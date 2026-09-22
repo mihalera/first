@@ -282,7 +282,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         }
 
         controlLabels[i].setText (controlNames[static_cast<int> (i)], juce::dontSendNotification);
-        controlLabels[i].setFont (juce::Font (9.0f, juce::Font::bold));
+        controlLabels[i].setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
         controlLabels[i].setColour (juce::Label::textColourId, secondaryTextColour);
         controlLabels[i].setJustificationType (juce::Justification::centred);
         controlLabels[i].setInterceptsMouseClicks (false, false);
