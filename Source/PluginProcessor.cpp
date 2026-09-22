@@ -45,13 +45,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     layout.add (std::make_unique<juce::AudioParameterChoice> ("speed", "Speed",
                                                             juce::StringArray { "7.5 ips", "15 ips", "30 ips" },
                                                             1));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("drive", "Drive", minTrack, maxTrack, 0.58f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("drive", "Drive", minTrack, maxTrack, 0.42f));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("bias", "Bias", minTrack, maxTrack, 0.36f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("tone", "Tone", minTrack, maxTrack, 0.52f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("wow", "Wow", minTrack, maxTrack, 0.18f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("flutter", "Flutter", minTrack, maxTrack, 0.22f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("mix", "Mix", minTrack, maxTrack, 0.82f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("output", "Output", minTrack, maxTrack, 0.86f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("tone", "Tone", minTrack, maxTrack, 0.58f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("wow", "Wow", minTrack, maxTrack, 0.14f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("flutter", "Flutter", minTrack, maxTrack, 0.18f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mix", "Mix", minTrack, maxTrack, 0.62f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("output", "Output", minTrack, maxTrack, 0.68f));
 
     return layout;
 }
@@ -185,56 +185,50 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     const auto mix = parameters.getRawParameterValue ("mix")->load();
     const auto output = parameters.getRawParameterValue ("output")->load();
 
-    const auto driveCurve = std::pow (drive, 1.85f);
-    const auto biasCurve = std::pow (bias, 1.35f);
-    const auto toneCurve = std::pow (tone, 0.82f);
-    const auto wowCurve = std::pow (wow, 1.8f);
-    const auto flutterCurve = std::pow (flutter, 1.7f);
-    const auto mixCurve = std::pow (mix, 1.35f);
-    const auto outputCurve = std::pow (output, 1.25f);
+    const auto driveCurve = std::pow (drive, 1.45f);
+    const auto biasCurve = std::pow (bias, 1.15f);
+    const auto toneCurve = std::pow (tone, 0.92f);
+    const auto wowCurve = std::pow (wow, 1.55f);
+    const auto flutterCurve = std::pow (flutter, 1.45f);
+    const auto mixCurve = std::pow (mix, 1.18f);
+    const auto outputCurve = std::pow (output, 1.12f);
 
     const auto twoPi = juce::MathConstants<float>::twoPi;
-    const auto speedScale = (speed == 0) ? 0.72f : (speed == 1) ? 1.0f : 1.38f;
-    const auto wowFreq = (0.16f + wowCurve * 2.6f) * speedScale;
-    const auto flutterFreq = (2.2f + flutterCurve * 12.5f) * (1.0f + speedScale * 0.24f);
-    const auto tapeRandom = 0.2f + wowCurve * 0.5f + flutterCurve * 0.32f;
+    const auto speedScale = (speed == 0) ? 0.76f : (speed == 1) ? 1.0f : 1.34f;
+    const auto wowFreq = (0.15f + wowCurve * 1.36f) * speedScale;
+    const auto flutterFreq = (1.9f + flutterCurve * 5.4f) * (1.0f + speedScale * 0.22f);
 
-    float tapeCurve = 1.0f;
-    float tapeHeadroom = 1.0f;
-    float tapeBiasBoost = 0.0f;
-    float tapeTexture = 0.0f;
-    float tapeColor = 0.0f;
+    float tapeCurve = 1.12f;
+    float tapeBiasBoost = 0.16f;
+    float tapeTexture = 0.20f;
+    float tapeColor = 0.12f;
 
     switch (tapeType)
     {
         case 0: // J37
-            tapeCurve = 1.5f;
-            tapeHeadroom = 1.25f;
-            tapeBiasBoost = 0.18f;
-            tapeTexture = 0.42f;
-            tapeColor = 0.18f;
+            tapeCurve = 1.18f;
+            tapeBiasBoost = 0.16f;
+            tapeTexture = 0.22f;
+            tapeColor = 0.12f;
             break;
         case 1: // Ampex 456
-            tapeCurve = 1.9f;
-            tapeHeadroom = 1.35f;
-            tapeBiasBoost = 0.26f;
-            tapeTexture = 0.5f;
-            tapeColor = 0.28f;
+            tapeCurve = 1.30f;
+            tapeBiasBoost = 0.24f;
+            tapeTexture = 0.30f;
+            tapeColor = 0.18f;
             break;
         case 2: // Studer A800
-            tapeCurve = 2.1f;
-            tapeHeadroom = 1.5f;
-            tapeBiasBoost = 0.32f;
-            tapeTexture = 0.62f;
-            tapeColor = 0.38f;
+            tapeCurve = 1.44f;
+            tapeBiasBoost = 0.28f;
+            tapeTexture = 0.38f;
+            tapeColor = 0.22f;
             break;
         case 3: // Chrome
         default:
-            tapeCurve = 1.7f;
-            tapeHeadroom = 1.1f;
-            tapeBiasBoost = 0.14f;
-            tapeTexture = 0.3f;
-            tapeColor = 0.12f;
+            tapeCurve = 1.22f;
+            tapeBiasBoost = 0.12f;
+            tapeTexture = 0.18f;
+            tapeColor = 0.09f;
             break;
     }
 
@@ -251,37 +245,39 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             const float x = channelData[i];
             const float wowLfo = std::sin (wowPhase);
             const float flutterLfo = std::sin (flutterPhase);
-            const float randomMicro = std::sin (wowPhase * 0.7f + flutterPhase * 1.3f + channel * 1.7f);
+            const float microRandom = std::sin (wowPhase * 0.8f + flutterPhase * 1.3f + channel * 2.4f);
 
             wowPhase += (twoPi * wowFreq) / sampleRate;
             flutterPhase += (twoPi * flutterFreq) / sampleRate;
 
-            const float wowMapped = std::pow (wow, 1.7f);
-            const float flutterMapped = std::pow (flutter, 1.6f);
-            const float biasMapped = std::pow (bias, 1.35f);
-            const float toneMapped = std::pow (tone, 0.9f);
-            const float mixMapped = std::pow (mix, 1.3f);
-            const float outputMapped = outputCurve;
+            const float driveAmount = 0.28f + driveCurve * 1.9f;
+            const float biasAmount = 0.18f + biasCurve * 1.55f;
+            const float toneAmount = 0.55f + toneCurve * 1.0f;
+            const float mixAmount = 0.12f + mixCurve * 0.88f;
+            const float outputAmount = 0.70f + outputCurve * 1.0f;
+            const float wowDepth = wowCurve * (0.05f + speedScale * 0.08f);
+            const float flutterDepth = flutterCurve * (0.08f + speedScale * 0.09f);
+            const float speedBias = 0.84f + speedScale * 0.30f;
 
-            const float wowMod = 1.0f + wowMapped * 0.16f * wowLfo;
-            const float flutterMod = 1.0f + flutterMapped * 0.2f * flutterLfo;
-            const float microMod = 1.0f + (tapeRandom + tapeTexture) * 0.14f * randomMicro;
+            const float wowMod = 1.0f + wowLfo * wowDepth;
+            const float flutterMod = 1.0f + flutterLfo * flutterDepth;
+            const float microMod = 1.0f + (tapeTexture * 0.18f + tapeColor * 0.12f) * microRandom;
 
-            const float driveBoost = 1.0f + driveCurve * 2.9f * (0.82f + speedScale * 0.25f);
-            const float signalPre = x * driveBoost;
-            const float tapeBias = biasMapped * (0.75f + tapeBiasBoost) + (toneMapped * 0.54f) + tapeColor;
-            const float softened = std::tanh (signalPre * (0.8f + driveCurve * 1.7f * tapeCurve));
-            const float harmonic = softened + (x * (0.18f + toneMapped * 0.9f + tapeColor * 0.18f));
-            const float biasDrive = std::tanh ((harmonic + lastBias * (0.35f + speedScale * 0.18f)) * (1.0f + tapeBias));
+            const float preDrive = x * (1.0f + driveAmount * 1.2f * speedBias);
+            const float preBias = preDrive + lastBias * (0.12f + biasCurve * 0.22f + speedScale * 0.05f);
 
-            const float soft = (biasDrive * (1.0f - 0.09f * toneMapped)) + (lastTapeSample * (0.2f + toneMapped * 0.25f + speedScale * 0.1f));
-            lastTapeSample = soft;
-            lastBias = biasDrive;
+            const float saturation = std::tanh (preBias * (0.82f + driveAmount * 1.1f * tapeCurve));
+            const float harmonicLift = std::tanh (preDrive * (0.85f + tapeColor * 1.2f) + x * (0.08f + toneAmount * 0.2f));
+            const float tapeBody = saturation * (0.82f + biasAmount * 0.7f) + harmonicLift * (0.22f + toneCurve * 0.62f);
+            const float memoryMix = tapeBody * 0.74f + lastTapeSample * 0.26f;
 
-            const float tapeEdge = soft * wowMod * flutterMod * microMod;
-            const float dry = x;
-            const float warmMix = dry * (1.0f - mixMapped * 0.7f) + tapeEdge * (0.44f + mixMapped * 1.5f);
-            const float finalOut = warmMix * (0.72f + outputMapped * 1.7f) * (0.92f + speedScale * 0.12f);
+            lastTapeSample = memoryMix;
+            lastBias = tapeBody;
+
+            const float motioned = memoryMix * wowMod * flutterMod * microMod;
+            const float dryMix = x * (1.0f - mixAmount);
+            const float wetMix = motioned * (0.20f + mixAmount * 0.82f);
+            const float finalOut = (dryMix + wetMix) * outputAmount * (0.92f + speedScale * 0.12f);
 
             channelData[i] = juce::jlimit (-0.999f, 0.999f, finalOut);
         }

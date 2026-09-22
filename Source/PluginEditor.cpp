@@ -129,11 +129,15 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         slider.setTextBoxStyle (juce::Slider::TextBoxBelow, true, 54, 18);
         slider.setTextBoxIsEditable (true);
-        slider.setRotaryParameters (0.08f, 1.0f, 0.5f);
-        slider.setVelocityBasedMode (true);
-        slider.setMouseDragSensitivity (120);
-        slider.setSkewFactorFromMidPoint (0.82f);
+        slider.setRotaryParameters (juce::MathConstants<float>::pi * 0.75f,
+                                   juce::MathConstants<float>::pi * 2.25f,
+                                   0.0f);
+        slider.setVelocityBasedMode (false);
+        slider.setMouseDragSensitivity (130);
+        slider.setSkewFactorFromMidPoint (0.62f);
         slider.setPopupDisplayEnabled (true, true, nullptr);
+        slider.setScrollWheelEnabled (true);
+        slider.setDoubleClickReturnValue (true, 0.5f);
         slider.setLookAndFeel (&customLookAndFeel);
         slider.setRange (0.0, 1.0);
         slider.setValue (startValue);
@@ -144,23 +148,25 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         slider.setSliderStyle (style);
         slider.setTextBoxStyle (juce::Slider::TextBoxRight, true, 52, 18);
         slider.setTextBoxIsEditable (true);
-        slider.setVelocityBasedMode (true);
-        slider.setMouseDragSensitivity (80);
-        slider.setSkewFactorFromMidPoint (0.7f);
+        slider.setVelocityBasedMode (false);
+        slider.setMouseDragSensitivity (110);
+        slider.setSkewFactorFromMidPoint (0.55f);
         slider.setPopupDisplayEnabled (true, true, nullptr);
+        slider.setScrollWheelEnabled (true);
+        slider.setDoubleClickReturnValue (true, 0.5f);
         slider.setLookAndFeel (&customLookAndFeel);
         slider.setRange (0.0, 1.0);
         slider.setValue (startValue);
     };
 
-    configureRotary (driveSlider, 0.62f);
-    configureRotary (biasSlider, 0.46f);
-    configureRotary (toneSlider, 0.66f);
-    configureRotary (wowSlider, 0.22f);
-    configureRotary (flutterSlider, 0.30f);
+    configureRotary (driveSlider, 0.42f);
+    configureRotary (biasSlider, 0.36f);
+    configureRotary (toneSlider, 0.58f);
+    configureRotary (wowSlider, 0.14f);
+    configureRotary (flutterSlider, 0.18f);
 
-    configureLinear (mixSlider, juce::Slider::LinearHorizontal, 0.82f);
-    configureLinear (outputSlider, juce::Slider::LinearVertical, 0.78f);
+    configureLinear (mixSlider, juce::Slider::LinearHorizontal, 0.62f);
+    configureLinear (outputSlider, juce::Slider::LinearVertical, 0.68f);
 
     tapeTypeBox.addItemList (juce::StringArray { "J37", "Ampex 456", "Studer A800", "Chrome" }, 1);
     speedBox.addItemList (juce::StringArray { "7.5 ips", "15 ips", "30 ips" }, 1);
@@ -271,58 +277,76 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawText ("INPUT", juce::Rectangle<int> (panel.getX() + 575, panel.getY() + 20, 60, 18), juce::Justification::centred, false);
 
     g.setColour (juce::Colour (0xffedf0f2));
-    g.fillRoundedRectangle (juce::Rectangle<float> (panel.getX() + 30.0f, panel.getY() + 88.0f,
-                                                  panel.getWidth() - 60.0f, 40.0f), 12.0f);
+    g.fillRoundedRectangle (juce::Rectangle<float> (panel.getX() + 30.0f, panel.getY() + 92.0f,
+                                                  panel.getWidth() - 60.0f, 34.0f), 10.0f);
     g.setColour (juce::Colour (0xffbf9a52));
-    g.drawRoundedRectangle (juce::Rectangle<float> (panel.getX() + 30.0f, panel.getY() + 88.0f,
-                                                  panel.getWidth() - 60.0f, 40.0f), 12.0f, 1.2f);
+    g.drawRoundedRectangle (juce::Rectangle<float> (panel.getX() + 30.0f, panel.getY() + 92.0f,
+                                                  panel.getWidth() - 60.0f, 34.0f), 10.0f, 1.2f);
 
     g.setColour (juce::Colour (0xff5f564f));
     g.setFont (juce::Font (11.0f, juce::Font::bold));
-    g.drawText ("REEL / TAPE / LOSS / WARMTH", juce::Rectangle<int> (panel.getX() + 40, panel.getY() + 99, 250, 20), juce::Justification::left, false);
+    g.drawText ("REEL / TAPE / LOSS / WARMTH", juce::Rectangle<int> (panel.getX() + 44, panel.getY() + 100, 240, 18), juce::Justification::left, false);
 
     g.setColour (juce::Colour (0xffa9823d));
     g.setFont (juce::Font (11.0f, juce::Font::bold));
 
-    const auto knobRowY = panel.getY() + 150;
-    const auto knobRowX = panel.getX() + 36;
+    const auto knobRowY = panel.getY() + 146;
+    const auto knobRowX = panel.getX() + 34;
     const auto labelW = 82;
     const auto labelH = 18;
 
     g.drawText ("TAPE", juce::Rectangle<int> (knobRowX, knobRowY + 112, labelW, labelH), juce::Justification::centred, false);
-    g.drawText ("SPEED", juce::Rectangle<int> (knobRowX + 96, knobRowY + 112, labelW + 18, labelH), juce::Justification::centred, false);
-    g.drawText ("DRIVE", juce::Rectangle<int> (knobRowX + 255, knobRowY + 112, 80, labelH), juce::Justification::centred, false);
+    g.drawText ("SPEED", juce::Rectangle<int> (knobRowX + 100, knobRowY + 112, labelW + 18, labelH), juce::Justification::centred, false);
+    g.drawText ("DRIVE", juce::Rectangle<int> (knobRowX + 256, knobRowY + 112, 80, labelH), juce::Justification::centred, false);
     g.drawText ("BIAS", juce::Rectangle<int> (knobRowX + 350, knobRowY + 112, 80, labelH), juce::Justification::centred, false);
     g.drawText ("TONE", juce::Rectangle<int> (knobRowX + 445, knobRowY + 112, 80, labelH), juce::Justification::centred, false);
-    g.drawText ("WOW", juce::Rectangle<int> (knobRowX + 12, knobRowY + 260, 82, labelH), juce::Justification::centred, false);
-    g.drawText ("FLUTTER", juce::Rectangle<int> (knobRowX + 108, knobRowY + 260, 92, labelH), juce::Justification::centred, false);
-    g.drawText ("MIX", juce::Rectangle<int> (knobRowX + 214, knobRowY + 260, 82, labelH), juce::Justification::centred, false);
+    g.drawText ("WOW", juce::Rectangle<int> (knobRowX + 16, knobRowY + 260, 82, labelH), juce::Justification::centred, false);
+    g.drawText ("FLUTTER", juce::Rectangle<int> (knobRowX + 112, knobRowY + 260, 92, labelH), juce::Justification::centred, false);
+    g.drawText ("MIX", juce::Rectangle<int> (knobRowX + 220, knobRowY + 260, 82, labelH), juce::Justification::centred, false);
     g.drawText ("OUT", juce::Rectangle<int> (knobRowX + 308, knobRowY + 260, 82, labelH), juce::Justification::centred, false);
 
     g.setColour (juce::Colour (0xffcaa566).withAlpha (0.18f));
-    g.fillRoundedRectangle (juce::Rectangle<float> (panel.getX() + 18.0f, panel.getY() + 135.0f,
+    g.fillRoundedRectangle (juce::Rectangle<float> (panel.getX() + 18.0f, panel.getY() + 136.0f,
                                                   panel.getWidth() - 36.0f, 3.0f), 2.0f);
+
+    for (int i = 0; i < 28; ++i)
+    {
+        const auto x = panel.getX() + 30.0f + (i * 19.0f) % (panel.getWidth() - 70.0f);
+        const auto y = panel.getY() + 18.0f + (i * 13) % 70;
+        g.setColour (juce::Colour (0xffd9caa3).withAlpha (0.040f + (i % 6) * 0.012f));
+        g.fillEllipse (x, y, 2.5f, 2.5f);
+    }
 }
 
 void FirstAudioProcessorEditor::resized()
 {
     const auto bounds = getLocalBounds().reduced (20, 22);
 
-    tapeTypeBox.setBounds (bounds.getX() + 34, bounds.getY() + 82, 110, 30);
-    speedBox.setBounds (bounds.getX() + 158, bounds.getY() + 82, 120, 30);
+    tapeTypeBox.setBounds (bounds.getX() + 34, bounds.getY() + 84, 110, 30);
+    speedBox.setBounds (bounds.getX() + 158, bounds.getY() + 84, 120, 30);
 
-    driveSlider.setBounds (bounds.getX() + 290, bounds.getY() + 138, 92, 92);
-    biasSlider.setBounds (bounds.getX() + 386, bounds.getY() + 138, 92, 92);
-    toneSlider.setBounds (bounds.getX() + 482, bounds.getY() + 138, 92, 92);
+    driveSlider.setBounds (bounds.getX() + 284, bounds.getY() + 138, 92, 92);
+    biasSlider.setBounds (bounds.getX() + 380, bounds.getY() + 138, 92, 92);
+    toneSlider.setBounds (bounds.getX() + 476, bounds.getY() + 138, 92, 92);
 
     wowSlider.setBounds (bounds.getX() + 42, bounds.getY() + 248, 92, 92);
     flutterSlider.setBounds (bounds.getX() + 138, bounds.getY() + 248, 92, 92);
-    mixSlider.setBounds (bounds.getX() + 236, bounds.getY() + 248, 120, 22);
-    outputSlider.setBounds (bounds.getX() + 236, bounds.getY() + 330, 18, 80);
+    mixSlider.setBounds (bounds.getX() + 236, bounds.getY() + 250, 125, 22);
+    outputSlider.setBounds (bounds.getX() + 240, bounds.getY() + 330, 18, 82);
 
-    driveSlider.setRotaryParameters (0.08f, 1.0f, 0.5f);
-    biasSlider.setRotaryParameters (0.08f, 1.0f, 0.5f);
-    toneSlider.setRotaryParameters (0.08f, 1.0f, 0.5f);
-    wowSlider.setRotaryParameters (0.08f, 1.0f, 0.5f);
-    flutterSlider.setRotaryParameters (0.08f, 1.0f, 0.5f);
+    driveSlider.setRotaryParameters (juce::MathConstants<float>::pi * 0.75f,
+                                    juce::MathConstants<float>::pi * 2.25f,
+                                    0.0f);
+    biasSlider.setRotaryParameters (juce::MathConstants<float>::pi * 0.75f,
+                                  juce::MathConstants<float>::pi * 2.25f,
+                                  0.0f);
+    toneSlider.setRotaryParameters (juce::MathConstants<float>::pi * 0.75f,
+                                   juce::MathConstants<float>::pi * 2.25f,
+                                   0.0f);
+    wowSlider.setRotaryParameters (juce::MathConstants<float>::pi * 0.75f,
+                                 juce::MathConstants<float>::pi * 2.25f,
+                                 0.0f);
+    flutterSlider.setRotaryParameters (juce::MathConstants<float>::pi * 0.75f,
+                                     juce::MathConstants<float>::pi * 2.25f,
+                                     0.0f);
 }
