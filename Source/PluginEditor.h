@@ -14,12 +14,8 @@
 //==============================================================================
 /**
 */
-namespace detail
-{
-    class J37OpenGLPanel;
-}
-
-class FirstAudioProcessorEditor  : public juce::AudioProcessorEditor
+class FirstAudioProcessorEditor  : public juce::AudioProcessorEditor,
+                                   private juce::Timer
 {
 public:
     FirstAudioProcessorEditor (FirstAudioProcessor&);
@@ -30,8 +26,10 @@ public:
     void resized() override;
 
 private:
+    void timerCallback() override;
+
     FirstAudioProcessor& audioProcessor;
-    std::unique_ptr<detail::J37OpenGLPanel> openGLPanel;
+    float animationPhase = 0.0f;
 
     juce::Slider driveSlider;
     juce::Slider biasSlider;

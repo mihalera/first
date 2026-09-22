@@ -9,153 +9,6 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
-#include <juce_box2d/juce_box2d.h>
-#include <juce_opengl/juce_opengl.h>
-
-namespace detail
-{
-    class J37OpenGLPanel final : public juce::OpenGLAppComponent,
-                               private juce::Timer
-    {
-    public:
-        J37OpenGLPanel()
-        {
-            setOpaque (false);
-            startTimerHz (30);
-
-            b2Vec2 gravity (0.0f, 0.0f);
-            physicsWorld = std::make_unique<b2World> (gravity);
-
-            for (int i = 0; i < 4; ++i)
-            {
-                b2BodyDef bodyDef;
-                bodyDef.type = b2_dynamicBody;
-                bodyDef.position.Set (0.22f + static_cast<float> (i) * 0.16f,
-                                      0.24f + static_cast<float> (i % 2) * 0.20f);
-                bodyDef.linearVelocity.Set ((i % 2 == 0 ? 1.0f : -1.0f) * 0.34f,
-                                           (i % 3 == 0 ? 0.5f : -0.35f) * 0.42f);
-
-                auto* body = physicsWorld->CreateBody (&bodyDef);
-
-                b2CircleShape circleShape;
-                circleShape.m_radius = 0.045f + static_cast<float> (i % 2) * 0.012f;
-
-                b2FixtureDef fixtureDef;
-                fixtureDef.shape = &circleShape;
-                fixtureDef.density = 0.7f;
-                fixtureDef.friction = 0.18f;
-                body->CreateFixture (&fixtureDef);
-
-                orbs.push_back ({ body, circleShape.m_radius, juce::Colour (0xffd8b36b).withAlpha (0.05f + i * 0.012f) });
-            }
-        }
-
-        ~J37OpenGLPanel() override
-        {
-            stopTimer();
-            physicsWorld.reset();
-        }
-
-        void initialise() override {}
-
-        void render() override
-        {
-            if (physicsWorld != nullptr)
-                physicsWorld->Step (1.0f / 30.0f, 6, 2);
-
-            const auto width = static_cast<double> (getWidth());
-            const auto height = static_cast<double> (getHeight());
-
-            juce::gl::glClearColor (0.96f, 0.95f, 0.94f, 0.0f);
-            juce::gl::glClear (juce::gl::GL_COLOR_BUFFER_BIT);
-
-            juce::gl::glMatrixMode (juce::gl::GL_PROJECTION);
-            juce::gl::glLoadIdentity();
-            juce::gl::glOrtho (0.0, width, height, 0.0, -1.0, 1.0);
-            juce::gl::glMatrixMode (juce::gl::GL_MODELVIEW);
-            juce::gl::glLoadIdentity();
-
-            juce::gl::glEnable (juce::gl::GL_BLEND);
-            juce::gl::glBlendFunc (juce::gl::GL_SRC_ALPHA,
-                                  juce::gl::GL_ONE_MINUS_SRC_ALPHA);
-
-            for (int i = 0; i < 12; ++i)
-            {
-                const auto y = 40.0f + static_cast<float> (i) * 30.0f;
-                const auto alpha = 0.016f + static_cast<float> (i) * 0.004f;
-                juce::gl::glBegin (juce::gl::GL_LINES);
-                juce::gl::glColor4f (0.76f, 0.69f, 0.53f, alpha);
-                juce::gl::glVertex2f (18.0f, y);
-                juce::gl::glVertex2f (static_cast<float> (width) - 18.0f, y + 8.0f);
-                juce::gl::glEnd();
-            }
-
-            juce::gl::glBegin (juce::gl::GL_LINES);
-            juce::gl::glColor4f (0.62f, 0.55f, 0.42f, 0.04f);
-            juce::gl::glVertex2f (42.0f, 18.0f);
-            juce::gl::glVertex2f (42.0f, static_cast<float> (height) - 18.0f);
-            juce::gl::glVertex2f (static_cast<float> (width) - 42.0f, 18.0f);
-            juce::gl::glVertex2f (static_cast<float> (width) - 42.0f, static_cast<float> (height) - 18.0f);
-            juce::gl::glEnd();
-
-            for (const auto& orb : orbs)
-            {
-                if (orb.body == nullptr)
-                    continue;
-
-                const auto position = orb.body->GetPosition();
-                const auto x = juce::jmap (position.x, 0.0f, 1.5f, 0.0f, static_cast<float> (width));
-                const auto y = juce::jmap (position.y, 0.0f, 1.2f, 0.0f, static_cast<float> (height));
-                const auto radius = juce::jmap (orb.radius, 0.04f, 0.10f, 6.0f, 12.0f);
-
-                const auto r = orb.colour.getFloatRed();
-                const auto g = orb.colour.getFloatGreen();
-                const auto b = orb.colour.getFloatBlue();
-                const auto a = orb.colour.getFloatAlpha();
-
-                juce::gl::glBegin (juce::gl::GL_TRIANGLE_FAN);
-                juce::gl::glColor4f (r, g, b, a);
-                juce::gl::glVertex2f (x, y);
-
-                for (int i = 0; i <= 28; ++i)
-                {
-                    const auto theta = juce::MathConstants<float>::twoPi * static_cast<float> (i) / 28.0f;
-                    const auto px = x + std::cos (theta) * radius;
-                    const auto py = y + std::sin (theta) * radius;
-                    juce::gl::glVertex2f (px, py);
-                }
-                juce::gl::glEnd();
-            }
-
-            juce::gl::glDisable (juce::gl::GL_BLEND);
-        }
-
-        void resized() override
-        {
-            // OpenGLAppComponent handles the viewport size itself.
-        }
-
-        void timerCallback() override
-        {
-            if (isShowing())
-                repaint();
-        }
-
-    private:
-        struct Orb
-        {
-            b2Body* body = nullptr;
-            float radius = 0.0f;
-            juce::Colour colour;
-        };
-
-        std::unique_ptr<b2World> physicsWorld;
-        std::vector<Orb> orbs;
-
-        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (J37OpenGLPanel)
-    };
-}
-
 namespace
 {
     struct J37LookAndFeel : juce::LookAndFeel_V4
@@ -270,6 +123,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
     setSize (760, 460);
+    startTimerHz (30);
 
     auto configureRotary = [this] (juce::Slider& slider, float startValue)
     {
@@ -336,10 +190,6 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     tapeTypeAttachment = std::make_unique<ComboBoxAttachment> (audioProcessor.parameters, "tape_type", tapeTypeBox);
     speedAttachment = std::make_unique<ComboBoxAttachment> (audioProcessor.parameters, "speed", speedBox);
 
-    openGLPanel = std::make_unique<detail::J37OpenGLPanel>();
-    addAndMakeVisible (*openGLPanel);
-    openGLPanel->setBounds (0, 0, getWidth(), getHeight());
-
     addAndMakeVisible (driveSlider);
     addAndMakeVisible (biasSlider);
     addAndMakeVisible (toneSlider);
@@ -353,6 +203,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 
 FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
 {
+    stopTimer();
 }
 
 //==============================================================================
@@ -458,13 +309,28 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
         g.setColour (juce::Colour (0xffd9caa3).withAlpha (0.04f + static_cast<float> (i % 5) * 0.012f));
         g.fillEllipse (x, y, 2.0f, 2.0f);
     }
+
+    // Use JUCE's software renderer for the decorative motion so the editor does
+    // not depend on a platform OpenGL context or legacy OpenGL entry points.
+    for (int i = 0; i < 4; ++i)
+    {
+        const auto phase = animationPhase + static_cast<float> (i) * 1.47f;
+        const auto x = static_cast<float> (panel.getX()) + 430.0f + std::sin (phase * 0.83f) * (28.0f + i * 7.0f);
+        const auto y = static_cast<float> (panel.getY()) + 294.0f + std::cos (phase * 1.11f) * (14.0f + i * 6.0f);
+        const auto radius = 5.0f + static_cast<float> (i) * 2.2f;
+        g.setColour (juce::Colour (0xffd8b36b).withAlpha (0.05f + static_cast<float> (i) * 0.018f));
+        g.fillEllipse (x - radius, y - radius, radius * 2.0f, radius * 2.0f);
+    }
+}
+
+void FirstAudioProcessorEditor::timerCallback()
+{
+    animationPhase = std::fmod (animationPhase + 0.045f, juce::MathConstants<float>::twoPi);
+    repaint();
 }
 
 void FirstAudioProcessorEditor::resized()
 {
-    if (openGLPanel != nullptr)
-        openGLPanel->setBounds (getLocalBounds());
-
     const auto bounds = getLocalBounds().reduced (20, 22);
 
     tapeTypeBox.setBounds (bounds.getX() + 34, bounds.getY() + 84, 110, 30);
