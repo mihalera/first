@@ -8,8 +8,10 @@
     every translation unit. Compiling that once and reusing it removes tens of
     seconds from a clean build and makes incremental rebuilds far cheaper.
 
-    This header is only used by the Visual Studio projects; the Projucer can be
-    configured to generate the same setup via the project's PCH option.
+    Only the plugin's own translation units opt into this header. The JUCE module
+    wrappers (include_juce_*.cpp) deliberately keep PrecompiledHeader = NotUsing,
+    because force-injecting JuceHeader.h into them trips JUCE's own
+    incorrect-use-of-JUCE-cpp-file guard.
 
   ==============================================================================
 */

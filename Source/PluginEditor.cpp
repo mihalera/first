@@ -1,3 +1,5 @@
+#include "../Builds/VisualStudio2026/pch.h"
+
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
