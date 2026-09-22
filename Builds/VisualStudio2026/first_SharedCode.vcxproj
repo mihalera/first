@@ -149,18 +149,28 @@
     </Bscmake>
   </ItemDefinitionGroup>
   <ItemGroup>
-    <ClCompile Include="pch.cpp">
-      <PrecompiledHeader>Create</PrecompiledHeader>
-      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-    </ClCompile>
-    <ClCompile Include="..\..\Source\PluginProcessor.cpp">
-      <PrecompiledHeader>Use</PrecompiledHeader>
-      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-    </ClCompile>
-    <ClCompile Include="..\..\Source\PluginEditor.cpp">
-      <PrecompiledHeader>Use</PrecompiledHeader>
-      <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
-    </ClCompile>
+    <!--
+      Precompiled headers are deliberately NOT used by this project.
+
+      In a .vcxproj the PCH is driven by three interdependent sparkles: the
+      PrecompiledHeader mode, the PrecompiledHeaderFile name, and a matching
+      #include at the top of every participating source file. If any of them
+      drifts, the build fails in a way that is hard to read:
+
+        C2857 on pch.cpp    - the /Yc name did not match pch.cpp's own include
+        C1010 on Plugin*.cpp - the /Yu pass never found a matching include
+
+      That configuration was the source of repeated CI failures, so the plugin
+      sources now simply include pch.h as an ordinary header and every
+      translation unit is compiled without PCH options. Builds take a little
+      longer, but there is nothing left that can silently disagree.
+
+      If you want the speed back, add <PrecompiledHeaderFile>pch.h</PrecompiledHeaderFile>
+      to EVERY item below, set Create on pch.cpp and Use on the plugin sources.
+    -->
+    <ClCompile Include="pch.cpp"/>
+    <ClCompile Include="..\..\Source\PluginProcessor.cpp"/>
+    <ClCompile Include="..\..\Source\PluginEditor.cpp"/>
     <ClCompile Include="..\..\..\..\..\Programs\JUCE\modules\juce_analytics\analytics\juce_Analytics.cpp">
       <ExcludedFromBuild>true</ExcludedFromBuild>
     </ClCompile>

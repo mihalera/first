@@ -6,10 +6,6 @@
   ==============================================================================
 */
 
-// The build enables a precompiled header for this translation unit, so this
-// include has to come first - before any other header.
-#include "../Builds/VisualStudio2026/pch.h"
-
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 

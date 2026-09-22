@@ -45,11 +45,14 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
-      - name: Cache precompiled header and objects
+      - name: Cache objects
         uses: actions/cache@v4
         with:
           path: Builds/VisualStudio2026/x64
-          key: msvc-build-${{ runner.os }}-${{ hashFiles('Source/**', 'Builds/VisualStudio2026/*.vcxproj', 'Builds/VisualStudio2026/pch.h') }}
+          # The key includes the PCH header and the project files. A stale object
+          # or leftover .pch from an earlier precompiled-header layout would
+          # otherwise survive into the next build and hide (or fake) a failure.
+          key: msvc-build-${{ runner.os }}-${{ hashFiles('Source/**', 'Builds/VisualStudio2026/*.vcxproj', 'Builds/VisualStudio2026/pch.h', 'Builds/VisualStudio2026/pch.cpp') }}
           restore-keys: |
             msvc-build-${{ runner.os }}-
 
