@@ -23,7 +23,7 @@ public:
     ~FirstAudioProcessor() override;
 
     //==============================================================================
-    void prepareToPlay (double sampleRate, int samplesPerBlock) override;
+    void prepareToPlay (double sampleRateToUse, int samplesPerBlock) override;
     void releaseResources() override;
 
    #ifndef JucePlugin_PreferredChannelConfigurations
@@ -57,9 +57,9 @@ public:
 
     juce::AudioProcessorValueTreeState parameters;
 
-    float getInputPeakLevel() const noexcept { return inputPeakLevel.load (std::memory_order_relaxed); }
+    float getInputPeakLevel() noexcept { return inputPeakLevel.exchange (0.0f, std::memory_order_relaxed); }
     float getInputRmsLevel() const noexcept { return inputRmsLevel.load (std::memory_order_relaxed); }
-    float getOutputPeakLevel() const noexcept { return outputPeakLevel.load (std::memory_order_relaxed); }
+    float getOutputPeakLevel() noexcept { return outputPeakLevel.exchange (0.0f, std::memory_order_relaxed); }
     float getOutputRmsLevel() const noexcept { return outputRmsLevel.load (std::memory_order_relaxed); }
 
 private:
