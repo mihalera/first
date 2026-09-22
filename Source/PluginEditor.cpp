@@ -511,6 +511,15 @@ void FirstAudioProcessorEditor::applyTheme()
     customLookAndFeel.setDarkTheme (darkTheme);
     inputMeter.setDarkTheme (darkTheme);
     outputMeter.setDarkTheme (darkTheme);
+    {
+        const juce::SpinLock::ScopedLockType lock (renderOrbsLock);
+        for (std::size_t i = 0; i < decorativeOrbCount; ++i)
+        {
+            const auto orbColour = palette.accent.withAlpha (0.25f + static_cast<float> (i) * 0.04f);
+            physicsOrbs[i].colour = orbColour;
+            renderOrbs[i].colour = orbColour;
+        }
+    }
 
     brandLabel.setColour (juce::Label::textColourId, palette.accent);
     titleLabel.setColour (juce::Label::textColourId, palette.text);
