@@ -971,7 +971,9 @@ void FirstAudioProcessorEditor::timerCallback()
     }
 
     // The reel spins according to the selected tape speed and the live drift.
-    const auto speedIndex = speedBox.getSelectedId() - 1;
+    // getSelectedId() returns 0 while nothing is selected, which would index the
+    // combo's item list at -1, so the index is clamped before it is used.
+    const auto speedIndex = juce::jlimit (0, 2, speedBox.getSelectedId() - 1);
     const auto speedScale = speedIndex == 0 ? 0.55f : (speedIndex == 1 ? 0.85f : 1.25f);
     reelSpeed += ((speedScale * (0.9f + driftAmount * 0.5f)) - reelSpeed) * 0.08f;
     reelAngle += reelSpeed * 0.09f;

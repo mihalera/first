@@ -48,9 +48,9 @@ public:
     //==============================================================================
     int getNumPrograms() override;
     int getCurrentProgram() override;
-    void setCurrentProgram (int index) override;
-    const juce::String getProgramName (int index) override;
-    void changeProgramName (int index, const juce::String& newName) override;
+    void setCurrentProgram (int) override;
+    const juce::String getProgramName (int) override;
+    void changeProgramName (int, const juce::String&) override;
 
     //==============================================================================
     void getStateInformation (juce::MemoryBlock& destData) override;
@@ -140,10 +140,11 @@ private:
     float toneLpAc = 0.0f;
     float toneLpBc = 0.0f;
 
-    // Two coupled glue stages: the input compressor runs straight after the input
-    // trim, the output compressor straight before the output trim.
-    float inputCompressorEnvelope = 0.0f;
-    float outputCompressorEnvelope = 0.0f;
+    // Two independent glue stages, each with its own detector envelope. The input
+    // stage runs straight after the input trim, the output stage straight before
+    // the output trim; neither reads the other's state.
+    GlueCompressor inputCompressor;
+    GlueCompressor outputCompressor;
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessor)

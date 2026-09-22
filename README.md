@@ -39,12 +39,22 @@ playback EQ tilt -> output glue compressor (always on) -> output trim (dB) -> st
 | Tape Type | J37 / Ampex 456 / Studer A800 / Chrome | Model character |
 | Speed | 7.5 / 15 / 30 ips | Transport speed, affects modulation and top end |
 
-The tape glue compressor is compressor-coupled in two places and has no on/off switch:
-the input stage sits immediately after the input trim (so INPUT drives a real
-recorder-input stage), the output stage sits immediately before the output trim.
-Each stage is gentle (about 1.2:1) and pays back roughly half of its reduction as
-makeup, so the machine keeps its level instead of collapsing. The COMP meter shows
-the combined reduction (0 to -12 dB) plus the IN/OUT split.
+The tape glue compressor is compressor-coupled in two places, and the two stages are
+completely independent processors: each has its own detector envelope and its own gain
+computer, and neither reads the other's state. Both are driven purely by the signal
+that reaches them plus the Input / Output parameters.
+
+The **input stage** sits immediately after the input trim, so INPUT pushes this signal
+into a real recorder-input stage and the tape always hears a controlled level. The
+**output stage** sits immediately before the output trim, so the headroom it creates is
+spent directly on OUTPUT.
+
+Turning INPUT or OUTPUT up moves that stage's threshold down (roughly -17 dB to -3 dB),
+steepens its ratio and allows more reduction; turning it below the middle backs the
+stage off completely, at which point it is genuinely transparent. Each stage pays back
+roughly 30-65 % of the reduction it applies as makeup, weighted by how hard its trim
+control is driving it, so neither stage quietly undoes the level the user dialled in.
+The COMP meter shows the combined reduction (0 to -12 dB) plus the IN/OUT split.
 
 ## Project type
 
@@ -63,6 +73,14 @@ The Visual Studio projects use a shared precompiled header (`Builds/VisualStudio
 which is the single biggest win for build time because every JUCE translation unit includes
 `JuceHeader.h`. Release builds also use `Optimization: MaxSpeed` with `FavorSizeOrSpeed: Speed`
 and multi-processor compilation.
+
+Every plugin source file (`Source/*.cpp`) must include `pch.h` as its **first** include -
+MSVC compiles those translation units with `/Yu pch.h` and fails with `C1010: unexpected end
+of file while looking for precompiled header` when it does not find it. The JUCE module
+wrappers (`JuceLibraryCode/include_juce_*.cpp`) deliberately stay out of the PCH scheme.
+`Builds/VisualStudio2026/stdafx.h` is a thin alias to `pch.h`: other JUCE exporters ask the
+compiler to force-include a file literally named `stdafx.h`, and a forced include that
+cannot be found is only a warning, which would silently break the PCH setup.
 
 ## Repository notes
 
