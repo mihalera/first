@@ -3,13 +3,12 @@
 
 namespace
 {
-    constexpr auto backgroundColour = 0xff0d1418;
-    constexpr auto panelColour = 0xff172127;
-    constexpr auto cardColour = 0xff1c292f;
-    constexpr auto raisedColour = 0xff26353b;
-    constexpr auto goldColour = 0xffd5ad68;
-    constexpr auto textColour = 0xfff2eee5;
-    constexpr auto secondaryTextColour = 0xff95a3a6;
+    const juce::Colour backgroundColour (0xff0d1418);
+    const juce::Colour panelColour (0xff172127);
+    const juce::Colour cardColour (0xff1c292f);
+    const juce::Colour goldColour (0xffd5ad68);
+    const juce::Colour textColour (0xfff2eee5);
+    const juce::Colour secondaryTextColour (0xff95a3a6);
 
     juce::String formatDb (float value)
     {
@@ -123,7 +122,7 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     g.drawRoundedRectangle (bounds.reduced (0.5f), 12.0f, 1.0f);
 
     g.setColour (secondaryTextColour);
-    g.setFont (juce::Font (10.0f, juce::Font::bold));
+    g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)));
     g.drawText (title, getLocalBounds().removeFromTop (28), juce::Justification::centred, false);
 
     const auto barTop = 38.0f;
@@ -142,7 +141,7 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     g.fillRoundedRectangle (barX, barTop, barWidth, barHeight, 5.0f);
 
     const float ticks[] { 0.0f, -6.0f, -18.0f, -36.0f, -60.0f };
-    g.setFont (juce::Font (9.0f));
+    g.setFont (juce::Font (juce::FontOptions (9.0f)));
     for (const auto tick : ticks)
     {
         const auto y = dbToY (tick);
@@ -173,7 +172,7 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
 
     const auto readoutY = getHeight() - 39;
     g.setColour (textColour);
-    g.setFont (juce::Font (9.0f, juce::Font::bold));
+    g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
     g.drawText ("PK " + formatDb (peakHoldDb),
                 juce::Rectangle<int> (4, readoutY, getWidth() - 8, 16),
                 juce::Justification::centred, false);
@@ -197,7 +196,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                 bool bold, juce::Justification justification)
     {
         label.setText (text, juce::dontSendNotification);
-        label.setFont (juce::Font (size, bold ? juce::Font::bold : juce::Font::plain));
+        label.setFont (juce::Font (juce::FontOptions (size, bold ? juce::Font::bold : juce::Font::plain)));
         label.setColour (juce::Label::textColourId, colour);
         label.setJustificationType (justification);
         label.setInterceptsMouseClicks (false, false);
