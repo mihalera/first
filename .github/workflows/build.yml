@@ -17,10 +17,11 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Download JUCE Framework
+    - name: Setup JUCE at expected absolute path
       shell: powershell
       run: |
-        git clone --depth 1 --branch develop https://github.com/juce-framework/JUCE.git JUCE
+        New-Item -ItemType Directory -Force -Path "D:\Desktop\Programs"
+        git clone --depth 1 https://github.com/juce-framework/JUCE.git "D:\Desktop\Programs\JUCE"
 
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
