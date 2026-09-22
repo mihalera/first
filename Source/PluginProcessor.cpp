@@ -13,6 +13,14 @@ namespace
 {
     constexpr float minTrack = 0.0f;
     constexpr float maxTrack = 1.0f;
+
+    inline float jsStyleNonlinearity (float x, float drive, float density)
+    {
+        const float signal = x * (1.0f + drive * 2.5f);
+        const float wobble = std::sin (signal * (1.8f + density * 4.2f));
+        const float shaped = signal + wobble * (0.22f + density * 0.45f);
+        return std::tanh (shaped * (0.8f + drive * 1.55f));
+    }
 }
 
 //==============================================================================
@@ -267,8 +275,9 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             const float preBias = preDrive + lastBias * (0.12f + biasCurve * 0.22f + speedScale * 0.05f);
 
             const float saturation = std::tanh (preBias * (0.82f + driveAmount * 1.1f * tapeCurve));
+            const float jsCurve = jsStyleNonlinearity (preDrive, driveCurve, tapeTexture);
             const float harmonicLift = std::tanh (preDrive * (0.85f + tapeColor * 1.2f) + x * (0.08f + toneAmount * 0.2f));
-            const float tapeBody = saturation * (0.82f + biasAmount * 0.7f) + harmonicLift * (0.22f + toneCurve * 0.62f);
+            const float tapeBody = saturation * (0.82f + biasAmount * 0.7f) + jsCurve * (0.28f + toneCurve * 0.42f) + harmonicLift * (0.22f + toneCurve * 0.62f);
             const float memoryMix = tapeBody * 0.74f + lastTapeSample * 0.26f;
 
             lastTapeSample = memoryMix;

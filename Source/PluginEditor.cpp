@@ -9,8 +9,150 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+#include <juce_box2d/juce_box2d.h>
+
 namespace
 {
+    class J37OpenGLPanel final : public juce::OpenGLAppComponent,
+                               private juce::Timer
+    {
+    public:
+        J37OpenGLPanel()
+        {
+            setOpaque (false);
+            startTimerHz (30);
+
+            b2Vec2 gravity (0.0f, 0.0f);
+            physicsWorld = std::make_unique<b2World> (gravity);
+
+            for (int i = 0; i < 4; ++i)
+            {
+                b2BodyDef bodyDef;
+                bodyDef.type = b2_dynamicBody;
+                bodyDef.position.Set (0.22f + static_cast<float> (i) * 0.16f,
+                                      0.24f + static_cast<float> (i % 2) * 0.20f);
+                bodyDef.linearVelocity.Set ((i % 2 == 0 ? 1.0f : -1.0f) * 0.34f,
+                                           (i % 3 == 0 ? 0.5f : -0.35f) * 0.42f);
+
+                auto* body = physicsWorld->CreateBody (&bodyDef);
+
+                b2CircleShape circleShape;
+                circleShape.m_radius = 0.045f + static_cast<float> (i % 2) * 0.012f;
+
+                b2FixtureDef fixtureDef;
+                fixtureDef.shape = &circleShape;
+                fixtureDef.density = 0.7f;
+                fixtureDef.friction = 0.18f;
+                body->CreateFixture (&fixtureDef);
+
+                orbs.push_back ({ body, circleShape.m_radius, juce::Colour (0xffd8b36b).withAlpha (0.05f + i * 0.012f) });
+            }
+        }
+
+        ~J37OpenGLPanel() override
+        {
+            stopTimer();
+            physicsWorld.reset();
+        }
+
+        void initialise() override {}
+
+        void render() override
+        {
+            if (physicsWorld != nullptr)
+                physicsWorld->Step (1.0f / 30.0f, 6, 2);
+
+            const auto width = static_cast<double> (getWidth());
+            const auto height = static_cast<double> (getHeight());
+
+            glClearColor (0.96f, 0.95f, 0.94f, 0.0f);
+            glClear (GL_COLOR_BUFFER_BIT);
+
+            glMatrixMode (GL_PROJECTION);
+            glLoadIdentity();
+            glOrtho (0.0, width, height, 0.0, -1.0, 1.0);
+            glMatrixMode (GL_MODELVIEW);
+            glLoadIdentity();
+
+            glEnable (GL_BLEND);
+            glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+
+            for (int i = 0; i < 12; ++i)
+            {
+                const auto y = 40.0f + static_cast<float> (i) * 30.0f;
+                const auto alpha = 0.016f + static_cast<float> (i) * 0.004f;
+                glBegin (GL_LINES);
+                glColor4f (0.76f, 0.69f, 0.53f, alpha);
+                glVertex2f (18.0f, y);
+                glVertex2f (static_cast<float> (width) - 18.0f, y + 8.0f);
+                glEnd();
+            }
+
+            glBegin (GL_LINES);
+            glColor4f (0.62f, 0.55f, 0.42f, 0.04f);
+            glVertex2f (42.0f, 18.0f);
+            glVertex2f (42.0f, static_cast<float> (height) - 18.0f);
+            glVertex2f (static_cast<float> (width) - 42.0f, 18.0f);
+            glVertex2f (static_cast<float> (width) - 42.0f, static_cast<float> (height) - 18.0f);
+            glEnd();
+
+            for (const auto& orb : orbs)
+            {
+                if (orb.body == nullptr)
+                    continue;
+
+                const auto position = orb.body->GetPosition();
+                const auto x = juce::jmap (position.x, 0.0f, 1.5f, 0.0f, static_cast<float> (width));
+                const auto y = juce::jmap (position.y, 0.0f, 1.2f, 0.0f, static_cast<float> (height));
+                const auto radius = juce::jmap (orb.radius, 0.04f, 0.10f, 6.0f, 12.0f);
+
+                const auto r = orb.colour.getFloatRed();
+                const auto g = orb.colour.getFloatGreen();
+                const auto b = orb.colour.getFloatBlue();
+                const auto a = orb.colour.getFloatAlpha();
+
+                glBegin (GL_TRIANGLE_FAN);
+                glColor4f (r, g, b, a);
+                glVertex2f (x, y);
+
+                for (int i = 0; i <= 28; ++i)
+                {
+                    const auto theta = juce::MathConstants<float>::twoPi * static_cast<float> (i) / 28.0f;
+                    const auto px = x + std::cos (theta) * radius;
+                    const auto py = y + std::sin (theta) * radius;
+                    glVertex2f (px, py);
+                }
+                glEnd();
+            }
+
+            glDisable (GL_BLEND);
+        }
+
+        void resized() override
+        {
+            setBounds (0, 0, getWidth(), getHeight());
+        }
+
+        void timerCallback() override
+        {
+            if (isShowing())
+                repaint();
+        }
+
+    private:
+        struct Orb
+        {
+            b2Body* body = nullptr;
+            float radius = 0.0f;
+            juce::Colour colour;
+        };
+
+        std::unique_ptr<b2World> physicsWorld;
+        std::vector<Orb> orbs;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (J37OpenGLPanel)
+    };
+
     struct J37LookAndFeel : juce::LookAndFeel_V4
     {
         void drawRotarySlider (juce::Graphics& g,
@@ -189,6 +331,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     tapeTypeAttachment = std::make_unique<ComboBoxAttachment> (audioProcessor.parameters, "tape_type", tapeTypeBox);
     speedAttachment = std::make_unique<ComboBoxAttachment> (audioProcessor.parameters, "speed", speedBox);
 
+    openGLPanel = std::make_unique<J37OpenGLPanel>();
+    addAndMakeVisible (*openGLPanel);
+    openGLPanel->setBounds (0, 0, getWidth(), getHeight());
+
     addAndMakeVisible (driveSlider);
     addAndMakeVisible (biasSlider);
     addAndMakeVisible (toneSlider);
@@ -210,7 +356,7 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     auto bg = getLocalBounds().toFloat();
 
     juce::ColourGradient lightGrad (
-        juce::Colour (0xfff5f2ea),
+        juce::Colour (0xfff6f3ee),
         bg.getX(),
         bg.getY(),
         juce::Colour (0xffdfe3e8),
@@ -218,74 +364,65 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
         bg.getBottom(),
         false);
     g.setGradientFill (lightGrad);
-    g.fillRoundedRectangle (bg.reduced (6.0f), 26.0f);
+    g.fillRoundedRectangle (bg.reduced (6.0f), 28.0f);
 
     const auto panel = getLocalBounds().reduced (12);
 
-    juce::Path grain;
-    for (int i = 0; i < 40; ++i)
-    {
-        const auto x = static_cast<float> (panel.getX() + 16 + (i % 5) * 55);
-        const auto y = static_cast<float> (panel.getY() + 10 + i * 11);
-        grain.startNewSubPath (x, y);
-        grain.lineTo (x + 18.0f, y + 4.0f);
-    }
-
     g.setGradientFill (juce::ColourGradient (
-        juce::Colour (0xfff8f5ef),
+        juce::Colour (0xfff8f3ed),
         static_cast<float> (panel.getX()),
         static_cast<float> (panel.getY()),
-        juce::Colour (0xffdfe5ea),
+        juce::Colour (0xffe4e9ee),
         static_cast<float> (panel.getRight()),
         static_cast<float> (panel.getBottom()),
         false));
     g.fillRoundedRectangle (panel.toFloat(), 24.0f);
 
-    g.setColour (juce::Colour (0xffc1a169).withAlpha (0.18f));
-    for (int i = 0; i < 18; ++i)
+    g.setColour (juce::Colour (0xffc7a55f).withAlpha (0.12f));
+    for (int i = 0; i < 14; ++i)
     {
-        const auto y = panel.getY() + 18 + i * 16;
-        g.drawLine (panel.getX() + 18.0f, static_cast<float> (y), panel.getRight() - 18.0f, static_cast<float> (y), 1.0f);
+        const auto y = panel.getY() + 18 + i * 18;
+        g.drawLine (panel.getX() + 18.0f, static_cast<float> (y), panel.getRight() - 18.0f, static_cast<float> (y) + 8.0f, 1.0f);
     }
 
-    g.setColour (juce::Colour (0xffc9a867));
-    g.drawRoundedRectangle (panel.toFloat().reduced (1.0f), 24.0f, 1.6f);
+    g.setColour (juce::Colour (0xff2a2d2f));
+    g.drawRoundedRectangle (panel.toFloat().reduced (2.0f), 24.0f, 1.8f);
 
-    g.setColour (juce::Colour (0xffd5b26f).withAlpha (0.22f));
-    g.fillRoundedRectangle (juce::Rectangle<float> (panel.getX() + 16.0f, panel.getY() + 16.0f,
-                                                  panel.getWidth() - 32.0f, 60.0f), 14.0f);
+    g.setColour (juce::Colour (0xffd5ad68).withAlpha (0.18f));
+    g.fillRoundedRectangle (juce::Rectangle<float> (panel.getX() + 8.0f, panel.getY() + 8.0f,
+                                                  panel.getWidth() - 16.0f, 72.0f), 18.0f);
 
-    g.setColour (juce::Colour (0xff9d7c39));
-    g.setFont (juce::Font (26.0f, juce::Font::bold));
-    g.drawText ("J37", juce::Rectangle<int> (panel.getX() + 22, panel.getY() + 18, 90, 30), juce::Justification::left, false);
+    g.setColour (juce::Colour (0xff7e5929));
+    g.setFont (juce::Font (25.0f, juce::Font::bold));
+    g.drawText ("J37", juce::Rectangle<int> (panel.getX() + 24, panel.getY() + 18, 88, 30), juce::Justification::left, false);
 
-    g.setColour (juce::Colour (0xff2d2d2d));
+    g.setColour (juce::Colour (0xff2c2c2c));
     g.setFont (juce::Font (15.0f, juce::Font::bold));
-    g.drawText ("TAPE SATURATOR", juce::Rectangle<int> (panel.getX() + 122, panel.getY() + 24, 220, 20), juce::Justification::left, false);
+    g.drawText ("TAPE SATURATOR", juce::Rectangle<int> (panel.getX() + 118, panel.getY() + 24, 220, 20), juce::Justification::left, false);
 
-    g.setColour (juce::Colour (0xffc8a15a));
-    g.fillRect (panel.getX() + 440, panel.getY() + 20, 170, 2);
-    g.fillRect (panel.getX() + 440, panel.getY() + 34, 170, 2);
+    g.setColour (juce::Colour (0xffc49a56));
+    g.fillRect (panel.getX() + 436, panel.getY() + 20, 186, 2);
+    g.fillRect (panel.getX() + 436, panel.getY() + 34, 186, 2);
 
-    g.setColour (juce::Colour (0xffd8bd7d));
+    g.setColour (juce::Colour (0xffd9ba7e));
     g.fillEllipse (panel.getX() + 646, panel.getY() + 18, 18, 18);
-    g.setColour (juce::Colour (0xff5bc58f));
+    g.setColour (juce::Colour (0xff3fb476));
     g.fillEllipse (panel.getX() + 646, panel.getY() + 18, 8, 8);
 
-    g.setColour (juce::Colour (0xff726d63));
+    g.setColour (juce::Colour (0xff6f675f));
     g.setFont (juce::Font (10.0f, juce::Font::bold));
-    g.drawText ("INPUT", juce::Rectangle<int> (panel.getX() + 575, panel.getY() + 20, 60, 18), juce::Justification::centred, false);
+    g.drawText ("INPUT", juce::Rectangle<int> (panel.getX() + 572, panel.getY() + 20, 60, 18), juce::Justification::centred, false);
 
-    g.setColour (juce::Colour (0xffedf0f2));
+    g.setColour (juce::Colour (0xfff2f3f6));
     g.fillRoundedRectangle (juce::Rectangle<float> (panel.getX() + 30.0f, panel.getY() + 92.0f,
-                                                  panel.getWidth() - 60.0f, 34.0f), 10.0f);
-    g.setColour (juce::Colour (0xffbf9a52));
+                                                  panel.getWidth() - 60.0f, 32.0f), 9.0f);
+    g.setColour (juce::Colour (0xffbb9048));
     g.drawRoundedRectangle (juce::Rectangle<float> (panel.getX() + 30.0f, panel.getY() + 92.0f,
-                                                  panel.getWidth() - 60.0f, 34.0f), 10.0f, 1.2f);
+                                                  panel.getWidth() - 60.0f, 32.0f), 9.0f, 1.1f);
 
-    g.setColour (juce::Colour (0xff5f564f));
+    g.setColour (juce::Colour (0xff564f49));
     g.setFont (juce::Font (11.0f, juce::Font::bold));
-    g.drawText ("REEL / TAPE / LOSS / WARMTH", juce::Rectangle<int> (panel.getX() + 44, panel.getY() + 100, 240, 18), juce::Justification::left, false);
+    g.drawText ("REEL / TAPE / LOSS / WARMTH", juce::Rectangle<int> (panel.getX() + 44, panel.getY() + 100, 242, 18), juce::Justification::left, false);
 
     g.setColour (juce::Colour (0xffa9823d));
     g.setFont (juce::Font (11.0f, juce::Font::bold));
@@ -296,30 +433,33 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     const auto labelH = 18;
 
     g.drawText ("TAPE", juce::Rectangle<int> (knobRowX, knobRowY + 112, labelW, labelH), juce::Justification::centred, false);
-    g.drawText ("SPEED", juce::Rectangle<int> (knobRowX + 100, knobRowY + 112, labelW + 18, labelH), juce::Justification::centred, false);
-    g.drawText ("DRIVE", juce::Rectangle<int> (knobRowX + 256, knobRowY + 112, 80, labelH), juce::Justification::centred, false);
-    g.drawText ("BIAS", juce::Rectangle<int> (knobRowX + 350, knobRowY + 112, 80, labelH), juce::Justification::centred, false);
-    g.drawText ("TONE", juce::Rectangle<int> (knobRowX + 445, knobRowY + 112, 80, labelH), juce::Justification::centred, false);
+    g.drawText ("SPEED", juce::Rectangle<int> (knobRowX + 96, knobRowY + 112, labelW + 22, labelH), juce::Justification::centred, false);
+    g.drawText ("DRIVE", juce::Rectangle<int> (knobRowX + 254, knobRowY + 112, 82, labelH), juce::Justification::centred, false);
+    g.drawText ("BIAS", juce::Rectangle<int> (knobRowX + 348, knobRowY + 112, 82, labelH), juce::Justification::centred, false);
+    g.drawText ("TONE", juce::Rectangle<int> (knobRowX + 444, knobRowY + 112, 82, labelH), juce::Justification::centred, false);
     g.drawText ("WOW", juce::Rectangle<int> (knobRowX + 16, knobRowY + 260, 82, labelH), juce::Justification::centred, false);
     g.drawText ("FLUTTER", juce::Rectangle<int> (knobRowX + 112, knobRowY + 260, 92, labelH), juce::Justification::centred, false);
     g.drawText ("MIX", juce::Rectangle<int> (knobRowX + 220, knobRowY + 260, 82, labelH), juce::Justification::centred, false);
     g.drawText ("OUT", juce::Rectangle<int> (knobRowX + 308, knobRowY + 260, 82, labelH), juce::Justification::centred, false);
 
-    g.setColour (juce::Colour (0xffcaa566).withAlpha (0.18f));
-    g.fillRoundedRectangle (juce::Rectangle<float> (panel.getX() + 18.0f, panel.getY() + 136.0f,
+    g.setColour (juce::Colour (0xffcaa566).withAlpha (0.2f));
+    g.fillRoundedRectangle (juce::Rectangle<float> (panel.getX() + 18.0f, panel.getY() + 138.0f,
                                                   panel.getWidth() - 36.0f, 3.0f), 2.0f);
 
-    for (int i = 0; i < 28; ++i)
+    for (int i = 0; i < 26; ++i)
     {
-        const auto x = panel.getX() + 30.0f + (i * 19.0f) % (panel.getWidth() - 70.0f);
-        const auto y = panel.getY() + 18.0f + (i * 13) % 70;
-        g.setColour (juce::Colour (0xffd9caa3).withAlpha (0.040f + (i % 6) * 0.012f));
-        g.fillEllipse (x, y, 2.5f, 2.5f);
+        const auto x = static_cast<float> (panel.getX()) + 30.0f + static_cast<float> ((i * 19) % (panel.getWidth() - 80));
+        const auto y = static_cast<float> (panel.getY()) + 18.0f + static_cast<float> ((i * 11) % 58);
+        g.setColour (juce::Colour (0xffd9caa3).withAlpha (0.04f + static_cast<float> (i % 5) * 0.012f));
+        g.fillEllipse (x, y, 2.0f, 2.0f);
     }
 }
 
 void FirstAudioProcessorEditor::resized()
 {
+    if (openGLPanel != nullptr)
+        openGLPanel->setBounds (getLocalBounds());
+
     const auto bounds = getLocalBounds().reduced (20, 22);
 
     tapeTypeBox.setBounds (bounds.getX() + 34, bounds.getY() + 84, 110, 30);

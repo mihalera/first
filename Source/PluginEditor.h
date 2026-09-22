@@ -14,6 +14,8 @@
 //==============================================================================
 /**
 */
+class J37OpenGLPanel;
+
 class FirstAudioProcessorEditor  : public juce::AudioProcessorEditor
 {
 public:
@@ -26,6 +28,7 @@ public:
 
 private:
     FirstAudioProcessor& audioProcessor;
+    std::unique_ptr<J37OpenGLPanel> openGLPanel;
 
     juce::Slider driveSlider;
     juce::Slider biasSlider;
