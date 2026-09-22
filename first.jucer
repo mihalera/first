@@ -25,12 +25,23 @@
     <MODULE id="juce_audio_processors_headless" showAllCode="1" useLocalCopy="0"
             useGlobalPath="1"/>
     <MODULE id="juce_audio_utils" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_box2d" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_build_tools" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_core" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_cryptography" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_data_structures" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_dsp" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_events" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_graphics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_gui_basics" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
     <MODULE id="juce_gui_extra" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_javascript" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_midi_ci" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_opengl" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_osc" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
+    <MODULE id="juce_product_unlocking" showAllCode="1" useLocalCopy="0"
+            useGlobalPath="1"/>
+    <MODULE id="juce_video" showAllCode="1" useLocalCopy="0" useGlobalPath="1"/>
   </MODULES>
   <JUCEOPTIONS JUCE_STRICT_REFCOUNTEDPOINTER="1" JUCE_VST3_CAN_REPLACE_VST2="0"/>
   <EXPORTFORMATS>
@@ -55,6 +66,16 @@
         <MODULEPATH id="juce_graphics" path="../../../Programs/JUCE/modules"/>
         <MODULEPATH id="juce_gui_basics" path="../../../Programs/JUCE/modules"/>
         <MODULEPATH id="juce_gui_extra" path="../../../Programs/JUCE/modules"/>
+        <MODULEPATH id="juce_build_tools" path="../../../Programs/JUCE/extras/Build"/>
+        <MODULEPATH id="juce_dsp" path="../../../Programs/JUCE/modules"/>
+        <MODULEPATH id="juce_box2d" path="../../../Programs/JUCE/modules"/>
+        <MODULEPATH id="juce_cryptography" path="../../../Programs/JUCE/modules"/>
+        <MODULEPATH id="juce_javascript" path="../../../Programs/JUCE/modules"/>
+        <MODULEPATH id="juce_midi_ci" path="../../../Programs/JUCE/modules"/>
+        <MODULEPATH id="juce_opengl" path="../../../Programs/JUCE/modules"/>
+        <MODULEPATH id="juce_osc" path="../../../Programs/JUCE/modules"/>
+        <MODULEPATH id="juce_product_unlocking" path="../../../Programs/JUCE/modules"/>
+        <MODULEPATH id="juce_video" path="../../../Programs/JUCE/modules"/>
       </MODULEPATHS>
     </VS2026>
   </EXPORTFORMATS>
