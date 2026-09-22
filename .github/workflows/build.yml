@@ -2,47 +2,71 @@ name: Build JUCE VST3 Plugin
 
 on:
   push:
-    branches: [ "main", "master" ]
+    branches: ["main", "master"]
   pull_request:
-    branches: [ "main", "master" ]
+    branches: ["main", "master"]
   workflow_dispatch:
+
+permissions:
+  contents: read
 
 jobs:
   build-windows:
     runs-on: windows-latest
 
     steps:
-    - name: Checkout repository
-      uses: actions/checkout@v4
-      with:
-        submodules: recursive
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
-    - name: Setup JUCE 9.0.2 at expected absolute path
-      shell: powershell
-      run: |
-        New-Item -ItemType Directory -Force -Path "D:\Desktop\Programs"
-        git clone --depth 1 --branch 9.0.2 --recurse-submodules https://github.com/juce-framework/JUCE.git "D:\Desktop\Programs\JUCE"
-        git -C "D:\Desktop\Programs\JUCE" submodule update --init --recursive
+      - name: Cache JUCE 9.0.2
+        id: juce-cache
+        uses: actions/cache@v4
+        with:
+          path: D:\Desktop\Programs\JUCE
+          key: juce-9.0.2-${{ runner.os }}
 
-    - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v2
+      - name: Setup JUCE 9.0.2
+        if: steps.juce-cache.outputs.cache-hit != 'true'
+        shell: powershell
+        run: |
+          New-Item -ItemType Directory -Force -Path "D:\Desktop\Programs"
 
-    - name: Compile VST3 via MSBuild
-      shell: powershell
-      run: |
-        $sln = Get-ChildItem -Recurse -Filter "*.sln" | Select-Object -First 1
-        if ($sln) {
-            Write-Host "Found solution file: $($sln.FullName)"
-            msbuild $sln.FullName /m /p:Configuration=Release /p:Platform=x64
-        } else {
-            Write-Error "Solution file (.sln) not found in repository!"
-            exit 1
-        }
+          git clone `
+            --depth 1 `
+            --branch 9.0.2 `
+            --recurse-submodules `
+            https://github.com/juce-framework/JUCE.git `
+            "D:\Desktop\Programs\JUCE"
 
-    - name: Upload VST3 Artifact
-      uses: actions/upload-artifact@v4
-      with:
-        name: J37-TapeSaturator-VST3
-        path: |
-          Builds/**/*.vst3
-        if-no-files-found: error
+          git -C "D:\Desktop\Programs\JUCE" submodule update --init --recursive
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Compile VST3
+        shell: powershell
+        run: |
+          $project = "Builds\VisualStudio2026\first_VST3.vcxproj"
+
+          if (!(Test-Path $project)) {
+              Write-Error "VST3 project not found: $project"
+              exit 1
+          }
+
+          msbuild $project `
+            /m `
+            /p:Configuration=Release `
+            /p:Platform=x64 `
+            /p:BuildInParallel=true `
+            /p:UseMultiToolTask=true `
+            /p:CL_MPCount=4 `
+            /verbosity:minimal
+
+      - name: Upload VST3 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: J37-TapeSaturator-VST3
+          path: Builds/VisualStudio2026/x64/Release/VST3/first.vst3
+          if-no-files-found: error
