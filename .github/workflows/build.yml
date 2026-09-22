@@ -21,9 +21,8 @@ jobs:
       shell: powershell
       run: |
         New-Item -ItemType Directory -Force -Path "D:\Desktop\Programs"
-        git clone https://github.com/juce-framework/JUCE.git "D:\Desktop\Programs\JUCE"
-        Set-Location "D:\Desktop\Programs\JUCE"
-        git checkout 8.0.10
+        git clone --depth 1 --branch 9.0.2 --recurse-submodules https://github.com/juce-framework/JUCE.git "D:\Desktop\Programs\JUCE"
+        git -C "D:\Desktop\Programs\JUCE" submodule update --init --recursive
 
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
