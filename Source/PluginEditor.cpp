@@ -3,16 +3,94 @@
 
 namespace
 {
-    const juce::Colour backgroundColour (0xff0d1418);
-    const juce::Colour panelColour (0xff172127);
-    const juce::Colour cardColour (0xff1c292f);
-    const juce::Colour goldColour (0xffd5ad68);
-    const juce::Colour textColour (0xfff2eee5);
-    const juce::Colour secondaryTextColour (0xff95a3a6);
+    struct UiPalette
+    {
+        juce::Colour background;
+        juce::Colour panel;
+        juce::Colour card;
+        juce::Colour raised;
+        juce::Colour border;
+        juce::Colour accent;
+        juce::Colour text;
+        juce::Colour secondary;
+        juce::Colour knobFace;
+        juce::Colour knobHighlight;
+        juce::Colour knobEdge;
+        juce::Colour readout;
+        juce::Colour gaugeFace;
+        juce::Colour gaugeInk;
+        juce::Colour needle;
+        juce::Colour status;
+    };
+
+    const UiPalette ivoryPalette {
+        juce::Colour::fromRGB (197, 184, 157),
+        juce::Colour::fromRGB (222, 210, 187),
+        juce::Colour::fromRGB (211, 197, 169),
+        juce::Colour::fromRGB (231, 220, 197),
+        juce::Colour::fromRGB (111, 97, 73),
+        juce::Colour::fromRGB (145, 96, 42),
+        juce::Colour::fromRGB (45, 38, 29),
+        juce::Colour::fromRGB (102, 91, 72),
+        juce::Colour::fromRGB (179, 162, 130),
+        juce::Colour::fromRGB (217, 203, 176),
+        juce::Colour::fromRGB (93, 78, 55),
+        juce::Colour::fromRGB (245, 238, 222),
+        juce::Colour::fromRGB (239, 229, 203),
+        juce::Colour::fromRGB (49, 43, 33),
+        juce::Colour::fromRGB (132, 47, 37),
+        juce::Colour::fromRGB (62, 111, 72)
+    };
+
+    const UiPalette charcoalPalette {
+        juce::Colour::fromRGB (28, 25, 21),
+        juce::Colour::fromRGB (54, 46, 35),
+        juce::Colour::fromRGB (68, 57, 42),
+        juce::Colour::fromRGB (84, 70, 50),
+        juce::Colour::fromRGB (144, 117, 72),
+        juce::Colour::fromRGB (211, 166, 83),
+        juce::Colour::fromRGB (244, 231, 204),
+        juce::Colour::fromRGB (190, 173, 140),
+        juce::Colour::fromRGB (89, 72, 51),
+        juce::Colour::fromRGB (126, 105, 73),
+        juce::Colour::fromRGB (209, 172, 103),
+        juce::Colour::fromRGB (35, 30, 24),
+        juce::Colour::fromRGB (226, 210, 173),
+        juce::Colour::fromRGB (48, 39, 28),
+        juce::Colour::fromRGB (132, 47, 37),
+        juce::Colour::fromRGB (122, 174, 128)
+    };
+
+    const UiPalette& paletteFor (bool darkTheme)
+    {
+        return darkTheme ? charcoalPalette : ivoryPalette;
+    }
 
     juce::String formatDb (float value)
     {
         return juce::String (value, 1) + " dB";
+    }
+
+    void drawScrew (juce::Graphics& g, float x, float y, const UiPalette& palette)
+    {
+        g.setColour (palette.border.withAlpha (0.65f));
+        g.fillEllipse (x - 3.0f, y - 3.0f, 6.0f, 6.0f);
+        g.setColour (palette.panel.brighter (0.22f));
+        g.drawLine (x - 1.5f, y + 1.5f, x + 1.5f, y - 1.5f, 0.8f);
+    }
+
+    void drawPanel (juce::Graphics& g, juce::Rectangle<int> area,
+                    const UiPalette& palette, float cornerSize)
+    {
+        const auto rect = area.toFloat();
+        juce::ColourGradient fill (palette.panel.brighter (0.08f), rect.getX(), rect.getY(),
+                                  palette.panel.darker (0.08f), rect.getRight(), rect.getBottom(), false);
+        g.setGradientFill (fill);
+        g.fillRoundedRectangle (rect, cornerSize);
+        g.setColour (palette.border);
+        g.drawRoundedRectangle (rect.reduced (0.5f), cornerSize, 1.0f);
+        g.setColour (palette.panel.brighter (0.12f).withAlpha (0.8f));
+        g.drawRoundedRectangle (rect.reduced (3.0f), juce::jmax (1.0f, cornerSize - 2.0f), 0.7f);
     }
 }
 
@@ -23,53 +101,74 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                                        const float rotaryEndAngle,
                                        juce::Slider& slider)
 {
+    const auto& palette = paletteFor (darkTheme);
     const auto bounds = juce::Rectangle<float> (static_cast<float> (x),
                                                  static_cast<float> (y),
                                                  static_cast<float> (width),
-                                                 static_cast<float> (height)).reduced (7.0f);
+                                                 static_cast<float> (height)).reduced (6.0f);
     const auto centre = bounds.getCentre();
-    const auto radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.36f;
-    const auto angle = juce::jmap (sliderPos, 0.0f, 1.0f, rotaryStartAngle, rotaryEndAngle);
+    const auto radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.34f;
     const auto outerRadius = radius + 8.0f;
+    const auto angle = juce::jmap (sliderPos, 0.0f, 1.0f, rotaryStartAngle, rotaryEndAngle);
 
-    g.setColour (juce::Colours::black.withAlpha (0.24f));
-    g.fillEllipse (centre.x - radius - 2.0f, centre.y - radius + 2.0f,
-                   (radius + 2.0f) * 2.0f, (radius + 2.0f) * 2.0f);
+    g.setColour (palette.knobEdge.withAlpha (0.22f));
+    g.fillEllipse (centre.x - radius - 3.0f, centre.y - radius + 2.0f,
+                   (radius + 3.0f) * 2.0f, (radius + 3.0f) * 2.0f);
 
-    juce::Path track;
-    track.addCentredArc (centre.x, centre.y, outerRadius, outerRadius, 0.0f,
-                         rotaryStartAngle, rotaryEndAngle, true);
-    g.setColour (juce::Colour (0xff35454a));
-    g.strokePath (track, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved,
-                                               juce::PathStrokeType::rounded));
+    juce::Path scaleTrack;
+    scaleTrack.addCentredArc (centre.x, centre.y, outerRadius, outerRadius, 0.0f,
+                              rotaryStartAngle, rotaryEndAngle, true);
+    g.setColour (palette.knobEdge.withAlpha (0.70f));
+    g.strokePath (scaleTrack, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved,
+                                                    juce::PathStrokeType::rounded));
 
-    juce::Path activeArc;
-    activeArc.addCentredArc (centre.x, centre.y, outerRadius, outerRadius, 0.0f,
-                             rotaryStartAngle, angle, true);
-    g.setColour (goldColour);
-    g.strokePath (activeArc, juce::PathStrokeType (3.0f, juce::PathStrokeType::curved,
-                                                   juce::PathStrokeType::rounded));
+    juce::Path activeTrack;
+    activeTrack.addCentredArc (centre.x, centre.y, outerRadius, outerRadius, 0.0f,
+                               rotaryStartAngle, angle, true);
+    g.setColour (palette.accent);
+    g.strokePath (activeTrack, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved,
+                                                     juce::PathStrokeType::rounded));
 
-    juce::ColourGradient face (juce::Colour (0xff344248), centre.x - radius, centre.y - radius,
-                               juce::Colour (0xff1c282d), centre.x + radius, centre.y + radius, false);
+    for (int tick = 0; tick <= 12; ++tick)
+    {
+        const auto tickAngle = juce::jmap (static_cast<float> (tick), 0.0f, 12.0f,
+                                           rotaryStartAngle, rotaryEndAngle);
+        const auto major = tick % 3 == 0;
+        const auto innerRadius = outerRadius + (major ? 3.0f : 4.0f);
+        const auto outerTickRadius = innerRadius + (major ? 5.0f : 2.5f);
+        const auto inner = centre + juce::Point<float> (std::cos (tickAngle) * innerRadius,
+                                                        std::sin (tickAngle) * innerRadius);
+        const auto outer = centre + juce::Point<float> (std::cos (tickAngle) * outerTickRadius,
+                                                        std::sin (tickAngle) * outerTickRadius);
+        g.setColour (palette.knobEdge.withAlpha (major ? 0.75f : 0.42f));
+        g.drawLine (inner.x, inner.y, outer.x, outer.y, major ? 1.2f : 0.8f);
+    }
+
+    juce::ColourGradient face (palette.knobHighlight, centre.x - radius, centre.y - radius,
+                               palette.knobFace, centre.x + radius, centre.y + radius, false);
     g.setGradientFill (face);
     g.fillEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f);
-
-    g.setColour (juce::Colour (0xff718087).withAlpha (0.55f));
+    g.setColour (palette.knobEdge.withAlpha (0.9f));
     g.drawEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f, 1.0f);
+    g.setColour (palette.knobHighlight.withAlpha (0.48f));
+    g.drawEllipse (centre.x - radius + 4.0f, centre.y - radius + 4.0f,
+                   radius * 2.0f - 8.0f, radius * 2.0f - 8.0f, 0.8f);
 
-    const auto pointerLength = radius * 0.64f;
-    const auto pointerEnd = centre + juce::Point<float> (std::cos (angle - juce::MathConstants<float>::halfPi) * pointerLength,
-                                                         std::sin (angle - juce::MathConstants<float>::halfPi) * pointerLength);
-    g.setColour (juce::Colour (0xffffe7b6));
-    g.drawLine (centre.x, centre.y, pointerEnd.x, pointerEnd.y, 3.0f);
-    g.setColour (goldColour);
-    g.fillEllipse (centre.x - 4.2f, centre.y - 4.2f, 8.4f, 8.4f);
+    const auto pointerLength = radius * 0.62f;
+    const auto pointerEnd = centre + juce::Point<float> (
+        std::cos (angle - juce::MathConstants<float>::halfPi) * pointerLength,
+        std::sin (angle - juce::MathConstants<float>::halfPi) * pointerLength);
+    g.setColour (palette.accent.darker (0.15f));
+    g.drawLine (centre.x + 1.0f, centre.y + 1.0f, pointerEnd.x + 1.0f, pointerEnd.y + 1.0f, 3.0f);
+    g.setColour (palette.needle);
+    g.drawLine (centre.x, centre.y, pointerEnd.x, pointerEnd.y, 2.2f);
+    g.setColour (palette.accent);
+    g.fillEllipse (centre.x - 3.5f, centre.y - 3.5f, 7.0f, 7.0f);
 
     if (slider.hasKeyboardFocus (false))
     {
-        g.setColour (juce::Colour (0xfff1d08a).withAlpha (0.8f));
-        g.drawEllipse (bounds.reduced (2.0f), 1.0f);
+        g.setColour (palette.accent.withAlpha (0.85f));
+        g.drawEllipse (bounds.reduced (1.5f), 1.1f);
     }
 }
 
@@ -115,70 +214,96 @@ void FirstAudioProcessorEditor::LevelMeter::setLevels (float peakLinear, float r
 
 void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
 {
-    auto bounds = getLocalBounds().toFloat().reduced (2.0f);
-    g.setColour (juce::Colour (0xff142025));
-    g.fillRoundedRectangle (bounds, 12.0f);
-    g.setColour (juce::Colour (0xff34434a));
-    g.drawRoundedRectangle (bounds.reduced (0.5f), 12.0f, 1.0f);
+    const auto& palette = paletteFor (darkTheme);
+    const auto bounds = getLocalBounds().toFloat().reduced (2.0f);
+    g.setColour (palette.raised.darker (0.12f));
+    g.fillRoundedRectangle (bounds, 5.0f);
+    g.setColour (palette.border.withAlpha (0.9f));
+    g.drawRoundedRectangle (bounds.reduced (0.5f), 5.0f, 1.0f);
 
-    g.setColour (secondaryTextColour);
+    g.setColour (palette.text);
     g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)));
-    g.drawText (title, getLocalBounds().removeFromTop (28), juce::Justification::centred, false);
+    g.drawText (title, getLocalBounds().removeFromTop (26), juce::Justification::centred, false);
 
-    const auto barTop = 38.0f;
-    const auto barBottom = static_cast<float> (getHeight()) - 80.0f;
-    const auto barHeight = juce::jmax (40.0f, barBottom - barTop);
-    const auto barWidth = 27.0f;
-    const auto barX = juce::jmin (static_cast<float> (getWidth()) - barWidth - 7.0f,
-                                  static_cast<float> (getWidth()) * 0.57f);
-    const auto dbToY = [barTop, barHeight] (float db)
+    const auto centreX = static_cast<float> (getWidth()) * 0.5f;
+    const auto centreY = 137.0f;
+    const auto radius = juce::jmin (centreX - 12.0f, 48.0f);
+    const auto startAngle = juce::MathConstants<float>::pi;
+    const auto endAngle = juce::MathConstants<float>::twoPi;
+
+    const auto dial = juce::Rectangle<float> (centreX - radius - 8.0f, 37.0f,
+                                              (radius + 8.0f) * 2.0f, 185.0f);
+    g.setColour (palette.knobEdge.withAlpha (0.55f));
+    g.fillRoundedRectangle (dial, 4.0f);
+    g.setColour (palette.gaugeFace);
+    g.fillRoundedRectangle (dial.reduced (3.0f), 3.0f);
+    g.setColour (palette.border);
+    g.drawRoundedRectangle (dial.reduced (3.0f), 3.0f, 0.9f);
+
+    juce::Path scaleArc;
+    scaleArc.addCentredArc (centreX, centreY, radius, radius, 0.0f,
+                            startAngle, endAngle, true);
+    g.setColour (palette.gaugeInk.withAlpha (0.8f));
+    g.strokePath (scaleArc, juce::PathStrokeType (1.1f));
+
+    for (int tick = 0; tick <= 10; ++tick)
     {
-        const auto normalized = juce::jlimit (0.0f, 1.0f, (db + 60.0f) / 60.0f);
-        return barTop + (1.0f - normalized) * barHeight;
-    };
+        const auto fraction = static_cast<float> (tick) / 10.0f;
+        const auto angle = juce::jmap (fraction, startAngle, endAngle);
+        const auto major = tick % 2 == 0;
+        const auto outerRadius = radius - 1.0f;
+        const auto innerRadius = radius - (major ? 8.0f : 4.0f);
+        const auto outer = juce::Point<float> (centreX + std::cos (angle) * outerRadius,
+                                               centreY + std::sin (angle) * outerRadius);
+        const auto inner = juce::Point<float> (centreX + std::cos (angle) * innerRadius,
+                                               centreY + std::sin (angle) * innerRadius);
+        g.setColour (palette.gaugeInk);
+        g.drawLine (inner.x, inner.y, outer.x, outer.y, major ? 1.1f : 0.7f);
 
-    g.setColour (juce::Colour (0xff0c1317));
-    g.fillRoundedRectangle (barX, barTop, barWidth, barHeight, 5.0f);
-
-    const float ticks[] { 0.0f, -6.0f, -18.0f, -36.0f, -60.0f };
-    g.setFont (juce::Font (juce::FontOptions (9.0f)));
-    for (const auto tick : ticks)
-    {
-        const auto y = dbToY (tick);
-        g.setColour (juce::Colour (0xff405057));
-        g.drawHorizontalLine (juce::roundToInt (y), barX - 2.0f, barX + barWidth + 2.0f);
-        g.setColour (secondaryTextColour);
-        g.drawText (juce::String (static_cast<int> (tick)),
-                    juce::Rectangle<int> (3, juce::roundToInt (y - 7.0f),
-                                          juce::jmax (28, juce::roundToInt (barX - 8.0f)), 14),
-                    juce::Justification::right, false);
+        if (major)
+        {
+            const auto db = -20 + juce::roundToInt (fraction * 23.0f);
+            const auto labelRadius = radius - 18.0f;
+            const auto labelPoint = juce::Point<float> (
+                centreX + std::cos (angle) * labelRadius,
+                centreY + std::sin (angle) * labelRadius);
+            g.setFont (juce::Font (juce::FontOptions (8.0f)));
+            g.drawText (juce::String (db > 0 ? "+" : "") + juce::String (db),
+                        juce::Rectangle<int> (juce::roundToInt (labelPoint.x - 10.0f),
+                                              juce::roundToInt (labelPoint.y - 5.0f), 20, 11),
+                        juce::Justification::centred, false);
+        }
     }
 
-    const auto rmsY = dbToY (rmsDb);
-    auto fill = juce::Rectangle<float> (barX + 3.0f, rmsY,
-                                        barWidth - 6.0f, barBottom - rmsY);
-    if (fill.getHeight() > 0.0f)
-    {
-        juce::ColourGradient levelGradient (juce::Colour (0xffe4594f), barX, barTop,
-                                            juce::Colour (0xff54bd87), barX, barBottom, false);
-        levelGradient.addColour (0.72, juce::Colour (0xffe1bd58));
-        g.setGradientFill (levelGradient);
-        g.fillRoundedRectangle (fill, 3.0f);
-    }
+    const auto needleDb = juce::jlimit (-20.0f, 3.0f, rmsDb);
+    const auto needleFraction = (needleDb + 20.0f) / 23.0f;
+    const auto needleAngle = juce::jmap (needleFraction, startAngle, endAngle);
+    const auto needleLength = radius - 13.0f;
+    const auto needleEnd = juce::Point<float> (
+        centreX + std::cos (needleAngle) * needleLength,
+        centreY + std::sin (needleAngle) * needleLength);
+    g.setColour (palette.needle.withAlpha (0.9f));
+    g.drawLine (centreX + 0.8f, centreY + 0.8f, needleEnd.x + 0.8f, needleEnd.y + 0.8f, 2.0f);
+    g.setColour (palette.needle);
+    g.drawLine (centreX, centreY, needleEnd.x, needleEnd.y, 1.5f);
+    g.setColour (palette.accent);
+    g.fillEllipse (centreX - 4.0f, centreY - 4.0f, 8.0f, 8.0f);
 
-    const auto holdY = dbToY (peakHoldDb);
-    g.setColour (juce::Colour (0xfffff2d1));
-    g.drawLine (barX - 2.0f, holdY, barX + barWidth + 2.0f, holdY, 2.0f);
-
-    const auto readoutY = getHeight() - 39;
-    g.setColour (textColour);
+    g.setColour (palette.gaugeInk.withAlpha (0.65f));
     g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
-    g.drawText ("PK " + formatDb (peakHoldDb),
-                juce::Rectangle<int> (4, readoutY, getWidth() - 8, 16),
+    g.drawText ("VU", juce::Rectangle<int> (juce::roundToInt (centreX - 19.0f),
+                                            juce::roundToInt (centreY + 13.0f), 38, 13),
                 juce::Justification::centred, false);
-    g.setColour (goldColour);
-    g.drawText ("RMS " + formatDb (rmsDb),
-                juce::Rectangle<int> (4, readoutY + 15, getWidth() - 8, 16),
+
+    const auto readoutY = getHeight() - 43;
+    g.setColour (palette.text);
+    g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
+    g.drawText ("PEAK  " + formatDb (peakHoldDb),
+                juce::Rectangle<int> (2, readoutY, getWidth() - 4, 17),
+                juce::Justification::centred, false);
+    g.setColour (palette.accent);
+    g.drawText ("RMS   " + formatDb (rmsDb),
+                juce::Rectangle<int> (2, readoutY + 17, getWidth() - 4, 17),
                 juce::Justification::centred, false);
 }
 
@@ -187,8 +312,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
     setResizable (true, true);
-    setResizeLimits (920, 610, 1440, 900);
-    setSize (1080, 700);
+    setResizeLimits (1000, 730, 1500, 1000);
+    setSize (1180, 760);
     createDecorativePhysics();
 
     const auto styleLabel = [] (juce::Label& label, const juce::String& text,
@@ -202,25 +327,31 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         label.setInterceptsMouseClicks (false, false);
     };
 
-    styleLabel (brandLabel, "ANALOG TAPE", 9.0f, goldColour, true, juce::Justification::left);
-    styleLabel (titleLabel, "J37", 27.0f, textColour, true, juce::Justification::left);
-    styleLabel (subtitleLabel, "TAPE MACHINE  /  SATURATION", 10.0f, secondaryTextColour, true,
-                juce::Justification::left);
-    styleLabel (statusLabel, "STEREO  •  REAL-TIME", 9.0f, juce::Colour (0xffa9d6be), true,
-                juce::Justification::centred);
-    styleLabel (deckHeadingLabel, "TAPE DECK", 10.0f, goldColour, true, juce::Justification::left);
-    styleLabel (tapeTypeLabel, "MODEL", 9.0f, secondaryTextColour, true, juce::Justification::left);
-    styleLabel (speedLabel, "SPEED", 9.0f, secondaryTextColour, true, juce::Justification::left);
-    styleLabel (deckHintLabel, "Choose a tape formula and transport speed.", 10.0f,
-                secondaryTextColour, false, juce::Justification::centredLeft);
-    styleLabel (controlsHeadingLabel, "TAPE CHARACTER", 10.0f, goldColour, true,
-                juce::Justification::left);
-    styleLabel (controlsHintLabel, "Double-click any control to reset it", 9.0f,
-                secondaryTextColour, false, juce::Justification::right);
-    styleLabel (metersHeadingLabel, "LEVELS", 10.0f, goldColour, true,
-                juce::Justification::left);
-    styleLabel (metersHintLabel, "dBFS  /  PEAK + RMS", 8.0f, secondaryTextColour, true,
-                juce::Justification::left);
+    styleLabel (brandLabel, "ANALOG TAPE", 9.0f, paletteFor (false).accent, true, juce::Justification::left);
+    titleLabel.setText ("J37", juce::dontSendNotification);
+    titleLabel.setFont (juce::Font (juce::FontOptions ("Georgia", "Bold", 30.0f)));
+    titleLabel.setJustificationType (juce::Justification::left);
+    titleLabel.setInterceptsMouseClicks (false, false);
+    styleLabel (subtitleLabel, "TAPE MACHINE  /  SATURATION", 10.0f,
+                paletteFor (false).secondary, true, juce::Justification::left);
+    styleLabel (statusLabel, "STEREO / REAL TIME", 9.0f,
+                paletteFor (false).status, true, juce::Justification::centred);
+    styleLabel (deckHeadingLabel, "TAPE DECK", 10.0f, paletteFor (false).accent,
+                true, juce::Justification::left);
+    styleLabel (tapeTypeLabel, "MODEL", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (speedLabel, "SPEED", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (deckHintLabel, "Select tape formula and transport speed.", 9.0f,
+                paletteFor (false).secondary, false, juce::Justification::centredLeft);
+    styleLabel (controlsHeadingLabel, "TAPE CHARACTER", 10.0f, paletteFor (false).accent,
+                true, juce::Justification::left);
+    styleLabel (controlsHintLabel, "Slow drag is precise. Hold Shift to fine tune.", 9.0f,
+                paletteFor (false).secondary, false, juce::Justification::right);
+    styleLabel (metersHeadingLabel, "LEVELS", 10.0f, paletteFor (false).accent,
+                true, juce::Justification::left);
+    styleLabel (metersHintLabel, "dBFS / PEAK + RMS", 8.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
 
     addAndMakeVisible (brandLabel);
     addAndMakeVisible (titleLabel);
@@ -235,12 +366,15 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (metersHeadingLabel);
     addAndMakeVisible (metersHintLabel);
 
-    const juce::StringArray controlIds { "input", "drive", "bias", "tone",
-                                         "wow", "flutter", "mix", "output" };
-    const juce::StringArray controlNames { "INPUT", "DRIVE", "BIAS", "TONE",
-                                           "WOW", "FLUTTER", "MIX", "OUTPUT" };
-    const std::array<double, controlCount> defaultValues { 0.0, 0.42, 0.36, 0.58,
-                                                           0.14, 0.18, 0.62, 0.68 };
+    const juce::StringArray controlIds { "input", "drive", "bias",
+                                         "tone", "wow", "flutter",
+                                         "mix", "output", "stereo_width" };
+    const juce::StringArray controlNames { "INPUT", "DRIVE", "BIAS",
+                                           "TONE", "WOW", "FLUTTER",
+                                           "MIX", "OUTPUT", "WIDTH" };
+    const std::array<double, controlCount> defaultValues { 0.0, 0.42, 0.36,
+                                                           0.58, 0.14, 0.18,
+                                                           0.62, 0.68, 0.5 };
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -249,18 +383,18 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         slider.setRotaryParameters (juce::MathConstants<float>::pi * 0.75f,
                                     juce::MathConstants<float>::pi * 2.25f, true);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 78, 20);
+        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 84, 20);
         slider.setTextBoxIsEditable (true);
-        slider.setVelocityBasedMode (false);
-        slider.setMouseDragSensitivity (250);
+        slider.setVelocityBasedMode (true);
+        slider.setVelocityModeParameters (0.35, 1, 0.02, true, juce::ModifierKeys::shiftModifier);
+        slider.setMouseDragSensitivity (600);
         slider.setPopupDisplayEnabled (true, true, this);
         slider.setScrollWheelEnabled (true);
         slider.setDoubleClickReturnValue (true, defaultValues[i]);
         slider.setLookAndFeel (&customLookAndFeel);
-        slider.setColour (juce::Slider::textBoxTextColourId, textColour);
-        slider.setColour (juce::Slider::textBoxBackgroundColourId, juce::Colour (0xff121b20));
-        slider.setColour (juce::Slider::textBoxOutlineColourId, juce::Colour (0xff35454a));
-        slider.setColour (juce::Slider::thumbColourId, goldColour);
+        slider.setColour (juce::Slider::textBoxOutlineColourId, paletteFor (false).border);
+        slider.setTooltip ("Slow movement gives fine control. Hold Shift to adjust precisely. "
+                           "Use the wheel for small steps. Double-click to reset.");
 
         if (i == 0)
         {
@@ -279,11 +413,15 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
             {
                 return juce::jlimit (0.0, 1.0, text.getDoubleValue() / 100.0);
             };
+            if (i == controlCount - 1)
+            {
+                slider.setTooltip ("Stereo width: 0 percent is mono, 50 percent is natural stereo, "
+                                   "100 percent is extra wide.");
+            }
         }
 
         controlLabels[i].setText (controlNames[static_cast<int> (i)], juce::dontSendNotification);
         controlLabels[i].setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
-        controlLabels[i].setColour (juce::Label::textColourId, secondaryTextColour);
         controlLabels[i].setJustificationType (juce::Justification::centred);
         controlLabels[i].setInterceptsMouseClicks (false, false);
 
@@ -300,18 +438,26 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     tapeTypeBox.setLookAndFeel (&customLookAndFeel);
     speedBox.setLookAndFeel (&customLookAndFeel);
 
-    const auto styleCombo = [] (juce::ComboBox& box)
+    autoButton.setClickingTogglesState (true);
+    autoButton.setButtonText ("AUTO GLUE");
+    autoButton.setTooltip ("Gentle automatic compression with long, program-dependent timing.");
+    autoButton.setLookAndFeel (&customLookAndFeel);
+    autoAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (audioProcessor.parameters, "auto_glue", autoButton);
+
+    themeButton.setButtonText ("DARK THEME");
+    themeButton.setTooltip ("Switch between the ivory and charcoal front panels.");
+    themeButton.setLookAndFeel (&customLookAndFeel);
+    themeButton.onClick = [this]
     {
-        box.setColour (juce::ComboBox::backgroundColourId, juce::Colour (0xff121b20));
-        box.setColour (juce::ComboBox::outlineColourId, juce::Colour (0xff3a4b51));
-        box.setColour (juce::ComboBox::textColourId, textColour);
-        box.setColour (juce::ComboBox::arrowColourId, goldColour);
-        box.setColour (juce::ComboBox::focusedOutlineColourId, goldColour);
+        darkTheme = ! darkTheme;
+        applyTheme();
     };
-    styleCombo (tapeTypeBox);
-    styleCombo (speedBox);
+
     addAndMakeVisible (tapeTypeBox);
     addAndMakeVisible (speedBox);
+    addAndMakeVisible (autoButton);
+    addAndMakeVisible (themeButton);
     tapeTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "tape_type", tapeTypeBox);
     speedAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
@@ -319,6 +465,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 
     addAndMakeVisible (inputMeter);
     addAndMakeVisible (outputMeter);
+    applyTheme();
 
     openGLContext.setComponentPaintingEnabled (true);
     openGLContext.setContinuousRepainting (false);
@@ -337,6 +484,8 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
 
     tapeTypeBox.setLookAndFeel (nullptr);
     speedBox.setLookAndFeel (nullptr);
+    autoButton.setLookAndFeel (nullptr);
+    themeButton.setLookAndFeel (nullptr);
 }
 
 FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayout() const
@@ -356,63 +505,119 @@ FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayo
     return layout;
 }
 
+void FirstAudioProcessorEditor::applyTheme()
+{
+    const auto& palette = paletteFor (darkTheme);
+    customLookAndFeel.setDarkTheme (darkTheme);
+    inputMeter.setDarkTheme (darkTheme);
+    outputMeter.setDarkTheme (darkTheme);
+
+    brandLabel.setColour (juce::Label::textColourId, palette.accent);
+    titleLabel.setColour (juce::Label::textColourId, palette.text);
+    subtitleLabel.setColour (juce::Label::textColourId, palette.secondary);
+    statusLabel.setColour (juce::Label::textColourId, palette.status);
+    deckHeadingLabel.setColour (juce::Label::textColourId, palette.accent);
+    tapeTypeLabel.setColour (juce::Label::textColourId, palette.secondary);
+    speedLabel.setColour (juce::Label::textColourId, palette.secondary);
+    deckHintLabel.setColour (juce::Label::textColourId, palette.secondary);
+    controlsHeadingLabel.setColour (juce::Label::textColourId, palette.accent);
+    controlsHintLabel.setColour (juce::Label::textColourId, palette.secondary);
+    metersHeadingLabel.setColour (juce::Label::textColourId, palette.accent);
+    metersHintLabel.setColour (juce::Label::textColourId, palette.secondary);
+
+    for (auto& label : controlLabels)
+        label.setColour (juce::Label::textColourId, palette.secondary);
+
+    for (auto& slider : controls)
+    {
+        slider.setColour (juce::Slider::textBoxTextColourId, palette.text);
+        slider.setColour (juce::Slider::textBoxBackgroundColourId, palette.readout);
+        slider.setColour (juce::Slider::textBoxOutlineColourId, palette.border);
+        slider.setColour (juce::Slider::thumbColourId, palette.accent);
+    }
+
+    const auto styleCombo = [&palette] (juce::ComboBox& box)
+    {
+        box.setColour (juce::ComboBox::backgroundColourId, palette.raised);
+        box.setColour (juce::ComboBox::outlineColourId, palette.border);
+        box.setColour (juce::ComboBox::textColourId, palette.text);
+        box.setColour (juce::ComboBox::arrowColourId, palette.accent);
+        box.setColour (juce::ComboBox::focusedOutlineColourId, palette.accent);
+    };
+    styleCombo (tapeTypeBox);
+    styleCombo (speedBox);
+
+    autoButton.setColour (juce::TextButton::buttonColourId, palette.raised);
+    autoButton.setColour (juce::TextButton::buttonOnColourId, palette.accent);
+    autoButton.setColour (juce::TextButton::textColourOffId, palette.text);
+    autoButton.setColour (juce::TextButton::textColourOnId, palette.panel);
+    themeButton.setColour (juce::TextButton::buttonColourId, palette.raised);
+    themeButton.setColour (juce::TextButton::textColourOffId, palette.text);
+
+    themeButton.setButtonText (darkTheme ? "LIGHT THEME" : "DARK THEME");
+    repaint();
+}
+
 //==============================================================================
 void FirstAudioProcessorEditor::paint (juce::Graphics& g)
 {
-    g.fillAll (juce::Colour (backgroundColour));
+    const auto& palette = paletteFor (darkTheme);
+    g.fillAll (palette.background);
 
     const auto layout = getEditorLayout();
-    const auto drawCard = [&g] (juce::Rectangle<int> area, juce::Colour base)
+    drawPanel (g, getLocalBounds().reduced (8), palette, 7.0f);
+    drawPanel (g, layout.header, palette, 5.0f);
+    drawPanel (g, layout.deck, palette, 5.0f);
+    drawPanel (g, layout.controls, palette, 5.0f);
+    drawPanel (g, layout.meters, palette, 5.0f);
+
+    const auto outer = getLocalBounds().reduced (8);
+    const auto grainColour = palette.text.withAlpha (darkTheme ? 0.025f : 0.035f);
+    g.setColour (grainColour);
+    for (int line = 0; line < 18; ++line)
     {
-        g.setGradientFill (juce::ColourGradient (base.brighter (0.045f),
-                                                 static_cast<float> (area.getX()),
-                                                 static_cast<float> (area.getY()),
-                                                 base.darker (0.12f),
-                                                 static_cast<float> (area.getRight()),
-                                                 static_cast<float> (area.getBottom()),
-                                                 false));
-        g.fillRoundedRectangle (area.toFloat(), 15.0f);
-        g.setColour (juce::Colour (0xff33434a).withAlpha (0.72f));
-        g.drawRoundedRectangle (area.toFloat().reduced (0.5f), 15.0f, 1.0f);
-    };
+        const auto y = outer.getY() + 9 + line * 4;
+        g.drawHorizontalLine (y, static_cast<float> (outer.getX() + 8),
+                              static_cast<float> (outer.getRight() - 8));
+    }
 
-    drawCard (getLocalBounds().reduced (8), juce::Colour (panelColour));
-    drawCard (layout.header, juce::Colour (0xff202c31));
-    drawCard (layout.deck, juce::Colour (cardColour));
-    drawCard (layout.controls, juce::Colour (cardColour));
-    drawCard (layout.meters, juce::Colour (cardColour));
+    g.setColour (palette.accent.withAlpha (0.85f));
+    g.fillRect (layout.header.getX() + 17, layout.header.getY() + 16, 3,
+                layout.header.getHeight() - 32);
 
-    g.setColour (goldColour.withAlpha (0.8f));
-    g.fillRoundedRectangle (juce::Rectangle<float> (
-        static_cast<float> (layout.header.getX() + 18),
-        static_cast<float> (layout.header.getY() + 17), 3.0f,
-        static_cast<float> (layout.header.getHeight() - 34)), 2.0f);
-
-    g.setColour (juce::Colour (0xff35454a));
+    g.setColour (palette.border.withAlpha (0.75f));
     g.drawHorizontalLine (layout.controls.getY() + 42,
                           static_cast<float> (layout.controls.getX() + 18),
                           static_cast<float> (layout.controls.getRight() - 18));
     g.drawHorizontalLine (layout.meters.getY() + 48,
                           static_cast<float> (layout.meters.getX() + 18),
                           static_cast<float> (layout.meters.getRight() - 18));
+    g.drawHorizontalLine (layout.deck.getBottom() - 8,
+                          static_cast<float> (layout.deck.getX() + 16),
+                          static_cast<float> (layout.deck.getRight() - 16));
 
-    const auto badge = juce::Rectangle<float> (
+    const auto statusBadge = juce::Rectangle<float> (
         static_cast<float> (layout.header.getRight() - 205),
         static_cast<float> (layout.header.getY() + 24), 184.0f, 30.0f);
-    g.setColour (juce::Colour (0xff182328));
-    g.fillRoundedRectangle (badge, 15.0f);
-    g.setColour (juce::Colour (0xff3c6653));
-    g.fillEllipse (badge.getX() + 13.0f, badge.getCentreY() - 3.5f, 7.0f, 7.0f);
+    g.setColour (palette.raised.darker (0.16f));
+    g.fillRoundedRectangle (statusBadge, 4.0f);
+    g.setColour (palette.status);
+    g.fillEllipse (statusBadge.getX() + 13.0f, statusBadge.getCentreY() - 3.0f, 6.0f, 6.0f);
 
-    // Subtle simulated reel details, kept clear of labels and controls.
-    g.setColour (goldColour.withAlpha (0.10f));
-    const auto reelCentre = juce::Point<float> (static_cast<float> (layout.deck.getRight() - 66),
+    for (const auto point : { juce::Point<float> (layout.header.getX() + 9.0f, layout.header.getY() + 9.0f),
+                              juce::Point<float> (layout.header.getRight() - 9.0f, layout.header.getY() + 9.0f),
+                              juce::Point<float> (layout.header.getX() + 9.0f, layout.header.getBottom() - 9.0f),
+                              juce::Point<float> (layout.header.getRight() - 9.0f, layout.header.getBottom() - 9.0f) })
+        drawScrew (g, point.x, point.y, palette);
+
+    const auto reelCentre = juce::Point<float> (static_cast<float> (layout.deck.getRight() - 64),
                                                 static_cast<float> (layout.deck.getCentreY() + 5));
-    for (const auto radius : { 18.0f, 10.0f, 3.0f })
+    g.setColour (palette.accent.withAlpha (0.22f));
+    for (const auto radius : { 19.0f, 12.0f, 3.0f })
         g.drawEllipse (reelCentre.x - radius, reelCentre.y - radius,
-                       radius * 2.0f, radius * 2.0f, 1.2f);
-    g.drawLine (reelCentre.x - 25.0f, reelCentre.y, reelCentre.x + 25.0f, reelCentre.y, 1.0f);
-    g.drawLine (reelCentre.x, reelCentre.y - 25.0f, reelCentre.x, reelCentre.y + 25.0f, 1.0f);
+                       radius * 2.0f, radius * 2.0f, 1.1f);
+    g.drawLine (reelCentre.x - 24.0f, reelCentre.y, reelCentre.x + 24.0f, reelCentre.y, 0.8f);
+    g.drawLine (reelCentre.x, reelCentre.y - 24.0f, reelCentre.x, reelCentre.y + 24.0f, 0.8f);
 
     std::array<RenderOrb, decorativeOrbCount> orbsToDraw;
     {
@@ -423,16 +628,15 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     for (const auto& orb : orbsToDraw)
     {
         const auto x = juce::jmap (orb.position.x, 0.0f, 1.5f,
-                                   static_cast<float> (layout.deck.getX()) + layout.deck.getWidth() * 0.68f,
-                                   static_cast<float> (layout.deck.getRight()) - 24.0f);
+                                   static_cast<float> (layout.deck.getX()) + layout.deck.getWidth() * 0.69f,
+                                   static_cast<float> (layout.deck.getRight()) - 28.0f);
         const auto y = juce::jmap (orb.position.y, 0.0f, 1.2f,
-                                   static_cast<float> (layout.deck.getY()) + 15.0f,
-                                   static_cast<float> (layout.deck.getBottom()) - 15.0f);
-        const auto radius = juce::jmap (orb.radius, 0.045f, 0.057f, 3.0f, 5.0f);
-
-        g.setColour (orb.colour.withAlpha (0.08f));
+                                   static_cast<float> (layout.deck.getY()) + 14.0f,
+                                   static_cast<float> (layout.deck.getBottom()) - 14.0f);
+        const auto radius = juce::jmap (orb.radius, 0.045f, 0.057f, 2.5f, 4.5f);
+        g.setColour (orb.colour.withAlpha (0.07f));
         g.fillEllipse (x - radius * 2.0f, y - radius * 2.0f, radius * 4.0f, radius * 4.0f);
-        g.setColour (orb.colour.withAlpha (0.22f));
+        g.setColour (orb.colour.withAlpha (0.17f));
         g.fillEllipse (x - radius, y - radius, radius * 2.0f, radius * 2.0f);
     }
 }
@@ -487,8 +691,8 @@ void FirstAudioProcessorEditor::createDecorativePhysics()
         orbFixture.restitution = 0.82f;
         body->CreateFixture (&orbFixture);
 
-        const auto colour = juce::Colour (0xffd8b36b)
-                                .withAlpha (0.45f + static_cast<float> (index) * 0.06f);
+        const auto colour = paletteFor (false).accent.withAlpha (
+            0.25f + static_cast<float> (index) * 0.04f);
         physicsOrbs[i] = { body, radius, colour };
         renderOrbs[i] = { juce::Point<float> (position.x, position.y), radius, colour };
     }
@@ -525,51 +729,55 @@ void FirstAudioProcessorEditor::resized()
 {
     const auto layout = getEditorLayout();
 
-    brandLabel.setBounds (layout.header.getX() + 29, layout.header.getY() + 12, 150, 14);
-    titleLabel.setBounds (layout.header.getX() + 27, layout.header.getY() + 25, 92, 42);
-    subtitleLabel.setBounds (layout.header.getX() + 126, layout.header.getY() + 37, 280, 20);
-    statusLabel.setBounds (layout.header.getRight() - 200, layout.header.getY() + 24, 177, 30);
+    brandLabel.setBounds (layout.header.getX() + 28, layout.header.getY() + 12, 150, 14);
+    titleLabel.setBounds (layout.header.getX() + 25, layout.header.getY() + 23, 96, 44);
+    subtitleLabel.setBounds (layout.header.getX() + 126, layout.header.getY() + 39, 310, 20);
+    themeButton.setBounds (layout.header.getRight() - 348, layout.header.getY() + 24, 126, 30);
+    statusLabel.setBounds (layout.header.getRight() - 202, layout.header.getY() + 24, 181, 30);
 
-    deckHeadingLabel.setBounds (layout.deck.getX() + 20, layout.deck.getY() + 9, 160, 16);
-    tapeTypeLabel.setBounds (layout.deck.getX() + 20, layout.deck.getY() + 39, 45, 20);
-    tapeTypeBox.setBounds (layout.deck.getX() + 69, layout.deck.getY() + 33, 206, 34);
-    speedLabel.setBounds (layout.deck.getX() + 300, layout.deck.getY() + 39, 45, 20);
-    speedBox.setBounds (layout.deck.getX() + 349, layout.deck.getY() + 33, 146, 34);
-    deckHintLabel.setBounds (layout.deck.getX() + 515, layout.deck.getY() + 32,
-                             juce::jmax (110, layout.deck.getWidth() - 600), 36);
+    deckHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 8, 150, 17);
+    tapeTypeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 39, 45, 20);
+    tapeTypeBox.setBounds (layout.deck.getX() + 68, layout.deck.getY() + 32, 208, 35);
+    speedLabel.setBounds (layout.deck.getX() + 296, layout.deck.getY() + 39, 45, 20);
+    speedBox.setBounds (layout.deck.getX() + 345, layout.deck.getY() + 32, 150, 35);
+    autoButton.setBounds (layout.deck.getX() + 515, layout.deck.getY() + 32, 118, 35);
+    deckHintLabel.setBounds (layout.deck.getX() + 647, layout.deck.getY() + 31,
+                             juce::jmax (130, layout.deck.getWidth() - 735), 36);
 
-    controlsHeadingLabel.setBounds (layout.controls.getX() + 19, layout.controls.getY() + 13, 200, 19);
-    controlsHintLabel.setBounds (layout.controls.getRight() - 254, layout.controls.getY() + 13,
-                                 235, 19);
-    metersHeadingLabel.setBounds (layout.meters.getX() + 18, layout.meters.getY() + 10, 100, 16);
-    metersHintLabel.setBounds (layout.meters.getX() + 18, layout.meters.getY() + 28, 150, 14);
+    controlsHeadingLabel.setBounds (layout.controls.getX() + 18, layout.controls.getY() + 12, 210, 19);
+    controlsHintLabel.setBounds (layout.controls.getRight() - 360, layout.controls.getY() + 12,
+                                 342, 19);
+    metersHeadingLabel.setBounds (layout.meters.getX() + 18, layout.meters.getY() + 8, 100, 18);
+    metersHintLabel.setBounds (layout.meters.getX() + 18, layout.meters.getY() + 27, 150, 14);
 
-    auto grid = layout.controls.reduced (13);
+    auto grid = layout.controls.reduced (14);
     grid.removeFromTop (42);
     grid.removeFromBottom (8);
-    const auto cellWidth = grid.getWidth() / 4;
-    const auto rowHeight = grid.getHeight() / 2;
+    const auto cellWidth = grid.getWidth() / controlColumns;
+    const auto rowHeight = grid.getHeight() / 3;
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
-        const auto row = static_cast<int> (i / 4);
-        const auto column = static_cast<int> (i % 4);
+        const auto row = static_cast<int> (i / controlColumns);
+        const auto column = static_cast<int> (i % controlColumns);
         auto cell = juce::Rectangle<int> (grid.getX() + column * cellWidth,
                                           grid.getY() + row * rowHeight,
-                                          column == 3 ? grid.getRight() - (grid.getX() + column * cellWidth)
-                                                      : cellWidth,
-                                          row == 1 ? grid.getBottom() - (grid.getY() + row * rowHeight)
-                                                   : rowHeight);
-        controlLabels[i].setBounds (cell.getX() + 3, cell.getY() + 1,
-                                    cell.getWidth() - 6, 17);
-        auto sliderBounds = cell.reduced (4);
-        sliderBounds.removeFromTop (19);
+                                          column == controlColumns - 1
+                                              ? grid.getRight() - (grid.getX() + column * cellWidth)
+                                              : cellWidth,
+                                          row == 2
+                                              ? grid.getBottom() - (grid.getY() + row * rowHeight)
+                                              : rowHeight);
+        controlLabels[i].setBounds (cell.getX() + 5, cell.getY() + 1,
+                                    cell.getWidth() - 10, 17);
+        auto sliderBounds = cell.reduced (5);
+        sliderBounds.removeFromTop (18);
         controls[i].setBounds (sliderBounds);
     }
 
     const auto meterWidth = (layout.meters.getWidth() - 44) / 2;
-    const auto meterY = layout.meters.getY() + 54;
-    const auto meterHeight = layout.meters.getHeight() - 68;
+    const auto meterY = layout.meters.getY() + 53;
+    const auto meterHeight = layout.meters.getHeight() - 67;
     inputMeter.setBounds (layout.meters.getX() + 14, meterY, meterWidth, meterHeight);
     outputMeter.setBounds (layout.meters.getRight() - 14 - meterWidth, meterY,
                            meterWidth, meterHeight);
