@@ -3,6 +3,11 @@
 
 namespace
 {
+    // Symmetric decibel range shared by the input and output trims, matching the
+    // processor's parameter layout exactly.
+    constexpr double minStageDb = -32.0;
+    constexpr double maxStageDb = 32.0;
+
     struct UiPalette
     {
         juce::Colour background;
@@ -111,6 +116,24 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     const auto outerRadius = radius + 8.0f;
     const auto angle = juce::jmap (sliderPos, 0.0f, 1.0f, rotaryStartAngle, rotaryEndAngle);
 
+    //------------------------------------------------------------------
+    //  Animation layer 1: a soft halo that breathes with the compressor
+    //  activity, plus a slow pulse so the panel never looks frozen.
+    //------------------------------------------------------------------
+    const auto breath = 0.5f + 0.5f * std::sin (animationPhase);
+    const auto haloAlpha = 0.05f + activity * 0.20f * (0.6f + 0.4f * breath);
+    if (haloAlpha > 0.01f)
+    {
+        for (int ring = 3; ring >= 1; --ring)
+        {
+            const auto haloRadius = outerRadius + static_cast<float> (ring) * 5.0f
+                                    + activity * 4.0f * breath;
+            g.setColour (palette.accent.withAlpha (haloAlpha / static_cast<float> (ring)));
+            g.drawEllipse (centre.x - haloRadius, centre.y - haloRadius,
+                           haloRadius * 2.0f, haloRadius * 2.0f, 1.6f);
+        }
+    }
+
     g.setColour (palette.knobEdge.withAlpha (0.22f));
     g.fillEllipse (centre.x - radius - 3.0f, centre.y - radius + 2.0f,
                    (radius + 3.0f) * 2.0f, (radius + 3.0f) * 2.0f);
@@ -129,12 +152,30 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     g.strokePath (activeTrack, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved,
                                                      juce::PathStrokeType::rounded));
 
+    // Bright tracer dot riding the end of the active arc - the clearest "live" cue.
+    const auto tracer = centre + juce::Point<float> (std::cos (angle) * outerRadius,
+                                                     std::sin (angle) * outerRadius);
+    const auto tracerPulse = 2.6f + 1.4f * breath + activity * 2.0f;
+    g.setColour (palette.accent.withAlpha (0.35f));
+    g.fillEllipse (tracer.x - tracerPulse * 1.9f, tracer.y - tracerPulse * 1.9f,
+                   tracerPulse * 3.8f, tracerPulse * 3.8f);
+    g.setColour (palette.readout);
+    g.fillEllipse (tracer.x - tracerPulse, tracer.y - tracerPulse,
+                   tracerPulse * 2.0f, tracerPulse * 2.0f);
+
+    //------------------------------------------------------------------
+    //  Animation layer 2: the scale ticks tremble with the transport
+    //  drift, so wow and flutter are visible as well as audible.
+    //------------------------------------------------------------------
+    const auto driftWobble = (drift - 0.5f) * 2.0f;
     for (int tick = 0; tick <= 12; ++tick)
     {
         const auto tickAngle = juce::jmap (static_cast<float> (tick), 0.0f, 12.0f,
                                            rotaryStartAngle, rotaryEndAngle);
         const auto major = tick % 3 == 0;
-        const auto innerRadius = outerRadius + (major ? 3.0f : 4.0f);
+        const auto tremble = std::sin (tickAngle * 3.0f + animationPhase * 1.7f)
+                             * driftWobble * 1.3f;
+        const auto innerRadius = outerRadius + (major ? 3.0f : 4.0f) + tremble;
         const auto outerTickRadius = innerRadius + (major ? 5.0f : 2.5f);
         const auto inner = centre + juce::Point<float> (std::cos (tickAngle) * innerRadius,
                                                         std::sin (tickAngle) * innerRadius);
@@ -153,6 +194,14 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     g.setColour (palette.knobHighlight.withAlpha (0.48f));
     g.drawEllipse (centre.x - radius + 4.0f, centre.y - radius + 4.0f,
                    radius * 2.0f - 8.0f, radius * 2.0f - 8.0f, 0.8f);
+
+    // Moving specular sweep across the knob face.
+    const auto sweepAngle = animationPhase * 0.6f;
+    const auto sweepCentre = centre + juce::Point<float> (std::cos (sweepAngle) * radius * 0.42f,
+                                                          std::sin (sweepAngle) * radius * 0.42f);
+    g.setColour (palette.knobHighlight.withAlpha (0.10f + 0.06f * breath));
+    g.fillEllipse (sweepCentre.x - radius * 0.42f, sweepCentre.y - radius * 0.42f,
+                   radius * 0.84f, radius * 0.84f);
 
     const auto pointerLength = radius * 0.62f;
     const auto pointerEnd = centre + juce::Point<float> (
@@ -308,6 +357,100 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
 }
 
 //==============================================================================
+void FirstAudioProcessorEditor::CompressorMeter::setReduction (float reductionDb, float newActivity)
+{
+    // Smooth downwards instantly (so gain reduction is never under-reported) but
+    // let the bar fall back gracefully, like a real VU-driven reduction needle.
+    const auto clamped = juce::jlimit (-12.0f, 0.0f, reductionDb);
+    const auto coefficient = clamped < displayedDb ? 0.55f : 0.10f;
+    displayedDb += (clamped - displayedDb) * coefficient;
+    activity += (juce::jlimit (0.0f, 1.0f, newActivity) - activity) * 0.22f;
+
+    repaint();
+}
+
+void FirstAudioProcessorEditor::CompressorMeter::paint (juce::Graphics& g)
+{
+    const auto& palette = paletteFor (darkTheme);
+    const auto bounds = getLocalBounds().toFloat().reduced (2.0f);
+
+    g.setColour (palette.raised.darker (0.12f));
+    g.fillRoundedRectangle (bounds, 5.0f);
+    g.setColour (palette.border.withAlpha (0.9f));
+    g.drawRoundedRectangle (bounds.reduced (0.5f), 5.0f, 1.0f);
+
+    g.setColour (palette.text);
+    g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)));
+    g.drawText ("COMP", getLocalBounds().removeFromTop (20), juce::Justification::centred, false);
+
+    const auto trackTop = 26.0f;
+    const auto trackBottom = static_cast<float> (getHeight()) - 46.0f;
+    const auto trackLeft = 12.0f;
+    const auto trackRight = static_cast<float> (getWidth()) - 12.0f;
+    const auto trackHeight = juce::jmax (24.0f, trackBottom - trackTop);
+
+    const auto centreX = 0.5f * (trackLeft + trackRight);
+    const auto barWidth = juce::jmin (30.0f, (trackRight - trackLeft) * 0.44f);
+    const auto barLeft = centreX - barWidth * 0.5f;
+
+    // Segmented LED ladder: it reads as a classic hardware reduction display.
+    constexpr int segments = 16;
+    const auto segmentGap = 2.0f;
+    const auto segmentHeight = (trackHeight - segmentGap * static_cast<float> (segments - 1))
+                               / static_cast<float> (segments);
+    const auto litFraction = juce::jlimit (0.0f, 1.0f, -displayedDb / 12.0f);
+    const auto litSegments = static_cast<int> (std::ceil (litFraction * static_cast<float> (segments)));
+
+    for (int segment = 0; segment < segments; ++segment)
+    {
+        const auto y = trackTop + static_cast<float> (segment) * (segmentHeight + segmentGap);
+        const auto lit = segments - segment <= litSegments;
+        const auto position = static_cast<float> (segment) / static_cast<float> (segments - 1);
+
+        juce::Colour segmentColour = palette.status;
+        if (position > 0.45f) segmentColour = palette.accent;
+        if (position > 0.78f) segmentColour = juce::Colour::fromRGB (196, 74, 52);
+
+        if (lit)
+        {
+            g.setColour (segmentColour.withAlpha (0.30f));
+            g.fillRoundedRectangle (barLeft - 2.0f, y - 1.0f, barWidth + 4.0f,
+                                    segmentHeight + 2.0f, 2.5f);
+            g.setColour (segmentColour);
+        }
+        else
+        {
+            g.setColour (palette.border.withAlpha (0.35f));
+        }
+
+        g.fillRoundedRectangle (barLeft, y, barWidth, segmentHeight, 2.0f);
+    }
+
+    // Activity glow behind the ladder so the meter still shows the compressor
+    // breathing during quiet passages where no reduction is happening.
+    if (activity > 0.01f)
+    {
+        const auto glowHeight = trackHeight * juce::jlimit (0.0f, 1.0f, activity);
+        g.setColour (palette.accent.withAlpha (0.10f + activity * 0.10f));
+        g.fillRoundedRectangle (barLeft - 5.0f, trackBottom - glowHeight,
+                                barWidth + 10.0f, glowHeight, 3.0f);
+    }
+
+    const auto readoutY = getHeight() - 42;
+    g.setColour (displayedDb < -0.05f ? palette.accent : palette.secondary);
+    g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)));
+    g.drawText (juce::String (displayedDb, 1) + " dB",
+                juce::Rectangle<int> (2, readoutY, getWidth() - 4, 16),
+                juce::Justification::centred, false);
+
+    g.setColour (palette.secondary);
+    g.setFont (juce::Font (juce::FontOptions (8.0f)));
+    g.drawText ("ALWAYS ON",
+                juce::Rectangle<int> (2, readoutY + 16, getWidth() - 4, 13),
+                juce::Justification::centred, false);
+}
+
+//==============================================================================
 FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
@@ -335,8 +478,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     styleLabel (subtitleLabel, "TAPE MACHINE  /  SATURATION", 10.0f,
                 paletteFor (false).secondary, true, juce::Justification::left);
     styleLabel (statusLabel, "STEREO / REAL TIME", 9.0f,
-                paletteFor (false).status, true, juce::Justification::centred);
-    styleLabel (deckHeadingLabel, "TAPE DECK", 10.0f, paletteFor (false).accent,
+                paletteFor (false).status, true, juce::Justification::centred);    styleLabel (deckHeadingLabel, "TAPE DECK", 10.0f, paletteFor (false).accent,
                 true, juce::Justification::left);
     styleLabel (tapeTypeLabel, "MODEL", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
@@ -352,6 +494,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 true, juce::Justification::left);
     styleLabel (metersHintLabel, "dBFS / PEAK + RMS", 8.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
+    styleLabel (compressorLabel, "TAPE GLUE", 10.0f, paletteFor (false).accent,
+                true, juce::Justification::left);
+    styleLabel (compressorReadout, "Always active", 8.0f, paletteFor (false).secondary,
+                false, juce::Justification::left);
 
     addAndMakeVisible (brandLabel);
     addAndMakeVisible (titleLabel);
@@ -365,6 +511,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (controlsHintLabel);
     addAndMakeVisible (metersHeadingLabel);
     addAndMakeVisible (metersHintLabel);
+    addAndMakeVisible (compressorLabel);
+    addAndMakeVisible (compressorReadout);
 
     const juce::StringArray controlIds { "input", "drive", "bias",
                                          "tone", "wow", "flutter",
@@ -374,7 +522,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                            "MIX", "OUTPUT", "WIDTH" };
     const std::array<double, controlCount> defaultValues { 0.0, 0.42, 0.36,
                                                            0.58, 0.14, 0.18,
-                                                           0.62, 0.68, 0.5 };
+                                                           0.62, 0.0, 0.5 };
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -396,11 +544,23 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         slider.setTooltip ("Slow movement gives fine control. Hold Shift to adjust precisely. "
                            "Use the wheel for small steps. Double-click to reset.");
 
-        if (i == 0)
+        if (i == 0 || i == 7)
         {
-            slider.setRange (-24.0, 24.0, 0.1);
+            // Input and Output are both calibrated decibel trims over the same range.
+            slider.setRange (minStageDb, maxStageDb, 0.1);
             slider.setNumDecimalPlacesToDisplay (1);
             slider.setTextValueSuffix (" dB");
+
+            if (i == 0)
+            {
+                slider.setTooltip ("Input trim. Drives the tape machine harder for more saturation. "
+                                   "Range -32 to +32 dB. Double-click to reset to 0 dB.");
+            }
+            else
+            {
+                slider.setTooltip ("Output trim in decibels, matching the input control. "
+                                   "Range -32 to +32 dB. Double-click to reset to 0 dB.");
+            }
         }
         else
         {
@@ -413,7 +573,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
             {
                 return juce::jlimit (0.0, 1.0, text.getDoubleValue() / 100.0);
             };
-            if (i == controlCount - 1)
+            if (i == 6)
+            {
+                slider.setTooltip ("Mix blends the dry signal with the tape path. "
+                                   "0 % is fully dry, 100 % is fully through the tape. "
+                                   "Double-click for the default 62 %.");
+            }
+            else if (i == controlCount - 1)
             {
                 slider.setTooltip ("Stereo width: 0 percent is mono, 50 percent is natural stereo, "
                                    "100 percent is extra wide.");
@@ -438,12 +604,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     tapeTypeBox.setLookAndFeel (&customLookAndFeel);
     speedBox.setLookAndFeel (&customLookAndFeel);
 
-    autoButton.setClickingTogglesState (true);
-    autoButton.setButtonText ("AUTO GLUE");
-    autoButton.setTooltip ("Gentle automatic compression with long, program-dependent timing.");
-    autoButton.setLookAndFeel (&customLookAndFeel);
-    autoAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
-        (audioProcessor.parameters, "auto_glue", autoButton);
+    bypassButton.setClickingTogglesState (true);
+    bypassButton.setButtonText ("BYPASS");
+    bypassButton.setTooltip ("Hard bypass: the tape engine and the glue compressor are switched out. "
+                             "The switch is ramped, so toggling it never clicks.");
+    bypassButton.setLookAndFeel (&customLookAndFeel);
+    bypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (audioProcessor.parameters, "bypass", bypassButton);
 
     themeButton.setButtonText ("DARK THEME");
     themeButton.setTooltip ("Switch between the ivory and charcoal front panels.");
@@ -456,7 +623,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 
     addAndMakeVisible (tapeTypeBox);
     addAndMakeVisible (speedBox);
-    addAndMakeVisible (autoButton);
+    addAndMakeVisible (bypassButton);
     addAndMakeVisible (themeButton);
     tapeTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "tape_type", tapeTypeBox);
@@ -465,6 +632,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 
     addAndMakeVisible (inputMeter);
     addAndMakeVisible (outputMeter);
+    addAndMakeVisible (compressorMeter);
     applyTheme();
 
     openGLContext.setComponentPaintingEnabled (true);
@@ -484,7 +652,7 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
 
     tapeTypeBox.setLookAndFeel (nullptr);
     speedBox.setLookAndFeel (nullptr);
-    autoButton.setLookAndFeel (nullptr);
+    bypassButton.setLookAndFeel (nullptr);
     themeButton.setLookAndFeel (nullptr);
 }
 
@@ -498,7 +666,7 @@ FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayo
     layout.deck = remaining.removeFromTop (84);
     remaining.removeFromTop (12);
 
-    layout.meters = remaining.removeFromRight (276);
+    layout.meters = remaining.removeFromRight (330);
     remaining.removeFromRight (14);
     layout.controls = remaining;
 
@@ -556,12 +724,16 @@ void FirstAudioProcessorEditor::applyTheme()
     styleCombo (tapeTypeBox);
     styleCombo (speedBox);
 
-    autoButton.setColour (juce::TextButton::buttonColourId, palette.raised);
-    autoButton.setColour (juce::TextButton::buttonOnColourId, palette.accent);
-    autoButton.setColour (juce::TextButton::textColourOffId, palette.text);
-    autoButton.setColour (juce::TextButton::textColourOnId, palette.panel);
+    bypassButton.setColour (juce::TextButton::buttonColourId, palette.raised);
+    bypassButton.setColour (juce::TextButton::buttonOnColourId, palette.needle);
+    bypassButton.setColour (juce::TextButton::textColourOffId, palette.text);
+    bypassButton.setColour (juce::TextButton::textColourOnId, palette.readout);
     themeButton.setColour (juce::TextButton::buttonColourId, palette.raised);
     themeButton.setColour (juce::TextButton::textColourOffId, palette.text);
+
+    compressorLabel.setColour (juce::Label::textColourId, palette.accent);
+    compressorReadout.setColour (juce::Label::textColourId, palette.secondary);
+    compressorMeter.setDarkTheme (darkTheme);
 
     themeButton.setButtonText (darkTheme ? "LIGHT THEME" : "DARK THEME");
     repaint();
@@ -610,8 +782,17 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
         static_cast<float> (layout.header.getY() + 24), 184.0f, 30.0f);
     g.setColour (palette.raised.darker (0.16f));
     g.fillRoundedRectangle (statusBadge, 4.0f);
+
+    // Status lamp: pulses with the compressor, so the header shows that the
+    // plugin is alive and working even when no gain reduction is happening.
+    const auto lampCentre = juce::Point<float> (statusBadge.getX() + 16.0f,
+                                                statusBadge.getCentreY());
+    const auto lampPulse = 4.5f + 2.5f * glowAmount;
+    g.setColour (palette.status.withAlpha (0.12f + 0.30f * glowAmount));
+    g.fillEllipse (lampCentre.x - lampPulse * 2.2f, lampCentre.y - lampPulse * 2.2f,
+                   lampPulse * 4.4f, lampPulse * 4.4f);
     g.setColour (palette.status);
-    g.fillEllipse (statusBadge.getX() + 13.0f, statusBadge.getCentreY() - 3.0f, 6.0f, 6.0f);
+    g.fillEllipse (lampCentre.x - 3.5f, lampCentre.y - 3.5f, 7.0f, 7.0f);
 
     for (const auto point : { juce::Point<float> (layout.header.getX() + 9.0f, layout.header.getY() + 9.0f),
                               juce::Point<float> (layout.header.getRight() - 9.0f, layout.header.getY() + 9.0f),
@@ -628,6 +809,35 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawLine (reelCentre.x - 24.0f, reelCentre.y, reelCentre.x + 24.0f, reelCentre.y, 0.8f);
     g.drawLine (reelCentre.x, reelCentre.y - 24.0f, reelCentre.x, reelCentre.y + 24.0f, 0.8f);
 
+    // Spokes: density tracks the selected tape speed, drift tracks the modulation.
+    const auto spokeAlpha = 0.20f + 0.45f * glowAmount;
+    for (int spoke = 0; spoke < 6; ++spoke)
+    {
+        const auto spokeAngle = reelAngle + static_cast<float> (spoke)
+                                              * juce::MathConstants<float>::pi / 3.0f;
+        const auto inner = juce::Point<float> (reelCentre.x + std::cos (spokeAngle) * 4.0f,
+                                               reelCentre.y + std::sin (spokeAngle) * 4.0f);
+        const auto outer = juce::Point<float> (reelCentre.x + std::cos (spokeAngle) * 18.5f,
+                                               reelCentre.y + std::sin (spokeAngle) * 18.5f);
+        g.setColour (palette.accent.withAlpha (spokeAlpha));
+        g.drawLine (inner.x, inner.y, outer.x, outer.y, 1.4f);
+
+        g.setColour (palette.readout.withAlpha (0.10f + 0.25f * glowAmount));
+        g.fillEllipse (outer.x - 1.6f, outer.y - 1.6f, 3.2f, 3.2f);
+    }
+
+    // Tape ribbon between the reel and the transport, drawn with a slight sag
+    // that breathes with the wow/flutter drift.
+    const auto sag = (driftAmount - 0.5f) * 5.0f;
+    juce::Path tapeRibbon;
+    tapeRibbon.startNewSubPath (reelCentre.x - 22.0f, reelCentre.y + 18.0f);
+    tapeRibbon.quadraticTo (static_cast<float> (layout.deck.getX() + 6),
+                            static_cast<float> (layout.deck.getBottom()) + 6.0f + sag,
+                            static_cast<float> (layout.deck.getX() + 4),
+                            static_cast<float> (layout.deck.getCentreY()) + sag);
+    g.setColour (palette.knobEdge.withAlpha (0.35f));
+    g.strokePath (tapeRibbon, juce::PathStrokeType (1.6f));
+
     std::array<RenderOrb, decorativeOrbCount> orbsToDraw;
     {
         const juce::SpinLock::ScopedLockType lock (renderOrbsLock);
@@ -643,9 +853,13 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
                                    static_cast<float> (layout.deck.getY()) + 14.0f,
                                    static_cast<float> (layout.deck.getBottom()) - 14.0f);
         const auto radius = juce::jmap (orb.radius, 0.045f, 0.057f, 2.5f, 4.5f);
-        g.setColour (orb.colour.withAlpha (0.07f));
-        g.fillEllipse (x - radius * 2.0f, y - radius * 2.0f, radius * 4.0f, radius * 4.0f);
-        g.setColour (orb.colour.withAlpha (0.17f));
+
+        // Halos breathe so the orbs read as particles rather than static dots.
+        const auto haloScale = 1.8f + 0.6f * std::sin (glowPhase + orb.position.x * 6.0f);
+        g.setColour (orb.colour.withAlpha (0.07f + 0.05f * glowAmount));
+        g.fillEllipse (x - radius * haloScale, y - radius * haloScale,
+                       radius * haloScale * 2.0f, radius * haloScale * 2.0f);
+        g.setColour (orb.colour.withAlpha (0.17f + 0.14f * glowAmount));
         g.fillEllipse (x - radius, y - radius, radius * 2.0f, radius * 2.0f);
     }
 }
@@ -679,8 +893,8 @@ void FirstAudioProcessorEditor::createDecorativePhysics()
     {
         const auto index = static_cast<int> (i);
         const auto radius = 0.045f + static_cast<float> (index % 2) * 0.012f;
-        const auto position = b2Vec2 (0.30f + static_cast<float> (index) * 0.22f,
-                                      0.28f + static_cast<float> (index % 2) * 0.18f);
+        const auto position = b2Vec2 (0.30f + static_cast<float> (index) * 0.18f,
+                                      0.28f + static_cast<float> (index % 3) * 0.16f);
 
         b2BodyDef bodyDefinition;
         bodyDefinition.type = b2_dynamicBody;
@@ -712,6 +926,55 @@ void FirstAudioProcessorEditor::timerCallback()
     inputMeter.setLevels (audioProcessor.getInputPeakLevel(), audioProcessor.getInputRmsLevel());
     outputMeter.setLevels (audioProcessor.getOutputPeakLevel(), audioProcessor.getOutputRmsLevel());
 
+    // Compressor display: gain reduction plus the live activity envelope.
+    const auto reduction = audioProcessor.getGainReductionDb();
+    const auto activity = audioProcessor.getCompressorActivity();
+    compressorMeter.setReduction (reduction, activity);
+
+    // Animated presentation state. Everything here is derived from audio
+    // telemetry, so the panel visibly reacts to what the plugin is doing.
+    glowPhase += 0.13f;
+    if (glowPhase > juce::MathConstants<float>::twoPi)
+        glowPhase -= juce::MathConstants<float>::twoPi;
+
+    const auto targetGlow = juce::jlimit (0.0f, 1.0f,
+                                          activity * 0.7f + std::abs (reduction) / 6.0f);
+    glowAmount += (targetGlow - glowAmount) * 0.18f;
+
+    const auto drift = audioProcessor.getTransportDrift();
+    driftAmount += (drift - driftAmount) * 0.25f;
+
+    // The header status text follows the real bypass state of the processor.
+    const auto bypassed = audioProcessor.isBypassed();
+    if (bypassed != currentBypassDisplay)
+    {
+        currentBypassDisplay = bypassed;
+        statusLabel.setText (bypassed ? "BYPASSED / DRY" : "STEREO / REAL TIME",
+                             juce::dontSendNotification);
+        statusLabel.setColour (juce::Label::textColourId,
+                               bypassed ? paletteFor (darkTheme).secondary
+                                        : paletteFor (darkTheme).status);
+    }
+
+    // The reel spins according to the selected tape speed and the live drift.
+    const auto speedIndex = speedBox.getSelectedId() - 1;
+    const auto speedScale = speedIndex == 0 ? 0.55f : (speedIndex == 1 ? 0.85f : 1.25f);
+    reelSpeed += ((speedScale * (0.9f + driftAmount * 0.5f)) - reelSpeed) * 0.08f;
+    reelAngle += reelSpeed * 0.09f;
+    if (reelAngle > juce::MathConstants<float>::twoPi)
+        reelAngle -= juce::MathConstants<float>::twoPi;
+
+    customLookAndFeel.setActivity (glowAmount);
+    customLookAndFeel.setDrift (driftAmount);
+    customLookAndFeel.advanceFrame();
+
+    // Repaint only what actually animates: the header lamp, the deck (reel +
+    // particles) and the control area (knob halos and tracers).
+    const auto layout = getEditorLayout();
+    repaint (layout.header);
+    repaint (layout.deck);
+    repaint (layout.controls);
+
     if (! isShowing() || physicsWorld == nullptr)
         return;
 
@@ -730,8 +993,6 @@ void FirstAudioProcessorEditor::timerCallback()
         const juce::SpinLock::ScopedLockType lock (renderOrbsLock);
         renderOrbs = nextFrame;
     }
-
-    repaint (getEditorLayout().deck);
 }
 
 void FirstAudioProcessorEditor::resized()
@@ -749,7 +1010,7 @@ void FirstAudioProcessorEditor::resized()
     tapeTypeBox.setBounds (layout.deck.getX() + 68, layout.deck.getY() + 32, 208, 35);
     speedLabel.setBounds (layout.deck.getX() + 296, layout.deck.getY() + 39, 45, 20);
     speedBox.setBounds (layout.deck.getX() + 345, layout.deck.getY() + 32, 150, 35);
-    autoButton.setBounds (layout.deck.getX() + 515, layout.deck.getY() + 32, 118, 35);
+    bypassButton.setBounds (layout.deck.getX() + 515, layout.deck.getY() + 32, 118, 35);
     deckHintLabel.setBounds (layout.deck.getX() + 647, layout.deck.getY() + 31,
                              juce::jmax (130, layout.deck.getWidth() - 735), 36);
 
@@ -758,6 +1019,8 @@ void FirstAudioProcessorEditor::resized()
                                  342, 19);
     metersHeadingLabel.setBounds (layout.meters.getX() + 18, layout.meters.getY() + 8, 100, 18);
     metersHintLabel.setBounds (layout.meters.getX() + 18, layout.meters.getY() + 27, 150, 14);
+    compressorLabel.setBounds (layout.meters.getX() + 190, layout.meters.getY() + 8, 120, 18);
+    compressorReadout.setBounds (layout.meters.getX() + 190, layout.meters.getY() + 27, 120, 14);
 
     auto grid = layout.controls.reduced (14);
     grid.removeFromTop (42);
@@ -784,10 +1047,17 @@ void FirstAudioProcessorEditor::resized()
         controls[i].setBounds (sliderBounds);
     }
 
-    const auto meterWidth = (layout.meters.getWidth() - 44) / 2;
+    const auto meterWidth = (layout.meters.getWidth() - 58) / 2;
     const auto meterY = layout.meters.getY() + 53;
     const auto meterHeight = layout.meters.getHeight() - 67;
     inputMeter.setBounds (layout.meters.getX() + 14, meterY, meterWidth, meterHeight);
     outputMeter.setBounds (layout.meters.getRight() - 14 - meterWidth, meterY,
                            meterWidth, meterHeight);
+
+    // Compressor reduction bar sits across the foot of the meters panel.
+    const auto compressorHeight = juce::jlimit (54, 78, layout.meters.getHeight() / 4);
+    compressorMeter.setBounds (layout.meters.getX() + 14,
+                               layout.meters.getBottom() - compressorHeight - 6,
+                               layout.meters.getWidth() - 28,
+                               compressorHeight);
 }

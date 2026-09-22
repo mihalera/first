@@ -45,6 +45,14 @@ jobs:
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
 
+      - name: Cache precompiled header and objects
+        uses: actions/cache@v4
+        with:
+          path: Builds/VisualStudio2026/x64
+          key: msvc-build-${{ runner.os }}-${{ hashFiles('Source/**', 'Builds/VisualStudio2026/*.vcxproj', 'Builds/VisualStudio2026/pch.h') }}
+          restore-keys: |
+            msvc-build-${{ runner.os }}-
+
       - name: Compile VST3
         shell: powershell
         run: |
@@ -55,13 +63,16 @@ jobs:
               exit 1
           }
 
+          # CL_MPCount is set to the runner's logical processor count so MSVC
+          # scales to the machine instead of a hard-coded four processes.
+          $env:CL_MPCount = [Environment]::ProcessorCount
+
           msbuild $solution `
             /m `
             /p:Configuration=Release `
             /p:Platform=x64 `
             /p:BuildInParallel=true `
             /p:UseMultiToolTask=true `
-            /p:CL_MPCount=4 `
             /verbosity:minimal
 
       - name: Upload VST3 Artifact

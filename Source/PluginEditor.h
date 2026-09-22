@@ -19,6 +19,10 @@ class J37LookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
     void setDarkTheme (bool shouldUseDarkTheme) noexcept { darkTheme = shouldUseDarkTheme; }
+    void setActivity (float newActivity) noexcept { activity = newActivity; }
+    void setDrift (float newDrift) noexcept { drift = newDrift; }
+    void advanceFrame() noexcept { animationPhase += 0.11f; }
+
     void drawRotarySlider (juce::Graphics&,
                            int, int, int, int,
                            float, float, float,
@@ -26,6 +30,9 @@ public:
 
 private:
     bool darkTheme = false;
+    float activity = 0.0f;   ///< Compressor activity, drives the glow around the knobs.
+    float drift = 0.0f;      ///< Transport drift, drives the fine wobble in the ticks.
+    float animationPhase = 0.0f;
 };
 
 class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor,
@@ -53,6 +60,22 @@ private:
         float rmsDb = -60.0f;
         float peakHoldDb = -60.0f;
         float peakHoldTime = 0.0f;
+        float animatedRmsDb = -60.0f;
+    };
+
+    /** Vertical gain-reduction bar showing how hard the tape glue compressor works. */
+    class CompressorMeter final : public juce::Component
+    {
+    public:
+        CompressorMeter() { setInterceptsMouseClicks (false, false); }
+        void setDarkTheme (bool shouldUseDarkTheme) noexcept { darkTheme = shouldUseDarkTheme; }
+        void setReduction (float reductionDb, float activity);
+        void paint (juce::Graphics&) override;
+
+    private:
+        bool darkTheme = false;
+        float displayedDb = 0.0f;   // Smoothed, always <= 0.
+        float activity = 0.0f;
     };
 
     struct PhysicsOrb
@@ -79,7 +102,7 @@ private:
 
     static constexpr std::size_t controlCount = 9;
     static constexpr int controlColumns = 3;
-    static constexpr std::size_t decorativeOrbCount = 4;
+    static constexpr std::size_t decorativeOrbCount = 6;
 
     void timerCallback() override;
     void createDecorativePhysics();
@@ -96,11 +119,11 @@ private:
 
     juce::ComboBox tapeTypeBox;
     juce::ComboBox speedBox;
-    juce::TextButton autoButton { "AUTO GLUE" };
+    juce::TextButton bypassButton { "BYPASS" };
     juce::TextButton themeButton { "DARK THEME" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tapeTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> speedAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
 
     juce::Label brandLabel;
     juce::Label titleLabel;
@@ -114,10 +137,21 @@ private:
     juce::Label controlsHintLabel;
     juce::Label metersHeadingLabel;
     juce::Label metersHintLabel;
+    juce::Label compressorLabel;
+    juce::Label compressorReadout;
 
     LevelMeter inputMeter { "INPUT" };
     LevelMeter outputMeter { "OUTPUT" };
+    CompressorMeter compressorMeter;
     bool darkTheme = false;
+
+    // Animated presentation state, advanced one step per editor frame.
+    float glowPhase = 0.0f;
+    float glowAmount = 0.0f;
+    float driftAmount = 0.5f;
+    float reelAngle = 0.0f;
+    float reelSpeed = 0.0f;
+    bool currentBypassDisplay = false;
 
     std::unique_ptr<b2World> physicsWorld;
     std::array<PhysicsOrb, decorativeOrbCount> physicsOrbs {};
