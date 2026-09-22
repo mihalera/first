@@ -9,6 +9,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+#include <array>
+
 namespace
 {
     constexpr float minTrack = 0.0f;
@@ -47,6 +49,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
 
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "input", 1 }, "Input",
+                                                            juce::NormalisableRange<float> (-24.0f, 24.0f, 0.1f),
+                                                            0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("dB")));
     layout.add (std::make_unique<juce::AudioParameterChoice> ("tape_type", "Tape Type",
                                                             juce::StringArray { "J37", "Ampex 456", "Studer A800", "Chrome" },
                                                             0));
@@ -129,10 +135,17 @@ void FirstAudioProcessor::changeProgramName (int index, const juce::String& newN
 }
 
 //==============================================================================
-void FirstAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerBlock)
 {
     juce::ignoreUnused (samplesPerBlock);
-    this->sampleRate = static_cast<float> (sampleRate);
+    this->sampleRate = static_cast<float> (sampleRateToUse);
+    inputGainSmoothed.reset (sampleRateToUse, 0.02);
+    inputGainSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (
+        parameters.getRawParameterValue ("input")->load()));
+    inputPeakLevel.store (0.0f, std::memory_order_relaxed);
+    inputRmsLevel.store (0.0f, std::memory_order_relaxed);
+    outputPeakLevel.store (0.0f, std::memory_order_relaxed);
+    outputRmsLevel.store (0.0f, std::memory_order_relaxed);
     wowPhaseL = 0.0f;
     wowPhaseR = 0.0f;
     flutterPhaseL = 0.0f;
@@ -192,6 +205,8 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     const auto flutter = parameters.getRawParameterValue ("flutter")->load();
     const auto mix = parameters.getRawParameterValue ("mix")->load();
     const auto output = parameters.getRawParameterValue ("output")->load();
+    const auto inputDb = parameters.getRawParameterValue ("input")->load();
+    inputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (inputDb));
 
     const auto driveCurve = std::pow (drive, 1.45f);
     const auto biasCurve = std::pow (bias, 1.15f);
@@ -240,32 +255,47 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             break;
     }
 
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
-    {
-        auto* channelData = buffer.getWritePointer (channel);
-        auto& wowPhase = channel == 0 ? wowPhaseL : wowPhaseR;
-        auto& flutterPhase = channel == 0 ? flutterPhaseL : flutterPhaseR;
-        auto& lastTapeSample = channel == 0 ? tapeLastL : tapeLastR;
-        auto& lastBias = channel == 0 ? tapeBiasL : tapeBiasR;
+    const float driveAmount = 0.28f + driveCurve * 1.9f;
+    const float biasAmount = 0.18f + biasCurve * 1.55f;
+    const float toneAmount = 0.55f + toneCurve * 1.0f;
+    const float mixAmount = 0.12f + mixCurve * 0.88f;
+    const float outputAmount = 0.70f + outputCurve * 1.0f;
+    const float wowDepth = wowCurve * (0.05f + speedScale * 0.08f);
+    const float flutterDepth = flutterCurve * (0.08f + speedScale * 0.09f);
+    const float speedBias = 0.84f + speedScale * 0.30f;
 
-        for (int i = 0; i < buffer.getNumSamples(); ++i)
+    std::array<float*, 2> channelData {};
+    for (int channel = 0; channel < totalNumInputChannels; ++channel)
+        channelData[static_cast<std::size_t> (channel)] = buffer.getWritePointer (channel);
+
+    float inputPeak = 0.0f;
+    float outputPeak = 0.0f;
+    double inputSquares = 0.0;
+    double outputSquares = 0.0;
+
+    // Advance the gain once per sample so both stereo channels receive the same ramp.
+    for (int i = 0; i < buffer.getNumSamples(); ++i)
+    {
+        const float inputGain = inputGainSmoothed.getNextValue();
+
+        for (int channel = 0; channel < totalNumInputChannels; ++channel)
         {
-            const float x = channelData[i];
+            auto& wowPhase = channel == 0 ? wowPhaseL : wowPhaseR;
+            auto& flutterPhase = channel == 0 ? flutterPhaseL : flutterPhaseR;
+            auto& lastTapeSample = channel == 0 ? tapeLastL : tapeLastR;
+            auto& lastBias = channel == 0 ? tapeBiasL : tapeBiasR;
+
+            const float rawInput = channelData[static_cast<std::size_t> (channel)][i];
+            inputPeak = juce::jmax (inputPeak, std::abs (rawInput));
+            inputSquares += static_cast<double> (rawInput) * rawInput;
+
+            const float x = rawInput * inputGain;
             const float wowLfo = std::sin (wowPhase);
             const float flutterLfo = std::sin (flutterPhase);
             const float microRandom = std::sin (wowPhase * 0.8f + flutterPhase * 1.3f + channel * 2.4f);
 
             wowPhase += (twoPi * wowFreq) / sampleRate;
             flutterPhase += (twoPi * flutterFreq) / sampleRate;
-
-            const float driveAmount = 0.28f + driveCurve * 1.9f;
-            const float biasAmount = 0.18f + biasCurve * 1.55f;
-            const float toneAmount = 0.55f + toneCurve * 1.0f;
-            const float mixAmount = 0.12f + mixCurve * 0.88f;
-            const float outputAmount = 0.70f + outputCurve * 1.0f;
-            const float wowDepth = wowCurve * (0.05f + speedScale * 0.08f);
-            const float flutterDepth = flutterCurve * (0.08f + speedScale * 0.09f);
-            const float speedBias = 0.84f + speedScale * 0.30f;
 
             const float wowMod = 1.0f + wowLfo * wowDepth;
             const float flutterMod = 1.0f + flutterLfo * flutterDepth;
@@ -277,7 +307,9 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             const float saturation = std::tanh (preBias * (0.82f + driveAmount * 1.1f * tapeCurve));
             const float jsCurve = jsStyleNonlinearity (preDrive, driveCurve, tapeTexture);
             const float harmonicLift = std::tanh (preDrive * (0.85f + tapeColor * 1.2f) + x * (0.08f + toneAmount * 0.2f));
-            const float tapeBody = saturation * (0.82f + biasAmount * 0.7f) + jsCurve * (0.28f + toneCurve * 0.42f) + harmonicLift * (0.22f + toneCurve * 0.62f);
+            const float tapeBody = saturation * (0.82f + biasAmount * 0.7f)
+                                 + jsCurve * (0.28f + toneCurve * 0.42f)
+                                 + harmonicLift * (0.22f + toneCurve * 0.62f);
             const float memoryMix = tapeBody * 0.74f + lastTapeSample * 0.26f;
 
             lastTapeSample = memoryMix;
@@ -287,10 +319,36 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             const float dryMix = x * (1.0f - mixAmount);
             const float wetMix = motioned * (0.20f + mixAmount * 0.82f);
             const float finalOut = (dryMix + wetMix) * outputAmount * (0.92f + speedScale * 0.12f);
+            const float limitedOut = juce::jlimit (-0.999f, 0.999f, finalOut);
 
-            channelData[i] = juce::jlimit (-0.999f, 0.999f, finalOut);
+            channelData[static_cast<std::size_t> (channel)][i] = limitedOut;
+            outputPeak = juce::jmax (outputPeak, std::abs (limitedOut));
+            outputSquares += static_cast<double> (limitedOut) * limitedOut;
         }
     }
+
+    const auto measuredSamples = static_cast<double> (buffer.getNumSamples())
+                               * static_cast<double> (juce::jmax (1, totalNumInputChannels));
+    const float inputRms = measuredSamples > 0.0
+        ? static_cast<float> (std::sqrt (inputSquares / measuredSamples)) : 0.0f;
+    const float outputRms = measuredSamples > 0.0
+        ? static_cast<float> (std::sqrt (outputSquares / measuredSamples)) : 0.0f;
+
+    const auto retainPeakUntilConsumed = [] (std::atomic<float>& publishedPeak, float blockPeak)
+    {
+        auto accumulatedPeak = publishedPeak.load (std::memory_order_relaxed);
+        while (accumulatedPeak < blockPeak
+               && ! publishedPeak.compare_exchange_weak (accumulatedPeak, blockPeak,
+                                                          std::memory_order_relaxed,
+                                                          std::memory_order_relaxed))
+        {
+        }
+    };
+
+    retainPeakUntilConsumed (inputPeakLevel, inputPeak);
+    inputRmsLevel.store (inputRms, std::memory_order_relaxed);
+    retainPeakUntilConsumed (outputPeakLevel, outputPeak);
+    outputRmsLevel.store (outputRms, std::memory_order_relaxed);
 }
 
 //==============================================================================
