@@ -20,6 +20,30 @@ jobs:
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
 
+    - name: Checkout JUCE modules
+      shell: powershell
+      run: |
+        if (-not (Test-Path "$env:GITHUB_WORKSPACE\JUCE")) {
+          git clone --depth 1 https://github.com/juce-framework/JUCE.git "$env:GITHUB_WORKSPACE\JUCE"
+        }
+
+    - name: Fix local JUCE paths for CI
+      shell: powershell
+      run: |
+        $repoRoot = $env:GITHUB_WORKSPACE
+        $oldPath = 'D:\Desktop\Programs\JUCE'
+        $newPath = "$repoRoot\JUCE"
+
+        Get-ChildItem -Path $repoRoot -Recurse -Include *.vcxproj,*.props,*.targets,*.jucer | ForEach-Object {
+          $path = $_.FullName
+          $content = Get-Content $path -Raw
+          $updated = $content.Replace($oldPath, $newPath)
+          if ($updated -ne $content) {
+            Set-Content -Path $path -Value $updated -Encoding UTF8
+            Write-Host "Patched JUCE path in: $path"
+          }
+        }
+
     - name: Compile VST3 via MSBuild
       shell: powershell
       run: |
