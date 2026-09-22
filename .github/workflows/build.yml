@@ -1,24 +1,41 @@
-name: Build JUCE Plugin
+name: Build JUCE VST3 Plugin
 
 on:
   push:
-    branches: [ main ]
+    branches: [ "main", "master" ]
   pull_request:
-    branches: [ main ]
+    branches: [ "main", "master" ]
+  workflow_dispatch:
 
 jobs:
   build-windows:
-    runs-on: windows-2022
+    runs-on: windows-latest
 
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+    - name: Checkout repository
+      uses: actions/checkout@v4
+      with:
+        submodules: recursive
 
-      - name: Setup MSBuild
-        uses: microsoft/setup-msbuild@v2
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
 
-      - name: Build solution
-        shell: powershell
-        run: |
-          $solution = Join-Path $env:GITHUB_WORKSPACE 'Builds/VisualStudio2026\first.sln'
-          msbuild "$solution" /m /p:Configuration=Release /p:Platform=x64
+    - name: Compile VST3 via MSBuild
+      shell: powershell
+      run: |
+        $sln = Get-ChildItem -Recurse -Filter "*.sln" | Select-Object -First 1
+        if ($sln) {
+            Write-Host "Знайдено проєкт: $($sln.FullName)"
+            msbuild $sln.FullName /m /p:Configuration=Release /p:Platform=x64
+        } else {
+            Write-Error "Файл рішення (.sln) не знайдено в репозиторії!"
+            exit 1
+        }
+
+    - name: Upload VST3 Artifact
+      uses: actions/upload-artifact@v4
+      with:
+        name: J37-TapeSaturator-VST3
+        path: |
+          Builds/**/*.vst3
+        if-no-files-found: error
