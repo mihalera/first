@@ -815,15 +815,15 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     {
         const auto spokeAngle = reelAngle + static_cast<float> (spoke)
                                               * juce::MathConstants<float>::pi / 3.0f;
-        const auto inner = juce::Point<float> (reelCentre.x + std::cos (spokeAngle) * 4.0f,
-                                               reelCentre.y + std::sin (spokeAngle) * 4.0f);
-        const auto outer = juce::Point<float> (reelCentre.x + std::cos (spokeAngle) * 18.5f,
-                                               reelCentre.y + std::sin (spokeAngle) * 18.5f);
+        const auto spokeInner = juce::Point<float> (reelCentre.x + std::cos (spokeAngle) * 4.0f,
+                                                    reelCentre.y + std::sin (spokeAngle) * 4.0f);
+        const auto spokeOuter = juce::Point<float> (reelCentre.x + std::cos (spokeAngle) * 18.5f,
+                                                    reelCentre.y + std::sin (spokeAngle) * 18.5f);
         g.setColour (palette.accent.withAlpha (spokeAlpha));
-        g.drawLine (inner.x, inner.y, outer.x, outer.y, 1.4f);
+        g.drawLine (spokeInner.x, spokeInner.y, spokeOuter.x, spokeOuter.y, 1.4f);
 
         g.setColour (palette.readout.withAlpha (0.10f + 0.25f * glowAmount));
-        g.fillEllipse (outer.x - 1.6f, outer.y - 1.6f, 3.2f, 3.2f);
+        g.fillEllipse (spokeOuter.x - 1.6f, spokeOuter.y - 1.6f, 3.2f, 3.2f);
     }
 
     // Tape ribbon between the reel and the transport, drawn with a slight sag

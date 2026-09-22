@@ -46,6 +46,20 @@ namespace
         const float seconds = juce::jmax (0.01f, milliseconds) * 0.001f;
         return 1.0f - std::exp (-1.0f / (seconds * juce::jmax (1.0f, sampleRate)));
     }
+
+    /**
+        Tape hiss source: a deterministic 32-bit LCG. It is thread-local so the audio
+        thread never shares the stream with the message thread, and it allocates or
+        locks nothing on the audio path. Declaring it here rather than capturing a
+        function-local static inside a lambda keeps MSVC happy (C3495) and removes
+        the capture from the per-sample loop.
+    */
+    inline float nextTapeNoise() noexcept
+    {
+        static thread_local std::uint32_t noiseState = 0x1b873593u;
+        noiseState = noiseState * 1664525u + 1013904223u;
+        return static_cast<float> ((noiseState >> 8) & 0x00ffffffu) * (1.0f / 8388608.0f) - 1.0f;
+    }
 }
 
 //==============================================================================
@@ -392,15 +406,6 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     const float driveGainCompensation = 0.52f + (1.0f - driveCurve) * 0.22f;
     const float finalOutputGain = 0.72f * driveGainCompensation * (0.94f + speedScale * 0.08f);
 
-    // Continuous pseudo-random tape noise: two interleaved LCG streams, one per
-    // channel, so the hiss is uncorrelated left/right and free of clock patterns.
-    static thread_local std::uint32_t noiseState = 0x1b873593u;
-    const auto nextNoise = [&noiseState]() -> float
-    {
-        noiseState = noiseState * 1664525u + 1013904223u;
-        return static_cast<float> ((noiseState >> 8) & 0x00ffffffu) * (1.0f / 8388608.0f) - 1.0f;
-    };
-
     const int activeChannels = juce::jmin (2, totalNumInputChannels);
 
     std::array<float*, 2> channelData {};
@@ -484,7 +489,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             const float compensation = tapeCurve / 1.30f;
             const float compressedBias = headLoss * (1.0f - 0.18f * headLoss * headLoss)
                                        / juce::jmax (0.35f, compensation);
-            const float noiseFloor = nextNoise() * hissGain;
+            const float noiseFloor = nextTapeNoise() * hissGain;
             const float motioned = (compressedBias + noiseFloor) * wowMod * flutterMod * grainMod;
 
             // Playback EQ: subtract the low band for air, add it back for body.
