@@ -46,7 +46,8 @@ jobs:
         $juceRoot = Join-Path $repoRoot 'JUCE'
         $legacyPaths = @(
           'D:\Desktop\Programs\JUCE',
-          'D:\Programs\JUCE'
+          'D:\Programs\JUCE',
+          '..\..\..\..\..\..\..\..\Programs\JUCE'
         )
 
         if (-not (Test-Path "$juceRoot\modules")) {
@@ -54,15 +55,27 @@ jobs:
         }
 
         foreach ($legacy in $legacyPaths) {
+          $drive = Split-Path $legacy -Qualifier
+          if ($drive -and -not (Test-Path $drive)) {
+            Write-Host "Skipping junction creation for $legacy because drive $drive is not present on this runner."
+            continue
+          }
+
           $parent = Split-Path $legacy -Parent
-          New-Item -ItemType Directory -Path $parent -Force | Out-Null
+          if ($parent -and -not (Test-Path $parent)) {
+            New-Item -ItemType Directory -Path $parent -Force | Out-Null
+          }
+
           if (Test-Path $legacy) {
             Remove-Item $legacy -Recurse -Force -ErrorAction SilentlyContinue
           }
-          New-Item -ItemType Junction -Path $legacy -Target $juceRoot -Force | Out-Null
+
+          if ($legacy -match '^[A-Za-z]:') {
+            New-Item -ItemType Junction -Path $legacy -Target $juceRoot -Force | Out-Null
+          }
         }
 
-        Get-ChildItem -Path $repoRoot -Recurse -Include *.vcxproj,*.props,*.targets | ForEach-Object {
+        Get-ChildItem -Path $repoRoot -Recurse -Include *.vcxproj,*.props,*.targets,*.filters | ForEach-Object {
           $path = $_.FullName
           $content = Get-Content $path -Raw
           $updated = $content
