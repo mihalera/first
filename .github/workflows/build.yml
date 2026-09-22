@@ -17,8 +17,27 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Setup MSBuild
-      uses: microsoft/setup-msbuild@v2
+    - name: Locate Visual Studio MSBuild
+      shell: powershell
+      run: |
+        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
+        if (-not (Test-Path $vswhere)) {
+          throw "vswhere.exe was not found. Visual Studio is not installed on this runner."
+        }
+
+        $vsInstallPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
+        if (-not $vsInstallPath) {
+          throw "No Visual Studio installation with MSBuild was found."
+        }
+
+        $msbuild = Join-Path $vsInstallPath 'MSBuild\Current\Bin\MSBuild.exe'
+        if (-not (Test-Path $msbuild)) {
+          throw "MSBuild.exe was not found under $vsInstallPath"
+        }
+
+        "MSBUILD_PATH=$msbuild" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
+        $env:Path += ";$((Split-Path $msbuild -Parent))"
+        Write-Host "Using MSBuild: $msbuild"
 
     - name: Prepare JUCE checkout and fix generated project paths
       shell: powershell
@@ -65,8 +84,9 @@ jobs:
           exit 1
         }
 
+        $msbuild = $env:MSBUILD_PATH
         Write-Host "Знайдено проєкт: $($sln.FullName)"
-        msbuild $sln.FullName /m /p:Configuration=Release /p:Platform=x64
+        & $msbuild $sln.FullName /m /p:Configuration=Release /p:Platform=x64
 
     - name: Upload VST3 Artifact
       uses: actions/upload-artifact@v4
