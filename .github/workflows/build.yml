@@ -13,96 +13,24 @@ jobs:
 
     steps:
     - name: Checkout repository
-      uses: actions/checkout@v5
+      uses: actions/checkout@v4
       with:
         submodules: recursive
 
-    - name: Locate Visual Studio MSBuild
-      shell: powershell
-      run: |
-        $vswhere = "${env:ProgramFiles(x86)}\Microsoft Visual Studio\Installer\vswhere.exe"
-        if (-not (Test-Path $vswhere)) {
-          throw "vswhere.exe was not found. Visual Studio is not installed on this runner."
-        }
-
-        $vsInstallPath = & $vswhere -latest -products * -requires Microsoft.Component.MSBuild -property installationPath
-        if (-not $vsInstallPath) {
-          throw "No Visual Studio installation with MSBuild was found."
-        }
-
-        $msbuild = Join-Path $vsInstallPath 'MSBuild\Current\Bin\MSBuild.exe'
-        if (-not (Test-Path $msbuild)) {
-          throw "MSBuild.exe was not found under $vsInstallPath"
-        }
-
-        "MSBUILD_PATH=$msbuild" | Out-File -FilePath $env:GITHUB_ENV -Encoding utf8 -Append
-        $env:Path += ";$((Split-Path $msbuild -Parent))"
-        Write-Host "Using MSBuild: $msbuild"
-
-    - name: Prepare JUCE checkout and fix generated project paths
-      shell: powershell
-      run: |
-        $repoRoot = $env:GITHUB_WORKSPACE
-        $juceRoot = Join-Path $repoRoot 'JUCE'
-        $legacyPaths = @(
-          'D:\Desktop\Programs\JUCE',
-          'D:\Programs\JUCE',
-          '..\..\..\..\..\..\..\..\Programs\JUCE'
-        )
-
-        if (-not (Test-Path "$juceRoot\modules")) {
-          git clone --depth 1 https://github.com/juce-framework/JUCE.git $juceRoot
-        }
-
-        foreach ($legacy in $legacyPaths) {
-          if ($legacy -notmatch '^[A-Za-z]:') {
-            Write-Host "Legacy path is relative; skipping filesystem junction logic: $legacy"
-            continue
-          }
-
-          $drive = Split-Path $legacy -Qualifier
-          if ($drive -and -not (Test-Path $drive)) {
-            Write-Host "Skipping junction creation for $legacy because drive $drive is not present on this runner."
-            continue
-          }
-
-          $parent = Split-Path $legacy -Parent
-          if ($parent -and -not (Test-Path $parent)) {
-            New-Item -ItemType Directory -Path $parent -Force | Out-Null
-          }
-
-          if (Test-Path $legacy) {
-            Remove-Item $legacy -Recurse -Force -ErrorAction SilentlyContinue
-          }
-
-          New-Item -ItemType Junction -Path $legacy -Target $juceRoot -Force | Out-Null
-        }
-
-        Get-ChildItem -Path $repoRoot -Recurse -Include *.vcxproj,*.props,*.targets,*.filters | ForEach-Object {
-          $path = $_.FullName
-          $content = Get-Content $path -Raw
-          $updated = $content
-          foreach ($legacy in $legacyPaths) {
-            $updated = $updated.Replace($legacy, $juceRoot)
-          }
-          if ($updated -ne $content) {
-            Set-Content -Path $path -Value $updated -Encoding UTF8
-            Write-Host "Patched JUCE path in: $path"
-          }
-        }
+    - name: Setup MSBuild
+      uses: microsoft/setup-msbuild@v2
 
     - name: Compile VST3 via MSBuild
       shell: powershell
       run: |
         $sln = Get-ChildItem -Recurse -Filter "*.sln" | Select-Object -First 1
-        if (-not $sln) {
-          Write-Error "Файл рішення (.sln) не знайдено в репозиторії!"
-          exit 1
+        if ($sln) {
+            Write-Host "Found solution file: $($sln.FullName)"
+            msbuild $sln.FullName /m /p:Configuration=Release /p:Platform=x64
+        } else {
+            Write-Error "Solution file (.sln) not found in repository!"
+            exit 1
         }
-
-        $msbuild = $env:MSBUILD_PATH
-        Write-Host "Знайдено проєкт: $($sln.FullName)"
-        & $msbuild $sln.FullName /m /p:Configuration=Release /p:Platform=x64
 
     - name: Upload VST3 Artifact
       uses: actions/upload-artifact@v4
