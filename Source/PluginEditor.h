@@ -11,6 +11,11 @@
 #include <JuceHeader.h>
 #include "PluginProcessor.h"
 
+#include <array>
+
+#include <juce_box2d/juce_box2d.h>
+#include <juce_opengl/juce_opengl.h>
+
 //==============================================================================
 /**
 */
@@ -27,9 +32,30 @@ public:
 
 private:
     void timerCallback() override;
+    void createDecorativePhysics();
+
+    struct PhysicsOrb
+    {
+        b2Body* body = nullptr;
+        float radius = 0.0f;
+        juce::Colour colour;
+    };
+
+    struct RenderOrb
+    {
+        juce::Point<float> position;
+        float radius = 0.0f;
+        juce::Colour colour;
+    };
+
+    static constexpr std::size_t decorativeOrbCount = 4;
 
     FirstAudioProcessor& audioProcessor;
-    float animationPhase = 0.0f;
+    std::unique_ptr<b2World> physicsWorld;
+    std::array<PhysicsOrb, decorativeOrbCount> physicsOrbs {};
+    std::array<RenderOrb, decorativeOrbCount> renderOrbs {};
+    juce::SpinLock renderOrbsLock;
+    juce::OpenGLContext openGLContext;
 
     juce::Slider driveSlider;
     juce::Slider biasSlider;
