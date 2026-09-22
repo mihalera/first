@@ -53,6 +53,13 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             juce::NormalisableRange<float> (-24.0f, 24.0f, 0.1f),
                                                             0.0f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("dB")));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "auto_glue", 1 },
+                                                            "Auto Glue", true));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "stereo_width", 1 },
+                                                            "Stereo Width",
+                                                            juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
+                                                            0.5f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
     layout.add (std::make_unique<juce::AudioParameterChoice> ("tape_type", "Tape Type",
                                                             juce::StringArray { "J37", "Ampex 456", "Studer A800", "Chrome" },
                                                             0));
@@ -154,6 +161,7 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     tapeLastR = 0.0f;
     tapeBiasL = 0.0f;
     tapeBiasR = 0.0f;
+    compressorEnvelope = 0.0f;
 }
 
 void FirstAudioProcessor::releaseResources()
@@ -186,18 +194,14 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     juce::ignoreUnused (midiMessages);
 
     juce::ScopedNoDenormals noDenormals;
-    const auto totalNumInputChannels  = getTotalNumInputChannels();
+    const auto totalNumInputChannels = getTotalNumInputChannels();
     const auto totalNumOutputChannels = getTotalNumOutputChannels();
 
-    for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
-        buffer.clear (i, 0, buffer.getNumSamples());
+    for (auto channel = totalNumInputChannels; channel < totalNumOutputChannels; ++channel)
+        buffer.clear (channel, 0, buffer.getNumSamples());
 
-    const auto tapeType = static_cast<int> (
-        parameters.getRawParameterValue ("tape_type")->load());
-
-    const auto speed = static_cast<int> (
-        parameters.getRawParameterValue ("speed")->load());
-
+    const auto tapeType = static_cast<int> (parameters.getRawParameterValue ("tape_type")->load());
+    const auto speed = static_cast<int> (parameters.getRawParameterValue ("speed")->load());
     const auto drive = parameters.getRawParameterValue ("drive")->load();
     const auto bias = parameters.getRawParameterValue ("bias")->load();
     const auto tone = parameters.getRawParameterValue ("tone")->load();
@@ -206,6 +210,9 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     const auto mix = parameters.getRawParameterValue ("mix")->load();
     const auto output = parameters.getRawParameterValue ("output")->load();
     const auto inputDb = parameters.getRawParameterValue ("input")->load();
+    const auto autoGlue = parameters.getRawParameterValue ("auto_glue")->load() >= 0.5f;
+    const auto stereoWidth = parameters.getRawParameterValue ("stereo_width")->load() * 2.0f;
+
     inputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (inputDb));
 
     const auto driveCurve = std::pow (drive, 1.45f);
@@ -263,9 +270,11 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     const float wowDepth = wowCurve * (0.05f + speedScale * 0.08f);
     const float flutterDepth = flutterCurve * (0.08f + speedScale * 0.09f);
     const float speedBias = 0.84f + speedScale * 0.30f;
+    const float finalOutputGain = outputAmount * (0.92f + speedScale * 0.12f);
+    const int activeChannels = juce::jmin (2, totalNumInputChannels);
 
     std::array<float*, 2> channelData {};
-    for (int channel = 0; channel < totalNumInputChannels; ++channel)
+    for (int channel = 0; channel < activeChannels; ++channel)
         channelData[static_cast<std::size_t> (channel)] = buffer.getWritePointer (channel);
 
     float inputPeak = 0.0f;
@@ -273,19 +282,19 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     double inputSquares = 0.0;
     double outputSquares = 0.0;
 
-    // Advance the gain once per sample so both stereo channels receive the same ramp.
-    for (int i = 0; i < buffer.getNumSamples(); ++i)
+    for (int sample = 0; sample < buffer.getNumSamples(); ++sample)
     {
         const float inputGain = inputGainSmoothed.getNextValue();
+        std::array<float, 2> tapeOutput {};
 
-        for (int channel = 0; channel < totalNumInputChannels; ++channel)
+        for (int channel = 0; channel < activeChannels; ++channel)
         {
             auto& wowPhase = channel == 0 ? wowPhaseL : wowPhaseR;
             auto& flutterPhase = channel == 0 ? flutterPhaseL : flutterPhaseR;
             auto& lastTapeSample = channel == 0 ? tapeLastL : tapeLastR;
             auto& lastBias = channel == 0 ? tapeBiasL : tapeBiasR;
 
-            const float rawInput = channelData[static_cast<std::size_t> (channel)][i];
+            const float rawInput = channelData[static_cast<std::size_t> (channel)][sample];
             inputPeak = juce::jmax (inputPeak, std::abs (rawInput));
             inputSquares += static_cast<double> (rawInput) * rawInput;
 
@@ -303,10 +312,12 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
 
             const float preDrive = x * (1.0f + driveAmount * 1.2f * speedBias);
             const float preBias = preDrive + lastBias * (0.12f + biasCurve * 0.22f + speedScale * 0.05f);
+            const float biasCompensation = 0.92f + tapeBiasBoost * 0.30f;
 
-            const float saturation = std::tanh (preBias * (0.82f + driveAmount * 1.1f * tapeCurve));
+            const float saturation = std::tanh (preBias * (0.82f + driveAmount * 1.1f * tapeCurve * biasCompensation));
             const float jsCurve = jsStyleNonlinearity (preDrive, driveCurve, tapeTexture);
-            const float harmonicLift = std::tanh (preDrive * (0.85f + tapeColor * 1.2f) + x * (0.08f + toneAmount * 0.2f));
+            const float harmonicLift = std::tanh (preDrive * (0.85f + tapeColor * 1.2f)
+                                                   + x * (0.08f + toneAmount * 0.2f));
             const float tapeBody = saturation * (0.82f + biasAmount * 0.7f)
                                  + jsCurve * (0.28f + toneCurve * 0.42f)
                                  + harmonicLift * (0.22f + toneCurve * 0.62f);
@@ -318,17 +329,85 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             const float motioned = memoryMix * wowMod * flutterMod * microMod;
             const float dryMix = x * (1.0f - mixAmount);
             const float wetMix = motioned * (0.20f + mixAmount * 0.82f);
-            const float finalOut = (dryMix + wetMix) * outputAmount * (0.92f + speedScale * 0.12f);
-            const float limitedOut = juce::jlimit (-0.999f, 0.999f, finalOut);
+            tapeOutput[static_cast<std::size_t> (channel)] = dryMix + wetMix;
+        }
 
-            channelData[static_cast<std::size_t> (channel)][i] = limitedOut;
+        float detectorPower = 0.0f;
+        if (activeChannels > 0)
+        {
+            for (int channel = 0; channel < activeChannels; ++channel)
+            {
+                const auto signal = tapeOutput[static_cast<std::size_t> (channel)];
+                detectorPower += signal * signal;
+            }
+            detectorPower /= static_cast<float> (activeChannels);
+        }
+
+        const float envelopeLevel = juce::jlimit (0.0f, 1.0f,
+                                                   std::sqrt (juce::jmax (0.0f, compressorEnvelope)));
+        const float attackSeconds = 0.18f + envelopeLevel * 0.32f;
+        const float releaseSeconds = 0.90f + envelopeLevel * 2.60f;
+        const float timeConstant = detectorPower > compressorEnvelope ? attackSeconds : releaseSeconds;
+        const float envelopeCoefficient = std::exp (-1.0f / (juce::jmax (1.0f, sampleRate) * timeConstant));
+        compressorEnvelope = envelopeCoefficient * compressorEnvelope
+                           + (1.0f - envelopeCoefficient) * detectorPower;
+
+        float compressionGain = 1.0f;
+        if (autoGlue)
+        {
+            constexpr float thresholdDb = -16.0f;
+            constexpr float kneeDb = 8.0f;
+            constexpr float ratio = 1.22f;
+            constexpr float reductionLimitDb = -3.0f;
+
+            const float envelopeDb = juce::Decibels::gainToDecibels (
+                std::sqrt (juce::jmax (0.0f, compressorEnvelope)), -100.0f);
+            const float overshootDb = envelopeDb - thresholdDb;
+            float reductionDb = 0.0f;
+
+            if (overshootDb > -kneeDb * 0.5f)
+            {
+                if (overshootDb < kneeDb * 0.5f)
+                {
+                    const auto kneeProgress = overshootDb + kneeDb * 0.5f;
+                    reductionDb = -(1.0f - 1.0f / ratio)
+                                * kneeProgress * kneeProgress / (2.0f * kneeDb);
+                }
+                else
+                {
+                    reductionDb = -(1.0f - 1.0f / ratio) * overshootDb;
+                }
+            }
+
+            reductionDb = juce::jmax (reductionLimitDb, reductionDb);
+            compressionGain = juce::Decibels::decibelsToGain (reductionDb);
+        }
+
+        std::array<float, 2> outputSignal {};
+        for (int channel = 0; channel < activeChannels; ++channel)
+            outputSignal[static_cast<std::size_t> (channel)] =
+                tapeOutput[static_cast<std::size_t> (channel)] * compressionGain * finalOutputGain;
+
+        if (activeChannels == 2)
+        {
+            const float mid = 0.5f * (outputSignal[0] + outputSignal[1]);
+            const float side = 0.5f * (outputSignal[0] - outputSignal[1]) * stereoWidth;
+            outputSignal[0] = mid + side;
+            outputSignal[1] = mid - side;
+        }
+
+        for (int channel = 0; channel < activeChannels; ++channel)
+        {
+            const float limitedOut = juce::jlimit (-0.999f, 0.999f,
+                                                   outputSignal[static_cast<std::size_t> (channel)]);
+            channelData[static_cast<std::size_t> (channel)][sample] = limitedOut;
             outputPeak = juce::jmax (outputPeak, std::abs (limitedOut));
             outputSquares += static_cast<double> (limitedOut) * limitedOut;
         }
     }
 
     const auto measuredSamples = static_cast<double> (buffer.getNumSamples())
-                               * static_cast<double> (juce::jmax (1, totalNumInputChannels));
+                               * static_cast<double> (juce::jmax (1, activeChannels));
     const float inputRms = measuredSamples > 0.0
         ? static_cast<float> (std::sqrt (inputSquares / measuredSamples)) : 0.0f;
     const float outputRms = measuredSamples > 0.0

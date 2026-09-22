@@ -79,6 +79,7 @@ private:
     float tapeLastR = 0.0f;
     float tapeBiasL = 0.0f;
     float tapeBiasR = 0.0f;
+    float compressorEnvelope = 0.0f;
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessor)
