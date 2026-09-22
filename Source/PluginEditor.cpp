@@ -123,6 +123,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
     setSize (760, 460);
+    createDecorativePhysics();
+
     startTimerHz (30);
 
     auto configureRotary = [this] (juce::Slider& slider, float startValue)
@@ -199,11 +201,18 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (outputSlider);
     addAndMakeVisible (tapeTypeBox);
     addAndMakeVisible (speedBox);
+
+    // Let JUCE's Graphics-based editor and controls paint through OpenGL.
+    // Rendering stays event-driven instead of drawing continuously.
+    openGLContext.setComponentPaintingEnabled (true);
+    openGLContext.setContinuousRepainting (false);
+    openGLContext.attachTo (*this);
 }
 
 FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
 {
     stopTimer();
+    openGLContext.detach();
 }
 
 //==============================================================================
@@ -310,23 +319,108 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
         g.fillEllipse (x, y, 2.0f, 2.0f);
     }
 
-    // Use JUCE's software renderer for the decorative motion so the editor does
-    // not depend on a platform OpenGL context or legacy OpenGL entry points.
-    for (int i = 0; i < 4; ++i)
+    std::array<RenderOrb, decorativeOrbCount> orbsToDraw;
     {
-        const auto phase = animationPhase + static_cast<float> (i) * 1.47f;
-        const auto x = static_cast<float> (panel.getX()) + 430.0f + std::sin (phase * 0.83f) * (28.0f + i * 7.0f);
-        const auto y = static_cast<float> (panel.getY()) + 294.0f + std::cos (phase * 1.11f) * (14.0f + i * 6.0f);
-        const auto radius = 5.0f + static_cast<float> (i) * 2.2f;
-        g.setColour (juce::Colour (0xffd8b36b).withAlpha (0.05f + static_cast<float> (i) * 0.018f));
+        const juce::SpinLock::ScopedLockType lock (renderOrbsLock);
+        orbsToDraw = renderOrbs;
+    }
+
+    for (const auto& orb : orbsToDraw)
+    {
+        const auto x = juce::jmap (orb.position.x, 0.0f, 1.5f,
+                                   static_cast<float> (panel.getX()) + 410.0f,
+                                   static_cast<float> (panel.getRight()) - 48.0f);
+        const auto y = juce::jmap (orb.position.y, 0.0f, 1.2f,
+                                   static_cast<float> (panel.getY()) + 250.0f,
+                                   static_cast<float> (panel.getBottom()) - 42.0f);
+        const auto radius = juce::jmap (orb.radius, 0.045f, 0.057f, 5.5f, 9.0f);
+
+        g.setColour (orb.colour.withAlpha (0.08f));
+        g.fillEllipse (x - radius * 1.8f, y - radius * 1.8f, radius * 3.6f, radius * 3.6f);
+        g.setColour (orb.colour.withAlpha (0.24f));
         g.fillEllipse (x - radius, y - radius, radius * 2.0f, radius * 2.0f);
+        g.setColour (juce::Colour (0xfff4ddb4).withAlpha (0.52f));
+        g.drawEllipse (x - radius, y - radius, radius * 2.0f, radius * 2.0f, 1.0f);
+    }
+}
+
+void FirstAudioProcessorEditor::createDecorativePhysics()
+{
+    physicsWorld = std::make_unique<b2World> (b2Vec2 (0.0f, 0.0f));
+
+    b2BodyDef boundaryDefinition;
+    auto* boundaryBody = physicsWorld->CreateBody (&boundaryDefinition);
+
+    const auto addWall = [boundaryBody] (float centreX, float centreY, float halfWidth, float halfHeight)
+    {
+        b2PolygonShape wallShape;
+        wallShape.SetAsBox (halfWidth, halfHeight, b2Vec2 (centreX, centreY), 0.0f);
+
+        b2FixtureDef wallFixture;
+        wallFixture.shape = &wallShape;
+        wallFixture.friction = 0.05f;
+        wallFixture.restitution = 0.82f;
+        boundaryBody->CreateFixture (&wallFixture);
+    };
+
+    addWall (0.75f, 0.0f, 0.75f, 0.02f);
+    addWall (0.75f, 1.2f, 0.75f, 0.02f);
+    addWall (0.0f, 0.6f, 0.02f, 0.6f);
+    addWall (1.5f, 0.6f, 0.02f, 0.6f);
+
+    for (std::size_t i = 0; i < decorativeOrbCount; ++i)
+    {
+        const auto index = static_cast<int> (i);
+        const auto radius = 0.045f + static_cast<float> (index % 2) * 0.012f;
+        const auto position = b2Vec2 (0.30f + static_cast<float> (index) * 0.22f,
+                                      0.28f + static_cast<float> (index % 2) * 0.18f);
+
+        b2BodyDef bodyDefinition;
+        bodyDefinition.type = b2_dynamicBody;
+        bodyDefinition.position = position;
+        bodyDefinition.linearVelocity.Set ((index % 2 == 0 ? 1.0f : -1.0f) * 0.34f,
+                                           (index % 3 == 0 ? 0.5f : -0.35f) * 0.42f);
+        bodyDefinition.linearDamping = 0.04f;
+        auto* body = physicsWorld->CreateBody (&bodyDefinition);
+
+        b2CircleShape circleShape;
+        circleShape.m_radius = radius;
+
+        b2FixtureDef orbFixture;
+        orbFixture.shape = &circleShape;
+        orbFixture.density = 0.7f;
+        orbFixture.friction = 0.15f;
+        orbFixture.restitution = 0.82f;
+        body->CreateFixture (&orbFixture);
+
+        const auto colour = juce::Colour (0xffd8b36b).withAlpha (0.65f + static_cast<float> (index) * 0.07f);
+        physicsOrbs[i] = { body, radius, colour };
+        renderOrbs[i] = { juce::Point<float> (position.x, position.y), radius, colour };
     }
 }
 
 void FirstAudioProcessorEditor::timerCallback()
 {
-    animationPhase = std::fmod (animationPhase + 0.045f, juce::MathConstants<float>::twoPi);
-    repaint();
+    if (! isShowing() || physicsWorld == nullptr)
+        return;
+
+    physicsWorld->Step (1.0f / 30.0f, 6, 2);
+
+    std::array<RenderOrb, decorativeOrbCount> nextFrame;
+    for (std::size_t i = 0; i < decorativeOrbCount; ++i)
+    {
+        const auto position = physicsOrbs[i].body->GetPosition();
+        nextFrame[i] = { juce::Point<float> (position.x, position.y),
+                         physicsOrbs[i].radius,
+                         physicsOrbs[i].colour };
+    }
+
+    {
+        const juce::SpinLock::ScopedLockType lock (renderOrbsLock);
+        renderOrbs = nextFrame;
+    }
+
+    repaint (juce::Rectangle<int> (400, 250, 340, 180));
 }
 
 void FirstAudioProcessorEditor::resized()
