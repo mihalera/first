@@ -9,6 +9,8 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+#include <array>
+
 namespace
 {
     constexpr float minTrack = 0.0f;
