@@ -343,8 +343,8 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             detectorPower /= static_cast<float> (activeChannels);
         }
 
-        const float detectorLevel = std::sqrt (detectorPower);
-        const float envelopeLevel = std::sqrt (juce::jmax (0.0f, compressorEnvelope));
+        const float envelopeLevel = juce::jlimit (0.0f, 1.0f,
+                                                   std::sqrt (juce::jmax (0.0f, compressorEnvelope)));
         const float attackSeconds = 0.18f + envelopeLevel * 0.32f;
         const float releaseSeconds = 0.90f + envelopeLevel * 2.60f;
         const float timeConstant = detectorPower > compressorEnvelope ? attackSeconds : releaseSeconds;
