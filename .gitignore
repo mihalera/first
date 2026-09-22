@@ -1,22 +1,62 @@
-# Visual Studio / JUCE
+# IDE / editor
 .vs/
+.vscode/
+*.code-workspace
 *.user
 *.suo
+*.userosscache
+*.sln.docstates
 *.vcxproj.user
+*.VC.db
+*.VC.VC.opendb
+
+# Build outputs
 x64/
 x86/
+Debug/
+Release/
+bin/
+obj/
+out/
 Builds/**/x64/
 Builds/**/x86/
+Builds/**/Debug/
+Builds/**/Release/
+
+# JUCE / plugin artifacts
 *.dll
+*.so
+*.dylib
+*.vst3/
+*.component/
+*.aaxplugin/
+*.wav
+*.mp3
+*.flac
+
+# Compiler / linker outputs
 *.exp
 *.lib
 *.pdb
 *.obj
+*.pch
+*.idb
+*.ipch
 *.tlog
 *.log
-*.ipch
 *.aps
 *.ncb
 *.opensdf
 *.sdf
 *.cache
+*.ilk
+*.db
+*.jucer.user
+
+# OS / misc
+Thumbs.db
+.DS_Store
+Desktop.ini
+
+# GitHub Actions artifacts
+.github/workflows/*.local.yml

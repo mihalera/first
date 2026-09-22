@@ -1,0 +1,24 @@
+name: Build JUCE Plugin
+
+on:
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
+
+jobs:
+  build-windows:
+    runs-on: windows-2022
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Setup MSBuild
+        uses: microsoft/setup-msbuild@v2
+
+      - name: Build solution
+        shell: powershell
+        run: |
+          $solution = Join-Path $env:GITHUB_WORKSPACE 'Builds/VisualStudio2026\first.sln'
+          msbuild "$solution" /m /p:Configuration=Release /p:Platform=x64
