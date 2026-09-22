@@ -1,0 +1,22 @@
+# Visual Studio / JUCE
+.vs/
+*.user
+*.suo
+*.vcxproj.user
+x64/
+x86/
+Builds/**/x64/
+Builds/**/x86/
+*.dll
+*.exp
+*.lib
+*.pdb
+*.obj
+*.tlog
+*.log
+*.ipch
+*.aps
+*.ncb
+*.opensdf
+*.sdf
+*.cache
