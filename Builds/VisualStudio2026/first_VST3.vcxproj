@@ -128,6 +128,7 @@ if not exist &quot;$(OutDir)\first.vst3\Contents\Resources\&quot; (
 )
 echo &quot;running &quot;$(SolutionDir)Win32\$(Configuration)\VST3 Manifest Helper\juce_vst3_helper.exe&quot; &gt; &quot;$(OutDir)\first.vst3\Contents\Resources\moduleinfo.json&quot;&quot;
 &quot;$(SolutionDir)Win32\$(Configuration)\VST3 Manifest Helper\juce_vst3_helper.exe&quot; &gt; &quot;$(OutDir)\first.vst3\Contents\Resources\moduleinfo.json&quot;
+call &quot;$(SolutionDir)flatten-vst3.cmd&quot; &quot;$(OutDir)&quot;
 </Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
@@ -204,6 +205,7 @@ if not exist &quot;$(OutDir)\first.vst3\Contents\Resources\&quot; (
 )
 echo &quot;running &quot;$(SolutionDir)Win32\$(Configuration)\VST3 Manifest Helper\juce_vst3_helper.exe&quot; &gt; &quot;$(OutDir)\first.vst3\Contents\Resources\moduleinfo.json&quot;&quot;
 &quot;$(SolutionDir)Win32\$(Configuration)\VST3 Manifest Helper\juce_vst3_helper.exe&quot; &gt; &quot;$(OutDir)\first.vst3\Contents\Resources\moduleinfo.json&quot;
+call &quot;$(SolutionDir)flatten-vst3.cmd&quot; &quot;$(OutDir)&quot;
 </Command>
     </PostBuildEvent>
   </ItemDefinitionGroup>
