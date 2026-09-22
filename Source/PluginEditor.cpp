@@ -12,12 +12,6 @@
 #include <juce_box2d/juce_box2d.h>
 #include <juce_opengl/juce_opengl.h>
 
-#ifdef _WIN32
-#include <windows.h>
-#include <GL/gl.h>
-#pragma comment(lib, "opengl32.lib")
-#endif
-
 namespace detail
 {
     class J37OpenGLPanel final : public juce::OpenGLAppComponent,
@@ -72,36 +66,37 @@ namespace detail
             const auto width = static_cast<double> (getWidth());
             const auto height = static_cast<double> (getHeight());
 
-            glClearColor (0.96f, 0.95f, 0.94f, 0.0f);
-            glClear (GL_COLOR_BUFFER_BIT);
+            juce::gl::glClearColor (0.96f, 0.95f, 0.94f, 0.0f);
+            juce::gl::glClear (juce::gl::GL_COLOR_BUFFER_BIT);
 
-            glMatrixMode (GL_PROJECTION);
-            glLoadIdentity();
-            glOrtho (0.0, width, height, 0.0, -1.0, 1.0);
-            glMatrixMode (GL_MODELVIEW);
-            glLoadIdentity();
+            juce::gl::glMatrixMode (juce::gl::GL_PROJECTION);
+            juce::gl::glLoadIdentity();
+            juce::gl::glOrtho (0.0, width, height, 0.0, -1.0, 1.0);
+            juce::gl::glMatrixMode (juce::gl::GL_MODELVIEW);
+            juce::gl::glLoadIdentity();
 
-            glEnable (GL_BLEND);
-            glBlendFunc (GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+            juce::gl::glEnable (juce::gl::GL_BLEND);
+            juce::gl::glBlendFunc (juce::gl::GL_SRC_ALPHA,
+                                  juce::gl::GL_ONE_MINUS_SRC_ALPHA);
 
             for (int i = 0; i < 12; ++i)
             {
                 const auto y = 40.0f + static_cast<float> (i) * 30.0f;
                 const auto alpha = 0.016f + static_cast<float> (i) * 0.004f;
-                glBegin (GL_LINES);
-                glColor4f (0.76f, 0.69f, 0.53f, alpha);
-                glVertex2f (18.0f, y);
-                glVertex2f (static_cast<float> (width) - 18.0f, y + 8.0f);
-                glEnd();
+                juce::gl::glBegin (juce::gl::GL_LINES);
+                juce::gl::glColor4f (0.76f, 0.69f, 0.53f, alpha);
+                juce::gl::glVertex2f (18.0f, y);
+                juce::gl::glVertex2f (static_cast<float> (width) - 18.0f, y + 8.0f);
+                juce::gl::glEnd();
             }
 
-            glBegin (GL_LINES);
-            glColor4f (0.62f, 0.55f, 0.42f, 0.04f);
-            glVertex2f (42.0f, 18.0f);
-            glVertex2f (42.0f, static_cast<float> (height) - 18.0f);
-            glVertex2f (static_cast<float> (width) - 42.0f, 18.0f);
-            glVertex2f (static_cast<float> (width) - 42.0f, static_cast<float> (height) - 18.0f);
-            glEnd();
+            juce::gl::glBegin (juce::gl::GL_LINES);
+            juce::gl::glColor4f (0.62f, 0.55f, 0.42f, 0.04f);
+            juce::gl::glVertex2f (42.0f, 18.0f);
+            juce::gl::glVertex2f (42.0f, static_cast<float> (height) - 18.0f);
+            juce::gl::glVertex2f (static_cast<float> (width) - 42.0f, 18.0f);
+            juce::gl::glVertex2f (static_cast<float> (width) - 42.0f, static_cast<float> (height) - 18.0f);
+            juce::gl::glEnd();
 
             for (const auto& orb : orbs)
             {
@@ -118,21 +113,21 @@ namespace detail
                 const auto b = orb.colour.getFloatBlue();
                 const auto a = orb.colour.getFloatAlpha();
 
-                glBegin (GL_TRIANGLE_FAN);
-                glColor4f (r, g, b, a);
-                glVertex2f (x, y);
+                juce::gl::glBegin (juce::gl::GL_TRIANGLE_FAN);
+                juce::gl::glColor4f (r, g, b, a);
+                juce::gl::glVertex2f (x, y);
 
                 for (int i = 0; i <= 28; ++i)
                 {
                     const auto theta = juce::MathConstants<float>::twoPi * static_cast<float> (i) / 28.0f;
                     const auto px = x + std::cos (theta) * radius;
                     const auto py = y + std::sin (theta) * radius;
-                    glVertex2f (px, py);
+                    juce::gl::glVertex2f (px, py);
                 }
-                glEnd();
+                juce::gl::glEnd();
             }
 
-            glDisable (GL_BLEND);
+            juce::gl::glDisable (juce::gl::GL_BLEND);
         }
 
         void resized() override
