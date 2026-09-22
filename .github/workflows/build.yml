@@ -20,20 +20,40 @@ jobs:
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
 
-    - name: Prepare JUCE folder layout expected by the generated project
+    - name: Prepare JUCE checkout and fix generated project paths
       shell: powershell
       run: |
-        $juceRoot = 'D:\Desktop\Programs\JUCE'
-        $altRoot = 'D:\Programs\JUCE'
-
-        New-Item -ItemType Directory -Path $juceRoot -Force | Out-Null
-
-        if (-not (Test-Path "$altRoot")) {
-          New-Item -ItemType SymbolicLink -Path $altRoot -Target $juceRoot -Force | Out-Null
-        }
+        $repoRoot = $env:GITHUB_WORKSPACE
+        $juceRoot = Join-Path $repoRoot 'JUCE'
+        $legacyPaths = @(
+          'D:\Desktop\Programs\JUCE',
+          'D:\Programs\JUCE'
+        )
 
         if (-not (Test-Path "$juceRoot\modules")) {
           git clone --depth 1 https://github.com/juce-framework/JUCE.git $juceRoot
+        }
+
+        foreach ($legacy in $legacyPaths) {
+          $parent = Split-Path $legacy -Parent
+          New-Item -ItemType Directory -Path $parent -Force | Out-Null
+          if (Test-Path $legacy) {
+            Remove-Item $legacy -Recurse -Force -ErrorAction SilentlyContinue
+          }
+          New-Item -ItemType Junction -Path $legacy -Target $juceRoot -Force | Out-Null
+        }
+
+        Get-ChildItem -Path $repoRoot -Recurse -Include *.vcxproj,*.props,*.targets | ForEach-Object {
+          $path = $_.FullName
+          $content = Get-Content $path -Raw
+          $updated = $content
+          foreach ($legacy in $legacyPaths) {
+            $updated = $updated.Replace($legacy, $juceRoot)
+          }
+          if ($updated -ne $content) {
+            Set-Content -Path $path -Value $updated -Encoding UTF8
+            Write-Host "Patched JUCE path in: $path"
+          }
         }
 
     - name: Compile VST3 via MSBuild
