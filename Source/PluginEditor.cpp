@@ -27,7 +27,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     {
         slider.setTextBoxStyle (juce::Slider::NoTextBox, false, 0, 0);
         slider.setRotaryParameters (0.0f, 1.0f, 0.5f);
-        slider.setVelocityModeEnabled (true);
+        slider.setVelocityBasedMode (true);
         slider.setPopupDisplayEnabled (true, true, nullptr);
         slider.setLookAndFeel (&juce::LookAndFeel::getDefaultLookAndFeel());
     };
@@ -62,15 +62,15 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     tapeTypeBox.setSelectedId (1);
     speedBox.setSelectedId (2);
 
-    driveAttachment = std::make_unique<juce::SliderAttachment> (audioProcessor.parameters, "drive", driveSlider);
-    biasAttachment = std::make_unique<juce::SliderAttachment> (audioProcessor.parameters, "bias", biasSlider);
-    toneAttachment = std::make_unique<juce::SliderAttachment> (audioProcessor.parameters, "tone", toneSlider);
-    wowAttachment = std::make_unique<juce::SliderAttachment> (audioProcessor.parameters, "wow", wowSlider);
-    flutterAttachment = std::make_unique<juce::SliderAttachment> (audioProcessor.parameters, "flutter", flutterSlider);
-    mixAttachment = std::make_unique<juce::SliderAttachment> (audioProcessor.parameters, "mix", mixSlider);
-    outputAttachment = std::make_unique<juce::SliderAttachment> (audioProcessor.parameters, "output", outputSlider);
-    tapeTypeAttachment = std::make_unique<juce::ComboBoxAttachment> (audioProcessor.parameters, "tape_type", tapeTypeBox);
-    speedAttachment = std::make_unique<juce::ComboBoxAttachment> (audioProcessor.parameters, "speed", speedBox);
+    driveAttachment = std::make_unique<SliderAttachment> (audioProcessor.parameters, "drive", driveSlider);
+    biasAttachment = std::make_unique<SliderAttachment> (audioProcessor.parameters, "bias", biasSlider);
+    toneAttachment = std::make_unique<SliderAttachment> (audioProcessor.parameters, "tone", toneSlider);
+    wowAttachment = std::make_unique<SliderAttachment> (audioProcessor.parameters, "wow", wowSlider);
+    flutterAttachment = std::make_unique<SliderAttachment> (audioProcessor.parameters, "flutter", flutterSlider);
+    mixAttachment = std::make_unique<SliderAttachment> (audioProcessor.parameters, "mix", mixSlider);
+    outputAttachment = std::make_unique<SliderAttachment> (audioProcessor.parameters, "output", outputSlider);
+    tapeTypeAttachment = std::make_unique<ComboBoxAttachment> (audioProcessor.parameters, "tape_type", tapeTypeBox);
+    speedAttachment = std::make_unique<ComboBoxAttachment> (audioProcessor.parameters, "speed", speedBox);
 
     addAndMakeVisible (driveSlider);
     addAndMakeVisible (biasSlider);

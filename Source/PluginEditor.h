@@ -37,15 +37,21 @@ private:
     juce::ComboBox tapeTypeBox;
     juce::ComboBox speedBox;
 
-    std::unique_ptr<juce::SliderAttachment> driveAttachment;
-    std::unique_ptr<juce::SliderAttachment> biasAttachment;
-    std::unique_ptr<juce::SliderAttachment> toneAttachment;
-    std::unique_ptr<juce::SliderAttachment> wowAttachment;
-    std::unique_ptr<juce::SliderAttachment> flutterAttachment;
-    std::unique_ptr<juce::SliderAttachment> mixAttachment;
-    std::unique_ptr<juce::SliderAttachment> outputAttachment;
-    std::unique_ptr<juce::ComboBoxAttachment> tapeTypeAttachment;
-    std::unique_ptr<juce::ComboBoxAttachment> speedAttachment;
+    using SliderAttachment =
+        juce::AudioProcessorValueTreeState::SliderAttachment;
+
+    using ComboBoxAttachment =
+        juce::AudioProcessorValueTreeState::ComboBoxAttachment;
+
+    std::unique_ptr<SliderAttachment> driveAttachment;
+    std::unique_ptr<SliderAttachment> biasAttachment;
+    std::unique_ptr<SliderAttachment> toneAttachment;
+    std::unique_ptr<SliderAttachment> wowAttachment;
+    std::unique_ptr<SliderAttachment> flutterAttachment;
+    std::unique_ptr<SliderAttachment> mixAttachment;
+    std::unique_ptr<SliderAttachment> outputAttachment;
+    std::unique_ptr<ComboBoxAttachment> tapeTypeAttachment;
+    std::unique_ptr<ComboBoxAttachment> speedAttachment;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessorEditor)
 };
