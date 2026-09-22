@@ -359,13 +359,19 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
 }
 
 //==============================================================================
-void FirstAudioProcessorEditor::CompressorMeter::setReduction (float reductionDb, float newActivity)
+void FirstAudioProcessorEditor::CompressorMeter::setReduction (float reductionDb, float inputReductionDb,
+                                                              float newActivity)
 {
     // Smooth downwards instantly (so gain reduction is never under-reported) but
     // let the bar fall back gracefully, like a real VU-driven reduction needle.
     const auto clamped = juce::jlimit (-12.0f, 0.0f, reductionDb);
     const auto coefficient = clamped < displayedDb ? 0.55f : 0.10f;
     displayedDb += (clamped - displayedDb) * coefficient;
+
+    const auto clampedInput = juce::jlimit (-12.0f, 0.0f, inputReductionDb);
+    const auto inputCoefficient = clampedInput < displayedInputDb ? 0.55f : 0.10f;
+    displayedInputDb += (clampedInput - displayedInputDb) * inputCoefficient;
+
     activity += (juce::jlimit (0.0f, 1.0f, newActivity) - activity) * 0.22f;
 
     repaint();
@@ -439,15 +445,19 @@ void FirstAudioProcessorEditor::CompressorMeter::paint (juce::Graphics& g)
     }
 
     const auto readoutY = getHeight() - 42;
-    g.setColour (displayedDb < -0.05f ? palette.accent : palette.secondary);
+    const auto totalReduction = displayedDb < -0.05f;
+    g.setColour (totalReduction ? palette.accent : palette.secondary);
     g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)));
     g.drawText (juce::String (displayedDb, 1) + " dB",
                 juce::Rectangle<int> (2, readoutY, getWidth() - 4, 16),
                 juce::Justification::centred, false);
 
+    // The two stages are labelled separately: IN is after the input trim, OUT is
+    // the stage that sits immediately before the output trim.
     g.setColour (palette.secondary);
     g.setFont (juce::Font (juce::FontOptions (8.0f)));
-    g.drawText ("ALWAYS ON",
+    g.drawText ("IN " + juce::String (displayedInputDb, 1) + "  OUT "
+                    + juce::String (totalReduction ? displayedDb - displayedInputDb : 0.0f, 1),
                 juce::Rectangle<int> (2, readoutY + 16, getWidth() - 4, 13),
                 juce::Justification::centred, false);
 }
@@ -496,9 +506,9 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 true, juce::Justification::left);
     styleLabel (metersHintLabel, "dBFS / PEAK + RMS", 8.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
-    styleLabel (compressorLabel, "TAPE GLUE", 10.0f, paletteFor (false).accent,
+    styleLabel (compressorLabel, "TAPE GLUE x2", 10.0f, paletteFor (false).accent,
                 true, juce::Justification::left);
-    styleLabel (compressorReadout, "Always active", 8.0f, paletteFor (false).secondary,
+    styleLabel (compressorReadout, "IN + OUT stage", 8.0f, paletteFor (false).secondary,
                 false, juce::Justification::left);
 
     addAndMakeVisible (brandLabel);
@@ -608,7 +618,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 
     bypassButton.setClickingTogglesState (true);
     bypassButton.setButtonText ("BYPASS");
-    bypassButton.setTooltip ("Hard bypass: the tape engine and the glue compressor are switched out. "
+    bypassButton.setTooltip ("Hard bypass: the tape engine and both glue compressors are switched out. "
                              "The switch is ramped, so toggling it never clicks.");
     bypassButton.setLookAndFeel (&customLookAndFeel);
     bypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
@@ -928,10 +938,12 @@ void FirstAudioProcessorEditor::timerCallback()
     inputMeter.setLevels (audioProcessor.getInputPeakLevel(), audioProcessor.getInputRmsLevel());
     outputMeter.setLevels (audioProcessor.getOutputPeakLevel(), audioProcessor.getOutputRmsLevel());
 
-    // Compressor display: gain reduction plus the live activity envelope.
+    // Compressor display: total gain reduction of the two glue stages plus the
+    // live activity envelope, with the input and output stages shown separately.
     const auto reduction = audioProcessor.getGainReductionDb();
+    const auto inputReduction = audioProcessor.getInputGainReductionDb();
     const auto activity = audioProcessor.getCompressorActivity();
-    compressorMeter.setReduction (reduction, activity);
+    compressorMeter.setReduction (reduction, inputReduction, activity);
 
     // Animated presentation state. Everything here is derived from audio
     // telemetry, so the panel visibly reacts to what the plugin is doing.

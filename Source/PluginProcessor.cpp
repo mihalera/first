@@ -46,6 +46,49 @@ namespace
         const float seconds = juce::jmax (0.01f, milliseconds) * 0.001f;
         return 1.0f - std::exp (-1.0f / (seconds * juce::jmax (1.0f, sampleRate)));
     }
+
+    /**
+        Shared soft-knee, program-dependent gain computer used by both glue
+        compressor stages. `envelopeDb` is the detector level in dBFS, the
+        reduction limit keeps the stage from ever collapsing the signal.
+    */
+    struct CompressorSettings
+    {
+        float thresholdDb = -16.0f;
+        float kneeDb = 8.0f;
+        float ratio = 1.22f;
+        float reductionLimitDb = -3.0f;
+    };
+
+    inline float compressorReductionDb (float envelopeDb, const CompressorSettings& settings) noexcept
+    {
+        const float halfKnee = settings.kneeDb * 0.5f;
+        const float overshootDb = envelopeDb - settings.thresholdDb;
+
+        float reductionDb = 0.0f;
+        if (overshootDb > -halfKnee)
+        {
+            if (overshootDb < halfKnee)
+            {
+                const auto kneeProgress = overshootDb + halfKnee;
+                reductionDb = -(1.0f - 1.0f / settings.ratio)
+                            * kneeProgress * kneeProgress / (2.0f * settings.kneeDb);
+            }
+            else
+            {
+                reductionDb = -(1.0f - 1.0f / settings.ratio) * overshootDb;
+            }
+        }
+
+        return juce::jmax (settings.reductionLimitDb, reductionDb);
+    }
+
+    // The tape machine is compressor-coupled in two places. INPUT COMP sits right
+    // after the input trim so that pushing INPUT drives the recorder harder and
+    // the following tape stage hears a controlled level; OUTPUT COMP sits right
+    // before the output trim and is what the COMP meter reports.
+    constexpr CompressorSettings inputCompressorSettings { -15.0f, 10.0f, 1.16f, -2.0f };
+    constexpr CompressorSettings outputCompressorSettings { -16.0f, 8.0f, 1.22f, -3.0f };
 }
 
 //==============================================================================
@@ -71,6 +114,8 @@ FirstAudioProcessor::FirstAudioProcessor()
     mixParam      = parameters.getRawParameterValue ("mix");
     outputDbParam = parameters.getRawParameterValue ("output");
     widthParam    = parameters.getRawParameterValue ("stereo_width");
+    tapeTypeParam  = parameters.getRawParameterValue ("tape_type");
+    speedParam     = parameters.getRawParameterValue ("speed");
     bypassParam   = parameters.getRawParameterValue ("bypass");
 }
 
@@ -202,6 +247,7 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     outputPeakLevel.store (0.0f, std::memory_order_relaxed);
     outputRmsLevel.store (0.0f, std::memory_order_relaxed);
     gainReductionDb.store (0.0f, std::memory_order_relaxed);
+    inputGainReductionDb.store (0.0f, std::memory_order_relaxed);
     compressorActivity.store (0.0f, std::memory_order_relaxed);
     transportDrift.store (0.5f, std::memory_order_relaxed);
     harmonicCharacter.store (0.0f, std::memory_order_relaxed);
@@ -218,7 +264,8 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     previousTone = -1.0f;
     toneLpAc = 0.0f;
     toneLpBc = 0.0f;
-    compressorEnvelope = 0.0f;
+    inputCompressorEnvelope = 0.0f;
+    outputCompressorEnvelope = 0.0f;
 }
 
 void FirstAudioProcessor::releaseResources()
@@ -275,7 +322,11 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             const auto* data = buffer.getReadPointer (channel);
             for (int sample = 0; sample < numSamples; ++sample)
             {
-                const auto value = data[sample];
+                // Note: getReadPointer() hands back `const float*`, so the value has to
+                // be read as a float here - with a 64-bit `SampleType` build (which the
+                // VST3 target can be generated as) `auto` would deduce double and every
+                // call below would be ambiguous.
+                const auto value = static_cast<float> (data[sample]);
                 bypassPeak = juce::jmax (bypassPeak, std::abs (value));
                 bypassSquares += static_cast<double> (value) * value;
             }
@@ -291,14 +342,15 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         outputPeakLevel.store (bypassPeak, std::memory_order_relaxed);
         outputRmsLevel.store (bypassRms, std::memory_order_relaxed);
         gainReductionDb.store (0.0f, std::memory_order_relaxed);
+        inputGainReductionDb.store (0.0f, std::memory_order_relaxed);
         compressorActivity.store (0.0f, std::memory_order_relaxed);
         return;
     }
 
     bypassActive.store (false, std::memory_order_relaxed);
 
-    const auto tapeType = static_cast<int> (parameters.getRawParameterValue ("tape_type")->load());
-    const auto speed = static_cast<int> (parameters.getRawParameterValue ("speed")->load());
+    const auto tapeType = static_cast<int> (tapeTypeParam->load());
+    const auto speed = static_cast<int> (speedParam->load());
     const auto drive = driveParam->load();
     const auto bias = biasParam->load();
     const auto tone = toneParam->load();
@@ -412,6 +464,8 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     double inputSquares = 0.0;
     double outputSquares = 0.0;
     float peakReductionDb = 0.0f;
+    float inputPeakReductionDb = 0.0f;
+    float inputEnvelopeActivity = 0.0f;
     float driftAccumulator = 0.0f;
 
     for (int sample = 0; sample < numSamples; ++sample)
@@ -436,6 +490,35 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             inputSquares += static_cast<double> (rawInput) * rawInput;
 
             const float x = rawInput * inputGain;
+
+            // ------------------------------------------------------------------
+            //  Input stage glue compressor: it lives straight after the input trim,
+            //  so the INPUT control pushes real level into it - exactly like hitting
+            //  a recorder input harder - and the tape stage always hears a controlled
+            //  level. Programme dependent and slow, like machine headroom.
+            // ------------------------------------------------------------------
+            const float inputEnvelopeLevel = juce::jlimit (0.0f, 1.0f,
+                                                           std::sqrt (juce::jmax (0.0f, inputCompressorEnvelope)));
+            const float inputDetectorPower = x * x;
+            const float inputAttackSeconds = 0.15f + inputEnvelopeLevel * 0.28f;
+            const float inputReleaseSeconds = 0.80f + inputEnvelopeLevel * 2.40f;
+            const float inputTimeConstant = inputDetectorPower > inputCompressorEnvelope
+                                                ? inputAttackSeconds : inputReleaseSeconds;
+            const float inputEnvelopeCoefficient = std::exp (-1.0f
+                                                / (juce::jmax (1.0f, sampleRate) * inputTimeConstant));
+            inputCompressorEnvelope = inputEnvelopeCoefficient * inputCompressorEnvelope
+                                    + (1.0f - inputEnvelopeCoefficient) * inputDetectorPower;
+
+            const float inputEnvelopeDb = juce::Decibels::gainToDecibels (
+                std::sqrt (juce::jmax (0.0f, inputCompressorEnvelope)), -100.0f);
+            const float inputReductionDb = compressorReductionDb (inputEnvelopeDb,
+                                                                  inputCompressorSettings);
+            const float inputCompressionGain = juce::Decibels::decibelsToGain (inputReductionDb);
+
+            inputPeakReductionDb = juce::jmin (inputPeakReductionDb, inputReductionDb);
+            inputEnvelopeActivity = juce::jmax (inputEnvelopeActivity, inputEnvelopeLevel);
+
+            const float x = rawInput * inputGain * inputCompressionGain;
 
             const float wowLfo = std::sin (wowPhase);
             const float flutterLfo = std::sin (flutterPhase);
@@ -497,8 +580,11 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         }
 
         // ---------------------------------------------------------------------
-        //  Tape glue compressor - always on, programme dependent, deliberately
-        //  slow so it feels like machine headroom rather than a modern limiter.
+        //  Output stage glue compressor: it sits immediately before the output
+        //  trim, so the headroom it creates is spent directly on the OUTPUT
+        //  control and the level leaving the plugin is calibrated. Always on,
+        //  programme dependent and deliberately slow so it feels like machine
+        //  headroom rather than a modern limiter.
         // ---------------------------------------------------------------------
         float detectorPower = 0.0f;
         if (activeChannels > 0)
@@ -512,46 +598,30 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         }
 
         const float envelopeLevel = juce::jlimit (0.0f, 1.0f,
-                                                   std::sqrt (juce::jmax (0.0f, compressorEnvelope)));
+                                                   std::sqrt (juce::jmax (0.0f, outputCompressorEnvelope)));
         const float attackSeconds = 0.18f + envelopeLevel * 0.32f;
         const float releaseSeconds = 0.90f + envelopeLevel * 2.60f;
-        const float timeConstant = detectorPower > compressorEnvelope ? attackSeconds : releaseSeconds;
+        const float timeConstant = detectorPower > outputCompressorEnvelope ? attackSeconds : releaseSeconds;
         const float envelopeCoefficient = std::exp (-1.0f / (juce::jmax (1.0f, sampleRate) * timeConstant));
-        compressorEnvelope = envelopeCoefficient * compressorEnvelope
-                           + (1.0f - envelopeCoefficient) * detectorPower;
-
-        constexpr float thresholdDb = -16.0f;
-        constexpr float kneeDb = 8.0f;
-        constexpr float ratio = 1.22f;
-        constexpr float reductionLimitDb = -3.0f;
+        outputCompressorEnvelope = envelopeCoefficient * outputCompressorEnvelope
+                                 + (1.0f - envelopeCoefficient) * detectorPower;
 
         const float envelopeDb = juce::Decibels::gainToDecibels (
-            std::sqrt (juce::jmax (0.0f, compressorEnvelope)), -100.0f);
-        const float overshootDb = envelopeDb - thresholdDb;
-        float reductionDb = 0.0f;
-
-        if (overshootDb > -kneeDb * 0.5f)
-        {
-            if (overshootDb < kneeDb * 0.5f)
-            {
-                const auto kneeProgress = overshootDb + kneeDb * 0.5f;
-                reductionDb = -(1.0f - 1.0f / ratio)
-                            * kneeProgress * kneeProgress / (2.0f * kneeDb);
-            }
-            else
-            {
-                reductionDb = -(1.0f - 1.0f / ratio) * overshootDb;
-            }
-        }
-
-        reductionDb = juce::jmax (reductionLimitDb, reductionDb);
+            std::sqrt (juce::jmax (0.0f, outputCompressorEnvelope)), -100.0f);
+        const float reductionDb = compressorReductionDb (envelopeDb, outputCompressorSettings);
         const float compressionGain = juce::Decibels::decibelsToGain (reductionDb);
         peakReductionDb = juce::jmin (peakReductionDb, reductionDb);
+
+        // Makeup: two gentle glue stages must not leave the machine quieter than it
+        // arrived, so each stage pays back a fraction of the reduction it applies.
+        const float inputMakeup = juce::Decibels::decibelsToGain (-inputPeakReductionDb * 0.55f);
+        const float outputMakeup = juce::Decibels::decibelsToGain (-reductionDb * 0.55f);
+        const float stageGain = compressionGain * outputMakeup * finalOutputGain * inputMakeup;
 
         std::array<float, 2> outputSignal {};
         for (int channel = 0; channel < activeChannels; ++channel)
             outputSignal[static_cast<std::size_t> (channel)] =
-                tapeOutput[static_cast<std::size_t> (channel)] * compressionGain * finalOutputGain;
+                tapeOutput[static_cast<std::size_t> (channel)] * stageGain;
 
         if (activeChannels == 2)
         {
@@ -598,11 +668,22 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     retainPeakUntilConsumed (outputPeakLevel, outputPeak);
     outputRmsLevel.store (outputRms, std::memory_order_relaxed);
 
+    // Blocks of zero samples arrive during silence (and with some host buffer sizes),
+    // and by then the per-sample smoothing would never have been advanced.
+    inputGainSmoothed.skip (numSamples);
+    outputGainSmoothed.skip (numSamples);
+    mixSmoothed.skip (numSamples);
+    widthSmoothed.skip (numSamples);
+    bypassSmoothed.skip (numSamples);
+
     // Compressor telemetry: worst-case reduction this block plus an activity
-    // envelope the UI can animate, both read without locking.
+    // envelope the UI can animate, both read without locking. The reduction of the
+    // input stage is published separately so the display can label the two stages.
     gainReductionDb.store (peakReductionDb, std::memory_order_relaxed);
+    inputGainReductionDb.store (inputPeakReductionDb, std::memory_order_relaxed);
     compressorActivity.store (juce::jlimit (0.0f, 1.0f,
-                                            std::sqrt (juce::jmax (0.0f, compressorEnvelope))),
+                                            juce::jmax (inputEnvelopeActivity,
+                                                        std::sqrt (juce::jmax (0.0f, outputCompressorEnvelope)))),
                               std::memory_order_relaxed);
 
     // Transport drift mapped to 0..1 for the UI wobble, and a harmonic weight

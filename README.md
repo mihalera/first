@@ -17,9 +17,10 @@ It explores a tape-saturation workflow with:
 
 ## Signal path
 
-Input trim (dB) -> record head (pre-emphasis, bias, magnetic hysteresis with memory) ->
+Input trim (dB) -> input glue compressor (always on) ->
+record head (pre-emphasis, bias, magnetic hysteresis with memory) ->
 tape low-pass and head-gap loss -> tape noise floor and wow/flutter modulation ->
-playback EQ tilt -> tape glue compressor (always on) -> output trim (dB) -> stereo width.
+playback EQ tilt -> output glue compressor (always on) -> output trim (dB) -> stereo width.
 
 ## Controls
 
@@ -38,8 +39,12 @@ playback EQ tilt -> tape glue compressor (always on) -> output trim (dB) -> ster
 | Tape Type | J37 / Ampex 456 / Studer A800 / Chrome | Model character |
 | Speed | 7.5 / 15 / 30 ips | Transport speed, affects modulation and top end |
 
-The tape glue compressor has no on/off switch: it always runs, and its gain reduction
-is displayed by the COMP meter (0 to -12 dB).
+The tape glue compressor is compressor-coupled in two places and has no on/off switch:
+the input stage sits immediately after the input trim (so INPUT drives a real
+recorder-input stage), the output stage sits immediately before the output trim.
+Each stage is gentle (about 1.2:1) and pays back roughly half of its reduction as
+makeup, so the machine keeps its level instead of collapsing. The COMP meter shows
+the combined reduction (0 to -12 dB) plus the IN/OUT split.
 
 ## Project type
 

@@ -63,18 +63,19 @@ private:
         float animatedRmsDb = -60.0f;
     };
 
-    /** Vertical gain-reduction bar showing how hard the tape glue compressor works. */
+    /** Vertical gain-reduction bar showing how hard the two tape glue stages work. */
     class CompressorMeter final : public juce::Component
     {
     public:
         CompressorMeter() { setInterceptsMouseClicks (false, false); }
         void setDarkTheme (bool shouldUseDarkTheme) noexcept { darkTheme = shouldUseDarkTheme; }
-        void setReduction (float reductionDb, float activity);
+        void setReduction (float reductionDb, float inputReductionDb, float activity);
         void paint (juce::Graphics&) override;
 
     private:
         bool darkTheme = false;
-        float displayedDb = 0.0f;   // Smoothed, always <= 0.
+        float displayedDb = 0.0f;        // Smoothed total reduction, always <= 0.
+        float displayedInputDb = 0.0f;   // Smoothed input-stage reduction, always <= 0.
         float activity = 0.0f;
     };
 

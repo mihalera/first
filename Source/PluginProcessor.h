@@ -66,10 +66,18 @@ public:
     float getOutputPeakLevel() noexcept { return outputPeakLevel.exchange (0.0f, std::memory_order_relaxed); }
     float getOutputRmsLevel() const noexcept { return outputRmsLevel.load (std::memory_order_relaxed); }
 
-    /** Compressor gain reduction in dB (always <= 0), for the reduction meter. */
-    float getGainReductionDb() const noexcept { return gainReductionDb.load (std::memory_order_relaxed); }
+    /** Gain reduction of the input stage compressor in dB (always <= 0). */
+    float getInputGainReductionDb() const noexcept { return inputGainReductionDb.load (std::memory_order_relaxed); }
 
-    /** Envelope of the tape glue compressor as a 0..1 linear activity value. */
+    /** Total gain reduction of both glue stages in dB (always <= 0). */
+    float getGainReductionDb() const noexcept
+    {
+        return juce::jlimit (-24.0f, 0.0f,
+                             inputGainReductionDb.load (std::memory_order_relaxed)
+                             + gainReductionDb.load (std::memory_order_relaxed));
+    }
+
+    /** Envelope of the tape glue compressors as a 0..1 linear activity value. */
     float getCompressorActivity() const noexcept { return compressorActivity.load (std::memory_order_relaxed); }
 
     /** Instantaneous transport drift (wow/flutter), normalised to 0..1 around 0.5. */
@@ -95,6 +103,8 @@ private:
     std::atomic<float>* outputDbParam = nullptr;
     std::atomic<float>* widthParam = nullptr;
     std::atomic<float>* bypassParam = nullptr;
+    std::atomic<float>* tapeTypeParam = nullptr;
+    std::atomic<float>* speedParam = nullptr;
 
     float sampleRate = 44100.0f;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> inputGainSmoothed;
@@ -107,6 +117,7 @@ private:
     std::atomic<float> inputRmsLevel { 0.0f };
     std::atomic<float> outputPeakLevel { 0.0f };
     std::atomic<float> outputRmsLevel { 0.0f };
+    std::atomic<float> inputGainReductionDb { 0.0f };
     std::atomic<float> gainReductionDb { 0.0f };
     std::atomic<float> compressorActivity { 0.0f };
     std::atomic<float> transportDrift { 0.5f };
@@ -128,7 +139,11 @@ private:
     float previousTone = -1.0f;
     float toneLpAc = 0.0f;
     float toneLpBc = 0.0f;
-    float compressorEnvelope = 0.0f;
+
+    // Two coupled glue stages: the input compressor runs straight after the input
+    // trim, the output compressor straight before the output trim.
+    float inputCompressorEnvelope = 0.0f;
+    float outputCompressorEnvelope = 0.0f;
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessor)
