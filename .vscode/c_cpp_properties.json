@@ -1,20 +1,22 @@
 {
-    "configurations": [
-        {
-            "name": "windows-gcc-x64",
-            "includePath": [
-                "${workspaceFolder}/**"
-            ],
-            "defines": [
-                "_DEBUG",
-                "UNICODE",
-                "_UNICODE"
-            ],
-            "cStandard": "${default}",
-            "cppStandard": "c++20",
-            "compilerPath": "gcc",
-            "intelliSenseMode": "windows-gcc-x64"
-        }
-    ],
-    "version": 4
+  "configurations": [
+    {
+      "name": "Windows",
+      "includePath": [
+        "${workspaceFolder}/**",
+        "${workspaceFolder}/Source",
+        "D:/Desktop/Programs/JUCE/modules"
+      ],
+      "defines": [
+        "_DEBUG",
+        "UNICODE",
+        "_UNICODE"
+      ],
+      "cStandard": "c17",
+      "cppStandard": "c++20",
+      "compilerPath": "cl.exe",
+      "intelliSenseMode": "windows-msvc-x64"
+    }
+  ],
+  "version": 4
 }
