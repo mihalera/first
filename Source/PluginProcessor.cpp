@@ -261,7 +261,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             const float biasMapped = std::pow (bias, 1.35f);
             const float toneMapped = std::pow (tone, 0.9f);
             const float mixMapped = std::pow (mix, 1.3f);
-            const float outputMapped = std::pow (output, 1.25f);
+            const float outputMapped = outputCurve;
 
             const float wowMod = 1.0f + wowMapped * 0.16f * wowLfo;
             const float flutterMod = 1.0f + flutterMapped * 0.2f * flutterLfo;

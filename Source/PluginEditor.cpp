@@ -203,9 +203,14 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
 {
     auto bg = getLocalBounds().toFloat();
 
-    juce::ColourGradient lightGrad (juce::Colour (0xfff5f2ea), bg.getTopLeft(),
-                                   juce::Colour (0xffdfe3e8), bg.getBottomRight(),
-                                   false);
+    juce::ColourGradient lightGrad (
+        juce::Colour (0xfff5f2ea),
+        bg.getX(),
+        bg.getY(),
+        juce::Colour (0xffdfe3e8),
+        bg.getRight(),
+        bg.getBottom(),
+        false);
     g.setGradientFill (lightGrad);
     g.fillRoundedRectangle (bg.reduced (6.0f), 26.0f);
 
@@ -214,14 +219,20 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     juce::Path grain;
     for (int i = 0; i < 40; ++i)
     {
-        const auto y = panel.getY() + 10 + i * 11;
-        const auto x = panel.getX() + 16 + (i % 5) * 55;
+        const auto x = static_cast<float> (panel.getX() + 16 + (i % 5) * 55);
+        const auto y = static_cast<float> (panel.getY() + 10 + i * 11);
         grain.startNewSubPath (x, y);
-        grain.lineTo (x + 18, y + 4);
+        grain.lineTo (x + 18.0f, y + 4.0f);
     }
 
-    g.setGradientFill (juce::ColourGradient (juce::Colour (0xfff8f5ef), panel.getTopLeft(),
-                                            juce::Colour (0xffdfe5ea), panel.getBottomRight(), false));
+    g.setGradientFill (juce::ColourGradient (
+        juce::Colour (0xfff8f5ef),
+        static_cast<float> (panel.getX()),
+        static_cast<float> (panel.getY()),
+        juce::Colour (0xffdfe5ea),
+        static_cast<float> (panel.getRight()),
+        static_cast<float> (panel.getBottom()),
+        false));
     g.fillRoundedRectangle (panel.toFloat(), 24.0f);
 
     g.setColour (juce::Colour (0xffc1a169).withAlpha (0.18f));
