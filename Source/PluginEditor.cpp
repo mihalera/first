@@ -10,8 +10,15 @@
 #include "PluginEditor.h"
 
 #include <juce_box2d/juce_box2d.h>
+#include <juce_opengl/juce_opengl.h>
 
-namespace
+#ifdef _WIN32
+#include <windows.h>
+#include <GL/gl.h>
+#pragma comment(lib, "opengl32.lib")
+#endif
+
+namespace detail
 {
     class J37OpenGLPanel final : public juce::OpenGLAppComponent,
                                private juce::Timer
@@ -130,7 +137,7 @@ namespace
 
         void resized() override
         {
-            setBounds (0, 0, getWidth(), getHeight());
+            // OpenGLAppComponent handles the viewport size itself.
         }
 
         void timerCallback() override
@@ -152,7 +159,10 @@ namespace
 
         JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (J37OpenGLPanel)
     };
+}
 
+namespace
+{
     struct J37LookAndFeel : juce::LookAndFeel_V4
     {
         void drawRotarySlider (juce::Graphics& g,
@@ -331,7 +341,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     tapeTypeAttachment = std::make_unique<ComboBoxAttachment> (audioProcessor.parameters, "tape_type", tapeTypeBox);
     speedAttachment = std::make_unique<ComboBoxAttachment> (audioProcessor.parameters, "speed", speedBox);
 
-    openGLPanel = std::make_unique<J37OpenGLPanel>();
+    openGLPanel = std::make_unique<detail::J37OpenGLPanel>();
     addAndMakeVisible (*openGLPanel);
     openGLPanel->setBounds (0, 0, getWidth(), getHeight());
 
