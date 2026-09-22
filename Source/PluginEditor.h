@@ -18,10 +18,14 @@
 class J37LookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
+    void setDarkTheme (bool shouldUseDarkTheme) noexcept { darkTheme = shouldUseDarkTheme; }
     void drawRotarySlider (juce::Graphics&,
                            int, int, int, int,
                            float, float, float,
                            juce::Slider&) override;
+
+private:
+    bool darkTheme = false;
 };
 
 class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor,
@@ -40,10 +44,12 @@ private:
     public:
         explicit LevelMeter (juce::String title);
         void setLevels (float peakLinear, float rmsLinear);
+        void setDarkTheme (bool shouldUseDarkTheme) noexcept { darkTheme = shouldUseDarkTheme; }
         void paint (juce::Graphics&) override;
 
     private:
         juce::String title;
+        bool darkTheme = false;
         float rmsDb = -60.0f;
         float peakHoldDb = -60.0f;
         float peakHoldTime = 0.0f;
@@ -71,11 +77,13 @@ private:
         juce::Rectangle<int> meters;
     };
 
-    static constexpr std::size_t controlCount = 8;
+    static constexpr std::size_t controlCount = 9;
+    static constexpr int controlColumns = 3;
     static constexpr std::size_t decorativeOrbCount = 4;
 
     void timerCallback() override;
     void createDecorativePhysics();
+    void applyTheme();
     EditorLayout getEditorLayout() const;
 
     FirstAudioProcessor& audioProcessor;
@@ -88,8 +96,11 @@ private:
 
     juce::ComboBox tapeTypeBox;
     juce::ComboBox speedBox;
+    juce::TextButton autoButton { "AUTO GLUE" };
+    juce::TextButton themeButton { "DARK THEME" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tapeTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> speedAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoAttachment;
 
     juce::Label brandLabel;
     juce::Label titleLabel;
@@ -106,6 +117,7 @@ private:
 
     LevelMeter inputMeter { "INPUT" };
     LevelMeter outputMeter { "OUTPUT" };
+    bool darkTheme = false;
 
     std::unique_ptr<b2World> physicsWorld;
     std::array<PhysicsOrb, decorativeOrbCount> physicsOrbs {};
