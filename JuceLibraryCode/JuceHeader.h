@@ -23,7 +23,6 @@
 #include <juce_audio_processors_headless/juce_audio_processors_headless.h>
 #include <juce_audio_utils/juce_audio_utils.h>
 #include <juce_box2d/juce_box2d.h>
-#include <juce_build_tools/juce_build_tools.h>
 #include <juce_core/juce_core.h>
 #include <juce_cryptography/juce_cryptography.h>
 #include <juce_data_structures/juce_data_structures.h>
