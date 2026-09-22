@@ -135,11 +135,11 @@ void FirstAudioProcessor::changeProgramName (int index, const juce::String& newN
 }
 
 //==============================================================================
-void FirstAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
+void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerBlock)
 {
     juce::ignoreUnused (samplesPerBlock);
-    this->sampleRate = static_cast<float> (sampleRate);
-    inputGainSmoothed.reset (sampleRate, 0.02);
+    this->sampleRate = static_cast<float> (sampleRateToUse);
+    inputGainSmoothed.reset (sampleRateToUse, 0.02);
     inputGainSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (
         parameters.getRawParameterValue ("input")->load()));
     inputPeakLevel.store (0.0f, std::memory_order_relaxed);
