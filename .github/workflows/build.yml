@@ -55,6 +55,11 @@ jobs:
         }
 
         foreach ($legacy in $legacyPaths) {
+          if ($legacy -notmatch '^[A-Za-z]:') {
+            Write-Host "Legacy path is relative; skipping filesystem junction logic: $legacy"
+            continue
+          }
+
           $drive = Split-Path $legacy -Qualifier
           if ($drive -and -not (Test-Path $drive)) {
             Write-Host "Skipping junction creation for $legacy because drive $drive is not present on this runner."
@@ -70,9 +75,7 @@ jobs:
             Remove-Item $legacy -Recurse -Force -ErrorAction SilentlyContinue
           }
 
-          if ($legacy -match '^[A-Za-z]:') {
-            New-Item -ItemType Junction -Path $legacy -Target $juceRoot -Force | Out-Null
-          }
+          New-Item -ItemType Junction -Path $legacy -Target $juceRoot -Force | Out-Null
         }
 
         Get-ChildItem -Path $repoRoot -Recurse -Include *.vcxproj,*.props,*.targets,*.filters | ForEach-Object {
