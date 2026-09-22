@@ -20,7 +20,7 @@ jobs:
     - name: Download JUCE Framework
       shell: powershell
       run: |
-        git clone --depth 1 --branch master https://github.com/juce-framework/JUCE.git JUCE
+        git clone --depth 1 --branch develop https://github.com/juce-framework/JUCE.git JUCE
 
     - name: Setup MSBuild
       uses: microsoft/setup-msbuild@v2
