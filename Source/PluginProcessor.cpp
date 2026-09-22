@@ -334,9 +334,20 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     const float outputRms = measuredSamples > 0.0
         ? static_cast<float> (std::sqrt (outputSquares / measuredSamples)) : 0.0f;
 
-    inputPeakLevel.store (inputPeak, std::memory_order_relaxed);
+    const auto retainPeakUntilConsumed = [] (std::atomic<float>& publishedPeak, float blockPeak)
+    {
+        auto accumulatedPeak = publishedPeak.load (std::memory_order_relaxed);
+        while (accumulatedPeak < blockPeak
+               && ! publishedPeak.compare_exchange_weak (accumulatedPeak, blockPeak,
+                                                          std::memory_order_relaxed,
+                                                          std::memory_order_relaxed))
+        {
+        }
+    };
+
+    retainPeakUntilConsumed (inputPeakLevel, inputPeak);
     inputRmsLevel.store (inputRms, std::memory_order_relaxed);
-    outputPeakLevel.store (outputPeak, std::memory_order_relaxed);
+    retainPeakUntilConsumed (outputPeakLevel, outputPeak);
     outputRmsLevel.store (outputRms, std::memory_order_relaxed);
 }
 
