@@ -47,8 +47,8 @@
   <EXPORTFORMATS>
     <VS2026 targetFolder="Builds/VisualStudio2026">
       <CONFIGURATIONS>
-        <CONFIGURATION isDebug="1" name="Debug" targetName="first"/>
-        <CONFIGURATION isDebug="0" name="Release" targetName="first"/>
+        <CONFIGURATION isDebug="1" name="Debug" targetName="first" postbuildCommand="call &quot;$(SolutionDir)flatten-vst3.cmd&quot; &quot;$(OutDir)&quot;"/>
+        <CONFIGURATION isDebug="0" name="Release" targetName="first" postbuildCommand="call &quot;$(SolutionDir)flatten-vst3.cmd&quot; &quot;$(OutDir)&quot;"/>
       </CONFIGURATIONS>
       <MODULEPATHS>
         <MODULEPATH id="juce_analytics" path="../../../Programs/JUCE/modules"/>
