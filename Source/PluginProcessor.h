@@ -12,6 +12,47 @@
 
 #include <array>
 #include <atomic>
+#include <cmath>
+
+//==============================================================================
+/**
+    One glue compressor stage. The two stages in this plugin are completely
+    independent: each keeps its own detector envelope and its own gain computer,
+    and neither reads the other's state. They are driven purely by the signal
+    that reaches them and by the Input / Output parameters.
+
+    The detector is a peak-following envelope with programme dependent time
+    constants (slower attack and release the further the stage is pushed).
+*/
+struct GlueCompressor
+{
+    float envelope = 0.0f;
+
+    void reset() noexcept { envelope = 0.0f; }
+
+    /** Envelope level of the most recent block, as 0..1 linear activity. */
+    float getEnvelopeActivity() const noexcept
+    {
+        return juce::jlimit (0.0f, 1.0f, std::sqrt (juce::jmax (0.0f, envelope)));
+    }
+
+    /** Pushes signal power through the detector; call once per sample. */
+    float processDetection (float detectorPower, float sampleRate,
+                            float attackBaseSeconds, float releaseBaseSeconds,
+                            float loadFactor) noexcept
+    {
+        const float envelopeLevel = getEnvelopeActivity();
+        const float attackSeconds = attackBaseSeconds * (1.0f + loadFactor * 1.8f)
+                                  + envelopeLevel * attackBaseSeconds * 1.8f;
+        const float releaseSeconds = releaseBaseSeconds * (1.0f + loadFactor * 2.2f)
+                                   + envelopeLevel * releaseBaseSeconds * 2.6f;
+        const float timeConstant = detectorPower > envelope ? attackSeconds : releaseSeconds;
+        const float coefficient = std::exp (-1.0f / (juce::jmax (1.0f, sampleRate) * timeConstant));
+        envelope = coefficient * envelope + (1.0f - coefficient) * detectorPower;
+
+        return juce::Decibels::gainToDecibels (std::sqrt (juce::jmax (0.0f, envelope)), -100.0f);
+    }
+};
 
 //==============================================================================
 /**

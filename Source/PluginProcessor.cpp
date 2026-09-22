@@ -10,6 +10,7 @@
 #include "PluginEditor.h"
 
 #include <array>
+#include <cstdint>
 
 namespace
 {
@@ -48,47 +49,8 @@ namespace
     }
 
     /**
-        One glue compressor stage. The two stages in this plugin are completely
-        independent: each keeps its own detector envelope and its own gain computer,
-        and neither reads the other's state. They are driven purely by the signal
-        that reaches them and by the Input / Output parameters, so the character of
-        the chain follows the way the machine is being driven.
-
-        The detector is a peak-following envelope with programme dependent time
-        constants (slower attack and release the further the stage is pushed), and
-        the gain computer is a soft knee above `thresholdDb`.
+        Soft-knee gain computer. `envelopeDb` is the detector level in dBFS.
     */
-    struct GlueCompressor
-    {
-        float envelope = 0.0f;
-
-        void reset() noexcept { envelope = 0.0f; }
-
-        /** Envelope level of the most recent block, as 0..1 linear activity. */
-        float getEnvelopeActivity() const noexcept
-        {
-            return juce::jlimit (0.0f, 1.0f, std::sqrt (juce::jmax (0.0f, envelope)));
-        }
-
-        /** Pushes signal power through the detector; call once per sample. */
-        float processDetection (float detectorPower, float sampleRate,
-                                float attackBaseSeconds, float releaseBaseSeconds,
-                                float loadFactor) noexcept
-        {
-            const float envelopeLevel = getEnvelopeActivity();
-            const float attackSeconds = attackBaseSeconds * (1.0f + loadFactor * 1.8f)
-                                      + envelopeLevel * attackBaseSeconds * 1.8f;
-            const float releaseSeconds = releaseBaseSeconds * (1.0f + loadFactor * 2.2f)
-                                       + envelopeLevel * releaseBaseSeconds * 2.6f;
-            const float timeConstant = detectorPower > envelope ? attackSeconds : releaseSeconds;
-            const float coefficient = std::exp (-1.0f / (juce::jmax (1.0f, sampleRate) * timeConstant));
-            envelope = coefficient * envelope + (1.0f - coefficient) * detectorPower;
-
-            return juce::Decibels::gainToDecibels (std::sqrt (juce::jmax (0.0f, envelope)), -100.0f);
-        }
-    };
-
-    /** Soft-knee gain computer. `envelopeDb` is the detector level in dBFS. */
     inline float softKneeReductionDb (float envelopeDb, float thresholdDb, float kneeDb, float ratio) noexcept
     {
         const float halfKnee = kneeDb * 0.5f;
@@ -457,13 +419,16 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     const float driveGainCompensation = 0.52f + (1.0f - driveCurve) * 0.22f;
     const float finalOutputGain = 0.72f * driveGainCompensation * (0.94f + speedScale * 0.08f);
 
-    // Continuous pseudo-random tape noise: two interleaved LCG streams, one per
-    // channel, so the hiss is uncorrelated left/right and free of clock patterns.
+    // Continuous pseudo-random tape noise: a 32-bit LCG, sampled independently
+    // per channel, so the hiss is uncorrelated left/right and free of clock
+    // patterns. Thread local because the audio thread owns the state, and advanced
+    // by reference - a thread_local variable has no automatic storage duration, so
+    // C++ does not allow it to be captured by a lambda.
     static thread_local std::uint32_t noiseState = 0x1b873593u;
-    const auto nextNoise = [&noiseState]() -> float
+    const auto nextNoise = [] (std::uint32_t& state) -> float
     {
-        noiseState = noiseState * 1664525u + 1013904223u;
-        return static_cast<float> ((noiseState >> 8) & 0x00ffffffu) * (1.0f / 8388608.0f) - 1.0f;
+        state = state * 1664525u + 1013904223u;
+        return static_cast<float> ((state >> 8) & 0x00ffffffu) * (1.0f / 8388608.0f) - 1.0f;
     };
 
     const int activeChannels = juce::jmin (2, totalNumInputChannels);
@@ -537,7 +502,11 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             inputPeak = juce::jmax (inputPeak, std::abs (rawInput));
             inputSquares += static_cast<double> (rawInput) * rawInput;
 
-            const float x = rawInput * inputGain;
+            // Input trim, then the input stage glue compressor. The detector runs on
+            // the trimmed signal, which is the level the INPUT control is asking for,
+            // and the resulting gain is folded into that same signal - so the tape
+            // hears one consistent, controlled level rather than a re-trim.
+            const float inputTrimmed = rawInput * inputGain;
 
             // ------------------------------------------------------------------
             //  Input stage glue compressor. It sits straight after the input trim,
@@ -547,7 +516,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             //  detector only ever sees the trimmed input signal.
             // ------------------------------------------------------------------
             const float inputEnvelopeDb = inputCompressor.processDetection (
-                x * x, sampleRate, 0.16f, 0.85f, inputDriveLoad);
+                inputTrimmed * inputTrimmed, sampleRate, 0.16f, 0.85f, inputDriveLoad);
             const float inputReductionDb = juce::jmax (inputReductionLimitDb,
                                                        softKneeReductionDb (inputEnvelopeDb,
                                                                             inputThresholdDb,
@@ -559,7 +528,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             inputEnvelopeActivity = juce::jmax (inputEnvelopeActivity,
                                                 inputCompressor.getEnvelopeActivity());
 
-            const float x = rawInput * inputGain * inputCompressionGain;
+            const float x = inputTrimmed * inputCompressionGain;
 
             const float wowLfo = std::sin (wowPhase);
             const float flutterLfo = std::sin (flutterPhase);
@@ -608,7 +577,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             const float compensation = tapeCurve / 1.30f;
             const float compressedBias = headLoss * (1.0f - 0.18f * headLoss * headLoss)
                                        / juce::jmax (0.35f, compensation);
-            const float noiseFloor = nextNoise() * hissGain;
+            const float noiseFloor = nextNoise (noiseState) * hissGain;
             const float motioned = (compressedBias + noiseFloor) * wowMod * flutterMod * grainMod;
 
             // Playback EQ: subtract the low band for air, add it back for body.
