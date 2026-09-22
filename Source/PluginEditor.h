@@ -36,6 +36,7 @@ private:
     juce::Slider outputSlider;
     juce::ComboBox tapeTypeBox;
     juce::ComboBox speedBox;
+    juce::LookAndFeel_V4 customLookAndFeel;
 
     using SliderAttachment =
         juce::AudioProcessorValueTreeState::SliderAttachment;

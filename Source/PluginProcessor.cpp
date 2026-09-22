@@ -187,8 +187,8 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
 
     const auto twoPi = juce::MathConstants<float>::twoPi;
     const auto speedScale = (speed == 0) ? 0.72f : (speed == 1) ? 1.0f : 1.38f;
-    const auto wowFreq = (0.22f + wow * 3.6f) * speedScale;
-    const auto flutterFreq = (2.8f + flutter * 17.0f) * (1.0f + speedScale * 0.2f);
+    const auto wowFreq = (0.26f + wow * 4.5f) * speedScale;
+    const auto flutterFreq = (3.4f + flutter * 20.0f) * (1.0f + speedScale * 0.32f);
 
     float tapeCurve = 1.0f;
     float tapeHeadroom = 1.0f;
@@ -236,23 +236,24 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             wowPhase += (twoPi * wowFreq) / sampleRate;
             flutterPhase += (twoPi * flutterFreq) / sampleRate;
 
-            const float wowMod = 1.0f + wow * 0.11f * wowLfo;
-            const float flutterMod = 1.0f + flutter * 0.08f * flutterLfo;
+            const float wowMod = 1.0f + wow * 0.24f * wowLfo;
+            const float flutterMod = 1.0f + flutter * 0.22f * flutterLfo;
 
-            const float signalPre = x * (1.0f + drive * 4.0f);
-            const float tapeBias = bias * (0.8f + tapeBiasBoost) + (tone * 0.25f);
-            const float warmed = std::tanh (signalPre * (1.0f + (drive * 1.2f * tapeCurve))) * (1.0f + tapeHeadroom * 0.2f);
-            const float harmonic = warmed + (x * (0.2f + tone * 0.75f));
-            const float biasDrive = std::tanh ((harmonic + lastBias * 0.4f) * (1.0f + tapeBias));
+            const float driveBoost = 1.0f + drive * 10.5f;
+            const float signalPre = x * driveBoost;
+            const float tapeBias = bias * (0.85f + tapeBiasBoost) + (tone * 0.35f);
+            const float warmed = std::tanh (signalPre * (1.0f + drive * 2.6f * tapeCurve)) * (1.0f + tapeHeadroom * 0.45f);
+            const float harmonic = warmed + (x * (0.38f + tone * 1.0f));
+            const float biasDrive = std::tanh ((harmonic + lastBias * 0.52f) * (1.0f + tapeBias));
 
-            const float soft = (biasDrive * (1.0f - 0.18f * tone)) + (lastTapeSample * (0.18f * tone));
+            const float soft = (biasDrive * (1.0f - 0.18f * tone)) + (lastTapeSample * (0.24f + tone * 0.2f));
             lastTapeSample = soft;
             lastBias = biasDrive;
 
             const float wet = soft * wowMod * flutterMod;
             const float dry = x;
-            const float outputSignal = dry * (1.0f - mix) + wet * mix;
-            const float finalOut = outputSignal * (0.7f + output * 1.2f);
+            const float outputSignal = dry * (1.0f - mix * 0.7f) + wet * (0.48f + mix * 1.8f);
+            const float finalOut = outputSignal * (0.58f + output * 1.9f);
 
             channelData[i] = juce::jlimit (-1.0f, 1.0f, finalOut);
         }
