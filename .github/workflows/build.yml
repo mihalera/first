@@ -48,14 +48,14 @@ jobs:
       - name: Compile VST3
         shell: powershell
         run: |
-          $project = "Builds\VisualStudio2026\first_VST3.vcxproj"
+          $solution = "Builds\VisualStudio2026\first.sln"
 
-          if (!(Test-Path $project)) {
-              Write-Error "VST3 project not found: $project"
+          if (!(Test-Path $solution)) {
+              Write-Error "Solution not found: $solution"
               exit 1
           }
 
-          msbuild $project `
+          msbuild $solution `
             /m `
             /p:Configuration=Release `
             /p:Platform=x64 `
