@@ -17,7 +17,7 @@ It explores a tape-saturation workflow with:
 ## Project type
 
 - Audio plugin: VST3
-- Framework: JUCE
+- Framework: JUCE 9.0.2
 - Target platform: Windows
 - Build system: Visual Studio/MSBuild
 

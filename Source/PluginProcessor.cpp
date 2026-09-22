@@ -106,20 +106,24 @@ int FirstAudioProcessor::getCurrentProgram()
 
 void FirstAudioProcessor::setCurrentProgram (int index)
 {
+    juce::ignoreUnused (index);
 }
 
 const juce::String FirstAudioProcessor::getProgramName (int index)
 {
+    juce::ignoreUnused (index);
     return {};
 }
 
 void FirstAudioProcessor::changeProgramName (int index, const juce::String& newName)
 {
+    juce::ignoreUnused (index, newName);
 }
 
 //==============================================================================
 void FirstAudioProcessor::prepareToPlay (double sampleRate, int samplesPerBlock)
 {
+    juce::ignoreUnused (samplesPerBlock);
     this->sampleRate = static_cast<float> (sampleRate);
     wowPhaseL = 0.0f;
     wowPhaseR = 0.0f;
@@ -158,6 +162,8 @@ bool FirstAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) co
 
 void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
+    juce::ignoreUnused (midiMessages);
+
     juce::ScopedNoDenormals noDenormals;
     const auto totalNumInputChannels  = getTotalNumInputChannels();
     const auto totalNumOutputChannels = getTotalNumOutputChannels();
@@ -165,15 +171,19 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     for (auto i = totalNumInputChannels; i < totalNumOutputChannels; ++i)
         buffer.clear (i, 0, buffer.getNumSamples());
 
-    const auto tapeType = static_cast<int> (*parameters.getRawParameterValue ("tape_type"));
-    const auto speed = static_cast<int> (*parameters.getRawParameterValue ("speed"));
-    const auto drive = *parameters.getRawParameterValue ("drive");
-    const auto bias = *parameters.getRawParameterValue ("bias");
-    const auto tone = *parameters.getRawParameterValue ("tone");
-    const auto wow = *parameters.getRawParameterValue ("wow");
-    const auto flutter = *parameters.getRawParameterValue ("flutter");
-    const auto mix = *parameters.getRawParameterValue ("mix");
-    const auto output = *parameters.getRawParameterValue ("output");
+    const auto tapeType = static_cast<int> (
+        parameters.getRawParameterValue ("tape_type")->load());
+
+    const auto speed = static_cast<int> (
+        parameters.getRawParameterValue ("speed")->load());
+
+    const auto drive = parameters.getRawParameterValue ("drive")->load();
+    const auto bias = parameters.getRawParameterValue ("bias")->load();
+    const auto tone = parameters.getRawParameterValue ("tone")->load();
+    const auto wow = parameters.getRawParameterValue ("wow")->load();
+    const auto flutter = parameters.getRawParameterValue ("flutter")->load();
+    const auto mix = parameters.getRawParameterValue ("mix")->load();
+    const auto output = parameters.getRawParameterValue ("output")->load();
 
     const auto twoPi = juce::MathConstants<float>::twoPi;
     const auto speedScale = (speed == 0) ? 0.72f : (speed == 1) ? 1.0f : 1.38f;

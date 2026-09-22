@@ -17,7 +17,7 @@ jobs:
       with:
         submodules: recursive
 
-    - name: Setup JUCE at expected absolute path
+    - name: Setup JUCE 9.0.2 at expected absolute path
       shell: powershell
       run: |
         New-Item -ItemType Directory -Force -Path "D:\Desktop\Programs"

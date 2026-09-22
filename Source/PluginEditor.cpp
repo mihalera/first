@@ -94,7 +94,7 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
 
     auto frame = getLocalBounds().reduced (10);
     g.setColour (juce::Colour (0xffd6b26d).withAlpha (0.25f));
-    g.drawRoundedRect (frame.toFloat(), 18.0f, 1.0f);
+    g.drawRoundedRectangle (frame.toFloat(), 18.0f, 1.0f);
 
     g.setColour (juce::Colours::white);
     g.setFont (juce::Font (18.0f, juce::Font::bold));
