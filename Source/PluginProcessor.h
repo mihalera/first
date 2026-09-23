@@ -618,11 +618,12 @@ private:
     std::atomic<bool> bypassActive { false };
 
     // Per-channel tape state: 3-element hysteresis memory (current, previous, older)
-    // plus a 2-element high-frequency post-emphasis memory.
+    // plus a 3-element high-frequency memory holding the tape-medium pole, the
+    // per-model head-damping pole and the TONE-macro head-gap pole, in chain order.
     std::array<float, 3> hystL {};
     std::array<float, 3> hystR {};
-    std::array<float, 2> highFreqL {};
-    std::array<float, 2> highFreqR {};
+    std::array<float, 3> highFreqL {};
+    std::array<float, 3> highFreqR {};
 
     // One-pole state for the hiss band-limit, per channel. Kept separate from the tape
     // filters so the noise colour cannot drift when the tone control moves.
@@ -638,18 +639,47 @@ private:
     float toneLpAc = 0.0f;
     float toneLpBc = 0.0f;
 
+    // TONE macro machine state, cached by updateToneCoefficients(). These were used by
+    // the .cpp without being declared here, which is what broke the build (C2065).
+    //   previousCharacter - last seen TONE value, so the cache is rebuilt only on change
+    //   headGapHz         - playback head-gap corner the macro fades between 24 kHz and 4.3 kHz
+    //   preDriveGain      - slow-machine pre-bias lift folded into the record head drive
+    //   flutterScale      - fast-machine shimmer multiplier on the flutter depth
+    float previousCharacter = -1.0f;
+    float headGapHz = 24000.0f;
+    float preDriveGain = 1.0f;
+    float flutterScale = 1.0f;
+
     // Per-instance tape noise generator. Kept as an object member rather than a
     // thread_local static so that instances never share one stream and the output
     // is reproducible for a given instance.
     std::uint32_t noiseState = 0x1b873593u;
 
-    // Noise-path levelling. The hiss gain tracks the programme power with a fast attack
-    // and a slow release so the noise floor is CONSTANT while signal plays and fades
-    // only in true pauses: if the hiss rode the compressor instead, pauses got LOUDER
-    // than programme (release pulls the level back up onto the hiss), which is exactly
-    // backwards for a tape machine. Both floats are audio-thread only.
-    float noiseBlockPower = 0.0f;
-    float noiseEnvelope = 0.0f;
+    // Noise-floor levelling, run ONCE PER BLOCK (see processBlock). The hiss sits in
+    // the wet path before the output glue compressor and the safety limiter, so the
+    // signal-dependent gain those stages apply also modulates the floor. The block's
+    // mean duck is measured (noiseDuckState, smoothed over ~250 ms) and the floor is
+    // lifted by its inverse (noiseHissLevelCompensation), so the hiss level is the
+    // SAME with and without signal: in a pause the stages are open (duck 1, lift 1)
+    // and under signal the duck is cancelled by the lift. Earlier follower-based
+    // schemes lifted the floor in the pause itself, which is what made silence
+    // noisier than programme. Audio-thread only, hence plain floats.
+    float noiseDuckState = 1.0f;
+    float noiseHissLevelCompensation = 1.0f;
+
+    // Per-channel DC-blocker state for the wet path. The asymmetric shaper and its
+    // bias offset leave a small DC component on the tape signal; on a real machine
+    // the playback electronics are AC-coupled, so the model is too. Without this,
+    // MIX at 100 % hands the limiter and soft clipper an off-centre waveform, which
+    // clips asymmetrically and reads as harsh garbage instead of a warm signal.
+    std::array<float, 2> dcBlockXState {};
+    std::array<float, 2> dcBlockYState {};
+
+    // Compressor-coupled saturation. The smoothed (0..1) amount the two glue stages
+    // are currently squeezing drives extra drive into the magnetic shaper, so the
+    // harder the compressors work, the harder the tape saturates - the way pushing
+    // a hot, compressed signal into a real record head does. Audio-thread only.
+    float squeezeSaturationDrive = 0.0f;
 
     // Two independent glue stages, each with its own detector envelope. The input
     // stage runs straight after the input trim, the output stage straight before

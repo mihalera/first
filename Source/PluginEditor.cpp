@@ -248,18 +248,26 @@ void FirstAudioProcessorEditor::LevelMeter::setLoudness (float peakDbIn, float r
     // Each view gets a ballistic matched to what it represents: the combined reading and
     // the RMS rise quickly and fall slowly, the VU is left slow because that is its whole
     // point, and the K-weighted LUFS is already time-averaged in the DSP.
+    //
+    // Re-tuned after the "meters look crooked" report: the raw DSP values arrive at
+    // 30 Hz with block-to-block jitter of several dB, which made the numbers twitch in
+    // a lopsided way. Each rise/fall pair is now an order of magnitude apart (a clean
+    // exponential envelope shape) and the RMS/LUFS rows share the same rise so the
+    // two "honest average" rows move as one steady pair.
     const auto smoothTowards = [] (float current, float target, float rise, float fall)
     {
         const auto coefficient = target > current ? rise : fall;
         return current + (target - current) * coefficient;
     };
 
-    displayedRms = smoothTowards (displayedRms, rmsDb, 0.55f, 0.15f);
-    displayedLufs = smoothTowards (displayedLufs, lufs, 0.30f, 0.10f);
-    displayedVu = smoothTowards (displayedVu, vuDb, 0.18f, 0.18f);
-    displayedCombined = smoothTowards (displayedCombined, combinedDb, 0.45f, 0.14f);
+    displayedRms = smoothTowards (displayedRms, rmsDb, 0.50f, 0.05f);
+    displayedLufs = smoothTowards (displayedLufs, lufs, 0.50f, 0.04f);
+    displayedVu = smoothTowards (displayedVu, vuDb, 0.15f, 0.08f);
+    displayedCombined = smoothTowards (displayedCombined, combinedDb, 0.35f, 0.07f);
 
-    // Peak hold, so a fast transient stays readable instead of flashing past.
+    // Peak hold, so a fast transient stays readable instead of flashing past. The
+    // release is a fixed dB-per-second slope rather than an exponential decay, so the
+    // hold marker falls in a straight, predictable line.
     if (peakDb >= peakHoldDb)
     {
         peakHoldDb = peakDb;
@@ -271,7 +279,7 @@ void FirstAudioProcessorEditor::LevelMeter::setLoudness (float peakDbIn, float r
     }
     else
     {
-        peakHoldDb = juce::jmax (peakDb, peakHoldDb - 18.0f * frameSeconds);
+        peakHoldDb = juce::jmax (peakDb, peakHoldDb - 12.0f * frameSeconds);
     }
 
     repaint();
@@ -311,23 +319,21 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // display scale factor. `bounds` is the same rectangle the frame above was drawn
     // from, so it is reused rather than recomputed.
     //
-    // The vertical budget is drawn FROM THE MEASURED heights (rather than assuming
-    // fixed slices fit): a previous version reserved fixed 44 + 46 px, but the five
-    // readout rows scale with textScale (5 x 15 px at scale 1.0, more when larger),
-    // so the last row slipped off the bottom edge and the dial collided with the
-    // text - which is what made the input/output meters look crooked.
-    const auto titleHeight = juce::roundToInt (20.0f * textScale);
-    const auto subtitleHeight = juce::roundToInt (12.0f * textScale);
-    const auto readoutRowHeight = juce::roundToInt (15.0f * textScale);
-    const auto readoutBottomPad = 4.0f;
-    const auto topBlock = titleHeight + subtitleHeight;
-    const auto readoutBlock = readoutRowHeight * 5 + juce::roundToInt (readoutBottomPad);
-    const auto faceHeight = juce::jmax (40.0f, static_cast<float> (getHeight())
-                                               - static_cast<float> (topBlock)
-                                               - static_cast<float> (readoutBlock));
+    // The vertical budget is now PROPORTIONAL rather than a stack of measured fixed
+    // slices: the dial face gets a fixed share of what is left after the title block,
+    // and the five readout rows share the remainder EVENLY. A previous scheme reserved
+    // per-row heights that scaled with textScale, so on short, narrow cells the rows
+    // bunched against the bottom edge while the dial sat high - the lopsided look that
+    // made the input/output meters read as crooked next to the compressor bars.
+    const auto topBlock = juce::roundToInt (32.0f * textScale);
+    constexpr int readoutRowCount = 5;
+    const auto bodyHeight = juce::jmax (72, getHeight() - topBlock);
+    const auto faceHeight = juce::roundToInt (static_cast<float> (bodyHeight) * 0.52f);
+    const auto readoutBlock = bodyHeight - faceHeight;
+    const auto readoutRowHeight = juce::jmax (10, readoutBlock / readoutRowCount);
     const auto face = juce::Rectangle<float> (bounds.getX(),
                                               bounds.getY() + static_cast<float> (topBlock),
-                                              bounds.getWidth(), faceHeight);
+                                              bounds.getWidth(), static_cast<float> (faceHeight));
 
     const auto centreX = face.getCentreX();
     // The dial is a half circle sitting on the lower edge of the face area.
@@ -417,17 +423,19 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     //  The combined row is the equal-weighted average of the four, which is what the
     //  needle and the dial are driven from.
     // -------------------------------------------------------------------
-    // The readout rows are placed from the measured block height, so they exactly
-    // fill the reserved area instead of being pegged to a fixed offset that drifts
-    // away from the dial as the meter is resized.
-    const auto readoutTop = getHeight() - readoutBlock;
+    // The readout rows fill the reserved block exactly, centred as a group, so the
+    // spacing between rows is identical however the meter is resized.
+    const auto usedReadout = readoutRowHeight * readoutRowCount;
+    const auto readoutTop = bounds.getY() + static_cast<float> (topBlock)
+                          + static_cast<float> (faceHeight)
+                          + (static_cast<float> (readoutBlock - usedReadout) * 0.5f);
     const auto rowHeight = readoutRowHeight;
 
     const auto drawReadoutRow = [&] (const juce::String& label, float value,
                                      juce::Colour valueColour, int row)
     {
-        const auto rowArea = juce::Rectangle<int> (2, readoutTop + row * rowHeight,
-                                                   getWidth() - 4, rowHeight);
+        const auto rowTop = juce::roundToInt (readoutTop) + row * rowHeight;
+        const auto rowArea = juce::Rectangle<int> (2, rowTop, getWidth() - 4, rowHeight);
         g.setColour (palette.secondary);
         g.setFont (juce::Font (juce::FontOptions (8.0f * textScale)));
         g.drawText (label, rowArea, juce::Justification::centredLeft, false);
@@ -573,11 +581,14 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // panel. The layout code below is all relative to getLocalBounds(), so it needs no
     // knowledge of DPI at all.
     //
-    // Re-tuned again after the first size pass: the panel fits a 1280 x 800 laptop
-    // window with room to spare, and the minimum (880 x 620) keeps the whole grid and
-    // the 2 x 2 meters readable on much smaller hosts.
-    setResizeLimits (880, 620, 1700, 1100);
-    setSize (1160, 740);
+    // Re-tuned for compactness after the "interface is still too large" report: the
+    // panel now opens at 1024 x 640 - comfortable on a 1280 x 800 laptop with a DAW
+    // browser open - and the minimum is 800 x 560, which keeps the knob grid and the
+    // 2 x 2 meters usable on much smaller hosts. The maximum was pulled in as well:
+    // beyond roughly 1500 px the analogue panel stops gaining legibility and only
+    // looks sparse.
+    setResizeLimits (800, 560, 1500, 960);
+    setSize (1024, 640);
     createDecorativePhysics();
 
     const auto styleLabel = [] (juce::Label& label, const juce::String& text,

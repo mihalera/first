@@ -411,15 +411,25 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // otherwise a rate switch would leave wow/flutter at a stale phase and click.
     resetSampleRateDependentState();
 
+    // Per-channel DC-blocker state: AC coupling restarts from zero after a rate
+    // change, exactly like the analogue coupling capacitors do on power-up.
+    dcBlockXState.fill (0.0f);
+    dcBlockYState.fill (0.0f);
+
+    // Compressor-coupled saturation state restarts neutral, so the first block
+    // after a rate switch is not coloured by a stale squeeze from the old rate.
+    squeezeSaturationDrive = 0.0f;
+
     // The tape noise generator is a per-instance LCG so that every plugin instance
     // and every render pass is deterministic, rather than sharing one thread_local
     // stream whose content would depend on how many instances happen to exist.
     noiseState = 0x1b873593u;
 
-    // The noise-path leveller also starts empty, so the first block does not inherit
-    // a stale floor from a previous session or sample rate.
-    noiseBlockPower = 0.0f;
-    noiseEnvelope = 0.0f;
+    // The noise-path leveller also starts neutral, so the first block does not
+    // inherit a stale floor from a previous session or sample rate. Duck 1 / lift 1
+    // is the paused, open-stages state.
+    noiseDuckState = 1.0f;
+    noiseHissLevelCompensation = 1.0f;
 
     // The safety limiter must start open, otherwise a stale gain from the previous
     // session would duck the first block audibly.
@@ -653,54 +663,96 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     const auto wowFreq = (0.15f + wowCurve * 1.36f) * speedScale;
     const auto flutterFreq = (1.9f + flutterCurve * 5.4f) * (1.0f + speedScale * 0.22f);
 
+    // The TONE macro's blend curve, computed once per block. Declared BEFORE the tape
+    // character section because the machine-state crossfade below is built from it:
+    // 0 % reads as the classic slow stock, 100 % as the hot fast stock.
+    const auto characterCurve = std::pow (
+        juce::jlimit (0.0f, 1.0f, character), 1.20f);
+
     // Per-model tape character: saturation curve, bias asymmetry, tape noise floor,
     // head-gap damping and the magnetic hysteresis thickness. The damping is a real
     // corner FREQUENCY in Hz (the previous ms values landed at 4-9 Hz through the
     // time-constant filter - the same 2*pi unit error that hid the whole wet path).
-    float tapeCurve = 1.18f;
-    float tapeAsymmetry = 0.16f;
-    float tapeHiss = 0.22f;
-    float headDampingHz = 12000.0f;
-    float hysteresis = 0.30f;
+    //
+    // TONE (the character macro) is a crossfade BETWEEN MACHINE STATES, and the tape
+    // formula is part of that state: at 0 % the machine behaves like the classic slow
+    // stock (gentle curve, strong asymmetry, warm hiss, dark damping, thick hysteresis
+    // blend) and at 100 % like the fast/hot stock (harder curve, less asymmetry, less
+    // hiss, more open damping, leaner hysteresis). The selected TAPE TYPE shifts the
+    // centre of that fade, so the knob still has its own meaning on top of the macro.
+    // The slow-machine end is represented by the J37 numbers and the fast end by a
+    // hotter generic stock, blended by the TONE curve.
+    const float slowMachineCurve = 1.18f;      // J37 - soft magnetic bend
+    const float slowMachineAsymmetry = 0.16f;  // strong even-harmonic warmth
+    const float slowMachineHiss = 0.22f;       // audible oxide floor
+    const float slowMachineDampingHz = 12000.0f;
+    const float slowMachineHysteresis = 0.30f;
 
+    const float fastMachineCurve = 1.44f;      // hot-stud style dense saturation
+    const float fastMachineAsymmetry = 0.10f;  // leaner, more symmetric bend
+    const float fastMachineHiss = 0.14f;       // quieter, faster stock
+    const float fastMachineDampingHz = 20000.0f;
+    const float fastMachineHysteresis = 0.44f;
+
+    const auto machineBlend = juce::jlimit (0.0f, 1.0f, characterCurve);
+    const auto blend = [machineBlend] (float slow, float fast)
+    {
+        return slow + (fast - slow) * machineBlend;
+    };
+
+    float tapeCurve = blend (slowMachineCurve, fastMachineCurve);
+    float tapeAsymmetry = blend (slowMachineAsymmetry, fastMachineAsymmetry);
+    float tapeHiss = blend (slowMachineHiss, fastMachineHiss);
+    float headDampingHz = blend (slowMachineDampingHz, fastMachineDampingHz);
+    float hysteresis = blend (slowMachineHysteresis, fastMachineHysteresis);
+
+    // The TAPE TYPE switch keeps its own voice on top of the TONE macro: it biases the
+    // blended state toward that formula's character (hotter formulas bend harder and
+    // hiss less, the classic J37 stays soft) rather than replacing it.
     switch (tapeType)
     {
         case 0: // J37 - the classic EMI reference sound
-            tapeCurve = 1.18f;
-            tapeAsymmetry = 0.16f;
-            tapeHiss = 0.22f;
-            headDampingHz = 12000.0f;
-            hysteresis = 0.30f;
             break;
         case 1: // Ampex 456 - hotter, more low-order colour
-            tapeCurve = 1.30f;
-            tapeAsymmetry = 0.24f;
-            tapeHiss = 0.30f;
-            headDampingHz = 16000.0f;
-            hysteresis = 0.38f;
+            tapeCurve += 0.08f;
+            tapeAsymmetry += 0.05f;
+            tapeHiss += 0.06f;
+            headDampingHz += 2500.0f;
+            hysteresis += 0.06f;
             break;
         case 2: // Studer A800 - darkest, densest saturation
-            tapeCurve = 1.44f;
-            tapeAsymmetry = 0.28f;
-            tapeHiss = 0.38f;
-            headDampingHz = 20000.0f;
-            hysteresis = 0.46f;
+            tapeCurve += 0.16f;
+            tapeAsymmetry += 0.08f;
+            tapeHiss += 0.12f;
+            headDampingHz += 5000.0f;
+            hysteresis += 0.12f;
             break;
         case 3: // Chrome - clean and bright, low noise
         default:
-            tapeCurve = 1.22f;
-            tapeAsymmetry = 0.12f;
-            tapeHiss = 0.18f;
-            headDampingHz = 8500.0f;
-            hysteresis = 0.24f;
+            tapeCurve += 0.02f;
+            tapeAsymmetry -= 0.03f;
+            tapeHiss -= 0.04f;
+            headDampingHz -= 2500.0f;
+            hysteresis -= 0.04f;
             break;
     }
+
+    tapeCurve = juce::jlimit (1.0f, 1.8f, tapeCurve);
+    tapeAsymmetry = juce::jlimit (0.0f, 0.4f, tapeAsymmetry);
+    tapeHiss = juce::jlimit (0.0f, 0.6f, tapeHiss);
+    headDampingHz = juce::jlimit (4000.0f, 26000.0f, headDampingHz);
+    hysteresis = juce::jlimit (0.1f, 0.7f, hysteresis);
 
     // DRIVE has no floor. It used to start at 0.28, which meant the signal was pushed
     // 38 % harder into the saturator even with the control at zero - a large part of why
     //    the plugin sounded overdriven at every setting. Now zero drive means unity gain
     // into the record head, so the machine is clean until the control asks it not to be.
-    const float driveAmount = driveCurve * 1.9f;
+    //
+    // Compressor-coupled saturation: the smoothed squeeze of both glue stages (updated
+    // once per block, see the end of processBlock) adds drive on top of the DRIVE
+    // control. The harder the compressors work, the hotter the record head is run and
+    // the harder the tape saturates - how a compressed signal hits a real machine.
+    const float driveAmount = driveCurve * 1.9f + squeezeSaturationDrive * 1.15f;
     const float biasAmount = 0.18f + biasCurve * 1.55f;
 
     // Dry/wet blend. MIX is a genuine crossfade: at 0 % the signal is untouched dry
@@ -722,11 +774,9 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         || std::abs (character - previousCharacter) > 1.0e-5f)
         updateToneCoefficients (tone);
 
-    // The TONE curve is re-derived from the same parameter inside
-    // updateToneCoefficients, so the tilt stage below reads the same value the head
-    // poles were built from. Captured once here instead of pow() per sample.
-    const auto characterCurve = std::pow (
-        juce::jlimit (0.0f, 1.0f, character), 1.20f);
+    // The TONE curve used by the tilt stage below is the one computed above the tape
+    // character section, so the head poles, the machine crossfade and the tilt all
+    // read the same value.
 
     // The playback head poles are constants for the whole block (they only depend on
     // the controls and the rate), so they are built here once rather than per sample.
@@ -757,32 +807,34 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     // -----------------------------------------------------------------------
     //  Noise-path levelling - the fix for "pauses are noisier than signal".
     //
-    //  The hiss used to sit in the wet path BELOW the output glue compressor and the
-    //  safety limiter. A glue compressor is programme-dependent gain, so it did the
-    //  exact opposite of what a tape machine does: while signal played, the detector
-    //  ducked everything including the hiss (signal buried the noise it also
-    //  suppressed), and in a pause the release pulled the level back up onto the
-    //  hiss alone - the pause got LOUDER. The limiter extended the same effect to
-    //  loud material, which ducked the hiss hardest exactly when the tape should be
-    //  doing its best masking work.
+    //  The hiss sits in the wet path BELOW the output glue compressor and the
+    //  safety limiter. Those are programme-dependent gains: while signal plays they
+    //  duck everything including the hiss, and in a pause they open again. Any
+    //  scheme that lifts the floor in the PAUSE (the original follower did exactly
+    //  that) makes silence the loudest place in the track.
     //
-    //  The fix is to make the noise path CONSTANT: the hiss gain is divided by a
-    //  follower of the programme power with a fast attack (the floor is re-established
-    //  within ~40 ms of the signal arriving) and a slow release (the floor fades over
-    //  ~3 s only in a true pause). With signal present the hiss is inaudible under it;
-    //  in a pause the tape keeps a steady, calm floor instead of swelling up.
+    //  The fix: measure the duck the stages actually apply (the mean output-stage
+    //  gain and limiter gain of the block) and lift the floor by its smoothed
+    //  inverse. With signal the lift cancels the duck and the floor stays at its
+    //  calibrated level, inaudible under the programme; in a pause the stages are
+    //  open, the lift is 1, and the tape keeps its natural quiet floor. The floor
+    //  is therefore CONSTANT in both states - which is the whole complaint fixed.
     // -----------------------------------------------------------------------
-    const float noiseAttack = 1.0f - std::exp (-1.0f / (juce::jmax (1.0f, sampleRate) * 0.04f));
-    const float noiseRelease = 1.0f - std::exp (-1.0f / (juce::jmax (1.0f, sampleRate) * 3.0f));
-    constexpr float noisePowerFloor = 1.0e-7f;   // below this the tape is "idle" (about -70 dBFS)
-    constexpr float noiseSensitivity = 1.6f;     // how far above the floor the leveller starts paying back
-    float hissLevelCompensation = 1.0f;
+    const float noiseDuckSmoothing = 1.0f - std::exp (
+        -1.0f / (juce::jmax (1.0f, sampleRate) * 0.25f));
 
     // onePoleCoefficient takes MILLISECONDS, so the 16 kHz corner is converted to the
     // equivalent time constant first: 1 / (2*pi*f). Passing 16000 here would be read as a
     // 16-second time constant, which would all but remove the hiss instead of shaping it.
     const float hissBandLimit = onePoleCoefficient (1000.0f / (juce::MathConstants<float>::twoPi * 16000.0f),
                                                     sampleRate);
+
+    // Playback AC coupling: an 8 Hz one-pole DC blocker, rebuilt per block from the
+    // rate. The standard form is y = x - x1 + R*y; R = 1 - 2*pi*fc/rate puts the
+    // corner exactly at fc Hz, and clamping keeps the arithmetic safe at any rate.
+    const float dcBlockR = juce::jlimit (0.5f, 0.9999f,
+                                         1.0f - (juce::MathConstants<float>::twoPi * 8.0f)
+                                             / juce::jmax (1.0f, sampleRate));
 
     // Output staging: the loudness the model adds is balanced out here, so OUTPUT
     // is a clean, calibrated +/- dB trim rather than an extra hidden gain stage.
@@ -798,6 +850,23 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     // shaper is near-unity at zero drive and only compresses when pushed, the static trim
     // has to be close to unity as well or the plugin ends up quiet instead of clean.
     const float driveGainCompensation = 1.0f - driveCurve * 0.16f;
+
+    // -----------------------------------------------------------------------
+    //  Compressor-coupled saturation.
+    //
+    //  The two glue stages are part of the machine, so how hard THEY work changes
+    //  how hard the tape saturates - the way pushing an already-compressed signal
+    //  into a real record head makes it saturate sooner and bloom harder. The
+    //  drive term below grows smoothly (200 ms smoothing, so it follows the
+    //  programme's density rather than individual transients) with the total gain
+    //  reduction both stages are currently applying.
+    //
+    //  The tape stage runs BEFORE the output compressor in the chain, so it cannot
+    //  see that stage's current-block reduction; it uses the previous block's
+    //  value instead, which at one-block latency is indistinguishable musically.
+    // -----------------------------------------------------------------------
+    const float squeezeDriveSmoothing = 1.0f - std::exp (
+        -1.0f / (juce::jmax (1.0f, sampleRate) * 0.2f));
 
     // The static calibration stays as designed: the slow programme compensator after
     // the output stage already restores any residual broadband loss against the
@@ -830,6 +899,11 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     float inputPeakReductionDb = 0.0f;
     float inputEnvelopeActivity = 0.0f;
     float driftAccumulator = 0.0f;
+
+    // Noise-floor levelling accumulator: sums the per-sample duck the output glue
+    // stage and safety limiter apply (their combined gain, 0..1), so the block's
+    // mean duck can be measured once, after the loop, for the leveller update.
+    float duckAccumulator = 0.0f;
 
     // Reference power for the final gain compensation: the power of the signal straight
     // after the INPUT trim, before the first glue compressor touches it. That is the
@@ -880,6 +954,38 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     const float outputKneeDb = 7.0f - outputDriveLoad * 2.0f;          // 7 .. 5 dB
     const float outputCompressorRatio = 1.16f + outputDriveLoad * 0.18f;
     const float outputReductionLimitDb = -(2.5f + outputDriveLoad * 5.0f);
+
+    // -----------------------------------------------------------------------
+    //  Tape-stock and transport coupling into the glue time constants.
+    //
+    //  The compressors are part of the machine, so the FORMULA loaded on it and
+    //  the SPEED it runs at change how the glue stages move - not just how the
+    //  tape saturates:
+    //
+    //    Tape formula (0 = J37 ... 3 = Chrome). Oxide thickness and bias current
+    //    set how quickly the detector can follow the programme: the soft, low-
+    //    output formulas get slower constants (more head bump, more relaxed
+    //    glue), the hot and chrome formulas get faster, tighter ones.
+    //
+    //    Transport speed. A slow 7.5 ips pass has more print-through and a
+    //    lazier flux build-up, so the glue is stretched; 30 ips is tight and
+    //    immediate, so the constants shorten. This rides the same speedScale
+    //    used for the head damping, so SPEED keeps one coherent meaning across
+    //    the whole machine.
+    //
+    //  Attack multipliers land roughly in 0.72..1.33, release in 0.72..1.40.
+    //  Both stages share the multipliers, so the two stages still feel like one
+    //  machine while remaining independent processors.
+    // -----------------------------------------------------------------------
+    const float stockAttackScale = 1.34f - 0.11f * static_cast<float> (tapeType);   // 1.34 -> 1.01
+    const float stockReleaseScale = 1.40f - 0.15f * static_cast<float> (tapeType);  // 1.40 -> 0.95
+    const float transportAttackScale = 1.32f - 0.22f * speedScale;                  // 1.14 -> 1.03
+    const float transportReleaseScale = 1.38f - 0.30f * speedScale;                 // 1.15 -> 0.98
+
+    const float inputAttackSeconds = 0.16f * stockAttackScale * transportAttackScale;
+    const float inputReleaseSeconds = 0.85f * stockReleaseScale * transportReleaseScale;
+    const float outputAttackSeconds = 0.20f * stockAttackScale * transportAttackScale;
+    const float outputReleaseSeconds = 1.00f * stockReleaseScale * transportReleaseScale;
 
     // Makeup is part of each stage, and it is driven by the same trim control: a
     // boosted trim pays its reduction back and a trimmed-down one simply backs off,
@@ -935,20 +1041,6 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             // keeps it independent of how the stereo material is panned.
             if (channel == 0)
                 referenceBlockPower += inputTrimmed * inputTrimmed;
-
-            // The noise follower listens to the CONTROLLED signal (channel 0, mono
-            // measurement) - the level the tape actually hears after the INPUT trim -
-            // so the floor stays put even when the user trims the input down between
-            // takes. Fast attack re-establishes the floor within ~40 ms of signal
-            // arriving, slow release lets it fade over ~3 s in a true pause.
-            if (channel == 0)
-            {
-                noiseBlockPower = inputTrimmed * inputTrimmed;
-                noiseEnvelope += (juce::jmax (noiseBlockPower, noisePowerFloor) - noiseEnvelope)
-                               * (noiseBlockPower > noiseEnvelope ? noiseAttack : noiseRelease);
-                hissLevelCompensation = 1.0f
-                                      + noiseSensitivity * noisePowerFloor / noiseEnvelope;
-            }
             // ------------------------------------------------------------------
             //  Input stage glue compressor. It sits straight after the input trim,
             //  so the signal that reaches the tape is always the controlled one and
@@ -957,7 +1049,8 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             //  detector only ever sees the trimmed input signal.
             // ------------------------------------------------------------------
             const float inputEnvelopeDb = inputCompressor.processDetection (
-                inputTrimmed * inputTrimmed, sampleRate, 0.16f, 0.85f, inputDriveLoad);
+                inputTrimmed * inputTrimmed, sampleRate, inputAttackSeconds, inputReleaseSeconds,
+                inputDriveLoad);
             const float inputReductionDb = juce::jmax (inputReductionLimitDb,
                                                        softKneeReductionDb (inputEnvelopeDb,
                                                                             inputThresholdDb,
@@ -1001,9 +1094,13 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             const float preDrive = x * (1.0f + driveAmount * 1.2f * speedBias * preDriveGain);
             const float recordBias = biasAmount * 0.42f;
 
-            // Magnetic hysteresis with memory - the core of the tape sound.
+            // Magnetic hysteresis with memory - the core of the tape sound. The
+            // squeeze term in the slope is the compressor coupling: dense, compressed
+            // programme literally thickens the magnetic curve, not just its level.
             const float shapedCore = magneticHysteresis (preDrive,
-                                                         driveCurve * tapeCurve + hysteresis * 0.25f,
+                                                         driveCurve * tapeCurve
+                                                             + hysteresis * 0.25f
+                                                             + squeezeSaturationDrive * 0.30f,
                                                          tapeAsymmetry * recordBias,
                                                          hysteresisMemory[0]);
             hysteresisMemory[2] = hysteresisMemory[1];
@@ -1025,8 +1122,14 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             highFreqMemory[1] += (shapedCore - highFreqMemory[1]) * toneLpAc;
             const float afterTapeLoss = highFreqMemory[1];
 
+            // Per-model head damping (the headDampingHz each TAPE TYPE sets, scaled
+            // by the transport speed). This pole used to be computed and then never
+            // applied - the formulas' damping figures were a no-op.
+            highFreqMemory[2] += (afterTapeLoss - highFreqMemory[2]) * hfPostCoefficient;
+            const float dampedLoss = highFreqMemory[2];
+
             // Playback head gap loss: the TONE macro's crossfade of the head itself.
-            highFreqMemory[0] += (afterTapeLoss - highFreqMemory[0]) * headGapCoefficient;
+            highFreqMemory[0] += (dampedLoss - highFreqMemory[0]) * headGapCoefficient;
             const float headLoss = highFreqMemory[0];
             highFreqMemory[1] = afterTapeLoss;
 
@@ -1060,10 +1163,12 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             // The band limit costs most of the noise power, so the gain is compensated by
             // the inverse of the filter's RMS response. Deriving it from the coefficient
             // rather than a fixed number keeps the perceived level flat at every rate.
-            // The programme follower above then lifts the floor back to its constant
-            // level: exactly the levelling a real machine's noise reduction does.
+            // The block-level leveller (noiseHissLevelCompensation) then lifts the floor
+            // by the amount the glue compressors and limiter duck it, so the floor is
+            // constant with and without signal.
             const float bandLimitCompensation = 1.0f / std::sqrt (juce::jmax (0.05f, hissBandLimit));
-            const float noiseFloor = hissLowPass * bandLimitCompensation * hissLevelCompensation;
+            const float noiseFloor = hissLowPass * bandLimitCompensation
+                                   * noiseHissLevelCompensation;
 
             const float motioned = (compressedBias + noiseFloor) * wowMod * flutterMod * grainMod;
 
@@ -1077,10 +1182,34 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             const float toneTilt = (motioned - lowBand) * (0.18f + 0.55f * characterCurve);
             const float deEmphasised = motioned + toneTilt * toneLpBc * 1.7f;
 
+            // -------------------------------------------------------------------
+            //  Playback AC coupling (DC blocker) - the fix for "MIX at maximum
+            //  produces garbage instead of a warm signal".
+            //
+            //  The shaper is deliberately asymmetric (that asymmetry is what creates
+            //  the even harmonics), which leaves a small DC component and a slightly
+            //  lopsided envelope on the tape signal. On a real machine the playback
+            //  electronics are AC-coupled, so that offset never reaches the output;
+            //  here it used to ride all the way into the glue compressor, the safety
+            //  limiter and the soft clipper. The clipper then worked on an off-centre
+            //  waveform: one half clipped much earlier than the other, the safety
+            //  limiter sat permanently pulled down by the DC, and the result was a
+            //  harsh, congested mess exactly when MIX was at 100 %.
+            //
+            //  A gentle one-pole DC blocker (about 8 Hz corner) removes the offset
+            //  without touching the bass the way a steep high-pass would, which is
+            //  precisely what the coupling capacitors in the playback chain do.
+            // -------------------------------------------------------------------
+            auto& dcX = dcBlockXState[static_cast<std::size_t> (channel)];
+            auto& dcY = dcBlockYState[static_cast<std::size_t> (channel)];
+            const float dcBlocked = deEmphasised - dcX + dcBlockR * dcY;
+            dcX = deEmphasised;
+            dcY = dcBlocked;
+
             // Equal-gain crossfade between the dry input and the fully processed tape
             // signal. The wet path is level-matched in finalOutputGain, so 0 % is a
             // transparent dry signal and 100 % is all tape, with no dip in the middle.
-            const float wetMix = deEmphasised * wetGain;
+            const float wetMix = dcBlocked * wetGain;
             const float dryMix = x * dryGain;
             tapeOutput[static_cast<std::size_t> (channel)] = dryMix + wetMix;
         }
@@ -1104,7 +1233,9 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         }
 
         const float envelopeDb = outputCompressor.processDetection (detectorPower, sampleRate,
-                                                                    0.20f, 1.00f, outputDriveLoad);
+                                                                    outputAttackSeconds,
+                                                                    outputReleaseSeconds,
+                                                                    outputDriveLoad);
         const float reductionDb = juce::jmax (outputReductionLimitDb,
                                               softKneeReductionDb (envelopeDb,
                                                                    outputThresholdDb,
@@ -1221,6 +1352,12 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
                                      : 1.0f - std::exp (-1.0f / (sampleRate * 0.120f));
         limiterGain += (requiredGain - limiterGain) * gainSmoothing;
 
+        // Noise-floor levelling: this frame's total duck is the combined gain the
+        // output stage and the limiter applied to the programme (and to the hiss
+        // riding with it). Accumulated across the block so the leveller can lift the
+        // floor by the block's mean duck once, after the loop.
+        duckAccumulator += juce::jlimit (0.0f, 1.0f, compressionGain * limiterGain);
+
         for (int channel = 0; channel < activeChannels; ++channel)
             outputSignal[static_cast<std::size_t> (channel)] *= limiterGain;
 
@@ -1279,6 +1416,35 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         ? static_cast<float> (std::sqrt (inputSquares / measuredSamples)) : 0.0f;
     const float outputRms = measuredSamples > 0.0
         ? static_cast<float> (std::sqrt (outputSquares / measuredSamples)) : 0.0f;
+
+    // Compressor-coupled saturation drive update (see the note at driveAmount): the
+    // total gain reduction both stages applied this block is smoothed into
+    // squeezeSaturationDrive over about 200 ms, so the tape stage reads programme
+    // density rather than individual transients. Zero squeeze leaves the shaper
+    // exactly as the DRIVE control set it; a slammed programme grows it smoothly.
+    {
+        const auto totalSqueezeDb = juce::jlimit (0.0f, 12.0f,
+                                                  -(inputPeakReductionDb + peakReductionDb));
+        const auto targetSqueeze = 1.0f - std::exp (-totalSqueezeDb * 0.20f);
+        squeezeSaturationDrive += (targetSqueeze - squeezeSaturationDrive)
+                                * squeezeDriveSmoothing;
+    }
+
+    // Noise-floor levelling update, applied ONCE PER BLOCK: the mean duck the output
+    // glue stage and safety limiter applied to this block is folded into a smoothed
+    // state, and the hiss floor is lifted by its inverse. Signal present -> stages
+    // duck -> lift cancels the duck -> floor constant. Pause -> stages open -> lift
+    // settles at 1 -> floor constant. Either way the tape noise never swells, which
+    // is the "noise must be the same with and without signal" fix.
+    {
+        const auto meanDuck = numSamples > 0
+            ? duckAccumulator / static_cast<float> (numSamples)
+            : 1.0f;
+        noiseDuckState += (meanDuck - noiseDuckState) * noiseDuckSmoothing;
+        const auto targetCompensation = 1.0f / juce::jmax (0.25f, noiseDuckState);
+        noiseHissLevelCompensation += (targetCompensation - noiseHissLevelCompensation)
+                                    * noiseDuckSmoothing;
+    }
 
     const auto retainPeakUntilConsumed = [] (std::atomic<float>& publishedPeak, float blockPeak)
     {
