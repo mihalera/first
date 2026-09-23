@@ -245,10 +245,12 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
   second instead of four times as often.
 - **Buffer size** - the DSP is per sample and reads `getNumSamples()` each block, so
   there is no fixed block-size assumption; zero-length blocks are handled too.
-- **Display scale** - the editor opens at a compact 1024 x 640 and can be resized
-  between 800 x 560 and 1500 x 960; both meter types lay themselves out proportionally
+- **Display scale** - the editor opens at a compact 960 x 600 and can be resized
+  between 780 x 540 and 1400 x 900; both meter types lay themselves out proportionally
   to their own bounds. Text scales with the meter, so nothing is drawn at a hardcoded
-  pixel size.
+  pixel size. The transport-deck controls chain off each other's edges rather than
+  sitting at absolute offsets, so nothing collides at the minimum size, and the level
+  meters keep clear air between the dial and the readout rows.
 - **Fonts** - the title uses a fallback chain rather than a Windows-only family.
 - **OpenGL** - treated as a best-effort accelerator; if a context cannot be created the
   panel falls back to the normal component renderer.

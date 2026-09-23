@@ -931,6 +931,13 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     const float compensationCoefficient = 1.0f - std::exp (
         -1.0f / (juce::jmax (1.0f, sampleRate) * 0.45f));
 
+    // VU ballistics (300 ms) for the input and output meters. The coefficient is a
+    // constant for the whole block - it depends only on the sample rate - so it is
+    // computed once here instead of re-evaluating an exp() twice per sample inside
+    // the loop below.
+    const float vuBallisticCoefficient = 1.0f - std::exp (
+        -1.0f / (juce::jmax (1.0f, sampleRate) * 0.3f));
+
     // -------------------------------------------------------------------------
     //  Glue compressor operating points.
     //
@@ -1025,8 +1032,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
 
             // Input-side VU ballistic and clipping, measured on the raw signal arriving
             // at the plugin so the INPUT meter shows what the host is actually sending.
-            const auto inputVuCoefficient = 1.0f - std::exp (-1.0f / (sampleRate * 0.3f));
-            inputVuAverage += (std::abs (rawInput) - inputVuAverage) * inputVuCoefficient;
+            inputVuAverage += (std::abs (rawInput) - inputVuAverage) * vuBallisticCoefficient;
             if (std::abs (rawInput) > 1.0f)
                 inputClippingThisBlock = true;
 
@@ -1386,8 +1392,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
 
             // VU ballistic: a 300 ms average, fed once per channel so it measures the
             // same programme average a hardware VU would.
-            const auto vuCoefficient = 1.0f - std::exp (-1.0f / (sampleRate * 0.3f));
-            vuAverage += (std::abs (limitedOut) - vuAverage) * vuCoefficient;
+            vuAverage += (std::abs (limitedOut) - vuAverage) * vuBallisticCoefficient;
         }
 
         // K-weighted loudness runs on the final stereo frame, after the width stage, so
