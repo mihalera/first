@@ -760,7 +760,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     openGLContext.setComponentPaintingEnabled (true);
     openGLContext.setContinuousRepainting (false);
 
-    if (! openGLContext.attachTo (*this))
+    // attachTo() returns void, so it cannot be tested directly - it would read as
+    // `if (!void)`, which is not a valid expression. The documented way to find out whether
+    // the context came up is to ask afterwards, and detach if it did not so the component
+    // renderer draws the panel instead.
+    openGLContext.attachTo (*this);
+
+    if (! openGLContext.isAttached())
         openGLContext.detach();
 
     startTimerHz (30);
