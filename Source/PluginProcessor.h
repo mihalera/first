@@ -21,14 +21,34 @@
     and neither reads the other's state. They are driven purely by the signal
     that reaches them and by the Input / Output parameters.
 
-    The detector is a peak-following envelope with programme dependent time
-    constants (slower attack and release the further the stage is pushed).
+    Time constants are SEMI-AUTOMATIC - there are no attack or release controls.
+    The stage listens to how the signal itself behaves and adapts both constants
+    as it goes, along three independent axes:
+
+      1. Programme level - the harder the stage is being driven, the slower it moves,
+         which is what makes it read as machine headroom rather than a limiter.
+      2. Transient vs sustained material - it tracks a fast and a slow view of the
+         signal; when the fast view runs ahead of the slow one we are on a transient,
+         so attack is quickened to catch it. When the two agree we are in sustained
+         programme, so attack is relaxed and release is stretched, letting the stage
+         breathe with the music instead of pumping.
+      3. Envelope fill - as the detector fills up, release lengthens further, so a
+         dense passage is held together and a sparse one recovers quickly.
 */
 struct GlueCompressor
 {
     float envelope = 0.0f;
 
-    void reset() noexcept { envelope = 0.0f; }
+    // A second, much slower follower used only to tell transients apart from sustained
+    // programme. Keeping it separate from `envelope` means the adaptation never feeds
+    // back into the gain computation itself.
+    float slowEnvelope = 0.0f;
+
+    void reset() noexcept
+    {
+        envelope = 0.0f;
+        slowEnvelope = 0.0f;
+    }
 
     /** Envelope level of the most recent block, as 0..1 linear activity. */
     float getEnvelopeActivity() const noexcept
@@ -36,18 +56,69 @@ struct GlueCompressor
         return juce::jlimit (0.0f, 1.0f, std::sqrt (juce::jmax (0.0f, envelope)));
     }
 
-    /** Pushes signal power through the detector; call once per sample. */
+    /** 0 = sustained programme, 1 = sharp transient. Used by the UI to show activity. */
+    float getTransientAmount() const noexcept
+    {
+        const auto fast = std::sqrt (juce::jmax (0.0f, envelope));
+        const auto slow = std::sqrt (juce::jmax (0.0f, slowEnvelope));
+        if (slow <= 1.0e-6f)
+            return 0.0f;
+
+        return juce::jlimit (0.0f, 1.0f, (fast - slow) / slow * 1.6f);
+    }
+
+    /**
+        Pushes signal power through the detector; call once per sample.
+
+        attackBaseSeconds and releaseBaseSeconds are the nominal constants. They are
+        then adapted by the three axes described above, so the caller never has to
+        schedule attack or release by hand - that is the semi-automatic behaviour.
+    */
     float processDetection (float detectorPower, float sampleRate,
                             float attackBaseSeconds, float releaseBaseSeconds,
                             float loadFactor) noexcept
     {
+        const float safeRate = juce::jmax (1.0f, sampleRate);
+
+        // -- Axis 3: how full the detector already is --------------------------
         const float envelopeLevel = getEnvelopeActivity();
-        const float attackSeconds = attackBaseSeconds * (1.0f + loadFactor * 1.8f)
-                                  + envelopeLevel * attackBaseSeconds * 1.8f;
+
+        // -- Axis 2: transient or sustained? ----------------------------------
+        // A time constant roughly a hundred times slower than the detector tracks the
+        // running programme level. Comparing the two is enough to tell a drum hit
+        // (fast spikes above the slow average) from a sustained pad or vocal line.
+        const float slowTimeConstant = juce::jmax (0.05f, releaseBaseSeconds * 3.5f);
+        const float slowCoefficient = std::exp (-1.0f / (safeRate * slowTimeConstant));
+        slowEnvelope = slowCoefficient * slowEnvelope
+                     + (1.0f - slowCoefficient) * detectorPower;
+
+        const float transientAmount = getTransientAmount();
+
+        // -- Axis 1: how hard the stage is being driven -----------------------
+        // Load lengthens both constants, so a stage being leaned on turns slow and
+        // dense while an idle one stays quick and transparent.
+        const float loadStretch = 1.0f + loadFactor * 1.8f;
+
+        // Attack: quick on transients so nothing is missed, relaxed on sustained
+        // material so the stage does not clamp the body of the sound. The transient
+        // term dominates the level term, because catching a peak matters more.
+        const float transientSpeedUp = 1.0f - transientAmount * 0.72f;
+        const float attackSeconds = attackBaseSeconds * loadStretch
+                                  * juce::jlimit (0.25f, 1.6f, transientSpeedUp)
+                                  * (1.0f + envelopeLevel * 0.9f);
+
+        // Release: long on sustained programme and when the detector is full, short on
+        // isolated transients so the stage reopens before the next event. This is what
+        // gives the classic auto-release feel - dense passages stay together, sparse
+        // ones breathe.
+        const float releaseStretch = 1.0f
+                                   + (1.0f - transientAmount) * 1.15f
+                                   + envelopeLevel * 2.4f;
         const float releaseSeconds = releaseBaseSeconds * (1.0f + loadFactor * 2.2f)
-                                   + envelopeLevel * releaseBaseSeconds * 2.6f;
+                                   * releaseStretch;
+
         const float timeConstant = detectorPower > envelope ? attackSeconds : releaseSeconds;
-        const float coefficient = std::exp (-1.0f / (juce::jmax (1.0f, sampleRate) * timeConstant));
+        const float coefficient = std::exp (-1.0f / (safeRate * timeConstant));
         envelope = coefficient * envelope + (1.0f - coefficient) * detectorPower;
 
         return juce::Decibels::gainToDecibels (std::sqrt (juce::jmax (0.0f, envelope)), -100.0f);
@@ -56,6 +127,111 @@ struct GlueCompressor
 
 //==============================================================================
 /**
+    Together-loudness (LUFS) measurement, following the ITU-R BS.1770 / EBU R128
+    weightings: a high-shelf and a high-pass, then mean-square over the measurement
+    window. Only the K-weighting is implemented - this is a live meter, not an
+    offline loudness normaliser, so gating and true-peak are deliberately left out.
+
+    The filters are biquads in direct form I, rebuilt from the sample rate in
+    prepare(), so the reading is correct at every supported rate: 44.1, 48, 88.2,
+    96, 176.4 and 192 kHz. The coefficients come from tan(pi * f0 / rate), which is
+    exact at any rate, so no additional scaling is needed for a 192 kHz session.
+*/
+struct LoudnessMeter
+{
+    void prepare (double sampleRate) noexcept
+    {
+        const auto rate = juce::jmax (8000.0, sampleRate);
+
+        // Stage 1: high-shelf, roughly +4 dB above 1.5 kHz, as specified for K-weighting.
+        {
+            const auto f0 = 1681.974450955533;
+            const auto gainDb = 3.999843853973347;
+            const auto q = 0.7071752369554196;
+
+            const auto k = std::tan (juce::MathConstants<double>::pi * f0 / rate);
+            const auto vh = std::pow (10.0, gainDb / 20.0);
+            const auto vb = std::pow (vh, 0.4996667741545416);
+            const auto denominator = 1.0 + k / q + k * k;
+
+            shelf.b0 = static_cast<float> ((vh + vb * k / q + k * k) / denominator);
+            shelf.b1 = static_cast<float> (2.0 * (k * k - vh) / denominator);
+            shelf.b2 = static_cast<float> ((vh - vb * k / q + k * k) / denominator);
+            shelf.a1 = static_cast<float> (2.0 * (k * k - 1.0) / denominator);
+            shelf.a2 = static_cast<float> ((1.0 - k / q + k * k) / denominator);
+        }
+
+        // Stage 2: high-pass at 38 Hz, the second half of the K-weighting curve.
+        {
+            const auto f0 = 38.13547087602444;
+            const auto q = 0.5003270373238773;
+
+            const auto k = std::tan (juce::MathConstants<double>::pi * f0 / rate);
+            const auto denominator = 1.0 + k / q + k * k;
+
+            highPass.b0 = static_cast<float> (1.0 / denominator);
+            highPass.b1 = static_cast<float> (-2.0 / denominator);
+            highPass.b2 = static_cast<float> (1.0 / denominator);
+            highPass.a1 = static_cast<float> (2.0 * (k * k - 1.0) / denominator);
+            highPass.a2 = static_cast<float> ((1.0 - k / q + k * k) / denominator);
+        }
+    }
+
+    void reset() noexcept
+    {
+        shelf = {};
+        highPass = {};
+        meanSquare = 0.0f;
+    }
+
+    /** Feeds one stereo frame and returns the current loudness in LUFS. */
+    float processFrame (float left, float right, float sampleRate) noexcept
+    {
+        const auto weightedLeft = highPass.process (shelf.process (left));
+        const auto weightedRight = highPass.process (shelf.process (right));
+
+        // BS.1770 sums the per-channel mean squares; the channels here are already
+        // gain-weighted equally, so it is a plain sum.
+        const auto frameMeanSquare = weightedLeft * weightedLeft
+                                   + weightedRight * weightedRight;
+
+        // A 400 ms sliding window, implemented as a one-pole that is close enough for
+        // a live display while staying cheap and block-size independent.
+        const auto coefficient = std::exp (-1.0f / (juce::jmax (1.0f, sampleRate) * 0.4f));
+        meanSquare = coefficient * meanSquare + (1.0f - coefficient) * frameMeanSquare;
+
+        const auto loudness = -0.691f + 10.0f * std::log10 (juce::jmax (1.0e-12f, meanSquare));
+        return juce::jmax (-70.0f, loudness);
+    }
+
+private:
+    struct Biquad
+    {
+        float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f, a1 = 0.0f, a2 = 0.0f;
+        float x1 = 0.0f, x2 = 0.0f, y1 = 0.0f, y2 = 0.0f;
+
+        float process (float x) noexcept
+        {
+            const auto y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
+            x2 = x1; x1 = x;
+            y2 = y1; y1 = y;
+            return y;
+        }
+    };
+
+    Biquad shelf;
+    Biquad highPass;
+    float meanSquare = 0.0f;
+};
+
+//==============================================================================
+/**
+    The tape machine. Signal flow, in order:
+
+      input trim -> input glue compressor -> record head (bias + magnetic hysteresis)
+      -> tape low-pass and head-gap loss -> tape noise floor and wow/flutter
+      -> playback EQ tilt -> output glue compressor -> final gain compensation
+      -> output trim -> stereo width
 */
 class FirstAudioProcessor  : public juce::AudioProcessor
 {
@@ -107,15 +283,71 @@ public:
     float getOutputPeakLevel() noexcept { return outputPeakLevel.exchange (0.0f, std::memory_order_relaxed); }
     float getOutputRmsLevel() const noexcept { return outputRmsLevel.load (std::memory_order_relaxed); }
 
+    // Input-side loudness, measured on the same four views as the output so the two
+    // meters can be read against each other.
+    float getInputPeakDb() const noexcept { return inputPeakDb.load (std::memory_order_relaxed); }
+    float getInputRmsDb() const noexcept { return inputRmsDb.load (std::memory_order_relaxed); }
+    float getInputLufs() const noexcept { return inputLufs.load (std::memory_order_relaxed); }
+    float getInputVuDb() const noexcept { return inputVuDb.load (std::memory_order_relaxed); }
+    float getInputCombinedDb() const noexcept { return inputCombinedDb.load (std::memory_order_relaxed); }
+    bool isInputClipping() const noexcept { return inputClipping.load (std::memory_order_relaxed); }
+
+    //==============================================================================
+    //  Four-way loudness metering.
+    //
+    //  The meters panel shows the same signal four different ways, because each one
+    //  answers a different question and no single scale is right for all of them:
+    //
+    //    RMS   - the honest electrical average, the engineer's baseline
+    //    LUFS  - K-weighted, so it reflects perceived loudness rather than volts
+    //    VU    - the classic 300 ms ballistic average, deliberately slower and forgiving
+    //    dB    - peak dBFS, the only one that tells you about clipping
+    //
+    //  The combined reading weights each contribution equally (25 % each), which makes
+    //  it deliberately blind to the weaknesses of any one scale: peak alone would jump
+    //  on transients, LUFS alone would ignore them, VU alone would smooth too much.
+    //==============================================================================
+    float getOutputPeakDb() const noexcept { return outputPeakDb.load (std::memory_order_relaxed); }
+    float getOutputRmsDb() const noexcept { return outputRmsDb.load (std::memory_order_relaxed); }
+    float getOutputLufs() const noexcept { return outputLufs.load (std::memory_order_relaxed); }
+    float getOutputVuDb() const noexcept { return outputVuDb.load (std::memory_order_relaxed); }
+
+    /** Equal-weighted (25 % each) blend of the four loudness views, in dB. */
+    float getOutputCombinedDb() const noexcept { return outputCombinedDb.load (std::memory_order_relaxed); }
+
+    /** True while the output is clipping, for the meter's peak lamp. */
+    bool isOutputClipping() const noexcept { return outputClipping.load (std::memory_order_relaxed); }
+
+    //==============================================================================
+    //  Harmonic character telemetry.
+    //
+    //  These report what the tape shaper is measurably producing, as ratios against the
+    //  fundamental. They are the honest answer to "is this adding the right kind of
+    //  distortion": even harmonics are warmth and body, odd harmonics are edge and
+    //  density, and looking like analogue tape means having both with even content
+    //  present rather than pure odd-order harshness.
+    //==============================================================================
+    float getEvenHarmonicRatio() const noexcept { return evenHarmonicRatio.load (std::memory_order_relaxed); }
+    float getOddHarmonicRatio() const noexcept { return oddHarmonicRatio.load (std::memory_order_relaxed); }
+
     /** Gain reduction of the input stage compressor in dB (always <= 0). */
     float getInputGainReductionDb() const noexcept { return inputGainReductionDb.load (std::memory_order_relaxed); }
+
+    /** Gain reduction of the output stage compressor in dB (always <= 0). */
+    float getOutputGainReductionDb() const noexcept { return outputGainReductionDb.load (std::memory_order_relaxed); }
+
+    /** Detector activity of the input stage compressor, 0..1, for its own meter. */
+    float getInputCompressorActivity() const noexcept { return inputCompressorActivity.load (std::memory_order_relaxed); }
+
+    /** Detector activity of the output stage compressor, 0..1, for its own meter. */
+    float getOutputCompressorActivity() const noexcept { return outputCompressorActivity.load (std::memory_order_relaxed); }
 
     /** Total gain reduction of both glue stages in dB (always <= 0). */
     float getGainReductionDb() const noexcept
     {
         return juce::jlimit (-24.0f, 0.0f,
                              inputGainReductionDb.load (std::memory_order_relaxed)
-                             + gainReductionDb.load (std::memory_order_relaxed));
+                             + outputGainReductionDb.load (std::memory_order_relaxed));
     }
 
     /** Envelope of the tape glue compressors as a 0..1 linear activity value. */
@@ -132,6 +364,12 @@ public:
 
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
+
+    /** Rebuilds every time-domain constant from the current sample rate. */
+    void resetSampleRateDependentState();
+
+    /** Recomputes the cached tone filter coefficients for the current rate. */
+    void updateToneCoefficients (float toneValue);
 
     // Cached parameter pointers: avoids repeated string lookups on the audio thread.
     std::atomic<float>* inputDbParam = nullptr;
@@ -156,10 +394,26 @@ private:
 
     std::atomic<float> inputPeakLevel { 0.0f };
     std::atomic<float> inputRmsLevel { 0.0f };
+    std::atomic<float> inputPeakDb { -70.0f };
+    std::atomic<float> inputRmsDb { -70.0f };
+    std::atomic<float> inputLufs { -70.0f };
+    std::atomic<float> inputVuDb { -70.0f };
+    std::atomic<float> inputCombinedDb { -70.0f };
+    std::atomic<bool> inputClipping { false };
     std::atomic<float> outputPeakLevel { 0.0f };
     std::atomic<float> outputRmsLevel { 0.0f };
+    std::atomic<float> outputPeakDb { -70.0f };
+    std::atomic<float> outputRmsDb { -70.0f };
+    std::atomic<float> outputLufs { -70.0f };
+    std::atomic<float> outputVuDb { -70.0f };
+    std::atomic<float> outputCombinedDb { -70.0f };
+    std::atomic<bool> outputClipping { false };
+    std::atomic<float> evenHarmonicRatio { 0.0f };
+    std::atomic<float> oddHarmonicRatio { 0.0f };
     std::atomic<float> inputGainReductionDb { 0.0f };
-    std::atomic<float> gainReductionDb { 0.0f };
+    std::atomic<float> outputGainReductionDb { 0.0f };
+    std::atomic<float> inputCompressorActivity { 0.0f };
+    std::atomic<float> outputCompressorActivity { 0.0f };
     std::atomic<float> compressorActivity { 0.0f };
     std::atomic<float> transportDrift { 0.5f };
     std::atomic<float> harmonicCharacter { 0.0f };
@@ -172,6 +426,11 @@ private:
     std::array<float, 2> highFreqL {};
     std::array<float, 2> highFreqR {};
 
+    // One-pole state for the hiss band-limit, per channel. Kept separate from the tape
+    // filters so the noise colour cannot drift when the tone control moves.
+    float hissLowPassL = 0.0f;
+    float hissLowPassR = 0.0f;
+
     float wowPhaseL = 0.0f;
     float wowPhaseR = 0.0f;
     float flutterPhaseL = 0.0f;
@@ -181,11 +440,44 @@ private:
     float toneLpAc = 0.0f;
     float toneLpBc = 0.0f;
 
+    // Per-instance tape noise generator. Kept as an object member rather than a
+    // thread_local static so that instances never share one stream and the output
+    // is reproducible for a given instance.
+    std::uint32_t noiseState = 0x1b873593u;
+
     // Two independent glue stages, each with its own detector envelope. The input
     // stage runs straight after the input trim, the output stage straight before
     // the output trim; neither reads the other's state.
     GlueCompressor inputCompressor;
     GlueCompressor outputCompressor;
+
+    // Measures the harmonics the tape shaper is actually producing, separating even from
+    // odd. This is the observable signature of the analogue character and drives the
+    // HARMONICS display.
+    HarmonicAnalyser harmonicAnalyser;
+
+    // Output safety limiter, the stage that keeps the signal below the soft clipper so it
+    // almost never has to act. `preLimiterDetector` is a fast peak follower and
+    // `limiterGain` is the smoothed gain it applies; keeping them separate gives the
+    // classic brick-wall shape - instant catch, musical release.
+    float preLimiterDetector = 0.0f;
+    float limiterGain = 1.0f;
+
+    // Final gain compensation. `smoothedCompensationDb` is the slow, programme-level
+    // correction applied after the last compressor. It is driven by comparing the
+    // reference power taken straight after the input trim (before the first compressor)
+    // against the power the chain actually produced. Audio-thread only, so a plain float.
+    float smoothedCompensationDb = 0.0f;
+
+    // K-weighted loudness, run on the plugin output and on the reference point so the
+    // panel can show both ends of the chain on the same scale.
+    LoudnessMeter outputLoudness;
+    LoudnessMeter inputLoudness;
+
+    // Classic 300 ms VU ballistic average, kept separate from the RMS so the VU meter
+    // has the slow, forgiving movement that makes it useful for programme level.
+    float vuAverage = 0.0f;
+    float inputVuAverage = 0.0f;
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessor)

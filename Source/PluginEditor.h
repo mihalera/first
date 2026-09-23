@@ -49,33 +49,53 @@ private:
     class LevelMeter final : public juce::Component
     {
     public:
-        explicit LevelMeter (juce::String title);
-        void setLevels (float peakLinear, float rmsLinear);
+        LevelMeter (juce::String meterTitle, juce::String meterSubtitle);
+
+        /** Feeds the four loudness views plus the equal-weighted combination, all in dB. */
+        void setLoudness (float peakDbIn, float rmsDbIn, float lufsIn, float vuDbIn,
+                          float combinedDbIn, bool clipping);
+
         void setDarkTheme (bool shouldUseDarkTheme) noexcept { darkTheme = shouldUseDarkTheme; }
         void paint (juce::Graphics&) override;
 
     private:
         juce::String title;
+        juce::String subtitle;
         bool darkTheme = false;
-        float rmsDb = -60.0f;
-        float peakHoldDb = -60.0f;
+
+        // The four independent loudness views, in dB. They are kept separately as well
+        // as combined so the meter can show the spread between them: that spread is
+        // itself useful information (a big peak-to-LUFS gap means a very dynamic signal).
+        float peakDb = -70.0f;
+        float rmsDb = -70.0f;
+        float lufs = -70.0f;
+        float vuDb = -70.0f;
+        float combinedDb = -70.0f;
+        bool clipping = false;
+
+        // Smoothed display values, so the numbers move like a meter instead of flickering.
+        float displayedRms = -70.0f;
+        float displayedLufs = -70.0f;
+        float displayedVu = -70.0f;
+        float displayedCombined = -70.0f;
+        float peakHoldDb = -70.0f;
         float peakHoldTime = 0.0f;
-        float animatedRmsDb = -60.0f;
     };
 
-    /** Vertical gain-reduction bar showing how hard the two tape glue stages work. */
+    /** Vertical gain-reduction bar for one glue compressor stage. */
     class CompressorMeter final : public juce::Component
     {
     public:
-        CompressorMeter() { setInterceptsMouseClicks (false, false); }
+        CompressorMeter (juce::String meterTitle, juce::String stageCaption);
         void setDarkTheme (bool shouldUseDarkTheme) noexcept { darkTheme = shouldUseDarkTheme; }
-        void setReduction (float reductionDb, float inputReductionDb, float activity);
+        void setReduction (float reductionDb, float activity);
         void paint (juce::Graphics&) override;
 
     private:
+        juce::String title;
+        juce::String caption;
         bool darkTheme = false;
-        float displayedDb = 0.0f;        // Smoothed total reduction, always <= 0.
-        float displayedInputDb = 0.0f;   // Smoothed input-stage reduction, always <= 0.
+        float displayedDb = 0.0f;   // Smoothed reduction, always <= 0.
         float activity = 0.0f;
     };
 
@@ -141,9 +161,18 @@ private:
     juce::Label compressorLabel;
     juce::Label compressorReadout;
 
-    LevelMeter inputMeter { "INPUT" };
-    LevelMeter outputMeter { "OUTPUT" };
-    CompressorMeter compressorMeter;
+    // Live harmonic readout. This is the one place the panel reports what the analogue
+    // model is actually doing to the signal rather than what it is receiving.
+    juce::Label harmonicsLabel;
+    juce::Label harmonicsReadout;
+
+    // Four metering surfaces, arranged two by two:
+    //   top row    - the INPUT and OUTPUT level VU meters
+    //   bottom row - one gain-reduction meter per glue compressor stage
+    LevelMeter inputMeter { "INPUT", "level VU" };
+    LevelMeter outputMeter { "OUTPUT", "level VU" };
+    CompressorMeter compressorMeterIn { "COMP IN", "after input trim" };
+    CompressorMeter compressorMeterOut { "COMP OUT", "before output trim" };
     bool darkTheme = false;
 
     // Animated presentation state, advanced one step per editor frame.

@@ -5,16 +5,22 @@
       "includePath": [
         "${workspaceFolder}/**",
         "${workspaceFolder}/Source",
-        "D:/Desktop/Programs/JUCE/modules"
+        "${workspaceFolder}/JuceLibraryCode",
+        "D:/Desktop/Programs/JUCE/modules/**"
       ],
       "defines": [
-        "_DEBUG",
+        "JUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1",
+        "JUCE_MODULE_AVAILABLE_juce_audio_processors=1",
+        "JUCE_MODULE_AVAILABLE_juce_gui_basics=1",
+        "JUCE_MODULE_AVAILABLE_juce_opengl=1",
+        "JUCE_MODULE_AVAILABLE_juce_box2d=1",
+        "JucePlugin_Name=\"first\"",
+        "JucePlugin_Build_VST3=1",
         "UNICODE",
         "_UNICODE"
       ],
       "cStandard": "c17",
       "cppStandard": "c++20",
-      "compilerPath": "cl.exe",
       "intelliSenseMode": "windows-msvc-x64"
     }
   ],

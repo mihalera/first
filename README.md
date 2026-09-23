@@ -12,7 +12,9 @@ It explores a tape-saturation workflow with:
 - speed influences and modulation
 - wow / flutter behavior
 - bias, tone, mix, and calibrated output staging in dB
-- an always-on tape glue compressor with a live reduction meter
+- two independent always-on tape glue compressors, one after the input trim and one
+  before the output trim, driven by the signal and by the Input / Output controls
+- four VU-style meters: input and output level, plus one reduction meter per compressor
 - a vintage analog-inspired UI with animated knobs, reel and level meters
 
 ## Signal path
@@ -32,12 +34,38 @@ playback EQ tilt -> output glue compressor (always on) -> output trim (dB) -> st
 | Tone | 0 to 100 % | Warm/soft to open/bright playback EQ |
 | Wow | 0 to 100 % | Slow transport pitch wander |
 | Flutter | 0 to 100 % | Fast transport shimmer |
-| Mix | 0 to 100 % | Dry to fully processed |
+| Mix | 0 to 100 % | True dry/wet crossfade: 0 % is dry, 100 % is fully tape. Default 50 % |
 | Output | -32 to +32 dB | Calibrated output trim in dB |
 | Width | 0 to 100 % | Mono through natural to extra wide |
 | Bypass | on/off | Ramps the whole tape engine out without clicking |
 | Tape Type | J37 / Ampex 456 / Studer A800 / Chrome | Model character |
 | Speed | 7.5 / 15 / 30 ips | Transport speed, affects modulation and top end |
+
+The percentage controls (Drive, Bias, Wow, Flutter) use a skewed knob taper so the
+gentle end of each control gets more travel. This is purely ergonomic and does **not**
+make the processing linear: the analogue nonlinearity lives in the DSP, not in the
+control mapping.
+
+### Analogue nonlinearity
+
+This is a saturation model, so the transfer functions are deliberately nonlinear - that
+is where the harmonics come from:
+
+- The per-control `pow()` curves (Drive 1.45, Bias 1.30, Wow 1.55, Flutter 1.45) make each
+  stage bend progressively harder as it is pushed rather than responding proportionally.
+- `magneticHysteresis()` stacks two `tanh` saturations with different slopes plus a
+  delayed memory term, modelling the soft initial permeability and the harder knee of real
+  magnetic domains. That gives low-order harmonics that grow gradually, and the
+  level-dependent bias term is what produces the even harmonics that make tape sound warm
+  rather than merely clipped.
+- Because clamping costs level, the tape stage tracks how much amplitude the shaper
+  removed and pays it back per sample, so DRIVE changes the tone instead of doubling as a
+  volume control. `finalOutputGain` handles only the static calibration; the two do not
+  fight each other.
+- MIX is the one control that is a true linear crossfade, so the blend always agrees with
+  its own readout.
+
+Speed also changes head-gap damping, so a faster tape genuinely keeps more top end.
 
 The tape glue compressor is compressor-coupled in two places, and the two stages are
 completely independent processors: each has its own detector envelope and its own gain
@@ -54,7 +82,122 @@ steepens its ratio and allows more reduction; turning it below the middle backs 
 stage off completely, at which point it is genuinely transparent. Each stage pays back
 roughly 30-65 % of the reduction it applies as makeup, weighted by how hard its trim
 control is driving it, so neither stage quietly undoes the level the user dialled in.
-The COMP meter shows the combined reduction (0 to -12 dB) plus the IN/OUT split.
+
+## Metering
+
+The meters panel shows four VU-style displays in a 2 x 2 grid:
+
+| Position | Meter | Reads |
+| --- | --- | --- |
+| top left | INPUT | input level, four-way loudness |
+| top right | OUTPUT | output level, four-way loudness |
+| bottom left | COMP IN | reduction of the compressor after the input trim |
+| bottom right | COMP OUT | reduction of the compressor before the output trim |
+
+Each compressor stage publishes its own reduction and detector activity from the audio
+thread, so the two glue meters are independent readings rather than one split value.
+
+### Four-way loudness
+
+Both level meters show the same signal four ways, because each scale answers a different
+question and none of them alone is enough:
+
+| View | What it is | Why it is there |
+| --- | --- | --- |
+| **PEAK dB** | block peak in dBFS | the only view that reports clipping |
+| **RMS** | electrical average of the block | the honest baseline |
+| **LUFS** | K-weighted, ITU-R BS.1770 | tracks perceived loudness rather than voltage |
+| **VU** | 300 ms ballistic average | the classic programme-level display |
+
+LUFS is computed with real K-weighting (high-shelf plus 38 Hz high-pass, rebuilt from the
+sample rate), not an approximation, so the reading is correct at 44.1, 48, 88.2, 96, 176.4
+and 192 kHz. The coefficients derive from `tan(pi * f0 / rate)`, which is exact at any rate.
+
+**MIX 25%** is the equal-weighted average of all four. Both the needle and the dial ride
+that number, so the meter shows one trustworthy value while the text block shows exactly
+how it was arrived at. Averaging in dB rather than linear matters: a single silent view
+would otherwise drag a linear average toward -infinity.
+
+The spread between the rows is itself information: a large PEAK-to-LUFS gap means very
+dynamic material, and a large VU-to-RMS gap means a lot of transient content.
+
+## Output protection
+
+Two stages keep the output clean, in this order:
+
+1. **Safety limiter.** A fast peak-follower pulls the gain back before the signal reaches
+the ceiling. It is a *gain* stage, not a shaper, so it adds no harmonics of its own - the
+only distortion in the output is the tape stage's. Normal material is limited
+transparently.
+
+2. **Soft clipper.** Only what still overshoots (a peak faster than the limiter's attack)
+reaches this. It is a linear region up to 0.70, then blends smoothly into a saturating
+exponential, so:
+   - below the knee the output is bit-for-bit the input, i.e. transparent for normal level;
+   - the value is continuous at the knee and the slope only changes gradually, so there is
+     no audible corner;
+   - it approaches a 0.985 ceiling asymptotically, so **no input, however large, can clip**.
+
+A hard `jlimit (-1, 1)` is deliberately not used anywhere: it converts overshoot into a
+flat-topped square edge, which is digital clipping, not tape behaviour. The meter's red
+PEAK row means the *clipper* had to act, not merely that the signal was loud.
+
+Order matters here: stereo width and the output trim are applied **before** the limiter, so
+a boost on OUTPUT cannot push the signal past the ceiling the limiter just established.
+
+## Final gain compensation
+
+After the last compressor, and before the output trim, a slow compensator compares the
+finished signal against a reference taken **straight after the input trim, before the
+first compressor**. That reference is the level the user dialled in with INPUT, so it is
+what the output should still track once the tape stage and both compressors have done
+their work.
+
+- It only ever **restores** a loss, never exaggerates: the correction is clamped to a
+  positive range, so it cannot turn into a hidden boost stage.
+- It is smoothed with a slow one-pole (about 450 ms), far slower than either compressor,
+  so it settles on the programme level and does not pump with transients. The
+  compressors keep their punch.
+- The measurement is taken *before* the correction is folded in, so it cannot chase its
+  own tail.
+
+This is why the plugin keeps a steady output level as DRIVE, TAPE TYPE, SPEED and MIX are
+changed, instead of drifting louder or quieter with every edit.
+
+## Platform notes
+
+The plugin is written to behave the same at any sample rate and on any display.
+Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
+
+- **Sample rate** - every time-domain constant is rebuilt in `prepareToPlay` through
+  `resetSampleRateDependentState()`. That includes the cached tone filter coefficients,
+  which previously were only refreshed when the Tone control moved and so stayed tuned to
+  the old rate after a switch.
+- **Time, not samples** - filters and detectors are specified as time constants and
+  converted with `1 - exp(-1 / (rate * seconds))`, so a 400 ms LUFS window, a 300 ms VU
+  ballistic and a 0.5 ms limiter attack all keep their meaning when the rate quadruples.
+  Nothing is expressed as a fixed sample count where it should be a duration.
+- **Hiss is band-limited** - the tape noise runs through a ~16 kHz one-pole rather than
+  white to Nyquist. Without it, a 192 kHz session would spread hiss across 96 kHz and it
+  would read as bright digital noise rather than tape. Because the bandwidth is fixed, its
+  gain needs no rate compensation; the earlier `sqrt(rate)` term existed only to keep
+  white-noise energy constant and would double-compensate on top of the band limit.
+- **No fixed Nyquist fractions used as frequencies** - where a limit depends on Nyquist
+  (the harmonic analyser's bins, its frequency tracker) the bound is written as a multiple
+  of the rate with a `jmax` floor, so the two bounds in a `jlimit` can never cross over.
+- **Harmonic analysis** - the Goertzel window is a fixed *duration* (11.6 ms, which is 512
+  samples at 44.1 kHz), so its bin width is constant. A fixed 512-sample window would be
+  only 2.7 ms at 192 kHz, giving a 375 Hz bin width that cannot separate a 1 kHz harmonic
+  series. The analysis stride is likewise rate-scaled, so it runs at a constant rate per
+  second instead of four times as often.
+- **Buffer size** - the DSP is per sample and reads `getNumSamples()` each block, so
+  there is no fixed block-size assumption; zero-length blocks are handled too.
+- **Display scale** - the editor sizes itself from the host display's scale factor, and
+  both meter types lay themselves out proportionally to their own bounds. Text scales
+  with the meter, so nothing is drawn at a hardcoded pixel size.
+- **Fonts** - the title uses a fallback chain rather than a Windows-only family.
+- **OpenGL** - treated as a best-effort accelerator; if a context cannot be created the
+  panel falls back to the normal component renderer.
 
 ## Project type
 

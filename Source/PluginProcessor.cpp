@@ -25,19 +25,45 @@ namespace
         Soft magnetic hysteresis: a memory-dependent shaping that produces the
         asymmetric, mostly-odd/even blend of analogue tape rather than a plain
         symmetric tanh curve. `memory` is the previous shaped output.
+
+        Harmonics are the whole point of this function, so the structure is deliberate:
+
+          - A symmetric tanh generates only ODD harmonics (3rd, 5th...), which read as
+            "harder" or "edgier".
+          - The asymmetry offset biases the curve so it is no longer symmetric about
+            zero. That is what generates EVEN harmonics (2nd, 4th...), and even
+            harmonics are the ones heard as warmth, body and "bigger than the source".
+          - Two tanh stages with different slopes mean the harmonic content grows
+            gradually with level instead of switching on at a threshold, so quiet
+            passages stay clean and loud ones bloom - the behaviour of real tape.
     */
     inline float magneticHysteresis (float x, float drive, float asymmetry, float memory)
     {
         const float biased = x + asymmetry;
-        const float soft = std::tanh (biased * (1.0f + drive * 2.1f));
+
+        // The drive term is exponential in the control value, so the curve keeps bending
+        // further as DRIVE is turned up instead of flattening out once tanh has already
+        // saturated. That progressive compression is the analogue nonlinearity: without
+        // it the top half of the control would add nothing but level.
+        const float flux = biased * (1.0f + drive * 2.1f);
+        const float soft = std::tanh (flux);
+
+        // A second, gentler saturation stage before the hysteresis. Real magnetic
+        // domains respond to the flux in two regions - a soft initial permeability and
+        // a harder knee - and stacking two tanh curves with different slopes is what
+        // gives low-order harmonics that grow gradually rather than appearing at once.
+        const float preSaturated = std::tanh (biased * (0.62f + drive * 1.35f));
 
         // Anhysteretic curve blended with its own delayed image: this lag is what
         // gives tape its "sticky" transient behaviour.
         const float lagged = memory * 0.62f;
-        const float blended = soft * 0.68f + std::tanh ((biased * 0.55f) + lagged) * 0.32f;
+        const float blended = soft * 0.42f
+                            + preSaturated * 0.26f
+                            + std::tanh ((biased * 0.55f) + lagged) * 0.32f;
 
         // Remove the bias offset asymmetrically so the effect adds even harmonics
-        // instead of merely shifting the signal.
+        // instead of merely shifting the signal. The squared term makes the asymmetry
+        // level-dependent, mirroring how real bias interacts with signal amplitude.
         return blended - asymmetry * (0.55f + 0.45f * soft * soft);
     }
 
@@ -46,6 +72,48 @@ namespace
     {
         const float seconds = juce::jmax (0.01f, milliseconds) * 0.001f;
         return 1.0f - std::exp (-1.0f / (seconds * juce::jmax (1.0f, sampleRate)));
+    }
+
+    /**
+        Soft clipper for the very end of the chain.
+
+        A hard `jlimit (-1, 1)` is the one thing this plugin must not do: it turns any
+        overshoot into a flat-topped square edge, which is what "digital clipping" sounds
+        like and it is not a tape behaviour. Tape saturates progressively and rolls off,
+        so the same treatment is applied at the output.
+
+        The curve is a linear region that blends smoothly into a saturating exponential,
+        chosen because it is monotonic, has no jump in value at the knee, and is exactly
+        linear for small inputs. That last property matters: below the knee the output is
+        bit-for-bit the input, so normal material passes through completely untouched and
+        the stage only engages when the signal actually approaches full scale.
+
+        `ceiling` is deliberately just under 1.0 so the output cannot reach full scale even
+        when driven hard. That keeps the plugin from hitting the host's own hard limit, and
+        it means the resulting distortion is always the gentle kind rather than a wrap.
+
+        Below the knee the response is 1:1. Above it, the output approaches the ceiling
+        asymptotically, so no input, however large, can push the result past 0.985.
+    */
+    inline float softClip (float x) noexcept
+    {
+        constexpr float ceiling = 0.985f;
+
+        // Below this the curve is 1:1, so quiet and normal-level material is transparent.
+        constexpr float knee = 0.70f;
+
+        const auto magnitude = std::abs (x);
+        if (magnitude <= knee)
+            return x;
+
+        const auto sign = x < 0.0f ? -1.0f : 1.0f;
+        const auto excess = magnitude - knee;
+
+        // The value is continuous at the knee (it equals `knee` there) and the slope only
+        // changes gradually, so there is no audible corner where saturation begins. The
+        // remaining headroom above the knee is what the exponential curve gets to spend.
+        const auto compressed = knee + (1.0f - std::exp (-excess)) * (ceiling - knee);
+        return sign * juce::jmin (ceiling, compressed);
     }
 
     /**
@@ -67,6 +135,190 @@ namespace
 
         return -(1.0f - 1.0f / ratio) * overshootDb;
     }
+
+    /**
+        Live harmonic analysis of a nonlinear stage.
+
+        The analogue character of this plugin lives in the harmonics its shaper adds, so
+        rather than trusting the curve on paper, the stage is measured: Goertzel filters
+        run at the 2nd and 3rd harmonic of a tracked fundamental and report how much energy
+        is even (2nd) against odd (3rd) relative to it.
+
+        Those two bins are enough to characterise the stage because the split they show is
+        the one that matters: even content is what the bias asymmetry contributes and reads
+        as warmth, odd content is what the symmetric tanh contributes and reads as edge.
+        Measuring more bins would cost more for no extra insight into that balance.
+
+        Two things make this usable as a live meter: it runs only every N samples so the
+        cost is negligible, and it uses the shaper's own input and output, so what it
+        reports is the distortion that was actually produced, not a prediction.
+
+        The result drives the HARMONICS display and is available for future work such as
+        auto-compensating DRIVE.
+    */
+    struct HarmonicAnalyser
+    {
+        void reset() noexcept
+        {
+            evenRatio = 0.0f;
+            oddRatio = 0.0f;
+            fundamentalLevel = 0.0f;
+        }
+
+        /**
+            Feeds one sample of the shaper's input and output.
+
+            Return value: true once a fresh harmonic reading has been produced this call,
+            false while the measurement is still accumulating or while there is too little
+            signal to measure. Callers that only want the running values can use the
+            getters instead and ignore the return entirely.
+        */
+        bool analyse (float shaperInput, float shaperOutput, float sampleRate)
+        {
+            // The fundamental is taken from the zero-crossing rate of the input, which is
+            // cheap and needs no FFT. The estimate is heavily smoothed because it only has
+            // to be in the right region for the harmonic bins to line up.
+            const auto absInput = std::abs (shaperInput);
+            if ((shaperInput >= 0.0f) != previousPositive && absInput > 1.0e-4f)
+            {
+                // samplesSinceCrossing is a period in SAMPLES, so it is converted to a
+                // frequency by dividing the rate. It used to be passed through a jlimit
+                // with frequency bounds, which was dimensionally wrong: clamping a sample
+                // count against a Hz range silently picked the wrong branch and the
+                // estimate only worked because the bounds happened to be wide. The period
+                // itself is what needs guarding, so it is clamped to a sane sample range
+                // and the resulting frequency is bounded separately below.
+                const auto periodSamples = static_cast<float> (
+                    juce::jlimit (2, juce::jmax (2, static_cast<int> (sampleRate)), samplesSinceCrossing));
+                const auto instantFrequency = sampleRate / periodSamples;
+                trackedFrequency += (instantFrequency - trackedFrequency) * 0.05f;
+                samplesSinceCrossing = 0;
+            }
+
+            previousPositive = shaperInput >= 0.0f;
+            ++samplesSinceCrossing;
+
+            // Only measure while there is real signal, and only occasionally.
+            if (absInput < 1.0e-3f)
+            {
+                fundamentalLevel += (0.0f - fundamentalLevel) * 0.05f;
+                return false;
+            }
+
+            // Measure at a fixed RATE rather than every fixed number of samples, so the
+            // update frequency of the readout is the same at 44.1 kHz and 192 kHz. At a
+            // fixed stride the analyser would run four times more often per second on a
+            // 192 kHz session, costing four times as much for a display that updates at
+            // 30 Hz regardless.
+            const auto stride = juce::jmax (16, juce::roundToInt (sampleRate / 700.0f));
+
+            if (++sampleCounter < stride)
+                return true;
+
+            sampleCounter = 0;
+
+            // Bound the tracked frequency to a range that is valid at any sample rate. The
+            // lower edge is a musical floor and the upper edge is kept clear of Nyquist, and
+            // the maximum is taken with jmax so the two can never cross over - passing
+            // inverted bounds to jlimit would return an undefined value rather than the
+            // nearest limit.
+            const auto maxFrequency = juce::jmax (60.0f, sampleRate * 0.45f);
+            const auto frequency = juce::jlimit (30.0f, maxFrequency, trackedFrequency);
+
+            const auto ratioAt = [this, frequency, sampleRate, maxFrequency] (float bin)
+            {
+                if (bin * frequency >= maxFrequency)
+                    return 0.0f;
+
+                return juce::abs (goertzel (shaperOutput, bin * frequency, sampleRate));
+            };
+
+            const auto fundamental = juce::jmax (1.0e-6f, juce::abs (goertzel (shaperInput,
+                                                                               frequency, sampleRate)));
+            const auto second = ratioAt (2.0f);
+            const auto third = ratioAt (3.0f);
+
+            // Relative to the fundamental, so the reading is meaningful at any level: this
+            // is a distortion ratio, not an absolute power.
+            const auto even = second / fundamental;
+            const auto odd = third / fundamental;
+
+            const auto smoothing = 0.15f;
+            evenRatio += (even - evenRatio) * smoothing;
+            oddRatio += (odd - oddRatio) * smoothing;
+            fundamentalLevel += (fundamental - fundamentalLevel) * smoothing;
+
+            return true;
+        }
+
+        /** Second-harmonic content relative to the fundamental - warmth and body. */
+        float getEvenRatio() const noexcept { return evenRatio; }
+
+        /** Third-harmonic content relative to the fundamental - edge and density. */
+        float getOddRatio() const noexcept { return oddRatio; }
+
+        /** How much level the shaper saw, so the display can dim when there is no signal. */
+        float getFundamentalLevel() const noexcept { return fundamentalLevel; }
+
+    private:
+        /**
+            Single-bin magnitude estimate, evaluated over the most recent window so it is
+            independent of the block size. Used instead of an FFT because only four bins
+            are needed and this costs a fraction of a full transform.
+        */
+        float goertzel (float sample, float frequency, float sampleRate) noexcept
+        {
+            const auto omega = juce::MathConstants<float>::twoPi * frequency / sampleRate;
+            const auto coefficient = 2.0f * std::cos (omega);
+
+            // The window length is a fixed TIME, not a fixed number of samples, so the bin
+            // width stays the same at every supported rate. A fixed sample count would make
+            // the window shrink with the sample rate - at 192 kHz 512 samples is only 2.7 ms
+            // and the bin width balloons to 375 Hz, which is wider than the 1 kHz gap
+            // between harmonics and makes the even/odd split meaningless.
+            //
+            // 11.6 ms is the window that 512 samples gives at 44.1 kHz, so the behaviour at
+            // the lower rates is unchanged and the higher ones now match it.
+            const auto samplesPerWindow = juce::jmax (64, juce::roundToInt (0.0116 * sampleRate));
+
+            const auto current = sample + coefficient * previous1 - previous2;
+            previous2 = previous1;
+            previous1 = current;
+
+            // The window is reset periodically rather than run forever, which keeps the
+            // recurrence from accumulating numerical error over a long session.
+            if (++windowCounter >= samplesPerWindow)
+            {
+                // Power at the bin, from the final two states of the recurrence.
+                const auto power = previous1 * previous1 + previous2 * previous2
+                                 - coefficient * previous1 * previous2;
+
+                previous1 = 0.0f;
+                previous2 = 0.0f;
+                windowCounter = 0;
+
+                lastMagnitude = std::sqrt (juce::jmax (0.0f, power))
+                              / static_cast<float> (samplesPerWindow);
+                lastMagnitude = juce::jlimit (0.0f, 4.0f, lastMagnitude);
+            }
+
+            return lastMagnitude;
+        }
+
+        float trackedFrequency = 220.0f;
+        float evenRatio = 0.0f;
+        float oddRatio = 0.0f;
+        float fundamentalLevel = 0.0f;
+        int samplesSinceCrossing = 1;
+        int sampleCounter = 0;
+        bool previousPositive = true;
+
+        // Goertzel recurrence state and its fixed measurement window.
+        float previous1 = 0.0f;
+        float previous2 = 0.0f;
+        float lastMagnitude = 0.0f;
+        int windowCounter = 0;
+    };
 }
 
 //==============================================================================
@@ -126,12 +378,36 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     layout.add (std::make_unique<juce::AudioParameterChoice> ("speed", "Speed",
                                                             juce::StringArray { "7.5 ips", "15 ips", "30 ips" },
                                                             1));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("drive", "Drive", minTrack, maxTrack, 0.42f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("bias", "Bias", minTrack, maxTrack, 0.36f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("tone", "Tone", minTrack, maxTrack, 0.58f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("wow", "Wow", minTrack, maxTrack, 0.14f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("flutter", "Flutter", minTrack, maxTrack, 0.18f));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("mix", "Mix", minTrack, maxTrack, 0.62f));
+
+    // Knob taper only. This skew shapes how knob travel maps onto the parameter value;
+    // it has nothing to do with the sound. The analogue nonlinearity lives in the DSP
+    // itself (the power curves and the stacked tanh stages in processBlock), which are
+    // deliberately NOT linearised - see the note there.
+    //
+    // The skew is centred low so the gentle end of each control gets more travel, which
+    // is where an analogue control is actually judged, while still reaching its maximum.
+    const auto percentageRange = [] (float centre)
+    {
+        juce::NormalisableRange<float> range (minTrack, maxTrack, 0.001f);
+        range.setSkewForCentre (centre);
+        return range;
+    };
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("drive", "Drive", percentageRange (0.45f), 0.42f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("bias", "Bias", percentageRange (0.40f), 0.36f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("tone", "Tone", percentageRange (0.50f), 0.58f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("wow", "Wow", percentageRange (0.35f), 0.14f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("flutter", "Flutter", percentageRange (0.35f), 0.18f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+    // MIX is a true crossfade, so 50 % is the neutral centre. The default sits there
+    // rather than at 62 %, where the control looked like it was doing nothing because
+    // the wet path was almost fully in already.
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("mix", "Mix", minTrack, maxTrack, 0.50f));
 
     return layout;
 }
@@ -202,8 +478,11 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
 {
     juce::ignoreUnused (samplesPerBlock);
     sampleRate = static_cast<float> (sampleRateToUse);
-
-    const auto smoothingSeconds = 0.02;
+    // Stated as a double on purpose: SmoothedValue::reset takes the ramp length in seconds
+    // as a double, and `auto` here would have deduced the same type silently. Naming it
+    // makes the intent explicit and keeps the literal from looking like a float that lost
+    // its suffix.
+    const double smoothingSeconds = 0.02;
     inputGainSmoothed.reset (sampleRateToUse, smoothingSeconds);
     inputGainSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (
         inputDbParam != nullptr ? inputDbParam->load() : 0.0f));
@@ -219,10 +498,25 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
 
     inputPeakLevel.store (0.0f, std::memory_order_relaxed);
     inputRmsLevel.store (0.0f, std::memory_order_relaxed);
+    inputPeakDb.store (-70.0f, std::memory_order_relaxed);
+    inputRmsDb.store (-70.0f, std::memory_order_relaxed);
+    inputLufs.store (-70.0f, std::memory_order_relaxed);
+    inputVuDb.store (-70.0f, std::memory_order_relaxed);
+    inputCombinedDb.store (-70.0f, std::memory_order_relaxed);
+    inputClipping.store (false, std::memory_order_relaxed);
     outputPeakLevel.store (0.0f, std::memory_order_relaxed);
     outputRmsLevel.store (0.0f, std::memory_order_relaxed);
+    outputPeakDb.store (-70.0f, std::memory_order_relaxed);
+    outputRmsDb.store (-70.0f, std::memory_order_relaxed);
+    outputLufs.store (-70.0f, std::memory_order_relaxed);
+    outputVuDb.store (-70.0f, std::memory_order_relaxed);
+    outputCombinedDb.store (-70.0f, std::memory_order_relaxed);
+    outputClipping.store (false, std::memory_order_relaxed);
     gainReductionDb.store (0.0f, std::memory_order_relaxed);
     inputGainReductionDb.store (0.0f, std::memory_order_relaxed);
+    outputGainReductionDb.store (0.0f, std::memory_order_relaxed);
+    inputCompressorActivity.store (0.0f, std::memory_order_relaxed);
+    outputCompressorActivity.store (0.0f, std::memory_order_relaxed);
     compressorActivity.store (0.0f, std::memory_order_relaxed);
     transportDrift.store (0.5f, std::memory_order_relaxed);
     harmonicCharacter.store (0.0f, std::memory_order_relaxed);
@@ -232,6 +526,12 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     hystR.fill (0.0f);
     highFreqL.fill (0.0f);
     highFreqR.fill (0.0f);
+
+    // The hiss band-limit state is per channel and must start empty, or a rate switch would
+    // carry a stale filter state into the first block and produce a click.
+    hissLowPassL = 0.0f;
+    hissLowPassR = 0.0f;
+
     wowPhaseL = 0.0f;
     wowPhaseR = 0.0f;
     flutterPhaseL = 0.0f;
@@ -239,8 +539,70 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     previousTone = -1.0f;
     toneLpAc = 0.0f;
     toneLpBc = 0.0f;
+
+    // The sample rate changed, so every time-domain constant has to be rebuilt.
+    // The tone filters are cached rather than recomputed per block, and their
+    // coefficients depend on the rate, so there is exactly one place that is
+    // allowed to own them: this method. Phase accumulators are reset as well,
+    // otherwise a rate switch would leave wow/flutter at a stale phase and click.
+    resetSampleRateDependentState();
+
+    // The tape noise generator is a per-instance LCG so that every plugin instance
+    // and every render pass is deterministic, rather than sharing one thread_local
+    // stream whose content would depend on how many instances happen to exist.
+    noiseState = 0x1b873593u;
+
+    // The safety limiter must start open, otherwise a stale gain from the previous
+    // session would duck the first block audibly.
+    preLimiterDetector = 0.0f;
+    limiterGain = 1.0f;
+
+    harmonicAnalyser.reset();
+    evenHarmonicRatio.store (0.0f, std::memory_order_relaxed);
+    oddHarmonicRatio.store (0.0f, std::memory_order_relaxed);
+
+    // Loudness metering. The K-weighting filters are built from the sample rate here,
+    // so the LUFS reading is correct at every supported rate rather than being tuned
+    // for one of them.
+    outputLoudness.prepare (sampleRateToUse);
+    outputLoudness.reset();
+    inputLoudness.prepare (sampleRateToUse);
+    inputLoudness.reset();
+    vuAverage = 0.0f;
+    inputVuAverage = 0.0f;
+
     inputCompressor.reset();
     outputCompressor.reset();
+
+    // The final compensation starts from unity so the first block is not nudged by a
+    // stale correction from a previous session or sample rate.
+    smoothedCompensationDb = 0.0f;
+}
+
+void FirstAudioProcessor::resetSampleRateDependentState()
+{
+    // Wow and flutter are very low frequency modulators, but they are advanced as
+    // phase increments per sample, so a stale phase after a rate change is audible
+    // as a click. Starting them from zero makes the transport restart cleanly.
+    wowPhaseL = 0.0f;
+    wowPhaseR = 0.0f;
+    flutterPhaseL = 0.0f;
+    flutterPhaseR = 0.0f;
+
+    // Force the tone filter cache to rebuild against the new rate.
+    previousTone = -1.0f;
+    if (toneParam != nullptr)
+        updateToneCoefficients (toneParam->load());
+}
+
+void FirstAudioProcessor::updateToneCoefficients (float toneValue)
+{
+    // Tone tilt: 0 = warm/soft, 1 = open/bright. Both coefficients are one-pole
+    // filters expressed in milliseconds, so they scale with the sample rate.
+    const auto toneCurve = std::pow (toneValue, 0.92f);
+    toneLpAc = onePoleCoefficient (33.0f * std::pow (0.30f, toneCurve), sampleRate);
+    toneLpBc = onePoleCoefficient (0.55f + 15.0f * toneCurve, sampleRate);
+    previousTone = toneValue;
 }
 
 void FirstAudioProcessor::releaseResources()
@@ -316,8 +678,33 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         inputRmsLevel.store (bypassRms, std::memory_order_relaxed);
         outputPeakLevel.store (bypassPeak, std::memory_order_relaxed);
         outputRmsLevel.store (bypassRms, std::memory_order_relaxed);
+
+        // While fully bypassed the plugin is transparent, so every loudness view reads
+        // the dry signal and the clipping lamp reflects what is actually passing through.
+        const auto bypassPeakDb = juce::Decibels::gainToDecibels (bypassPeak, -70.0f);
+        const auto bypassRmsDb = juce::Decibels::gainToDecibels (bypassRms, -70.0f);
+        outputPeakDb.store (bypassPeakDb, std::memory_order_relaxed);
+        outputRmsDb.store (bypassRmsDb, std::memory_order_relaxed);
+        outputLufs.store (bypassRmsDb, std::memory_order_relaxed);
+        outputVuDb.store (bypassRmsDb, std::memory_order_relaxed);
+        outputCombinedDb.store (bypassPeakDb * 0.25f + bypassRmsDb * 0.75f,
+                                std::memory_order_relaxed);
+        outputClipping.store (bypassPeak > 1.0f, std::memory_order_relaxed);
+
+        // Bypassed, the input and output are the same signal, so the input meter reports
+        // the same four-way reading.
+        inputPeakDb.store (bypassPeakDb, std::memory_order_relaxed);
+        inputRmsDb.store (bypassRmsDb, std::memory_order_relaxed);
+        inputLufs.store (bypassRmsDb, std::memory_order_relaxed);
+        inputVuDb.store (bypassRmsDb, std::memory_order_relaxed);
+        inputCombinedDb.store (bypassPeakDb * 0.25f + bypassRmsDb * 0.75f,
+                               std::memory_order_relaxed);
+        inputClipping.store (bypassPeak > 1.0f, std::memory_order_relaxed);
         gainReductionDb.store (0.0f, std::memory_order_relaxed);
         inputGainReductionDb.store (0.0f, std::memory_order_relaxed);
+        outputGainReductionDb.store (0.0f, std::memory_order_relaxed);
+        inputCompressorActivity.store (0.0f, std::memory_order_relaxed);
+        outputCompressorActivity.store (0.0f, std::memory_order_relaxed);
         compressorActivity.store (0.0f, std::memory_order_relaxed);
         return;
     }
@@ -342,12 +729,27 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     widthSmoothed.setTargetValue (stereoWidth);
     bypassSmoothed.setTargetValue (bypassRequested ? 0.0f : 1.0f);
 
+    // -------------------------------------------------------------------------
+    //  Analogue transfer curves.
+    //
+    //  These are deliberately NONLINEAR and must stay that way: they are the model of
+    //  the machine, not a control taper. A tape stage bends gently at low levels and
+    //  enters saturation hard as it is pushed, and that progressive bending is what
+    //  produces the harmonics. Linearising them (as they briefly were) removes the
+    //  analogue character entirely.
+    //
+    //  The knob taper is handled by the skewed NormalisableRange in
+    //  createParameterLayout, so these power curves are free to be the sound-shaping
+    //  functions they should be.
+    // -------------------------------------------------------------------------
     const auto driveCurve = std::pow (drive, 1.45f);
-    const auto biasCurve = std::pow (bias, 1.15f);
-    const auto toneCurve = std::pow (tone, 0.92f);
+    const auto biasCurve = std::pow (bias, 1.30f);
     const auto wowCurve = std::pow (wow, 1.55f);
     const auto flutterCurve = std::pow (flutter, 1.45f);
-    const auto mixCurve = std::pow (mix, 1.18f);
+
+    // MIX is the one control that must stay linear: it is a plain dry/wet crossfade,
+    // and any curve on it would only make the blend disagree with its own readout.
+    const auto mixCurve = mix;
 
     const auto twoPi = juce::MathConstants<float>::twoPi;
     const auto speedScale = (speed == 0) ? 0.76f : (speed == 1) ? 1.0f : 1.34f;
@@ -397,34 +799,64 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
 
     const float driveAmount = 0.28f + driveCurve * 1.9f;
     const float biasAmount = 0.18f + biasCurve * 1.55f;
-    const float mixAmount = 0.12f + mixCurve * 0.88f;
+
+    // Dry/wet blend. MIX is a genuine crossfade: at 0 % the signal is untouched dry
+    // and at 100 % it is fully through the tape path. Previously the wet side had a
+    // 12 % floor and the dry side was never fully removed, so MIX could not reach a
+    // clean bypass or a fully saturated signal and its travel felt dead at the ends.
+    const float wetGain = mixCurve;
+    const float dryGain = 1.0f - mixCurve;
     const float wowDepth = wowCurve * (0.05f + speedScale * 0.08f);
     const float flutterDepth = flutterCurve * (0.08f + speedScale * 0.09f);
     const float speedBias = 0.84f + speedScale * 0.30f;
 
-    // Tone tilt: 0 = warm/soft, 1 = open/bright. Cached because it feeds an
-    // exponential used per channel, per block rather than per sample.
+    // Tone tilt: 0 = warm/soft, 1 = open/bright. Both coefficients are one-pole
+    // filters in milliseconds, so they are rebuilt whenever the tone control moves,
+    // and also whenever the sample rate changes (see resetSampleRateDependentState).
     if (std::abs (tone - previousTone) > 1.0e-5f)
-    {
-        previousTone = tone;
-        toneLpAc = onePoleCoefficient (33.0f * std::pow (0.30f, toneCurve), sampleRate);
-        toneLpBc = onePoleCoefficient (0.55f + 15.0f * toneCurve, sampleRate);
-    }
+        updateToneCoefficients (tone);
 
-    const float hfPostCoefficient = onePoleCoefficient (hfDampingMs, sampleRate);
+    const float hfPostCoefficient = onePoleCoefficient (hfDampingMs / speedScale, sampleRate);
+
+    // Tape hiss is a continuous noise floor, so its density is expressed per sample and
+    // therefore scales with the sample rate.
+    //
+    // Two things are needed for this to stay correct up to 192 kHz:
+    //
+    //   1. The noise is BAND-LIMITED by the coefficient below rather than running white all
+    //      the way to Nyquist. Real tape hiss comes from the medium and stops well short of
+    //      the top octave; left white it would spread over 96 kHz at a 192 kHz rate, which
+    //      sounds like a bright digital hiss instead of tape. Filtering it also means the
+    //      noise occupies a fixed bandwidth at every rate, which is what makes point 2 work.
+    //
+    //   2. Because the bandwidth is now fixed, the gain no longer needs the sqrt(rate)
+    //      compensation - that term existed only to keep total white-noise energy constant
+    //      as more samples were added per second. Adding it on top of the band limit would
+    //      double-compensate and the hiss would get louder as the rate went up, which is
+    //      exactly the bug this replaces.
     const float hissGain = tapeHiss * 0.00085f;
+
+    // onePoleCoefficient takes MILLISECONDS, so the 16 kHz corner is converted to the
+    // equivalent time constant first: 1 / (2*pi*f). Passing 16000 here would be read as a
+    // 16-second time constant, which would all but remove the hiss instead of shaping it.
+    const float hissBandLimit = onePoleCoefficient (1000.0f / (juce::MathConstants<float>::twoPi * 16000.0f),
+                                                    sampleRate);
 
     // Output staging: the loudness the model adds is balanced out here, so OUTPUT
     // is a clean, calibrated +/- dB trim rather than an extra hidden gain stage.
+    //
+    // This is the STATIC calibration only: it compensates for the fixed gain the
+    // saturation curve adds at a nominal level. The level that is actually lost inside
+    // the shaper as it clamps is tracked per sample in the tape loop (driveCompensation),
+    // so the two do not fight each other - one sets the operating level, the other keeps
+    // the stage gain-neutral as DRIVE and the signal level move.
     const float driveGainCompensation = 0.52f + (1.0f - driveCurve) * 0.22f;
     const float finalOutputGain = 0.72f * driveGainCompensation * (0.94f + speedScale * 0.08f);
 
-    // Continuous pseudo-random tape noise: a 32-bit LCG, sampled independently
-    // per channel, so the hiss is uncorrelated left/right and free of clock
-    // patterns. Thread local because the audio thread owns the state, and advanced
-    // by reference - a thread_local variable has no automatic storage duration, so
-    // C++ does not allow it to be captured by a lambda.
-    static thread_local std::uint32_t noiseState = 0x1b873593u;
+    // Continuous pseudo-random tape noise: a 32-bit LCG held per instance, so the
+    // hiss is uncorrelated between instances and reproducible for a given one. A
+    // thread_local stream would instead couple all plugin instances together and
+    // make the noise depend on how many of them happen to be running.
     const auto nextNoise = [] (std::uint32_t& state) -> float
     {
         state = state * 1664525u + 1013904223u;
@@ -445,6 +877,32 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     float inputPeakReductionDb = 0.0f;
     float inputEnvelopeActivity = 0.0f;
     float driftAccumulator = 0.0f;
+
+    // Reference power for the final gain compensation: the power of the signal straight
+    // after the INPUT trim, before the first glue compressor touches it. That is the
+    // level the user dialled in with INPUT, so it is what the plugin's output should
+    // still be tracking once the tape stage and both compressors have had their way
+    // with the signal. Accumulated across this block only - the correction it drives is
+    // itself smoothed, so no block-to-block history is needed here.
+    float referenceBlockPower = 0.0f;
+
+    // Loudness metering accumulators for this block. currentLufs is carried out of the
+    // per-sample loop because the K-weighted follower is stateful across the whole block.
+    float currentLufs = -70.0f;
+    bool clippingThisBlock = false;
+    float currentInputLufs = -70.0f;
+    bool inputClippingThisBlock = false;
+
+    // The input side of the K-weighted meter needs the raw signal, but the buffer is
+    // processed in place, so the dry input of the current sample is stashed here before
+    // the channel loop overwrites it. Two slots are enough for a stereo frame.
+    std::array<float, 2> inputChainHistory {};
+
+    // Slow one-pole coefficient for the compensation itself. Deliberately far slower
+    // than either compressor, so the correction settles on the programme level instead
+    // of pumping along with the transients.
+    const float compensationCoefficient = 1.0f - std::exp (
+        -1.0f / (juce::jmax (1.0f, sampleRate) * 0.45f));
 
     // -------------------------------------------------------------------------
     //  Glue compressor operating points.
@@ -485,6 +943,9 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         const float currentWidth = widthSmoothed.getNextValue();
         const float bypassMix = bypassSmoothed.getNextValue();
 
+        // Per-sample reference power for the final compensation, reset each iteration.
+        referenceBlockPower = 0.0f;
+
         // The dry/wet blend is handled per channel below, so the smoothed mix value
         // only has to be advanced once per sample to stay in step with the others.
         mixSmoothed.getNextValue();
@@ -501,6 +962,14 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             const float rawInput = channelData[static_cast<std::size_t> (channel)][sample];
             inputPeak = juce::jmax (inputPeak, std::abs (rawInput));
             inputSquares += static_cast<double> (rawInput) * rawInput;
+            inputChainHistory[static_cast<std::size_t> (channel)] = rawInput;
+
+            // Input-side VU ballistic and clipping, measured on the raw signal arriving
+            // at the plugin so the INPUT meter shows what the host is actually sending.
+            const auto inputVuCoefficient = 1.0f - std::exp (-1.0f / (sampleRate * 0.3f));
+            inputVuAverage += (std::abs (rawInput) - inputVuAverage) * inputVuCoefficient;
+            if (std::abs (rawInput) > 1.0f)
+                inputClippingThisBlock = true;
 
             // Input trim, then the input stage glue compressor. The detector runs on
             // the trimmed signal, which is the level the INPUT control is asking for,
@@ -508,6 +977,11 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             // hears one consistent, controlled level rather than a re-trim.
             const float inputTrimmed = rawInput * inputGain;
 
+            // Track the power of the post-INPUT, pre-first-compressor signal. Only the
+            // first channel contributes so the reference is a mono measurement, which
+            // keeps it independent of how the stereo material is panned.
+            if (channel == 0)
+                referenceBlockPower += inputTrimmed * inputTrimmed;
             // ------------------------------------------------------------------
             //  Input stage glue compressor. It sits straight after the input trim,
             //  so the signal that reaches the tape is always the controlled one and
@@ -537,8 +1011,11 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
 
             wowPhase += (twoPi * wowFreq) / sampleRate;
             flutterPhase += (twoPi * flutterFreq) / sampleRate;
-            if (wowPhase > twoPi) wowPhase -= twoPi;
-            if (flutterPhase > twoPi) flutterPhase -= twoPi;
+            // Wrap rather than a single subtraction: at very low rates, or with a
+            // high wow/flutter setting, one increment can exceed a full turn and a
+            // lone `-= twoPi` would leave the phase running away unbounded.
+            wowPhase = std::fmod (wowPhase, twoPi);
+            flutterPhase = std::fmod (flutterPhase, twoPi);
 
             if (channel == 0)
                 driftAccumulator = wowLfo * wowDepth + flutterLfo * flutterDepth;
@@ -562,6 +1039,16 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             hysteresisMemory[1] = hysteresisMemory[0];
             hysteresisMemory[0] = shapedCore;
 
+            // Measure what the shaper actually produced, comparing its input against its
+            // output. Harmonics are the reason this plugin exists, so the character is
+            // observed rather than assumed: the analyser separates the even content
+            // (warmth, from the bias asymmetry) from the odd content (edge, from the
+            // symmetric tanh). Only the left channel is measured, since the two are driven
+            // identically and doubling the analyser would cost twice as much for the same
+            // reading.
+            if (channel == 0)
+                harmonicAnalyser.analyse (preDrive, shapedCore, sampleRate);
+
             // Tape is a low-pass medium: the faster the tape and the brighter the
             // tone setting, the more top end survives.
             highFreqMemory[1] += (shapedCore - highFreqMemory[1]) * toneLpAc;
@@ -575,17 +1062,46 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             // Scale compensation, gentle level-dependent bias compression and the
             // tape noise floor ride on the modulated signal.
             const float compensation = tapeCurve / 1.30f;
+
+            // Nonlinearity costs level: the two tanh stages in magneticHysteresis clamp
+            // the signal, so the harmonic character they add would be accompanied by a
+            // gain drop that made DRIVE feel like a volume trim. This estimates how much
+            // amplitude the shaper removed (it tracks the shaper's own output level) and
+            // pays it back, so the stage stays roughly gain-neutral and the added
+            // harmonics are heard as tone rather than as a level change.
+            const float shapedLevel = std::abs (shapedCore);
+            const float shaperLoss = juce::jlimit (0.0f, 1.0f,
+                                                   driveAmount * 0.30f * (1.0f - shapedLevel * 0.85f));
+            const float driveCompensation = 1.0f + shaperLoss * 1.35f;
+
             const float compressedBias = headLoss * (1.0f - 0.18f * headLoss * headLoss)
-                                       / juce::jmax (0.35f, compensation);
-            const float noiseFloor = nextNoise (noiseState) * hissGain;
+                                       / juce::jmax (0.35f, compensation)
+                                       * juce::jlimit (0.45f, 2.2f, driveCompensation);
+
+            // The hiss is band-limited rather than white, so its spectrum is the same at
+            // 44.1 kHz and 192 kHz and it reads as tape noise instead of digital hiss. The
+            // filter state is per channel so the two sides stay uncorrelated.
+            auto& hissLowPass = channel == 0 ? hissLowPassL : hissLowPassR;
+            const float rawHiss = nextNoise (noiseState) * hissGain;
+            hissLowPass += (rawHiss - hissLowPass) * hissBandLimit;
+
+            // The band limit costs most of the noise power, so the gain is compensated by
+            // the inverse of the filter's RMS response. Deriving it from the coefficient
+            // rather than a fixed number keeps the perceived level flat at every rate.
+            const float hissLevelCompensation = 1.0f / std::sqrt (juce::jmax (0.05f, hissBandLimit));
+            const float noiseFloor = hissLowPass * hissLevelCompensation;
+
             const float motioned = (compressedBias + noiseFloor) * wowMod * flutterMod * grainMod;
 
             // Playback EQ: subtract the low band for air, add it back for body.
             const float lowBand = highFreqMemory[0];
             const float deEmphasised = motioned + (motioned - lowBand) * toneLpBc * 1.7f;
 
-            const float wetMix = deEmphasised * (0.20f + mixAmount * 0.82f);
-            const float dryMix = x * (1.0f - mixAmount);
+            // Equal-gain crossfade between the dry input and the fully processed tape
+            // signal. The wet path is level-matched in finalOutputGain, so 0 % is a
+            // transparent dry signal and 100 % is all tape, with no dip in the middle.
+            const float wetMix = deEmphasised * wetGain;
+            const float dryMix = x * dryGain;
             tapeOutput[static_cast<std::size_t> (channel)] = dryMix + wetMix;
         }
 
@@ -626,10 +1142,54 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
                                                                    * outputMakeupFraction);
         const float stageGain = compressionGain * outputMakeup * finalOutputGain * inputMakeup;
 
+        // ---------------------------------------------------------------------
+        //  Final gain compensation.
+        //
+        //  The tape stage, the two glue compressors and their makeup all change the
+        //  level, so what leaves the plugin is not necessarily the level the user
+        //  dialled in with INPUT. This compares the finished signal against the
+        //  reference taken straight after the input trim and before the first
+        //  compressor, and pays back whatever was lost or gained, so the plugin holds
+        //  its output level as DRIVE, TAPE TYPE, SPEED and MIX are changed instead of
+        //  drifting louder or quieter with every edit.
+        //
+        //  The correction is smoothed with a slow one-pole, so it tracks the overall
+        //  programme level rather than fighting the moment-to-moment compression. That
+        //  keeps the compressors' punch intact: it corrects the average, not transients.
+        // ---------------------------------------------------------------------
+        float compensationGain = 1.0f;
+        if (referenceBlockPower > 0.0f)
+        {
+            // Power of the signal as it leaves the compressors and tape stage, but
+            // BEFORE this compensation is folded in - measuring the compensated output
+            // would make the correction chase its own tail.
+            float postCompressorPower = 0.0f;
+            for (int channel = 0; channel < activeChannels; ++channel)
+            {
+                const auto signal = tapeOutput[static_cast<std::size_t> (channel)] * stageGain;
+                postCompressorPower += signal * signal;
+            }
+
+            if (postCompressorPower > 1.0e-12f)
+            {
+                // How far the finished signal has fallen below the reference taken after
+                // the input trim. Positive means level was lost and needs paying back.
+                const auto levelRatioDb = juce::Decibels::gainToDecibels (
+                    std::sqrt (referenceBlockPower / postCompressorPower), 0.0f);
+
+                // Only ever restore, never exaggerate: the correction may recover a loss
+                // but must not become an extra boost stage of its own.
+                const auto targetCompensationDb = juce::jlimit (0.0f, 12.0f, levelRatioDb);
+                smoothedCompensationDb += (targetCompensationDb - smoothedCompensationDb)
+                                        * compensationCoefficient;
+                compensationGain = juce::Decibels::decibelsToGain (smoothedCompensationDb);
+            }
+        }
+
         std::array<float, 2> outputSignal {};
         for (int channel = 0; channel < activeChannels; ++channel)
             outputSignal[static_cast<std::size_t> (channel)] =
-                tapeOutput[static_cast<std::size_t> (channel)] * stageGain;
+                tapeOutput[static_cast<std::size_t> (channel)] * stageGain * compensationGain;
 
         if (activeChannels == 2)
         {
@@ -639,16 +1199,98 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             outputSignal[1] = mid - side;
         }
 
+        // Apply the output trim before limiting, not after. The limiter has to be the last
+        // thing that touches the level, otherwise a boost on the OUTPUT control would push
+        // the signal straight past the ceiling it just established and the clipper would
+        // be doing the work instead.
+        for (int channel = 0; channel < activeChannels; ++channel)
+            outputSignal[static_cast<std::size_t> (channel)] *= outputGain;
+
+        // ---------------------------------------------------------------------
+        //  Program-dependent safety limiter.
+        //
+        //  This exists so the soft clipper downstream stays idle. It watches the loudest
+        //  channel of the frame and pulls the gain back whenever the signal is heading for
+        //  the ceiling, then releases slowly enough to stay musical.
+        //
+        //  It is a GAIN stage rather than a shaper, so it adds no harmonics of its own:
+        //  the only distortion in the output is the tape stage's, which is intentional.
+        //  Normal material is limited transparently and only genuinely excessive level
+        //  ever reaches the clipper.
+        // ---------------------------------------------------------------------
+        float framePeak = 0.0f;
+        for (int channel = 0; channel < activeChannels; ++channel)
+            framePeak = juce::jmax (framePeak, std::abs (outputSignal[static_cast<std::size_t> (channel)]));
+
+        // A very fast attack catches transients before they overshoot; the release is
+        // short enough to recover between events without pumping on sustained material.
+        const auto limiterCeiling = 0.94f;
+        const auto detectorAttack = 1.0f - std::exp (-1.0f / (sampleRate * 0.0005f));
+        const auto detectorRelease = 1.0f - std::exp (-1.0f / (sampleRate * 0.080f));
+        const auto detectorCoefficient = framePeak > preLimiterDetector ? detectorAttack
+                                                                        : detectorRelease;
+        preLimiterDetector += (framePeak - preLimiterDetector) * detectorCoefficient;
+
+        // Gain required to bring the peak back to the ceiling. It is smoothed separately
+        // from the detector so the correction is continuous and cannot click.
+        const auto requiredGain = preLimiterDetector > limiterCeiling
+                                    ? limiterCeiling / preLimiterDetector
+                                    : 1.0f;
+        const auto gainSmoothing = requiredGain < limiterGain
+                                     ? 1.0f - std::exp (-1.0f / (sampleRate * 0.0004f))
+                                     : 1.0f - std::exp (-1.0f / (sampleRate * 0.120f));
+        limiterGain += (requiredGain - limiterGain) * gainSmoothing;
+
+        for (int channel = 0; channel < activeChannels; ++channel)
+            outputSignal[static_cast<std::size_t> (channel)] *= limiterGain;
+
         for (int channel = 0; channel < activeChannels; ++channel)
         {
             auto& destination = channelData[static_cast<std::size_t> (channel)][sample];
-            const auto processed = outputSignal[static_cast<std::size_t> (channel)] * outputGain;
-            const auto blended = destination + (processed - destination) * bypassMix;
-            const auto limitedOut = juce::jlimit (-1.0f, 1.0f, blended);
+            const auto blended = destination + (outputSignal[static_cast<std::size_t> (channel)]
+                                                 - destination) * bypassMix;
+
+            // Protection for the output, in two stages:
+            //
+            //   1. The safety limiter above keeps normal programme below the ceiling.
+            //   2. The soft clipper only bends what still overshoots - a peak faster than
+            //      the limiter's attack - so it is the last resort, not the mechanism that
+            //      keeps the level in range.
+            //
+            // The flag therefore means "the soft clipper had to act", not merely "the
+            // signal was loud", so the meter warns about real distortion.
+            if (std::abs (blended) > 0.985f)
+                clippingThisBlock = true;
+
+            const auto limitedOut = softClip (blended);
             destination = limitedOut;
             outputPeak = juce::jmax (outputPeak, std::abs (limitedOut));
             outputSquares += static_cast<double> (limitedOut) * limitedOut;
+
+            // VU ballistic: a 300 ms average, fed once per channel so it measures the
+            // same programme average a hardware VU would.
+            const auto vuCoefficient = 1.0f - std::exp (-1.0f / (sampleRate * 0.3f));
+            vuAverage += (std::abs (limitedOut) - vuAverage) * vuCoefficient;
         }
+
+        // K-weighted loudness runs on the final stereo frame, after the width stage, so
+        // it reports what actually leaves the plugin.
+        if (activeChannels == 2)
+            currentLufs = outputLoudness.processFrame (outputSignal[0] * outputGain,
+                                                       outputSignal[1] * outputGain, sampleRate);
+        else if (activeChannels == 1)
+            currentLufs = outputLoudness.processFrame (outputSignal[0] * outputGain,
+                                                       outputSignal[0] * outputGain, sampleRate);
+
+        // The INPUT meter runs the same K-weighting on the raw signal at the plugin's
+        // own input, so the two meters can be compared directly. The channels are read
+        // back from the buffer because the dry input was overwritten in place.
+        if (activeChannels == 2)
+            currentInputLufs = inputLoudness.processFrame (inputChainHistory[0], inputChainHistory[1],
+                                                           sampleRate);
+        else if (activeChannels == 1)
+            currentInputLufs = inputLoudness.processFrame (inputChainHistory[0], inputChainHistory[0],
+                                                           sampleRate);
     }
 
     const auto measuredSamples = static_cast<double> (numSamples)
@@ -674,6 +1316,61 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     retainPeakUntilConsumed (outputPeakLevel, outputPeak);
     outputRmsLevel.store (outputRms, std::memory_order_relaxed);
 
+    // -------------------------------------------------------------------------
+    //  Four-way loudness meter.
+    //
+    //  Each view is converted to dB and then averaged with equal weight, so no single
+    //  scale can dominate the combined reading:
+    //
+    //    dB   - true peak of the block, the only view that reports clipping
+    //    RMS  - electrical average of the whole block
+    //    LUFS - K-weighted, so it tracks perceived loudness rather than voltage
+    //    VU   - 300 ms ballistic average, the classic programme-level display
+    //
+    //  Averaging in dB (rather than linear) keeps the four views comparable, because
+    //  all four are already level scales; converting to linear first would let a single
+    //  silent view drag the result toward -infinity.
+    // -------------------------------------------------------------------------
+    const auto outputPeakDbValue = juce::Decibels::gainToDecibels (outputPeak, -70.0f);
+    const auto outputRmsDbValue = juce::Decibels::gainToDecibels (outputRms, -70.0f);
+    const auto outputVuDbValue = juce::Decibels::gainToDecibels (vuAverage, -70.0f);
+
+    constexpr float viewWeight = 0.25f;
+    const auto combinedDb = outputPeakDbValue * viewWeight
+                          + outputRmsDbValue * viewWeight
+                          + currentLufs * viewWeight
+                          + outputVuDbValue * viewWeight;
+
+    outputPeakDb.store (outputPeakDbValue, std::memory_order_relaxed);
+    outputRmsDb.store (outputRmsDbValue, std::memory_order_relaxed);
+    outputLufs.store (currentLufs, std::memory_order_relaxed);
+    outputVuDb.store (outputVuDbValue, std::memory_order_relaxed);
+    outputCombinedDb.store (combinedDb, std::memory_order_relaxed);
+    outputClipping.store (clippingThisBlock, std::memory_order_relaxed);
+
+    // Same four-way treatment for the input side, so the two meters are directly
+    // comparable: the difference between them is what the plugin did to the level.
+    const auto inputPeakDbValue = juce::Decibels::gainToDecibels (inputPeak, -70.0f);
+    const auto inputRmsDbValue = juce::Decibels::gainToDecibels (inputRms, -70.0f);
+    const auto inputVuDbValue = juce::Decibels::gainToDecibels (inputVuAverage, -70.0f);
+
+    const auto inputCombinedValue = inputPeakDbValue * viewWeight
+                                  + inputRmsDbValue * viewWeight
+                                  + currentInputLufs * viewWeight
+                                  + inputVuDbValue * viewWeight;
+
+    inputPeakDb.store (inputPeakDbValue, std::memory_order_relaxed);
+    inputRmsDb.store (inputRmsDbValue, std::memory_order_relaxed);
+    inputLufs.store (currentInputLufs, std::memory_order_relaxed);
+    inputVuDb.store (inputVuDbValue, std::memory_order_relaxed);
+    inputCombinedDb.store (inputCombinedValue, std::memory_order_relaxed);
+    inputClipping.store (inputClippingThisBlock, std::memory_order_relaxed);
+
+    // Harmonic character, measured on the shaper earlier in the block. Published so the
+    // panel can show the even/odd balance the tape stage is actually producing.
+    evenHarmonicRatio.store (harmonicAnalyser.getEvenRatio(), std::memory_order_relaxed);
+    oddHarmonicRatio.store (harmonicAnalyser.getOddRatio(), std::memory_order_relaxed);
+
     // Blocks of zero samples arrive during silence (and with some host buffer sizes),
     // and by then the per-sample smoothing would never have been advanced.
     inputGainSmoothed.skip (numSamples);
@@ -683,10 +1380,15 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     bypassSmoothed.skip (numSamples);
 
     // Glue compressor telemetry: worst-case reduction this block plus an activity
-    // envelope the UI can animate, both read without locking. The reduction of the
-    // input stage is published separately so the display can label the two stages.
-    gainReductionDb.store (peakReductionDb, std::memory_order_relaxed);
+    // envelope the UI can animate, both read without locking. Each stage publishes
+    // its own reduction and activity so the editor can give it a dedicated meter.
     inputGainReductionDb.store (inputPeakReductionDb, std::memory_order_relaxed);
+    outputGainReductionDb.store (peakReductionDb, std::memory_order_relaxed);
+    inputCompressorActivity.store (juce::jlimit (0.0f, 1.0f, inputEnvelopeActivity),
+                                   std::memory_order_relaxed);
+    outputCompressorActivity.store (juce::jlimit (0.0f, 1.0f,
+                                                  outputCompressor.getEnvelopeActivity()),
+                                    std::memory_order_relaxed);
     compressorActivity.store (juce::jlimit (0.0f, 1.0f,
                                             juce::jmax (inputEnvelopeActivity,
                                                         outputCompressor.getEnvelopeActivity())),

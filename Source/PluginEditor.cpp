@@ -12,7 +12,6 @@ namespace
     {
         juce::Colour background;
         juce::Colour panel;
-        juce::Colour card;
         juce::Colour raised;
         juce::Colour border;
         juce::Colour accent;
@@ -28,42 +27,46 @@ namespace
         juce::Colour status;
     };
 
+    // NOTE: this struct is aggregate-initialised positionally below, so the field order here
+    // and the order of the colour literals in each palette must stay in step. `card` used to
+    // sit third and was never read, which meant every colour after it was one field adrift of
+    // its name; it has been removed and the literals below follow this order exactly.
+    // If you add a field, add it at the end and append its literal to both palettes.
+
     const UiPalette ivoryPalette {
-        juce::Colour::fromRGB (197, 184, 157),
-        juce::Colour::fromRGB (222, 210, 187),
-        juce::Colour::fromRGB (211, 197, 169),
-        juce::Colour::fromRGB (231, 220, 197),
-        juce::Colour::fromRGB (111, 97, 73),
-        juce::Colour::fromRGB (145, 96, 42),
-        juce::Colour::fromRGB (45, 38, 29),
-        juce::Colour::fromRGB (102, 91, 72),
-        juce::Colour::fromRGB (179, 162, 130),
-        juce::Colour::fromRGB (217, 203, 176),
-        juce::Colour::fromRGB (93, 78, 55),
-        juce::Colour::fromRGB (245, 238, 222),
-        juce::Colour::fromRGB (239, 229, 203),
-        juce::Colour::fromRGB (49, 43, 33),
-        juce::Colour::fromRGB (132, 47, 37),
-        juce::Colour::fromRGB (62, 111, 72)
+        juce::Colour::fromRGB (197, 184, 157),   // background
+        juce::Colour::fromRGB (222, 210, 187),   // panel
+        juce::Colour::fromRGB (231, 220, 197),   // raised
+        juce::Colour::fromRGB (111, 97, 73),     // border
+        juce::Colour::fromRGB (145, 96, 42),     // accent
+        juce::Colour::fromRGB (45, 38, 29),      // text
+        juce::Colour::fromRGB (102, 91, 72),     // secondary
+        juce::Colour::fromRGB (179, 162, 130),   // knobFace
+        juce::Colour::fromRGB (217, 203, 176),   // knobHighlight
+        juce::Colour::fromRGB (93, 78, 55),      // knobEdge
+        juce::Colour::fromRGB (245, 238, 222),   // readout
+        juce::Colour::fromRGB (239, 229, 203),   // gaugeFace
+        juce::Colour::fromRGB (49, 43, 33),      // gaugeInk
+        juce::Colour::fromRGB (132, 47, 37),     // needle
+        juce::Colour::fromRGB (62, 111, 72)      // status
     };
 
     const UiPalette charcoalPalette {
-        juce::Colour::fromRGB (28, 25, 21),
-        juce::Colour::fromRGB (54, 46, 35),
-        juce::Colour::fromRGB (68, 57, 42),
-        juce::Colour::fromRGB (84, 70, 50),
-        juce::Colour::fromRGB (144, 117, 72),
-        juce::Colour::fromRGB (211, 166, 83),
-        juce::Colour::fromRGB (244, 231, 204),
-        juce::Colour::fromRGB (190, 173, 140),
-        juce::Colour::fromRGB (89, 72, 51),
-        juce::Colour::fromRGB (126, 105, 73),
-        juce::Colour::fromRGB (209, 172, 103),
-        juce::Colour::fromRGB (35, 30, 24),
-        juce::Colour::fromRGB (226, 210, 173),
-        juce::Colour::fromRGB (48, 39, 28),
-        juce::Colour::fromRGB (132, 47, 37),
-        juce::Colour::fromRGB (122, 174, 128)
+        juce::Colour::fromRGB (28, 25, 21),      // background
+        juce::Colour::fromRGB (54, 46, 35),      // panel
+        juce::Colour::fromRGB (84, 70, 50),      // raised
+        juce::Colour::fromRGB (144, 117, 72),    // border
+        juce::Colour::fromRGB (211, 166, 83),    // accent
+        juce::Colour::fromRGB (244, 231, 204),   // text
+        juce::Colour::fromRGB (190, 173, 140),   // secondary
+        juce::Colour::fromRGB (89, 72, 51),      // knobFace
+        juce::Colour::fromRGB (126, 105, 73),    // knobHighlight
+        juce::Colour::fromRGB (209, 172, 103),   // knobEdge
+        juce::Colour::fromRGB (35, 30, 24),      // readout
+        juce::Colour::fromRGB (226, 210, 173),   // gaugeFace
+        juce::Colour::fromRGB (48, 39, 28),      // gaugeInk
+        juce::Colour::fromRGB (132, 47, 37),     // needle
+        juce::Colour::fromRGB (122, 174, 128)    // status
     };
 
     const UiPalette& paletteFor (bool darkTheme)
@@ -222,31 +225,44 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
 }
 
 //==============================================================================
-FirstAudioProcessorEditor::LevelMeter::LevelMeter (juce::String meterTitle)
-    : title (std::move (meterTitle))
+FirstAudioProcessorEditor::LevelMeter::LevelMeter (juce::String meterTitle, juce::String meterSubtitle)
+    : title (std::move (meterTitle)), subtitle (std::move (meterSubtitle))
 {
     setOpaque (false);
 }
 
-void FirstAudioProcessorEditor::LevelMeter::setLevels (float peakLinear, float rmsLinear)
+void FirstAudioProcessorEditor::LevelMeter::setLoudness (float peakDbIn, float rmsDbIn,
+                                                        float lufsIn, float vuDbIn,
+                                                        float combinedDbIn, bool clippingIn)
 {
-    constexpr float floorDb = -60.0f;
+    constexpr float floorDb = -70.0f;
     constexpr float frameSeconds = 1.0f / 30.0f;
 
-    const auto toDb = [] (float level)
+    peakDb = juce::jlimit (floorDb, 6.0f, peakDbIn);
+    rmsDb = juce::jlimit (floorDb, 6.0f, rmsDbIn);
+    lufs = juce::jlimit (floorDb, 6.0f, lufsIn);
+    vuDb = juce::jlimit (floorDb, 6.0f, vuDbIn);
+    combinedDb = juce::jlimit (floorDb, 6.0f, combinedDbIn);
+    clipping = clippingIn;
+
+    // Each view gets a ballistic matched to what it represents: the combined reading and
+    // the RMS rise quickly and fall slowly, the VU is left slow because that is its whole
+    // point, and the K-weighted LUFS is already time-averaged in the DSP.
+    const auto smoothTowards = [] (float current, float target, float rise, float fall)
     {
-        return juce::Decibels::gainToDecibels (juce::jmax (0.0f, level), -60.0f);
+        const auto coefficient = target > current ? rise : fall;
+        return current + (target - current) * coefficient;
     };
 
-    const auto targetPeakDb = juce::jlimit (floorDb, 6.0f, toDb (peakLinear));
-    const auto targetRmsDb = juce::jlimit (floorDb, 6.0f, toDb (rmsLinear));
+    displayedRms = smoothTowards (displayedRms, rmsDb, 0.55f, 0.15f);
+    displayedLufs = smoothTowards (displayedLufs, lufs, 0.30f, 0.10f);
+    displayedVu = smoothTowards (displayedVu, vuDb, 0.18f, 0.18f);
+    displayedCombined = smoothTowards (displayedCombined, combinedDb, 0.45f, 0.14f);
 
-    const auto rmsCoefficient = targetRmsDb > rmsDb ? 0.58f : 0.16f;
-    rmsDb += (targetRmsDb - rmsDb) * rmsCoefficient;
-
-    if (targetPeakDb >= peakHoldDb)
+    // Peak hold, so a fast transient stays readable instead of flashing past.
+    if (peakDb >= peakHoldDb)
     {
-        peakHoldDb = targetPeakDb;
+        peakHoldDb = peakDb;
         peakHoldTime = 0.65f;
     }
     else if (peakHoldTime > 0.0f)
@@ -255,7 +271,7 @@ void FirstAudioProcessorEditor::LevelMeter::setLevels (float peakLinear, float r
     }
     else
     {
-        peakHoldDb = juce::jmax (targetPeakDb, peakHoldDb - 18.0f * frameSeconds);
+        peakHoldDb = juce::jmax (peakDb, peakHoldDb - 18.0f * frameSeconds);
     }
 
     repaint();
@@ -271,17 +287,44 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     g.drawRoundedRectangle (bounds.reduced (0.5f), 5.0f, 1.0f);
 
     g.setColour (palette.text);
-    g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)));
-    g.drawText (title, getLocalBounds().removeFromTop (26), juce::Justification::centred, false);
+    // A local text scale derived from the meter's own size (not from the display), so
+    // the labels grow with the dial instead of staying at a fixed 8-10 px and becoming
+    // unreadable in a large cell or oversized in a small one.
+    const auto textScale = juce::jlimit (0.85f, 1.6f,
+                                         static_cast<float> (getWidth()) / 190.0f * 1.0f);
 
-    const auto centreX = static_cast<float> (getWidth()) * 0.5f;
-    const auto centreY = 137.0f;
-    const auto radius = juce::jmin (centreX - 12.0f, 48.0f);
+    g.setColour (palette.text);
+    g.setFont (juce::Font (juce::FontOptions (10.0f * textScale, juce::Font::bold)));
+    g.drawText (title, getLocalBounds().removeFromTop (juce::roundToInt (20.0f * textScale)),
+                juce::Justification::centred, false);
+
+    g.setColour (palette.secondary);
+    g.setFont (juce::Font (juce::FontOptions (8.0f * textScale)));
+    g.drawText (subtitle,
+                getLocalBounds().removeFromTop (juce::roundToInt (32.0f * textScale))
+                                .withTrimmedTop (juce::roundToInt (18.0f * textScale)),
+                juce::Justification::centred, false);
+
+    // Everything below is derived from this component's own bounds rather than from
+    // fixed pixel offsets, so the dial stays centred and correctly scaled whether the
+    // meter is a tall single-column VU or one cell of the 2 x 2 grid, and at any
+    // display scale factor. `bounds` is the same rectangle the frame above was drawn
+    // from, so it is reused rather than recomputed.
+    const auto labelArea = 44.0f;
+    const auto readoutArea = 46.0f;
+    const auto face = bounds.withTrimmedTop (labelArea).withTrimmedBottom (readoutArea);
+
+    const auto centreX = face.getCentreX();
+    // The dial is a half circle sitting on the lower edge of the face area.
+    const auto radius = juce::jmin (face.getWidth() * 0.5f - 10.0f, face.getHeight() * 0.72f);
+    const auto centreY = face.getBottom() - 6.0f;
     const auto startAngle = juce::MathConstants<float>::pi;
     const auto endAngle = juce::MathConstants<float>::twoPi;
 
-    const auto dial = juce::Rectangle<float> (centreX - radius - 8.0f, 37.0f,
-                                              (radius + 8.0f) * 2.0f, 185.0f);
+    const auto dial = juce::Rectangle<float> (centreX - radius - 8.0f,
+                                              centreY - radius - 10.0f,
+                                              (radius + 8.0f) * 2.0f,
+                                              radius + 16.0f);
     g.setColour (palette.knobEdge.withAlpha (0.55f));
     g.fillRoundedRectangle (dial, 4.0f);
     g.setColour (palette.gaugeFace);
@@ -289,15 +332,19 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     g.setColour (palette.border);
     g.drawRoundedRectangle (dial.reduced (3.0f), 3.0f, 0.9f);
 
+    // The tick marks and their labels only make sense once the dial is big enough to
+    // separate them, so they are drawn from an adaptive count rather than always ten.
+    const auto tickCount = radius > 34.0f ? 10 : 6;
+
     juce::Path scaleArc;
     scaleArc.addCentredArc (centreX, centreY, radius, radius, 0.0f,
                             startAngle, endAngle, true);
     g.setColour (palette.gaugeInk.withAlpha (0.8f));
     g.strokePath (scaleArc, juce::PathStrokeType (1.1f));
 
-    for (int tick = 0; tick <= 10; ++tick)
+    for (int tick = 0; tick <= tickCount; ++tick)
     {
-        const auto fraction = static_cast<float> (tick) / 10.0f;
+        const auto fraction = static_cast<float> (tick) / static_cast<float> (tickCount);
         const auto angle = juce::jmap (fraction, startAngle, endAngle);
         const auto major = tick % 2 == 0;
         const auto outerRadius = radius - 1.0f;
@@ -312,11 +359,11 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
         if (major)
         {
             const auto db = -20 + juce::roundToInt (fraction * 23.0f);
-            const auto labelRadius = radius - 18.0f;
+            const auto labelRadius = juce::jmax (4.0f, radius - 18.0f);
             const auto labelPoint = juce::Point<float> (
                 centreX + std::cos (angle) * labelRadius,
                 centreY + std::sin (angle) * labelRadius);
-            g.setFont (juce::Font (juce::FontOptions (8.0f)));
+            g.setFont (juce::Font (juce::FontOptions (8.0f * textScale)));
             g.drawText (juce::String (db > 0 ? "+" : "") + juce::String (db),
                         juce::Rectangle<int> (juce::roundToInt (labelPoint.x - 10.0f),
                                               juce::roundToInt (labelPoint.y - 5.0f), 20, 11),
@@ -324,10 +371,18 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
         }
     }
 
-    const auto needleDb = juce::jlimit (-20.0f, 3.0f, rmsDb);
+    g.setColour (palette.gaugeInk.withAlpha (0.65f));
+    g.setFont (juce::Font (juce::FontOptions (9.0f * textScale, juce::Font::bold)));
+    g.drawText ("VU", juce::Rectangle<int> (juce::roundToInt (centreX - 19.0f),
+                                            juce::roundToInt (centreY + 13.0f), 38, 13),
+                juce::Justification::centred, false);
+
+    // The needle rides the combined 25 %-each reading, so the dial shows one trustworthy
+    // number while the text block below shows exactly how that number was arrived at.
+    const auto needleDb = juce::jlimit (-20.0f, 3.0f, displayedCombined);
     const auto needleFraction = (needleDb + 20.0f) / 23.0f;
     const auto needleAngle = juce::jmap (needleFraction, startAngle, endAngle);
-    const auto needleLength = radius - 13.0f;
+    const auto needleLength = juce::jmax (4.0f, radius - 13.0f);
     const auto needleEnd = juce::Point<float> (
         centreX + std::cos (needleAngle) * needleLength,
         centreY + std::sin (needleAngle) * needleLength);
@@ -338,37 +393,55 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     g.setColour (palette.accent);
     g.fillEllipse (centreX - 4.0f, centreY - 4.0f, 8.0f, 8.0f);
 
-    g.setColour (palette.gaugeInk.withAlpha (0.65f));
-    g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
-    g.drawText ("VU", juce::Rectangle<int> (juce::roundToInt (centreX - 19.0f),
-                                            juce::roundToInt (centreY + 13.0f), 38, 13),
-                juce::Justification::centred, false);
+    // -------------------------------------------------------------------
+    //  Four-way readout.
+    //
+    //  Each scale gets its own row because they answer different questions and their
+    //  spread is meaningful: PEAK against LUFS shows how dynamic the material is, and
+    //  the gap between VU and RMS shows how much transient content is present.
+    //  The combined row is the equal-weighted average of the four, which is what the
+    //  needle and the dial are driven from.
+    // -------------------------------------------------------------------
+    const auto readoutTop = getHeight() - juce::roundToInt (62.0f * textScale);
+    const auto rowHeight = juce::roundToInt (15.0f * textScale);
 
-    const auto readoutY = getHeight() - 43;
-    g.setColour (palette.text);
-    g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
-    g.drawText ("PEAK  " + formatDb (peakHoldDb),
-                juce::Rectangle<int> (2, readoutY, getWidth() - 4, 17),
-                juce::Justification::centred, false);
-    g.setColour (palette.accent);
-    g.drawText ("RMS   " + formatDb (rmsDb),
-                juce::Rectangle<int> (2, readoutY + 17, getWidth() - 4, 17),
-                juce::Justification::centred, false);
+    const auto drawReadoutRow = [&] (const juce::String& label, float value,
+                                     juce::Colour valueColour, int row)
+    {
+        const auto rowArea = juce::Rectangle<int> (2, readoutTop + row * rowHeight,
+                                                   getWidth() - 4, rowHeight);
+        g.setColour (palette.secondary);
+        g.setFont (juce::Font (juce::FontOptions (8.0f * textScale)));
+        g.drawText (label, rowArea, juce::Justification::centredLeft, false);
+
+        g.setColour (valueColour);
+        g.setFont (juce::Font (juce::FontOptions (8.5f * textScale, juce::Font::bold)));
+        g.drawText (formatDb (value), rowArea, juce::Justification::centredRight, false);
+    };
+
+    // The clipping lamp: only the peak view can clip, so it is flagged next to that row.
+    const auto peakColour = clipping ? juce::Colour::fromRGB (208, 82, 58) : palette.text;
+    drawReadoutRow ("PEAK dB", peakHoldDb, peakColour, 0);
+    drawReadoutRow ("RMS", displayedRms, palette.text, 1);
+    drawReadoutRow ("LUFS", displayedLufs, palette.accent, 2);
+    drawReadoutRow ("VU", displayedVu, palette.text, 3);
+    drawReadoutRow ("MIX 25%", displayedCombined, palette.accent, 4);
+}
+//==============================================================================
+FirstAudioProcessorEditor::CompressorMeter::CompressorMeter (juce::String meterTitle,
+                                                             juce::String stageCaption)
+    : title (std::move (meterTitle)), caption (std::move (stageCaption))
+{
+    setInterceptsMouseClicks (false, false);
 }
 
-//==============================================================================
-void FirstAudioProcessorEditor::CompressorMeter::setReduction (float reductionDb, float inputReductionDb,
-                                                              float newActivity)
+void FirstAudioProcessorEditor::CompressorMeter::setReduction (float reductionDb, float newActivity)
 {
     // Smooth downwards instantly (so gain reduction is never under-reported) but
     // let the bar fall back gracefully, like a real VU-driven reduction needle.
     const auto clamped = juce::jlimit (-12.0f, 0.0f, reductionDb);
     const auto coefficient = clamped < displayedDb ? 0.55f : 0.10f;
     displayedDb += (clamped - displayedDb) * coefficient;
-
-    const auto clampedInput = juce::jlimit (-12.0f, 0.0f, inputReductionDb);
-    const auto inputCoefficient = clampedInput < displayedInputDb ? 0.55f : 0.10f;
-    displayedInputDb += (clampedInput - displayedInputDb) * inputCoefficient;
 
     activity += (juce::jlimit (0.0f, 1.0f, newActivity) - activity) * 0.22f;
 
@@ -385,23 +458,31 @@ void FirstAudioProcessorEditor::CompressorMeter::paint (juce::Graphics& g)
     g.setColour (palette.border.withAlpha (0.9f));
     g.drawRoundedRectangle (bounds.reduced (0.5f), 5.0f, 1.0f);
 
-    g.setColour (palette.text);
-    g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)));
-    g.drawText ("COMP", getLocalBounds().removeFromTop (20), juce::Justification::centred, false);
+    // Text and ladder scale with this meter's own size, so the reduction display stays
+    // legible whether it is one cell of the 2 x 2 grid or a large panel, without any
+    // dependence on the host's display scale.
+    const auto textScale = juce::jlimit (0.85f, 1.6f, static_cast<float> (getWidth()) / 190.0f);
 
-    const auto trackTop = 26.0f;
-    const auto trackBottom = static_cast<float> (getHeight()) - 46.0f;
+    g.setColour (palette.text);
+    g.setFont (juce::Font (juce::FontOptions (10.0f * textScale, juce::Font::bold)));
+    g.drawText (title, getLocalBounds().removeFromTop (juce::roundToInt (22.0f * textScale)),
+                juce::Justification::centred, false);
+
+    const auto trackTop = 26.0f * textScale;
+    const auto trackBottom = static_cast<float> (getHeight()) - 46.0f * textScale;
     const auto trackLeft = 12.0f;
     const auto trackRight = static_cast<float> (getWidth()) - 12.0f;
     const auto trackHeight = juce::jmax (24.0f, trackBottom - trackTop);
 
     const auto centreX = 0.5f * (trackLeft + trackRight);
-    const auto barWidth = juce::jmin (30.0f, (trackRight - trackLeft) * 0.44f);
+    const auto barWidth = juce::jmin (30.0f * textScale, (trackRight - trackLeft) * 0.44f);
     const auto barLeft = centreX - barWidth * 0.5f;
 
-    // Segmented LED ladder: it reads as a classic hardware reduction display.
-    constexpr int segments = 16;
-    const auto segmentGap = 2.0f;
+    // Segmented LED ladder: it reads as a classic hardware reduction display. The
+    // segment count is chosen from the available height so the ladder fills the cell
+    // instead of leaving gaps in a tall layout or overlapping in a short one.
+    const auto segments = juce::jlimit (8, 24, juce::roundToInt (trackHeight / (7.0f * textScale)));
+    const auto segmentGap = 2.0f * textScale;
     const auto segmentHeight = (trackHeight - segmentGap * static_cast<float> (segments - 1))
                                / static_cast<float> (segments);
     const auto litFraction = juce::jlimit (0.0f, 1.0f, -displayedDb / 12.0f);
@@ -442,20 +523,19 @@ void FirstAudioProcessorEditor::CompressorMeter::paint (juce::Graphics& g)
                                 barWidth + 10.0f, glowHeight, 3.0f);
     }
 
-    const auto readoutY = getHeight() - 42;
-    const auto totalReduction = displayedDb < -0.05f;
-    g.setColour (totalReduction ? palette.accent : palette.secondary);
-    g.setFont (juce::Font (juce::FontOptions (10.0f, juce::Font::bold)));
+    const auto readoutY = getHeight() - juce::roundToInt (42.0f * textScale);
+    const auto reducing = displayedDb < -0.05f;
+    g.setColour (reducing ? palette.accent : palette.secondary);
+    g.setFont (juce::Font (juce::FontOptions (10.0f * textScale, juce::Font::bold)));
     g.drawText (juce::String (displayedDb, 1) + " dB",
                 juce::Rectangle<int> (2, readoutY, getWidth() - 4, 16),
                 juce::Justification::centred, false);
 
-    // The two stages are labelled separately: IN is after the input trim, OUT is
-    // the stage that sits immediately before the output trim.
+    // Each meter now belongs to exactly one stage, so the caption names the point in
+    // the chain that stage sits at rather than splitting one readout into IN and OUT.
     g.setColour (palette.secondary);
-    g.setFont (juce::Font (juce::FontOptions (8.0f)));
-    g.drawText ("IN " + juce::String (displayedInputDb, 1) + "  OUT "
-                    + juce::String (totalReduction ? displayedDb - displayedInputDb : 0.0f, 1),
+    g.setFont (juce::Font (juce::FontOptions (8.0f * textScale)));
+    g.drawText (caption,
                 juce::Rectangle<int> (2, readoutY + 16, getWidth() - 4, 13),
                 juce::Justification::centred, false);
 }
@@ -465,8 +545,21 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
     setResizable (true, true);
-    setResizeLimits (1000, 730, 1500, 1000);
-    setSize (1180, 760);
+
+    // The editor is sized from the host's display scale so it keeps the same physical
+    // size on a 1080p panel and on a 200 % scaled 4K display. Without this the window
+    // opens at a fixed pixel count and simply looks half-size (with unreadable 9 px
+    // text) on a high-DPI screen. The design size is in logical units, so the layout
+    // code below never needs to know about DPI at all.
+    const auto displayScale = juce::jlimit (1.0, 2.0,
+                                            juce::Desktop::getInstance().getDisplays()
+                                                .getPrimaryDisplay()->scale);
+    const auto designWidth = juce::roundToInt (1240.0 * displayScale);
+    const auto designHeight = juce::roundToInt (820.0 * displayScale);
+
+    setResizeLimits (juce::roundToInt (1000.0 * displayScale), juce::roundToInt (760.0 * displayScale),
+                     juce::roundToInt (1700.0 * displayScale), juce::roundToInt (1100.0 * displayScale));
+    setSize (designWidth, designHeight);
     createDecorativePhysics();
 
     const auto styleLabel = [] (juce::Label& label, const juce::String& text,
@@ -482,7 +575,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 
     styleLabel (brandLabel, "ANALOG TAPE", 9.0f, paletteFor (false).accent, true, juce::Justification::left);
     titleLabel.setText ("J37", juce::dontSendNotification);
-    titleLabel.setFont (juce::Font (juce::FontOptions ("Georgia", "Bold", 30.0f)));
+
+    // Serif display face with a cross-platform fallback chain. "Georgia" only exists on
+    // Windows, so naming it alone made the title fall back to an arbitrary face (and an
+    // unpredictable width) on macOS and Linux. FontOptions accepts a comma-separated
+    // list and uses the first family that resolves, ending in a generic fallback.
+    titleLabel.setFont (juce::Font (juce::FontOptions ("Georgia, Times New Roman, Times, serif",
+                                                       30.0f, juce::Font::bold)));
     titleLabel.setJustificationType (juce::Justification::left);
     titleLabel.setInterceptsMouseClicks (false, false);
     styleLabel (subtitleLabel, "TAPE MACHINE  /  SATURATION", 10.0f,
@@ -504,10 +603,14 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 true, juce::Justification::left);
     styleLabel (metersHintLabel, "dBFS / PEAK + RMS", 8.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
-    styleLabel (compressorLabel, "TAPE GLUE x2", 10.0f, paletteFor (false).accent,
-                true, juce::Justification::left);
-    styleLabel (compressorReadout, "IN + OUT stage", 8.0f, paletteFor (false).secondary,
-                false, juce::Justification::left);
+    styleLabel (compressorLabel, "GLUE x2", 10.0f, paletteFor (false).accent,
+                true, juce::Justification::right);
+    styleLabel (compressorReadout, "one meter per stage", 8.0f, paletteFor (false).secondary,
+                false, juce::Justification::right);
+    styleLabel (harmonicsLabel, "HARMONICS", 10.0f, paletteFor (false).accent,
+                true, juce::Justification::centredRight);
+    styleLabel (harmonicsReadout, "even / odd", 8.0f, paletteFor (false).secondary,
+                false, juce::Justification::centredRight);
 
     addAndMakeVisible (brandLabel);
     addAndMakeVisible (titleLabel);
@@ -523,6 +626,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (metersHintLabel);
     addAndMakeVisible (compressorLabel);
     addAndMakeVisible (compressorReadout);
+    addAndMakeVisible (harmonicsLabel);
+    addAndMakeVisible (harmonicsReadout);
 
     const juce::StringArray controlIds { "input", "drive", "bias",
                                          "tone", "wow", "flutter",
@@ -642,12 +747,21 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 
     addAndMakeVisible (inputMeter);
     addAndMakeVisible (outputMeter);
-    addAndMakeVisible (compressorMeter);
+    addAndMakeVisible (compressorMeterIn);
+    addAndMakeVisible (compressorMeterOut);
     applyTheme();
 
+    // OpenGL is only an optimisation for the animated panel, and it is the least
+    // portable part of the UI: some Windows drivers, remote sessions, virtual machines
+    // and headless hosts cannot create a context at all. Attaching unconditionally
+    // means those setups get a broken or blank editor, so the context is treated as a
+    // best-effort accelerator. If it cannot attach, the component renderer draws the
+    // same panel through the software path with no visual difference.
     openGLContext.setComponentPaintingEnabled (true);
     openGLContext.setContinuousRepainting (false);
-    openGLContext.attachTo (*this);
+
+    if (! openGLContext.attachTo (*this))
+        openGLContext.detach();
 
     startTimerHz (30);
 }
@@ -671,12 +785,18 @@ FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayo
     auto remaining = getLocalBounds().reduced (18);
     EditorLayout layout;
 
+    // Header and deck are fixed-height, so they keep their proportions at small panel
+    // sizes and on high-DPI displays. The rest of the height goes to controls + meters.
     layout.header = remaining.removeFromTop (78);
     remaining.removeFromTop (12);
     layout.deck = remaining.removeFromTop (84);
     remaining.removeFromTop (12);
 
-    layout.meters = remaining.removeFromRight (330);
+    // The meters panel has to hold a 2 x 2 grid of dials, so it claims a share of the
+    // width rather than a fixed pixel count. That keeps both rows legible whether the
+    // editor is at its minimum size or opened large.
+    const auto metersWidth = juce::jlimit (320, 460, juce::roundToInt (static_cast<float> (remaining.getWidth()) * 0.30f));
+    layout.meters = remaining.removeFromRight (metersWidth);
     remaining.removeFromRight (14);
     layout.controls = remaining;
 
@@ -743,7 +863,10 @@ void FirstAudioProcessorEditor::applyTheme()
 
     compressorLabel.setColour (juce::Label::textColourId, palette.accent);
     compressorReadout.setColour (juce::Label::textColourId, palette.secondary);
-    compressorMeter.setDarkTheme (darkTheme);
+    harmonicsLabel.setColour (juce::Label::textColourId, palette.accent);
+    harmonicsReadout.setColour (juce::Label::textColourId, palette.secondary);
+    compressorMeterIn.setDarkTheme (darkTheme);
+    compressorMeterOut.setDarkTheme (darkTheme);
 
     themeButton.setButtonText (darkTheme ? "LIGHT THEME" : "DARK THEME");
     repaint();
@@ -933,15 +1056,48 @@ void FirstAudioProcessorEditor::createDecorativePhysics()
 
 void FirstAudioProcessorEditor::timerCallback()
 {
-    inputMeter.setLevels (audioProcessor.getInputPeakLevel(), audioProcessor.getInputRmsLevel());
-    outputMeter.setLevels (audioProcessor.getOutputPeakLevel(), audioProcessor.getOutputRmsLevel());
+    // Four meters: the two level meters each show the full four-way loudness reading
+    // (peak dB, RMS, LUFS, VU and their equal-weighted combination), and each glue
+    // compressor stage gets its own reduction meter fed from its own telemetry, so the
+    // panel shows both what the signal level is doing and where the work is being done.
+    inputMeter.setLoudness (audioProcessor.getInputPeakDb(),
+                            audioProcessor.getInputRmsDb(),
+                            audioProcessor.getInputLufs(),
+                            audioProcessor.getInputVuDb(),
+                            audioProcessor.getInputCombinedDb(),
+                            audioProcessor.isInputClipping());
+    outputMeter.setLoudness (audioProcessor.getOutputPeakDb(),
+                             audioProcessor.getOutputRmsDb(),
+                             audioProcessor.getOutputLufs(),
+                             audioProcessor.getOutputVuDb(),
+                             audioProcessor.getOutputCombinedDb(),
+                             audioProcessor.isOutputClipping());
 
-    // Compressor display: total gain reduction of the two glue stages plus the
-    // live activity envelope, with the input and output stages shown separately.
+    compressorMeterIn.setReduction (audioProcessor.getInputGainReductionDb(),
+                                    audioProcessor.getInputCompressorActivity());
+    compressorMeterOut.setReduction (audioProcessor.getOutputGainReductionDb(),
+                                     audioProcessor.getOutputCompressorActivity());
+
     const auto reduction = audioProcessor.getGainReductionDb();
-    const auto inputReduction = audioProcessor.getInputGainReductionDb();
     const auto activity = audioProcessor.getCompressorActivity();
-    compressorMeter.setReduction (reduction, inputReduction, activity);
+
+    // Report the harmonic balance the tape stage is producing. Even and odd are shown
+    // side by side because the ratio between them is the character: even-dominant reads as
+    // warm and full, odd-dominant as hard and edgy, and real tape has both.
+    const auto evenRatio = audioProcessor.getEvenHarmonicRatio();
+    const auto oddRatio = audioProcessor.getOddHarmonicRatio();
+    harmonicsReadout.setText ("E " + juce::String (evenRatio * 100.0f, 1) + " %"
+                                  + "   O " + juce::String (oddRatio * 100.0f, 1) + " %",
+                              juce::dontSendNotification);
+
+    // Colour the readout by which family dominates, so the character is readable at a
+    // glance without needing to compare the numbers.
+    const auto harmonicPalette = paletteFor (darkTheme);
+    const auto totalHarmonics = evenRatio + oddRatio;
+    harmonicsReadout.setColour (juce::Label::textColourId,
+                                totalHarmonics < 0.001f ? harmonicPalette.secondary
+                                : evenRatio >= oddRatio ? harmonicPalette.status
+                                                        : harmonicPalette.needle);
 
     // Animated presentation state. Everything here is derived from audio
     // telemetry, so the panel visibly reacts to what the plugin is doing.
@@ -1031,10 +1187,18 @@ void FirstAudioProcessorEditor::resized()
     controlsHeadingLabel.setBounds (layout.controls.getX() + 18, layout.controls.getY() + 12, 210, 19);
     controlsHintLabel.setBounds (layout.controls.getRight() - 360, layout.controls.getY() + 12,
                                  342, 19);
-    metersHeadingLabel.setBounds (layout.meters.getX() + 18, layout.meters.getY() + 8, 100, 18);
-    metersHintLabel.setBounds (layout.meters.getX() + 18, layout.meters.getY() + 27, 150, 14);
-    compressorLabel.setBounds (layout.meters.getX() + 190, layout.meters.getY() + 8, 120, 18);
-    compressorReadout.setBounds (layout.meters.getX() + 190, layout.meters.getY() + 27, 120, 14);
+    metersHeadingLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 8, 130, 18);
+    metersHintLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 27, 150, 14);
+    compressorLabel.setBounds (layout.meters.getRight() - 176, layout.meters.getY() + 8, 160, 18);
+    compressorReadout.setBounds (layout.meters.getRight() - 176, layout.meters.getY() + 27, 160, 14);
+
+    // The harmonic readout sits in the free space at the right of the deck row, which is
+    // where a real machine would print its meter calibration.
+    const auto harmonicsWidth = 150;
+    harmonicsLabel.setBounds (layout.deck.getRight() - harmonicsWidth - 18,
+                              layout.deck.getY() + 8, harmonicsWidth, 18);
+    harmonicsReadout.setBounds (layout.deck.getRight() - harmonicsWidth - 18,
+                                layout.deck.getY() + 27, harmonicsWidth, 16);
 
     auto grid = layout.controls.reduced (14);
     grid.removeFromTop (42);
@@ -1061,17 +1225,31 @@ void FirstAudioProcessorEditor::resized()
         controls[i].setBounds (sliderBounds);
     }
 
-    const auto meterWidth = (layout.meters.getWidth() - 58) / 2;
-    const auto meterY = layout.meters.getY() + 53;
-    const auto meterHeight = layout.meters.getHeight() - 67;
-    inputMeter.setBounds (layout.meters.getX() + 14, meterY, meterWidth, meterHeight);
-    outputMeter.setBounds (layout.meters.getRight() - 14 - meterWidth, meterY,
-                           meterWidth, meterHeight);
+    // Four meters in a 2 x 2 grid inside the meters panel:
+    //   row 1 - INPUT and OUTPUT level VU meters
+    //   row 2 - COMP IN and COMP OUT gain-reduction meters
+    // The rows share the available height evenly, so the arrangement (and the
+    // input-left / output-right reading order) holds at any panel size.
+    auto meterArea = layout.meters.reduced (14, 0);
+    meterArea.removeFromTop (44);           // heading + hint labels
+    meterArea.removeFromBottom (8);
 
-    // Compressor reduction bar sits across the foot of the meters panel.
-    const auto compressorHeight = juce::jlimit (54, 78, layout.meters.getHeight() / 4);
-    compressorMeter.setBounds (layout.meters.getX() + 14,
-                               layout.meters.getBottom() - compressorHeight - 6,
-                               layout.meters.getWidth() - 28,
-                               compressorHeight);
+    const auto columnGap = 8;
+    const auto rowGap = 8;
+    const auto columnWidth = (meterArea.getWidth() - columnGap) / 2;
+
+    // Note the separate name: `rowHeight` is already taken by the control grid above, so
+    // reusing it here would shadow it through the rest of the function and trip the
+    // redefinition error rather than silently picking the wrong cell size.
+    const auto meterRowHeight = (meterArea.getHeight() - rowGap) / 2;
+
+    const auto leftColumn = meterArea.getX();
+    const auto rightColumn = meterArea.getRight() - columnWidth;
+    const auto topRow = meterArea.getY();
+    const auto bottomRow = meterArea.getBottom() - meterRowHeight;
+
+    inputMeter.setBounds (leftColumn, topRow, columnWidth, meterRowHeight);
+    outputMeter.setBounds (rightColumn, topRow, columnWidth, meterRowHeight);
+    compressorMeterIn.setBounds (leftColumn, bottomRow, columnWidth, meterRowHeight);
+    compressorMeterOut.setBounds (rightColumn, bottomRow, columnWidth, meterRowHeight);
 }
