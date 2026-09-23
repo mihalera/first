@@ -1,19 +1,24 @@
 # first
 
-A JUCE-based VST3 audio plugin prototype inspired by classic analog tape saturation and J37-style coloration.
+**J37 Tape Mastering** - a JUCE-based VST3 **mastering-grade tape saturation plugin** inspired by classic analog tape machines and J37-style coloration.
+
+This is, first and foremost, a **bus / mastering tool**: two independent glue compressors wrap the tape stage, the output level is calibrated in dB, the loudness metering is four-way (peak / RMS / LUFS / VU), and the output protection chain guarantees that what leaves the plugin is clean and controlled. Use it on the master bus, a drum bus or any programme material where you want the density and warmth of tape without losing control of the level.
 
 ## Overview
 
-This project is a focused audio effect plugin built for Windows with JUCE and Visual Studio.
-It explores a tape-saturation workflow with:
+This project is a mastering-oriented audio effect plugin built for Windows with JUCE and Visual Studio.
+It provides a tape-saturation mastering workflow with:
 
 - drive and harmonic character controls
+- a **TONE macro** that crossfades the whole machine state (tape stock, head gap, pre-bias, flutter) between the classic slow machine and the fast/hot machine
 - tape-type selection
 - speed influences and modulation
 - wow / flutter behavior
 - bias, brightness, mix, and calibrated output staging in dB
 - two independent always-on tape glue compressors, one after the input trim and one
   before the output trim, driven by the signal and by the Input / Output controls
+- **compressor-coupled saturation**: the harder the glue stages squeeze, the hotter the record head is driven, so dense programme saturates more than sparse programme - like real tape
+- glue attack/release time constants that follow the loaded **tape type** and the selected **transport speed**
 - four VU-style meters: input and output level, plus one reduction meter per compressor
 - a vintage analog-inspired UI with animated knobs, reel and level meters
 
@@ -29,17 +34,18 @@ playback EQ tilt -> output glue compressor (always on) -> output trim (dB) -> st
 | Control | Range | Notes |
 | --- | --- | --- |
 | Input | -32 to +32 dB | Drives the tape machine harder |
-| Drive | 0 to 100 % | Saturation amount |
+| Drive | 0 to 100 % | Saturation amount (grows with compressor squeeze) |
 | Bias | 0 to 100 % | Tape bias offset and asymmetry |
 | Brightness | 0 to 100 % | Tape roll-off and playback EQ: warm/soft to open/airy |
+| Tone | 0 to 100 % | Machine-state macro: blends the tape stock, head gap, pre-bias and flutter between the classic slow machine (0 %) and the fast/hot machine (100 %) |
 | Wow | 0 to 100 % | Slow transport pitch wander |
 | Flutter | 0 to 100 % | Fast transport shimmer |
 | Mix | 0 to 100 % | True dry/wet crossfade: 0 % is dry, 100 % is fully tape. Default 50 % |
 | Output | -32 to +32 dB | Calibrated output trim in dB |
 | Width | 0 to 100 % | Mono through natural to extra wide |
 | Bypass | on/off | Ramps the whole tape engine out without clicking |
-| Tape Type | J37 / Ampex 456 / Studer A800 / Chrome | Model character |
-| Speed | 7.5 / 15 / 30 ips | Transport speed, affects modulation and top end |
+| Tape Type | J37 / Ampex 456 / Studer A800 / Chrome | Model character (also shapes the glue time constants) |
+| Speed | 7.5 / 15 / 30 ips | Transport speed, affects modulation, top end and glue timing |
 
 The percentage controls (Drive, Bias, Wow, Flutter) use a skewed knob taper so the
 gentle end of each control gets more travel. This is purely ergonomic and does **not**
@@ -76,7 +82,8 @@ Speed also changes head-gap damping, so a faster tape genuinely keeps more top e
 The tape glue compressor is compressor-coupled in two places, and the two stages are
 completely independent processors: each has its own detector envelope and its own gain
 computer, and neither reads the other's state. Both are driven purely by the signal
-that reaches them plus the Input / Output parameters.
+that reaches them plus the Input / Output parameters, while their attack/release
+time constants follow the tape formula and transport speed (see above).
 
 The **input stage** sits immediately after the input trim, so INPUT pushes this signal
 into a real recorder-input stage and the tape always hears a controlled level. The
@@ -88,6 +95,46 @@ steepens its ratio and allows more reduction; turning it below the middle backs 
 stage off completely, at which point it is genuinely transparent. Each stage pays back
 roughly 30-65 % of the reduction it applies as makeup, weighted by how hard its trim
 control is driving it, so neither stage quietly undoes the level the user dialled in.
+
+### Compressor-coupled saturation
+
+The glue stages and the tape stage share one machine, so they are coupled both ways:
+the total gain reduction both stages are applying (smoothed over about 200 ms, so it
+follows programme density rather than individual hits) adds drive on top of the DRIVE
+control and thickens the magnetic curve itself. The result is exactly what happens
+when a compressed signal is pushed into a real record head: dense, slammed programme
+saturates noticeably harder, sparse programme stays clean. With zero reduction the
+shaper is exactly what the DRIVE control set - the coupling only ever adds on top.
+
+### Tape formula and speed shape the glue timing
+
+The attack and release time constants of both stages are derived from the loaded tape
+formula and the selected transport speed, the way a real machine's glue behaves:
+
+- **Tape type** - the soft classic stock moves slower and warmer (more head bump in the
+  envelope); hotter and chrome stocks move faster and tighter.
+- **Speed** - 7.5 ips stretches the constants (lazier flux build-up, print-through),
+  30 ips shortens them (tight, immediate). The multipliers ride the same speed scale
+  as the head damping, so SPEED keeps one coherent meaning across the whole machine.
+
+The semi-automatic programme adaptation (transient vs sustained, envelope fill, load)
+still runs on top of these bases, as described below in the header documentation.
+
+## Noise floor
+
+The tape hiss is a continuous band-limited noise floor whose level is held constant
+**once per block**: the mean gain reduction the output glue stage and the safety
+limiter apply to each block is measured, smoothed over about 250 ms, and the floor is
+lifted by its inverse. With signal present the lift cancels the duck and the floor
+stays at its calibrated level, inaudible under the programme; in a pause the stages
+are open and the floor sits at its natural quiet level. Either way the tape noise
+never swells - the floor is a property of the machine, not of the momentary
+programme, which is the fix for pauses hissing louder than passages.
+
+The wet path is AC-coupled at the playback end (an 8 Hz DC blocker, exactly like the
+coupling capacitors in real playback electronics), so the asymmetric shaper's DC
+offset never reaches the compressor, limiter or clipper. This is what keeps MIX at
+100 % sounding like a warm saturated signal instead of an off-centre, congested one.
 
 ## Metering
 
@@ -198,9 +245,10 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
   second instead of four times as often.
 - **Buffer size** - the DSP is per sample and reads `getNumSamples()` each block, so
   there is no fixed block-size assumption; zero-length blocks are handled too.
-- **Display scale** - the editor sizes itself from the host display's scale factor, and
-  both meter types lay themselves out proportionally to their own bounds. Text scales
-  with the meter, so nothing is drawn at a hardcoded pixel size.
+- **Display scale** - the editor opens at a compact 1024 x 640 and can be resized
+  between 800 x 560 and 1500 x 960; both meter types lay themselves out proportionally
+  to their own bounds. Text scales with the meter, so nothing is drawn at a hardcoded
+  pixel size.
 - **Fonts** - the title uses a fallback chain rather than a Windows-only family.
 - **OpenGL** - treated as a best-effort accelerator; if a context cannot be created the
   panel falls back to the normal component renderer.
