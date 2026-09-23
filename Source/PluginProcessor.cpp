@@ -41,30 +41,41 @@ namespace
     {
         const float biased = x + asymmetry;
 
-        // The drive term is exponential in the control value, so the curve keeps bending
-        // further as DRIVE is turned up instead of flattening out once tanh has already
-        // saturated. That progressive compression is the analogue nonlinearity: without
-        // it the top half of the control would add nothing but level.
-        const float flux = biased * (1.0f + drive * 2.1f);
-        const float soft = std::tanh (flux);
+        // ------------------------------------------------------------------
+        //  One saturating branch, normalised so it is unity-slope at the origin.
+        //
+        //  The previous version summed three tanh terms whose weights added to 1.0. Each
+        //  term saturated independently, so the curves stacked and the transfer compressed
+        //  a full-scale input to 0.67 even with DRIVE at zero - the plugin saturated at
+        //  every setting, which is what made it sound overdriven no matter what.
+        //
+        //  `tanh (s*x) / s` is the right shape: its slope at zero is exactly 1, so quiet
+        //  signals pass through untouched, and its asymptote is 1/s, so the amount of
+        //  compression at the top is set purely by s - which is what DRIVE controls. With
+        //  DRIVE at zero, s is 1 and the curve is a gentle, single-tanh tape bend rather
+        //  than three stacked ones.
+        // ------------------------------------------------------------------
+        const float slope = 1.0f + drive * 2.6f;
+        const float hard = std::tanh (biased * slope) / slope;
 
-        // A second, gentler saturation stage before the hysteresis. Real magnetic
-        // domains respond to the flux in two regions - a soft initial permeability and
-        // a harder knee - and stacking two tanh curves with different slopes is what
-        // gives low-order harmonics that grow gradually rather than appearing at once.
-        const float preSaturated = std::tanh (biased * (0.62f + drive * 1.35f));
-
-        // Anhysteretic curve blended with its own delayed image: this lag is what
-        // gives tape its "sticky" transient behaviour.
+        // The delayed image gives tape its "sticky" transient behaviour. It shares the
+        // same unity-slope normalisation so it contributes character without costing
+        // level, and it is scaled by the drive amount so it cannot bend at zero drive.
         const float lagged = memory * 0.62f;
-        const float blended = soft * 0.42f
-                            + preSaturated * 0.26f
-                            + std::tanh ((biased * 0.55f) + lagged) * 0.32f;
+        const float delayedSlope = 0.55f + drive * 1.0f;
+        const float delayed = std::tanh ((biased * delayedSlope) + lagged) / delayedSlope;
 
-        // Remove the bias offset asymmetrically so the effect adds even harmonics
-        // instead of merely shifting the signal. The squared term makes the asymmetry
+        // A blend, not a sum: the weights add to one so the two branches average rather
+        // than stacking their compression.
+        constexpr float hardWeight = 0.70f;
+        constexpr float delayedWeight = 0.30f;
+
+        const float blended = hard * hardWeight + delayed * delayedWeight;
+
+        // Remove the bias offset asymmetrically so the effect adds even harmonics instead
+        // of merely shifting the signal. The squared term makes the asymmetry
         // level-dependent, mirroring how real bias interacts with signal amplitude.
-        return blended - asymmetry * (0.55f + 0.45f * soft * soft);
+        return blended - asymmetry * (0.55f + 0.45f * hard * hard);
     }
 
     /** One-pole low-pass coefficient for a given time constant in milliseconds. */
@@ -213,7 +224,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("bias", "Bias", percentageRange (0.40f), 0.36f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("tone", "Tone", percentageRange (0.50f), 0.58f,
+    // The parameter ID stays "tone" so existing saved sessions still resolve it; only the
+    // name shown in the host and on the panel is BRIGHTNESS. Artists reach for brightness
+    // first, and "tone" is vague enough that it reads as a different thing (tilt, midrange,
+    // character) depending on who is looking at it.
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("tone", "Brightness", percentageRange (0.50f), 0.58f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("wow", "Wow", percentageRange (0.35f), 0.14f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
@@ -611,7 +626,11 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             break;
     }
 
-    const float driveAmount = 0.28f + driveCurve * 1.9f;
+    // DRIVE has no floor. It used to start at 0.28, which meant the signal was pushed
+    // 38 % harder into the saturator even with the control at zero - a large part of why
+    //    the plugin sounded overdriven at every setting. Now zero drive means unity gain
+    // into the record head, so the machine is clean until the control asks it not to be.
+    const float driveAmount = driveCurve * 1.9f;
     const float biasAmount = 0.18f + biasCurve * 1.55f;
 
     // Dry/wet blend. MIX is a genuine crossfade: at 0 % the signal is untouched dry
@@ -664,8 +683,13 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     // the shaper as it clamps is tracked per sample in the tape loop (driveCompensation),
     // so the two do not fight each other - one sets the operating level, the other keeps
     // the stage gain-neutral as DRIVE and the signal level move.
-    const float driveGainCompensation = 0.52f + (1.0f - driveCurve) * 0.22f;
-    const float finalOutputGain = 0.72f * driveGainCompensation * (0.94f + speedScale * 0.08f);
+    //
+    // Recalibrated for the corrected shaper. The old constants assumed a stage that
+    // saturated at every setting, so they were fighting a permanent loss; now that the
+    // shaper is near-unity at zero drive and only compresses when pushed, the static trim
+    // has to be close to unity as well or the plugin ends up quiet instead of clean.
+    const float driveGainCompensation = 1.0f - driveCurve * 0.16f;
+    const float finalOutputGain = 0.78f * driveGainCompensation * (0.94f + speedScale * 0.08f);
 
     // Continuous pseudo-random tape noise: a 32-bit LCG held per instance, so the
     // hiss is uncorrelated between instances and reproducible for a given one. A
@@ -840,7 +864,9 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             const float flutterMod = 1.0f + flutterLfo * flutterDepth;
             const float grainMod = 1.0f + tapeHiss * 0.10f * grainLfo;
 
-            // Record head: pre-emphasis, tape bias offset and drive.
+            // Record head: pre-emphasis, tape bias offset and drive. With DRIVE at zero
+            // this is exactly unity, so the saturator sees the signal at the level the
+            // user dialled in rather than a pre-boosted version of it.
             const float preDrive = x * (1.0f + driveAmount * 1.2f * speedBias);
             const float recordBias = biasAmount * 0.42f;
 
@@ -877,20 +903,21 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             // tape noise floor ride on the modulated signal.
             const float compensation = tapeCurve / 1.30f;
 
-            // Nonlinearity costs level: the two tanh stages in magneticHysteresis clamp
-            // the signal, so the harmonic character they add would be accompanied by a
-            // gain drop that made DRIVE feel like a volume trim. This estimates how much
-            // amplitude the shaper removed (it tracks the shaper's own output level) and
-            // pays it back, so the stage stays roughly gain-neutral and the added
-            // harmonics are heard as tone rather than as a level change.
+            // Nonlinearity costs level, but only when the shaper is actually working. The
+            // corrected shaper is near-unity at low drive, so this correction scales with
+            // the drive amount rather than applying a large standing boost - the old 2.2x
+            // ceiling was compensating for a stage that saturated at every setting and is
+            // no longer appropriate, which is part of why the plugin came out harsh and
+            // loud. It now recovers a modest amount of the level the clamps removed and
+            // stays close to unity when the machine is running clean.
             const float shapedLevel = std::abs (shapedCore);
             const float shaperLoss = juce::jlimit (0.0f, 1.0f,
-                                                   driveAmount * 0.30f * (1.0f - shapedLevel * 0.85f));
-            const float driveCompensation = 1.0f + shaperLoss * 1.35f;
+                                                   driveCurve * 0.22f * (1.0f - shapedLevel * 0.7f));
+            const float driveCompensation = 1.0f + shaperLoss;
 
             const float compressedBias = headLoss * (1.0f - 0.18f * headLoss * headLoss)
                                        / juce::jmax (0.35f, compensation)
-                                       * juce::jlimit (0.45f, 2.2f, driveCompensation);
+                                       * juce::jlimit (0.8f, 1.35f, driveCompensation);
 
             // The hiss is band-limited rather than white, so its spectrum is the same at
             // 44.1 kHz and 192 kHz and it reads as tape noise instead of digital hiss. The

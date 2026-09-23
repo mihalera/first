@@ -546,20 +546,16 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 {
     setResizable (true, true);
 
-    // The editor is sized from the host's display scale so it keeps the same physical
-    // size on a 1080p panel and on a 200 % scaled 4K display. Without this the window
-    // opens at a fixed pixel count and simply looks half-size (with unreadable 9 px
-    // text) on a high-DPI screen. The design size is in logical units, so the layout
-    // code below never needs to know about DPI at all.
-    const auto displayScale = juce::jlimit (1.0, 2.0,
-                                            juce::Desktop::getInstance().getDisplays()
-                                                .getPrimaryDisplay()->scale);
-    const auto designWidth = juce::roundToInt (1240.0 * displayScale);
-    const auto designHeight = juce::roundToInt (820.0 * displayScale);
-
-    setResizeLimits (juce::roundToInt (1000.0 * displayScale), juce::roundToInt (760.0 * displayScale),
-                     juce::roundToInt (1700.0 * displayScale), juce::roundToInt (1100.0 * displayScale));
-    setSize (designWidth, designHeight);
+    // The editor is deliberately sized in LOGICAL units and the DPI scale is NOT applied
+    // here. JUCE already handles display scaling for plugin editors: component coordinates
+    // are logical, and the host (or JUCE on the desktop) multiplies them by the display
+    // scale when it maps them to physical pixels. Multiplying setSize() by the display
+    // scale as well applies it a second time, which is why the window opened far too large
+    // - on a 150 % display this asked for 1860 x 1230 physical pixels for a 1240 x 820
+    // panel. The layout code below is all relative to getLocalBounds(), so it needs no
+    // knowledge of DPI at all.
+    setResizeLimits (1000, 760, 1700, 1100);
+    setSize (1240, 820);
     createDecorativePhysics();
 
     const auto styleLabel = [] (juce::Label& label, const juce::String& text,
@@ -633,7 +629,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                          "tone", "wow", "flutter",
                                          "mix", "output", "stereo_width" };
     const juce::StringArray controlNames { "INPUT", "DRIVE", "BIAS",
-                                           "TONE", "WOW", "FLUTTER",
+                                           "BRIGHT", "WOW", "FLUTTER",
                                            "MIX", "OUTPUT", "WIDTH" };
     const std::array<double, controlCount> defaultValues { 0.0, 0.42, 0.36,
                                                            0.58, 0.14, 0.18,
@@ -688,11 +684,18 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
             {
                 return juce::jlimit (0.0, 1.0, text.getDoubleValue() / 100.0);
             };
-            if (i == 6)
+            if (i == 3)
+            {
+                slider.setTooltip ("Brightness sets how much top end survives the tape. "
+                                   "Low is warm, soft and rolled off; high is open and airy. "
+                                   "A faster tape speed keeps more top end at the same setting. "
+                                   "Double-click for the default 58 %.");
+            }
+            else if (i == 6)
             {
                 slider.setTooltip ("Mix blends the dry signal with the tape path. "
                                    "0 % is fully dry, 100 % is fully through the tape. "
-                                   "Double-click for the default 62 %.");
+                                   "Double-click for the default 50 %.");
             }
             else if (i == controlCount - 1)
             {

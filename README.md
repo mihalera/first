@@ -11,7 +11,7 @@ It explores a tape-saturation workflow with:
 - tape-type selection
 - speed influences and modulation
 - wow / flutter behavior
-- bias, tone, mix, and calibrated output staging in dB
+- bias, brightness, mix, and calibrated output staging in dB
 - two independent always-on tape glue compressors, one after the input trim and one
   before the output trim, driven by the signal and by the Input / Output controls
 - four VU-style meters: input and output level, plus one reduction meter per compressor
@@ -31,7 +31,7 @@ playback EQ tilt -> output glue compressor (always on) -> output trim (dB) -> st
 | Input | -32 to +32 dB | Drives the tape machine harder |
 | Drive | 0 to 100 % | Saturation amount |
 | Bias | 0 to 100 % | Tape bias offset and asymmetry |
-| Tone | 0 to 100 % | Warm/soft to open/bright playback EQ |
+| Brightness | 0 to 100 % | Tape roll-off and playback EQ: warm/soft to open/airy |
 | Wow | 0 to 100 % | Slow transport pitch wander |
 | Flutter | 0 to 100 % | Fast transport shimmer |
 | Mix | 0 to 100 % | True dry/wet crossfade: 0 % is dry, 100 % is fully tape. Default 50 % |
@@ -53,15 +53,21 @@ is where the harmonics come from:
 
 - The per-control `pow()` curves (Drive 1.45, Bias 1.30, Wow 1.55, Flutter 1.45) make each
   stage bend progressively harder as it is pushed rather than responding proportionally.
-- `magneticHysteresis()` stacks two `tanh` saturations with different slopes plus a
-  delayed memory term, modelling the soft initial permeability and the harder knee of real
-  magnetic domains. That gives low-order harmonics that grow gradually, and the
-  level-dependent bias term is what produces the even harmonics that make tape sound warm
-  rather than merely clipped.
-- Because clamping costs level, the tape stage tracks how much amplitude the shaper
-  removed and pays it back per sample, so DRIVE changes the tone instead of doubling as a
-  volume control. `finalOutputGain` handles only the static calibration; the two do not
+- `magneticHysteresis()` uses a single saturating branch, normalised so its slope at the
+  origin is exactly 1. That is the property that makes DRIVE mean something: at zero drive
+  the curve is a gentle tape bend, and the amount of compression at the top is set purely by
+  the drive-scaled slope. A delayed memory term gives tape its "sticky" transient
+  behaviour, and the level-dependent bias term is what produces the even harmonics that make
+  tape sound warm rather than merely clipped.
+- Because clamping costs level, the tape stage tracks how much amplitude the shaper removed
+  and pays a little of it back per sample, so DRIVE changes the tone instead of doubling as
+  a volume control. `finalOutputGain` handles only the static calibration; the two do not
   fight each other.
+- **DRIVE at 0 % is unity gain into the record head and the shaper is near-transparent**,
+  so the machine is clean until the control asks it not to be. This is worth stating because
+  it was previously broken twice over: the shaper summed three saturating curves that
+  stacked into permanent distortion, and DRIVE had a hard floor of 0.28 that pre-boosted the
+  signal 38 % even at zero. Both are fixed.
 - MIX is the one control that is a true linear crossfade, so the blend always agrees with
   its own readout.
 
@@ -170,9 +176,9 @@ The plugin is written to behave the same at any sample rate and on any display.
 Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
 
 - **Sample rate** - every time-domain constant is rebuilt in `prepareToPlay` through
-  `resetSampleRateDependentState()`. That includes the cached tone filter coefficients,
-  which previously were only refreshed when the Tone control moved and so stayed tuned to
-  the old rate after a switch.
+  `resetSampleRateDependentState()`. That includes the cached brightness filter
+  coefficients, which previously were only refreshed when the Brightness control moved and
+  so stayed tuned to the old rate after a switch.
 - **Time, not samples** - filters and detectors are specified as time constants and
   converted with `1 - exp(-1 / (rate * seconds))`, so a 400 ms LUFS window, a 300 ms VU
   ballistic and a 0.5 ms limiter attack all keep their meaning when the rate quadruples.
