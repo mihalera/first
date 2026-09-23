@@ -310,9 +310,24 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // meter is a tall single-column VU or one cell of the 2 x 2 grid, and at any
     // display scale factor. `bounds` is the same rectangle the frame above was drawn
     // from, so it is reused rather than recomputed.
-    const auto labelArea = 44.0f;
-    const auto readoutArea = 46.0f;
-    const auto face = bounds.withTrimmedTop (labelArea).withTrimmedBottom (readoutArea);
+    //
+    // The vertical budget is drawn FROM THE MEASURED heights (rather than assuming
+    // fixed slices fit): a previous version reserved fixed 44 + 46 px, but the five
+    // readout rows scale with textScale (5 x 15 px at scale 1.0, more when larger),
+    // so the last row slipped off the bottom edge and the dial collided with the
+    // text - which is what made the input/output meters look crooked.
+    const auto titleHeight = juce::roundToInt (20.0f * textScale);
+    const auto subtitleHeight = juce::roundToInt (12.0f * textScale);
+    const auto readoutRowHeight = juce::roundToInt (15.0f * textScale);
+    const auto readoutBottomPad = 4.0f;
+    const auto topBlock = titleHeight + subtitleHeight;
+    const auto readoutBlock = readoutRowHeight * 5 + juce::roundToInt (readoutBottomPad);
+    const auto faceHeight = juce::jmax (40.0f, static_cast<float> (getHeight())
+                                               - static_cast<float> (topBlock)
+                                               - static_cast<float> (readoutBlock));
+    const auto face = juce::Rectangle<float> (bounds.getX(),
+                                              bounds.getY() + static_cast<float> (topBlock),
+                                              bounds.getWidth(), faceHeight);
 
     const auto centreX = face.getCentreX();
     // The dial is a half circle sitting on the lower edge of the face area.
@@ -402,8 +417,11 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     //  The combined row is the equal-weighted average of the four, which is what the
     //  needle and the dial are driven from.
     // -------------------------------------------------------------------
-    const auto readoutTop = getHeight() - juce::roundToInt (62.0f * textScale);
-    const auto rowHeight = juce::roundToInt (15.0f * textScale);
+    // The readout rows are placed from the measured block height, so they exactly
+    // fill the reserved area instead of being pegged to a fixed offset that drifts
+    // away from the dial as the meter is resized.
+    const auto readoutTop = getHeight() - readoutBlock;
+    const auto rowHeight = readoutRowHeight;
 
     const auto drawReadoutRow = [&] (const juce::String& label, float value,
                                      juce::Colour valueColour, int row)
@@ -554,8 +572,12 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // - on a 150 % display this asked for 1860 x 1230 physical pixels for a 1240 x 820
     // panel. The layout code below is all relative to getLocalBounds(), so it needs no
     // knowledge of DPI at all.
-    setResizeLimits (1000, 760, 1700, 1100);
-    setSize (1240, 820);
+    //
+    // Re-tuned again after the first size pass: the panel fits a 1280 x 800 laptop
+    // window with room to spare, and the minimum (880 x 620) keeps the whole grid and
+    // the 2 x 2 meters readable on much smaller hosts.
+    setResizeLimits (880, 620, 1700, 1100);
+    setSize (1160, 740);
     createDecorativePhysics();
 
     const auto styleLabel = [] (juce::Label& label, const juce::String& text,
@@ -626,14 +648,14 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (harmonicsReadout);
 
     const juce::StringArray controlIds { "input", "drive", "bias",
-                                         "tone", "wow", "flutter",
-                                         "mix", "output", "stereo_width" };
+                                         "tone", "character", "wow",
+                                         "flutter", "mix", "output", "stereo_width" };
     const juce::StringArray controlNames { "INPUT", "DRIVE", "BIAS",
-                                           "BRIGHT", "WOW", "FLUTTER",
-                                           "MIX", "OUTPUT", "WIDTH" };
+                                           "BRIGHT", "TONE", "WOW",
+                                           "FLUTTER", "MIX", "OUTPUT", "WIDTH" };
     const std::array<double, controlCount> defaultValues { 0.0, 0.42, 0.36,
-                                                           0.58, 0.14, 0.18,
-                                                           0.62, 0.0, 0.5 };
+                                                           0.58, 0.5, 0.14,
+                                                           0.18, 0.5, 0.0, 0.5 };
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -673,6 +695,15 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                    "Range -32 to +32 dB. Double-click to reset to 0 dB.");
             }
         }
+        else if (i == 4)
+        {
+            // The TONE macro: a crossfade between machine states, not between dry and wet.
+            slider.setTooltip ("Tone blends the tape machine's own character between two states: "
+                               "0 percent is the classic slow machine (soft head gap, warm roll-off, "
+                               "relaxed flutter), 100 percent is the fast machine (open top end, "
+                               "tighter flutter, more pre-bias). It mixes the SPEED and head parameters "
+                               "rather than dry and wet. Double-click for the neutral 50 percent.");
+        }
         else
         {
             slider.setRange (0.0, 1.0, 0.001);
@@ -689,13 +720,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 slider.setTooltip ("Brightness sets how much top end survives the tape. "
                                    "Low is warm, soft and rolled off; high is open and airy. "
                                    "A faster tape speed keeps more top end at the same setting. "
-                                   "Double-click for the default 58 %.");
+                                   "Double-click for the default 58 percent.");
             }
-            else if (i == 6)
+            else if (i == 7)
             {
                 slider.setTooltip ("Mix blends the dry signal with the tape path. "
-                                   "0 % is fully dry, 100 % is fully through the tape. "
-                                   "Double-click for the default 50 %.");
+                                   "0 percent is fully dry, 100 percent is fully through the tape. "
+                                   "Double-click for the default 50 percent.");
             }
             else if (i == controlCount - 1)
             {
@@ -1213,7 +1244,7 @@ void FirstAudioProcessorEditor::resized()
     grid.removeFromTop (42);
     grid.removeFromBottom (8);
     const auto cellWidth = grid.getWidth() / controlColumns;
-    const auto rowHeight = grid.getHeight() / 3;
+    const auto rowHeight = grid.getHeight() / 2;
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -1224,7 +1255,7 @@ void FirstAudioProcessorEditor::resized()
                                           column == controlColumns - 1
                                               ? grid.getRight() - (grid.getX() + column * cellWidth)
                                               : cellWidth,
-                                          row == 2
+                                          row == 1
                                               ? grid.getBottom() - (grid.getY() + row * rowHeight)
                                               : rowHeight);
         controlLabels[i].setBounds (cell.getX() + 5, cell.getY() + 1,
