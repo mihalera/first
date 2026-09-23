@@ -121,8 +121,8 @@ private:
         juce::Rectangle<int> meters;
     };
 
-    static constexpr std::size_t controlCount = 9;
-    static constexpr int controlColumns = 3;
+    static constexpr std::size_t controlCount = 10;
+    static constexpr int controlColumns = 5;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     void timerCallback() override;

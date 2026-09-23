@@ -86,6 +86,25 @@ namespace
     }
 
     /**
+        One-pole low-pass coefficient for a given -3 dB CORNER FREQUENCY in Hz.
+
+        This is the correct unit for musical filters. `onePoleCoefficient()` takes a time
+        constant, and those two are easy to confuse: tau = 1/(2*pi*f0), so passing a
+        frequency where a time constant is expected (or vice versa) puts the corner off by
+        a factor of 2*pi or more. The previous tape low-passes passed millisecond values
+        that were written as if they were kilohertz corners - "26.0f" meant 26 kHz but
+        landed at a 26 ms tau, i.e. a 6 Hz corner - and the whole wet path came out
+        sub-audio, which is what made MIX at 100 % sound like mush instead of tape.
+    */
+    inline float onePoleCoefficientHz (float cornerHz, float sampleRate)
+    {
+        const float omega = juce::MathConstants<float>::twoPi
+                          * juce::jmax (1.0f, cornerHz)
+                          / juce::jmax (1.0f, sampleRate);
+        return juce::jlimit (0.0f, 1.0f, 1.0f - std::exp (-omega));
+    }
+
+    /**
         Soft clipper for the very end of the chain.
 
         A hard `jlimit (-1, 1)` is the one thing this plugin must not do: it turns any
@@ -166,6 +185,7 @@ FirstAudioProcessor::FirstAudioProcessor()
     driveParam    = parameters.getRawParameterValue ("drive");
     biasParam     = parameters.getRawParameterValue ("bias");
     toneParam     = parameters.getRawParameterValue ("tone");
+    characterParam = parameters.getRawParameterValue ("character");
     wowParam      = parameters.getRawParameterValue ("wow");
     flutterParam  = parameters.getRawParameterValue ("flutter");
     mixParam      = parameters.getRawParameterValue ("mix");
@@ -239,6 +259,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     // rather than at 62 %, where the control looked like it was doing nothing because
     // the wet path was almost fully in already.
     layout.add (std::make_unique<juce::AudioParameterFloat> ("mix", "Mix", minTrack, maxTrack, 0.50f));
+
+    // TONE is the added macro: a crossfade BETWEEN TAPE SETTINGS rather than between
+    // dry and wet. At 0 % the transport behaves like the classic slow machine - soft
+    // head damping, gentle roll-off, warmer wow. At 100 % it behaves like the fast
+    // machine - open top end, wider head-gap pole, tighter flutter. Everything the
+    // SPEED switch and the head electronics set is blended between those two states,
+    // which is exactly how the machine's own speed/eq macro behaves on the hardware.
+    // The ID is "character" because "tone" is already taken by Brightness above.
+    layout.add (std::make_unique<juce::AudioParameterFloat> ("character", "Tone", percentageRange (0.50f), 0.50f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
 
     return layout;
 }
@@ -367,8 +397,12 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     flutterPhaseL = 0.0f;
     flutterPhaseR = 0.0f;
     previousTone = -1.0f;
+    previousCharacter = -1.0f;
     toneLpAc = 0.0f;
     toneLpBc = 0.0f;
+    headGapHz = 24000.0f;
+    preDriveGain = 1.0f;
+    flutterScale = 1.0f;
 
     // The sample rate changed, so every time-domain constant has to be rebuilt.
     // The tone filters are cached rather than recomputed per block, and their
@@ -381,6 +415,11 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // and every render pass is deterministic, rather than sharing one thread_local
     // stream whose content would depend on how many instances happen to exist.
     noiseState = 0x1b873593u;
+
+    // The noise-path leveller also starts empty, so the first block does not inherit
+    // a stale floor from a previous session or sample rate.
+    noiseBlockPower = 0.0f;
+    noiseEnvelope = 0.0f;
 
     // The safety limiter must start open, otherwise a stale gain from the previous
     // session would duck the first block audibly.
@@ -419,20 +458,48 @@ void FirstAudioProcessor::resetSampleRateDependentState()
     flutterPhaseL = 0.0f;
     flutterPhaseR = 0.0f;
 
-    // Force the tone filter cache to rebuild against the new rate.
+    // Force the tone and TONE caches to rebuild against the new rate.
     previousTone = -1.0f;
+    previousCharacter = -1.0f;
     if (toneParam != nullptr)
         updateToneCoefficients (toneParam->load());
 }
 
 void FirstAudioProcessor::updateToneCoefficients (float toneValue)
 {
-    // Tone tilt: 0 = warm/soft, 1 = open/bright. Both coefficients are one-pole
-    // filters expressed in milliseconds, so they scale with the sample rate.
+    // Tone tilt: 0 = warm/soft, 1 = open/bright. Both corners are real frequencies in
+    // Hz converted with onePoleCoefficientHz, so they mean the same thing at every
+    // sample rate. (The previous version passed millisecond values that were written
+    // as if they were kilohertz - a 2*pi unit error - which put both corners around
+    // 5-16 Hz and made the whole wet path sub-audio.)
     const auto toneCurve = std::pow (toneValue, 0.92f);
-    toneLpAc = onePoleCoefficient (33.0f * std::pow (0.30f, toneCurve), sampleRate);
-    toneLpBc = onePoleCoefficient (0.55f + 15.0f * toneCurve, sampleRate);
+
+    // Record-side roll-off: the magnetic medium itself. 6.5 kHz at warm keeps the
+    // classic rounded top, 17 kHz at bright keeps essentially everything.
+    toneLpAc = onePoleCoefficientHz (6500.0f + 10500.0f * toneCurve, sampleRate);
+
+    // Playback head-gap shelf: this is the "air" half of the tilt, always well above
+    // the record corner so the two together make a gentle broadband tilt instead of
+    // one steep brick wall.
+    toneLpBc = onePoleCoefficientHz (9000.0f + 15000.0f * toneCurve, sampleRate);
     previousTone = toneValue;
+
+    // TONE macro crossfade, between machine states rather than dry/wet:
+    //   head gap  - the dominant top-end damping of the playback head
+    //   pre-bias  - how hard the record head is driven for a given input
+    //   flutter   - the fast transport shimmer every speed sets
+    // 0 % is the classic slow machine (soft, dark, wide wow), 100 % the fast one
+    // (open, tight, present). Cached here so the per-sample loop only ever reads
+    // ready-made coefficients.
+    const auto character = (characterParam != nullptr
+                               ? juce::jlimit (0.0f, 1.0f, characterParam->load())
+                               : 0.5f);
+    const auto characterCurve = std::pow (character, 1.20f);
+
+    headGapHz = 24000.0f * std::pow (0.28f, characterCurve); // 24 kHz -> 4.3 kHz
+    preDriveGain = 1.0f + 0.55f * (1.0f - characterCurve);
+    flutterScale = 0.75f + 0.55f * characterCurve;
+    previousCharacter = character;
 }
 
 void FirstAudioProcessor::releaseResources()
@@ -545,6 +612,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     const auto drive = driveParam->load();
     const auto bias = biasParam->load();
     const auto tone = toneParam->load();
+    const auto character = characterParam != nullptr ? characterParam->load() : 0.5f;
     const auto wow = wowParam->load();
     const auto flutter = flutterParam->load();
     const auto mix = mixParam->load();
@@ -586,11 +654,13 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     const auto flutterFreq = (1.9f + flutterCurve * 5.4f) * (1.0f + speedScale * 0.22f);
 
     // Per-model tape character: saturation curve, bias asymmetry, tape noise floor,
-    // high-frequency softening and the magnetic hysteresis thickness.
+    // head-gap damping and the magnetic hysteresis thickness. The damping is a real
+    // corner FREQUENCY in Hz (the previous ms values landed at 4-9 Hz through the
+    // time-constant filter - the same 2*pi unit error that hid the whole wet path).
     float tapeCurve = 1.18f;
     float tapeAsymmetry = 0.16f;
     float tapeHiss = 0.22f;
-    float hfDampingMs = 26.0f;
+    float headDampingHz = 12000.0f;
     float hysteresis = 0.30f;
 
     switch (tapeType)
@@ -599,21 +669,21 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             tapeCurve = 1.18f;
             tapeAsymmetry = 0.16f;
             tapeHiss = 0.22f;
-            hfDampingMs = 26.0f;
+            headDampingHz = 12000.0f;
             hysteresis = 0.30f;
             break;
         case 1: // Ampex 456 - hotter, more low-order colour
             tapeCurve = 1.30f;
             tapeAsymmetry = 0.24f;
             tapeHiss = 0.30f;
-            hfDampingMs = 34.0f;
+            headDampingHz = 16000.0f;
             hysteresis = 0.38f;
             break;
         case 2: // Studer A800 - darkest, densest saturation
             tapeCurve = 1.44f;
             tapeAsymmetry = 0.28f;
             tapeHiss = 0.38f;
-            hfDampingMs = 44.0f;
+            headDampingHz = 20000.0f;
             hysteresis = 0.46f;
             break;
         case 3: // Chrome - clean and bright, low noise
@@ -621,7 +691,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             tapeCurve = 1.22f;
             tapeAsymmetry = 0.12f;
             tapeHiss = 0.18f;
-            hfDampingMs = 18.0f;
+            headDampingHz = 8500.0f;
             hysteresis = 0.24f;
             break;
     }
@@ -643,13 +713,28 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     const float flutterDepth = flutterCurve * (0.08f + speedScale * 0.09f);
     const float speedBias = 0.84f + speedScale * 0.30f;
 
-    // Tone tilt: 0 = warm/soft, 1 = open/bright. Both coefficients are one-pole
-    // filters in milliseconds, so they are rebuilt whenever the tone control moves,
-    // and also whenever the sample rate changes (see resetSampleRateDependentState).
-    if (std::abs (tone - previousTone) > 1.0e-5f)
+    // Tone tilt: 0 = warm/soft, 1 = open/bright. The coefficients are cached by
+    // updateToneCoefficients, which also derives the TONE-macro machine-state scalars
+    // (head gap, pre-bias, flutter scale). They are rebuilt whenever either control
+    // moves, and also whenever the sample rate changes (see
+    // resetSampleRateDependentState).
+    if (std::abs (tone - previousTone) > 1.0e-5f
+        || std::abs (character - previousCharacter) > 1.0e-5f)
         updateToneCoefficients (tone);
 
-    const float hfPostCoefficient = onePoleCoefficient (hfDampingMs / speedScale, sampleRate);
+    // The TONE curve is re-derived from the same parameter inside
+    // updateToneCoefficients, so the tilt stage below reads the same value the head
+    // poles were built from. Captured once here instead of pow() per sample.
+    const auto characterCurve = std::pow (
+        juce::jlimit (0.0f, 1.0f, character), 1.20f);
+
+    // The playback head poles are constants for the whole block (they only depend on
+    // the controls and the rate), so they are built here once rather than per sample.
+    // The head-gap pole is the TONE macro's own crossfade - slow/soft machine (4.3 kHz)
+    // to fast/open machine (24 kHz) - divided by the selected speed's damping, so SPEED
+    // and TONE keep their independent meaning on the same head.
+    const float headGapCoefficient = onePoleCoefficientHz (headGapHz * speedScale, sampleRate);
+    const float hfPostCoefficient = onePoleCoefficientHz (headDampingHz * speedScale, sampleRate);
 
     // Tape hiss is a continuous noise floor, so its density is expressed per sample and
     // therefore scales with the sample rate.
@@ -668,6 +753,30 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     //      double-compensate and the hiss would get louder as the rate went up, which is
     //      exactly the bug this replaces.
     const float hissGain = tapeHiss * 0.00085f;
+
+    // -----------------------------------------------------------------------
+    //  Noise-path levelling - the fix for "pauses are noisier than signal".
+    //
+    //  The hiss used to sit in the wet path BELOW the output glue compressor and the
+    //  safety limiter. A glue compressor is programme-dependent gain, so it did the
+    //  exact opposite of what a tape machine does: while signal played, the detector
+    //  ducked everything including the hiss (signal buried the noise it also
+    //  suppressed), and in a pause the release pulled the level back up onto the
+    //  hiss alone - the pause got LOUDER. The limiter extended the same effect to
+    //  loud material, which ducked the hiss hardest exactly when the tape should be
+    //  doing its best masking work.
+    //
+    //  The fix is to make the noise path CONSTANT: the hiss gain is divided by a
+    //  follower of the programme power with a fast attack (the floor is re-established
+    //  within ~40 ms of the signal arriving) and a slow release (the floor fades over
+    //  ~3 s only in a true pause). With signal present the hiss is inaudible under it;
+    //  in a pause the tape keeps a steady, calm floor instead of swelling up.
+    // -----------------------------------------------------------------------
+    const float noiseAttack = 1.0f - std::exp (-1.0f / (juce::jmax (1.0f, sampleRate) * 0.04f));
+    const float noiseRelease = 1.0f - std::exp (-1.0f / (juce::jmax (1.0f, sampleRate) * 3.0f));
+    constexpr float noisePowerFloor = 1.0e-7f;   // below this the tape is "idle" (about -70 dBFS)
+    constexpr float noiseSensitivity = 1.6f;     // how far above the floor the leveller starts paying back
+    float hissLevelCompensation = 1.0f;
 
     // onePoleCoefficient takes MILLISECONDS, so the 16 kHz corner is converted to the
     // equivalent time constant first: 1 / (2*pi*f). Passing 16000 here would be read as a
@@ -689,6 +798,12 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     // shaper is near-unity at zero drive and only compresses when pushed, the static trim
     // has to be close to unity as well or the plugin ends up quiet instead of clean.
     const float driveGainCompensation = 1.0f - driveCurve * 0.16f;
+
+    // The static calibration stays as designed: the slow programme compensator after
+    // the output stage already restores any residual broadband loss against the
+    // post-INPUT reference, so no extra static boost is wanted here - with the tape
+    // poles now in the audio range the passband is close to unity and the wet path
+    // level-tracks the dry one at any MIX setting.
     const float finalOutputGain = 0.78f * driveGainCompensation * (0.94f + speedScale * 0.08f);
 
     // Continuous pseudo-random tape noise: a 32-bit LCG held per instance, so the
@@ -820,6 +935,20 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             // keeps it independent of how the stereo material is panned.
             if (channel == 0)
                 referenceBlockPower += inputTrimmed * inputTrimmed;
+
+            // The noise follower listens to the CONTROLLED signal (channel 0, mono
+            // measurement) - the level the tape actually hears after the INPUT trim -
+            // so the floor stays put even when the user trims the input down between
+            // takes. Fast attack re-establishes the floor within ~40 ms of signal
+            // arriving, slow release lets it fade over ~3 s in a true pause.
+            if (channel == 0)
+            {
+                noiseBlockPower = inputTrimmed * inputTrimmed;
+                noiseEnvelope += (juce::jmax (noiseBlockPower, noisePowerFloor) - noiseEnvelope)
+                               * (noiseBlockPower > noiseEnvelope ? noiseAttack : noiseRelease);
+                hissLevelCompensation = 1.0f
+                                      + noiseSensitivity * noisePowerFloor / noiseEnvelope;
+            }
             // ------------------------------------------------------------------
             //  Input stage glue compressor. It sits straight after the input trim,
             //  so the signal that reaches the tape is always the controlled one and
@@ -861,13 +990,15 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             // Transport speed modulation: wow is a slow pitch wander, flutter a fast
             // shimmer, and the grain term adds the fine tape-surface texture.
             const float wowMod = 1.0f + wowLfo * wowDepth;
-            const float flutterMod = 1.0f + flutterLfo * flutterDepth;
+            const float flutterMod = 1.0f + flutterLfo * flutterDepth * flutterScale;
             const float grainMod = 1.0f + tapeHiss * 0.10f * grainLfo;
 
             // Record head: pre-emphasis, tape bias offset and drive. With DRIVE at zero
             // this is exactly unity, so the saturator sees the signal at the level the
-            // user dialled in rather than a pre-boosted version of it.
-            const float preDrive = x * (1.0f + driveAmount * 1.2f * speedBias);
+            // user dialled in rather than a pre-boosted version of it. The TONE macro
+            // adds the slow-machine pre-bias on top, scaled by the speed's own bias so
+            // the two controls multiply naturally instead of fighting.
+            const float preDrive = x * (1.0f + driveAmount * 1.2f * speedBias * preDriveGain);
             const float recordBias = biasAmount * 0.42f;
 
             // Magnetic hysteresis with memory - the core of the tape sound.
@@ -894,8 +1025,8 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             highFreqMemory[1] += (shapedCore - highFreqMemory[1]) * toneLpAc;
             const float afterTapeLoss = highFreqMemory[1];
 
-            // Playback head gap loss and low-frequency head bump.
-            highFreqMemory[0] += (afterTapeLoss - highFreqMemory[0]) * hfPostCoefficient;
+            // Playback head gap loss: the TONE macro's crossfade of the head itself.
+            highFreqMemory[0] += (afterTapeLoss - highFreqMemory[0]) * headGapCoefficient;
             const float headLoss = highFreqMemory[0];
             highFreqMemory[1] = afterTapeLoss;
 
@@ -929,14 +1060,22 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             // The band limit costs most of the noise power, so the gain is compensated by
             // the inverse of the filter's RMS response. Deriving it from the coefficient
             // rather than a fixed number keeps the perceived level flat at every rate.
-            const float hissLevelCompensation = 1.0f / std::sqrt (juce::jmax (0.05f, hissBandLimit));
-            const float noiseFloor = hissLowPass * hissLevelCompensation;
+            // The programme follower above then lifts the floor back to its constant
+            // level: exactly the levelling a real machine's noise reduction does.
+            const float bandLimitCompensation = 1.0f / std::sqrt (juce::jmax (0.05f, hissBandLimit));
+            const float noiseFloor = hissLowPass * bandLimitCompensation * hissLevelCompensation;
 
             const float motioned = (compressedBias + noiseFloor) * wowMod * flutterMod * grainMod;
 
             // Playback EQ: subtract the low band for air, add it back for body.
             const float lowBand = highFreqMemory[0];
-            const float deEmphasised = motioned + (motioned - lowBand) * toneLpBc * 1.7f;
+
+            // TONE macro: a TILTED EQ placed after the head poles. It mirrors the
+            // frequency mapping of updateToneCoefficients (slow machine = warm, fast
+            // machine = open), so the crossfade keeps a constant musical feel across
+            // the whole travel instead of only moving the poles themselves.
+            const float toneTilt = (motioned - lowBand) * (0.18f + 0.55f * characterCurve);
+            const float deEmphasised = motioned + toneTilt * toneLpBc * 1.7f;
 
             // Equal-gain crossfade between the dry input and the fully processed tape
             // signal. The wet path is level-matched in finalOutputGain, so 0 % is a

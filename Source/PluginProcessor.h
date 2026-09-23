@@ -550,6 +550,9 @@ public:
     /** Instantaneous transport drift (wow/flutter), normalised to 0..1 around 0.5. */
     float getTransportDrift() const noexcept { return transportDrift.load (std::memory_order_relaxed); }
 
+    /** Tone macro (tape/speed character crossfade), 0..1, for the editor. */
+    float getToneMacro() const noexcept { return characterParam != nullptr ? characterParam->load() : 0.0f; }
+
     /** Harmonic weight of the last block, 0..1, used for UI colour animation. */
     float getHarmonicCharacter() const noexcept { return harmonicCharacter.load (std::memory_order_relaxed); }
 
@@ -570,6 +573,7 @@ private:
     std::atomic<float>* driveParam = nullptr;
     std::atomic<float>* biasParam = nullptr;
     std::atomic<float>* toneParam = nullptr;
+    std::atomic<float>* characterParam = nullptr;
     std::atomic<float>* wowParam = nullptr;
     std::atomic<float>* flutterParam = nullptr;
     std::atomic<float>* mixParam = nullptr;
@@ -638,6 +642,14 @@ private:
     // thread_local static so that instances never share one stream and the output
     // is reproducible for a given instance.
     std::uint32_t noiseState = 0x1b873593u;
+
+    // Noise-path levelling. The hiss gain tracks the programme power with a fast attack
+    // and a slow release so the noise floor is CONSTANT while signal plays and fades
+    // only in true pauses: if the hiss rode the compressor instead, pauses got LOUDER
+    // than programme (release pulls the level back up onto the hiss), which is exactly
+    // backwards for a tape machine. Both floats are audio-thread only.
+    float noiseBlockPower = 0.0f;
+    float noiseEnvelope = 0.0f;
 
     // Two independent glue stages, each with its own detector envelope. The input
     // stage runs straight after the input trim, the output stage straight before
