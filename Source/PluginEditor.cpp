@@ -392,12 +392,9 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
         }
     }
 
-    g.setColour (palette.gaugeInk.withAlpha (0.65f));
-    g.setFont (juce::Font (juce::FontOptions (9.0f * textScale, juce::Font::bold)));
-    g.drawText ("VU", juce::Rectangle<int> (juce::roundToInt (centreX - 19.0f),
-                                            juce::roundToInt (centreY + 13.0f), 38, 13),
-                juce::Justification::centred, false);
-
+    // (The old standalone "VU" caption was removed: it sat at centreY + 13, exactly
+    // where the readout rows begin, and printed over the PEAK and RMS rows. The scale
+    // is already named by the meter subtitle and by the VU row itself.)
     // The needle rides the combined 25 %-each reading, so the dial shows one trustworthy
     // number while the text block below shows exactly how that number was arrived at.
     const auto needleDb = juce::jlimit (-20.0f, 3.0f, displayedCombined);
@@ -426,9 +423,16 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // The readout rows fill the reserved block exactly, centred as a group, so the
     // spacing between rows is identical however the meter is resized.
     const auto usedReadout = readoutRowHeight * readoutRowCount;
-    const auto readoutTop = bounds.getY() + static_cast<float> (topBlock)
-                          + static_cast<float> (faceHeight)
-                          + (static_cast<float> (readoutBlock - usedReadout) * 0.5f);
+    // 4 px of clear air between the dial box and the first row, so the needle pivot
+    // and the PEAK row never crowd each other. The block is then clamped to the meter
+    // bottom: on a short cell the spare room is zero, so without the clamp the extra
+    // gap would push the last row past the panel edge.
+    const auto desiredReadoutTop = bounds.getY() + static_cast<float> (topBlock)
+                                 + static_cast<float> (faceHeight) + 4.0f
+                                 + juce::jmax (0.0f, static_cast<float> (readoutBlock
+                                                   - usedReadout - 4) * 0.5f);
+    const auto readoutTop = juce::jmin (desiredReadoutTop,
+                                        bounds.getBottom() - static_cast<float> (usedReadout) - 1.0f);
     const auto rowHeight = readoutRowHeight;
 
     const auto drawReadoutRow = [&] (const juce::String& label, float value,
@@ -581,14 +585,17 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // panel. The layout code below is all relative to getLocalBounds(), so it needs no
     // knowledge of DPI at all.
     //
-    // Re-tuned for compactness after the "interface is still too large" report: the
-    // panel now opens at 1024 x 640 - comfortable on a 1280 x 800 laptop with a DAW
-    // browser open - and the minimum is 800 x 560, which keeps the knob grid and the
-    // 2 x 2 meters usable on much smaller hosts. The maximum was pulled in as well:
-    // beyond roughly 1500 px the analogue panel stops gaining legibility and only
+    // Re-tuned again after a second "interface is still too large" report. Two things
+    // shrank the real footprint: the 1024 x 640 opening size itself, and the outer
+    // furniture - getEditorLayout() previously kept 18 px on every edge of the window
+    // and a 78 px header, which alone cost more than a hundred rows of dead panel
+    // before any control appeared. The opening size is now 960 x 600 - the same
+    // proportion, one notch smaller - and the minimum is 780 x 540 so small hosts
+    // keep the knob grid and the 2 x 2 meters usable. The maximum is pulled in to
+    // 1400 x 900: beyond that the analogue panel stops gaining legibility and only
     // looks sparse.
-    setResizeLimits (800, 560, 1500, 960);
-    setSize (1024, 640);
+    setResizeLimits (780, 540, 1400, 900);
+    setSize (960, 600);
     createDecorativePhysics();
 
     const auto styleLabel = [] (juce::Label& label, const juce::String& text,
@@ -833,15 +840,19 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
 
 FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayout() const
 {
-    auto remaining = getLocalBounds().reduced (18);
+    // Outer padding of 14 px instead of 18: the screws and the panel border only need
+    // that much clearance, and every pixel saved here goes to the working areas. The
+    // header is 70 px and the deck 80 - both are still comfortably above their fixed
+    // furniture (30 px badge, 35 px combo boxes), but no longer bankroll dead space.
+    auto remaining = getLocalBounds().reduced (14);
     EditorLayout layout;
 
     // Header and deck are fixed-height, so they keep their proportions at small panel
     // sizes and on high-DPI displays. The rest of the height goes to controls + meters.
-    layout.header = remaining.removeFromTop (78);
-    remaining.removeFromTop (12);
-    layout.deck = remaining.removeFromTop (84);
-    remaining.removeFromTop (12);
+    layout.header = remaining.removeFromTop (70);
+    remaining.removeFromTop (10);
+    layout.deck = remaining.removeFromTop (80);
+    remaining.removeFromTop (10);
 
     // The meters panel has to hold a 2 x 2 grid of dials, so it claims a share of the
     // width rather than a fixed pixel count. That keeps both rows legible whether the
@@ -947,8 +958,8 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     }
 
     g.setColour (palette.accent.withAlpha (0.85f));
-    g.fillRect (layout.header.getX() + 17, layout.header.getY() + 16, 3,
-                layout.header.getHeight() - 32);
+    g.fillRect (layout.header.getX() + 17, layout.header.getY() + 14, 3,
+                layout.header.getHeight() - 28);
 
     g.setColour (palette.border.withAlpha (0.75f));
     g.drawHorizontalLine (layout.controls.getY() + 42,
@@ -963,7 +974,7 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
 
     const auto statusBadge = juce::Rectangle<float> (
         static_cast<float> (layout.header.getRight() - 205),
-        static_cast<float> (layout.header.getY() + 24), 184.0f, 30.0f);
+        static_cast<float> (layout.header.getY() + 20), 184.0f, 30.0f);
     g.setColour (palette.raised.darker (0.16f));
     g.fillRoundedRectangle (statusBadge, 4.0f);
 
@@ -1220,36 +1231,53 @@ void FirstAudioProcessorEditor::resized()
 {
     const auto layout = getEditorLayout();
 
-    brandLabel.setBounds (layout.header.getX() + 28, layout.header.getY() + 12, 150, 14);
-    titleLabel.setBounds (layout.header.getX() + 25, layout.header.getY() + 23, 96, 44);
-    subtitleLabel.setBounds (layout.header.getX() + 126, layout.header.getY() + 39, 310, 20);
-    themeButton.setBounds (layout.header.getRight() - 348, layout.header.getY() + 24, 126, 30);
-    statusLabel.setBounds (layout.header.getRight() - 202, layout.header.getY() + 24, 181, 30);
-
-    deckHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 8, 150, 17);
-    tapeTypeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 39, 45, 20);
-    tapeTypeBox.setBounds (layout.deck.getX() + 68, layout.deck.getY() + 32, 208, 35);
-    speedLabel.setBounds (layout.deck.getX() + 296, layout.deck.getY() + 39, 45, 20);
-    speedBox.setBounds (layout.deck.getX() + 345, layout.deck.getY() + 32, 150, 35);
-    bypassButton.setBounds (layout.deck.getX() + 515, layout.deck.getY() + 32, 118, 35);
-    deckHintLabel.setBounds (layout.deck.getX() + 647, layout.deck.getY() + 31,
-                             juce::jmax (130, layout.deck.getWidth() - 735), 36);
-
-    controlsHeadingLabel.setBounds (layout.controls.getX() + 18, layout.controls.getY() + 12, 210, 19);
-    controlsHintLabel.setBounds (layout.controls.getRight() - 360, layout.controls.getY() + 12,
-                                 342, 19);
-    metersHeadingLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 8, 130, 18);
-    metersHintLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 27, 150, 14);
-    compressorLabel.setBounds (layout.meters.getRight() - 176, layout.meters.getY() + 8, 160, 18);
-    compressorReadout.setBounds (layout.meters.getRight() - 176, layout.meters.getY() + 27, 160, 14);
+    brandLabel.setBounds (layout.header.getX() + 28, layout.header.getY() + 10, 150, 14);
+    titleLabel.setBounds (layout.header.getX() + 25, layout.header.getY() + 21, 96, 44);
+    subtitleLabel.setBounds (layout.header.getX() + 126, layout.header.getY() + 37, 270, 20);
+    themeButton.setBounds (layout.header.getRight() - 348, layout.header.getY() + 20, 126, 30);
+    statusLabel.setBounds (layout.header.getRight() - 202, layout.header.getY() + 20, 181, 30);
 
     // The harmonic readout sits in the free space at the right of the deck row, which is
-    // where a real machine would print its meter calibration.
+    // where a real machine would print its meter calibration. It is placed first so the
+    // deck controls below can chain off it: the hint label ends where this begins.
     const auto harmonicsWidth = 150;
     harmonicsLabel.setBounds (layout.deck.getRight() - harmonicsWidth - 18,
-                              layout.deck.getY() + 8, harmonicsWidth, 18);
+                              layout.deck.getY() + 8, harmonicsWidth, 17);
     harmonicsReadout.setBounds (layout.deck.getRight() - harmonicsWidth - 18,
-                                layout.deck.getY() + 27, harmonicsWidth, 16);
+                                layout.deck.getY() + 26, harmonicsWidth, 15);
+
+    // The deck controls are laid out by CHAINING each group off the previous one's
+    // right edge instead of absolute offsets: the old fixed offsets (296 / 345 / 515 px)
+    // were calibrated for a 1024 px panel and collided once the window could shrink
+    // below that. The hint label takes whatever space remains before the readout.
+    deckHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 7, 150, 16);
+    tapeTypeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 42, 45, 16);
+    tapeTypeBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 33, 180, 32);
+
+    speedLabel.setBounds (tapeTypeBox.getRight() + 24, layout.deck.getY() + 42, 45, 16);
+    speedBox.setBounds (tapeTypeBox.getRight() + 72, layout.deck.getY() + 33, 120, 32);
+    bypassButton.setBounds (speedBox.getRight() + 24, layout.deck.getY() + 33, 100, 32);
+
+    // The hint takes what is left between the bypass button and the readout, up to a
+    // sane maximum, and disappears entirely rather than colliding on a narrow panel.
+    const auto hintLeft = bypassButton.getRight() + 20;
+    deckHintLabel.setBounds (hintLeft, layout.deck.getY() + 30,
+                             juce::jmax (0, juce::jmin (220,
+                                  harmonicsLabel.getX() - 24 - hintLeft)), 32);
+
+    controlsHeadingLabel.setBounds (layout.controls.getX() + 18, layout.controls.getY() + 10, 210, 19);
+    const auto controlsHintRight = layout.controls.getRight() - 12;
+    const auto controlsHintLeft = juce::jmax (layout.controls.getX() + 240,
+                                              controlsHeadingLabel.getRight() + 24);
+    controlsHintLabel.setBounds (controlsHintLeft, layout.controls.getY() + 10,
+                                 juce::jmax (0, controlsHintRight - controlsHintLeft), 19);
+    metersHeadingLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 8, 130, 18);
+    metersHintLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 27, 150, 14);
+    const auto compressorLabelWidth = 120;
+    compressorLabel.setBounds (layout.meters.getRight() - compressorLabelWidth - 14,
+                               layout.meters.getY() + 8, compressorLabelWidth, 18);
+    compressorReadout.setBounds (layout.meters.getRight() - compressorLabelWidth - 14,
+                                 layout.meters.getY() + 27, compressorLabelWidth, 14);
 
     auto grid = layout.controls.reduced (14);
     grid.removeFromTop (42);
@@ -1281,8 +1309,8 @@ void FirstAudioProcessorEditor::resized()
     //   row 2 - COMP IN and COMP OUT gain-reduction meters
     // The rows share the available height evenly, so the arrangement (and the
     // input-left / output-right reading order) holds at any panel size.
-    auto meterArea = layout.meters.reduced (14, 0);
-    meterArea.removeFromTop (44);           // heading + hint labels
+    auto meterArea = layout.meters.reduced (12, 0);
+    meterArea.removeFromTop (46);           // heading + hint labels, with 4 px clearance
     meterArea.removeFromBottom (8);
 
     const auto columnGap = 8;
