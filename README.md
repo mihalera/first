@@ -11,6 +11,8 @@ It provides a tape-saturation mastering workflow with:
 
 - drive and harmonic character controls
 - a **TONE macro** that crossfades the whole machine state (tape stock, head gap, pre-bias, flutter) between the classic slow machine and the fast/hot machine
+- **oversampling** (Off / 2x / 4x) around the nonlinear engine, with the filter delay reported to the host
+- **factory presets** covering the machine's real range, plus A/B compare and full-state undo/redo
 - tape-type selection
 - speed influences and modulation
 - wow / flutter behavior
@@ -46,6 +48,10 @@ playback EQ tilt -> output glue compressor (always on) -> output trim (dB) -> st
 | Bypass | on/off | Ramps the whole tape engine out without clicking |
 | Tape Type | J37 / Ampex 456 / Studer A800 / Chrome | Model character (also shapes the glue time constants) |
 | Speed | 7.5 / 15 / 30 ips | Transport speed, affects modulation, top end and glue timing |
+| Oversampling | Off / 2x / 4x | Runs the tape engine at a higher internal rate to reduce aliasing; the added latency is reported to the host |
+| Presets | 12 factory | Loaded from the preset box; each application is one undoable step |
+| A/B compare | two slots | COPY A / COPY B store states, A/B swaps them live; an EDITED badge shows when the sides differ |
+| Undo / Redo | full state | Ctrl+Z / Ctrl+Y (or the panel buttons) step through preset and A/B history |
 
 The percentage controls (Drive, Bias, Wow, Flutter) use a skewed knob taper so the
 gentle end of each control gets more travel. This is purely ergonomic and does **not**
@@ -181,6 +187,26 @@ silent view would otherwise drag a linear average toward -infinity. (The row is 
 The spread between the rows is itself information: a large PEAK-to-LUFS gap means very
 dynamic material, and a large VU-to-RMS gap means a lot of transient content.
 
+## Oversampling
+
+The magnetic hysteresis is a nonlinear process, so it aliases: harmonics generated above
+Nyquist fold back down into the audible band. The OVERSAMPLING switch (Off / 2x / 4x) wraps
+the whole tape engine in a polyphase half-band upsampler, runs the model at two or four
+times the session rate, and filters back down. The added filter delay (zero at Off, a few
+samples at 2x/4x) is reported to the host through `setLatencySamples`, so DAW PDC
+compensates automatically. The three engines exist side by side with independent filter
+state, so switching mid-playback is glitch-free.
+
+## Presets, A/B compare and undo
+
+Twelve factory presets cover the machine's range from gentle bus warmth to slammed drum
+tape. A preset replaces the whole machine state in a single undoable transaction - Ctrl+Z
+brings back exactly what was on screen before. The A/B section stores two complete states:
+COPY A / COPY B capture the current settings into their slot (the live side mirrors your
+edits continuously), the A/B button swaps the sides live, and an A/B EDITED badge lights
+while the two stored sides differ. Undo history covers preset loads and A/B recalls as
+full-state transactions, so one step moves the whole machine, never half of it.
+
 ## Output protection
 
 Two stages keep the output clean, in this order:
@@ -256,7 +282,8 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
   between 780 x 540 and 1400 x 900; both meter types lay themselves out proportionally
   to their own bounds. Text scales with the meter, so nothing is drawn at a hardcoded
   pixel size. The transport-deck controls chain off each other's edges rather than
-  sitting at absolute offsets, so nothing collides at the minimum size, and the level
+  sitting at absolute offsets, so nothing collides at the minimum size. The deck is two
+  chained lines - transport controls, then the preset / A/B / undo row - and the level
   meters keep clear air between the dial and the readout rows.
 - **Fonts** - the title uses a fallback chain rather than a Windows-only family.
 - **OpenGL** - treated as a best-effort accelerator; if a context cannot be created the
