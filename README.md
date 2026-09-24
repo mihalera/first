@@ -319,6 +319,14 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
 - **Tooltips** - every knob and switch carries a tooltip explaining what it does and its
   default; the tips appear quickly on hover (about a third of a second).
 - **Fonts** - the title uses a fallback chain rather than a Windows-only family.
+- **Toggle switches** - BYPASS, POLARITY and AUTO GAIN are drawn as small hardware
+  rockers by the panel's own Look and Feel: a recessed body, a sliding thumb with the
+  engraved OFF / ON state, a status LED that lights when engaged, and the function
+  name engraved beside the LED. They no longer look like ordinary buttons.
+- **Decorative artwork stays out of the way** - the spinning reel sits in the deck's
+  heading corner, the tape ribbon hangs inside the free corridor between the
+  oversampling switch and the harmonics readout, and the drifting dust particles are
+  confined to the same corridor, so no decoration ever prints over a caption.
 - **OpenGL** - treated as a best-effort accelerator; if a context cannot be created the
   panel falls back to the normal component renderer.
 

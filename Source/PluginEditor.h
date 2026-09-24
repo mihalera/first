@@ -28,6 +28,10 @@ public:
                            float, float, float,
                            juce::Slider&) override;
 
+    /** Hardware rocker-switch drawing for the panel's on/off toggles. */
+    void drawToggleButton (juce::Graphics&, juce::ToggleButton&,
+                           bool, bool) override;
+
 private:
     bool darkTheme = false;
     float activity = 0.0f;   ///< Compressor activity, drives the glow around the knobs.
@@ -152,7 +156,7 @@ private:
 
     juce::ComboBox tapeTypeBox;
     juce::ComboBox speedBox;
-    juce::TextButton bypassButton { "BYPASS" };
+    juce::ToggleButton bypassButton { "BYPASS" };
     juce::TextButton themeButton { "DARK THEME" };
 
     // Premium workflow bar: oversampling switch, factory + user presets, A/B compare,
@@ -166,8 +170,8 @@ private:
     juce::TextButton compareButton { "A/B" };
     juce::TextButton undoButton { "UNDO" };
     juce::TextButton redoButton { "REDO" };
-    juce::TextButton polarityButton { "POLARITY" };
-    juce::TextButton autoGainButton { "AUTO GAIN" };
+    juce::ToggleButton polarityButton { "POLARITY" };
+    juce::ToggleButton autoGainButton { "AUTO GAIN" };
     juce::ComboBox oversamplingBox;
     juce::Label oversamplingLabel;
     juce::Label presetHeadingLabel;
