@@ -32,6 +32,17 @@ public:
     void drawToggleButton (juce::Graphics&, juce::ToggleButton&,
                            bool, bool) override;
 
+    /** Caption drawing for the panel's text buttons.
+
+        juce::TextButton has no per-button font, so the only way to keep a caption
+        inside a fixed-width button is to draw the text here and size the font to
+        the button's own width. The preset / A/B row is width-constrained at the
+        minimum panel size, so a caption that grows ("A (LIVE) *") used to be
+        ellipsised by the default Look and Feel.
+    */
+    void drawButtonText (juce::Graphics&, juce::TextButton&,
+                         bool, bool) override;
+
 private:
     bool darkTheme = false;
     float activity = 0.0f;   ///< Compressor activity, drives the glow around the knobs.

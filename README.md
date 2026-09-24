@@ -321,9 +321,11 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
   ended, so the two lines printed on top of each other).
 - **Tooltips** - every knob and switch carries a tooltip explaining what it does and its
   default; the tips appear quickly on hover (about a third of a second).
-- **Fonts** - the title uses a fallback chain rather than a Windows-only family, and the
-  fixed-width A/B, compare and undo/redo captions are measured and scaled to their buttons
-  so a caption that grows (`A (LIVE) *`) can never ellipsise into unreadable text.
+- **Fonts** - the title uses a fallback chain rather than a Windows-only family. Text
+  buttons are drawn through the panel's own Look and Feel, which measures each caption
+  against that button's width and scales the font to fit - `juce::TextButton` has no
+  per-button font, and without this the width-constrained A/B row ellipsised a caption
+  that grows (`A (LIVE) *`) into unreadable text.
 - **Toggle switches** - BYPASS, POLARITY and AUTO GAIN are drawn as small hardware
   rockers by the panel's own Look and Feel: the function name engraved across a
   proportional top band, a recessed track below with a single sliding thumb that

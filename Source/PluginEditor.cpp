@@ -92,7 +92,7 @@ namespace
     juce::Font shrinkingFont (const juce::String& text, float maxHeight,
                               int fontStyle, float availableWidth)
     {
-        const auto makeFont = [maxHeight, fontStyle] (float height)
+        const auto makeFont = [fontStyle] (float height)
         {
             return juce::Font (juce::FontOptions (height, fontStyle));
         };
@@ -361,6 +361,42 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
 }
 
 //==============================================================================
+//  Text-button captions are measured against each button's own width rather than
+//  drawn at whatever size the default Look and Feel happens to choose. The
+//  preset / A/B row is width-constrained at the minimum panel size, so a caption
+//  that grows ("A (LIVE) *", "A/B: B") used to be ellipsised; scaling the font to
+//  the button keeps the whole caption readable at any editor size.
+//==============================================================================
+void J37LookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button,
+                                     bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
+{
+    const auto& palette = paletteFor (darkTheme);
+
+    auto colour = button.findColour (button.getToggleState() ? juce::TextButton::textColourOnId
+                                                             : juce::TextButton::textColourOffId);
+    if (! button.isEnabled())
+        colour = colour.withMultipliedAlpha (0.45f);
+    if (shouldDrawButtonAsHighlighted)
+        colour = colour.brighter (0.12f);
+    if (shouldDrawButtonAsDown)
+        colour = colour.darker (0.3f);
+
+    // Side bearing so the fitted caption is never clipped by the rounded corners.
+    const auto bounds = button.getLocalBounds().toFloat().reduced (5.0f, 1.0f);
+    const auto text = button.getButtonText();
+
+    g.setColour (colour);
+    g.setFont (shrinkingFont (text, 12.0f, juce::Font::bold, bounds.getWidth()));
+    g.drawText (text, bounds, juce::Justification::centred, true);
+
+    if (button.hasKeyboardFocus (false))
+    {
+        g.setColour (palette.accent.withAlpha (0.7f));
+        g.drawRoundedRectangle (button.getLocalBounds().toFloat().reduced (1.0f), 4.0f, 1.0f);
+    }
+}
+
+//==============================================================================
 FirstAudioProcessorEditor::LevelMeter::LevelMeter (juce::String meterTitle, juce::String meterSubtitle)
     : title (std::move (meterTitle)), subtitle (std::move (meterSubtitle))
 {
@@ -444,7 +480,7 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // ended and the two lines printed on top of each other.
     const auto topBlock = juce::roundToInt (32.0f * textScale);
     const auto titleHeight = juce::roundToInt (18.0f * textScale);
-    const auto localBounds = getLocalBounds();
+    auto localBounds = getLocalBounds();
     const auto titleBand = localBounds.removeFromTop (titleHeight);
     const auto subtitleBand = localBounds.removeFromTop (topBlock - titleHeight);
 
@@ -1279,18 +1315,6 @@ void FirstAudioProcessorEditor::updateWorkflowButtons()
     copyBButton.setButtonText (copyBButton.getButtonText()
                                + (dirty && activeSlot != 1 ? " *" : ""));
 
-    // Fit the A/B workflow captions to the width each button actually has. The live
-    // captions can grow to "A (LIVE) *" and the compare caption to "A/B: B"; at the
-    // default 14 pt they overflowed their 64/54 px buttons and ellipsised, which read
-    // as broken text. The font is scaled to the button instead.
-    const auto fitWorkflowCaption = [] (juce::TextButton& button)
-    {
-        button.setFont (shrinkingFont (button.getButtonText(), 12.0f, juce::Font::bold,
-                                       static_cast<float> (button.getWidth()) - 8.0f));
-    };
-    fitWorkflowCaption (copyAButton);
-    fitWorkflowCaption (copyBButton);
-    fitWorkflowCaption (compareButton);
 
     auto& undoManager = audioProcessor.getUndoManager();
     undoButton.setEnabled (undoManager.canUndo());
@@ -1876,14 +1900,6 @@ void FirstAudioProcessorEditor::resized()
     undoButton.setBounds (compareButton.getRight() + 5, layout.deck.getY() + 116, 44, 32);
     redoButton.setBounds (undoButton.getRight() + 5, layout.deck.getY() + 116, 44, 32);
     compareBadgeLabel.setBounds (redoButton.getRight() + 8, layout.deck.getY() + 116, 54, 32);
-
-    // Re-fit every workflow caption now that the buttons have their real widths
-    // (updateWorkflowButtons ran before the first resized(), when the widths were
-    // still zero), so A/B can never ellipsise after a host resize.
-    for (auto* button : { &copyAButton, &copyBButton, &compareButton,
-                          &savePresetButton, &deletePresetButton, &undoButton, &redoButton })
-        button->setFont (shrinkingFont (button->getButtonText(), 12.0f, juce::Font::bold,
-                                        static_cast<float> (button->getWidth()) - 8.0f));
 
     presetBadgeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 149,
                                 layout.deck.getWidth() - 36, 13);
