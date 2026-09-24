@@ -324,9 +324,22 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
   over 20 ms (`SmoothedValue`) instead of being applied raw. They are recomputed the
   instant either knob moves, and a stepped gain dropped straight into the per-sample loop
   put a discontinuity in the waveform on every block boundary - heard as crackle while
-  the knob was dragged. Every other control was already safe: INPUT / OUTPUT / MIX /
-  WIDTH / BYPASS use smoothed values, DRIVE and BIAS feed memoryless curves, and WOW /
-  FLUTTER are oscillators, so none of them can step the waveform.
+  the knob was dragged. INPUT / OUTPUT / MIX / WIDTH / BYPASS were already safe (smoothed
+  values) and WOW / FLUTTER are oscillators, so neither can step the waveform.
+- **BIAS and DRIVE morph the curve, they do not step it** - the magnetic shaper takes
+  two arguments that shape the transfer curve itself, and BIAS's is a DC offset added
+  straight into the `tanh` and subtracted again at the output. That made it far louder
+  than any linear control when it moved: stepping it shifts the whole curve, and the
+  playback DC blocker downstream then has to swallow the resulting step. Both arguments
+  now ramp through `SmoothedValue` over 20 ms, so the curve morphs continuously.
+- **Level meters no longer overbook their cell** - the readout rows used to be sized from
+  a fixed share of the meter body and only then clamped to fit, which pushed the first
+  row back on top of the dial and left the last row one pixel from the rounded border.
+  The rows now take the space that genuinely remains below the dial (floored, never
+  rounded up, so they can never creep back into it) and a real bottom margin is reserved.
+  Measured on the 980 x 690 default, the first row overlapped the dial box by 4 px, the
+  needle pivot by 2 px and the end tick label by 3 px; all three are now 0, with 4-7 px
+  of clear air underneath.
 - **Editor thread stays out of the audio thread's way** - the panel used to re-mirror the
   live machine into the active A/B slot on *every* 30 Hz timer frame, and each call made
   two full deep copies of the parameter tree: sixty whole-tree copies a second, landing
@@ -340,7 +353,9 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
   buttons are drawn through the panel's own Look and Feel, which measures each caption
   against that button's width and scales the font to fit - `juce::TextButton` has no
   per-button font, and without this the width-constrained A/B row ellipsised a caption
-  that grows (`A (LIVE) *`) into unreadable text.
+  that grows (`A (LIVE) *`) into unreadable text. The fit keeps a proportional safety
+  margin (3 px floor) rather than a flat pixel: on the 38-44 px SAVE / DEL / UNDO / REDO
+  buttons a caption measured as "just fitting" and still came out as `SA...` / `D...`.
 - **Toggle switches** - BYPASS, POLARITY and AUTO GAIN are drawn as small hardware
   rockers by the panel's own Look and Feel: the function name engraved across a
   proportional top band, a recessed track below with a single sliding thumb that
@@ -359,9 +374,20 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
 - **Text keeps clear of the panel edges** - the level meters inset their readout rows by a
   share of the cell's own width instead of a hardcoded 2 px, so the left-aligned label
   and the right-aligned value stop looking pasted onto the rounded border. The preset
-  badge band sits 5 px clear of the controls above it, is inset further than the other
-  deck text, and fits its caption to the available width - so neither `FACTORY STATE` nor
-  a long user-preset name can run into the edges or be clipped.
+  badge band sits 4 px clear of the controls above it and 3 px clear of the divider below
+  it (it used to hug the deck's bottom border with the divider right under it, reading as
+  a caption that had fallen off the panel), is inset further than the other deck text, and
+  fits its caption to the available width - so neither `FACTORY STATE` nor a long
+  user-preset name can run into the edges or be clipped.
+- **Build identity** - the deck's heading strip prints `BUILD <commit>`, so a bug report
+  can name the exact build instead of "the latest one". CMake reads it once with
+  `git rev-parse --short=8 HEAD` and passes it to the sources as `J37_BUILD_COMMIT`.
+  Two rules keep it from ever breaking a build or lying about one: outside a git
+  checkout (a tarball, a vendored copy) the build still succeeds and prints `BUILD
+  unknown`, and a dirty working tree gets a trailing `+` so local edits can never be
+  mistaken for a clean build. The label sits on the deck heading strip because that is
+  the only full-width band near the top that stays empty at the 780 px minimum - the
+  header's equivalent gap shrinks to about 58 px there.
 - **OpenGL** - treated as a best-effort accelerator; if a context cannot be created the
   panel falls back to the normal component renderer.
 

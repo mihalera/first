@@ -211,6 +211,8 @@ private:
     juce::Label subtitleLabel;
     juce::Label statusLabel;
     juce::Label deckHeadingLabel;
+    /** The commit this binary was built from, shown at the top of the deck. */
+    juce::Label buildLabel;
     juce::Label tapeTypeLabel;
     juce::Label speedLabel;
     juce::Label deckHintLabel;

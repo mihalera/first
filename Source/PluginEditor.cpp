@@ -102,10 +102,13 @@ namespace
 
         auto font = makeFont (maxHeight);
 
-        // A small safety margin: the measurement ignores the last pixel or two of
-        // side bearing, which is enough to make JUCE's own fitting code ellipsise a
-        // string that this measured as "just fitting".
-        const auto available = availableWidth - 1.0f;
+        // A safety margin for side bearing. A flat 1 px was not enough: on the narrow
+        // workflow buttons (SAVE / DEL / UNDO / REDO, 38-44 px wide) a caption measured
+        // as "just fitting" and then still came out as "SA..." / "D..." / "UN...",
+        // because the real rendered string is a little wider than the arrangement
+        // reports. The margin is now a share of the available width with a 3 px floor.
+        const auto available = juce::jmax (1.0f, availableWidth
+                                             - juce::jmax (3.0f, availableWidth * 0.08f));
         const auto measured = juce::GlyphArrangement::getStringWidth (font, text);
 
         if (measured > available)
@@ -381,8 +384,10 @@ void J37LookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button
     if (shouldDrawButtonAsDown)
         colour = colour.darker (0.3f);
 
-    // Side bearing so the fitted caption is never clipped by the rounded corners.
-    const auto bounds = button.getLocalBounds().toFloat().reduced (5.0f, 1.0f);
+    // Side bearing so the fitted caption is never clipped by the rounded corners. 3 px
+    // rather than 5: the workflow buttons are only 38-44 px wide, so every pixel here is
+    // the difference between a full "SAVE" and an ellipsised "SA...".
+    const auto bounds = button.getLocalBounds().toFloat().reduced (3.0f, 1.0f);
     const auto text = button.getButtonText();
 
     g.setColour (colour);
@@ -505,13 +510,37 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // bunched against the bottom edge while the dial sat high - the lopsided look that
     // made the input/output meters read as crooked next to the compressor bars.
     constexpr int readoutRowCount = 5;
+
+    // The dial takes a fixed share of the body, and the readout rows then take
+    // whatever is genuinely LEFT below it. The old code computed the row block from a
+    // fixed share of the body and only afterwards clamped it upwards to fit, which had
+    // two consequences: the clamp pushed the first row back up against the dial, and
+    // the last row still ended up ONE pixel from the rounded bottom border at every
+    // editor size - the loudness numbers were literally touching the panel edge.
+    // Taking the row height from the space that actually remains below the dial keeps
+    // the dial, the rows and the border from fighting over the same pixels.
     const auto bodyHeight = juce::jmax (72, getHeight() - topBlock);
-    const auto faceHeight = juce::roundToInt (static_cast<float> (bodyHeight) * 0.52f);
-    const auto readoutBlock = bodyHeight - faceHeight;
-    const auto readoutRowHeight = juce::jmax (10, readoutBlock / readoutRowCount);
+    const auto faceHeight = juce::roundToInt (static_cast<float> (bodyHeight) * 0.48f);
     const auto face = juce::Rectangle<float> (bounds.getX(),
                                               bounds.getY() + static_cast<float> (topBlock),
                                               bounds.getWidth(), static_cast<float> (faceHeight));
+
+    constexpr float rowGapAbove = 4.0f;
+    constexpr float rowBottomMargin = 3.0f;
+    const auto rowsTop = face.getBottom() + rowGapAbove;
+    const auto availableForRows = juce::jmax (static_cast<float> (readoutRowCount * 10),
+                                              bounds.getBottom() - rowsTop - rowBottomMargin);
+    // floor, not round: rounding UP would make the block taller than the space that
+    // was actually measured, and the clamp below would then drag the whole block back
+    // up on top of the dial. Flooring guarantees the rows start below the dial and
+    // still leave the bottom margin.
+    const auto readoutRowHeight = juce::jmax (10, static_cast<int> (availableForRows
+                                                                    / readoutRowCount));
+    const auto usedReadout = readoutRowHeight * readoutRowCount;
+    const auto readoutTop = juce::jmin (rowsTop,
+                                        bounds.getBottom() - static_cast<float> (usedReadout)
+                                          - rowBottomMargin);
+    const auto rowHeight = readoutRowHeight;
 
     const auto centreX = face.getCentreX();
     // The dial is a half circle sitting on the lower edge of the face area.
@@ -598,21 +627,6 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     //  The combined row is the equal-weighted average of the four, which is what the
     //  needle and the dial are driven from.
     // -------------------------------------------------------------------
-    // The readout rows fill the reserved block exactly, centred as a group, so the
-    // spacing between rows is identical however the meter is resized.
-    const auto usedReadout = readoutRowHeight * readoutRowCount;
-    // 4 px of clear air between the dial box and the first row, so the needle pivot
-    // and the PEAK row never crowd each other. The block is then clamped to the meter
-    // bottom: on a short cell the spare room is zero, so without the clamp the extra
-    // gap would push the last row past the panel edge.
-    const auto desiredReadoutTop = bounds.getY() + static_cast<float> (topBlock)
-                                 + static_cast<float> (faceHeight) + 4.0f
-                                 + juce::jmax (0.0f, static_cast<float> (readoutBlock
-                                                   - usedReadout - 4) * 0.5f);
-    const auto readoutTop = juce::jmin (desiredReadoutTop,
-                                        bounds.getBottom() - static_cast<float> (usedReadout) - 1.0f);
-    const auto rowHeight = readoutRowHeight;
-
     // The readout rows are inset from the meter's rounded border by a share of the
     // cell's own width instead of a hardcoded 2 px. At the minimum panel size the
     // left-aligned label started and the right-aligned value ended two pixels from the
@@ -833,8 +847,22 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     styleLabel (subtitleLabel, "TAPE MACHINE  /  SATURATION", 10.0f,
                 paletteFor (false).secondary, true, juce::Justification::left);
     styleLabel (statusLabel, "STEREO / REAL TIME", 9.0f,
-                paletteFor (false).status, true, juce::Justification::centred);    styleLabel (deckHeadingLabel, "TAPE DECK", 10.0f, paletteFor (false).accent,
+                paletteFor (false).status, true, juce::Justification::centred);
+    styleLabel (deckHeadingLabel, "TAPE DECK", 10.0f, paletteFor (false).accent,
                 true, juce::Justification::left);
+
+    // Build identity, printed on the deck's heading strip. CMake resolves
+    // J37_BUILD_COMMIT from `git rev-parse --short=8 HEAD` at configure time and marks
+    // a dirty tree with a trailing "+"; when the sources are built outside a git
+    // checkout the definition still exists and reads "unknown", so this line can never
+    // be empty and the two cases are always distinguishable at a glance.
+#ifdef J37_BUILD_COMMIT
+    const juce::String buildId (J37_BUILD_COMMIT);
+#else
+    const juce::String buildId ("unknown");
+#endif
+    styleLabel (buildLabel, "BUILD " + buildId, 8.0f, paletteFor (false).secondary,
+                true, juce::Justification::centredRight);
     styleLabel (tapeTypeLabel, "MODEL", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
     styleLabel (speedLabel, "SPEED", 9.0f, paletteFor (false).secondary,
@@ -863,6 +891,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (subtitleLabel);
     addAndMakeVisible (statusLabel);
     addAndMakeVisible (deckHeadingLabel);
+    addAndMakeVisible (buildLabel);
     addAndMakeVisible (tapeTypeLabel);
     addAndMakeVisible (speedLabel);
     addAndMakeVisible (deckHintLabel);
@@ -1430,6 +1459,7 @@ void FirstAudioProcessorEditor::applyTheme()
     subtitleLabel.setColour (juce::Label::textColourId, palette.secondary);
     statusLabel.setColour (juce::Label::textColourId, palette.status);
     deckHeadingLabel.setColour (juce::Label::textColourId, palette.accent);
+    buildLabel.setColour (juce::Label::textColourId, palette.secondary);
     tapeTypeLabel.setColour (juce::Label::textColourId, palette.secondary);
     speedLabel.setColour (juce::Label::textColourId, palette.secondary);
     deckHintLabel.setColour (juce::Label::textColourId, palette.secondary);
@@ -1887,13 +1917,21 @@ void FirstAudioProcessorEditor::resized()
     //                     chain ends at x + 664 of 752.
     //   line 2 (y + 74) - POLARITY | AUTO GAIN | OVER | oversampling box (ends x + 324);
     //                     the harmonics readout takes the right end (x + 608..x + 738).
-    //   line 3 (y + 112)- PRESET | factory box | USER box | SAVE | DEL | A/B | undo | redo
+    //   line 3 (y + 110)- PRESET | factory box | USER box | SAVE | DEL | A/B | undo | redo
     //                     | badge (ends x + 751 of 752).
-    // Line 3 sits at y + 112 rather than y + 116 so the preset badge is not jammed
-    // against the bottom of the controls: it gets its own band at y + 149 with 5 px of
-    // clear air above it, and the deck divider is drawn at y + 163 (just above the panel
+    // Line 3 sits at y + 110 rather than y + 116 so the preset badge is not jammed
+    // against the controls, and the badge itself sits at y + 146 with clear air both
+    // above and below it. The deck divider is drawn at y + 163 (just above the panel
     // edge) so the divider never crosses the badge text either.
     deckHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 6, 150, 16);
+
+    // The build id rides the deck's heading strip, right-aligned and stopping short of
+    // the reel (whose left edge is deck.right - 56). This strip is the only full-width
+    // band near the top of the panel that is guaranteed empty at the 780 px minimum:
+    // the header's equivalent gap shrinks to about 58 px there, and the switches row
+    // is reserved for the drifting particles.
+    buildLabel.setBounds (layout.deck.getX() + 190, layout.deck.getY() + 6,
+                          layout.deck.getWidth() - 280, 16);
 
     tapeTypeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 41, 45, 16);
     tapeTypeBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 32, 148, 32);
@@ -1913,23 +1951,27 @@ void FirstAudioProcessorEditor::resized()
     harmonicsReadout.setBounds (layout.deck.getRight() - harmonicsWidth - 14,
                                 layout.deck.getY() + 88, harmonicsWidth, 14);
 
-    presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 121, 46, 16);
-    presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 112, 128, 32);
-    userPresetBox.setBounds (presetBox.getRight() + 6, layout.deck.getY() + 112, 100, 32);
-    savePresetButton.setBounds (userPresetBox.getRight() + 5, layout.deck.getY() + 112, 40, 32);
-    deletePresetButton.setBounds (savePresetButton.getRight() + 4, layout.deck.getY() + 112, 38, 32);
-    copyAButton.setBounds (deletePresetButton.getRight() + 10, layout.deck.getY() + 112, 64, 32);
-    copyBButton.setBounds (copyAButton.getRight() + 5, layout.deck.getY() + 112, 64, 32);
-    compareButton.setBounds (copyBButton.getRight() + 5, layout.deck.getY() + 112, 54, 32);
-    undoButton.setBounds (compareButton.getRight() + 5, layout.deck.getY() + 112, 44, 32);
-    redoButton.setBounds (undoButton.getRight() + 5, layout.deck.getY() + 112, 44, 32);
-    compareBadgeLabel.setBounds (redoButton.getRight() + 8, layout.deck.getY() + 112, 54, 32);
+    presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 119, 46, 16);
+    presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 110, 128, 32);
+    userPresetBox.setBounds (presetBox.getRight() + 6, layout.deck.getY() + 110, 100, 32);
+    savePresetButton.setBounds (userPresetBox.getRight() + 5, layout.deck.getY() + 110, 40, 32);
+    deletePresetButton.setBounds (savePresetButton.getRight() + 4, layout.deck.getY() + 110, 38, 32);
+    copyAButton.setBounds (deletePresetButton.getRight() + 10, layout.deck.getY() + 110, 64, 32);
+    copyBButton.setBounds (copyAButton.getRight() + 5, layout.deck.getY() + 110, 64, 32);
+    compareButton.setBounds (copyBButton.getRight() + 5, layout.deck.getY() + 110, 54, 32);
+    undoButton.setBounds (compareButton.getRight() + 5, layout.deck.getY() + 110, 44, 32);
+    redoButton.setBounds (undoButton.getRight() + 5, layout.deck.getY() + 110, 44, 32);
+    compareBadgeLabel.setBounds (redoButton.getRight() + 8, layout.deck.getY() + 110, 54, 32);
 
     // The badge band is inset further than the other deck text (22 px instead of 18)
     // and its caption is fitted to the width it actually has, so neither "FACTORY
     // STATE" nor a long user-preset name can run into the panel edges or be clipped.
-    presetBadgeLabel.setBounds (layout.deck.getX() + 22, layout.deck.getY() + 149,
-                                layout.deck.getWidth() - 44, 13);
+    // y + 146 (not y + 149) so the badge has clear air BOTH above and below: the old
+    // position left it hugging the deck's bottom border with the divider right under
+    // it, which read as a caption that had fallen off the panel. 4 px above, 3 px
+    // below, 2 px taller for the text.
+    presetBadgeLabel.setBounds (layout.deck.getX() + 22, layout.deck.getY() + 146,
+                                layout.deck.getWidth() - 44, 14);
     presetBadgeLabel.setFont (shrinkingFont (presetBadgeLabel.getText(), 8.0f,
                                              juce::Font::plain,
                                              static_cast<float> (presetBadgeLabel.getWidth()) - 4.0f));

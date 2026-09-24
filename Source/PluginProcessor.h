@@ -830,6 +830,16 @@ private:
     juce::SmoothedValue<float> toneShelfGainSmoothed { 1.0f };
     juce::SmoothedValue<float> preDriveGainSmoothed { 1.0f };
 
+    // The two arguments that shape the magnetic curve itself. BIAS was the loudest
+    // control to move because its asymmetry term is a DC OFFSET added straight into the
+    // tanh and then subtracted again at the output - stepping it does not just change
+    // gain, it shifts the whole transfer curve, and the playback DC blocker downstream
+    // then has to swallow the resulting step. That is why BIAS thumped far harder than
+    // any linear control. Both arguments ramp over 20 ms like the other gains, so the
+    // curve morphs continuously instead of jumping.
+    juce::SmoothedValue<float> shaperDriveSmoothed { 0.0f };
+    juce::SmoothedValue<float> shaperAsymmetrySmoothed { 0.0f };
+
     // Per-instance tape noise generator. Kept as an object member rather than a
     // thread_local static so that instances never share one stream and the output
     // is reproducible for a given instance.
