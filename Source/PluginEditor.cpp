@@ -229,6 +229,88 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
 }
 
 //==============================================================================
+//  Toggle switches are drawn as small hardware rockers instead of the default
+//  text-button look: a recessed body with engraved OFF / ON captions, a thumb
+//  that physically slides between the two positions, and a status LED that
+//  lights when the switch is engaged. This is what the panel's BYPASS /
+//  POLARITY / AUTO GAIN controls were missing - they used to look like plain
+//  buttons that happened to hold state.
+//==============================================================================
+void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button,
+                                       bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
+{
+    const auto& palette = paletteFor (darkTheme);
+    const auto bounds = button.getLocalBounds().toFloat().reduced (2.0f, 3.0f);
+    const auto isOn = button.getToggleState();
+
+    // Recessed body: darker fill with a vertical sheen, bevel on the inside.
+    juce::ColourGradient body (palette.readout.darker (isOn ? 0.25f : 0.05f),
+                               bounds.getX(), bounds.getY(),
+                               palette.readout.darker (0.45f),
+                               bounds.getX(), bounds.getBottom(), false);
+    g.setGradientFill (body);
+    g.fillRoundedRectangle (bounds, 4.0f);
+    g.setColour (palette.border.withAlpha (0.9f));
+    g.drawRoundedRectangle (bounds, 4.0f, 1.0f);
+    g.setColour (palette.panel.brighter (0.15f).withAlpha (0.5f));
+    g.drawRoundedRectangle (bounds.reduced (2.0f), 3.0f, 0.7f);
+
+    // Left half: the LED and the function name. Right half: the sliding thumb with
+    // the engraved state (OFF / ON) printed on the thumb itself, which keeps the
+    // state readable at the panel's 32 px switch height without crowding.
+    const auto ledZone = juce::Rectangle<float> (bounds.getX() + 2.0f, bounds.getY(),
+                                                 bounds.getWidth() * 0.5f - 4.0f,
+                                                 bounds.getHeight());
+    const auto thumbZone = juce::Rectangle<float> (bounds.getRight() - bounds.getWidth() * 0.5f + 2.0f,
+                                                   bounds.getY(),
+                                                   bounds.getWidth() * 0.5f - 4.0f,
+                                                   bounds.getHeight());
+
+    // LED: lit when on, dark socket when off.
+    const auto ledCentre = juce::Point<float> (ledZone.getX() + 7.0f, ledZone.getCentreY());
+    if (isOn)
+    {
+        g.setColour (palette.status.withAlpha (0.22f));
+        g.fillEllipse (ledCentre.x - 4.5f, ledCentre.y - 4.5f, 9.0f, 9.0f);
+    }
+    g.setColour (isOn ? palette.status : palette.knobEdge.withAlpha (0.45f));
+    g.fillEllipse (ledCentre.x - 2.0f, ledCentre.y - 2.0f, 4.0f, 4.0f);
+
+    // Function name engraved next to the LED.
+    g.setColour (palette.text.withAlpha (0.92f));
+    g.setFont (juce::Font (juce::FontOptions (8.5f, juce::Font::bold)));
+    g.drawText (button.getButtonText().toUpperCase(),
+                ledZone.withTrimmedLeft (15.0f).withTrimmedRight (2.0f),
+                juce::Justification::centredLeft, true);
+
+    // Thumb on the right half, nudged to the engaged position with a small travel.
+    const auto travel = juce::Point<float> (isOn ? 0.0f : -4.0f, 0.0f);
+    auto thumb = juce::Rectangle<float> (thumbZone.getX() + thumbZone.getWidth() - 26.0f,
+                                         bounds.getY() + 4.0f, 24.0f, bounds.getHeight() - 8.0f);
+    if (shouldDrawButtonAsDown)
+        thumb.translate (0.0f, 1.0f);
+    thumb.translate (travel.x, travel.y);
+    juce::ColourGradient thumbFill (palette.knobHighlight, thumb.getX(), thumb.getY(),
+                                    palette.knobFace, thumb.getX(), thumb.getBottom(), false);
+    g.setGradientFill (thumbFill);
+    g.fillRoundedRectangle (thumb, 3.0f);
+    g.setColour (palette.knobEdge.withAlpha (0.85f));
+    g.drawRoundedRectangle (thumb, 3.0f, 1.0f);
+
+    // State caption engraved on the thumb.
+    g.setColour (palette.gaugeInk.withAlpha (0.9f));
+    g.setFont (juce::Font (juce::FontOptions (8.0f, juce::Font::bold)));
+    g.drawText (isOn ? "ON" : "OFF", thumb, juce::Justification::centred, false);
+
+    // Hover ring for mouse/keyboard focus feedback.
+    if (shouldDrawButtonAsHighlighted || button.hasKeyboardFocus (false))
+    {
+        g.setColour (palette.accent.withAlpha (0.5f));
+        g.drawRoundedRectangle (bounds.expanded (1.5f), 5.0f, 1.0f);
+    }
+}
+
+//==============================================================================
 FirstAudioProcessorEditor::LevelMeter::LevelMeter (juce::String meterTitle, juce::String meterSubtitle)
     : title (std::move (meterTitle)), subtitle (std::move (meterSubtitle))
 {
@@ -1145,18 +1227,9 @@ void FirstAudioProcessorEditor::updateWorkflowButtons()
     undoButton.setEnabled (undoManager.canUndo());
     redoButton.setEnabled (undoManager.canRedo());
 
-    // The toggle switches restyle themselves here (rather than relying on the
-    // theme lambda inside applyTheme, which is out of scope), so flipping one in
-    // the host or on the panel recolours on the same frame.
-    const auto& palette = paletteFor (darkTheme);
-    for (auto* toggle : { &polarityButton, &autoGainButton })
-    {
-        toggle->setColour (juce::TextButton::buttonColourId, palette.raised);
-        toggle->setColour (juce::TextButton::buttonOnColourId,
-                           toggle == &polarityButton ? palette.needle : palette.accent);
-        toggle->setColour (juce::TextButton::textColourOffId, palette.text);
-        toggle->setColour (juce::TextButton::textColourOnId, palette.readout);
-    }
+    // The toggles draw themselves through J37LookAndFeel::drawToggleButton, which
+    // reads the palette live, so theme and state changes recolour on the same frame
+    // without any per-colour bookkeeping here.
 
     // Short captions: the badge sits at the right end of the preset row, where the
     // old "A/B MATCHED" could push into the redo button on a narrow panel.
@@ -1290,10 +1363,7 @@ void FirstAudioProcessorEditor::applyTheme()
         button.setColour (juce::TextButton::textColourOnId, palette.readout);
     };
 
-    bypassButton.setColour (juce::TextButton::buttonColourId, palette.raised);
-    bypassButton.setColour (juce::TextButton::buttonOnColourId, palette.needle);
-    bypassButton.setColour (juce::TextButton::textColourOffId, palette.text);
-    bypassButton.setColour (juce::TextButton::textColourOnId, palette.readout);
+    // bypassButton is a ToggleButton drawn by J37LookAndFeel::drawToggleButton.
     themeButton.setColour (juce::TextButton::buttonColourId, palette.raised);
     themeButton.setColour (juce::TextButton::textColourOffId, palette.text);
 
@@ -1305,8 +1375,8 @@ void FirstAudioProcessorEditor::applyTheme()
     styleWorkflowButton (redoButton, false);
     styleWorkflowButton (savePresetButton, false);
     styleWorkflowButton (deletePresetButton, false);
-    styleWorkflowButton (polarityButton, polarityButton.getToggleState());
-    styleWorkflowButton (autoGainButton, autoGainButton.getToggleState());
+    // polarityButton and autoGainButton are drawn by J37LookAndFeel::drawToggleButton
+    // and need no per-theme colour calls here.
     presetHeadingLabel.setColour (juce::Label::textColourId, palette.secondary);
     oversamplingLabel.setColour (juce::Label::textColourId, palette.secondary);
     compareBadgeLabel.setColour (juce::Label::textColourId,
@@ -1386,14 +1456,17 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
                               juce::Point<float> (layout.header.getRight() - 9.0f, layout.header.getBottom() - 9.0f) })
         drawScrew (g, point.x, point.y, palette);
 
-    const auto reelCentre = juce::Point<float> (static_cast<float> (layout.deck.getRight() - 64),
-                                                static_cast<float> (layout.deck.getCentreY() + 5));
+    // The decorative reel lives in the deck's TOP-RIGHT corner, in the heading band
+    // (y + 6..22) where no control sits, and clear of the harmonics readout, which is
+    // right-aligned below it on the switches line. It used to sit ON the readout text.
+    const auto reelCentre = juce::Point<float> (static_cast<float> (layout.deck.getRight() - 42),
+                                                static_cast<float> (layout.deck.getY() + 14));
     g.setColour (palette.accent.withAlpha (0.22f));
-    for (const auto radius : { 19.0f, 12.0f, 3.0f })
+    for (const auto radius : { 11.0f, 7.0f, 2.0f })
         g.drawEllipse (reelCentre.x - radius, reelCentre.y - radius,
-                       radius * 2.0f, radius * 2.0f, 1.1f);
-    g.drawLine (reelCentre.x - 24.0f, reelCentre.y, reelCentre.x + 24.0f, reelCentre.y, 0.8f);
-    g.drawLine (reelCentre.x, reelCentre.y - 24.0f, reelCentre.x, reelCentre.y + 24.0f, 0.8f);
+                       radius * 2.0f, radius * 2.0f, 1.0f);
+    g.drawLine (reelCentre.x - 14.0f, reelCentre.y, reelCentre.x + 14.0f, reelCentre.y, 0.8f);
+    g.drawLine (reelCentre.x, reelCentre.y - 14.0f, reelCentre.x, reelCentre.y + 14.0f, 0.8f);
 
     // Spokes: density tracks the selected tape speed, drift tracks the modulation.
     const auto spokeAlpha = 0.20f + 0.45f * glowAmount;
@@ -1401,10 +1474,10 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     {
         const auto spokeAngle = reelAngle + static_cast<float> (spoke)
                                               * juce::MathConstants<float>::pi / 3.0f;
-        const auto spokeInner = juce::Point<float> (reelCentre.x + std::cos (spokeAngle) * 4.0f,
-                                                    reelCentre.y + std::sin (spokeAngle) * 4.0f);
-        const auto spokeOuter = juce::Point<float> (reelCentre.x + std::cos (spokeAngle) * 18.5f,
-                                                    reelCentre.y + std::sin (spokeAngle) * 18.5f);
+        const auto spokeInner = juce::Point<float> (reelCentre.x + std::cos (spokeAngle) * 2.0f,
+                                                    reelCentre.y + std::sin (spokeAngle) * 2.0f);
+        const auto spokeOuter = juce::Point<float> (reelCentre.x + std::cos (spokeAngle) * 10.5f,
+                                                    reelCentre.y + std::sin (spokeAngle) * 10.5f);
         g.setColour (palette.accent.withAlpha (spokeAlpha));
         g.drawLine (spokeInner.x, spokeInner.y, spokeOuter.x, spokeOuter.y, 1.4f);
 
@@ -1412,17 +1485,19 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
         g.fillEllipse (spokeOuter.x - 1.6f, spokeOuter.y - 1.6f, 3.2f, 3.2f);
     }
 
-    // Tape ribbon between the reel and the transport, drawn with a slight sag
-    // that breathes with the wow/flutter drift.
+    // Tape ribbon from the small reel down the deck's right edge, sagging with the
+    // wow/flutter drift. It stays inside the clear corridor between the oversampling
+    // box (ends x + 382 of the deck) and the harmonics readout (starts x + 608), so
+    // it can never cross a control or a caption.
     const auto sag = (driftAmount - 0.5f) * 5.0f;
     juce::Path tapeRibbon;
-    tapeRibbon.startNewSubPath (reelCentre.x - 22.0f, reelCentre.y + 18.0f);
-    tapeRibbon.quadraticTo (static_cast<float> (layout.deck.getX() + 6),
-                            static_cast<float> (layout.deck.getBottom()) + 6.0f + sag,
-                            static_cast<float> (layout.deck.getX() + 4),
-                            static_cast<float> (layout.deck.getCentreY()) + sag);
+    tapeRibbon.startNewSubPath (reelCentre.x, reelCentre.y + 12.0f);
+    tapeRibbon.quadraticTo (reelCentre.x + 30.0f + sag,
+                            static_cast<float> (layout.deck.getY() + 56.0f),
+                            reelCentre.x + 6.0f + sag,
+                            static_cast<float> (layout.deck.getY() + 60.0f));
     g.setColour (palette.knobEdge.withAlpha (0.35f));
-    g.strokePath (tapeRibbon, juce::PathStrokeType (1.6f));
+    g.strokePath (tapeRibbon, juce::PathStrokeType (1.4f));
 
     std::array<RenderOrb, decorativeOrbCount> orbsToDraw;
     {
@@ -1432,13 +1507,17 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
 
     for (const auto& orb : orbsToDraw)
     {
+        // The orbs drift only inside the deck's free corridor between the oversampling
+        // box (ends x + 382) and the harmonics readout (starts x + 608), on the
+        // heading + switches bands. They used to wander over the readout text, the
+        // reel and the preset row.
         const auto x = juce::jmap (orb.position.x, 0.0f, 1.5f,
-                                   static_cast<float> (layout.deck.getX()) + layout.deck.getWidth() * 0.69f,
-                                   static_cast<float> (layout.deck.getRight()) - 28.0f);
+                                   static_cast<float> (layout.deck.getX()) + 400.0f,
+                                   static_cast<float> (layout.deck.getX()) + 590.0f);
         const auto y = juce::jmap (orb.position.y, 0.0f, 1.2f,
                                    static_cast<float> (layout.deck.getY()) + 14.0f,
-                                   static_cast<float> (layout.deck.getBottom()) - 14.0f);
-        const auto radius = juce::jmap (orb.radius, 0.045f, 0.057f, 2.5f, 4.5f);
+                                   static_cast<float> (layout.deck.getY()) + 62.0f);
+        const auto radius = juce::jmap (orb.radius, 0.045f, 0.057f, 2.0f, 3.5f);
 
         // Halos breathe so the orbs read as particles rather than static dots.
         const auto haloScale = 1.8f + 0.6f * std::sin (glowPhase + orb.position.x * 6.0f);
@@ -1663,9 +1742,12 @@ void FirstAudioProcessorEditor::resized()
 {
     const auto layout = getEditorLayout();
 
-    brandLabel.setBounds (layout.header.getX() + 28, layout.header.getY() + 10, 150, 14);
-    titleLabel.setBounds (layout.header.getX() + 25, layout.header.getY() + 21, 96, 44);
-    subtitleLabel.setBounds (layout.header.getX() + 126, layout.header.getY() + 37, 270, 20);
+    // Header captions: the small brand strip sits ABOVE the big title (they used to
+    // share the same band and printed over each other), the subtitle starts right of
+    // the title box, and all three stay clear of the theme button / status badge.
+    brandLabel.setBounds (layout.header.getX() + 26, layout.header.getY() + 8, 120, 12);
+    titleLabel.setBounds (layout.header.getX() + 25, layout.header.getY() + 22, 96, 42);
+    subtitleLabel.setBounds (layout.header.getX() + 126, layout.header.getY() + 40, 220, 18);
     themeButton.setBounds (layout.header.getRight() - 348, layout.header.getY() + 20, 126, 30);
     statusLabel.setBounds (layout.header.getRight() - 202, layout.header.getY() + 20, 181, 30);
 
@@ -1687,8 +1769,8 @@ void FirstAudioProcessorEditor::resized()
     bypassButton.setBounds (speedBox.getRight() + 18, layout.deck.getY() + 32, 92, 32);
     deckHintLabel.setBounds (bypassButton.getRight() + 14, layout.deck.getY() + 34, 130, 28);
 
-    polarityButton.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 74, 84, 32);
-    autoGainButton.setBounds (polarityButton.getRight() + 6, layout.deck.getY() + 74, 88, 32);
+    polarityButton.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 74, 92, 32);
+    autoGainButton.setBounds (polarityButton.getRight() + 6, layout.deck.getY() + 74, 100, 32);
     oversamplingLabel.setBounds (autoGainButton.getRight() + 16, layout.deck.getY() + 83, 40, 16);
     oversamplingBox.setBounds (autoGainButton.getRight() + 58, layout.deck.getY() + 74, 72, 32);
 
