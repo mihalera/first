@@ -656,7 +656,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 true, juce::Justification::left);
     styleLabel (speedLabel, "SPEED", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
-    styleLabel (deckHintLabel, "Select tape formula and transport speed.", 9.0f,
+    styleLabel (deckHintLabel, "Tape formula and speed.", 9.0f,
                 paletteFor (false).secondary, false, juce::Justification::centredLeft);
     styleLabel (controlsHeadingLabel, "TAPE CHARACTER", 10.0f, paletteFor (false).accent,
                 true, juce::Justification::left);
@@ -709,7 +709,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         slider.setRotaryParameters (juce::MathConstants<float>::pi * 0.75f,
                                     juce::MathConstants<float>::pi * 2.25f, true);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 84, 20);
+        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 64, 18);
         slider.setTextBoxIsEditable (true);
         // Drag response tuned by ear: velocity-based mode throttled the first pixels
         // of every drag behind an acceleration ramp, which read as "slow knobs".
