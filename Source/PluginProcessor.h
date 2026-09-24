@@ -623,7 +623,7 @@ private:
     void resetSampleRateDependentState();
 
     /** Recomputes the cached tone filter coefficients for the current rate. */
-    void updateToneCoefficients (float toneValue);
+    void updateToneCoefficients (float toneValue, float engineSampleRate);
 
     /** (Re)creates the oversampling engine for the requested factor and reports latency. */
     void setOversamplingFactor (OversamplingFactor factor, int samplesPerBlock);
