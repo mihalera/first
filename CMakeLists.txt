@@ -203,13 +203,16 @@ if(APPLE)
     # `first` target (a STATIC library) and each format gets its own suffix -
     # first_VST3, first_AU, first_AUv3. There is no `first_SharedCode` target; the
     # `_SharedCode` suffix only appears in the output file name.
-    foreach(target first_AUv3 first_AU)
-        if(TARGET ${target})
-            set_target_properties(${target} PROPERTIES
-                XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS
-                "${appex_support_target}/AUv3_AppExtension.entitlements")
-        endif()
-    endforeach()
+    #
+    # Only the AUv3 app extension is sandboxed. A plain AU component is loaded
+    # directly by the host process and must NOT carry the app-sandbox entitlement:
+    # an Audio Unit that declares com.apple.security.app-sandbox is rejected by the
+    # AU validation step and silently disappears from Logic's plug-in list.
+    if(TARGET first_AUv3)
+        set_target_properties(first_AUv3 PROPERTIES
+            XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS
+            "${appex_support_target}/AUv3_AppExtension.entitlements")
+    endif()
 
     # Keep the size_t -> int conversion warning visible. It is harmless (the state
     # blob is never near 2 GB) but it was the only warning in the whole build, so

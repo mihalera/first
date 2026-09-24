@@ -373,10 +373,11 @@ cmake -S . -B build -G "Visual Studio 18 2026" -A x64 -DCMAKE_BUILD_TYPE=Release
 cmake --build build --config Release --parallel
 ```
 
-Artefacts land in `build/first_artefacts/Release/`:
+Artefacts land in `build/first_artefacts/Release/`, one subfolder per plugin format, with
+each bundle named after `PRODUCT_NAME`:
 
 ```
-build/first_artefacts/Release/first.vst3/Contents/x86_64-win/first.vst3
+build/first_artefacts/Release/VST3/Analog Saturator.vst3/Contents/x86_64-win/...
 ```
 
 > This is a real VST3 **bundle**, not a bare DLL. The old Projucer workflow produced a
@@ -387,7 +388,7 @@ build/first_artefacts/Release/first.vst3/Contents/x86_64-win/first.vst3
 ### macOS
 
 ```sh
-cmake -S . -B build \
+cmake -S . -B build -G Xcode \
   -DCMAKE_BUILD_TYPE=Release \
   -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
   -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO
@@ -398,13 +399,20 @@ cmake --build build --config Release --parallel
 on both Apple Silicon and Intel Macs. Leaving one architecture out makes the plugin
 invisible to half the machines it is installed on, so both are always listed.
 
-Three formats are produced in `build/first_artefacts/Release/`:
+`-G Xcode` is **required** for the AUv3 build. JUCE only adds the AUv3 target when the
+generator is Xcode (see `_juce_get_platform_plugin_kinds` in
+`JUCE/extras/Build/CMake/JUCEModuleSupport.cmake`); with the default Unix Makefiles
+generator the AUv3 format is silently dropped and a "build all" run produces VST3 and AU
+only. If you are unsure, run `cmake --build build --target help | grep AUv3` and switch
+generators if the target is absent.
+
+Three formats are produced, one per format subfolder under `build/first_artefacts/Release/`:
 
 | Artefact | Format | Hosts that load it |
 | --- | --- | --- |
-| `first.vst3` | VST3 | Reaper, Cubase, Studio One, Bitwig |
-| `first.component` | Audio Unit | Logic Pro, GarageBand, Final Cut |
-| `first.appex` | AUv3 | Logic Pro, GarageBand, iOS hosts |
+| `VST3/Analog Saturator.vst3` | VST3 | Reaper, Cubase, Studio One, Bitwig |
+| `AU/Analog Saturator.component` | Audio Unit | Logic Pro, GarageBand, Final Cut |
+| `AUv3/Analog Saturator.appex` | AUv3 | Logic Pro, GarageBand, iOS hosts |
 
 AU and AUv3 matter for Mac users because **Logic and GarageBand cannot load VST3 at all**.
 Shipping only VST3 means the plugin does not exist for them.
@@ -423,8 +431,8 @@ Or copy by hand:
 
 ```
 Windows : C:\Program Files\Common Files\VST3\
-macOS   : ~/Library/Audio/Plug-Ins/VST3/first.vst3
-          ~/Library/Audio/Plug-Ins/Components/first.component
+macOS   : ~/Library/Audio/Plug-Ins/VST3/Analog Saturator.vst3
+          ~/Library/Audio/Plug-Ins/Components/Analog Saturator.component
 ```
 
 AUv3 is discovered through its containing app rather than copied by hand; run the app that

@@ -83,6 +83,44 @@ namespace
         return juce::String (rounded, 1) + " dB";
     }
 
+    // Returns the largest font up to `maxHeight` at which `text` still fits inside
+    // `availableWidth`. Captions in a switch or a fixed-width label are laid out in
+    // code, not by a layout engine, so a caption that grows (or a host that swaps in
+    // a wider default font) silently truncates or ellipsises - and a truncated
+    // caption is what made the rocker switches look broken. Measuring the string
+    // against the space it actually has keeps the text whole instead.
+    juce::Font shrinkingFont (const juce::String& text, float maxHeight,
+                              int fontStyle, float availableWidth)
+    {
+        const auto makeFont = [maxHeight, fontStyle] (float height)
+        {
+            return juce::Font (juce::FontOptions (height, fontStyle));
+        };
+
+        if (availableWidth <= 0.0f || text.isEmpty())
+            return makeFont (maxHeight);
+
+        auto font = makeFont (maxHeight);
+
+        // A small safety margin: the measurement ignores the last pixel or two of
+        // side bearing, which is enough to make JUCE's own fitting code ellipsise a
+        // string that this measured as "just fitting".
+        const auto available = availableWidth - 1.0f;
+        const auto measured = juce::GlyphArrangement::getStringWidth (font, text);
+
+        if (measured > available)
+        {
+            // Scale once by the measured ratio rather than stepping down in fixed
+            // decrements: one measurement, and the result is the exact size that
+            // just fits instead of the next coarser size down.
+            const auto ratio = available / measured;
+            const auto scaled = maxHeight * juce::jlimit (0.55f, 1.0f, ratio);
+            font = makeFont (scaled);
+        }
+
+        return font;
+    }
+
     void drawScrew (juce::Graphics& g, float x, float y, const UiPalette& palette)
     {
         g.setColour (palette.border.withAlpha (0.65f));
@@ -263,8 +301,7 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     const auto labelBand = bounds.withTrimmedTop (0.0f).withHeight (11.0f);
     const auto track = bounds.withTrimmedTop (11.0f).withTrimmedLeft (5.0f).withTrimmedRight (5.0f);
 
-    // Status LED in the label band's left corner: the band's only other occupant is
-    // the centred label, so the LED has guaranteed clear space.
+    // Status LED in the label band's left corner.
     const auto ledCentre = juce::Point<float> (bounds.getX() + 6.0f, labelBand.getCentreY());
     if (isOn)
     {
@@ -274,21 +311,32 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     g.setColour (isOn ? palette.status : palette.knobEdge.withAlpha (0.45f));
     g.fillEllipse (ledCentre.x - 2.0f, ledCentre.y - 2.0f, 4.0f, 4.0f);
 
-    // Function name, engraved across the full width. Nothing else shares this band.
+    // Function name, engraved in the part of the band the LED cannot reach. The left
+    // inset is the LED's own footprint plus a gap, so the two can never overlap no
+    // matter how long the caption is - previously the text was centred across the
+    // full width and only stayed clear by the captions happening to be short.
+    const auto captionBand = labelBand.reduced (11.0f, 0.0f);
     g.setColour (palette.text.withAlpha (0.92f));
-    g.setFont (juce::Font (juce::FontOptions (8.0f, juce::Font::bold)));
-    g.drawText (button.getButtonText().toUpperCase(), labelBand,
-                juce::Justification::centred, false);
+    g.setFont (shrinkingFont (button.getButtonText().toUpperCase(), 8.0f,
+                              juce::Font::bold, captionBand.getWidth()));
+    g.drawText (button.getButtonText().toUpperCase(), captionBand,
+                juce::Justification::centred, true);
 
-    // Track bed: recessed groove with OFF and ON stops engraved at its ends.
+    // Track bed: recessed groove with OFF and ON stops engraved at its ends. Each
+    // stop gets exactly 22px, which is comfortable for three characters but would
+    // truncate the moment the default font substituted anything wider, so the font
+    // is fitted to the stop rather than the stop being fitted to the font.
+    constexpr float stopWidth = 22.0f;
     g.setColour (palette.readout.darker (0.55f));
     g.fillRoundedRectangle (track, 3.0f);
-    g.setFont (juce::Font (juce::FontOptions (7.0f, juce::Font::bold)));
     g.setColour (palette.secondary.withAlpha (0.8f));
-    g.drawText ("OFF", juce::Rectangle<float> (track.getX(), track.getY(), 22.0f, track.getHeight()),
-                juce::Justification::centred, false);
-    g.drawText ("ON", juce::Rectangle<float> (track.getRight() - 22.0f, track.getY(), 22.0f, track.getHeight()),
-                juce::Justification::centred, false);
+    g.setFont (shrinkingFont ("OFF", 7.0f, juce::Font::bold, stopWidth));
+    g.drawText ("OFF", juce::Rectangle<float> (track.getX(), track.getY(), stopWidth, track.getHeight()),
+                juce::Justification::centred, true);
+    g.setFont (shrinkingFont ("ON", 7.0f, juce::Font::bold, stopWidth));
+    g.drawText ("ON", juce::Rectangle<float> (track.getRight() - stopWidth, track.getY(),
+                                              stopWidth, track.getHeight()),
+                juce::Justification::centred, true);
 
     // Thumb slides between the two stops. The thumb is sized to cover its stop, and
     // pressing nudges it down one pixel for a mechanical feel.
@@ -304,10 +352,11 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     g.setColour (palette.knobEdge.withAlpha (0.85f));
     g.drawRoundedRectangle (thumb, 3.0f, 1.0f);
 
-    // State text on the thumb.
+    // State text on the thumb, fitted to the thumb. The thumb is the authoritative
+    // state readout, so its text must never be the thing that gets clipped.
     g.setColour (palette.gaugeInk.withAlpha (0.95f));
-    g.setFont (juce::Font (juce::FontOptions (7.5f, juce::Font::bold)));
-    g.drawText (isOn ? "ON" : "OFF", thumb, juce::Justification::centred, false);
+    g.setFont (shrinkingFont (isOn ? "ON" : "OFF", 7.5f, juce::Font::bold, thumb.getWidth()));
+    g.drawText (isOn ? "ON" : "OFF", thumb, juce::Justification::centred, true);
 
     // Hover ring for mouse/keyboard focus feedback.
     if (shouldDrawButtonAsHighlighted || button.hasKeyboardFocus (false))
@@ -1457,10 +1506,20 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     g.setColour (palette.status);
     g.fillEllipse (lampCentre.x - 3.5f, lampCentre.y - 3.5f, 7.0f, 7.0f);
 
-    for (const auto point : { juce::Point<float> (layout.header.getX() + 9.0f, layout.header.getY() + 9.0f),
-                              juce::Point<float> (layout.header.getRight() - 9.0f, layout.header.getY() + 9.0f),
-                              juce::Point<float> (layout.header.getX() + 9.0f, layout.header.getBottom() - 9.0f),
-                              juce::Point<float> (layout.header.getRight() - 9.0f, layout.header.getBottom() - 9.0f) })
+    // getX()/getRight() return int, so the 9.0f insets are added *after* the cast.
+    // `getX() + 9.0f` promotes the int to float implicitly, which is exactly what
+    // the int-to-float conversion warnings on macOS flag. Reading the edges into
+    // float locals once also keeps the four screw positions consistent with each
+    // other instead of each one repeating its own mixed int/float arithmetic.
+    const auto headerX = static_cast<float> (layout.header.getX());
+    const auto headerRight = static_cast<float> (layout.header.getRight());
+    const auto headerY = static_cast<float> (layout.header.getY());
+    const auto headerBottom = static_cast<float> (layout.header.getBottom());
+
+    for (const auto point : { juce::Point<float> (headerX + 9.0f, headerY + 9.0f),
+                              juce::Point<float> (headerRight - 9.0f, headerY + 9.0f),
+                              juce::Point<float> (headerX + 9.0f, headerBottom - 9.0f),
+                              juce::Point<float> (headerRight - 9.0f, headerBottom - 9.0f) })
         drawScrew (g, point.x, point.y, palette);
 
     // The decorative reel lives in the deck's TOP-RIGHT corner, in the heading band
@@ -1499,10 +1558,11 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     const auto sag = (driftAmount - 0.5f) * 5.0f;
     juce::Path tapeRibbon;
     tapeRibbon.startNewSubPath (reelCentre.x, reelCentre.y + 12.0f);
+    const auto deckY = static_cast<float> (layout.deck.getY());
     tapeRibbon.quadraticTo (reelCentre.x + 30.0f + sag,
-                            static_cast<float> (layout.deck.getY() + 56.0f),
+                            deckY + 56.0f,
                             reelCentre.x + 6.0f + sag,
-                            static_cast<float> (layout.deck.getY() + 60.0f));
+                            deckY + 60.0f);
     g.setColour (palette.knobEdge.withAlpha (0.35f));
     g.strokePath (tapeRibbon, juce::PathStrokeType (1.4f));
 
