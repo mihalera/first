@@ -198,13 +198,15 @@ FirstAudioProcessor::FirstAudioProcessor()
     polarityParam  = parameters.getRawParameterValue ("polarity");
     autoGainParam  = parameters.getRawParameterValue ("auto_gain");
 
-    // Three fixed oversampling engines (off / 2x / 4x). Each owns its own filter
+    // Four fixed oversampling engines (off / 2x / 4x / 8x). Each owns its own filter
     // state, so switching between them is glitch-free even mid-render, and the
     // host is told the latency of whichever one is active.
     oversamplers.add (new juce::dsp::Oversampling<float> (2)); // dummy, factor 1
     oversamplers.add (new juce::dsp::Oversampling<float> (2, 1,
                         juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true));
     oversamplers.add (new juce::dsp::Oversampling<float> (2, 2,
+                        juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true));
+    oversamplers.add (new juce::dsp::Oversampling<float> (2, 3,
                         juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true));
 
     // The A/B slots start as copies of the default state so that toggling compare
@@ -310,7 +312,9 @@ juce::StringArray FirstAudioProcessor::getPresetNames()
 {
     return { "Default Tape", "Gentle Warmth", "Bus Glue Tape", "Drum Slam",
              "Vintage Lo-Fi", "Wide Master", "Clean Glue", "Saturated Crunch",
-             "Wobbly Cassette", "Bright Air Tape", "Mix Saturation", "Master Bounce" };
+             "Wobbly Cassette", "Bright Air Tape", "Mix Saturation", "Master Bounce",
+             "Vocal Rail", "Drum Room Warm", "Bass Weight", "Master Safety",
+             "Lo-Fi Radio", "Ferric Master" };
 }
 
 std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int index)
@@ -351,6 +355,12 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
         case 9:  return row (-1.0f, 0.55f, 0.44f, 0.68f, 0.58f, 0.12f, 0.16f, 1.00f, -0.5f, 0.58f, 2, 2, 1); // Bright Air Tape
         case 10: return row (+1.0f, 0.68f, 0.46f, 0.64f, 0.66f, 0.16f, 0.20f, 1.00f, -1.0f, 0.40f, 1, 1, 2); // Mix Saturation
         case 11: return row (0.0f, 0.50f, 0.40f, 0.62f, 0.52f, 0.15f, 0.19f, 1.00f,  0.0f, 0.50f, 0, 1, 2); // Master Bounce
+        case 12: return row (+1.0f, 0.38f, 0.42f, 0.60f, 0.42f, 0.08f, 0.10f, 0.70f, -1.0f, 0.50f, 0, 1, 1); // Vocal Rail
+        case 13: return row (+2.0f, 0.55f, 0.50f, 0.45f, 0.38f, 0.18f, 0.22f, 1.00f, -1.0f, 0.50f, 1, 0, 1); // Drum Room Warm
+        case 14: return row (+2.5f, 0.48f, 0.36f, 0.42f, 0.35f, 0.06f, 0.08f, 1.00f, -2.0f, 0.50f, 2, 2, 2); // Bass Weight
+        case 15: return row (0.0f, 0.30f, 0.32f, 0.66f, 0.62f, 0.05f, 0.07f, 1.00f,  0.0f, 0.55f, 3, 2, 2); // Master Safety
+        case 16: return row (+4.0f, 0.62f, 0.30f, 0.28f, 0.30f, 0.26f, 0.32f, 0.65f, -4.0f, 0.35f, 3, 0, 1); // Lo-Fi Radio
+        case 17: return row (0.0f, 0.44f, 0.38f, 0.55f, 0.50f, 0.10f, 0.13f, 1.00f,  0.0f, 0.52f, 7, 1, 1); // Ferric Master
         default: break;
     }
     return {};
@@ -535,7 +545,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             0.5f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
     layout.add (std::make_unique<juce::AudioParameterChoice> ("tape_type", "Tape Type",
-                                                            juce::StringArray { "J37", "Ampex 456", "Studer A800", "Chrome" },
+                                                            juce::StringArray { "J37", "Ampex 456", "Studer A800",
+                                                                                 "Chrome", "Type 111", "GP9",
+                                                                                 "Quantegy 499", "RTM SM911" },
                                                             0));
     layout.add (std::make_unique<juce::AudioParameterChoice> ("speed", "Speed",
                                                             juce::StringArray { "7.5 ips", "15 ips", "30 ips" },
@@ -564,7 +576,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     // aliases far less, and the added filter delay is reported to the host.
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "oversampling", 1 },
                                                             "Oversampling",
-                                                            juce::StringArray { "Off", "2x", "4x" },
+                                                            juce::StringArray { "Off", "2x", "4x", "8x" },
                                                             0));
 
     // The parameter ID stays "tone" so existing saved sessions still resolve it; only the
@@ -728,7 +740,7 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     previousTone = -1.0f;
     previousCharacter = -1.0f;
     toneLpAc = 0.0f;
-    toneLpBc = 0.0f;
+    toneShelfState = 0.0f;
     headGapHz = 24000.0f;
     preDriveGain = 1.0f;
     flutterScale = 1.0f;
@@ -822,6 +834,8 @@ void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int 
         oversamplingRateFactor = 2.0f;
     else if (clamped == OversamplingFactor::x4)
         oversamplingRateFactor = 4.0f;
+    else if (clamped == OversamplingFactor::x8)
+        oversamplingRateFactor = 8.0f;
     else
         oversamplingRateFactor = 1.0f;
 
@@ -843,21 +857,26 @@ void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int 
 
 void FirstAudioProcessor::updateToneCoefficients (float toneValue, float engineSampleRate)
 {
-    // Tone tilt: 0 = warm/soft, 1 = open/bright. Both corners are real frequencies in
-    // Hz converted with onePoleCoefficientHz, so they mean the same thing at every
+    // Tone tilt: 0 = warm/soft, 1 = open/bright. Every corner is a real frequency in
+    // Hz converted with onePoleCoefficientHz, so it means the same thing at every
     // sample rate. (The previous version passed millisecond values that were written
     // as if they were kilohertz - a 2*pi unit error - which put both corners around
     // 5-16 Hz and made the whole wet path sub-audio.)
     const auto toneCurve = std::pow (toneValue, 0.92f);
 
     // Record-side roll-off: the magnetic medium itself. 6.5 kHz at warm keeps the
-    // classic rounded top, 17 kHz at bright keeps essentially everything.
-    toneLpAc = onePoleCoefficientHz (6500.0f + 10500.0f * toneCurve, engineSampleRate);
+    // classic rounded top, 18 kHz at bright keeps essentially everything.
+    toneLpAc = onePoleCoefficientHz (6500.0f + 11500.0f * toneCurve, engineSampleRate);
 
-    // Playback head-gap shelf: this is the "air" half of the tilt, always well above
-    // the record corner so the two together make a gentle broadband tilt instead of
-    // one steep brick wall.
-    toneLpBc = onePoleCoefficientHz (9000.0f + 15000.0f * toneCurve, engineSampleRate);
+    // BRIGHTNESS playback shelf: a high-shelf whose corner sits at a FIXED 8 kHz
+    // while its GAIN follows the control. Previously the corner frequency itself
+    // was what the control moved - and because that coefficient was then used as a
+    // one-pole GAIN inside the tilt stage, the audible result was a barely-perceptible
+    // smear around 9-24 kHz: the knob "worked strangely". A fixed corner plus a gain
+    // ramp makes the behaviour monotonic, audible at every setting and independent
+    // of the TONE macro.
+    toneShelfCoefficient = onePoleCoefficientHz (8000.0f, engineSampleRate);
+    toneShelfGain = 1.0f + toneCurve * 0.42f; // up to about +8.5 dB of top-end lift
     previousTone = toneValue;
 
     // TONE macro crossfade, between machine states rather than dry/wet:
@@ -922,6 +941,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     {
         case OversamplingFactor::x2:
         case OversamplingFactor::x4:
+        case OversamplingFactor::x8:
         {
             if (auto* oversampler = oversamplers.getUnchecked (static_cast<int> (currentOversampling)))
             {
@@ -1167,12 +1187,40 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             hysteresis += 0.12f;
             break;
         case 3: // Chrome - clean and bright, low noise
-        default:
             tapeCurve += 0.02f;
             tapeAsymmetry -= 0.03f;
             tapeHiss -= 0.02f;
             headDampingHz -= 2500.0f;
             hysteresis -= 0.04f;
+            break;
+        case 4: // Type 111 - gentle low-noise mastering stock, very quiet, soft top
+            tapeCurve -= 0.05f;
+            tapeAsymmetry -= 0.02f;
+            tapeHiss -= 0.045f;
+            headDampingHz -= 4000.0f;
+            hysteresis -= 0.05f;
+            break;
+        case 5: // GP9 - hot modern mastering formula: dense low end, higher floor
+            tapeCurve += 0.14f;
+            tapeAsymmetry += 0.07f;
+            tapeHiss += 0.075f;
+            headDampingHz += 6000.0f;
+            hysteresis += 0.11f;
+            break;
+        case 6: // Quantegy 499 - high-output studio workhorse: open top, firm glue
+            tapeCurve += 0.10f;
+            tapeAsymmetry += 0.04f;
+            tapeHiss += 0.045f;
+            headDampingHz += 8000.0f;
+            hysteresis += 0.08f;
+            break;
+        case 7: // RTM SM911 - broadcast reference: balanced, smooth, low noise
+        default:
+            tapeCurve += 0.05f;
+            tapeAsymmetry += 0.02f;
+            tapeHiss -= 0.01f;
+            headDampingHz += 3500.0f;
+            hysteresis += 0.03f;
             break;
     }
 
@@ -1437,8 +1485,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //  Both stages share the multipliers, so the two stages still feel like one
     //  machine while remaining independent processors.
     // -----------------------------------------------------------------------
-    const float stockAttackScale = 1.34f - 0.11f * static_cast<float> (tapeType);   // 1.34 -> 1.01
-    const float stockReleaseScale = 1.40f - 0.15f * static_cast<float> (tapeType);  // 1.40 -> 0.95
+    // Eight formulas now index this scale: type 0 (J37, softest glue) through
+    // type 7 (RTM SM911), linearly between. The jlimit keeps the ends exact.
+    const float stockAttackScale = juce::jlimit (0.95f, 1.34f,
+                                                 1.34f - 0.047f * static_cast<float> (tapeType));
+    const float stockReleaseScale = juce::jlimit (0.95f, 1.40f,
+                                                  1.40f - 0.064f * static_cast<float> (tapeType));
     const float transportAttackScale = 1.32f - 0.22f * speedScale;                  // 1.14 -> 1.03
     const float transportReleaseScale = 1.38f - 0.30f * speedScale;                 // 1.15 -> 0.98
 
@@ -1634,15 +1686,16 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
             const float motioned = (compressedBias + noiseFloor) * wowMod * flutterMod * grainMod;
 
-            // Playback EQ: subtract the low band for air, add it back for body.
+            // Playback EQ: the BRIGHTNESS shelf. A one-pole low-pass at the fixed
+            // 8 kHz shelf corner splits the signal into its low and high bands; the
+            // high band is boosted by the Brightness gain and the bands are summed
+            // back. Low settings lift nothing (warm), high settings lift the top
+            // octaves (open) - linear in between, so the knob behaves like the EQ
+            // it is drawn as.
             const float lowBand = highFreqMemory[0];
-
-            // TONE macro: a TILTED EQ placed after the head poles. It mirrors the
-            // frequency mapping of updateToneCoefficients (slow machine = warm, fast
-            // machine = open), so the crossfade keeps a constant musical feel across
-            // the whole travel instead of only moving the poles themselves.
-            const float toneTilt = (motioned - lowBand) * (0.18f + 0.55f * characterCurve);
-            const float deEmphasised = motioned + toneTilt * toneLpBc * 1.7f;
+            toneShelfState += (motioned - lowBand - toneShelfState) * toneShelfCoefficient;
+            const float shelfLift = toneShelfState * (toneShelfGain - 1.0f);
+            const float deEmphasised = motioned + shelfLift;
 
             // -------------------------------------------------------------------
             //  Playback AC coupling (DC blocker) - the fix for "MIX at maximum
