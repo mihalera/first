@@ -188,6 +188,10 @@ private:
     juce::Label presetHeadingLabel;
     juce::Label compareBadgeLabel;
     juce::Label presetBadgeLabel;
+    // A/B mirroring is throttled to roughly 5 Hz rather than run on every timer
+    // frame, so the deep parameter-tree copy cannot compete with the audio thread
+    // while a knob is being dragged.
+    int compareMirrorTick = 0;
     int lastShownPreset = -2;
     int lastShownSlot = -1;
     bool lastShownDirty = false;

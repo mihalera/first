@@ -319,6 +319,21 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
   meter's title and subtitle are carved out of one proportional top block as two
   non-overlapping bands (the old arithmetic started the subtitle *before* the title
   ended, so the two lines printed on top of each other).
+- **No clicks when a knob moves** - the two coefficients that *multiply* the signal from
+  a control, the BRIGHTNESS shelf gain and the TONE macro's record-head pre-bias, ramp
+  over 20 ms (`SmoothedValue`) instead of being applied raw. They are recomputed the
+  instant either knob moves, and a stepped gain dropped straight into the per-sample loop
+  put a discontinuity in the waveform on every block boundary - heard as crackle while
+  the knob was dragged. Every other control was already safe: INPUT / OUTPUT / MIX /
+  WIDTH / BYPASS use smoothed values, DRIVE and BIAS feed memoryless curves, and WOW /
+  FLUTTER are oscillators, so none of them can step the waveform.
+- **Editor thread stays out of the audio thread's way** - the panel used to re-mirror the
+  live machine into the active A/B slot on *every* 30 Hz timer frame, and each call made
+  two full deep copies of the parameter tree: sixty whole-tree copies a second, landing
+  on the message thread in the middle of a knob drag, on top of the repaint work. The
+  dropouts that follow are heard as clicks. Mirroring now runs at ~5 Hz, only while the
+  editor is on screen, and skips the second copy when the live state already matches the
+  stored slot.
 - **Tooltips** - every knob and switch carries a tooltip explaining what it does and its
   default; the tips appear quickly on hover (about a third of a second).
 - **Fonts** - the title uses a fallback chain rather than a Windows-only family. Text
@@ -341,6 +356,12 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
   confined to that corridor *on the switches row only*, so no decoration ever prints
   over a caption or a switch. The deck divider is drawn one pixel above the panel's
   bottom edge, below the preset badge, so it no longer cuts through the badge text.
+- **Text keeps clear of the panel edges** - the level meters inset their readout rows by a
+  share of the cell's own width instead of a hardcoded 2 px, so the left-aligned label
+  and the right-aligned value stop looking pasted onto the rounded border. The preset
+  badge band sits 5 px clear of the controls above it, is inset further than the other
+  deck text, and fits its caption to the available width - so neither `FACTORY STATE` nor
+  a long user-preset name can run into the edges or be clipped.
 - **OpenGL** - treated as a best-effort accelerator; if a context cannot be created the
   panel falls back to the normal component renderer.
 

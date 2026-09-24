@@ -821,6 +821,15 @@ private:
     float toneShelfGain = 1.0f;
     float toneShelfState = 0.0f;
 
+    // Smoothed copies of the two coefficients that MULTIPLY the signal from a control:
+    // the BRIGHTNESS shelf gain and the TONE macro's record-head pre-bias. Their raw
+    // values are rebuilt the instant either knob moves, and feeding a stepped gain
+    // straight into the per-sample loop put a discontinuity into the waveform on every
+    // block boundary while the knob was dragged - that was the crackle. These ramp over
+    // 20 ms instead, so the control still feels immediate but never steps the signal.
+    juce::SmoothedValue<float> toneShelfGainSmoothed { 1.0f };
+    juce::SmoothedValue<float> preDriveGainSmoothed { 1.0f };
+
     // Per-instance tape noise generator. Kept as an object member rather than a
     // thread_local static so that instances never share one stream and the output
     // is reproducible for a given instance.

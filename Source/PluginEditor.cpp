@@ -613,11 +613,19 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
                                         bounds.getBottom() - static_cast<float> (usedReadout) - 1.0f);
     const auto rowHeight = readoutRowHeight;
 
+    // The readout rows are inset from the meter's rounded border by a share of the
+    // cell's own width instead of a hardcoded 2 px. At the minimum panel size the
+    // left-aligned label started and the right-aligned value ended two pixels from the
+    // border, which is what made the numbers look pasted onto the panel edge and the
+    // column read as crooked.
+    const auto rowInset = juce::jmax (5, juce::roundToInt (getWidth() * 0.055f));
+    const auto rowWidth = juce::jmax (1, getWidth() - 2 * rowInset);
+
     const auto drawReadoutRow = [&] (const juce::String& label, float value,
                                      juce::Colour valueColour, int row)
     {
         const auto rowTop = juce::roundToInt (readoutTop) + row * rowHeight;
-        const auto rowArea = juce::Rectangle<int> (2, rowTop, getWidth() - 4, rowHeight);
+        const auto rowArea = juce::Rectangle<int> (rowInset, rowTop, rowWidth, rowHeight);
         g.setColour (palette.secondary);
         g.setFont (juce::Font (juce::FontOptions (8.0f * textScale)));
         g.drawText (label, rowArea, juce::Justification::centredLeft, false);
@@ -644,7 +652,8 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // reads as a summary.
     g.setColour (palette.border.withAlpha (0.45f));
     g.drawHorizontalLine (juce::roundToInt (readoutTop) + 4 * rowHeight,
-                          6.0f, static_cast<float> (getWidth()) - 6.0f);
+                          static_cast<float> (rowInset),
+                          static_cast<float> (getWidth() - rowInset));
 
     // The summary row drives the needle: it is the equal-weighted average of the four
     // views above (the old "MIX 25%" caption wrongly suggested it had something to do
@@ -1331,11 +1340,15 @@ void FirstAudioProcessorEditor::updateWorkflowButtons()
 
     const auto presetName = audioProcessor.getCurrentPresetName();
     const auto presetIsDirty = audioProcessor.isPresetDirty();
-    presetBadgeLabel.setText (presetName.isEmpty()
+    const auto presetBadgeText = presetName.isEmpty()
                                 ? "FACTORY STATE"
                                 : (presetIsDirty ? "PRESET: " + presetName + " (EDITED)"
-                                                 : "PRESET: " + presetName),
-                              juce::dontSendNotification);
+                                                 : "PRESET: " + presetName);
+    presetBadgeLabel.setText (presetBadgeText, juce::dontSendNotification);
+    // Re-fit on every caption change, not just on resize: a user can name a preset
+    // anything at all, and the badge must shrink to fit rather than clip at the edge.
+    presetBadgeLabel.setFont (shrinkingFont (presetBadgeText, 8.0f, juce::Font::plain,
+                                             static_cast<float> (presetBadgeLabel.getWidth()) - 4.0f));
     presetBadgeLabel.setColour (juce::Label::textColourId,
                                 presetIsDirty ? paletteFor (darkTheme).accent
                                               : paletteFor (darkTheme).secondary);
@@ -1820,11 +1833,20 @@ void FirstAudioProcessorEditor::timerCallback()
         updateWorkflowButtons();
     }
 
-    // While the user turns knobs, the live state drifts away from the stored side.
-    // Mirror those edits into the active slot every frame so COPY A / COPY B always
-    // capture the machine as it is right now, and the edited dot tells the truth.
-    // This also rebuilds the dirty flag cheaply on the message thread.
-    audioProcessor.updateActiveCompareSlot();
+    // While the user turns knobs, the live state drifts away from the stored side, so
+    // the active A/B slot is re-mirrored periodically and COPY A / COPY B always capture
+    // the machine as it is right now. This used to run on EVERY timer frame: each call
+    // deep-copies the whole parameter tree twice, so at 30 Hz that was sixty whole-tree
+    // copies a second landing on the message thread in the middle of a knob drag - on top
+    // of the repaint work. That is exactly when the GUI thread is busiest and the audio
+    // thread has least headroom, and the resulting dropouts are heard as clicks. It now
+    // runs at ~5 Hz and only while the editor is actually on screen, which is far faster
+    // than a person can hear the EDITED badge appear.
+    if (isShowing() && ++compareMirrorTick >= 6)
+    {
+        compareMirrorTick = 0;
+        audioProcessor.updateActiveCompareSlot();
+    }
 
     if (! isShowing() || physicsWorld == nullptr)
         return;
@@ -1865,10 +1887,12 @@ void FirstAudioProcessorEditor::resized()
     //                     chain ends at x + 664 of 752.
     //   line 2 (y + 74) - POLARITY | AUTO GAIN | OVER | oversampling box (ends x + 324);
     //                     the harmonics readout takes the right end (x + 608..x + 738).
-    //   line 3 (y + 116)- PRESET | factory box | USER box | SAVE | DEL | A/B | undo | redo
+    //   line 3 (y + 112)- PRESET | factory box | USER box | SAVE | DEL | A/B | undo | redo
     //                     | badge (ends x + 751 of 752).
-    // The preset badge rides its own band at y + 149, and the deck divider is drawn at
-    // y + 163 (just above the panel edge) so the divider never crosses the badge text.
+    // Line 3 sits at y + 112 rather than y + 116 so the preset badge is not jammed
+    // against the bottom of the controls: it gets its own band at y + 149 with 5 px of
+    // clear air above it, and the deck divider is drawn at y + 163 (just above the panel
+    // edge) so the divider never crosses the badge text either.
     deckHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 6, 150, 16);
 
     tapeTypeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 41, 45, 16);
@@ -1889,20 +1913,26 @@ void FirstAudioProcessorEditor::resized()
     harmonicsReadout.setBounds (layout.deck.getRight() - harmonicsWidth - 14,
                                 layout.deck.getY() + 88, harmonicsWidth, 14);
 
-    presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 125, 46, 16);
-    presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 116, 128, 32);
-    userPresetBox.setBounds (presetBox.getRight() + 6, layout.deck.getY() + 116, 100, 32);
-    savePresetButton.setBounds (userPresetBox.getRight() + 5, layout.deck.getY() + 116, 40, 32);
-    deletePresetButton.setBounds (savePresetButton.getRight() + 4, layout.deck.getY() + 116, 38, 32);
-    copyAButton.setBounds (deletePresetButton.getRight() + 10, layout.deck.getY() + 116, 64, 32);
-    copyBButton.setBounds (copyAButton.getRight() + 5, layout.deck.getY() + 116, 64, 32);
-    compareButton.setBounds (copyBButton.getRight() + 5, layout.deck.getY() + 116, 54, 32);
-    undoButton.setBounds (compareButton.getRight() + 5, layout.deck.getY() + 116, 44, 32);
-    redoButton.setBounds (undoButton.getRight() + 5, layout.deck.getY() + 116, 44, 32);
-    compareBadgeLabel.setBounds (redoButton.getRight() + 8, layout.deck.getY() + 116, 54, 32);
+    presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 121, 46, 16);
+    presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 112, 128, 32);
+    userPresetBox.setBounds (presetBox.getRight() + 6, layout.deck.getY() + 112, 100, 32);
+    savePresetButton.setBounds (userPresetBox.getRight() + 5, layout.deck.getY() + 112, 40, 32);
+    deletePresetButton.setBounds (savePresetButton.getRight() + 4, layout.deck.getY() + 112, 38, 32);
+    copyAButton.setBounds (deletePresetButton.getRight() + 10, layout.deck.getY() + 112, 64, 32);
+    copyBButton.setBounds (copyAButton.getRight() + 5, layout.deck.getY() + 112, 64, 32);
+    compareButton.setBounds (copyBButton.getRight() + 5, layout.deck.getY() + 112, 54, 32);
+    undoButton.setBounds (compareButton.getRight() + 5, layout.deck.getY() + 112, 44, 32);
+    redoButton.setBounds (undoButton.getRight() + 5, layout.deck.getY() + 112, 44, 32);
+    compareBadgeLabel.setBounds (redoButton.getRight() + 8, layout.deck.getY() + 112, 54, 32);
 
-    presetBadgeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 149,
-                                layout.deck.getWidth() - 36, 13);
+    // The badge band is inset further than the other deck text (22 px instead of 18)
+    // and its caption is fitted to the width it actually has, so neither "FACTORY
+    // STATE" nor a long user-preset name can run into the panel edges or be clipped.
+    presetBadgeLabel.setBounds (layout.deck.getX() + 22, layout.deck.getY() + 149,
+                                layout.deck.getWidth() - 44, 13);
+    presetBadgeLabel.setFont (shrinkingFont (presetBadgeLabel.getText(), 8.0f,
+                                             juce::Font::plain,
+                                             static_cast<float> (presetBadgeLabel.getWidth()) - 4.0f));
 
     controlsHeadingLabel.setBounds (layout.controls.getX() + 18, layout.controls.getY() + 10, 210, 19);
     const auto controlsHintRight = layout.controls.getRight() - 12;
