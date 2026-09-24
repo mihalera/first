@@ -163,6 +163,11 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     const auto radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.34f;
     const auto outerRadius = radius + 8.0f;
     const auto angle = juce::jmap (sliderPos, 0.0f, 1.0f, rotaryStartAngle, rotaryEndAngle);
+    // JUCE's Path::addCentredArc measures clockwise from 12 o'clock and places a
+    // point at (sin(angle), -cos(angle)). Convert that same angle to ordinary screen
+    // coordinates for the tracer, ticks and pointer; using cos(angle), sin(angle)
+    // directly rotates every indicator by 90 degrees and makes the arc look crooked.
+    const auto screenAngle = angle - juce::MathConstants<float>::halfPi;
 
     //------------------------------------------------------------------
     //  Animation layer 1: a soft halo that breathes with the compressor
@@ -201,8 +206,8 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                                                      juce::PathStrokeType::rounded));
 
     // Bright tracer dot riding the end of the active arc - the clearest "live" cue.
-    const auto tracer = centre + juce::Point<float> (std::cos (angle) * outerRadius,
-                                                     std::sin (angle) * outerRadius);
+    const auto tracer = centre + juce::Point<float> (std::cos (screenAngle) * outerRadius,
+                                                     std::sin (screenAngle) * outerRadius);
     const auto tracerPulse = 2.6f + 1.4f * breath + activity * 2.0f;
     g.setColour (palette.accent.withAlpha (0.35f));
     g.fillEllipse (tracer.x - tracerPulse * 1.9f, tracer.y - tracerPulse * 1.9f,
@@ -220,15 +225,16 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     {
         const auto tickAngle = juce::jmap (static_cast<float> (tick), 0.0f, 12.0f,
                                            rotaryStartAngle, rotaryEndAngle);
+        const auto tickScreenAngle = tickAngle - juce::MathConstants<float>::halfPi;
         const auto major = tick % 3 == 0;
-        const auto tremble = std::sin (tickAngle * 3.0f + animationPhase * 1.7f)
+        const auto tremble = std::sin (tickScreenAngle * 3.0f + animationPhase * 1.7f)
                              * driftWobble * 1.3f;
         const auto innerRadius = outerRadius + (major ? 3.0f : 4.0f) + tremble;
         const auto outerTickRadius = innerRadius + (major ? 5.0f : 2.5f);
-        const auto inner = centre + juce::Point<float> (std::cos (tickAngle) * innerRadius,
-                                                        std::sin (tickAngle) * innerRadius);
-        const auto outer = centre + juce::Point<float> (std::cos (tickAngle) * outerTickRadius,
-                                                        std::sin (tickAngle) * outerTickRadius);
+        const auto inner = centre + juce::Point<float> (std::cos (tickScreenAngle) * innerRadius,
+                                                        std::sin (tickScreenAngle) * innerRadius);
+        const auto outer = centre + juce::Point<float> (std::cos (tickScreenAngle) * outerTickRadius,
+                                                        std::sin (tickScreenAngle) * outerTickRadius);
         g.setColour (palette.knobEdge.withAlpha (major ? 0.75f : 0.42f));
         g.drawLine (inner.x, inner.y, outer.x, outer.y, major ? 1.2f : 0.8f);
     }
@@ -252,9 +258,11 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                    radius * 0.84f, radius * 0.84f);
 
     const auto pointerLength = radius * 0.62f;
+    // The pointer uses the same converted screen angle as the active arc, tracer and
+    // ticks, so its tip is exactly radial rather than 90 degrees away from the arc.
     const auto pointerEnd = centre + juce::Point<float> (
-        std::cos (angle - juce::MathConstants<float>::halfPi) * pointerLength,
-        std::sin (angle - juce::MathConstants<float>::halfPi) * pointerLength);
+        std::cos (screenAngle) * pointerLength,
+        std::sin (screenAngle) * pointerLength);
     g.setColour (palette.accent.darker (0.15f));
     g.drawLine (centre.x + 1.0f, centre.y + 1.0f, pointerEnd.x + 1.0f, pointerEnd.y + 1.0f, 3.0f);
     g.setColour (palette.needle);
@@ -309,21 +317,32 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     const auto track = bounds.withTrimmedTop (labelHeight)
                             .withTrimmedLeft (4.0f).withTrimmedRight (4.0f);
 
-    // Status lamp, recessed into the TOP-RIGHT corner of the switch. It gets a dark
-    // bezel so it reads as a lamp set into the panel rather than a loose dot floating
-    // next to the text, and it sits 8 px in from the border so it is never flush with
-    // the rounded edge.
-    const auto ledCentre = juce::Point<float> (bounds.getRight() - 8.0f,
-                                                labelBand.getCentreY());
-    g.setColour (palette.readout.darker (0.35f));
-    g.fillEllipse (ledCentre.x - 3.5f, ledCentre.y - 3.5f, 7.0f, 7.0f);
+    // Status lamp: one explicit circular footprint, concentric at every scale. The
+    // previous square slot made the lamp's visual centre depend on the band height,
+    // which read as a curved/crooked LED at the smaller toggle sizes. All three layers
+    // below use the same centre and only change diameter, so there is no offset bezel,
+    // crescent, or elliptical edge to line up.
+    const auto ledDiameter = juce::jlimit (6.0f, 8.0f, labelBand.getHeight() * 0.55f);
+    const auto ledCentre = juce::Point<float> (
+        labelBand.getRight() - 4.0f - ledDiameter * 0.5f,
+        labelBand.getCentreY());
+    const auto ledBounds = juce::Rectangle<float> (ledCentre.x - ledDiameter * 0.5f,
+                                                     ledCentre.y - ledDiameter * 0.5f,
+                                                     ledDiameter, ledDiameter);
+    g.setColour (palette.readout.darker (0.40f));
+    g.fillEllipse (ledBounds.getX(), ledBounds.getY(),
+                   ledBounds.getWidth(), ledBounds.getHeight());
     if (isOn)
     {
-        g.setColour (palette.status.withAlpha (0.22f));
-        g.fillEllipse (ledCentre.x - 4.0f, ledCentre.y - 4.0f, 8.0f, 8.0f);
+        g.setColour (palette.status.withAlpha (0.24f));
+        const auto glowBounds = ledBounds.expanded (1.5f);
+        g.fillEllipse (glowBounds.getX(), glowBounds.getY(),
+                       glowBounds.getWidth(), glowBounds.getHeight());
     }
     g.setColour (isOn ? palette.status : palette.knobEdge.withAlpha (0.45f));
-    g.fillEllipse (ledCentre.x - 1.8f, ledCentre.y - 1.8f, 3.6f, 3.6f);
+    const auto coreBounds = ledBounds.reduced (ledDiameter * 0.28f);
+    g.fillEllipse (coreBounds.getX(), coreBounds.getY(),
+                   coreBounds.getWidth(), coreBounds.getHeight());
 
     // The function name is centred in the WHOLE label band, not in a band with the
     // lamp's footprint sliced off one side. Trimming the right edge left the caption
