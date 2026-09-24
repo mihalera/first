@@ -315,19 +315,32 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
   The deck is three control lines - transport, switches / oversampling, then the preset /
   A/B / undo row - with a badge band of its own underneath, and every line's control
   chain is width-accounted to fit the minimum 780 px panel with no overlap. The level
-  meters keep clear air between the dial and the readout rows.
+  meters keep clear air between the dial and the readout rows, and each level
+  meter's title and subtitle are carved out of one proportional top block as two
+  non-overlapping bands (the old arithmetic started the subtitle *before* the title
+  ended, so the two lines printed on top of each other).
 - **Tooltips** - every knob and switch carries a tooltip explaining what it does and its
   default; the tips appear quickly on hover (about a third of a second).
-- **Fonts** - the title uses a fallback chain rather than a Windows-only family.
+- **Fonts** - the title uses a fallback chain rather than a Windows-only family. Text
+  buttons are drawn through the panel's own Look and Feel, which measures each caption
+  against that button's width and scales the font to fit - `juce::TextButton` has no
+  per-button font, and without this the width-constrained A/B row ellipsised a caption
+  that grows (`A (LIVE) *`) into unreadable text.
 - **Toggle switches** - BYPASS, POLARITY and AUTO GAIN are drawn as small hardware
-  rockers by the panel's own Look and Feel: the function name engraved across the
-  top of the switch, a recessed track below with OFF and ON stops, a thumb that
-  slides between the stops carrying the state text, and a status LED in the top
-  corner that lights when engaged. They no longer look like ordinary buttons.
+  rockers by the panel's own Look and Feel: the function name engraved across a
+  proportional top band, a recessed track below with a single sliding thumb that
+  carries the only state word (`OFF` or `ON`), and a status LED inset on the right of
+  the caption band that lights when engaged. The previous version stacked a hardcoded
+  11 px label band over a 15 px track and printed `OFF`, `ON` *and* the thumb caption
+  at once - that is what made the switches look crowded and strange. The redundant
+  stop captions are gone, the band height is a proportion of the control, and the
+  thumb is sized to exactly half the track so it can never overhang either end.
 - **Decorative artwork stays out of the way** - the spinning reel sits in the deck's
   heading corner, the tape ribbon hangs inside the free corridor between the
   oversampling switch and the harmonics readout, and the drifting dust particles are
-  confined to the same corridor, so no decoration ever prints over a caption.
+  confined to that corridor *on the switches row only*, so no decoration ever prints
+  over a caption or a switch. The deck divider is drawn one pixel above the panel's
+  bottom edge, below the preset badge, so it no longer cuts through the badge text.
 - **OpenGL** - treated as a best-effort accelerator; if a context cannot be created the
   panel falls back to the normal component renderer.
 
