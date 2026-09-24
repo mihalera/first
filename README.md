@@ -40,7 +40,7 @@ playback EQ tilt -> output glue compressor (always on) -> output trim (dB) -> st
 | Tone | 0 to 100 % | Machine-state macro: blends the tape stock, head gap, pre-bias and flutter between the classic slow machine (0 %) and the fast/hot machine (100 %) |
 | Wow | 0 to 100 % | Slow transport pitch wander |
 | Flutter | 0 to 100 % | Fast transport shimmer |
-| Mix | 0 to 100 % | True dry/wet crossfade: 0 % is dry, 100 % is fully tape. Default 50 % |
+| Mix | 0 to 100 % | True dry/wet crossfade: 0 % is dry, 100 % is fully tape. Displayed as a percentage; default 50 % |
 | Output | -32 to +32 dB | Calibrated output trim in dB |
 | Width | 0 to 100 % | Mono through natural to extra wide |
 | Bypass | on/off | Ramps the whole tape engine out without clicking |
@@ -122,14 +122,20 @@ still runs on top of these bases, as described below in the header documentation
 
 ## Noise floor
 
-The tape hiss is a continuous band-limited noise floor whose level is held constant
-**once per block**: the mean gain reduction the output glue stage and the safety
-limiter apply to each block is measured, smoothed over about 250 ms, and the floor is
-lifted by its inverse. With signal present the lift cancels the duck and the floor
-stays at its calibrated level, inaudible under the programme; in a pause the stages
-are open and the floor sits at its natural quiet level. Either way the tape noise
-never swells - the floor is a property of the machine, not of the momentary
-programme, which is the fix for pauses hissing louder than passages.
+The tape hiss is a continuous band-limited noise floor whose **pause level is calibrated
+below -32 dBFS** - inaudible by design - and whose level under signal can only ever go
+**down**, never up: once per block, the mean gain reduction the output glue stage and the
+safety limiter apply is measured, smoothed over about 250 ms, and the floor is ducked by
+that amount (with a hard cap so the leveller can never lift the hiss back above its pause
+level). So in a pause you hear the machine's quiet calibrated floor, and while material
+plays the hiss sits even lower, hidden under the programme. The noise never swells and
+never outweighs the signal - the floor is a property of the machine, not of the momentary
+programme.
+
+The fine tape-surface **grain modulation is gated by the transport**: with both Wow and
+Flutter closed, no modulation of any kind reaches the wet signal - there is no hidden
+"noise generator" running when the transport is switched off. It fades in only as the
+transport controls are opened, like real tape mechanics.
 
 The wet path is AC-coupled at the playback end (an 8 Hz DC blocker, exactly like the
 coupling capacitors in real playback electronics), so the asymmetric shaper's DC
@@ -166,10 +172,11 @@ LUFS is computed with real K-weighting (high-shelf plus 38 Hz high-pass, rebuilt
 sample rate), not an approximation, so the reading is correct at 44.1, 48, 88.2, 96, 176.4
 and 192 kHz. The coefficients derive from `tan(pi * f0 / rate)`, which is exact at any rate.
 
-**MIX 25%** is the equal-weighted average of all four. Both the needle and the dial ride
-that number, so the meter shows one trustworthy value while the text block shows exactly
-how it was arrived at. Averaging in dB rather than linear matters: a single silent view
-would otherwise drag a linear average toward -infinity.
+**AVG** is the equal-weighted average of all four and is what the needle and the dial
+ride. Both the needle and the dial show that one trustworthy value while the text block
+shows exactly how it was arrived at. Averaging in dB rather than linear matters: a single
+silent view would otherwise drag a linear average toward -infinity. (The row is captioned
+"AVG", not "MIX": it has nothing to do with the MIX control.)
 
 The spread between the rows is itself information: a large PEAK-to-LUFS gap means very
 dynamic material, and a large VU-to-RMS gap means a lot of transient content.
