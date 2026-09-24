@@ -194,10 +194,209 @@ FirstAudioProcessor::FirstAudioProcessor()
     tapeTypeParam  = parameters.getRawParameterValue ("tape_type");
     speedParam     = parameters.getRawParameterValue ("speed");
     bypassParam   = parameters.getRawParameterValue ("bypass");
+    oversamplingParam = parameters.getRawParameterValue ("oversampling");
+
+    // Three fixed oversampling engines (off / 2x / 4x). Each owns its own filter
+    // state, so switching between them is glitch-free even mid-render, and the
+    // host is told the latency of whichever one is active.
+    oversamplers.add (new juce::dsp::Oversampling<float> (2)); // dummy, factor 1
+    oversamplers.add (new juce::dsp::Oversampling<float> (2, 1,
+                        juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true));
+    oversamplers.add (new juce::dsp::Oversampling<float> (2, 2,
+                        juce::dsp::Oversampling<float>::filterHalfBandPolyphaseIIR, true, true));
+
+    // The A/B slots start as copies of the default state so that toggling compare
+    // before anything is stored recalls the same settings rather than an empty tree.
+    compareSlots[0] = parameters.copyState().createCopy();
+    compareSlots[1] = compareSlots[0].createCopy();
 }
 
-FirstAudioProcessor::~FirstAudioProcessor()
+FirstAudioProcessor::~FirstAudioProcessor() = default;
+
+//==============================================================================
+//  Full-state undo. Preset applications and A/B recalls are recorded as one
+//  UndoableAction each that swaps the whole APVTS state tree, so a single Ctrl+Z
+//  brings back exactly what was on screen before. Individual knob moves are not
+//  booked into the history (the A/B slots and double-click reset cover those),
+//  which keeps the undo stack meaningful instead of thousands of micro-steps.
+//==============================================================================
+namespace
 {
+    class StateSwapAction final : public juce::UndoableAction
+    {
+    public:
+        StateSwapAction (FirstAudioProcessor& ownerIn,
+                         const juce::ValueTree& stateBefore,
+                         const juce::ValueTree& stateAfter)
+            : owner (ownerIn), before (stateBefore), after (stateAfter) {}
+
+        bool perform() override { owner.replaceParameterState (after); return true; }
+        bool undo() override    { owner.replaceParameterState (before); return true; }
+
+        int getSizeInUnits() override
+        {
+            return (int) (sizeof (*this) + (std::size_t) before.getNumChildren() * 128);
+        }
+
+    private:
+        FirstAudioProcessor& owner;
+        juce::ValueTree before, after;
+    };
+}
+
+void FirstAudioProcessor::replaceParameterState (const juce::ValueTree& newState)
+{
+    if (! newState.isValid())
+        return;
+
+    // replaceState pushes every parameter change to the host and the editor, so the
+    // UI, the DAW automation display and the engine all agree after a swap.
+    parameters.replaceState (newState.createCopy());
+
+    // A state swap can include the oversampling switch, so the active engine and the
+    // reported latency must follow before the next block is rendered. The RAW value
+    // is the choice index; getValue() returns the normalised 0..1 form, which for a
+    // choice parameter would round the 4x entry down to 2x. The rebuild uses the
+    // remembered host block size rather than a hardcoded one.
+    if (auto* rawOversampling = parameters.getRawParameterValue ("oversampling"))
+    {
+        const auto requested = static_cast<int> (rawOversampling->load());
+        if (requested != static_cast<int> (currentOversampling))
+            setOversamplingFactor (static_cast<OversamplingFactor> (requested), lastBlockSize);
+    }
+}
+
+void FirstAudioProcessor::applyStateWithUndo (const juce::ValueTree& targetState,
+                                              const juce::String& transactionName)
+{
+    if (! targetState.isValid())
+        return;
+
+    const auto stateBefore = parameters.copyState().createCopy();
+    const auto stateAfter = juce::ValueTree (targetState).createCopy();
+
+    undoManager.beginNewTransaction (transactionName);
+    undoManager.perform (new StateSwapAction (*this, stateBefore, stateAfter));
+}
+
+//==============================================================================
+//  Factory presets.
+//
+//  Twelve starting points covering the machine's real range. Each returns the full
+//  parameter map it represents - nothing is patched onto the user's current state
+//  beyond the listed values, so a preset changes the machine, not the session.
+//==============================================================================
+juce::StringArray FirstAudioProcessor::getPresetNames()
+{
+    return { "Default Tape", "Gentle Warmth", "Bus Glue Tape", "Drum Slam",
+             "Vintage Lo-Fi", "Wide Master", "Clean Glue", "Saturated Crunch",
+             "Wobbly Cassette", "Bright Air Tape", "Mix Saturation", "Master Bounce" };
+}
+
+std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int index)
+{
+    // Local helper so every row below reads like the sound it names.
+    auto row = [] (float inputDb, float drive, float bias, float tone, float character,
+                   float wow, float flutter, float mix, float outputDb, float width,
+                   int tapeType, int speed, int oversampling)
+    {
+        return std::map<juce::String, float> {
+            { "input",         inputDb },
+            { "drive",         drive },
+            { "bias",          bias },
+            { "tone",          tone },
+            { "character",     character },
+            { "wow",           wow },
+            { "flutter",       flutter },
+            { "mix",           mix },
+            { "output",        outputDb },
+            { "stereo_width",  width },
+            { "tape_type",     static_cast<float> (tapeType) },
+            { "speed",         static_cast<float> (speed) },
+            { "oversampling",  static_cast<float> (oversampling) }
+        };
+    };
+
+    switch (index)
+    {
+        case 0:  return row (0.0f, 0.42f, 0.36f, 0.58f, 0.50f, 0.14f, 0.18f, 1.00f,  0.0f, 0.50f, 0, 1, 1); // Default Tape
+        case 1:  return row (-3.0f, 0.28f, 0.30f, 0.48f, 0.30f, 0.10f, 0.12f, 0.65f, -1.0f, 0.50f, 0, 1, 1); // Gentle Warmth
+        case 2:  return row (+1.5f, 0.62f, 0.48f, 0.66f, 0.62f, 0.16f, 0.22f, 1.00f, -0.5f, 0.55f, 1, 1, 1); // Bus Glue Tape
+        case 3:  return row (0.0f, 0.75f, 0.42f, 0.74f, 0.70f, 0.12f, 0.20f, 1.00f, -1.0f, 0.50f, 2, 2, 2); // Drum Slam
+        case 4:  return row (0.0f, 0.35f, 0.34f, 0.55f, 0.45f, 0.22f, 0.28f, 0.70f,  0.0f, 0.50f, 0, 0, 1); // Vintage Lo-Fi
+        case 5:  return row (0.0f, 0.40f, 0.38f, 0.62f, 0.55f, 0.18f, 0.24f, 0.55f,  0.0f, 0.62f, 0, 1, 1); // Wide Master
+        case 6:  return row (-6.0f, 0.22f, 0.30f, 0.50f, 0.35f, 0.10f, 0.14f, 0.45f,  0.0f, 0.50f, 3, 2, 1); // Clean Glue
+        case 7:  return row (+3.0f, 0.85f, 0.52f, 0.70f, 0.78f, 0.14f, 0.26f, 1.00f, -1.5f, 0.45f, 1, 2, 2); // Saturated Crunch
+        case 8:  return row (0.0f, 0.48f, 0.40f, 0.60f, 0.50f, 0.30f, 0.34f, 1.00f,  0.0f, 0.50f, 0, 0, 1); // Wobbly Cassette
+        case 9:  return row (-1.0f, 0.55f, 0.44f, 0.68f, 0.58f, 0.12f, 0.16f, 1.00f, -0.5f, 0.58f, 2, 2, 1); // Bright Air Tape
+        case 10: return row (+1.0f, 0.68f, 0.46f, 0.64f, 0.66f, 0.16f, 0.20f, 1.00f, -1.0f, 0.40f, 1, 1, 2); // Mix Saturation
+        case 11: return row (0.0f, 0.50f, 0.40f, 0.62f, 0.52f, 0.15f, 0.19f, 1.00f,  0.0f, 0.50f, 0, 1, 2); // Master Bounce
+        default: break;
+    }
+    return {};
+}
+
+void FirstAudioProcessor::applyFactoryPreset (int index)
+{
+    const auto clampedIndex = juce::jlimit (0, numFactoryPresets - 1, index);
+    const auto& values = factoryPresetValues (clampedIndex);
+    if (values.empty())
+        return;
+
+    // Build the target tree from the CURRENT state so anything the map does not
+    // list (nothing today, but future-proof) survives the preset change.
+    auto target = parameters.copyState().createCopy();
+    const auto idProperty = juce::Identifier ("id");
+    const auto valueProperty = juce::Identifier ("value");
+
+    for (const auto& valuePair : values)
+    {
+        if (auto* parameter = parameters.getParameter (valuePair.first))
+        {
+            const auto normalised = parameter->convertTo0to1 (valuePair.second);
+            for (int i = 0; i < target.getNumChildren(); ++i)
+            {
+                auto parameterChild = target.getChild (i);
+                if (parameterChild.hasProperty (idProperty)
+                    && parameterChild.getProperty (idProperty).toString() == valuePair.first)
+                {
+                    parameterChild.setProperty (valueProperty, normalised, nullptr);
+                    break;
+                }
+            }
+        }
+    }
+
+    applyStateWithUndo (target, "Preset: " + getPresetNames()[clampedIndex]);
+    lastPresetIndex.store (clampedIndex, std::memory_order_relaxed);
+}
+
+void FirstAudioProcessor::copyToCompareSlot (int slot)
+{
+    const auto slotIndex = juce::jlimit (0, 1, slot);
+    compareSlots[static_cast<std::size_t> (slotIndex)] = parameters.copyState().createCopy();
+    updateCompareDirty();
+}
+
+void FirstAudioProcessor::toggleCompare()
+{
+    const auto nextSlot = 1 - activeSlot.load (std::memory_order_relaxed);
+    applyStateWithUndo (compareSlots[static_cast<std::size_t> (nextSlot)],
+                        nextSlot == 0 ? "Recall A" : "Recall B");
+    activeSlot.store (nextSlot, std::memory_order_relaxed);
+}
+
+void FirstAudioProcessor::updateCompareDirty()
+{
+    const auto& slotA = compareSlots[0];
+    const auto& slotB = compareSlots[1];
+    const auto dirty = slotA.isValid() && slotB.isValid() && ! slotA.isEquivalentTo (slotB);
+    compareDirty.store (dirty, std::memory_order_relaxed);
+}
+
+void FirstAudioProcessor::updateActiveCompareSlot()
+{
+    copyToCompareSlot (activeSlot.load (std::memory_order_relaxed));
 }
 
 juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createParameterLayout()
@@ -244,6 +443,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
     layout.add (std::make_unique<juce::AudioParameterFloat> ("bias", "Bias", percentageRange (0.40f), 0.36f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
+    // OVERSAMPLING: a host-visible quality switch. OFF keeps the latency at zero;
+    // 2x/4x run the tape engine at a higher internal rate so the magnetic shaper
+    // aliases far less, and the added filter delay is reported to the host.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "oversampling", 1 },
+                                                            "Oversampling",
+                                                            juce::StringArray { "Off", "2x", "4x" },
+                                                            0));
+
     // The parameter ID stays "tone" so existing saved sessions still resolve it; only the
     // name shown in the host and on the panel is BRIGHTNESS. Artists reach for brightness
     // first, and "tone" is vague enough that it reads as a different thing (tilt, midrange,
@@ -337,8 +544,14 @@ void FirstAudioProcessor::changeProgramName (int, const juce::String&)
 //==============================================================================
 void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerBlock)
 {
-    juce::ignoreUnused (samplesPerBlock);
     sampleRate = static_cast<float> (sampleRateToUse);
+
+    // The oversampling engines only depend on rate and block size, so they are
+    // (re)built here. The parameter (if restored by a session) picks which one runs.
+    const auto requestedOversampling = oversamplingParam != nullptr
+        ? static_cast<OversamplingFactor> (static_cast<int> (oversamplingParam->load()))
+        : currentOversampling;
+    setOversamplingFactor (requestedOversampling, juce::jmax (1, samplesPerBlock));
     // Stated as a double on purpose: SmoothedValue::reset takes the ramp length in seconds
     // as a double, and `auto` here would have deduced the same type silently. Naming it
     // makes the intent explicit and keeps the literal from looking like a float that lost
@@ -472,10 +685,47 @@ void FirstAudioProcessor::resetSampleRateDependentState()
     previousTone = -1.0f;
     previousCharacter = -1.0f;
     if (toneParam != nullptr)
-        updateToneCoefficients (toneParam->load());
+        updateToneCoefficients (toneParam->load(), sampleRate);
+
+    // The oversampling filters hold per-rate state (their half-band coefficients are
+    // tuned to the incoming rate), so they must be flushed on a rate change or the
+    // first block after the switch carries a stale pipeline and clicks.
+    for (auto* oversampler : oversamplers)
+        if (oversampler != nullptr)
+            oversampler->reset();
 }
 
-void FirstAudioProcessor::updateToneCoefficients (float toneValue)
+void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int samplesPerBlock)
+{
+    const auto clamped = (factor == OversamplingFactor::x2 || factor == OversamplingFactor::x4)
+                       ? factor : OversamplingFactor::off;
+    const auto clampedIndex = static_cast<int> (clamped);
+
+    lastBlockSize = juce::jmax (1, samplesPerBlock);
+    if (clamped == OversamplingFactor::x2)
+        oversamplingRateFactor = 2.0f;
+    else if (clamped == OversamplingFactor::x4)
+        oversamplingRateFactor = 4.0f;
+    else
+        oversamplingRateFactor = 1.0f;
+
+    if (auto* oversampler = oversamplers.getUnchecked (clampedIndex))
+    {
+        oversampler->initProcessing (static_cast<size_t> (lastBlockSize));
+        oversampler->reset();
+
+        // The dummy stage adds no delay; the real ones report their filter latency
+        // so every DAW can compensate sample-accurately. setLatencySamples is the
+        // inherited non-virtual host-notification setter.
+        AudioProcessor::setLatencySamples (clamped == OversamplingFactor::off
+                                             ? 0
+                                             : juce::roundToInt (oversampler->getLatencyInSamples()));
+    }
+
+    currentOversampling = clamped;
+}
+
+void FirstAudioProcessor::updateToneCoefficients (float toneValue, float engineSampleRate)
 {
     // Tone tilt: 0 = warm/soft, 1 = open/bright. Both corners are real frequencies in
     // Hz converted with onePoleCoefficientHz, so they mean the same thing at every
@@ -486,12 +736,12 @@ void FirstAudioProcessor::updateToneCoefficients (float toneValue)
 
     // Record-side roll-off: the magnetic medium itself. 6.5 kHz at warm keeps the
     // classic rounded top, 17 kHz at bright keeps essentially everything.
-    toneLpAc = onePoleCoefficientHz (6500.0f + 10500.0f * toneCurve, sampleRate);
+    toneLpAc = onePoleCoefficientHz (6500.0f + 10500.0f * toneCurve, engineSampleRate);
 
     // Playback head-gap shelf: this is the "air" half of the tilt, always well above
     // the record corner so the two together make a gentle broadband tilt instead of
     // one steep brick wall.
-    toneLpBc = onePoleCoefficientHz (9000.0f + 15000.0f * toneCurve, sampleRate);
+    toneLpBc = onePoleCoefficientHz (9000.0f + 15000.0f * toneCurve, engineSampleRate);
     previousTone = toneValue;
 
     // TONE macro crossfade, between machine states rather than dry/wet:
@@ -539,45 +789,108 @@ bool FirstAudioProcessor::isBusesLayoutSupported (const BusesLayout& layouts) co
 
 void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
+    juce::ScopedNoDenormals noDenormals;
+
+    // The oversampling switch is a host parameter; a change requires rebuilding
+    // nothing (three fixed engines exist side by side) - only the routing picks
+    // which one runs, which is a cheap branch taken once per block.
+    if (oversamplingParam != nullptr)
+    {
+        const auto requested = static_cast<int> (oversamplingParam->load());
+        if (requested != static_cast<int> (currentOversampling))
+            setOversamplingFactor (static_cast<OversamplingFactor> (requested),
+                                   juce::jmax (1, lastBlockSize));
+    }
+
+    switch (currentOversampling)
+    {
+        case OversamplingFactor::x2:
+        case OversamplingFactor::x4:
+        {
+            if (auto* oversampler = oversamplers.getUnchecked (static_cast<int> (currentOversampling)))
+            {
+                // The block must be non-const: processSamplesDown writes the result
+                // back into it, in place over the host's audio.
+                juce::dsp::AudioBlock<float> block (buffer);
+                processTapeEngine (oversampler->processSamplesUp (block), midiMessages);
+                oversampler->processSamplesDown (block);
+                return;
+            }
+            break;
+        }
+        case OversamplingFactor::off:
+        default:
+            break;
+    }
+
+    processTapeEngine (buffer, midiMessages);
+}
+
+void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
+                                             juce::MidiBuffer& midiMessages)
+{
     juce::ignoreUnused (midiMessages);
 
-    juce::ScopedNoDenormals noDenormals;
-    const auto totalNumInputChannels = getTotalNumInputChannels();
-    const auto totalNumOutputChannels = getTotalNumOutputChannels();
-    const auto numSamples = buffer.getNumSamples();
+    const int numSamples = static_cast<int> (block.getNumSamples());
 
-    for (auto channel = totalNumInputChannels; channel < totalNumOutputChannels; ++channel)
-        buffer.clear (channel, 0, numSamples);
+    // Every time constant inside the engine is a duration converted from a sample
+    // rate, so it has to see the rate the block actually runs at: the session rate in
+    // the plain path, and the multiplied rate in the oversampled path (see
+    // processBlock). Reading `sampleRate` here instead would silently turn every
+    // filter, detector and modulator off-tune the moment oversampling is switched on.
+    const auto engineSampleRate = juce::jmax (1.0f, sampleRate * oversamplingRateFactor);
+
+    // The engine works directly on the block: in the oversampled path the block
+    // references the oversampler's internal storage, in the plain path it wraps
+    // the host buffer. Either way processing is in place, so what arrives also
+    // leaves through the same block.
+
+    // Channels the engine actually works with: up to two, bounded by both what the
+    // host delivers and what the oversampler's internal storage provides. Clearing
+    // output-only channels (a mono-in/stereo-out host) must not write past the block.
+    const int activeInputChannels = juce::jmin (2, juce::jmin (getTotalNumInputChannels(),
+                                                               (int) block.getNumChannels()));
+
+    // Clear any output-only channels (mono->stereo hosts) the host expects filled.
+    for (int channel = activeInputChannels;
+         channel < juce::jmin (2, (int) block.getNumChannels());
+         ++channel)
+        block.clear (static_cast<std::size_t> (channel), 0, numSamples);
 
     // -------------------------------------------------------------------------
     //  Bypass: the parameter is ramped, so the plugin can be switched in and out
     //  without a click, and while fully bypassed we skip the tape engine entirely.
     //  Input metering stays alive so the user can still see what is arriving.
     // -------------------------------------------------------------------------
-    const auto bypassRequested = bypassParam != nullptr && bypassParam->load() >= 0.5f;
+    // Getters (never raw fields) so the reads are seq_cst-per-call but always
+    // thread-consistent: `bypassParam->load() >= 0.5f && bypassParam->load() < 0.5f`
+    // against the same atomic could otherwise straddle a host-side value change.
+    const auto bypassRequested = [&]
+    {
+        auto* parameter = bypassParam;
+        return parameter != nullptr && parameter->load() >= 0.5f;
+    }();
+
     if (bypassRequested && ! bypassSmoothed.isSmoothing() && bypassSmoothed.getCurrentValue() <= 0.0f)
     {
         bypassActive.store (true, std::memory_order_relaxed);
 
         float bypassPeak = 0.0f;
         double bypassSquares = 0.0;
-        for (int channel = 0; channel < totalNumInputChannels; ++channel)
+        for (int channel = 0; channel < activeInputChannels; ++channel)
         {
-            const auto* data = buffer.getReadPointer (channel);
             for (int sample = 0; sample < numSamples; ++sample)
             {
-                // Note: getReadPointer() hands back `const float*`, so the value has to
-                // be read as a float here - with a 64-bit `SampleType` build (which the
-                // VST3 target can be generated as) `auto` would deduce double and every
-                // call below would be ambiguous.
-                const auto value = static_cast<float> (data[sample]);
+                // getSample() reads through the block, so the same code serves the
+                // host-buffer path and the oversampler's internal-buffer path.
+                const auto value = block.getSample (channel, sample);
                 bypassPeak = juce::jmax (bypassPeak, std::abs (value));
                 bypassSquares += static_cast<double> (value) * value;
             }
         }
 
         const auto bypassSamples = static_cast<double> (numSamples)
-                                 * static_cast<double> (juce::jmax (1, totalNumInputChannels));
+                                 * static_cast<double> (juce::jmax (1, activeInputChannels));
         const auto bypassRms = bypassSamples > 0.0
             ? static_cast<float> (std::sqrt (bypassSquares / bypassSamples)) : 0.0f;
 
@@ -779,7 +1092,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     // resetSampleRateDependentState).
     if (std::abs (tone - previousTone) > 1.0e-5f
         || std::abs (character - previousCharacter) > 1.0e-5f)
-        updateToneCoefficients (tone);
+        updateToneCoefficients (tone, engineSampleRate);
 
     // The TONE curve used by the tilt stage below is the one computed above the tape
     // character section, so the head poles, the machine crossfade and the tilt all
@@ -790,8 +1103,8 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     // The head-gap pole is the TONE macro's own crossfade - slow/soft machine (4.3 kHz)
     // to fast/open machine (24 kHz) - divided by the selected speed's damping, so SPEED
     // and TONE keep their independent meaning on the same head.
-    const float headGapCoefficient = onePoleCoefficientHz (headGapHz * speedScale, sampleRate);
-    const float hfPostCoefficient = onePoleCoefficientHz (headDampingHz * speedScale, sampleRate);
+    const float headGapCoefficient = onePoleCoefficientHz (headGapHz * speedScale, engineSampleRate);
+    const float hfPostCoefficient = onePoleCoefficientHz (headDampingHz * speedScale, engineSampleRate);
 
     // Tape hiss is a continuous noise floor, so its density is expressed per sample and
     // therefore scales with the sample rate.
@@ -826,7 +1139,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     //  is always quieter under the programme than beside it.
     // -----------------------------------------------------------------------
     const float noiseDuckSmoothing = 1.0f - std::exp (
-        -1.0f / (juce::jmax (1.0f, sampleRate) * 0.25f));
+        -1.0f / (engineSampleRate * 0.25f));
 
     // Pause cap on the leveller: the compensated floor can never exceed this level,
     // so a stray frame of open stages cannot push the hiss back up. With the retuned
@@ -838,14 +1151,14 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     // equivalent time constant first: 1 / (2*pi*f). Passing 16000 here would be read as a
     // 16-second time constant, which would all but remove the hiss instead of shaping it.
     const float hissBandLimit = onePoleCoefficient (1000.0f / (juce::MathConstants<float>::twoPi * 16000.0f),
-                                                    sampleRate);
+                                                    engineSampleRate);
 
     // Playback AC coupling: an 8 Hz one-pole DC blocker, rebuilt per block from the
     // rate. The standard form is y = x - x1 + R*y; R = 1 - 2*pi*fc/rate puts the
     // corner exactly at fc Hz, and clamping keeps the arithmetic safe at any rate.
     const float dcBlockR = juce::jlimit (0.5f, 0.9999f,
                                          1.0f - (juce::MathConstants<float>::twoPi * 8.0f)
-                                             / juce::jmax (1.0f, sampleRate));
+                                             / engineSampleRate);
 
     // Output staging: the loudness the model adds is balanced out here, so OUTPUT
     // is a clean, calibrated +/- dB trim rather than an extra hidden gain stage.
@@ -877,7 +1190,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     //  value instead, which at one-block latency is indistinguishable musically.
     // -----------------------------------------------------------------------
     const float squeezeDriveSmoothing = 1.0f - std::exp (
-        -1.0f / (juce::jmax (1.0f, sampleRate) * 0.2f));
+        -1.0f / (engineSampleRate * 0.2f));
 
     // The static calibration stays as designed: the slow programme compensator after
     // the output stage already restores any residual broadband loss against the
@@ -896,11 +1209,14 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         return static_cast<float> ((state >> 8) & 0x00ffffffu) * (1.0f / 8388608.0f) - 1.0f;
     };
 
-    const int activeChannels = juce::jmin (2, totalNumInputChannels);
+    const int activeChannels = activeInputChannels;
 
+    // Working pointers into the block's own storage. In the plain path these are
+    // the host buffer's channels; in the oversampled path they are the oversampler's
+    // internal buffer. The engine is written against these pointers only.
     std::array<float*, 2> channelData {};
     for (int channel = 0; channel < activeChannels; ++channel)
-        channelData[static_cast<std::size_t> (channel)] = buffer.getWritePointer (channel);
+        channelData[static_cast<std::size_t> (channel)] = block.getChannelPointer (static_cast<std::size_t> (channel));
 
     float inputPeak = 0.0f;
     float outputPeak = 0.0f;
@@ -940,14 +1256,14 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     // than either compressor, so the correction settles on the programme level instead
     // of pumping along with the transients.
     const float compensationCoefficient = 1.0f - std::exp (
-        -1.0f / (juce::jmax (1.0f, sampleRate) * 0.45f));
+        -1.0f / (engineSampleRate * 0.45f));
 
     // VU ballistics (300 ms) for the input and output meters. The coefficient is a
     // constant for the whole block - it depends only on the sample rate - so it is
     // computed once here instead of re-evaluating an exp() twice per sample inside
     // the loop below.
     const float vuBallisticCoefficient = 1.0f - std::exp (
-        -1.0f / (juce::jmax (1.0f, sampleRate) * 0.3f));
+        -1.0f / (engineSampleRate * 0.3f));
 
     // -------------------------------------------------------------------------
     //  Glue compressor operating points.
@@ -1066,7 +1382,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             //  detector only ever sees the trimmed input signal.
             // ------------------------------------------------------------------
             const float inputEnvelopeDb = inputCompressor.processDetection (
-                inputTrimmed * inputTrimmed, sampleRate, inputAttackSeconds, inputReleaseSeconds,
+                inputTrimmed * inputTrimmed, engineSampleRate, inputAttackSeconds, inputReleaseSeconds,
                 inputDriveLoad);
             const float inputReductionDb = juce::jmax (inputReductionLimitDb,
                                                        softKneeReductionDb (inputEnvelopeDb,
@@ -1086,8 +1402,8 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             const float grainLfo = std::sin (wowPhase * 0.8f + flutterPhase * 1.3f
                                              + static_cast<float> (channel) * 2.4f);
 
-            wowPhase += (twoPi * wowFreq) / sampleRate;
-            flutterPhase += (twoPi * flutterFreq) / sampleRate;
+            wowPhase += (twoPi * wowFreq) / engineSampleRate;
+            flutterPhase += (twoPi * flutterFreq) / engineSampleRate;
             // Wrap rather than a single subtraction: at very low rates, or with a
             // high wow/flutter setting, one increment can exceed a full turn and a
             // lone `-= twoPi` would leave the phase running away unbounded.
@@ -1135,7 +1451,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             // identically and doubling the analyser would cost twice as much for the same
             // reading.
             if (channel == 0)
-                harmonicAnalyser.analyse (preDrive, shapedCore, sampleRate);
+                harmonicAnalyser.analyse (preDrive, shapedCore, engineSampleRate);
 
             // Tape is a low-pass medium: the faster the tape and the brighter the
             // tone setting, the more top end survives.
@@ -1252,7 +1568,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
             detectorPower /= static_cast<float> (activeChannels);
         }
 
-        const float envelopeDb = outputCompressor.processDetection (detectorPower, sampleRate,
+        const float envelopeDb = outputCompressor.processDetection (detectorPower, engineSampleRate,
                                                                     outputAttackSeconds,
                                                                     outputReleaseSeconds,
                                                                     outputDriveLoad);
@@ -1356,8 +1672,8 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         // A very fast attack catches transients before they overshoot; the release is
         // short enough to recover between events without pumping on sustained material.
         const auto limiterCeiling = 0.94f;
-        const auto detectorAttack = 1.0f - std::exp (-1.0f / (sampleRate * 0.0005f));
-        const auto detectorRelease = 1.0f - std::exp (-1.0f / (sampleRate * 0.080f));
+        const auto detectorAttack = 1.0f - std::exp (-1.0f / (engineSampleRate * 0.0005f));
+        const auto detectorRelease = 1.0f - std::exp (-1.0f / (engineSampleRate * 0.080f));
         const auto detectorCoefficient = framePeak > preLimiterDetector ? detectorAttack
                                                                         : detectorRelease;
         preLimiterDetector += (framePeak - preLimiterDetector) * detectorCoefficient;
@@ -1368,8 +1684,8 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
                                     ? limiterCeiling / preLimiterDetector
                                     : 1.0f;
         const auto gainSmoothing = requiredGain < limiterGain
-                                     ? 1.0f - std::exp (-1.0f / (sampleRate * 0.0004f))
-                                     : 1.0f - std::exp (-1.0f / (sampleRate * 0.120f));
+                                     ? 1.0f - std::exp (-1.0f / (engineSampleRate * 0.0004f))
+                                     : 1.0f - std::exp (-1.0f / (engineSampleRate * 0.120f));
         limiterGain += (requiredGain - limiterGain) * gainSmoothing;
 
         // Noise-floor levelling: this frame's total duck is the combined gain the
@@ -1413,20 +1729,20 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         // it reports what actually leaves the plugin.
         if (activeChannels == 2)
             currentLufs = outputLoudness.processFrame (outputSignal[0] * outputGain,
-                                                       outputSignal[1] * outputGain, sampleRate);
+                                                       outputSignal[1] * outputGain, engineSampleRate);
         else if (activeChannels == 1)
             currentLufs = outputLoudness.processFrame (outputSignal[0] * outputGain,
-                                                       outputSignal[0] * outputGain, sampleRate);
+                                                       outputSignal[0] * outputGain, engineSampleRate);
 
         // The INPUT meter runs the same K-weighting on the raw signal at the plugin's
         // own input, so the two meters can be compared directly. The channels are read
         // back from the buffer because the dry input was overwritten in place.
         if (activeChannels == 2)
             currentInputLufs = inputLoudness.processFrame (inputChainHistory[0], inputChainHistory[1],
-                                                           sampleRate);
+                                                           engineSampleRate);
         else if (activeChannels == 1)
             currentInputLufs = inputLoudness.processFrame (inputChainHistory[0], inputChainHistory[0],
-                                                           sampleRate);
+                                                           engineSampleRate);
     }
 
     const auto measuredSamples = static_cast<double> (numSamples)
@@ -1598,6 +1914,12 @@ void FirstAudioProcessor::setStateInformation (const void* data, int sizeInBytes
 
     if (xmlState != nullptr)
         parameters.replaceState (juce::ValueTree::fromXml (*xmlState));
+
+    // A freshly loaded session defines both A/B slots: the loaded state becomes
+    // the active side and both slots are seeded with it, so compare starts clean.
+    copyToCompareSlot (0);
+    copyToCompareSlot (1);
+    activeSlot.store (0, std::memory_order_relaxed);
 }
 
 //==============================================================================

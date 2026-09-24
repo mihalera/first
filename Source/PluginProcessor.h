@@ -13,6 +13,8 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <map>
+#include <memory>
 
 //==============================================================================
 /**
@@ -444,6 +446,9 @@ public:
 
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
+    /** The tape engine proper; processBlock routes into this, oversampled or not. */
+    void processTapeEngine (juce::dsp::AudioBlock<float>, juce::MidiBuffer&);
+
     //==============================================================================
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override;
@@ -468,6 +473,58 @@ public:
     void setStateInformation (const void* data, int sizeInBytes) override;
 
     juce::AudioProcessorValueTreeState parameters;
+
+    //==============================================================================
+    //  Premium workflow: oversampling, factory presets, A/B compare, undo/redo.
+
+    /** Oversampling quality selector, shown to the host as a parameter too. */
+    enum class OversamplingFactor : int
+    {
+        off = 0,
+        x2  = 1,
+        x4  = 2
+    };
+
+    OversamplingFactor getOversamplingFactor() const noexcept
+    {
+        return currentOversampling;
+    }
+
+    /** Undo manager shared with the editor (wired to Ctrl+Z / Ctrl+Y there). */
+    juce::UndoManager& getUndoManager() noexcept { return undoManager; }
+
+    /** Number of factory presets. */
+    static constexpr int numFactoryPresets = 12;
+
+    /** Display names of the factory presets, in order. */
+    static juce::StringArray getPresetNames();
+
+    /** Applies factory preset `index` (0..numFactoryPresets-1) with one undo transaction. */
+    void applyFactoryPreset (int index);
+
+    /** The index of the last factory preset the user (or a session load) selected. */
+    int getLastPresetIndex() const noexcept { return lastPresetIndex.load (std::memory_order_relaxed); }
+
+    /** Stores the current settings into slot A or B (0 = A, 1 = B). */
+    void copyToCompareSlot (int slot);
+
+    /** Recalls slot A or B (0 = A, 1 = B) and swaps the active side. */
+    void toggleCompare();
+
+    /** The A/B side that is currently live (0 = A, 1 = B). */
+    int getActiveCompareSlot() const noexcept { return activeSlot.load (std::memory_order_relaxed); }
+
+    /** True when the settings in the two slots differ (drives the edited dot). */
+    bool isCompareDirty() const noexcept { return compareDirty.load (std::memory_order_relaxed); }
+
+    /** Stores the current settings into whichever slot is currently live. */
+    void updateActiveCompareSlot();
+
+    /** Swaps the whole APVTS state. Public because the undoable StateSwapAction
+        (an anonymous-namespace type in the .cpp, so it cannot be befriended) calls
+        it from perform() / undo(); every other caller should go through the
+        UndoManager instead. */
+    void replaceParameterState (const juce::ValueTree& newState);
 
     //==============================================================================
     //  Live telemetry published by the audio thread and consumed by the editor.
@@ -568,6 +625,22 @@ private:
     /** Recomputes the cached tone filter coefficients for the current rate. */
     void updateToneCoefficients (float toneValue);
 
+    /** (Re)creates the oversampling engine for the requested factor and reports latency. */
+    void setOversamplingFactor (OversamplingFactor factor, int samplesPerBlock);
+
+    /** Pure function of the parameter snapshot - the factory preset table. */
+    static std::map<juce::String, float> factoryPresetValues (int index);
+
+    /** Applies a raw value map through the APVTS, wrapped in one undo transaction. */
+    void applyParameterValues (const std::map<juce::String, float>& values,
+                               const juce::String& undoTransactionName);
+
+    /** Applies a state tree as a single undoable transaction. */
+    void applyStateWithUndo (const juce::ValueTree& targetState, const juce::String& transactionName);
+
+    /** Rebuilds the A/B dirty flag from the two stored slot states. */
+    void updateCompareDirty();
+
     // Cached parameter pointers: avoids repeated string lookups on the audio thread.
     std::atomic<float>* inputDbParam = nullptr;
     std::atomic<float>* driveParam = nullptr;
@@ -580,6 +653,7 @@ private:
     std::atomic<float>* outputDbParam = nullptr;
     std::atomic<float>* widthParam = nullptr;
     std::atomic<float>* bypassParam = nullptr;
+    std::atomic<float>* oversamplingParam = nullptr;
     std::atomic<float>* tapeTypeParam = nullptr;
     std::atomic<float>* speedParam = nullptr;
 
@@ -616,6 +690,37 @@ private:
     std::atomic<float> transportDrift { 0.5f };
     std::atomic<float> harmonicCharacter { 0.0f };
     std::atomic<bool> bypassActive { false };
+
+    // -----------------------------------------------------------------------
+    //  Premium workflow state.
+    // -----------------------------------------------------------------------
+    // Oversampling engines, one per factor. The OFF entry exists so the editor
+    // combo can always call setOversamplingFactor with an OwnedArray index without
+    // special-casing; the dummy stage passes audio through bit-for-bit (and its
+    // latency is zero, so no host compensation is needed).
+    juce::OwnedArray<juce::dsp::Oversampling<float>> oversamplers;
+    OversamplingFactor currentOversampling = OversamplingFactor::off;
+
+    // The block size the engines were last built for, and the rate multiplier of the
+    // ACTIVE engine. processBlock picks a rebuild size from lastBlockSize rather than
+    // buffer.getNumSamples(), which on the oversampled path returns the wrong rate's
+    // sample count and would oscillate between rebuilds every block.
+    int lastBlockSize = 512;
+    float oversamplingRateFactor = 1.0f;
+
+    // The two A/B slots hold full parameter states; the live side is the one the
+    // engine is currently rendering. Slot recall swaps state, never sample data.
+    juce::ValueTree compareSlots[2];
+    std::atomic<int> activeSlot { 0 };
+    std::atomic<bool> compareDirty { false };
+
+    // Undo history for every parameter change the editor makes. Parameter gestures
+    // from hosts are NOT recorded, so automation stays authoritative.
+    juce::UndoManager undoManager;
+
+    // The last factory preset selection, published so the editor combo can restore
+    // its display after a preset or session change.
+    std::atomic<int> lastPresetIndex { -1 };
 
     // Per-channel tape state: 3-element hysteresis memory (current, previous, older)
     // plus a 3-element high-frequency memory holding the tape-medium pole, the

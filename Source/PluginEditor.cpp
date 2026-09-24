@@ -816,6 +816,75 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         applyTheme();
     };
 
+    // ---------------------------------------------------------------
+    //  Premium workflow bar.
+    // ---------------------------------------------------------------
+    styleLabel (presetHeadingLabel, "PRESET", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::centredLeft);
+    addAndMakeVisible (presetHeadingLabel);
+
+    refreshPresetList();
+    presetBox.setTooltip ("Factory presets. Loading one replaces the whole machine state "
+                          "in a single undoable step.");
+    presetBox.setLookAndFeel (&customLookAndFeel);
+    presetBox.onChange = [this]
+    {
+        const auto selectedId = presetBox.getSelectedId();
+        if (selectedId <= 0)
+            return;
+        const auto presetIndex = selectedId - 1;
+        if (presetIndex == audioProcessor.getLastPresetIndex())
+            return; // re-selecting the displayed entry is not a state change
+        audioProcessor.applyFactoryPreset (presetIndex);
+        lastShownPreset = presetIndex;
+    };
+    addAndMakeVisible (presetBox);
+
+    const auto workflowButtonSetup = [&] (juce::TextButton& button, const juce::String& tip)
+    {
+        button.setTooltip (tip);
+        button.setLookAndFeel (&customLookAndFeel);
+        addAndMakeVisible (button);
+    };
+
+    workflowButtonSetup (copyAButton, "Store the current settings in slot A. "
+                                      "A is the side the plugin starts on.");
+    workflowButtonSetup (copyBButton, "Store the current settings in slot B.");
+    workflowButtonSetup (compareButton, "Toggle between slots A and B to compare settings "
+                                        "with identical level, bypass state and oversampling.");
+    workflowButtonSetup (undoButton, "Undo the last preset or A/B change (Ctrl+Z).");
+    workflowButtonSetup (redoButton, "Redo an undone preset or A/B change (Ctrl+Y).");
+
+    copyAButton.onClick = [this]
+    {
+        audioProcessor.copyToCompareSlot (0);
+        updateWorkflowButtons();
+    };
+    copyBButton.onClick = [this]
+    {
+        audioProcessor.copyToCompareSlot (1);
+        updateWorkflowButtons();
+    };
+    compareButton.onClick = [this]
+    {
+        audioProcessor.toggleCompare();
+        updateWorkflowButtons();
+    };
+    undoButton.onClick = [this]
+    {
+        audioProcessor.getUndoManager().undo();
+        updateWorkflowButtons();
+    };
+    redoButton.onClick = [this]
+    {
+        audioProcessor.getUndoManager().redo();
+        updateWorkflowButtons();
+    };
+
+    styleLabel (compareBadgeLabel, "", 8.5f, paletteFor (false).accent,
+                true, juce::Justification::centred);
+    addAndMakeVisible (compareBadgeLabel);
+
     addAndMakeVisible (tapeTypeBox);
     addAndMakeVisible (speedBox);
     addAndMakeVisible (bypassButton);
@@ -864,6 +933,72 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     speedBox.setLookAndFeel (nullptr);
     bypassButton.setLookAndFeel (nullptr);
     themeButton.setLookAndFeel (nullptr);
+    presetBox.setLookAndFeel (nullptr);
+    copyAButton.setLookAndFeel (nullptr);
+    copyBButton.setLookAndFeel (nullptr);
+    compareButton.setLookAndFeel (nullptr);
+    undoButton.setLookAndFeel (nullptr);
+    redoButton.setLookAndFeel (nullptr);
+}
+
+void FirstAudioProcessorEditor::refreshPresetList()
+{
+    presetBox.clear (juce::dontSendNotification);
+    const auto names = FirstAudioProcessor::getPresetNames();
+    for (auto i = 0; i < names.size(); ++i)
+        presetBox.addItem (names[i], i + 1);
+    presetBox.setSelectedItemIndex (juce::jmax (0, audioProcessor.getLastPresetIndex()),
+                                    juce::dontSendNotification);
+    lastShownPreset = audioProcessor.getLastPresetIndex();
+}
+
+void FirstAudioProcessorEditor::updateWorkflowButtons()
+{
+    // The A/B buttons carry the active side on their text, so the panel always says
+    // which slot is live without needing a separate readout.
+    const auto activeSlot = audioProcessor.getActiveCompareSlot();
+    copyAButton.setButtonText (activeSlot == 0 ? "A (LIVE)" : "COPY A");
+    copyBButton.setButtonText (activeSlot == 1 ? "B (LIVE)" : "COPY B");
+    compareButton.setButtonText (activeSlot == 0 ? "A/B: B" : "A/B: A");
+
+    // An edited dot on the inactive slot's caption: when the two stored slots differ,
+    // the side you are NOT hearing has something different on it.
+    const auto dirty = audioProcessor.isCompareDirty();
+    copyAButton.setButtonText (copyAButton.getButtonText()
+                               + (dirty && activeSlot != 0 ? " *" : ""));
+    copyBButton.setButtonText (copyBButton.getButtonText()
+                               + (dirty && activeSlot != 1 ? " *" : ""));
+
+    auto& undoManager = audioProcessor.getUndoManager();
+    undoButton.setEnabled (undoManager.canUndo());
+    redoButton.setEnabled (undoManager.canRedo());
+
+    compareBadgeLabel.setText (dirty ? "A/B EDITED" : "A/B MATCHED",
+                               juce::dontSendNotification);
+}
+
+bool FirstAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
+{
+    // Ctrl/Cmd+Z and Ctrl/Cmd+Y mirror the DAW convention inside the plugin's own
+    // preset/A/B history. The Shift+Z (redo) test comes FIRST: a bare Ctrl+Z also
+    // matches the Shift variant, so testing undo first would swallow the redo chord.
+    const auto commandDown = key.getModifiers().isCommandDown();
+    if (commandDown && key.isKeyCode ('Y'))
+    {
+        audioProcessor.getUndoManager().redo();
+        updateWorkflowButtons();
+        return true;
+    }
+    if (commandDown && key.isKeyCode ('Z'))
+    {
+        if (key.getModifiers().isShiftDown())
+            audioProcessor.getUndoManager().redo();
+        else
+            audioProcessor.getUndoManager().undo();
+        updateWorkflowButtons();
+        return true;
+    }
+    return Component::keyPressed (key);
 }
 
 FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayout() const
@@ -871,15 +1006,18 @@ FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayo
     // Outer padding of 14 px instead of 18: the screws and the panel border only need
     // that much clearance, and every pixel saved here goes to the working areas. The
     // header is 70 px and the deck 80 - both are still comfortably above their fixed
-    // furniture (30 px badge, 35 px combo boxes), but no longer bankroll dead space.
+    // furniture (30 px badge, 35 px combo boxes) plus the deck's second workflow line,
+    // but no longer bankroll dead space.
     auto remaining = getLocalBounds().reduced (14);
     EditorLayout layout;
 
     // Header and deck are fixed-height, so they keep their proportions at small panel
-    // sizes and on high-DPI displays. The rest of the height goes to controls + meters.
+    // sizes and on high-DPI displays. The deck is two lines tall: transport controls
+    // on the first, the preset / A/B / undo row on the second. The rest of the height
+    // goes to controls + meters.
     layout.header = remaining.removeFromTop (70);
     remaining.removeFromTop (10);
-    layout.deck = remaining.removeFromTop (80);
+    layout.deck = remaining.removeFromTop (116);
     remaining.removeFromTop (10);
 
     // The meters panel has to hold a 2 x 2 grid of dials, so it claims a share of the
@@ -943,6 +1081,15 @@ void FirstAudioProcessorEditor::applyTheme()
     };
     styleCombo (tapeTypeBox);
     styleCombo (speedBox);
+    styleCombo (presetBox);
+
+    const auto styleWorkflowButton = [&palette] (juce::TextButton& button, bool emphasised)
+    {
+        button.setColour (juce::TextButton::buttonColourId, palette.raised);
+        button.setColour (juce::TextButton::buttonOnColourId, palette.accent);
+        button.setColour (juce::TextButton::textColourOffId, emphasised ? palette.text : palette.secondary);
+        button.setColour (juce::TextButton::textColourOnId, palette.readout);
+    };
 
     bypassButton.setColour (juce::TextButton::buttonColourId, palette.raised);
     bypassButton.setColour (juce::TextButton::buttonOnColourId, palette.needle);
@@ -950,6 +1097,15 @@ void FirstAudioProcessorEditor::applyTheme()
     bypassButton.setColour (juce::TextButton::textColourOnId, palette.readout);
     themeButton.setColour (juce::TextButton::buttonColourId, palette.raised);
     themeButton.setColour (juce::TextButton::textColourOffId, palette.text);
+
+    styleWorkflowButton (copyAButton, audioProcessor.getActiveCompareSlot() == 0);
+    styleWorkflowButton (copyBButton, audioProcessor.getActiveCompareSlot() == 1);
+    styleWorkflowButton (compareButton, false);
+    styleWorkflowButton (undoButton, false);
+    styleWorkflowButton (redoButton, false);
+    presetHeadingLabel.setColour (juce::Label::textColourId, palette.secondary);
+    compareBadgeLabel.setColour (juce::Label::textColourId,
+                                 audioProcessor.isCompareDirty() ? palette.accent : palette.secondary);
 
     compressorLabel.setColour (juce::Label::textColourId, palette.accent);
     compressorReadout.setColour (juce::Label::textColourId, palette.secondary);
@@ -959,6 +1115,8 @@ void FirstAudioProcessorEditor::applyTheme()
     compressorMeterOut.setDarkTheme (darkTheme);
 
     themeButton.setButtonText (darkTheme ? "LIGHT THEME" : "DARK THEME");
+
+    updateWorkflowButtons();
     repaint();
 }
 
@@ -1235,6 +1393,35 @@ void FirstAudioProcessorEditor::timerCallback()
     repaint (layout.deck);
     repaint (layout.controls);
 
+    // Workflow state is cheap to poll at 30 Hz and makes the panel self-healing:
+    // if the host, a session load or a preset change moves anything, the buttons,
+    // badge and preset display catch up on the next frame instead of lying.
+    const auto canUndoNow = audioProcessor.getUndoManager().canUndo();
+    const auto canRedoNow = audioProcessor.getUndoManager().canRedo();
+    const auto slotNow = audioProcessor.getActiveCompareSlot();
+    const auto dirtyNow = audioProcessor.isCompareDirty();
+    const auto presetNow = audioProcessor.getLastPresetIndex();
+    if (slotNow != lastShownSlot || dirtyNow != lastShownDirty
+        || canUndoNow != lastShownCanUndo || canRedoNow != lastShownCanRedo)
+    {
+        lastShownSlot = slotNow;
+        lastShownDirty = dirtyNow;
+        lastShownCanUndo = canUndoNow;
+        lastShownCanRedo = canRedoNow;
+        updateWorkflowButtons();
+    }
+    if (presetNow != lastShownPreset)
+    {
+        lastShownPreset = presetNow;
+        presetBox.setSelectedItemIndex (juce::jmax (0, presetNow), juce::dontSendNotification);
+    }
+
+    // While the user turns knobs, the live state drifts away from the stored side.
+    // Mirror those edits into the active slot every frame so COPY A / COPY B always
+    // capture the machine as it is right now, and the edited dot tells the truth.
+    // This also rebuilds the dirty flag cheaply on the message thread.
+    audioProcessor.updateActiveCompareSlot();
+
     if (! isShowing() || physicsWorld == nullptr)
         return;
 
@@ -1286,8 +1473,21 @@ void FirstAudioProcessorEditor::resized()
     speedBox.setBounds (tapeTypeBox.getRight() + 72, layout.deck.getY() + 33, 120, 32);
     bypassButton.setBounds (speedBox.getRight() + 24, layout.deck.getY() + 33, 100, 32);
 
-    // The hint takes what is left between the bypass button and the readout, up to a
-    // sane maximum, and disappears entirely rather than colliding on a narrow panel.
+    // Preset / A/B / undo row: the deck's SECOND line, aligned under the transport
+    // combo boxes and chained left-to-right. The whole chain is ~660 px, which fits
+    // the minimum 780 px panel and always ends well left of the harmonics readout.
+    presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 84, 46, 16);
+    presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 76, 150, 32);
+    copyAButton.setBounds (presetBox.getRight() + 8, layout.deck.getY() + 76, 76, 32);
+    copyBButton.setBounds (copyAButton.getRight() + 6, layout.deck.getY() + 76, 76, 32);
+    compareButton.setBounds (copyBButton.getRight() + 6, layout.deck.getY() + 76, 70, 32);
+    undoButton.setBounds (compareButton.getRight() + 6, layout.deck.getY() + 76, 56, 32);
+    redoButton.setBounds (undoButton.getRight() + 6, layout.deck.getY() + 76, 56, 32);
+    compareBadgeLabel.setBounds (redoButton.getRight() + 8, layout.deck.getY() + 76, 74, 32);
+
+    // The hint takes what is left between the bypass button and the readout on the
+    // transport line, up to a sane maximum, and disappears entirely rather than
+    // colliding on a narrow panel.
     const auto hintLeft = bypassButton.getRight() + 20;
     deckHintLabel.setBounds (hintLeft, layout.deck.getY() + 30,
                              juce::jmax (0, juce::jmin (220,

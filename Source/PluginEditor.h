@@ -130,8 +130,16 @@ private:
     void applyTheme();
     EditorLayout getEditorLayout() const;
 
+    void refreshPresetList();
+    void updateWorkflowButtons();
+    bool keyPressed (const juce::KeyPress&) override;
+
     FirstAudioProcessor& audioProcessor;
     J37LookAndFeel customLookAndFeel;
+
+    // Tooltips (set with setTooltip on the workflow controls) only render while a
+    // TooltipWindow instance exists; without one the calls are silent no-ops.
+    juce::SharedResourcePointer<juce::TooltipWindow> tooltipWindow;
 
     std::array<juce::Slider, controlCount> controls;
     std::array<juce::Label, controlCount> controlLabels;
@@ -142,6 +150,21 @@ private:
     juce::ComboBox speedBox;
     juce::TextButton bypassButton { "BYPASS" };
     juce::TextButton themeButton { "DARK THEME" };
+
+    // Premium workflow bar: factory presets, A/B compare and undo/redo.
+    juce::ComboBox presetBox;
+    juce::TextButton copyAButton { "COPY A" };
+    juce::TextButton copyBButton { "COPY B" };
+    juce::TextButton compareButton { "A/B" };
+    juce::TextButton undoButton { "UNDO" };
+    juce::TextButton redoButton { "REDO" };
+    juce::Label presetHeadingLabel;
+    juce::Label compareBadgeLabel;
+    int lastShownPreset = -2;
+    int lastShownSlot = -1;
+    bool lastShownDirty = false;
+    bool lastShownCanUndo = false;
+    bool lastShownCanRedo = false;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tapeTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> speedAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
