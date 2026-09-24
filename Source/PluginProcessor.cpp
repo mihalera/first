@@ -1297,6 +1297,14 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     toneShelfGainSmoothed.setTargetValue (toneShelfGain);
     preDriveGainSmoothed.setTargetValue (preDriveGain);
 
+    // The magnetic curve's own two arguments ramp for the same reason: BIAS shifts the
+    // whole transfer curve, so a per-block step is a hard discontinuity, not a zipper.
+    const auto shaperDriveTarget = driveCurve * tapeCurve + hysteresis * 0.25f
+                                     + squeezeSaturationDrive * 0.30f;
+    const auto shaperAsymmetryTarget = tapeAsymmetry * (biasAmount * 0.42f);
+    shaperDriveSmoothed.setTargetValue (shaperDriveTarget);
+    shaperAsymmetrySmoothed.setTargetValue (shaperAsymmetryTarget);
+
     // The TONE curve used by the tilt stage below is the one computed above the tape
     // character section, so the head poles, the machine crossfade and the tilt all
     // read the same value.
@@ -1636,16 +1644,16 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // the two controls multiply naturally instead of fighting.
             const float preDrive = x * (1.0f + driveAmount * 1.2f * speedBias
                                           * preDriveGainSmoothed.getCurrentValue());
-            const float recordBias = biasAmount * 0.42f;
-
             // Magnetic hysteresis with memory - the core of the tape sound. The
             // squeeze term in the slope is the compressor coupling: dense, compressed
             // programme literally thickens the magnetic curve, not just its level.
+            // Both arguments come from the ramps, so DRIVE and BIAS morph the curve
+            // continuously instead of stepping it on every block boundary - BIAS was
+            // the loudest of all, because its asymmetry term shifts the whole curve
+            // rather than merely scaling it.
             const float shapedCore = magneticHysteresis (preDrive,
-                                                         driveCurve * tapeCurve
-                                                             + hysteresis * 0.25f
-                                                             + squeezeSaturationDrive * 0.30f,
-                                                         tapeAsymmetry * recordBias,
+                                                         shaperDriveSmoothed.getCurrentValue(),
+                                                         shaperAsymmetrySmoothed.getCurrentValue(),
                                                          hysteresisMemory[0]);
             hysteresisMemory[2] = hysteresisMemory[1];
             hysteresisMemory[1] = hysteresisMemory[0];
