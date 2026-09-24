@@ -619,6 +619,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // looks sparse.
     setResizeLimits (780, 640, 1400, 960);
     setSize (980, 690);
+
+    // Tooltips appear after a third of a second of hover: quick enough to be
+    // discoverable, slow enough not to flash while the user sweeps the panel.
+    tooltipWindow->setMillisecondsBeforeTipAppears (350);
     createDecorativePhysics();
 
     const auto styleLabel = [] (juce::Label& label, const juce::String& text,
@@ -726,47 +730,48 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         // generic interaction hints ride along on every knob.
         const auto parameterTooltip = [&] (const juce::String& id) -> juce::String
         {
-            const auto hints = " Hold Shift for fine control, mouse wheel for small "
-                               "steps, double-click to reset.";
+            // juce::String, not a char pointer: the + below must concatenate strings,
+            // not pointers (which does not compile).
+            const juce::String hints = " Hold Shift for fine control, mouse wheel for small "
+                                       "steps, double-click to reset.";
             if (id == "input")
-                return "INPUT - output-stages the signal into the machine before the "
+                return juce::String ("INPUT - output-stages the signal into the machine before the "
                        "tape. Positive pushes the tape harder for more saturation, "
-                       "negative cleans up. Range -32 to +32 dB, default 0 dB." + hints;
+                       "negative cleans up. Range -32 to +32 dB, default 0 dB.") + hints;
             if (id == "drive")
-                return "DRIVE - the amount of magnetic saturation. At 0 percent the "
+                return juce::String ("DRIVE - the amount of magnetic saturation. At 0 percent the "
                        "machine is clean; higher settings bend the signal like tape "
-                       "and add harmonics. Default 42 percent." + hints;
+                       "and add harmonics. Default 42 percent.") + hints;
             if (id == "bias")
-                return "BIAS - the record head's ultra-sonic offset. It shapes the "
+                return juce::String ("BIAS - the record head's ultra-sonic offset. It shapes the "
                        "even harmonics: low bias is edgy and thin, higher bias is "
-                       "warmer and fuller. Default 36 percent." + hints;
+                       "warmer and fuller. Default 36 percent.") + hints;
             if (id == "tone")
-                return "BRIGHTNESS - the playback high-shelf above 8 kHz. Low is warm "
-                       "and rounded, high is open and airy. Default 58 percent." + hints;
+                return juce::String ("BRIGHTNESS - the playback high-shelf above 8 kHz. Low is warm "
+                       "and rounded, high is open and airy. Default 58 percent.") + hints;
             if (id == "character")
-                return "TONE - the machine-state macro. It crossfades the whole deck "
+                return juce::String ("TONE - the machine-state macro. It crossfades the whole deck "
                        "between the classic slow machine (soft head gap, relaxed "
                        "flutter) and the fast hot machine (open top end, tight "
-                       "flutter). Default 50 percent." + hints;
+                       "flutter). Default 50 percent.") + hints;
             if (id == "wow")
-                return "WOW - slow pitch wander of the transport, like a slightly "
+                return juce::String ("WOW - slow pitch wander of the transport, like a slightly "
                        "loose capstan. 0 percent is a perfectly steady machine. "
-                       "Default 14 percent." + hints;
+                       "Default 14 percent.") + hints;
             if (id == "flutter")
-                return "FLUTTER - fast shimmer of the transport, like the tape "
+                return juce::String ("FLUTTER - fast shimmer of the transport, like the tape "
                        "brushing the heads. 0 percent is perfectly steady. "
-                       "Default 18 percent." + hints;
+                       "Default 18 percent.") + hints;
             if (id == "mix")
-                return "MIX - dry/wet crossfade. 0 percent is the untouched signal, "
-                       "100 percent is fully through the tape. Default 50 percent."
-                       + hints;
+                return juce::String ("MIX - dry/wet crossfade. 0 percent is the untouched signal, "
+                       "100 percent is fully through the tape. Default 50 percent.") + hints;
             if (id == "output")
-                return "OUTPUT - calibrated output trim after the whole chain. "
-                       "Range -32 to +32 dB, default 0 dB." + hints;
+                return juce::String ("OUTPUT - calibrated output trim after the whole chain. "
+                       "Range -32 to +32 dB, default 0 dB.") + hints;
             if (id == "stereo_width")
-                return "WIDTH - stereo image after the tape. 0 percent is mono, "
+                return juce::String ("WIDTH - stereo image after the tape. 0 percent is mono, "
                        "50 percent is the natural stereo width, 100 percent is extra "
-                       "wide. Default 50 percent." + hints;
+                       "wide. Default 50 percent.") + hints;
             return hints;
         };
         slider.setTooltip (parameterTooltip (controlIds[static_cast<int> (i)]));
