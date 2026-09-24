@@ -195,6 +195,8 @@ FirstAudioProcessor::FirstAudioProcessor()
     speedParam     = parameters.getRawParameterValue ("speed");
     bypassParam   = parameters.getRawParameterValue ("bypass");
     oversamplingParam = parameters.getRawParameterValue ("oversampling");
+    polarityParam  = parameters.getRawParameterValue ("polarity");
+    autoGainParam  = parameters.getRawParameterValue ("auto_gain");
 
     // Three fixed oversampling engines (off / 2x / 4x). Each owns its own filter
     // state, so switching between them is glitch-free even mid-render, and the
@@ -209,9 +211,27 @@ FirstAudioProcessor::FirstAudioProcessor()
     // before anything is stored recalls the same settings rather than an empty tree.
     compareSlots[0] = parameters.copyState().createCopy();
     compareSlots[1] = compareSlots[0].createCopy();
+
+    // Preset dirty tracking: any parameter change while a preset is loaded lights the
+    // edited badge in the editor. Host automation ALSO flows through here, which is
+    // fine - the badge is advisory and matches what the DAW's own "plugin modified"
+    // indication would say.
+    for (const auto* parameterID : { "input", "output", "bypass", "polarity", "auto_gain",
+                                     "stereo_width", "tape_type", "speed", "drive", "bias",
+                                     "oversampling", "tone", "wow", "flutter", "mix",
+                                     "character" })
+        parameters.addParameterListener (parameterID, this);
 }
 
-FirstAudioProcessor::~FirstAudioProcessor() = default;
+FirstAudioProcessor::~FirstAudioProcessor()
+{
+    for (const auto* parameterID : { "input", "output", "bypass", "polarity", "auto_gain",
+                                     "stereo_width", "tape_type", "speed", "drive", "bias",
+                                     "oversampling", "tone", "wow", "flutter", "mix",
+                                     "character" })
+        parameters.removeParameterListener (parameterID, this);
+}
+
 
 //==============================================================================
 //  Full-state undo. Preset applications and A/B recalls are recorded as one
@@ -369,6 +389,7 @@ void FirstAudioProcessor::applyFactoryPreset (int index)
 
     applyStateWithUndo (target, "Preset: " + getPresetNames()[clampedIndex]);
     lastPresetIndex.store (clampedIndex, std::memory_order_relaxed);
+    markPresetClean (getPresetNames()[clampedIndex]);
 }
 
 void FirstAudioProcessor::copyToCompareSlot (int slot)
@@ -399,6 +420,92 @@ void FirstAudioProcessor::updateActiveCompareSlot()
     copyToCompareSlot (activeSlot.load (std::memory_order_relaxed));
 }
 
+//==============================================================================
+//  User presets.
+//
+//  A factory preset covers the machine's designed range; a user preset freezes the
+//  whole machine exactly as it stands. Files are XML state trees (the same format
+//  getStateInformation writes into a session) with a .j37tape extension, stored in
+//  the per-user application data directory, so they survive plugin updates, are
+//  shared by every instance and never depend on the session.
+//==============================================================================
+juce::File FirstAudioProcessor::getUserPresetDirectory()
+{
+    auto directory = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                       .getChildFile ("J37 Tape Mastering")
+                       .getChildFile ("Presets");
+    if (! directory.isDirectory())
+        directory.createDirectory();
+    return directory;
+}
+
+juce::StringArray FirstAudioProcessor::getUserPresetNames() const
+{
+    juce::StringArray names;
+    for (const auto& entry : getUserPresetDirectory().findChildFiles (juce::File::findFiles,
+                                                                      false, "*.j37tape"))
+        names.add (entry.getFileNameWithoutExtension());
+    names.sort (true);
+    return names;
+}
+
+bool FirstAudioProcessor::saveUserPreset (const juce::String& name)
+{
+    const auto sanitised = name.trim();
+    if (sanitised.isEmpty())
+        return false;
+
+    // Strip characters the host file system cannot store, so a preset named with a
+    // slash cannot escape the preset directory.
+    juce::String safe;
+    for (const auto character : sanitised)
+        if (character != '/' && character != '\\' && character != ':' && character != '?')
+            safe += character;
+    safe = safe.trim();
+    if (safe.isEmpty())
+        return false;
+
+    auto state = parameters.copyState();
+    std::unique_ptr<juce::XmlElement> xml (state.createXml());
+    if (xml == nullptr)
+        return false;
+
+    const auto file = getUserPresetDirectory().getChildFile (safe + ".j37tape");
+    const auto saved = xml->writeTo (file);
+    if (saved)
+        markPresetClean (safe);
+    return saved;
+}
+
+bool FirstAudioProcessor::applyUserPreset (const juce::String& name)
+{
+    const auto file = getUserPresetDirectory().getChildFile (name.trim() + ".j37tape");
+    const auto xml = juce::parseXML (file);
+    if (xml == nullptr)
+        return false;
+
+    auto restored = juce::ValueTree::fromXml (*xml);
+    if (! restored.isValid())
+        return false;
+
+    applyStateWithUndo (restored, "User preset: " + name);
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+    markPresetClean (name.trim());
+    return true;
+}
+
+bool FirstAudioProcessor::deleteUserPreset (const juce::String& name)
+{
+    const auto file = getUserPresetDirectory().getChildFile (name.trim() + ".j37tape");
+    if (! file.existsAsFile())
+        return false;
+
+    const auto deleted = file.deleteFile();
+    if (currentPresetName.equalsIgnoreCase (name.trim()))
+        markPresetClean ({});
+    return deleted;
+}
+
 juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createParameterLayout()
 {
     juce::AudioProcessorValueTreeState::ParameterLayout layout;
@@ -413,6 +520,15 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             juce::AudioParameterFloatAttributes().withLabel ("dB")));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "bypass", 1 },
                                                             "Bypass", false));
+    // POLARITY INVERT: a mastering staple. A full polarity flip on the output, so a
+    // 180-degree mis-wiring between two sources can be corrected without re-patching.
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "polarity", 1 },
+                                                            "Polarity Invert", false));
+    // AUTO GAIN: when on, the slow programme compensator (see the final gain
+    // compensation section) is allowed to act; when off the output level is exactly
+    // what the chain produced. Default ON, matching what earlier builds always did.
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "auto_gain", 1 },
+                                                            "Auto Gain", true));
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "stereo_width", 1 },
                                                             "Stereo Width",
                                                             juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
@@ -946,6 +1062,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto outputDb = outputDbParam->load();
     const auto inputDb = inputDbParam->load();
     const auto stereoWidth = widthParam->load() * 2.0f;
+
+    // Output-stage switches, read once per block: polarity is a pure sign flip on
+    // whatever leaves the machine, and auto gain gates the slow programme
+    // compensator (see the final gain compensation section below).
+    const float polaritySign = (polarityParam != nullptr && polarityParam->load() >= 0.5f) ? -1.0f : 1.0f;
+    const bool autoGainEnabled = autoGainParam == nullptr || autoGainParam->load() >= 0.5f;
 
     inputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (inputDb));
     outputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (outputDb));
@@ -1609,7 +1731,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         //  keeps the compressors' punch intact: it corrects the average, not transients.
         // ---------------------------------------------------------------------
         float compensationGain = 1.0f;
-        if (referenceBlockPower > 0.0f)
+        if (autoGainEnabled && referenceBlockPower > 0.0f)
         {
             // Power of the signal as it leaves the compressors and tape stage, but
             // BEFORE this compensation is folded in - measuring the compensated output
@@ -1719,13 +1841,15 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             if (std::abs (blended) > 0.985f)
                 clippingThisBlock = true;
 
-            const auto limitedOut = softClip (blended);
+            // The polarity switch flips the finished sample after the clipper, so a
+            // 180-degree source mis-wiring is corrected at the very last stage.
+            const auto limitedOut = softClip (blended) * polaritySign;
             destination = limitedOut;
             outputPeak = juce::jmax (outputPeak, std::abs (limitedOut));
             outputSquares += static_cast<double> (limitedOut) * limitedOut;
 
-            // VU ballistic: a 300 ms average, fed once per channel so it measures the
-            // same programme average a hardware VU would.
+            // VU ballistics read the magnitude, so a polarity flip cannot make the
+            // meter lie about the programme level.
             vuAverage += (std::abs (limitedOut) - vuAverage) * vuBallisticCoefficient;
         }
 
@@ -1924,6 +2048,11 @@ void FirstAudioProcessor::setStateInformation (const void* data, int sizeInBytes
     copyToCompareSlot (0);
     copyToCompareSlot (1);
     activeSlot.store (0, std::memory_order_relaxed);
+
+    // A session load restores the parameters, not the preset that produced them:
+    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
 }
 
 //==============================================================================

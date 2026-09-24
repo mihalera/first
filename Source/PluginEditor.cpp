@@ -817,6 +817,44 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     };
 
     // ---------------------------------------------------------------
+    //  Output-stage switches: polarity invert and auto gain.
+    // ---------------------------------------------------------------
+    polarityButton.setClickingTogglesState (true);
+    polarityButton.setTooltip ("Inverts the output polarity (180-degree phase flip). "
+                               "Use it to correct an inverted source or to align two "
+                               "machines feeding the same bus.");
+    polarityButton.setLookAndFeel (&customLookAndFeel);
+    polarityAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (audioProcessor.parameters, "polarity", polarityButton);
+    addAndMakeVisible (polarityButton);
+
+    autoGainButton.setClickingTogglesState (true);
+    autoGainButton.setTooltip ("Auto gain lets the slow programme compensator restore "
+                               "the level the INPUT trim dialled in. Switch it off to "
+                               "keep the output exactly at the level the chain produced.");
+    autoGainButton.setLookAndFeel (&customLookAndFeel);
+    autoGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (audioProcessor.parameters, "auto_gain", autoGainButton);
+    addAndMakeVisible (autoGainButton);
+
+    // ---------------------------------------------------------------
+    //  Oversampling switch on the panel. The parameter has always been
+    //  host-visible; without a control it could only be reached from the
+    //  DAW's own parameter list, which is not how a premium plugin works.
+    // ---------------------------------------------------------------
+    styleLabel (oversamplingLabel, "OVER", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    addAndMakeVisible (oversamplingLabel);
+    oversamplingBox.addItemList (juce::StringArray { "Off", "2x", "4x" }, 1);
+    oversamplingBox.setTooltip ("Internal rate of the tape engine. 2x and 4x reduce the "
+                                "aliasing of the magnetic shaper; the added filter delay "
+                                "is reported to the host, so DAW PDC compensates.");
+    oversamplingBox.setLookAndFeel (&customLookAndFeel);
+    oversamplingAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "oversampling", oversamplingBox);
+    addAndMakeVisible (oversamplingBox);
+
+    // ---------------------------------------------------------------
     //  Premium workflow bar.
     // ---------------------------------------------------------------
     styleLabel (presetHeadingLabel, "PRESET", 9.0f, paletteFor (false).secondary,
@@ -846,6 +884,89 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         button.setLookAndFeel (&customLookAndFeel);
         addAndMakeVisible (button);
     };
+
+    // ---------------------------------------------------------------
+    //  User presets: the combo lists what is on disk, SAVE opens a name
+    //  dialog and DEL removes the selected file. Every action refreshes
+    //  the list so two instances of the plugin stay honest with each
+    //  other about what exists.
+    // ---------------------------------------------------------------
+    refreshUserPresetList();
+    userPresetBox.setTooltip ("User presets - your own saved machine states. "
+                              "Selecting one recalls it as a single undoable step.");
+    userPresetBox.setLookAndFeel (&customLookAndFeel);
+    userPresetBox.setTextWhenNothingSelected ("USER...");
+    userPresetBox.onChange = [this]
+    {
+        const auto selectedId = userPresetBox.getSelectedId();
+        if (selectedId <= 0)
+            return;
+        const auto name = userPresetBox.getItemText (selectedId - 1);
+        if (name.isEmpty() || name == audioProcessor.getCurrentPresetName())
+            return;
+        if (audioProcessor.applyUserPreset (name))
+        {
+            lastShownUserPreset = name;
+            lastShownPreset = -1;
+            // A user preset clears the factory selection: ID 0 is "no selection".
+            presetBox.setSelectedId (audioProcessor.getLastPresetIndex() + 1,
+                                     juce::dontSendNotification);
+            updateWorkflowButtons();
+        }
+        else
+        {
+            refreshUserPresetList(); // the file vanished; rebuild the list
+        }
+    };
+    addAndMakeVisible (userPresetBox);
+
+    workflowButtonSetup (savePresetButton, "Store the whole machine state as a user "
+                                           "preset you can recall in any session.");
+    workflowButtonSetup (deletePresetButton, "Delete the selected user preset file.");
+    savePresetButton.onClick = [this]
+    {
+        if (savePresetWindow != nullptr)
+        {
+            savePresetWindow->exitModalState (0);
+            savePresetWindow.reset();
+        }
+
+        auto* window = new juce::AlertWindow ("Save user preset",
+                                              "Name this machine state:",
+                                              juce::MessageBoxIconType::NoIcon);
+        window->addTextEditor ("preset_name", audioProcessor.getCurrentPresetName(), "Name:");
+        window->addButton ("Save", 1, juce::KeyPress (juce::KeyPress::returnKey));
+        window->addButton ("Cancel", 0, juce::KeyPress (juce::KeyPress::escapeKey));
+        savePresetWindow.reset (window);
+
+        window->enterModalState (true, juce::ModalCallbackFunction::create ([this, window] (int result)
+        {
+            // Guard on the pointer: an older dialog's asynchronous callback must
+            // never dismiss a newer one.
+            if (savePresetWindow.get() != window)
+                return;
+            const auto chosen = window->getTextEditorContents ("preset_name");
+            savePresetWindow.reset();
+            if (result == 1 && chosen.trim().isNotEmpty())
+            {
+                if (audioProcessor.saveUserPreset (chosen))
+                    refreshUserPresetList();
+            }
+        }), false);
+    };
+    deletePresetButton.onClick = [this]
+    {
+        const auto selectedId = userPresetBox.getSelectedId();
+        if (selectedId <= 0)
+            return;
+        const auto name = userPresetBox.getItemText (selectedId - 1);
+        if (name.isNotEmpty() && audioProcessor.deleteUserPreset (name))
+            refreshUserPresetList();
+    };
+
+    styleLabel (presetBadgeLabel, "", 8.0f, paletteFor (false).secondary,
+                false, juce::Justification::centredLeft);
+    addAndMakeVisible (presetBadgeLabel);
 
     workflowButtonSetup (copyAButton, "Store the current settings in slot A. "
                                       "A is the side the plugin starts on.");
@@ -939,6 +1060,28 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     compareButton.setLookAndFeel (nullptr);
     undoButton.setLookAndFeel (nullptr);
     redoButton.setLookAndFeel (nullptr);
+    polarityButton.setLookAndFeel (nullptr);
+    autoGainButton.setLookAndFeel (nullptr);
+    oversamplingBox.setLookAndFeel (nullptr);
+    savePresetButton.setLookAndFeel (nullptr);
+    deletePresetButton.setLookAndFeel (nullptr);
+
+    if (savePresetWindow != nullptr)
+        savePresetWindow->exitModalState (0);
+    savePresetWindow.reset();
+}
+
+void FirstAudioProcessorEditor::refreshUserPresetList()
+{
+    userPresetBox.clear (juce::dontSendNotification);
+    const auto names = audioProcessor.getUserPresetNames();
+    for (auto i = 0; i < names.size(); ++i)
+        userPresetBox.addItem (names[i], i + 1);
+
+    const auto loaded = audioProcessor.getCurrentPresetName();
+    const auto index = names.indexOf (loaded);
+    userPresetBox.setSelectedItemIndex (index >= 0 ? index : -1, juce::dontSendNotification);
+    lastShownUserPreset = index >= 0 ? loaded : juce::String();
 }
 
 void FirstAudioProcessorEditor::refreshPresetList()
@@ -973,8 +1116,32 @@ void FirstAudioProcessorEditor::updateWorkflowButtons()
     undoButton.setEnabled (undoManager.canUndo());
     redoButton.setEnabled (undoManager.canRedo());
 
+    // The toggle switches restyle themselves here (rather than relying on the
+    // theme lambda inside applyTheme, which is out of scope), so flipping one in
+    // the host or on the panel recolours on the same frame.
+    const auto& palette = paletteFor (darkTheme);
+    for (auto* toggle : { &polarityButton, &autoGainButton })
+    {
+        toggle->setColour (juce::TextButton::buttonColourId, palette.raised);
+        toggle->setColour (juce::TextButton::buttonOnColourId,
+                           toggle == &polarityButton ? palette.needle : palette.accent);
+        toggle->setColour (juce::TextButton::textColourOffId, palette.text);
+        toggle->setColour (juce::TextButton::textColourOnId, palette.readout);
+    }
+
     compareBadgeLabel.setText (dirty ? "A/B EDITED" : "A/B MATCHED",
                                juce::dontSendNotification);
+
+    const auto presetName = audioProcessor.getCurrentPresetName();
+    const auto presetIsDirty = audioProcessor.isPresetDirty();
+    presetBadgeLabel.setText (presetName.isEmpty()
+                                ? "FACTORY STATE"
+                                : (presetIsDirty ? "PRESET: " + presetName + " (EDITED)"
+                                                 : "PRESET: " + presetName),
+                              juce::dontSendNotification);
+    presetBadgeLabel.setColour (juce::Label::textColourId,
+                                presetIsDirty ? paletteFor (darkTheme).accent
+                                              : paletteFor (darkTheme).secondary);
 }
 
 bool FirstAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
@@ -1098,12 +1265,18 @@ void FirstAudioProcessorEditor::applyTheme()
     themeButton.setColour (juce::TextButton::buttonColourId, palette.raised);
     themeButton.setColour (juce::TextButton::textColourOffId, palette.text);
 
+    styleCombo (oversamplingBox);
     styleWorkflowButton (copyAButton, audioProcessor.getActiveCompareSlot() == 0);
     styleWorkflowButton (copyBButton, audioProcessor.getActiveCompareSlot() == 1);
     styleWorkflowButton (compareButton, false);
     styleWorkflowButton (undoButton, false);
     styleWorkflowButton (redoButton, false);
+    styleWorkflowButton (savePresetButton, false);
+    styleWorkflowButton (deletePresetButton, false);
+    styleWorkflowButton (polarityButton, polarityButton.getToggleState());
+    styleWorkflowButton (autoGainButton, autoGainButton.getToggleState());
     presetHeadingLabel.setColour (juce::Label::textColourId, palette.secondary);
+    oversamplingLabel.setColour (juce::Label::textColourId, palette.secondary);
     compareBadgeLabel.setColour (juce::Label::textColourId,
                                  audioProcessor.isCompareDirty() ? palette.accent : palette.secondary);
 
@@ -1413,7 +1586,19 @@ void FirstAudioProcessorEditor::timerCallback()
     if (presetNow != lastShownPreset)
     {
         lastShownPreset = presetNow;
-        presetBox.setSelectedItemIndex (juce::jmax (0, presetNow), juce::dontSendNotification);
+        // Item IDs are index + 1, so 0 means "no selection" - exactly what a user
+        // preset (index -1) should show in the FACTORY combo.
+        presetBox.setSelectedId (presetNow + 1, juce::dontSendNotification);
+        refreshUserPresetList(); // a factory load clears the user-preset selection
+    }
+
+    const auto userPresetNow = audioProcessor.getCurrentPresetName();
+    const auto presetDirtyNow = audioProcessor.isPresetDirty();
+    if (userPresetNow != lastShownUserPreset || presetDirtyNow != lastShownPresetDirty)
+    {
+        lastShownUserPreset = userPresetNow;
+        lastShownPresetDirty = presetDirtyNow;
+        updateWorkflowButtons();
     }
 
     // While the user turns knobs, the live state drifts away from the stored side.
@@ -1473,22 +1658,35 @@ void FirstAudioProcessorEditor::resized()
     speedBox.setBounds (tapeTypeBox.getRight() + 72, layout.deck.getY() + 33, 120, 32);
     bypassButton.setBounds (speedBox.getRight() + 24, layout.deck.getY() + 33, 100, 32);
 
-    // Preset / A/B / undo row: the deck's SECOND line, aligned under the transport
-    // combo boxes and chained left-to-right. The whole chain is ~660 px, which fits
-    // the minimum 780 px panel and always ends well left of the harmonics readout.
+    // Output-stage switches and the oversampling switch chain off the bypass button
+    // on the transport line. Polarity and auto gain are mastering staples, and the
+    // oversampling parameter is host-visible but still needs its own switch on the
+    // panel - previously it could only be changed from the DAW's own list.
+    polarityButton.setBounds (bypassButton.getRight() + 12, layout.deck.getY() + 33, 88, 32);
+    autoGainButton.setBounds (polarityButton.getRight() + 6, layout.deck.getY() + 33, 92, 32);
+    oversamplingLabel.setBounds (autoGainButton.getRight() + 14, layout.deck.getY() + 42, 40, 16);
+    oversamplingBox.setBounds (autoGainButton.getRight() + 56, layout.deck.getY() + 33, 78, 32);
+
+    // Preset / A/B / undo row: the deck's SECOND line. The factory preset combo keeps
+    // its heading on the far left; the USER preset group (combo + SAVE / DEL) follows
+    // it, then the A/B and undo cluster, then the badge.
     presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 84, 46, 16);
-    presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 76, 150, 32);
-    copyAButton.setBounds (presetBox.getRight() + 8, layout.deck.getY() + 76, 76, 32);
-    copyBButton.setBounds (copyAButton.getRight() + 6, layout.deck.getY() + 76, 76, 32);
+    presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 76, 132, 32);
+    userPresetBox.setBounds (presetBox.getRight() + 6, layout.deck.getY() + 76, 130, 32);
+    savePresetButton.setBounds (userPresetBox.getRight() + 6, layout.deck.getY() + 76, 48, 32);
+    deletePresetButton.setBounds (savePresetButton.getRight() + 4, layout.deck.getY() + 76, 42, 32);
+    copyAButton.setBounds (deletePresetButton.getRight() + 10, layout.deck.getY() + 76, 72, 32);
+    copyBButton.setBounds (copyAButton.getRight() + 6, layout.deck.getY() + 76, 72, 32);
     compareButton.setBounds (copyBButton.getRight() + 6, layout.deck.getY() + 76, 70, 32);
     undoButton.setBounds (compareButton.getRight() + 6, layout.deck.getY() + 76, 56, 32);
     redoButton.setBounds (undoButton.getRight() + 6, layout.deck.getY() + 76, 56, 32);
     compareBadgeLabel.setBounds (redoButton.getRight() + 8, layout.deck.getY() + 76, 74, 32);
+    presetBadgeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 101, 460, 12);
 
-    // The hint takes what is left between the bypass button and the readout on the
-    // transport line, up to a sane maximum, and disappears entirely rather than
+    // The hint takes what is left between the oversampling switch and the readout on
+    // the transport line, up to a sane maximum, and disappears entirely rather than
     // colliding on a narrow panel.
-    const auto hintLeft = bypassButton.getRight() + 20;
+    const auto hintLeft = oversamplingBox.getRight() + 20;
     deckHintLabel.setBounds (hintLeft, layout.deck.getY() + 30,
                              juce::jmax (0, juce::jmin (220,
                                   harmonicsLabel.getX() - 24 - hintLeft)), 32);

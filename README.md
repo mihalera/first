@@ -12,7 +12,8 @@ It provides a tape-saturation mastering workflow with:
 - drive and harmonic character controls
 - a **TONE macro** that crossfades the whole machine state (tape stock, head gap, pre-bias, flutter) between the classic slow machine and the fast/hot machine
 - **oversampling** (Off / 2x / 4x) around the nonlinear engine, with the filter delay reported to the host
-- **factory presets** covering the machine's real range, plus A/B compare and full-state undo/redo
+- **factory presets** covering the machine's real range, plus **user presets** saved to disk, A/B compare and full-state undo/redo
+- **polarity invert** and **auto gain** output switches, the two mastering staples
 - tape-type selection
 - speed influences and modulation
 - wow / flutter behavior
@@ -49,7 +50,10 @@ playback EQ tilt -> output glue compressor (always on) -> output trim (dB) -> st
 | Tape Type | J37 / Ampex 456 / Studer A800 / Chrome | Model character (also shapes the glue time constants) |
 | Speed | 7.5 / 15 / 30 ips | Transport speed, affects modulation, top end and glue timing |
 | Oversampling | Off / 2x / 4x | Runs the tape engine at a higher internal rate to reduce aliasing; the added latency is reported to the host |
+| Polarity | on/off | Inverts the output polarity (180-degree flip), after the protection chain and the meters' magnitude path |
+| Auto Gain | on/off | Lets the slow programme compensator restore the level the INPUT trim dialled in; off leaves the output exactly at the level the chain produced |
 | Presets | 12 factory | Loaded from the preset box; each application is one undoable step |
+| User presets | unlimited | SAVE stores the whole machine state as a `.j37tape` file in the user's application-data directory; DEL removes the selected file; recall is one undoable step |
 | A/B compare | two slots | COPY A / COPY B store states, A/B swaps them live; an EDITED badge shows when the sides differ |
 | Undo / Redo | full state | Ctrl+Z / Ctrl+Y (or the panel buttons) step through preset and A/B history |
 
@@ -201,11 +205,32 @@ state, so switching mid-playback is glitch-free.
 
 Twelve factory presets cover the machine's range from gentle bus warmth to slammed drum
 tape. A preset replaces the whole machine state in a single undoable transaction - Ctrl+Z
-brings back exactly what was on screen before. The A/B section stores two complete states:
+brings back exactly what was on screen before.
+
+**User presets** go further: SAVE freezes the whole machine exactly as it stands into a
+`.j37tape` file (an XML state tree, the same format the session stores) under
+`<user app data>/J37 Tape Mastering/Presets`. Files survive plugin updates, are shared by
+every instance, and recall as one undoable step. A badge under the workflow row names the
+loaded preset and lights while the live state has drifted away from it - including when
+host automation moves a parameter.
+
+The A/B section stores two complete states:
 COPY A / COPY B capture the current settings into their slot (the live side mirrors your
 edits continuously), the A/B button swaps the sides live, and an A/B EDITED badge lights
-while the two stored sides differ. Undo history covers preset loads and A/B recalls as
-full-state transactions, so one step moves the whole machine, never half of it.
+while the two stored sides differ. Undo history covers factory and user preset loads and
+A/B recalls as full-state transactions, so one step moves the whole machine, never half of
+it.
+
+## Output-stage switches
+
+Two switches sit at the very end of the chain:
+
+- **POLARITY** flips the output sign (a 180-degree rotation, not a phase shift). It is
+  applied after the limiter and clipper, and the VU/metering path reads magnitudes, so
+  the displays stay honest either way.
+- **AUTO GAIN** gates the slow programme compensator. On (default) the plugin keeps
+  tracking the level the INPUT trim dialled in; off hands full level responsibility to
+  the OUTPUT trim alone, which is how many engineers prefer to ride a mastering chain.
 
 ## Output protection
 

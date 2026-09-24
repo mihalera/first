@@ -131,6 +131,7 @@ private:
     EditorLayout getEditorLayout() const;
 
     void refreshPresetList();
+    void refreshUserPresetList();
     void updateWorkflowButtons();
     bool keyPressed (const juce::KeyPress&) override;
 
@@ -151,23 +152,37 @@ private:
     juce::TextButton bypassButton { "BYPASS" };
     juce::TextButton themeButton { "DARK THEME" };
 
-    // Premium workflow bar: factory presets, A/B compare and undo/redo.
+    // Premium workflow bar: oversampling switch, factory + user presets, A/B compare,
+    // undo/redo, polarity and auto-gain switches.
     juce::ComboBox presetBox;
+    juce::ComboBox userPresetBox;
+    juce::TextButton savePresetButton { "SAVE" };
+    juce::TextButton deletePresetButton { "DEL" };
     juce::TextButton copyAButton { "COPY A" };
     juce::TextButton copyBButton { "COPY B" };
     juce::TextButton compareButton { "A/B" };
     juce::TextButton undoButton { "UNDO" };
     juce::TextButton redoButton { "REDO" };
+    juce::TextButton polarityButton { "POLARITY" };
+    juce::TextButton autoGainButton { "AUTO GAIN" };
+    juce::ComboBox oversamplingBox;
+    juce::Label oversamplingLabel;
     juce::Label presetHeadingLabel;
     juce::Label compareBadgeLabel;
+    juce::Label presetBadgeLabel;
     int lastShownPreset = -2;
     int lastShownSlot = -1;
     bool lastShownDirty = false;
     bool lastShownCanUndo = false;
     bool lastShownCanRedo = false;
+    juce::String lastShownUserPreset;
+    bool lastShownPresetDirty = false;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tapeTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> speedAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversamplingAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> polarityAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoGainAttachment;
 
     juce::Label brandLabel;
     juce::Label titleLabel;
@@ -211,6 +226,8 @@ private:
     std::array<RenderOrb, decorativeOrbCount> renderOrbs {};
     juce::SpinLock renderOrbsLock;
     juce::OpenGLContext openGLContext;
+
+    std::unique_ptr<juce::AlertWindow> savePresetWindow;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessorEditor)
 };

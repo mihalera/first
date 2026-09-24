@@ -429,7 +429,8 @@ private:
       -> playback EQ tilt -> output glue compressor -> final gain compensation
       -> output trim -> stereo width
 */
-class FirstAudioProcessor  : public juce::AudioProcessor
+class FirstAudioProcessor  : public juce::AudioProcessor,
+                             private juce::AudioProcessorValueTreeState::Listener
 {
 public:
     //==============================================================================
@@ -504,6 +505,33 @@ public:
 
     /** The index of the last factory preset the user (or a session load) selected. */
     int getLastPresetIndex() const noexcept { return lastPresetIndex.load (std::memory_order_relaxed); }
+
+    //==============================================================================
+    //  User presets - stored on disk next to the factory list.
+    //
+    //  A factory preset covers the machine's range; a USER preset freezes the whole
+    //  machine exactly as it stands, including anything the factory list has no row
+    //  for. Files live in <user app data>/J37 Tape Mastering/Presets with a .j37tape
+    //  extension, so they survive plugin updates and are shared by every instance.
+    //==============================================================================
+
+    /** Names of the user presets found on disk, sorted alphabetically. */
+    juce::StringArray getUserPresetNames() const;
+
+    /** Saves the current full machine state as a user preset. Returns true on success. */
+    bool saveUserPreset (const juce::String& name);
+
+    /** Recalls a user preset by name as one undoable transaction. Returns true on success. */
+    bool applyUserPreset (const juce::String& name);
+
+    /** Deletes a user preset file from disk. Returns true if the file existed. */
+    bool deleteUserPreset (const juce::String& name);
+
+    /** The user preset currently loaded, or an empty string when none is active. */
+    juce::String getCurrentPresetName() const { return currentPresetName; }
+
+    /** True when the live state has drifted from the loaded (factory or user) preset. */
+    bool isPresetDirty() const noexcept { return presetDirty.load (std::memory_order_relaxed); }
 
     /** Stores the current settings into slot A or B (0 = A, 1 = B). */
     void copyToCompareSlot (int slot);
@@ -638,6 +666,26 @@ private:
     /** Applies a state tree as a single undoable transaction. */
     void applyStateWithUndo (const juce::ValueTree& targetState, const juce::String& transactionName);
 
+    /** The directory user presets are read from and written to (created on demand). */
+    static juce::File getUserPresetDirectory();
+
+    /** Restores the badge to a clean, named preset state (used after a preset load). */
+    void markPresetClean (const juce::String& name)
+    {
+        currentPresetName = name;
+        presetNameNonEmpty.store (! name.isEmpty(), std::memory_order_relaxed);
+        presetDirty.store (false, std::memory_order_relaxed);
+    }
+
+    /** AudioProcessorValueTreeState::Listener: any parameter change dirties the badge. */
+    void parameterChanged (const juce::String&, float) override
+    {
+        // Reads and writes only atomics: APVTS forwards host automation here from the
+        // audio thread, and the badge is advisory state, never control state.
+        if (presetNameNonEmpty.load (std::memory_order_relaxed))
+            presetDirty.store (true, std::memory_order_relaxed);
+    }
+
     /** Rebuilds the A/B dirty flag from the two stored slot states. */
     void updateCompareDirty();
 
@@ -656,6 +704,8 @@ private:
     std::atomic<float>* oversamplingParam = nullptr;
     std::atomic<float>* tapeTypeParam = nullptr;
     std::atomic<float>* speedParam = nullptr;
+    std::atomic<float>* polarityParam = nullptr;
+    std::atomic<float>* autoGainParam = nullptr;
 
     float sampleRate = 44100.0f;
     juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> inputGainSmoothed;
@@ -721,6 +771,14 @@ private:
     // The last factory preset selection, published so the editor combo can restore
     // its display after a preset or session change.
     std::atomic<int> lastPresetIndex { -1 };
+
+    // User-preset bookkeeping: the name of the preset currently loaded (empty when
+    // none is), and whether the live state has drifted away from it since. The flag
+    // is re-armable cheaply because it is only advisory (a UI badge) - the true state
+    // is the parameters themselves.
+    juce::String currentPresetName;
+    std::atomic<bool> presetDirty { false };
+    std::atomic<bool> presetNameNonEmpty { false };
 
     // Per-channel tape state: 3-element hysteresis memory (current, previous, older)
     // plus a 3-element high-frequency memory holding the tape-medium pole, the
