@@ -169,8 +169,8 @@ private:
     // Four metering surfaces, arranged two by two:
     //   top row    - the INPUT and OUTPUT level VU meters
     //   bottom row - one gain-reduction meter per glue compressor stage
-    LevelMeter inputMeter { "INPUT", "level VU" };
-    LevelMeter outputMeter { "OUTPUT", "level VU" };
+    LevelMeter inputMeter { "INPUT", "LEVEL / dBFS" };
+    LevelMeter outputMeter { "OUTPUT", "LEVEL / dBFS" };
     CompressorMeter compressorMeterIn { "COMP IN", "after input trim" };
     CompressorMeter compressorMeterOut { "COMP OUT", "before output trim" };
     bool darkTheme = false;

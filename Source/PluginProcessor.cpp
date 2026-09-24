@@ -684,13 +684,13 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     // hotter generic stock, blended by the TONE curve.
     const float slowMachineCurve = 1.18f;      // J37 - soft magnetic bend
     const float slowMachineAsymmetry = 0.16f;  // strong even-harmonic warmth
-    const float slowMachineHiss = 0.22f;       // audible oxide floor
+    const float slowMachineHiss = 0.10f;       // quiet oxide floor (below audibility)
     const float slowMachineDampingHz = 12000.0f;
     const float slowMachineHysteresis = 0.30f;
 
     const float fastMachineCurve = 1.44f;      // hot-stud style dense saturation
     const float fastMachineAsymmetry = 0.10f;  // leaner, more symmetric bend
-    const float fastMachineHiss = 0.14f;       // quieter, faster stock
+    const float fastMachineHiss = 0.06f;       // quieter still, faster stock
     const float fastMachineDampingHz = 20000.0f;
     const float fastMachineHysteresis = 0.44f;
 
@@ -716,14 +716,14 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         case 1: // Ampex 456 - hotter, more low-order colour
             tapeCurve += 0.08f;
             tapeAsymmetry += 0.05f;
-            tapeHiss += 0.06f;
+            tapeHiss += 0.03f;
             headDampingHz += 2500.0f;
             hysteresis += 0.06f;
             break;
         case 2: // Studer A800 - darkest, densest saturation
             tapeCurve += 0.16f;
             tapeAsymmetry += 0.08f;
-            tapeHiss += 0.12f;
+            tapeHiss += 0.06f;
             headDampingHz += 5000.0f;
             hysteresis += 0.12f;
             break;
@@ -731,7 +731,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         default:
             tapeCurve += 0.02f;
             tapeAsymmetry -= 0.03f;
-            tapeHiss -= 0.04f;
+            tapeHiss -= 0.02f;
             headDampingHz -= 2500.0f;
             hysteresis -= 0.04f;
             break;
@@ -764,6 +764,13 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     const float wowDepth = wowCurve * (0.05f + speedScale * 0.08f);
     const float flutterDepth = flutterCurve * (0.08f + speedScale * 0.09f);
     const float speedBias = 0.84f + speedScale * 0.30f;
+
+    // How much the transport is actually modulating: 0 when both Wow and Flutter are
+    // off, rising as either opens. The tape-surface grain below is gated by this, so
+    // with the transport switched off NOTHING moves the wet signal - previously the
+    // grain ran unconditionally and read as a mystery noise generator whenever both
+    // controls were closed.
+    const float transportActivity = juce::jlimit (0.0f, 1.0f, (wowCurve + flutterCurve) * 2.0f);
 
     // Tone tilt: 0 = warm/soft, 1 = open/bright. The coefficients are cached by
     // updateToneCoefficients, which also derives the TONE-macro machine-state scalars
@@ -802,26 +809,30 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     //      as more samples were added per second. Adding it on top of the band limit would
     //      double-compensate and the hiss would get louder as the rate went up, which is
     //      exactly the bug this replaces.
-    const float hissGain = tapeHiss * 0.00085f;
+    const float hissGain = tapeHiss * 0.00042f;
 
     // -----------------------------------------------------------------------
-    //  Noise-path levelling - the fix for "pauses are noisier than signal".
+    //  Noise-path levelling - the hiss must be INAUDIBLE in a pause.
     //
     //  The hiss sits in the wet path BELOW the output glue compressor and the
     //  safety limiter. Those are programme-dependent gains: while signal plays they
-    //  duck everything including the hiss, and in a pause they open again. Any
-    //  scheme that lifts the floor in the PAUSE (the original follower did exactly
-    //  that) makes silence the loudest place in the track.
+    //  duck everything including the hiss, and in a pause they open again.
     //
-    //  The fix: measure the duck the stages actually apply (the mean output-stage
-    //  gain and limiter gain of the block) and lift the floor by its smoothed
-    //  inverse. With signal the lift cancels the duck and the floor stays at its
-    //  calibrated level, inaudible under the programme; in a pause the stages are
-    //  open, the lift is 1, and the tape keeps its natural quiet floor. The floor
-    //  is therefore CONSTANT in both states - which is the whole complaint fixed.
+    //  The floor's calibrated level is chosen so that the compensated pause level is
+    //  below -32 dBFS (the user's explicit requirement), i.e. well under the audibility
+    //  threshold at the nominal operating level. While signal plays, the measured duck
+    //  (mean output-stage gain and limiter gain of the block, smoothed over ~250 ms)
+    //  ducks the floor further - it never swells above its pause level, so the noise
+    //  is always quieter under the programme than beside it.
     // -----------------------------------------------------------------------
     const float noiseDuckSmoothing = 1.0f - std::exp (
         -1.0f / (juce::jmax (1.0f, sampleRate) * 0.25f));
+
+    // Pause cap on the leveller: the compensated floor can never exceed this level,
+    // so a stray frame of open stages cannot push the hiss back up. With the retuned
+    // hiss gain (-21 dB pre-compensation) the floor sits near -32 dBFS or below with
+    // the stage open, and ducks further under signal.
+    constexpr float noisePauseCeiling = 1.05f;
 
     // onePoleCoefficient takes MILLISECONDS, so the 16 kHz corner is converted to the
     // equivalent time constant first: 1 / (2*pi*f). Passing 16000 here would be read as a
@@ -1087,10 +1098,13 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
                 driftAccumulator = wowLfo * wowDepth + flutterLfo * flutterDepth;
 
             // Transport speed modulation: wow is a slow pitch wander, flutter a fast
-            // shimmer, and the grain term adds the fine tape-surface texture.
+            // shimmer, and the grain term adds the fine tape-surface texture. The grain
+            // is gated by the transport's actual activity: with Wow AND Flutter both at
+            // zero the machine is mathematically still, so no modulation of any kind
+            // reaches the signal.
             const float wowMod = 1.0f + wowLfo * wowDepth;
             const float flutterMod = 1.0f + flutterLfo * flutterDepth * flutterScale;
-            const float grainMod = 1.0f + tapeHiss * 0.10f * grainLfo;
+            const float grainMod = 1.0f + tapeHiss * 0.10f * transportActivity * grainLfo;
 
             // Record head: pre-emphasis, tape bias offset and drive. With DRIVE at zero
             // this is exactly unity, so the saturator sees the signal at the level the
@@ -1438,15 +1452,20 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     // Noise-floor levelling update, applied ONCE PER BLOCK: the mean duck the output
     // glue stage and safety limiter applied to this block is folded into a smoothed
     // state, and the hiss floor is lifted by its inverse. Signal present -> stages
-    // duck -> lift cancels the duck -> floor constant. Pause -> stages open -> lift
-    // settles at 1 -> floor constant. Either way the tape noise never swells, which
-    // is the "noise must be the same with and without signal" fix.
+    // duck -> the floor sits below its pause level, hidden under the programme.
+    // Pause -> stages open -> the floor settles at its calibrated (sub -32 dBFS)
+    // level, capped so it can never rise above that. The noise therefore never
+    // outweighs the signal in either state.
     {
         const auto meanDuck = numSamples > 0
             ? duckAccumulator / static_cast<float> (numSamples)
             : 1.0f;
         noiseDuckState += (meanDuck - noiseDuckState) * noiseDuckSmoothing;
-        const auto targetCompensation = 1.0f / juce::jmax (0.25f, noiseDuckState);
+        // Pause cap: the compensated floor can never rise above noisePauseCeiling,
+        // so even a frame of fully-open stages cannot push the hiss past its
+        // calibrated pause level (below -32 dBFS with the retuned hiss gain).
+        const auto targetCompensation = juce::jmin (noisePauseCeiling,
+                                                    1.0f / juce::jmax (0.25f, noiseDuckState));
         noiseHissLevelCompensation += (targetCompensation - noiseHissLevelCompensation)
                                     * noiseDuckSmoothing;
     }

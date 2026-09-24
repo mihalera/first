@@ -76,7 +76,11 @@ namespace
 
     juce::String formatDb (float value)
     {
-        return juce::String (value, 1) + " dB";
+        // Round to one decimal BEFORE formatting, so a value like -0.04 (which is just
+        // the meter's jitter floor) prints as "0.0 dB" instead of the crooked-looking
+        // "-0.0 dB".
+        const auto rounded = std::round (value * 10.0f) * 0.1f + 0.0f;
+        return juce::String (rounded, 1) + " dB";
     }
 
     void drawScrew (juce::Graphics& g, float x, float y, const UiPalette& palette)
@@ -444,8 +448,13 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
         g.setFont (juce::Font (juce::FontOptions (8.0f * textScale)));
         g.drawText (label, rowArea, juce::Justification::centredLeft, false);
 
+        // The value column uses a monospaced face so digits are all the same width:
+        // with a proportional font the right-aligned numbers kept shifting sideways
+        // frame to frame ("1" is narrower than "8"), which read as the meter being
+        // crooked. With fixed-width digits the column has a clean, stable right edge.
         g.setColour (valueColour);
-        g.setFont (juce::Font (juce::FontOptions (8.5f * textScale, juce::Font::bold)));
+        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                                  8.5f * textScale, juce::Font::bold)));
         g.drawText (formatDb (value), rowArea, juce::Justification::centredRight, false);
     };
 
@@ -455,7 +464,18 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     drawReadoutRow ("RMS", displayedRms, palette.text, 1);
     drawReadoutRow ("LUFS", displayedLufs, palette.accent, 2);
     drawReadoutRow ("VU", displayedVu, palette.text, 3);
-    drawReadoutRow ("MIX 25%", displayedCombined, palette.accent, 4);
+
+    // Hairline on the exact boundary between the four measurement rows and the
+    // summary row (neither row's centred text reaches its own edge), so the average
+    // reads as a summary.
+    g.setColour (palette.border.withAlpha (0.45f));
+    g.drawHorizontalLine (juce::roundToInt (readoutTop) + 4 * rowHeight,
+                          6.0f, static_cast<float> (getWidth()) - 6.0f);
+
+    // The summary row drives the needle: it is the equal-weighted average of the four
+    // views above (the old "MIX 25%" caption wrongly suggested it had something to do
+    // with the MIX control).
+    drawReadoutRow ("AVG", displayedCombined, palette.accent, 4);
 }
 //==============================================================================
 FirstAudioProcessorEditor::CompressorMeter::CompressorMeter (juce::String meterTitle,
@@ -556,8 +576,11 @@ void FirstAudioProcessorEditor::CompressorMeter::paint (juce::Graphics& g)
     const auto readoutY = getHeight() - juce::roundToInt (42.0f * textScale);
     const auto reducing = displayedDb < -0.05f;
     g.setColour (reducing ? palette.accent : palette.secondary);
-    g.setFont (juce::Font (juce::FontOptions (10.0f * textScale, juce::Font::bold)));
-    g.drawText (juce::String (displayedDb, 1) + " dB",
+    g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                              10.0f * textScale, juce::Font::bold)));
+    // Same rounding-then-printing rule as the level meters' formatDb: near-zero
+    // reductions must read "0.0 dB", never "-0.0 dB".
+    g.drawText (formatDb (displayedDb),
                 juce::Rectangle<int> (2, readoutY, getWidth() - 4, 16),
                 juce::Justification::centred, false);
 
@@ -695,7 +718,12 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         slider.setTooltip ("Slow movement gives fine control. Hold Shift to adjust precisely. "
                            "Use the wheel for small steps. Double-click to reset.");
 
-        if (i == 0 || i == 7)
+        // Index 8 is OUTPUT, not 7: the control order is INPUT, DRIVE, BIAS, BRIGHT,
+        // TONE, WOW, FLUTTER, MIX, OUTPUT, WIDTH. The old check (i == 7) handed MIX
+        // the -32..+32 dB range and suffix - which is why the Mix knob displayed dB -
+        // and left OUTPUT stuck in the 0..1 percentage branch, where its slider range
+        // clipped the real +/-32 dB parameter down to 0..1.
+        if (i == 0 || i == 8)
         {
             // Input and Output are both calibrated decibel trims over the same range.
             slider.setRange (minStageDb, maxStageDb, 0.1);
