@@ -309,20 +309,29 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     const auto track = bounds.withTrimmedTop (labelHeight)
                             .withTrimmedLeft (4.0f).withTrimmedRight (4.0f);
 
-    // Status LED in the label band's RIGHT corner. The caption is drawn in the band
-    // with the LED's footprint removed, so the two can never overlap no matter how
-    // long the caption is.
-    const auto ledCentre = juce::Point<float> (bounds.getRight() - 7.0f, labelBand.getCentreY());
+    // Status lamp, recessed into the TOP-RIGHT corner of the switch. It gets a dark
+    // bezel so it reads as a lamp set into the panel rather than a loose dot floating
+    // next to the text, and it sits 8 px in from the border so it is never flush with
+    // the rounded edge.
+    const auto ledCentre = juce::Point<float> (bounds.getRight() - 8.0f,
+                                                labelBand.getCentreY());
+    g.setColour (palette.readout.darker (0.35f));
+    g.fillEllipse (ledCentre.x - 3.5f, ledCentre.y - 3.5f, 7.0f, 7.0f);
     if (isOn)
     {
         g.setColour (palette.status.withAlpha (0.22f));
         g.fillEllipse (ledCentre.x - 4.0f, ledCentre.y - 4.0f, 8.0f, 8.0f);
     }
     g.setColour (isOn ? palette.status : palette.knobEdge.withAlpha (0.45f));
-    g.fillEllipse (ledCentre.x - 2.0f, ledCentre.y - 2.0f, 4.0f, 4.0f);
+    g.fillEllipse (ledCentre.x - 1.8f, ledCentre.y - 1.8f, 3.6f, 3.6f);
 
-    // Function name, engraved in the part of the band the LED cannot reach.
-    const auto captionBand = labelBand.withTrimmedRight (13.0f);
+    // The function name is centred in the WHOLE label band, not in a band with the
+    // lamp's footprint sliced off one side. Trimming the right edge left the caption
+    // sitting about 6 px left of the switch's true centre, which is what made the label
+    // and the lamp look crookedly placed. At the three real captions (BYPASS, POLARITY,
+    // AUTO GAIN) the centred text clears the lamp by at least 15 px, so centring the
+    // caption cannot make them collide.
+    const auto captionBand = labelBand;
     g.setColour (palette.text.withAlpha (0.92f));
     g.setFont (shrinkingFont (button.getButtonText().toUpperCase(), 8.0f,
                                juce::Font::bold, captionBand.getWidth()));
@@ -553,6 +562,19 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
                                               centreY - radius - 10.0f,
                                               (radius + 8.0f) * 2.0f,
                                               radius + 16.0f);
+
+    // The whole dial is clipped to the face it belongs to. This is the guarantee that
+    // nothing drawn here can ever continue past the dial box and into the readout rows
+    // below: whatever the gauge geometry does, the PEAK/RMS/LUFS/VU/AVG rows are simply
+    // unreachable. The box itself ends exactly on the face's bottom edge, so the clip
+    // never cuts the visible instrument. (JUCE 9 removed GraphicsStateSaver; saveState /
+    // restoreState are the pair it wrapped, and the restore is called explicitly below.)
+    g.saveState();
+    // 1 px of slack so rounding the float face to an integer clip cannot shave the
+    // bottom border off the dial's own rounded box. The readout rows start 4 px below
+    // the face, so this still leaves 3 px of guaranteed clearance.
+    g.reduceClipRegion (face.toNearestInt().reduced (1, 1));
+
     g.setColour (palette.knobEdge.withAlpha (0.55f));
     g.fillRoundedRectangle (dial, 4.0f);
     g.setColour (palette.gaugeFace);
@@ -564,9 +586,20 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // separate them, so they are drawn from an adaptive count rather than always ten.
     const auto tickCount = radius > 34.0f ? 10 : 6;
 
+    // The gauge arc, and the reason its angles are NOT the startAngle/endAngle the tick
+    // loop below uses. JUCE's arc convention is 0 radians = 12 o'clock with the angle
+    // increasing clockwise - Point::getPointOnCircumference is (x + r*sin a, y - r*cos a)
+    // - so the top half, left over the top to the right, is 3/2*pi to 5/2*pi. Handing
+    // addCentredArc the tick loop's pi..2*pi put the sweep on the WRONG half: it began
+    // at the BOTTOM of the dial, bulged out to the left and ended at the top, which is
+    // the black half-circle that hung below the meter and ran through the readout rows.
+    // 3/2*pi -> 5/2*pi traces the same left -> top -> right path that the ticks and the
+    // needle describe with (cos a, sin a) over pi..2*pi, so all three agree exactly.
     juce::Path scaleArc;
     scaleArc.addCentredArc (centreX, centreY, radius, radius, 0.0f,
-                            startAngle, endAngle, true);
+                            juce::MathConstants<float>::pi * 1.5f,
+                            juce::MathConstants<float>::pi * 2.5f,
+                            true);
     g.setColour (palette.gaugeInk.withAlpha (0.8f));
     g.strokePath (scaleArc, juce::PathStrokeType (1.1f));
 
@@ -617,6 +650,7 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     g.drawLine (centreX, centreY, needleEnd.x, needleEnd.y, 1.5f);
     g.setColour (palette.accent);
     g.fillEllipse (centreX - 4.0f, centreY - 4.0f, 8.0f, 8.0f);
+    g.restoreState();   // end of the dial clip - the readout rows below draw unclipped
 
     // -------------------------------------------------------------------
     //  Four-way readout.

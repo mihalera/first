@@ -835,6 +835,21 @@ void FirstAudioProcessor::resetSampleRateDependentState()
     toneShelfGainSmoothed.setCurrentAndTargetValue (toneShelfGain);
     preDriveGainSmoothed.reset (sampleRate, 0.02);
     preDriveGainSmoothed.setCurrentAndTargetValue (preDriveGain);
+    // The next two are seeded from their source, which is a class member and is
+    // therefore visible in this scope. The remaining ramps are only re-timed: their sources
+    // (driveAmount, hfPostCoefficient, headGapCoefficient, hissGain) are per-BLOCK
+    // locals inside processTapeEngine, so they do not exist in this scope. Resetting
+    // without seeding is exactly right for them - the value survives and the next
+    // block's setTargetValue ramps into it, which is the glide we want after a rate
+    // change anyway.
+    toneLpSmoothed.reset (sampleRate, 0.02);
+    toneLpSmoothed.setCurrentAndTargetValue (toneLpAc);
+    flutterScaleSmoothed.reset (sampleRate, 0.02);
+    flutterScaleSmoothed.setCurrentAndTargetValue (flutterScale);
+    driveAmountSmoothed.reset (sampleRate, 0.02);
+    hfPostSmoothed.reset (sampleRate, 0.02);
+    headGapSmoothed.reset (sampleRate, 0.02);
+    hissGainSmoothed.reset (sampleRate, 0.02);
 
     // The oversampling filters hold per-rate state (their half-band coefficients are
     // tuned to the incoming rate), so they must be flushed on a rate change or the
@@ -1335,6 +1350,16 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //      exactly the bug this replaces.
     const float hissGain = tapeHiss * 0.00042f;
 
+    // Every control-derived coefficient the block needs is in scope by now, so the
+    // ramps are fed once here and read per sample with getCurrentValue(): no
+    // multiplier and no pole in the wet path can step from one block to the next.
+    driveAmountSmoothed.setTargetValue (driveAmount);
+    toneLpSmoothed.setTargetValue (toneLpAc);
+    hfPostSmoothed.setTargetValue (hfPostCoefficient);
+    headGapSmoothed.setTargetValue (headGapCoefficient);
+    flutterScaleSmoothed.setTargetValue (flutterScale);
+    hissGainSmoothed.setTargetValue (hissGain);
+
     // -----------------------------------------------------------------------
     //  Noise-path levelling - the hiss must be INAUDIBLE in a pause.
     //
@@ -1634,7 +1659,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // zero the machine is mathematically still, so no modulation of any kind
             // reaches the signal.
             const float wowMod = 1.0f + wowLfo * wowDepth;
-            const float flutterMod = 1.0f + flutterLfo * flutterDepth * flutterScale;
+            const float flutterMod = 1.0f + flutterLfo * flutterDepth
+                                       * flutterScaleSmoothed.getCurrentValue();
             const float grainMod = 1.0f + tapeHiss * 0.10f * transportActivity * grainLfo;
 
             // Record head: pre-emphasis, tape bias offset and drive. With DRIVE at zero
@@ -1642,8 +1668,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // user dialled in rather than a pre-boosted version of it. The TONE macro
             // adds the slow-machine pre-bias on top, scaled by the speed's own bias so
             // the two controls multiply naturally instead of fighting.
-            const float preDrive = x * (1.0f + driveAmount * 1.2f * speedBias
-                                          * preDriveGainSmoothed.getCurrentValue());
+            const float preDrive = x * (1.0f + driveAmountSmoothed.getCurrentValue() * 1.2f
+                                          * speedBias * preDriveGainSmoothed.getCurrentValue());
             // Magnetic hysteresis with memory - the core of the tape sound. The
             // squeeze term in the slope is the compressor coupling: dense, compressed
             // programme literally thickens the magnetic curve, not just its level.
@@ -1671,17 +1697,17 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
             // Tape is a low-pass medium: the faster the tape and the brighter the
             // tone setting, the more top end survives.
-            highFreqMemory[1] += (shapedCore - highFreqMemory[1]) * toneLpAc;
+            highFreqMemory[1] += (shapedCore - highFreqMemory[1]) * toneLpSmoothed.getCurrentValue();
             const float afterTapeLoss = highFreqMemory[1];
 
             // Per-model head damping (the headDampingHz each TAPE TYPE sets, scaled
             // by the transport speed). This pole used to be computed and then never
             // applied - the formulas' damping figures were a no-op.
-            highFreqMemory[2] += (afterTapeLoss - highFreqMemory[2]) * hfPostCoefficient;
+            highFreqMemory[2] += (afterTapeLoss - highFreqMemory[2]) * hfPostSmoothed.getCurrentValue();
             const float dampedLoss = highFreqMemory[2];
 
             // Playback head gap loss: the TONE macro's crossfade of the head itself.
-            highFreqMemory[0] += (dampedLoss - highFreqMemory[0]) * headGapCoefficient;
+            highFreqMemory[0] += (dampedLoss - highFreqMemory[0]) * headGapSmoothed.getCurrentValue();
             const float headLoss = highFreqMemory[0];
             highFreqMemory[1] = afterTapeLoss;
 
@@ -1709,7 +1735,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // 44.1 kHz and 192 kHz and it reads as tape noise instead of digital hiss. The
             // filter state is per channel so the two sides stay uncorrelated.
             auto& hissLowPass = channel == 0 ? hissLowPassL : hissLowPassR;
-            const float rawHiss = nextNoise (noiseState) * hissGain;
+            const float rawHiss = nextNoise (noiseState) * hissGainSmoothed.getCurrentValue();
             hissLowPass += (rawHiss - hissLowPass) * hissBandLimit;
 
             // The band limit costs most of the noise power, so the gain is compensated by
