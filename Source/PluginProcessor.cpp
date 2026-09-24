@@ -852,13 +852,14 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                                                (int) block.getNumChannels()));
 
     // Clear any output-only channels (mono->stereo hosts) the host expects filled.
-    // JUCE 9's AudioBlock::clear takes (channel, length) - it always starts at
-    // sample 0, so no offset argument exists to pass.
+    // AudioBlock::clear() in JUCE 9 takes no arguments and clears EVERY channel,
+    // so the per-channel primitive is FloatVectorOperations::clear directly -
+    // exactly what AudioBlock's own clearInternal() calls.
     for (int channel = activeInputChannels;
          channel < juce::jmin (2, (int) block.getNumChannels());
          ++channel)
-        block.clear (static_cast<std::size_t> (channel),
-                     static_cast<std::size_t> (juce::jmax (0, numSamples)));
+        juce::FloatVectorOperations::clear (
+            block.getChannelPointer (static_cast<std::size_t> (channel)), numSamples);
 
     // -------------------------------------------------------------------------
     //  Bypass: the parameter is ramped, so the plugin can be switched in and out
