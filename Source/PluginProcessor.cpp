@@ -829,27 +829,24 @@ void FirstAudioProcessor::resetSampleRateDependentState()
     if (toneParam != nullptr)
         updateToneCoefficients (toneParam->load(), sampleRate);
 
-    // Start the two control-derived gain ramps from the coefficients that were just
-    // rebuilt, so a rate change or a preset load glides into them instead of stepping.
+    // Re-time the coefficient ramps for the new rate. The playback poles start from
+    // neutral non-zero values, so the first wet block is audible while the exact
+    // per-block targets are reached through the normal 20 ms ramps.
     toneShelfGainSmoothed.reset (sampleRate, 0.02);
     toneShelfGainSmoothed.setCurrentAndTargetValue (toneShelfGain);
     preDriveGainSmoothed.reset (sampleRate, 0.02);
     preDriveGainSmoothed.setCurrentAndTargetValue (preDriveGain);
-    // The next two are seeded from their source, which is a class member and is
-    // therefore visible in this scope. The remaining ramps are only re-timed: their sources
-    // (driveAmount, hfPostCoefficient, headGapCoefficient, hissGain) are per-BLOCK
-    // locals inside processTapeEngine, so they do not exist in this scope. Resetting
-    // without seeding is exactly right for them - the value survives and the next
-    // block's setTargetValue ramps into it, which is the glide we want after a rate
-    // change anyway.
     toneLpSmoothed.reset (sampleRate, 0.02);
     toneLpSmoothed.setCurrentAndTargetValue (toneLpAc);
     flutterScaleSmoothed.reset (sampleRate, 0.02);
     flutterScaleSmoothed.setCurrentAndTargetValue (flutterScale);
+
     driveAmountSmoothed.reset (sampleRate, 0.02);
     hfPostSmoothed.reset (sampleRate, 0.02);
     headGapSmoothed.reset (sampleRate, 0.02);
     hissGainSmoothed.reset (sampleRate, 0.02);
+    shaperDriveSmoothed.reset (sampleRate, 0.02);
+    shaperAsymmetrySmoothed.reset (sampleRate, 0.02);
 
     // The oversampling filters hold per-rate state (their half-band coefficients are
     // tuned to the incoming rate), so they must be flushed on a rate change or the
@@ -1149,10 +1146,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto wowCurve = std::pow (wow, 1.55f);
     const auto flutterCurve = std::pow (flutter, 1.45f);
 
-    // MIX is the one control that must stay linear: it is a plain dry/wet crossfade,
-    // and any curve on it would only make the blend disagree with its own readout.
-    const auto mixCurve = mix;
-
+    // MIX carries no shaping curve of its own: its smoothed value IS the blend
+    // position, converted to the raised-cosine dry/wet gains per sample below. Any
+    // extra curve on it would only make the blend disagree with its own readout.
     const auto twoPi = juce::MathConstants<float>::twoPi;
     const auto speedScale = (speed == 0) ? 0.76f : (speed == 1) ? 1.0f : 1.34f;
     const auto wowFreq = (0.15f + wowCurve * 1.36f) * speedScale;
@@ -1282,8 +1278,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // and at 100 % it is fully through the tape path. Previously the wet side had a
     // 12 % floor and the dry side was never fully removed, so MIX could not reach a
     // clean bypass or a fully saturated signal and its travel felt dead at the ends.
-    const float wetGain = mixCurve;
-    const float dryGain = 1.0f - mixCurve;
+    // The gains themselves are derived per sample further down, from the smoothed MIX.
     const float wowDepth = wowCurve * (0.05f + speedScale * 0.08f);
     const float flutterDepth = flutterCurve * (0.08f + speedScale * 0.09f);
     const float speedBias = 0.84f + speedScale * 0.30f;
@@ -1579,9 +1574,22 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         // Per-sample reference power for the final compensation, reset each iteration.
         referenceBlockPower = 0.0f;
 
-        // The dry/wet blend is handled per channel below, so the smoothed mix value
-        // only has to be advanced once per sample to stay in step with the others.
-        mixSmoothed.getNextValue();
+        // The dry/wet blend is handled per channel below, so the smoothed MIX is read
+        // once per SAMPLE here and the gains are derived from it.
+        //
+        // Two defects are fixed together. First, this line used to advance the smoother
+        // and throw the value away while the crossfade used the raw per-block
+        // parameter - so MIX itself was a hard step on every block boundary, the last
+        // control that could still crackle. Second, the crossfade was linear
+        // (dry + wet = 1) while the comment beside it promised an equal-gain fade with
+        // no dip; for two mostly uncorrelated signals a linear fade loses about 3 dB in
+        // the middle of the travel. A raised-cosine fade holds the pair's total power
+        // constant, sits at exactly 0 dB on BOTH ends (MIX 0 is pure dry, MIX 1 is pure
+        // wet) and has no step in its slope, so neither end of the control can collapse.
+        const auto mixNow = juce::jlimit (0.0f, 1.0f, mixSmoothed.getNextValue());
+        const auto mixAngle = mixNow * juce::MathConstants<float>::halfPi;
+        const auto dryGain = std::sin (mixAngle);
+        const auto wetGain = std::cos (mixAngle);
 
         std::array<float, 2> tapeOutput {};
 
@@ -1785,9 +1793,10 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             dcX = deEmphasised;
             dcY = dcBlocked;
 
-            // Equal-gain crossfade between the dry input and the fully processed tape
-            // signal. The wet path is level-matched in finalOutputGain, so 0 % is a
-            // transparent dry signal and 100 % is all tape, with no dip in the middle.
+            // Raised-cosine crossfade between the dry input and the fully processed
+            // tape signal, driven by the smoothed MIX. 0 % is a transparent dry signal
+            // and 100 % is all tape, both at unity, with the level held across the
+            // middle of the travel.
             const float wetMix = dcBlocked * wetGain;
             const float dryMix = x * dryGain;
             tapeOutput[static_cast<std::size_t> (channel)] = dryMix + wetMix;

@@ -13,8 +13,116 @@
 #include <array>
 #include <atomic>
 #include <cmath>
+#include <cstdint>
 #include <map>
 #include <memory>
+
+//==============================================================================
+/**
+    A sample-clock adapter for JUCE's SmoothedValue.
+
+    The engine uses one coefficient pair for both channels, so every ramp must advance
+    once per SAMPLE, not once per channel and not never. JUCE's getCurrentValue() is a
+    peek; it does not advance the ramp. The first smoother in each frame advances the
+    shared clock, and the other smoothers advance lazily on their first read in that
+    frame. This preserves the existing call sites while making their old
+    getCurrentValue() intent explicit and sample-accurate.
+*/
+struct SampleClock
+{
+    std::uint64_t sample = 0;
+};
+
+class SampleSmoother
+{
+public:
+    explicit SampleSmoother (SampleClock& clockToUse, bool startsSample = false,
+                             bool invertOutput = false, float initialValue = 0.0f)
+        : clock (clockToUse), startsSample (startsSample), invertOutput (invertOutput),
+          smoother (initialValue)
+    {
+    }
+
+    void reset (double sampleRateToUse, double smoothingSeconds) noexcept
+    {
+        smoother.reset (sampleRateToUse, smoothingSeconds);
+        lastSample = clock.sample;
+        snapNextTarget = true;
+    }
+
+    void setCurrentAndTargetValue (float value) noexcept
+    {
+        smoother.setCurrentAndTargetValue (value);
+        lastSample = clock.sample;
+        snapNextTarget = false;
+    }
+
+    void setTargetValue (float value) noexcept
+    {
+        // The first target after a rate reset is seeded at its exact value. Without
+        // this, a coefficient that starts at zero (notably the playback poles) can
+        // leave the first wet frame silent while its 20 ms ramp is still in progress.
+        if (snapNextTarget)
+        {
+            smoother.setCurrentAndTargetValue (value);
+            snapNextTarget = false;
+        }
+        else
+        {
+            smoother.setTargetValue (value);
+        }
+    }
+
+    float getNextValue() noexcept
+    {
+        if (startsSample)
+        {
+            ++clock.sample;
+            lastSample = clock.sample;
+        }
+        else
+        {
+            lastSample = clock.sample;
+        }
+
+        const auto value = smoother.getNextValue();
+        return invertOutput ? 1.0f - value : value;
+    }
+
+    float getCurrentValue() noexcept
+    {
+        if (lastSample != clock.sample)
+        {
+            lastSample = clock.sample;
+            const auto value = smoother.getNextValue();
+            return invertOutput ? 1.0f - value : value;
+        }
+
+        const auto value = smoother.getCurrentValue();
+        return invertOutput ? 1.0f - value : value;
+    }
+
+    bool isSmoothing() const noexcept
+    {
+        return smoother.isSmoothing();
+    }
+
+    // The processing loop already consumed every sample. Advancing here would apply
+    // the ramp a second time and turn it into a block-rate zipper.
+    void skip (int) noexcept
+    {
+    }
+
+private:
+    using Smoother = juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear>;
+
+    SampleClock& clock;
+    bool startsSample = false;
+    bool invertOutput = false;
+    Smoother smoother;
+    std::uint64_t lastSample = 0;
+    bool snapNextTarget = true;
+};
 
 //==============================================================================
 /**
@@ -709,11 +817,17 @@ private:
     std::atomic<float>* autoGainParam = nullptr;
 
     float sampleRate = 44100.0f;
-    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> inputGainSmoothed;
-    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> outputGainSmoothed;
-    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> mixSmoothed;
-    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> widthSmoothed;
-    juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear> bypassSmoothed;
+    // Every smoother below is advanced exactly once at the top of each sample frame.
+    // The values are then reused for both channels, so a stereo block cannot advance
+    // a control ramp twice or leave it frozen at its initial coefficient.
+    SampleClock sampleClock;
+    SampleSmoother inputGainSmoothed { sampleClock, true };
+    SampleSmoother outputGainSmoothed { sampleClock };
+    // The raised-cosine expression assigns sin() to dry and cos() to wet, so the
+    // user-facing MIX ramp is presented inverted: 0 % remains dry and 100 % wet.
+    SampleSmoother mixSmoothed { sampleClock, false, true };
+    SampleSmoother widthSmoothed { sampleClock };
+    SampleSmoother bypassSmoothed { sampleClock };
 
     std::atomic<float> inputPeakLevel { 0.0f };
     std::atomic<float> inputRmsLevel { 0.0f };
@@ -827,8 +941,8 @@ private:
     // straight into the per-sample loop put a discontinuity into the waveform on every
     // block boundary while the knob was dragged - that was the crackle. These ramp over
     // 20 ms instead, so the control still feels immediate but never steps the signal.
-    juce::SmoothedValue<float> toneShelfGainSmoothed { 1.0f };
-    juce::SmoothedValue<float> preDriveGainSmoothed { 1.0f };
+    SampleSmoother toneShelfGainSmoothed { sampleClock, false, false, 1.0f };
+    SampleSmoother preDriveGainSmoothed { sampleClock, false, false, 1.0f };
 
     // The two arguments that shape the magnetic curve itself. BIAS was the loudest
     // control to move because its asymmetry term is a DC OFFSET added straight into the
@@ -837,8 +951,8 @@ private:
     // then has to swallow the resulting step. That is why BIAS thumped far harder than
     // any linear control. Both arguments ramp over 20 ms like the other gains, so the
     // curve morphs continuously instead of jumping.
-    juce::SmoothedValue<float> shaperDriveSmoothed { 0.0f };
-    juce::SmoothedValue<float> shaperAsymmetrySmoothed { 0.0f };
+    SampleSmoother shaperDriveSmoothed { sampleClock };
+    SampleSmoother shaperAsymmetrySmoothed { sampleClock };
 
     // The remaining control-derived coefficients of the tape path, ramped for the same
     // reason. Smoothing only the two shaper arguments was not enough: DRIVE still
@@ -846,12 +960,14 @@ private:
     // pole (toneLpAc), TONE still stepped both playback poles and the flutter depth,
     // and the hiss level still jumped. Each of those is a step in a multiplier or a
     // filter pole on every block boundary, which is the crackle that survived.
-    juce::SmoothedValue<float> driveAmountSmoothed { 0.0f };
-    juce::SmoothedValue<float> toneLpSmoothed { 0.0f };
-    juce::SmoothedValue<float> hfPostSmoothed { 0.0f };
-    juce::SmoothedValue<float> headGapSmoothed { 0.0f };
-    juce::SmoothedValue<float> flutterScaleSmoothed { 1.0f };
-    juce::SmoothedValue<float> hissGainSmoothed { 0.0f };
+    SampleSmoother driveAmountSmoothed { sampleClock };
+    SampleSmoother toneLpSmoothed { sampleClock };
+    // A neutral mid-range initial value keeps the first wet block audible while the
+    // rate- and parameter-dependent poles settle to their exact targets.
+    SampleSmoother hfPostSmoothed { sampleClock, false, false, 0.5f };
+    SampleSmoother headGapSmoothed { sampleClock, false, false, 0.5f };
+    SampleSmoother flutterScaleSmoothed { sampleClock, false, false, 1.0f };
+    SampleSmoother hissGainSmoothed { sampleClock };
 
     // Per-instance tape noise generator. Kept as an object member rather than a
     // thread_local static so that instances never share one stream and the output
