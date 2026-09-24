@@ -49,28 +49,45 @@ jobs:
         run: |
           cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
 
-      # CMake writes artefacts to <build>/first_artefacts/<Config>/. On Windows
-      # this is a proper VST3 *bundle* - first.vst3/Contents/x86_64-win/first.vst3 -
-      # not the flattened file the Projucer produced, so the old flatten-vst3.cmd
-      # step is gone along with it.
+      # JUCE's CMake build writes the bundles to
+      #   <build>/first_artefacts/<Config>/<FORMAT>/<PRODUCT_NAME>.<ext>
+      # i.e. the format is a subfolder of the config folder and the bundle is named
+      # after PRODUCT_NAME, not after the CMake target. Asking for a hard-coded
+      # "first.vst3" therefore fails even on a perfectly good build, so the bundle
+      # is located by pattern instead. On Windows this is a proper VST3 *bundle*
+      # (first.vst3/Contents/x86_64-win/first.vst3), not the flattened file the
+      # retired Projucer project produced.
       - name: Verify the VST3 bundle was produced
+        id: vst3
         shell: pwsh
         run: |
-          $bundle = "build/first_artefacts/${{ env.BUILD_TYPE }}/first.vst3"
-          if (!(Test-Path $bundle)) {
-              Write-Error "Expected VST3 bundle not found: $bundle"
+          $bundle = Get-ChildItem -Path "build/first_artefacts/${{ env.BUILD_TYPE }}" `
+                                 -Recurse -Filter "*.vst3" -Directory |
+                       Sort-Object FullName |
+                       Select-Object -First 1
+          if ($null -eq $bundle) {
+              Write-Error "No .vst3 bundle found under build/first_artefacts/${{ env.BUILD_TYPE }}"
               Get-ChildItem -Recurse build/first_artefacts -ErrorAction SilentlyContinue |
                   Select-Object -First 40 FullName
               exit 1
           }
-          Write-Host "Bundle contents:"
-          Get-ChildItem -Recurse $bundle | Select-Object FullName
+          $binary = Get-ChildItem -Path $bundle.FullName -Recurse -Filter "*.vst3" -File |
+                       Select-Object -First 1
+          if ($null -eq $binary) {
+              Write-Error "VST3 bundle $($bundle.FullName) contains no .vst3 binary"
+              Get-ChildItem -Recurse $bundle.FullName | Select-Object FullName
+              exit 1
+          }
+          Write-Host "Bundle:     $($bundle.FullName)"
+          Write-Host "Binary:     $($binary.FullName)"
+          "bundle=$($bundle.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "binary=$($binary.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Upload VST3 Artifact
         uses: actions/upload-artifact@v4
         with:
           name: J37-TapeSaturator-VST3-Windows
-          path: build/first_artefacts/${{ env.BUILD_TYPE }}/first.vst3
+          path: ${{ steps.vst3.outputs.bundle }}
           if-no-files-found: error
 
   # ============================================================================
@@ -99,12 +116,18 @@ jobs:
       # - is built for both architectures in one pass. Passing -arch at the
       # xcodebuild level would only affect the top-level target.
       #
+      # The Xcode generator is required, not merely preferred: JUCE only adds the
+      # AUv3 target when the generator is Xcode (JUCEModuleSupport.cmake,
+      # _juce_get_platform_plugin_kinds). With the default Unix Makefiles
+      # generator the AUv3 format is silently dropped from the build, so a
+      # "Build all" run produces VST3 and AU only and first.appex never appears.
+      #
       # Code signing is disabled: this is a CI build with no Developer ID
       # certificate. See README "Signing and notarisation" for what a
       # distributable build needs instead.
       - name: Configure CMake
         run: |
-          cmake -S . -B build \
+          cmake -S . -B build -G Xcode \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
             -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
@@ -115,34 +138,55 @@ jobs:
         run: |
           cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
 
+      # JUCE's CMake build lays the bundles out as
+      #   <build>/first_artefacts/<Config>/<FORMAT>/<PRODUCT_NAME>.<extension>
+      # so the paths are Release/VST3/*.vst3, Release/AU/*.component and
+      # Release/AUv3/*.appex - not first.vst3 directly inside Release/. They are
+      # located by pattern so a future PRODUCT_NAME change cannot silently break
+      # the check. Each located bundle is exported to $RUNNER_TEMP/bundles.txt for
+      # the following steps.
       - name: Verify all three formats were produced
         run: |
-          set -e
+          set -euo pipefail
           BASE="build/first_artefacts/${{ env.BUILD_TYPE }}"
+          : > "$RUNNER_TEMP/bundles.txt"
           missing=0
 
-          for artefact in first.vst3 first.component first.appex; do
-            if [ ! -e "$BASE/$artefact" ]; then
-              echo "MISSING: $BASE/$artefact"
+          locate() {
+            # $1 = format subfolder, $2 = extension
+            local found
+            found=$(find "$BASE/$1" -maxdepth 1 -name "*.$2" -print -quit 2>/dev/null || true)
+            if [ -z "$found" ]; then
+              echo "MISSING: $BASE/$1/*.$2"
               missing=1
-            else
-              echo "OK: $artefact"
+              return 0
             fi
-          done
+            echo "OK: $1 -> $found"
+            echo "$found" >> "$RUNNER_TEMP/bundles.txt"
+          }
+
+          locate VST3 vst3
+          locate AU component
+          locate AUv3 appex
 
           if [ "$missing" -ne 0 ]; then
             echo "--- what was actually built ---"
-            find build/first_artefacts -maxdepth 2 2>/dev/null || true
+            find build/first_artefacts -maxdepth 3 2>/dev/null || true
             exit 1
           fi
 
       - name: Verify the binaries are universal
         run: |
-          set -e
-          BASE="build/first_artefacts/${{ env.BUILD_TYPE }}"
+          set -euo pipefail
 
           check() {
-            local binary="$1"
+            local bundle="$1"
+            local binary
+            binary=$(find "$bundle/Contents/MacOS" -maxdepth 1 -type f -print -quit)
+            if [ -z "$binary" ]; then
+              echo "No executable inside $bundle" >&2
+              exit 1
+            fi
             echo "--- $binary ---"
             lipo -info "$binary" | tee /tmp/lipo.txt
             # Both slices must be present. A single-arch build would install but
@@ -151,24 +195,21 @@ jobs:
             grep -q "x86_64" /tmp/lipo.txt
           }
 
-          check "$BASE/first.vst3/Contents/MacOS/first"
-          check "$BASE/first.component/Contents/MacOS/first"
-          check "$BASE/first.appex/Contents/MacOS/first"
+          while IFS= read -r bundle; do
+            check "$bundle"
+          done < "$RUNNER_TEMP/bundles.txt"
 
       # AU and AUv3 are what Logic, GarageBand and Final Cut can actually load -
       # those hosts do not see VST3 at all.
       - name: Package artifacts
         run: |
-          set -e
+          set -euo pipefail
           ART="$RUNNER_TEMP/artifacts"
-          BASE="build/first_artefacts/${{ env.BUILD_TYPE }}"
           mkdir -p "$ART"
 
-          for artefact in first.vst3 first.component first.appex; do
-            if [ -e "$BASE/$artefact" ]; then
-              cp -R "$BASE/$artefact" "$ART/"
-            fi
-          done
+          while IFS= read -r bundle; do
+            cp -R "$bundle" "$ART/"
+          done < "$RUNNER_TEMP/bundles.txt"
 
           ls -la "$ART"
 
