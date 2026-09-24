@@ -16,6 +16,8 @@ BEGIN
   BEGIN
     BLOCK "040904E4"
     BEGIN
+      VALUE "CompanyName",  "MCsmes\0"
+      VALUE "LegalCopyright",  "MCsmes\0"
       VALUE "FileDescription",  "first\0"
       VALUE "FileVersion",  "1.0.0\0"
       VALUE "ProductName",  "first\0"

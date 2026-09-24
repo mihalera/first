@@ -1,4 +1,4 @@
-name: Build JUCE VST3 Plugin
+name: Build JUCE Plugin (VST3 + AUv3)
 
 on:
   push:
@@ -18,29 +18,10 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
+          # JUCE is a submodule pinned at 9.0.2. Recursive checkout gives exactly the
+          # same source that the macOS job builds, so neither platform can drift onto a
+          # different JUCE revision.
           submodules: recursive
-
-      - name: Cache JUCE 9.0.2
-        id: juce-cache
-        uses: actions/cache@v4
-        with:
-          path: D:\Desktop\Programs\JUCE
-          key: juce-9.0.2-${{ runner.os }}
-
-      - name: Setup JUCE 9.0.2
-        if: steps.juce-cache.outputs.cache-hit != 'true'
-        shell: powershell
-        run: |
-          New-Item -ItemType Directory -Force -Path "D:\Desktop\Programs"
-
-          git clone `
-            --depth 1 `
-            --branch 9.0.2 `
-            --recurse-submodules `
-            https://github.com/juce-framework/JUCE.git `
-            "D:\Desktop\Programs\JUCE"
-
-          git -C "D:\Desktop\Programs\JUCE" submodule update --init --recursive
 
       - name: Setup MSBuild
         uses: microsoft/setup-msbuild@v2
@@ -81,6 +62,63 @@ jobs:
       - name: Upload VST3 Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: J37-TapeSaturator-VST3
+          name: J37-TapeSaturator-VST3-Windows
           path: Builds/VisualStudio2026/x64/Release/VST3/first.vst3
+          if-no-files-found: error
+
+  build-macos:
+    runs-on: macos-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify JUCE submodule is present
+        run: |
+          if [ ! -d "JUCE/modules" ]; then
+            echo "JUCE submodule missing - the Xcode project resolves modules relative to the repo root."
+            exit 1
+          fi
+          ls JUCE/modules | head -n 5
+
+      - name: Build VST3, AU and AUv3 (universal)
+        run: |
+          xcodebuild \
+            -project Builds/MacOSX/first.xcodeproj \
+            -configuration Release \
+            -arch arm64 -arch x86_64 \
+            CODE_SIGNING_ALLOWED=NO CODE_SIGNING_REQUIRED=NO \
+            ONLY_ACTIVE_ARCH=NO \
+            build
+
+      # The three plugin formats land in different places, so each is packaged on its
+      # own. AU and AUv3 are what Logic, GarageBand and Final Cut can actually load -
+      # those hosts do not see VST3 at all.
+      - name: Package artifacts
+        run: |
+          set -e
+          ART="$RUNNER_TEMP/artifacts"
+          mkdir -p "$ART"
+
+          for fmt in VST3 AU AUv3; do
+            if [ -d "Builds/MacOSX/build/Release/$fmt" ]; then
+              cp -R "Builds/MacOSX/build/Release/$fmt" "$ART/"
+            fi
+          done
+
+          # xcodebuild puts the products under a DerivedData-style folder in some
+          # configurations, so fall back to a recursive find before giving up.
+          if [ -z "$(ls -A "$ART" 2>/dev/null)" ]; then
+            find Builds/MacOSX -maxdepth 4 -type d \( -name '*.vst3' -o -name '*.component' -o -name '*.appex' \) -exec cp -R {} "$ART/" \;
+          fi
+
+          ls -la "$ART"
+
+      - name: Upload macOS Artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: J37-TapeSaturator-macOS
+          path: ${{ runner.temp }}/artifacts
           if-no-files-found: error
