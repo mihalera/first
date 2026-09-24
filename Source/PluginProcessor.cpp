@@ -427,7 +427,21 @@ void FirstAudioProcessor::updateCompareDirty()
 
 void FirstAudioProcessor::updateActiveCompareSlot()
 {
-    copyToCompareSlot (activeSlot.load (std::memory_order_relaxed));
+    const auto slotIndex = static_cast<std::size_t> (
+        juce::jlimit (0, 1, activeSlot.load (std::memory_order_relaxed)));
+
+    // One deep copy of the live parameter tree, then compare before storing. The old
+    // path called copyToCompareSlot, which made a SECOND full copy of the tree every
+    // call - and the editor was calling this on every timer frame, so dragging a knob
+    // piled two whole-tree copies per frame on top of the repaint. Skipping the second
+    // copy when the live state already matches the stored slot keeps the A/B mirroring
+    // cheap in the common case, where nothing has actually changed.
+    const auto liveState = parameters.copyState();
+    if (compareSlots[slotIndex].isEquivalentTo (liveState))
+        return;
+
+    compareSlots[slotIndex] = liveState.createCopy();
+    updateCompareDirty();
 }
 
 //==============================================================================
@@ -814,6 +828,13 @@ void FirstAudioProcessor::resetSampleRateDependentState()
     previousCharacter = -1.0f;
     if (toneParam != nullptr)
         updateToneCoefficients (toneParam->load(), sampleRate);
+
+    // Start the two control-derived gain ramps from the coefficients that were just
+    // rebuilt, so a rate change or a preset load glides into them instead of stepping.
+    toneShelfGainSmoothed.reset (sampleRate, 0.02);
+    toneShelfGainSmoothed.setCurrentAndTargetValue (toneShelfGain);
+    preDriveGainSmoothed.reset (sampleRate, 0.02);
+    preDriveGainSmoothed.setCurrentAndTargetValue (preDriveGain);
 
     // The oversampling filters hold per-rate state (their half-band coefficients are
     // tuned to the incoming rate), so they must be flushed on a rate change or the
@@ -1268,6 +1289,14 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         || std::abs (character - previousCharacter) > 1.0e-5f)
         updateToneCoefficients (tone, engineSampleRate);
 
+    // Feed the ramps from the cached coefficients once per block; the per-sample loop
+    // then reads getCurrentValue(), which advances the ramp one sample at a time. Only
+    // these two gains are ramped - every other control either feeds a memoryless curve
+    // (DRIVE, BIAS), an oscillator (WOW, FLUTTER) or an already-smoothed value
+    // (INPUT, OUTPUT, MIX, WIDTH, BYPASS), none of which can step the waveform.
+    toneShelfGainSmoothed.setTargetValue (toneShelfGain);
+    preDriveGainSmoothed.setTargetValue (preDriveGain);
+
     // The TONE curve used by the tilt stage below is the one computed above the tape
     // character section, so the head poles, the machine crossfade and the tilt all
     // read the same value.
@@ -1605,7 +1634,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // user dialled in rather than a pre-boosted version of it. The TONE macro
             // adds the slow-machine pre-bias on top, scaled by the speed's own bias so
             // the two controls multiply naturally instead of fighting.
-            const float preDrive = x * (1.0f + driveAmount * 1.2f * speedBias * preDriveGain);
+            const float preDrive = x * (1.0f + driveAmount * 1.2f * speedBias
+                                          * preDriveGainSmoothed.getCurrentValue());
             const float recordBias = biasAmount * 0.42f;
 
             // Magnetic hysteresis with memory - the core of the tape sound. The
@@ -1694,7 +1724,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // it is drawn as.
             const float lowBand = highFreqMemory[0];
             toneShelfState += (motioned - lowBand - toneShelfState) * toneShelfCoefficient;
-            const float shelfLift = toneShelfState * (toneShelfGain - 1.0f);
+            const float shelfLift = toneShelfState * (toneShelfGainSmoothed.getCurrentValue() - 1.0f);
             const float deEmphasised = motioned + shelfLift;
 
             // -------------------------------------------------------------------
