@@ -332,6 +332,11 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
   than any linear control when it moved: stepping it shifts the whole curve, and the
   playback DC blocker downstream then has to swallow the resulting step. Both arguments
   now ramp through `SmoothedValue` over 20 ms, so the curve morphs continuously.
+  Smoothing only the shaper arguments turned out not to be enough, so the rest of the
+  tape path is ramped too: DRIVE's pre-drive gain, BRIGHT's record pole, TONE's two
+  playback poles, the flutter depth and the hiss level. Every control-derived multiplier
+  and pole in the wet path is now continuous - a step in any of them is a discontinuity
+  in the waveform, and that was the crackle.
 - **Level meters no longer overbook their cell** - the readout rows used to be sized from
   a fixed share of the meter body and only then clamped to fit, which pushed the first
   row back on top of the dial and left the last row one pixel from the rounded border.
@@ -340,6 +345,21 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
   Measured on the 980 x 690 default, the first row overlapped the dial box by 4 px, the
   needle pivot by 2 px and the end tick label by 3 px; all three are now 0, with 4-7 px
   of clear air underneath.
+- **The meters' gauge arc is on the same half as its own ticks** - JUCE's arc angles run
+  0 = 12 o'clock and increase *clockwise*, while the ticks and the needle are placed with
+  `cos`/`sin` where 0 = 3 o'clock. Handing `addCentredArc` the tick loop's `pi..2*pi` so
+  swept the **wrong half of the circle**: the arc started at the bottom of the dial,
+  bulged out to the left and finished at the top - the black half-circle that hung below
+  the INPUT / OUTPUT meters and crossed the readout rows. The arc now runs
+  `1.5*pi .. 2.5*pi`, which is exactly the left-over-the-top-to-the-right path the ticks
+  and needle describe, and the whole dial is clipped to its own face so no gauge geometry
+  can reach the readout rows whatever happens.
+- **The switch captions are centred under their own switch** - the rocker caption was
+  centred in a band with the lamp's footprint sliced off its right edge, which parked the
+  text about 6 px left of the switch's true centre and made the lamp look crookedly
+  placed. The caption is now centred in the full label band (at the three real captions -
+  BYPASS, POLARITY, AUTO GAIN - the centred text still clears the lamp by at least
+  15 px), and the lamp sits in a recessed bezel 8 px in from the border.
 - **Editor thread stays out of the audio thread's way** - the panel used to re-mirror the
   live machine into the active A/B slot on *every* 30 Hz timer frame, and each call made
   two full deep copies of the parameter tree: sixty whole-tree copies a second, landing

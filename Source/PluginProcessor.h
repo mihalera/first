@@ -840,6 +840,19 @@ private:
     juce::SmoothedValue<float> shaperDriveSmoothed { 0.0f };
     juce::SmoothedValue<float> shaperAsymmetrySmoothed { 0.0f };
 
+    // The remaining control-derived coefficients of the tape path, ramped for the same
+    // reason. Smoothing only the two shaper arguments was not enough: DRIVE still
+    // multiplied the signal through driveAmount raw, BRIGHT still stepped the record
+    // pole (toneLpAc), TONE still stepped both playback poles and the flutter depth,
+    // and the hiss level still jumped. Each of those is a step in a multiplier or a
+    // filter pole on every block boundary, which is the crackle that survived.
+    juce::SmoothedValue<float> driveAmountSmoothed { 0.0f };
+    juce::SmoothedValue<float> toneLpSmoothed { 0.0f };
+    juce::SmoothedValue<float> hfPostSmoothed { 0.0f };
+    juce::SmoothedValue<float> headGapSmoothed { 0.0f };
+    juce::SmoothedValue<float> flutterScaleSmoothed { 1.0f };
+    juce::SmoothedValue<float> hissGainSmoothed { 0.0f };
+
     // Per-instance tape noise generator. Kept as an object member rather than a
     // thread_local static so that instances never share one stream and the output
     // is reproducible for a given instance.
