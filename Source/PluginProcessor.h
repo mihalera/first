@@ -483,7 +483,8 @@ public:
     {
         off = 0,
         x2  = 1,
-        x4  = 2
+        x4  = 2,
+        x8  = 3
     };
 
     OversamplingFactor getOversamplingFactor() const noexcept
@@ -495,7 +496,7 @@ public:
     juce::UndoManager& getUndoManager() noexcept { return undoManager; }
 
     /** Number of factory presets. */
-    static constexpr int numFactoryPresets = 12;
+    static constexpr int numFactoryPresets = 18;
 
     /** Display names of the factory presets, in order. */
     static juce::StringArray getPresetNames();
@@ -800,7 +801,6 @@ private:
 
     float previousTone = -1.0f;
     float toneLpAc = 0.0f;
-    float toneLpBc = 0.0f;
 
     // TONE macro machine state, cached by updateToneCoefficients(). These were used by
     // the .cpp without being declared here, which is what broke the build (C2065).
@@ -812,6 +812,14 @@ private:
     float headGapHz = 24000.0f;
     float preDriveGain = 1.0f;
     float flutterScale = 1.0f;
+
+    // BRIGHTNESS playback shelf, cached with the other coefficients: a fixed 8 kHz
+    // high-shelf corner whose GAIN follows the Brightness control. The gain itself is
+    // a per-sample scalar (slope at warm = 0 dB, at bright = +6.5 dB peak lift), so
+    // the control always does something audible and predictable at every setting.
+    float toneShelfCoefficient = 0.5f;
+    float toneShelfGain = 1.0f;
+    float toneShelfState = 0.0f;
 
     // Per-instance tape noise generator. Kept as an object member rather than a
     // thread_local static so that instances never share one stream and the output

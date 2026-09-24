@@ -617,8 +617,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // keep the knob grid and the 2 x 2 meters usable. The maximum is pulled in to
     // 1400 x 900: beyond that the analogue panel stops gaining legibility and only
     // looks sparse.
-    setResizeLimits (780, 540, 1400, 900);
-    setSize (960, 600);
+    setResizeLimits (780, 640, 1400, 960);
+    setSize (980, 690);
     createDecorativePhysics();
 
     const auto styleLabel = [] (juce::Label& label, const juce::String& text,
@@ -656,7 +656,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 paletteFor (false).secondary, false, juce::Justification::centredLeft);
     styleLabel (controlsHeadingLabel, "TAPE CHARACTER", 10.0f, paletteFor (false).accent,
                 true, juce::Justification::left);
-    styleLabel (controlsHintLabel, "Slow drag is precise. Hold Shift to fine tune.", 9.0f,
+    styleLabel (controlsHintLabel, "Hold Shift for fine tune. Wheel for small steps.", 9.0f,
                 paletteFor (false).secondary, false, juce::Justification::right);
     styleLabel (metersHeadingLabel, "LEVELS", 10.0f, paletteFor (false).accent,
                 true, juce::Justification::left);
@@ -707,16 +707,69 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                     juce::MathConstants<float>::pi * 2.25f, true);
         slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 84, 20);
         slider.setTextBoxIsEditable (true);
+        // Drag response tuned by ear: velocity-based mode throttled the first pixels
+        // of every drag behind an acceleration ramp, which read as "slow knobs".
+        // Direct movement plus a high sensitivity gives a full 0..1 sweep in about a
+        // third of the panel width; Shift still engages JUCE's low-velocity mode for
+        // fine control.
+        slider.setMouseDragSensitivity (1400);
         slider.setVelocityBasedMode (true);
-        slider.setVelocityModeParameters (0.35, 1, 0.02, true, juce::ModifierKeys::shiftModifier);
-        slider.setMouseDragSensitivity (600);
+        slider.setVelocityModeParameters (1.0, 2, 0.06, true, juce::ModifierKeys::shiftModifier);
         slider.setPopupDisplayEnabled (true, true, this);
         slider.setScrollWheelEnabled (true);
         slider.setDoubleClickReturnValue (true, defaultValues[i]);
         slider.setLookAndFeel (&customLookAndFeel);
         slider.setColour (juce::Slider::textBoxOutlineColourId, paletteFor (false).border);
-        slider.setTooltip ("Slow movement gives fine control. Hold Shift to adjust precisely. "
-                           "Use the wheel for small steps. Double-click to reset.");
+
+        // A tooltip for EVERY parameter - this is what shows when the user hovers.
+        // The per-name text explains what the control does and its default, and the
+        // generic interaction hints ride along on every knob.
+        const auto parameterTooltip = [&] (const juce::String& id) -> juce::String
+        {
+            const auto hints = " Hold Shift for fine control, mouse wheel for small "
+                               "steps, double-click to reset.";
+            if (id == "input")
+                return "INPUT - output-stages the signal into the machine before the "
+                       "tape. Positive pushes the tape harder for more saturation, "
+                       "negative cleans up. Range -32 to +32 dB, default 0 dB." + hints;
+            if (id == "drive")
+                return "DRIVE - the amount of magnetic saturation. At 0 percent the "
+                       "machine is clean; higher settings bend the signal like tape "
+                       "and add harmonics. Default 42 percent." + hints;
+            if (id == "bias")
+                return "BIAS - the record head's ultra-sonic offset. It shapes the "
+                       "even harmonics: low bias is edgy and thin, higher bias is "
+                       "warmer and fuller. Default 36 percent." + hints;
+            if (id == "tone")
+                return "BRIGHTNESS - the playback high-shelf above 8 kHz. Low is warm "
+                       "and rounded, high is open and airy. Default 58 percent." + hints;
+            if (id == "character")
+                return "TONE - the machine-state macro. It crossfades the whole deck "
+                       "between the classic slow machine (soft head gap, relaxed "
+                       "flutter) and the fast hot machine (open top end, tight "
+                       "flutter). Default 50 percent." + hints;
+            if (id == "wow")
+                return "WOW - slow pitch wander of the transport, like a slightly "
+                       "loose capstan. 0 percent is a perfectly steady machine. "
+                       "Default 14 percent." + hints;
+            if (id == "flutter")
+                return "FLUTTER - fast shimmer of the transport, like the tape "
+                       "brushing the heads. 0 percent is perfectly steady. "
+                       "Default 18 percent." + hints;
+            if (id == "mix")
+                return "MIX - dry/wet crossfade. 0 percent is the untouched signal, "
+                       "100 percent is fully through the tape. Default 50 percent."
+                       + hints;
+            if (id == "output")
+                return "OUTPUT - calibrated output trim after the whole chain. "
+                       "Range -32 to +32 dB, default 0 dB." + hints;
+            if (id == "stereo_width")
+                return "WIDTH - stereo image after the tape. 0 percent is mono, "
+                       "50 percent is the natural stereo width, 100 percent is extra "
+                       "wide. Default 50 percent." + hints;
+            return hints;
+        };
+        slider.setTooltip (parameterTooltip (controlIds[static_cast<int> (i)]));
 
         // Index 8 is OUTPUT, not 7: the control order is INPUT, DRIVE, BIAS, BRIGHT,
         // TONE, WOW, FLUTTER, MIX, OUTPUT, WIDTH. The old check (i == 7) handed MIX
@@ -729,26 +782,6 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
             slider.setRange (minStageDb, maxStageDb, 0.1);
             slider.setNumDecimalPlacesToDisplay (1);
             slider.setTextValueSuffix (" dB");
-
-            if (i == 0)
-            {
-                slider.setTooltip ("Input trim. Drives the tape machine harder for more saturation. "
-                                   "Range -32 to +32 dB. Double-click to reset to 0 dB.");
-            }
-            else
-            {
-                slider.setTooltip ("Output trim in decibels, matching the input control. "
-                                   "Range -32 to +32 dB. Double-click to reset to 0 dB.");
-            }
-        }
-        else if (i == 4)
-        {
-            // The TONE macro: a crossfade between machine states, not between dry and wet.
-            slider.setTooltip ("Tone blends the tape machine's own character between two states: "
-                               "0 percent is the classic slow machine (soft head gap, warm roll-off, "
-                               "relaxed flutter), 100 percent is the fast machine (open top end, "
-                               "tighter flutter, more pre-bias). It mixes the SPEED and head parameters "
-                               "rather than dry and wet. Double-click for the neutral 50 percent.");
         }
         else
         {
@@ -761,24 +794,6 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
             {
                 return juce::jlimit (0.0, 1.0, text.getDoubleValue() / 100.0);
             };
-            if (i == 3)
-            {
-                slider.setTooltip ("Brightness sets how much top end survives the tape. "
-                                   "Low is warm, soft and rolled off; high is open and airy. "
-                                   "A faster tape speed keeps more top end at the same setting. "
-                                   "Double-click for the default 58 percent.");
-            }
-            else if (i == 7)
-            {
-                slider.setTooltip ("Mix blends the dry signal with the tape path. "
-                                   "0 percent is fully dry, 100 percent is fully through the tape. "
-                                   "Double-click for the default 50 percent.");
-            }
-            else if (i == controlCount - 1)
-            {
-                slider.setTooltip ("Stereo width: 0 percent is mono, 50 percent is natural stereo, "
-                                   "100 percent is extra wide.");
-            }
         }
 
         controlLabels[i].setText (controlNames[static_cast<int> (i)], juce::dontSendNotification);
@@ -792,17 +807,24 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
             (audioProcessor.parameters, controlIds[static_cast<int> (i)], slider);
     }
 
-    tapeTypeBox.addItemList (juce::StringArray { "J37", "Ampex 456", "Studer A800", "Chrome" }, 1);
+    tapeTypeBox.addItemList (juce::StringArray { "J37", "Ampex 456", "Studer A800", "Chrome",
+                                                 "Type 111", "GP9", "Quantegy 499", "RTM SM911" }, 1);
     speedBox.addItemList (juce::StringArray { "7.5 ips", "15 ips", "30 ips" }, 1);
     tapeTypeBox.setTextWhenNothingSelected ("Select tape");
     speedBox.setTextWhenNothingSelected ("Select speed");
+    tapeTypeBox.setTooltip ("Tape formula. Each stock bends the sound differently: "
+                            "J37 is soft and classic, Ampex and Studer are hotter, "
+                            "Chrome and Type 111 are cleaner, GP9 and 499 are dense "
+                            "modern formulas, SM911 is the broadcast reference. The "
+                            "formula also shapes the glue compressors' timing.");
+    speedBox.setTooltip ("Transport speed. 7.5 ips is dark and loose, 15 ips is the "
+                         "classic studio speed, 30 ips keeps the most top end and "
+                         "the tightest glue. Speed also shapes the glue timing.");
     tapeTypeBox.setLookAndFeel (&customLookAndFeel);
     speedBox.setLookAndFeel (&customLookAndFeel);
 
     bypassButton.setClickingTogglesState (true);
     bypassButton.setButtonText ("BYPASS");
-    bypassButton.setTooltip ("Hard bypass: the tape engine and both glue compressors are switched out. "
-                             "The switch is ramped, so toggling it never clicks.");
     bypassButton.setLookAndFeel (&customLookAndFeel);
     bypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
         (audioProcessor.parameters, "bypass", bypassButton);
@@ -819,6 +841,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // ---------------------------------------------------------------
     //  Output-stage switches: polarity invert and auto gain.
     // ---------------------------------------------------------------
+    bypassButton.setTooltip ("Hard bypass: the tape engine and both glue compressors are "
+                             "switched out. The switch is ramped, so toggling it never clicks.");
     polarityButton.setClickingTogglesState (true);
     polarityButton.setTooltip ("Inverts the output polarity (180-degree phase flip). "
                                "Use it to correct an inverted source or to align two "
@@ -845,7 +869,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     styleLabel (oversamplingLabel, "OVER", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
     addAndMakeVisible (oversamplingLabel);
-    oversamplingBox.addItemList (juce::StringArray { "Off", "2x", "4x" }, 1);
+    oversamplingBox.addItemList (juce::StringArray { "Off", "2x", "4x", "8x" }, 1);
     oversamplingBox.setTooltip ("Internal rate of the tape engine. 2x and 4x reduce the "
                                 "aliasing of the magnetic shaper; the added filter delay "
                                 "is reported to the host, so DAW PDC compensates.");
@@ -1129,7 +1153,9 @@ void FirstAudioProcessorEditor::updateWorkflowButtons()
         toggle->setColour (juce::TextButton::textColourOnId, palette.readout);
     }
 
-    compareBadgeLabel.setText (dirty ? "A/B EDITED" : "A/B MATCHED",
+    // Short captions: the badge sits at the right end of the preset row, where the
+    // old "A/B MATCHED" could push into the redo button on a narrow panel.
+    compareBadgeLabel.setText (dirty ? "EDITED" : "MATCHED",
                                juce::dontSendNotification);
 
     const auto presetName = audioProcessor.getCurrentPresetName();
@@ -1179,13 +1205,14 @@ FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayo
     EditorLayout layout;
 
     // Header and deck are fixed-height, so they keep their proportions at small panel
-    // sizes and on high-DPI displays. The deck is two lines tall: transport controls
-    // on the first, the preset / A/B / undo row on the second. The rest of the height
-    // goes to controls + meters.
+    // sizes and on high-DPI displays. The deck is three control lines tall - transport,
+    // then switches / oversampling, then presets and the A/B cluster - plus a badge
+    // band at the bottom, so no two groups ever share a row and nothing can overlap
+    // even at the minimum panel size (752 px of deck width fits every line exactly).
     layout.header = remaining.removeFromTop (70);
-    remaining.removeFromTop (10);
-    layout.deck = remaining.removeFromTop (116);
-    remaining.removeFromTop (10);
+    remaining.removeFromTop (8);
+    layout.deck = remaining.removeFromTop (164);
+    remaining.removeFromTop (8);
 
     // The meters panel has to hold a 2 x 2 grid of dials, so it claims a share of the
     // width rather than a fixed pixel count. That keeps both rows legible whether the
@@ -1637,59 +1664,49 @@ void FirstAudioProcessorEditor::resized()
     themeButton.setBounds (layout.header.getRight() - 348, layout.header.getY() + 20, 126, 30);
     statusLabel.setBounds (layout.header.getRight() - 202, layout.header.getY() + 20, 181, 30);
 
-    // The harmonic readout sits in the free space at the right of the deck row, which is
-    // where a real machine would print its meter calibration. It is placed first so the
-    // deck controls below can chain off it: the hint label ends where this begins.
-    const auto harmonicsWidth = 150;
-    harmonicsLabel.setBounds (layout.deck.getRight() - harmonicsWidth - 18,
-                              layout.deck.getY() + 8, harmonicsWidth, 17);
-    harmonicsReadout.setBounds (layout.deck.getRight() - harmonicsWidth - 18,
-                                layout.deck.getY() + 26, harmonicsWidth, 15);
+    // The deck has three dedicated lines, each chain widths are tuned to fit the
+    // minimum deck width (752 px at a 780 px window) without any overlap:
+    //   line 1 (y + 32) - transport: MODEL | tape box | SPEED | speed box | BYPASS | hint
+    //                     chain ends at x + 634 of 752.
+    //   line 2 (y + 74) - POLARITY | AUTO GAIN | OVER | oversampling box (ends x + 324);
+    //                     the harmonics readout takes the right end (x + 608..x + 738).
+    //   line 3 (y + 116)- PRESET | factory box | USER box | SAVE | DEL | A/B | undo | redo
+    //                     | badge (ends x + 751 of 752).
+    // The preset badge rides its own band at y + 150, so no label ever sits on a control.
+    deckHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 6, 150, 16);
 
-    // The deck controls are laid out by CHAINING each group off the previous one's
-    // right edge instead of absolute offsets: the old fixed offsets (296 / 345 / 515 px)
-    // were calibrated for a 1024 px panel and collided once the window could shrink
-    // below that. The hint label takes whatever space remains before the readout.
-    deckHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 7, 150, 16);
-    tapeTypeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 42, 45, 16);
-    tapeTypeBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 33, 180, 32);
+    tapeTypeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 41, 45, 16);
+    tapeTypeBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 32, 148, 32);
+    speedLabel.setBounds (tapeTypeBox.getRight() + 16, layout.deck.getY() + 41, 45, 16);
+    speedBox.setBounds (tapeTypeBox.getRight() + 62, layout.deck.getY() + 32, 104, 32);
+    bypassButton.setBounds (speedBox.getRight() + 18, layout.deck.getY() + 32, 92, 32);
+    deckHintLabel.setBounds (bypassButton.getRight() + 14, layout.deck.getY() + 34, 130, 28);
 
-    speedLabel.setBounds (tapeTypeBox.getRight() + 24, layout.deck.getY() + 42, 45, 16);
-    speedBox.setBounds (tapeTypeBox.getRight() + 72, layout.deck.getY() + 33, 120, 32);
-    bypassButton.setBounds (speedBox.getRight() + 24, layout.deck.getY() + 33, 100, 32);
+    polarityButton.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 74, 84, 32);
+    autoGainButton.setBounds (polarityButton.getRight() + 6, layout.deck.getY() + 74, 88, 32);
+    oversamplingLabel.setBounds (autoGainButton.getRight() + 16, layout.deck.getY() + 83, 40, 16);
+    oversamplingBox.setBounds (autoGainButton.getRight() + 58, layout.deck.getY() + 74, 72, 32);
 
-    // Output-stage switches and the oversampling switch chain off the bypass button
-    // on the transport line. Polarity and auto gain are mastering staples, and the
-    // oversampling parameter is host-visible but still needs its own switch on the
-    // panel - previously it could only be changed from the DAW's own list.
-    polarityButton.setBounds (bypassButton.getRight() + 12, layout.deck.getY() + 33, 88, 32);
-    autoGainButton.setBounds (polarityButton.getRight() + 6, layout.deck.getY() + 33, 92, 32);
-    oversamplingLabel.setBounds (autoGainButton.getRight() + 14, layout.deck.getY() + 42, 40, 16);
-    oversamplingBox.setBounds (autoGainButton.getRight() + 56, layout.deck.getY() + 33, 78, 32);
+    const auto harmonicsWidth = 130;
+    harmonicsLabel.setBounds (layout.deck.getRight() - harmonicsWidth - 14,
+                              layout.deck.getY() + 70, harmonicsWidth, 15);
+    harmonicsReadout.setBounds (layout.deck.getRight() - harmonicsWidth - 14,
+                                layout.deck.getY() + 88, harmonicsWidth, 14);
 
-    // Preset / A/B / undo row: the deck's SECOND line. The factory preset combo keeps
-    // its heading on the far left; the USER preset group (combo + SAVE / DEL) follows
-    // it, then the A/B and undo cluster, then the badge.
-    presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 84, 46, 16);
-    presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 76, 132, 32);
-    userPresetBox.setBounds (presetBox.getRight() + 6, layout.deck.getY() + 76, 130, 32);
-    savePresetButton.setBounds (userPresetBox.getRight() + 6, layout.deck.getY() + 76, 48, 32);
-    deletePresetButton.setBounds (savePresetButton.getRight() + 4, layout.deck.getY() + 76, 42, 32);
-    copyAButton.setBounds (deletePresetButton.getRight() + 10, layout.deck.getY() + 76, 72, 32);
-    copyBButton.setBounds (copyAButton.getRight() + 6, layout.deck.getY() + 76, 72, 32);
-    compareButton.setBounds (copyBButton.getRight() + 6, layout.deck.getY() + 76, 70, 32);
-    undoButton.setBounds (compareButton.getRight() + 6, layout.deck.getY() + 76, 56, 32);
-    redoButton.setBounds (undoButton.getRight() + 6, layout.deck.getY() + 76, 56, 32);
-    compareBadgeLabel.setBounds (redoButton.getRight() + 8, layout.deck.getY() + 76, 74, 32);
-    presetBadgeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 101, 460, 12);
+    presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 125, 46, 16);
+    presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 116, 110, 32);
+    userPresetBox.setBounds (presetBox.getRight() + 6, layout.deck.getY() + 116, 106, 32);
+    savePresetButton.setBounds (userPresetBox.getRight() + 5, layout.deck.getY() + 116, 42, 32);
+    deletePresetButton.setBounds (savePresetButton.getRight() + 4, layout.deck.getY() + 116, 38, 32);
+    copyAButton.setBounds (deletePresetButton.getRight() + 10, layout.deck.getY() + 116, 66, 32);
+    copyBButton.setBounds (copyAButton.getRight() + 5, layout.deck.getY() + 116, 66, 32);
+    compareButton.setBounds (copyBButton.getRight() + 5, layout.deck.getY() + 116, 56, 32);
+    undoButton.setBounds (compareButton.getRight() + 5, layout.deck.getY() + 116, 46, 32);
+    redoButton.setBounds (undoButton.getRight() + 5, layout.deck.getY() + 116, 46, 32);
+    compareBadgeLabel.setBounds (redoButton.getRight() + 8, layout.deck.getY() + 116, 56, 32);
 
-    // The hint takes what is left between the oversampling switch and the readout on
-    // the transport line, up to a sane maximum, and disappears entirely rather than
-    // colliding on a narrow panel.
-    const auto hintLeft = oversamplingBox.getRight() + 20;
-    deckHintLabel.setBounds (hintLeft, layout.deck.getY() + 30,
-                             juce::jmax (0, juce::jmin (220,
-                                  harmonicsLabel.getX() - 24 - hintLeft)), 32);
+    presetBadgeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 149,
+                                layout.deck.getWidth() - 36, 13);
 
     controlsHeadingLabel.setBounds (layout.controls.getX() + 18, layout.controls.getY() + 10, 210, 19);
     const auto controlsHintRight = layout.controls.getRight() - 12;

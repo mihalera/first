@@ -47,12 +47,12 @@ playback EQ tilt -> output glue compressor (always on) -> output trim (dB) -> st
 | Output | -32 to +32 dB | Calibrated output trim in dB |
 | Width | 0 to 100 % | Mono through natural to extra wide |
 | Bypass | on/off | Ramps the whole tape engine out without clicking |
-| Tape Type | J37 / Ampex 456 / Studer A800 / Chrome | Model character (also shapes the glue time constants) |
+| Tape Type | J37 / Ampex 456 / Studer A800 / Chrome / Type 111 / GP9 / Quantegy 499 / RTM SM911 | Model character (also shapes the glue time constants) |
 | Speed | 7.5 / 15 / 30 ips | Transport speed, affects modulation, top end and glue timing |
-| Oversampling | Off / 2x / 4x | Runs the tape engine at a higher internal rate to reduce aliasing; the added latency is reported to the host |
+| Oversampling | Off / 2x / 4x / 8x | Runs the tape engine at a higher internal rate to reduce aliasing; the added latency is reported to the host |
 | Polarity | on/off | Inverts the output polarity (180-degree flip), after the protection chain and the meters' magnitude path |
 | Auto Gain | on/off | Lets the slow programme compensator restore the level the INPUT trim dialled in; off leaves the output exactly at the level the chain produced |
-| Presets | 12 factory | Loaded from the preset box; each application is one undoable step |
+| Presets | 18 factory | Loaded from the preset box; each application is one undoable step |
 | User presets | unlimited | SAVE stores the whole machine state as a `.j37tape` file in the user's application-data directory; DEL removes the selected file; recall is one undoable step |
 | A/B compare | two slots | COPY A / COPY B store states, A/B swaps them live; an EDITED badge shows when the sides differ |
 | Undo / Redo | full state | Ctrl+Z / Ctrl+Y (or the panel buttons) step through preset and A/B history |
@@ -60,7 +60,8 @@ playback EQ tilt -> output glue compressor (always on) -> output trim (dB) -> st
 The percentage controls (Drive, Bias, Wow, Flutter) use a skewed knob taper so the
 gentle end of each control gets more travel. This is purely ergonomic and does **not**
 make the processing linear: the analogue nonlinearity lives in the DSP, not in the
-control mapping.
+control mapping. Knob drags are direct and fast - a full sweep takes about a third of the
+panel width - and Shift engages fine control, so nothing feels sluggish at any setting.
 
 ### Analogue nonlinearity
 
@@ -86,6 +87,11 @@ is where the harmonics come from:
   signal 38 % even at zero. Both are fixed.
 - MIX is the one control that is a true linear crossfade, so the blend always agrees with
   its own readout.
+- **BRIGHTNESS is a real playback high-shelf**: a fixed 8 kHz corner whose gain follows
+  the control (0 dB at warm up to about +8.5 dB at bright). Earlier versions moved the
+  corner frequency and folded it into a tilt stage shared with the TONE macro, which made
+  the knob's action faint and unpredictable; the shelf is now fixed-corner, monotonic and
+  independent of the macro.
 
 Speed also changes head-gap damping, so a faster tape genuinely keeps more top end.
 
@@ -195,16 +201,16 @@ dynamic material, and a large VU-to-RMS gap means a lot of transient content.
 
 The magnetic hysteresis is a nonlinear process, so it aliases: harmonics generated above
 Nyquist fold back down into the audible band. The OVERSAMPLING switch (Off / 2x / 4x) wraps
-the whole tape engine in a polyphase half-band upsampler, runs the model at two or four
-times the session rate, and filters back down. The added filter delay (zero at Off, a few
-samples at 2x/4x) is reported to the host through `setLatencySamples`, so DAW PDC
-compensates automatically. The three engines exist side by side with independent filter
+the whole tape engine in a polyphase half-band upsampler, runs the model at two, four or
+eight times the session rate, and filters back down. The added filter delay (zero at Off,
+a few samples at 2x/4x/8x) is reported to the host through `setLatencySamples`, so DAW PDC
+compensates automatically. The four engines exist side by side with independent filter
 state, so switching mid-playback is glitch-free.
 
 ## Presets, A/B compare and undo
 
-Twelve factory presets cover the machine's range from gentle bus warmth to slammed drum
-tape. A preset replaces the whole machine state in a single undoable transaction - Ctrl+Z
+Eighteen factory presets cover the machine's range from gentle bus warmth to slammed drum
+tape, including vocal, bass and mastering-safety starting points. A preset replaces the whole machine state in a single undoable transaction - Ctrl+Z
 brings back exactly what was on screen before.
 
 **User presets** go further: SAVE freezes the whole machine exactly as it stands into a
@@ -303,13 +309,15 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
   second instead of four times as often.
 - **Buffer size** - the DSP is per sample and reads `getNumSamples()` each block, so
   there is no fixed block-size assumption; zero-length blocks are handled too.
-- **Display scale** - the editor opens at a compact 960 x 600 and can be resized
-  between 780 x 540 and 1400 x 900; both meter types lay themselves out proportionally
-  to their own bounds. Text scales with the meter, so nothing is drawn at a hardcoded
-  pixel size. The transport-deck controls chain off each other's edges rather than
-  sitting at absolute offsets, so nothing collides at the minimum size. The deck is two
-  chained lines - transport controls, then the preset / A/B / undo row - and the level
+- **Display scale** - the editor opens at 980 x 690 and can be resized between
+  780 x 640 and 1400 x 960; both meter types lay themselves out proportionally to their
+  own bounds. Text scales with the meter, so nothing is drawn at a hardcoded pixel size.
+  The deck is three control lines - transport, switches / oversampling, then the preset /
+  A/B / undo row - with a badge band of its own underneath, and every line's control
+  chain is width-accounted to fit the minimum 780 px panel with no overlap. The level
   meters keep clear air between the dial and the readout rows.
+- **Tooltips** - every knob and switch carries a tooltip explaining what it does and its
+  default; the tips appear quickly on hover (about a third of a second).
 - **Fonts** - the title uses a fallback chain rather than a Windows-only family.
 - **OpenGL** - treated as a best-effort accelerator; if a context cannot be created the
   panel falls back to the normal component renderer.

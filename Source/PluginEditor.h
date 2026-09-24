@@ -140,7 +140,9 @@ private:
 
     // Tooltips (set with setTooltip on the workflow controls) only render while a
     // TooltipWindow instance exists; without one the calls are silent no-ops.
-    juce::SharedResourcePointer<juce::TooltipWindow> tooltipWindow;
+    // TooltipWindow: a shared instance is required for any setTooltip text to show.
+    // A short delay makes the tip appear quickly when the user hovers a control.
+    juce::SharedResourcePointer<juce::TooltipWindow> tooltipWindow { 350 };
 
     std::array<juce::Slider, controlCount> controls;
     std::array<juce::Label, controlCount> controlLabels;
