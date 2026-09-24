@@ -32,8 +32,17 @@ jobs:
       - name: Configure CMake
         shell: pwsh
         run: |
-          cmake -S . -B build -G "Visual Studio 18 2026" -A x64 `
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+          # The generator is not named explicitly. "Visual Studio 18 2026" is the
+          # name for the current VS, but that string changes with every Visual
+          # Studio release and a wrong one fails the configure step outright -
+          # which already happened once here. Letting CMake pick the newest
+          # installed generator keeps this working across runner image updates.
+          cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Show which toolchain CMake selected
+        shell: pwsh
+        run: |
+          Get-Content build/CMakeCache.txt | Select-String -Pattern "CMAKE_GENERATOR:|CMAKE_CXX_COMPILER:"
 
       - name: Build
         shell: pwsh

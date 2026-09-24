@@ -55,8 +55,8 @@ add_subdirectory(JUCE)
 #  that a plugin built with CMake is seen by hosts and by existing saved
 #  sessions as the same plugin as before:
 #
-#    ManufacturerCode 0x4d616e75          ("Mcms")
-#    PluginCode       0x5a793539          ("Zy59")
+#    ManufacturerCode 0x4d616e75  ("Manu" - see the note below)
+#    PluginCode       0x5a793539  ("Zy59")
 #    Bundle ID        com.MCsmes.first
 #    Product name     Analog Saturator
 # ------------------------------------------------------------------------------
@@ -99,6 +99,27 @@ juce_add_plugin(first
     COPY_PLUGIN_AFTER_BUILD     ${COPY_PLUGIN_AFTER_BUILD}
     VST3_CATEGORIES             Fx
     AU_MAIN_TYPE                kAudioUnitType_Effect)
+
+# ------------------------------------------------------------------------------
+#  Generated JuceHeader.h
+#
+#  The plugin sources include <JuceHeader.h>, which is how the previous Projucer
+#  project exposed JUCE. CMake does NOT create that header automatically for
+#  plugin targets - the Projucer wrote it into JuceLibraryCode/, and that folder
+#  is gone.
+#
+#  juce_generate_juce_header() writes it into the target's generated-sources
+#  directory and puts that directory on the include path. It also supplies
+#  ProjectInfo::companyName, ProjectInfo::projectName and the project version,
+#  which the same header used to carry.
+#
+#  The alternative - changing the sources to include the individual
+#  <juce_audio_processors/juce_audio_processors.h> headers instead - is the
+#  modern JUCE idiom and builds faster, because it stops pulling every module
+#  header into every translation unit. That is a larger change to the source
+#  files, so it is left as a follow-up rather than folded into this migration.
+# ------------------------------------------------------------------------------
+juce_generate_juce_header(first)
 
 # ------------------------------------------------------------------------------
 #  Sources
