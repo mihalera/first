@@ -293,16 +293,23 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     g.setColour (palette.panel.brighter (0.15f).withAlpha (0.5f));
     g.drawRoundedRectangle (bounds.reduced (2.0f), 3.0f, 0.7f);
 
-    // Two stacked bands so nothing ever fights for width:
-    //   top band    - the function name, centred across the full switch width
-    //   bottom band - a short track with the OFF and ON stops and the sliding thumb;
-    //                 the thumb carries the state text, so the state is always
-    //                 readable and the label never truncates.
-    const auto labelBand = bounds.withTrimmedTop (0.0f).withHeight (11.0f);
-    const auto track = bounds.withTrimmedTop (11.0f).withTrimmedLeft (5.0f).withTrimmedRight (5.0f);
+    // Two bands sized from the switch itself, so nothing ever fights for width:
+    //   top band    - the function name, engraved across the full switch width
+    //   bottom band - a short recessed track with a sliding thumb that carries the
+    //                 state text; the state is always readable and the label never
+    //                 truncates. The band height is a proportion of the control
+    //                 (was a hardcoded 11 px, which on a 32 px switch left a crowded
+    //                 15 px track carrying THREE overlapping text pieces: OFF, ON and
+    //                 the thumb caption).
+    const auto labelHeight = juce::jlimit (10.0f, 14.0f, bounds.getHeight() * 0.44f);
+    const auto labelBand = bounds.withHeight (labelHeight);
+    const auto track = bounds.withTrimmedTop (labelHeight)
+                            .withTrimmedLeft (4.0f).withTrimmedRight (4.0f);
 
-    // Status LED in the label band's left corner.
-    const auto ledCentre = juce::Point<float> (bounds.getX() + 6.0f, labelBand.getCentreY());
+    // Status LED in the label band's RIGHT corner. The caption is drawn in the band
+    // with the LED's footprint removed, so the two can never overlap no matter how
+    // long the caption is.
+    const auto ledCentre = juce::Point<float> (bounds.getRight() - 7.0f, labelBand.getCentreY());
     if (isOn)
     {
         g.setColour (palette.status.withAlpha (0.22f));
@@ -311,40 +318,27 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     g.setColour (isOn ? palette.status : palette.knobEdge.withAlpha (0.45f));
     g.fillEllipse (ledCentre.x - 2.0f, ledCentre.y - 2.0f, 4.0f, 4.0f);
 
-    // Function name, engraved in the part of the band the LED cannot reach. The left
-    // inset is the LED's own footprint plus a gap, so the two can never overlap no
-    // matter how long the caption is - previously the text was centred across the
-    // full width and only stayed clear by the captions happening to be short.
-    const auto captionBand = labelBand.reduced (11.0f, 0.0f);
+    // Function name, engraved in the part of the band the LED cannot reach.
+    const auto captionBand = labelBand.withTrimmedRight (13.0f);
     g.setColour (palette.text.withAlpha (0.92f));
     g.setFont (shrinkingFont (button.getButtonText().toUpperCase(), 8.0f,
-                              juce::Font::bold, captionBand.getWidth()));
+                               juce::Font::bold, captionBand.getWidth()));
     g.drawText (button.getButtonText().toUpperCase(), captionBand,
                 juce::Justification::centred, true);
 
-    // Track bed: recessed groove with OFF and ON stops engraved at its ends. Each
-    // stop gets exactly 22px, which is comfortable for three characters but would
-    // truncate the moment the default font substituted anything wider, so the font
-    // is fitted to the stop rather than the stop being fitted to the font.
-    constexpr float stopWidth = 22.0f;
+    // Track bed: a recessed groove with the thumb sliding between its two ends. The
+    // OFF/ON stop captions were removed - the thumb's own caption is the single
+    // authoritative state readout, so there is only ever one state word on screen.
     g.setColour (palette.readout.darker (0.55f));
     g.fillRoundedRectangle (track, 3.0f);
-    g.setColour (palette.secondary.withAlpha (0.8f));
-    g.setFont (shrinkingFont ("OFF", 7.0f, juce::Font::bold, stopWidth));
-    g.drawText ("OFF", juce::Rectangle<float> (track.getX(), track.getY(), stopWidth, track.getHeight()),
-                juce::Justification::centred, true);
-    g.setFont (shrinkingFont ("ON", 7.0f, juce::Font::bold, stopWidth));
-    g.drawText ("ON", juce::Rectangle<float> (track.getRight() - stopWidth, track.getY(),
-                                              stopWidth, track.getHeight()),
-                juce::Justification::centred, true);
 
-    // Thumb slides between the two stops. The thumb is sized to cover its stop, and
-    // pressing nudges it down one pixel for a mechanical feel.
-    const auto thumbHeight = track.getHeight() - 2.0f;
+    // Thumb sized to fully cover its half of the track (was a fixed 23 px on a track
+    // whose half-width changed with the control, so it could overhang the right edge).
+    const auto thumbWidth = juce::jmax (12.0f, (track.getWidth() - 2.0f) * 0.5f);
+    const auto thumbHeight = juce::jmax (8.0f, track.getHeight() - 2.0f);
+    const auto thumbX = isOn ? track.getRight() - thumbWidth - 1.0f : track.getX() + 1.0f;
     const auto thumbY = track.getY() + 1.0f + (shouldDrawButtonAsDown ? 1.0f : 0.0f);
-    const auto thumb = juce::Rectangle<float> (
-        (isOn ? track.getRight() - 24.0f : track.getX()) + 1.0f,
-        thumbY, 23.0f, thumbHeight);
+    const auto thumb = juce::Rectangle<float> (thumbX, thumbY, thumbWidth, thumbHeight);
     juce::ColourGradient thumbFill (palette.knobHighlight, thumb.getX(), thumb.getY(),
                                     palette.knobFace, thumb.getX(), thumb.getBottom(), false);
     g.setGradientFill (thumbFill);
@@ -354,7 +348,7 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
 
     // State text on the thumb, fitted to the thumb. The thumb is the authoritative
     // state readout, so its text must never be the thing that gets clipped.
-    g.setColour (palette.gaugeInk.withAlpha (0.95f));
+    g.setColour (isOn ? palette.gaugeInk.withAlpha (0.95f) : palette.secondary);
     g.setFont (shrinkingFont (isOn ? "ON" : "OFF", 7.5f, juce::Font::bold, thumb.getWidth()));
     g.drawText (isOn ? "ON" : "OFF", thumb, juce::Justification::centred, true);
 
@@ -443,17 +437,24 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     const auto textScale = juce::jlimit (0.85f, 1.6f,
                                          static_cast<float> (getWidth()) / 190.0f * 1.0f);
 
+    // The title and subtitle get two NON-OVERLAPPING bands carved out of one
+    // proportional top block. The old code removed 20*scale for the title, then
+    // removed 32*scale and trimmed 18*scale off that for the subtitle, so the
+    // subtitle actually started at 14*scale - six pixels (scaled) BEFORE the title
+    // ended and the two lines printed on top of each other.
+    const auto topBlock = juce::roundToInt (32.0f * textScale);
+    const auto titleHeight = juce::roundToInt (18.0f * textScale);
+    const auto localBounds = getLocalBounds();
+    const auto titleBand = localBounds.removeFromTop (titleHeight);
+    const auto subtitleBand = localBounds.removeFromTop (topBlock - titleHeight);
+
     g.setColour (palette.text);
     g.setFont (juce::Font (juce::FontOptions (10.0f * textScale, juce::Font::bold)));
-    g.drawText (title, getLocalBounds().removeFromTop (juce::roundToInt (20.0f * textScale)),
-                juce::Justification::centred, false);
+    g.drawText (title, titleBand, juce::Justification::centred, false);
 
     g.setColour (palette.secondary);
     g.setFont (juce::Font (juce::FontOptions (8.0f * textScale)));
-    g.drawText (subtitle,
-                getLocalBounds().removeFromTop (juce::roundToInt (32.0f * textScale))
-                                .withTrimmedTop (juce::roundToInt (18.0f * textScale)),
-                juce::Justification::centred, false);
+    g.drawText (subtitle, subtitleBand, juce::Justification::centred, false);
 
     // Everything below is derived from this component's own bounds rather than from
     // fixed pixel offsets, so the dial stays centred and correctly scaled whether the
@@ -467,7 +468,6 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // per-row heights that scaled with textScale, so on short, narrow cells the rows
     // bunched against the bottom edge while the dial sat high - the lopsided look that
     // made the input/output meters read as crooked next to the compressor bars.
-    const auto topBlock = juce::roundToInt (32.0f * textScale);
     constexpr int readoutRowCount = 5;
     const auto bodyHeight = juce::jmax (72, getHeight() - topBlock);
     const auto faceHeight = juce::roundToInt (static_cast<float> (bodyHeight) * 0.52f);
@@ -1279,6 +1279,19 @@ void FirstAudioProcessorEditor::updateWorkflowButtons()
     copyBButton.setButtonText (copyBButton.getButtonText()
                                + (dirty && activeSlot != 1 ? " *" : ""));
 
+    // Fit the A/B workflow captions to the width each button actually has. The live
+    // captions can grow to "A (LIVE) *" and the compare caption to "A/B: B"; at the
+    // default 14 pt they overflowed their 64/54 px buttons and ellipsised, which read
+    // as broken text. The font is scaled to the button instead.
+    const auto fitWorkflowCaption = [] (juce::TextButton& button)
+    {
+        button.setFont (shrinkingFont (button.getButtonText(), 12.0f, juce::Font::bold,
+                                       static_cast<float> (button.getWidth()) - 8.0f));
+    };
+    fitWorkflowCaption (copyAButton);
+    fitWorkflowCaption (copyBButton);
+    fitWorkflowCaption (compareButton);
+
     auto& undoManager = audioProcessor.getUndoManager();
     undoButton.setEnabled (undoManager.canUndo());
     redoButton.setEnabled (undoManager.canRedo());
@@ -1485,7 +1498,10 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     g.drawHorizontalLine (layout.meters.getY() + 48,
                           static_cast<float> (layout.meters.getX() + 18),
                           static_cast<float> (layout.meters.getRight() - 18));
-    g.drawHorizontalLine (layout.deck.getBottom() - 8,
+    // The deck divider sits one pixel above the panel's bottom edge, BELOW the preset
+    // badge band. It used to be eight pixels above the bottom, which put it straight
+    // through the middle of the badge text at the minimum editor size.
+    g.drawHorizontalLine (layout.deck.getBottom() - 1,
                           static_cast<float> (layout.deck.getX() + 16),
                           static_cast<float> (layout.deck.getRight() - 16));
 
@@ -1574,16 +1590,17 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
 
     for (const auto& orb : orbsToDraw)
     {
-        // The orbs drift only inside the deck's free corridor between the oversampling
-        // box (ends x + 382) and the harmonics readout (starts x + 608), on the
-        // heading + switches bands. They used to wander over the readout text, the
-        // reel and the preset row.
+        // The orbs drift only inside the deck's free corridor on the SWITCHES line,
+        // between the oversampling box (ends x + 382) and the harmonics readout
+        // (starts x + 608). The old vertical band was the heading + switches rows
+        // (y + 14..62), which crossed the BYPASS switch and the deck hint on the
+        // transport row above.
         const auto x = juce::jmap (orb.position.x, 0.0f, 1.5f,
                                    static_cast<float> (layout.deck.getX()) + 400.0f,
                                    static_cast<float> (layout.deck.getX()) + 590.0f);
         const auto y = juce::jmap (orb.position.y, 0.0f, 1.2f,
-                                   static_cast<float> (layout.deck.getY()) + 14.0f,
-                                   static_cast<float> (layout.deck.getY()) + 62.0f);
+                                   static_cast<float> (layout.deck.getY()) + 74.0f,
+                                   static_cast<float> (layout.deck.getY()) + 104.0f);
         const auto radius = juce::jmap (orb.radius, 0.045f, 0.057f, 2.0f, 3.5f);
 
         // Halos breathe so the orbs read as particles rather than static dots.
@@ -1821,12 +1838,13 @@ void FirstAudioProcessorEditor::resized()
     // The deck has three dedicated lines, each chain widths are tuned to fit the
     // minimum deck width (752 px at a 780 px window) without any overlap:
     //   line 1 (y + 32) - transport: MODEL | tape box | SPEED | speed box | BYPASS | hint
-    //                     chain ends at x + 634 of 752.
+    //                     chain ends at x + 664 of 752.
     //   line 2 (y + 74) - POLARITY | AUTO GAIN | OVER | oversampling box (ends x + 324);
     //                     the harmonics readout takes the right end (x + 608..x + 738).
     //   line 3 (y + 116)- PRESET | factory box | USER box | SAVE | DEL | A/B | undo | redo
     //                     | badge (ends x + 751 of 752).
-    // The preset badge rides its own band at y + 150, so no label ever sits on a control.
+    // The preset badge rides its own band at y + 149, and the deck divider is drawn at
+    // y + 163 (just above the panel edge) so the divider never crosses the badge text.
     deckHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 6, 150, 16);
 
     tapeTypeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 41, 45, 16);
@@ -1834,7 +1852,7 @@ void FirstAudioProcessorEditor::resized()
     speedLabel.setBounds (tapeTypeBox.getRight() + 16, layout.deck.getY() + 41, 45, 16);
     speedBox.setBounds (tapeTypeBox.getRight() + 62, layout.deck.getY() + 32, 104, 32);
     bypassButton.setBounds (speedBox.getRight() + 18, layout.deck.getY() + 32, 92, 32);
-    deckHintLabel.setBounds (bypassButton.getRight() + 14, layout.deck.getY() + 34, 130, 28);
+    deckHintLabel.setBounds (bypassButton.getRight() + 14, layout.deck.getY() + 34, 160, 28);
 
     polarityButton.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 74, 92, 32);
     autoGainButton.setBounds (polarityButton.getRight() + 6, layout.deck.getY() + 74, 100, 32);
@@ -1858,6 +1876,14 @@ void FirstAudioProcessorEditor::resized()
     undoButton.setBounds (compareButton.getRight() + 5, layout.deck.getY() + 116, 44, 32);
     redoButton.setBounds (undoButton.getRight() + 5, layout.deck.getY() + 116, 44, 32);
     compareBadgeLabel.setBounds (redoButton.getRight() + 8, layout.deck.getY() + 116, 54, 32);
+
+    // Re-fit every workflow caption now that the buttons have their real widths
+    // (updateWorkflowButtons ran before the first resized(), when the widths were
+    // still zero), so A/B can never ellipsise after a host resize.
+    for (auto* button : { &copyAButton, &copyBButton, &compareButton,
+                          &savePresetButton, &deletePresetButton, &undoButton, &redoButton })
+        button->setFont (shrinkingFont (button->getButtonText(), 12.0f, juce::Font::bold,
+                                        static_cast<float> (button->getWidth()) - 8.0f));
 
     presetBadgeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 149,
                                 layout.deck.getWidth() - 36, 13);
