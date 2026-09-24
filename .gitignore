@@ -11,6 +11,21 @@
 *.VC.VC.opendb
 
 # Build outputs
+#
+# CMake builds out-of-source, so the whole tree is disposable and must never be
+# committed. The generic names below catch a default `cmake -B build`, and the
+# explicit `build/` entry catches the one the CI and the README use.
+build/
+cmake-build-*/
+CMakeFiles/
+CMakeCache.txt
+cmake_install.cmake
+CTestTestfile.cmake
+_deps/
+install_manifest.txt
+*.ninja
+compile_commands.json
+
 x64/
 x86/
 Debug/
@@ -18,17 +33,18 @@ Release/
 bin/
 obj/
 out/
-Builds/**/x64/
-Builds/**/x86/
-Builds/**/Debug/
-Builds/**/Release/
 
 # JUCE / plugin artifacts
+#
+# These patterns matter more than they look: a stray *.vst3/ or *.component/
+# inside the checkout would be picked up by some hosts when scanning the repo,
+# and a committed bundle is always a stale build.
 *.dll
 *.so
 *.dylib
 *.vst3/
 *.component/
+*.appex/
 *.aaxplugin/
 *.wav
 *.mp3
@@ -39,7 +55,10 @@ Builds/**/Release/
 *.lib
 *.pdb
 *.obj
+*.o
+*.a
 *.pch
+*.gch
 *.idb
 *.ipch
 *.tlog
@@ -51,7 +70,6 @@ Builds/**/Release/
 *.cache
 *.ilk
 *.db
-*.jucer.user
 
 # OS / misc
 Thumbs.db

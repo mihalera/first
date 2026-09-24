@@ -70,7 +70,23 @@ juce_add_plugin(first
     COMPANY_WEBSITE             "https://www.MCsmes.com"
     COMPANY_EMAIL               ""
     BUNDLE_ID                   "com.MCsmes.first"
-    PLUGIN_MANUFACTURER_CODE    Mcms
+
+    # These two codes are the plugin's identity to every host. They are
+    # deliberately NOT "corrected" to match the company name:
+    #
+    #   ManufacturerCode 0x4d616e75  "Manu"
+    #   PluginCode       0x5a793539  "Zy59"
+    #
+    # 0x4d616e75 is the ASCII for "Manu" - the default that JUCE's template
+    # supplies, and the value the Projucer project has always carried. The plugin
+    # code was customised but the manufacturer code never was.
+    #
+    # Hosts key their plugin registry and their saved sessions on this PAIR, so
+    # changing either one makes the plugin look like a different product:
+    # existing sessions would not find it, and users would end up with both old
+    # and new entries installed side by side. "Manu" therefore stays exactly as
+    # it is, however odd it looks next to the company name.
+    PLUGIN_MANUFACTURER_CODE    Manu
     PLUGIN_CODE                 Zy59
     PRODUCT_NAME                "Analog Saturator"
     DESCRIPTION                 "Tape machine saturation and J37-style coloration"
