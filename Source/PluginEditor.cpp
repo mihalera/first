@@ -255,41 +255,48 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     g.setColour (palette.panel.brighter (0.15f).withAlpha (0.5f));
     g.drawRoundedRectangle (bounds.reduced (2.0f), 3.0f, 0.7f);
 
-    // Left half: the LED and the function name. Right half: the sliding thumb with
-    // the engraved state (OFF / ON) printed on the thumb itself, which keeps the
-    // state readable at the panel's 32 px switch height without crowding.
-    const auto ledZone = juce::Rectangle<float> (bounds.getX() + 2.0f, bounds.getY(),
-                                                 bounds.getWidth() * 0.5f - 4.0f,
-                                                 bounds.getHeight());
-    const auto thumbZone = juce::Rectangle<float> (bounds.getRight() - bounds.getWidth() * 0.5f + 2.0f,
-                                                   bounds.getY(),
-                                                   bounds.getWidth() * 0.5f - 4.0f,
-                                                   bounds.getHeight());
+    // Two stacked bands so nothing ever fights for width:
+    //   top band    - the function name, centred across the full switch width
+    //   bottom band - a short track with the OFF and ON stops and the sliding thumb;
+    //                 the thumb carries the state text, so the state is always
+    //                 readable and the label never truncates.
+    const auto labelBand = bounds.withTrimmedTop (0.0f).withHeight (11.0f);
+    const auto track = bounds.withTrimmedTop (11.0f).withTrimmedLeft (5.0f).withTrimmedRight (5.0f);
 
-    // LED: lit when on, dark socket when off.
-    const auto ledCentre = juce::Point<float> (ledZone.getX() + 7.0f, ledZone.getCentreY());
+    // Status LED in the label band's left corner: the band's only other occupant is
+    // the centred label, so the LED has guaranteed clear space.
+    const auto ledCentre = juce::Point<float> (bounds.getX() + 6.0f, labelBand.getCentreY());
     if (isOn)
     {
         g.setColour (palette.status.withAlpha (0.22f));
-        g.fillEllipse (ledCentre.x - 4.5f, ledCentre.y - 4.5f, 9.0f, 9.0f);
+        g.fillEllipse (ledCentre.x - 4.0f, ledCentre.y - 4.0f, 8.0f, 8.0f);
     }
     g.setColour (isOn ? palette.status : palette.knobEdge.withAlpha (0.45f));
     g.fillEllipse (ledCentre.x - 2.0f, ledCentre.y - 2.0f, 4.0f, 4.0f);
 
-    // Function name engraved next to the LED.
+    // Function name, engraved across the full width. Nothing else shares this band.
     g.setColour (palette.text.withAlpha (0.92f));
-    g.setFont (juce::Font (juce::FontOptions (8.5f, juce::Font::bold)));
-    g.drawText (button.getButtonText().toUpperCase(),
-                ledZone.withTrimmedLeft (15.0f).withTrimmedRight (2.0f),
-                juce::Justification::centredLeft, true);
+    g.setFont (juce::Font (juce::FontOptions (8.0f, juce::Font::bold)));
+    g.drawText (button.getButtonText().toUpperCase(), labelBand,
+                juce::Justification::centred, false);
 
-    // Thumb on the right half, nudged to the engaged position with a small travel.
-    const auto travel = juce::Point<float> (isOn ? 0.0f : -4.0f, 0.0f);
-    auto thumb = juce::Rectangle<float> (thumbZone.getX() + thumbZone.getWidth() - 26.0f,
-                                         bounds.getY() + 4.0f, 24.0f, bounds.getHeight() - 8.0f);
-    if (shouldDrawButtonAsDown)
-        thumb.translate (0.0f, 1.0f);
-    thumb.translate (travel.x, travel.y);
+    // Track bed: recessed groove with OFF and ON stops engraved at its ends.
+    g.setColour (palette.readout.darker (0.55f));
+    g.fillRoundedRectangle (track, 3.0f);
+    g.setFont (juce::Font (juce::FontOptions (7.0f, juce::Font::bold)));
+    g.setColour (palette.secondary.withAlpha (0.8f));
+    g.drawText ("OFF", juce::Rectangle<float> (track.getX(), track.getY(), 22.0f, track.getHeight()),
+                juce::Justification::centred, false);
+    g.drawText ("ON", juce::Rectangle<float> (track.getRight() - 22.0f, track.getY(), 22.0f, track.getHeight()),
+                juce::Justification::centred, false);
+
+    // Thumb slides between the two stops. The thumb is sized to cover its stop, and
+    // pressing nudges it down one pixel for a mechanical feel.
+    const auto thumbHeight = track.getHeight() - 2.0f;
+    const auto thumbY = track.getY() + 1.0f + (shouldDrawButtonAsDown ? 1.0f : 0.0f);
+    const auto thumb = juce::Rectangle<float> (
+        (isOn ? track.getRight() - 24.0f : track.getX()) + 1.0f,
+        thumbY, 23.0f, thumbHeight);
     juce::ColourGradient thumbFill (palette.knobHighlight, thumb.getX(), thumb.getY(),
                                     palette.knobFace, thumb.getX(), thumb.getBottom(), false);
     g.setGradientFill (thumbFill);
@@ -297,9 +304,9 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     g.setColour (palette.knobEdge.withAlpha (0.85f));
     g.drawRoundedRectangle (thumb, 3.0f, 1.0f);
 
-    // State caption engraved on the thumb.
-    g.setColour (palette.gaugeInk.withAlpha (0.9f));
-    g.setFont (juce::Font (juce::FontOptions (8.0f, juce::Font::bold)));
+    // State text on the thumb.
+    g.setColour (palette.gaugeInk.withAlpha (0.95f));
+    g.setFont (juce::Font (juce::FontOptions (7.5f, juce::Font::bold)));
     g.drawText (isOn ? "ON" : "OFF", thumb, juce::Justification::centred, false);
 
     // Hover ring for mouse/keyboard focus feedback.
@@ -742,7 +749,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 paletteFor (false).secondary, false, juce::Justification::centredLeft);
     styleLabel (controlsHeadingLabel, "TAPE CHARACTER", 10.0f, paletteFor (false).accent,
                 true, juce::Justification::left);
-    styleLabel (controlsHintLabel, "Hold Shift for fine tune. Wheel for small steps.", 9.0f,
+    styleLabel (controlsHintLabel, "Shift = fine tune", 9.0f,
                 paletteFor (false).secondary, false, juce::Justification::right);
     styleLabel (metersHeadingLabel, "LEVELS", 10.0f, paletteFor (false).accent,
                 true, juce::Justification::left);
@@ -1781,16 +1788,16 @@ void FirstAudioProcessorEditor::resized()
                                 layout.deck.getY() + 88, harmonicsWidth, 14);
 
     presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 125, 46, 16);
-    presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 116, 110, 32);
-    userPresetBox.setBounds (presetBox.getRight() + 6, layout.deck.getY() + 116, 106, 32);
-    savePresetButton.setBounds (userPresetBox.getRight() + 5, layout.deck.getY() + 116, 42, 32);
+    presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 116, 128, 32);
+    userPresetBox.setBounds (presetBox.getRight() + 6, layout.deck.getY() + 116, 100, 32);
+    savePresetButton.setBounds (userPresetBox.getRight() + 5, layout.deck.getY() + 116, 40, 32);
     deletePresetButton.setBounds (savePresetButton.getRight() + 4, layout.deck.getY() + 116, 38, 32);
-    copyAButton.setBounds (deletePresetButton.getRight() + 10, layout.deck.getY() + 116, 66, 32);
-    copyBButton.setBounds (copyAButton.getRight() + 5, layout.deck.getY() + 116, 66, 32);
-    compareButton.setBounds (copyBButton.getRight() + 5, layout.deck.getY() + 116, 56, 32);
-    undoButton.setBounds (compareButton.getRight() + 5, layout.deck.getY() + 116, 46, 32);
-    redoButton.setBounds (undoButton.getRight() + 5, layout.deck.getY() + 116, 46, 32);
-    compareBadgeLabel.setBounds (redoButton.getRight() + 8, layout.deck.getY() + 116, 56, 32);
+    copyAButton.setBounds (deletePresetButton.getRight() + 10, layout.deck.getY() + 116, 64, 32);
+    copyBButton.setBounds (copyAButton.getRight() + 5, layout.deck.getY() + 116, 64, 32);
+    compareButton.setBounds (copyBButton.getRight() + 5, layout.deck.getY() + 116, 54, 32);
+    undoButton.setBounds (compareButton.getRight() + 5, layout.deck.getY() + 116, 44, 32);
+    redoButton.setBounds (undoButton.getRight() + 5, layout.deck.getY() + 116, 44, 32);
+    compareBadgeLabel.setBounds (redoButton.getRight() + 8, layout.deck.getY() + 116, 54, 32);
 
     presetBadgeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 149,
                                 layout.deck.getWidth() - 36, 13);
