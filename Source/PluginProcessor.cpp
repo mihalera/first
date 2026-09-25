@@ -1775,6 +1775,50 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         // gain-only.
         std::array<float, 2> undertoneOutput {};
 
+        // ------------------------------------------------------------------
+        //  Input stage glue compressor, detected ONCE per frame.
+        //
+        //  It sits straight after the input trim, so the signal that reaches the
+        //  tape is always the controlled one and the INPUT control is what drives
+        //  this stage - exactly like hitting a recorder input harder. Fully
+        //  independent of the output stage: this detector only ever sees the
+        //  trimmed input.
+        //
+        //  It used to run inside the per-channel loop, once per channel, on that
+        //  channel's own power. In stereo that is a detector advancing twice per
+        //  frame, so every attack and release constant silently halved, and each
+        //  channel taking its gain from an envelope the other channel had already
+        //  moved - the two sides compressed at slightly different instants, which
+        //  is where stereo image wander on a transient comes from. The gain is now
+        //  computed once, from the power averaged over the channels, and both
+        //  sides are given the same one. This is the arrangement the OUTPUT stage
+        //  compressor below has always used.
+        // ------------------------------------------------------------------
+        std::array<float, 2> inputTrimmedByChannel {};
+        float inputDetectorPower = 0.0f;
+        for (int channel = 0; channel < activeChannels; ++channel)
+        {
+            const auto raw = channelData[static_cast<std::size_t> (channel)][sample];
+            const auto trimmed = raw * inputGain;
+            inputTrimmedByChannel[static_cast<std::size_t> (channel)] = trimmed;
+            inputDetectorPower += trimmed * trimmed;
+        }
+        inputDetectorPower /= static_cast<float> (juce::jmax (1, activeChannels));
+
+        const float inputEnvelopeDb = inputCompressor.processDetection (
+            inputDetectorPower, engineSampleRate, inputAttackSeconds, inputReleaseSeconds,
+            inputDriveLoad);
+        const float inputReductionDb = juce::jmax (inputReductionLimitDb,
+                                                   softKneeReductionDb (inputEnvelopeDb,
+                                                                        inputThresholdDb,
+                                                                        inputKneeDb,
+                                                                        inputCompressorRatio));
+        const float inputCompressionGain = juce::Decibels::decibelsToGain (inputReductionDb);
+
+        inputPeakReductionDb = juce::jmin (inputPeakReductionDb, inputReductionDb);
+        inputEnvelopeActivity = juce::jmax (inputEnvelopeActivity,
+                                            inputCompressor.getEnvelopeActivity());
+
         for (int channel = 0; channel < activeChannels; ++channel)
         {
             auto& wowPhase = channel == 0 ? wowPhaseL : wowPhaseR;
@@ -1793,38 +1837,15 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             if (std::abs (rawInput) > 1.0f)
                 inputClippingThisBlock = true;
 
-            // Input trim, then the input stage glue compressor. The detector runs on
-            // the trimmed signal, which is the level the INPUT control is asking for,
-            // and the resulting gain is folded into that same signal - so the tape
-            // hears one consistent, controlled level rather than a re-trim.
-            const float inputTrimmed = rawInput * inputGain;
+            // The trimmed input for this channel, and this frame's compressor gain
+            // for both of them, as computed once above the loop.
+            const float inputTrimmed = inputTrimmedByChannel[static_cast<std::size_t> (channel)];
 
             // Track the power of the post-INPUT, pre-first-compressor signal. Only the
             // first channel contributes so the reference is a mono measurement, which
             // keeps it independent of how the stereo material is panned.
             if (channel == 0)
                 referenceBlockPower += inputTrimmed * inputTrimmed;
-            // ------------------------------------------------------------------
-            //  Input stage glue compressor. It sits straight after the input trim,
-            //  so the signal that reaches the tape is always the controlled one and
-            //  the INPUT control is what drives this stage - exactly like hitting a
-            //  recorder input harder. Fully independent of the output stage: this
-            //  detector only ever sees the trimmed input signal.
-            // ------------------------------------------------------------------
-            const float inputEnvelopeDb = inputCompressor.processDetection (
-                inputTrimmed * inputTrimmed, engineSampleRate, inputAttackSeconds, inputReleaseSeconds,
-                inputDriveLoad);
-            const float inputReductionDb = juce::jmax (inputReductionLimitDb,
-                                                       softKneeReductionDb (inputEnvelopeDb,
-                                                                            inputThresholdDb,
-                                                                            inputKneeDb,
-                                                                            inputCompressorRatio));
-            const float inputCompressionGain = juce::Decibels::decibelsToGain (inputReductionDb);
-
-            inputPeakReductionDb = juce::jmin (inputPeakReductionDb, inputReductionDb);
-            inputEnvelopeActivity = juce::jmax (inputEnvelopeActivity,
-                                                inputCompressor.getEnvelopeActivity());
-
             const float x = inputTrimmed * inputCompressionGain;
 
             const float wowLfo = std::sin (wowPhase);
@@ -1913,9 +1934,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                 harmonicAnalyser.analyse (preDrive, shapedCore, engineSampleRate);
 
             // Tape is a low-pass medium: the faster the tape and the brighter the
-            // tone setting, the more top end survives. The subharmonic rides into this
-            // filter along with the shaper output, so tape's own top-end loss applies
-            // to it as well - it is part of the recording, not an effect layered on it.
+            // tone setting, the more top end survives. The undertones are NOT part of
+            // this - they join below, after the last nonlinearity.
             highFreqMemory[1] += (withSubharmonic - highFreqMemory[1]) * toneLpSmoothed.getCurrentValue();
             const float afterTapeLoss = highFreqMemory[1];
 
@@ -1999,8 +2019,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // octaves (open) - linear in between, so the knob behaves like the EQ
             // it is drawn as.
             const float lowBand = highFreqMemory[0];
-            toneShelfState += (motioned - lowBand - toneShelfState) * toneShelfCoefficient;
-            const float shelfLift = toneShelfState * (toneShelfGainSmoothed.getCurrentValue() - 1.0f);
+            auto& shelfState = toneShelfState[static_cast<std::size_t> (channel)];
+            shelfState += (motioned - lowBand - shelfState) * toneShelfCoefficient;
+            const float shelfLift = shelfState * (toneShelfGainSmoothed.getCurrentValue() - 1.0f);
             const float deEmphasised = motioned + shelfLift;
 
             // -------------------------------------------------------------------
@@ -2238,12 +2259,22 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
         // K-weighted loudness runs on the final stereo frame, after the width stage, so
         // it reports what actually leaves the plugin.
+        //
+        // It reads the channels back out of the buffer rather than off outputSignal,
+        // for two reasons. The OUTPUT trim was already applied to outputSignal above,
+        // so metering `outputSignal * outputGain` - which is what this used to do -
+        // applied that trim a second time: the meter read 6 dB high for every decibel
+        // of boost on OUTPUT, on a control that has nothing to do with loudness. And
+        // the buffer holds the finished sample - the limiter's gain, the soft clipper
+        // and the bypass crossfade have all run by this point - so this is the only
+        // one of the three reads that is the signal the host actually receives. The
+        // INPUT meter below reads its channels the same way.
         if (activeChannels == 2)
-            currentLufs = outputLoudness.processFrame (outputSignal[0] * outputGain,
-                                                       outputSignal[1] * outputGain, engineSampleRate);
+            currentLufs = outputLoudness.processFrame (channelData[0][sample],
+                                                       channelData[1][sample], engineSampleRate);
         else if (activeChannels == 1)
-            currentLufs = outputLoudness.processFrame (outputSignal[0] * outputGain,
-                                                       outputSignal[0] * outputGain, engineSampleRate);
+            currentLufs = outputLoudness.processFrame (channelData[0][sample],
+                                                       channelData[0][sample], engineSampleRate);
 
         // The INPUT meter runs the same K-weighting on the raw signal at the plugin's
         // own input, so the two meters can be compared directly. The channels are read

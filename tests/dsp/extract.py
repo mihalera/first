@@ -19,6 +19,16 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 HEADER = REPO / "Source" / "PluginProcessor.h"
 IMPL = REPO / "Source" / "PluginProcessor.cpp"
 
+# The MIX crossfade is a two-part fact: the formula in the .cpp and an inversion
+# flag on the smoother in the .h. Each was correct on its own once, and the pair
+# was wrong together - the flag was a patch over a formula that put sin() and cos()
+# on the wrong sides, and correcting the formula without removing the patch left
+# the two ends of the control swapped. A replica that hard-codes the intended
+# behaviour cannot see that class of bug at all, so the flag is read out of the
+# real declaration and handed to the harness.
+MIX_SMOOTHER = re.compile(
+    r"SampleSmoother\s+mixSmoothed\s*\{([^}]*)\}")
+
 HEADER_PIECES = [
     ("GlueCompressor", "struct GlueCompressor"),
     ("SubharmonicGenerator", "struct SubharmonicGenerator"),
@@ -48,6 +58,23 @@ def extract_function(text: str, signature: str) -> str:
     return text[start:end]
 
 
+def mix_inverts(header: str) -> bool:
+    """True when the real `mixSmoothed` member is declared with invertOutput set."""
+    match = MIX_SMOOTHER.search(header)
+    if match is None:
+        raise SystemExit(
+            "extract.py: no `SampleSmoother mixSmoothed {...}` declaration found in "
+            "PluginProcessor.h. The MIX crossfade cannot be checked without it.")
+
+    arguments = [argument.strip() for argument in match.group(1).split(",")]
+
+    # SampleSmoother (clock, startsSample = false, invertOutput = false, initial = 0)
+    if len(arguments) < 2:
+        return False
+
+    return arguments[1].lower() == "true"
+
+
 def main() -> int:
     destination = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "extracted_dsp.inc")
     header = HEADER.read_text()
@@ -55,6 +82,8 @@ def main() -> int:
 
     chunks = ["// GENERATED FILE - do not edit.",
               "// Cut verbatim out of Source/ by tests/dsp/extract.py.",
+              "",
+              f"#define SUBFUND_MIX_INVERTS {1 if mix_inverts(header) else 0}",
               ""]
 
     for name, declaration in HEADER_PIECES:
