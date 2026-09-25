@@ -374,18 +374,30 @@ private:
 */
 struct SubharmonicGenerator
 {
-    // A four-stage undertone cascade. The stages produce the subharmonic series:
-    // fundamental / 2, fundamental / 3, fundamental / 4, and fundamental / 5.
+    // An eight-stage undertone cascade. The stages produce the subharmonic series:
+    // fundamental / 2, / 3, / 4, / 5, / 6, / 7, / 8, and / 9.
     //
-    // For a 100 Hz fundamental:
-    //   - Stage 0 (/2): 50.0 Hz  (sub-octave -1: foundational sub-bass weight)
-    //   - Stage 1 (/3): 33.3 Hz  (1 octave + 5th down: low-mid harmonic thickness)
-    //   - Stage 2 (/4): 25.0 Hz  (sub-octave -2: deep sub rumble)
-    //   - Stage 3 (/5): 20.0 Hz  (2 octaves + major 3rd down: seismic undertone)
-    static constexpr int numStages = 4;
-    static constexpr int dividers[numStages] { 2, 3, 4, 5 };
+    // For a fundamental note that allows them (e.g. >= 140 Hz):
+    //   - Stage 0 (/2): -1 octave (foundational sub-bass weight)
+    //   - Stage 1 (/3): -1 octave + 5th down (low-mid harmonic thickness)
+    //   - Stage 2 (/4): -2 octaves down (deep sub rumble)
+    //   - Stage 3 (/5): -2 octaves + major 3rd down (warm undertone)
+    //   - Stage 4 (/6): -2 octaves + 5th down (sub-bass density)
+    //   - Stage 5 (/7): -2 octaves + harmonic 7th down (extended sub warmth)
+    //   - Stage 6 (/8): -3 octaves down (extreme low weight)
+    //   - Stage 7 (/9): -3 octaves + major 2nd down (sub-boundary reinforcement)
+    //
+    // Frequency-aware audibility:
+    // When the input fundamental is very low (e.g. 20 - 40 Hz), dividing by 4, 5, 6, 7, 8, 9
+    // would produce inaudible subsonic DC (< 14 Hz) that strains speakers and ruins headroom.
+    // Each stage checks its actual synthesized frequency and smoothly rolls off between
+    // 22 Hz and 14 Hz. Thus, when the signal allows (upper bass / low mids), all 8 stages
+    // are fully active; when the note is already deep sub-bass, stages below the audible
+    // limit fade out gracefully.
+    static constexpr int numStages = 8;
+    static constexpr int dividers[numStages] { 2, 3, 4, 5, 6, 7, 8, 9 };
 
-    // Detector filter states (2-pole Butterworth low-pass at ~240 Hz).
+    // Detector filter states (2-pole Butterworth low-pass at ~260 Hz).
     // Filters out upper harmonics, cymbals, guitars and noise so that cycle
     // detection locks cleanly onto the true fundamental bass note.
     float lp1 = 0.0f;
@@ -435,7 +447,7 @@ struct SubharmonicGenerator
 
         cachedSampleRate = currentSampleRate;
         const float safeRate = juce::jmax (1.0f, currentSampleRate);
-        lpCoeff = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * 240.0f / safeRate);
+        lpCoeff = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * 260.0f / safeRate);
         attackCoeff = 1.0f - std::exp (-1.0f / (safeRate * 0.003f));
         releaseCoeff = 1.0f - std::exp (-1.0f / (safeRate * 0.060f));
     }
@@ -457,7 +469,7 @@ struct SubharmonicGenerator
         const float safeRate = juce::jmax (1.0f, sampleRate);
 
         // ----------------------------------------------------------------------
-        //  1. Two-pole low-pass filter (~240 Hz) on detector path.
+        //  1. Two-pole low-pass filter (~260 Hz) on detector path.
         //  Isolates the fundamental bass note from highs and overtones so the
         //  cycle detector never mistriggers on treble content.
         // ----------------------------------------------------------------------
@@ -487,9 +499,9 @@ struct SubharmonicGenerator
         if (det > triggerThreshold && prevDet <= triggerThreshold && armed)
         {
             armed = false;
-            // Valid fundamental range: 25 Hz up to 500 Hz
+            // Valid fundamental range: 15 Hz up to 500 Hz
             const float minPeriod = safeRate / 500.0f;
-            const float maxPeriod = safeRate / 25.0f;
+            const float maxPeriod = safeRate / 15.0f;
 
             if (samplesSinceCrossing >= minPeriod && samplesSinceCrossing <= maxPeriod)
                 period += (samplesSinceCrossing - period) * 0.25f;
@@ -520,24 +532,15 @@ struct SubharmonicGenerator
         // ----------------------------------------------------------------------
         //  4. Continuous phase advancement and subharmonic synthesis.
         // ----------------------------------------------------------------------
-        const float safePeriod = juce::jlimit (safeRate / 500.0f, safeRate / 25.0f, period);
+        const float safePeriod = juce::jlimit (safeRate / 500.0f, safeRate / 15.0f, period);
         const float baseStep = 1.0f / safePeriod;
+        const float trackedFundamentalHz = safeRate / safePeriod;
 
-        // Stage weighting: stage 0 (octave down) is always present;
-        // higher drive progressively activates stages 1, 2, 3 (1/3, 1/4, 1/5).
         const float clampedDrive = juce::jlimit (0.0f, 1.0f, driveAmount);
-        const float w0 = 1.0f;
-        const float w1 = 0.25f + 0.35f * clampedDrive;
-        const float w2 = 0.15f + 0.30f * clampedDrive;
-        const float w3 = 0.05f + 0.20f * clampedDrive;
-        const float weights[numStages] { w0, w1, w2, w3 };
-        const float weightSum = w0 + w1 + w2 + w3;
-
-        // Downward saturation ("сатурація в інший бік"):
-        // Saturating the subharmonics produces warm analog inter-harmonics that
-        // glue the sub frequencies directly into the note's fundamental.
         const float driveScale = 1.0f + clampedDrive * 1.5f;
+
         float sum = 0.0f;
+        float weightSum = 0.0f;
 
         for (int s = 0; s < numStages; ++s)
         {
@@ -545,16 +548,47 @@ struct SubharmonicGenerator
             if (phases[s] >= 1.0f)
                 phases[s] -= 1.0f;
 
+            const float subFreq = trackedFundamentalHz / static_cast<float> (dividers[s]);
+
+            // Low-frequency audibility window:
+            // Stages that fall below ~14 - 22 Hz are smoothly attenuated so that
+            // inaudible, speaker-straining infrasonic DC is never generated.
+            // When f0 is high enough (e.g. > 140 Hz), all 8 subharmonics are fully active.
+            // When f0 is very low (e.g. 20 Hz), inaudible stages fade out naturally.
+            float audibility = 0.0f;
+            if (subFreq >= 22.0f)
+            {
+                audibility = 1.0f;
+            }
+            else if (subFreq > 14.0f)
+            {
+                const float t = (subFreq - 14.0f) / (22.0f - 14.0f);
+                audibility = t * t * (3.0f - 2.0f * t); // smoothstep
+            }
+
+            if (audibility <= 0.0f)
+                continue;
+
+            // Stage weighting: stage 0 (octave down) has full presence;
+            // higher stages scale with drive and fall off progressively.
+            const float stageFalloff = 1.0f / static_cast<float> (s + 1);
+            const float w = (s == 0) ? 1.0f : stageFalloff * (0.20f + 0.80f * clampedDrive);
+            const float effectiveWeight = w * audibility;
+            weightSum += effectiveWeight;
+
             // Continuous cosine waveform
             const float osc = std::cos (juce::MathConstants<float>::twoPi * phases[s]);
 
-            // Soft-clip saturation on subharmonic
+            // Soft-clip saturation on subharmonic (downward saturation)
             const float saturated = std::tanh (osc * driveScale);
-            sum += saturated * weights[s];
+            sum += saturated * effectiveWeight;
         }
 
-        // Dynamically scaled by the fundamental bass envelope and user depth
-        return (sum / weightSum) * detPeak * depth;
+        if (weightSum <= 1.0e-4f)
+            return 0.0f;
+
+        const float fade = juce::jmin (1.0f, weightSum);
+        return (sum / weightSum) * detPeak * depth * fade;
     }
 };
 

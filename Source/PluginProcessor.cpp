@@ -596,10 +596,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
 
     // SUBFUND: the subharmonic generator. Every other stage here makes overtones - a
     // 100 Hz note gains 200, 300, 400 Hz. This one produces the subharmonic series:
-    // multi-frequency downward harmonics (1/2, 1/3, 1/4, 1/5 - 50, 33.3, 25, 20 Hz)
-    // with analogue saturation in the other direction. Real tape does this through
-    // bias leakage, domain-wall motion and scrape flutter, none of which a static
-    // curve can produce. See SubharmonicGenerator.
+    // an 8-stage downward harmonic cascade (1/2, 1/3, 1/4, 1/5, 1/6, 1/7, 1/8, 1/9)
+    // with analogue saturation in the other direction. When the fundamental frequency
+    // permits, up to 8 subharmonics are synthesized; stages falling below the audible
+    // threshold (< 14-22 Hz) are smoothly attenuated to prevent subsonic DC rumble.
+    // See SubharmonicGenerator.
     //
     // Defaults to OFF: it is a colour, not a correction, and a plugin should not add
     // subharmonic weight to every session that has not asked for it.

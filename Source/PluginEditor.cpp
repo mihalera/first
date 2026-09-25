@@ -1042,11 +1042,12 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "wide. Default 50 percent.") + hints;
             if (id == "subfund")
                 return juce::String ("SUBFUND - subharmonic saturation (downward harmonics). "
-                       "Generates the subharmonic undertone family (1/2, 1/3, 1/4, 1/5) "
-                       "below the note, adding deep multi-layered weight and warmth that regular "
-                       "saturation cannot reach. While standard tape drive pushes harmonics upward, "
-                       "this saturates in the opposite direction with warm analog soft-clipping, "
-                       "phase-locked dynamically to the bass performance. Default 0 percent - "
+                       "Generates up to 8 subharmonic undertones (1/2 through 1/9) "
+                       "below the note when signal frequency permits, adding deep multi-layered "
+                       "weight and warmth that regular saturation cannot reach. Stages falling "
+                       "below audible sub-bass (< 14-22 Hz) are smoothly attenuated to prevent DC "
+                       "rumble. While standard drive pushes harmonics upward, this saturates in the "
+                       "opposite direction with warm analog soft-clipping. Default 0 percent - "
                        "it is a colour, not a correction.") + hints;
             return hints;
         };
