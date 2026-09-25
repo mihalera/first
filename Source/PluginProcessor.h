@@ -403,10 +403,11 @@ struct SubharmonicGenerator
     float lp1 = 0.0f;
     float lp2 = 0.0f;
 
-    // Follower tracking the dynamic envelope of the bass fundamental.
+    // Follower tracking the dynamic envelope of the RAW input signal.
     // Scales the generated subharmonics so they breathe with the music and
     // decay smoothly to silence.
     float detPeak = 0.0f;
+    float peakTrack = 0.0f;  // tracks raw input envelope (not filtered)
 
     // Period tracker and Schmitt-trigger zero crossing detector
     float period = 441.0f;
