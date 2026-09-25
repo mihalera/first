@@ -75,7 +75,30 @@ namespace
         // Remove the bias offset asymmetrically so the effect adds even harmonics instead
         // of merely shifting the signal. The squared term makes the asymmetry
         // level-dependent, mirroring how real bias interacts with signal amplitude.
-        return blended - asymmetry * (0.55f + 0.45f * hard * hard);
+        const float asymmetryTerm = asymmetry * 0.45f * hard * hard;
+
+        // The bias is an OFFSET on this transfer curve, and an offset on a curve is
+        // also a DC pedestal coming out of it: at digital silence this function
+        // returned a constant of roughly -30 dBFS rather than zero. That pedestal is
+        // the last always-on source in the engine - the hiss is gated by the
+        // transport, but this was not - and it is a rumble, not a click: it arrives
+        // the instant the input goes quiet, sits there, and is then taken away
+        // again by the playback DC blocker some 20 ms later. On a pause that reads
+        // as the machine still making a sound with nothing playing.
+        //
+        // Subtracting the curve's own value at zero input removes the pedestal and
+        // nothing else. The even-harmonic asymmetry survives intact because only its
+        // AC part is kept - the difference between the asymmetry term now and the
+        // same term evaluated at zero - and the lagged branch is evaluated at the
+        // same memory it was given, so the subtraction is exact rather than an
+        // approximation that drifts. Zero in, zero out, at every drive and bias, on
+        // every sample.
+        const float hardAtZero = std::tanh (asymmetry * slope) / slope;
+        const float delayedAtZero = std::tanh ((asymmetry * delayedSlope) + lagged) / delayedSlope;
+        const float blendedAtZero = hardAtZero * hardWeight + delayedAtZero * delayedWeight;
+        const float asymmetryAtZero = asymmetry * 0.45f * hardAtZero * hardAtZero;
+
+        return (blended - blendedAtZero) - (asymmetryTerm - asymmetryAtZero);
     }
 
     /** One-pole low-pass coefficient for a given time constant in milliseconds. */
@@ -767,7 +790,7 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     outputGainSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (
         outputDbParam != nullptr ? outputDbParam->load() : 0.0f));
     mixSmoothed.reset (sampleRateToUse, smoothingSeconds);
-    mixSmoothed.setCurrentAndTargetValue (mixParam != nullptr ? mixParam->load() : 0.62f);
+    mixSmoothed.setCurrentAndTargetValue (mixParam != nullptr ? mixParam->load() : 0.50f);
     widthSmoothed.reset (sampleRateToUse, smoothingSeconds);
     widthSmoothed.setCurrentAndTargetValue (widthParam != nullptr ? widthParam->load() * 2.0f : 1.0f);
     bypassSmoothed.reset (sampleRateToUse, 0.01);
@@ -1706,10 +1729,27 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         // wet) and has no step in its slope, so neither end of the control can collapse.
         const auto mixNow = juce::jlimit (0.0f, 1.0f, mixSmoothed.getNextValue());
         const auto mixAngle = mixNow * juce::MathConstants<float>::halfPi;
-        const auto dryGain = std::sin (mixAngle);
-        const auto wetGain = std::cos (mixAngle);
+
+        // The taper itself was fine; the two gains were on the wrong sides. sin was
+        // applied to the DRY path and cos to the WET one, so MIX 0 delivered the
+        // fully processed tape and MIX 100 the untouched input - the exact reverse
+        // of what the control, its parameter comment and the panel tooltip all
+        // describe, and the reason MIX at 0 did not sound dry at all. Both ends of
+        // an equal-power crossfade sit at unity either way, so this is a swap and
+        // not a change of taper: MIX 0 is dry at unity, MIX 1 is wet at unity, and
+        // the total power still holds across the travel.
+        const auto dryGain = std::cos (mixAngle);
+        const auto wetGain = std::sin (mixAngle);
 
         std::array<float, 2> tapeOutput {};
+
+        // The SUBFUND undertones, one per channel. They are generated from the
+        // shaper's output down in the tape loop but deliberately NOT summed into
+        // the tape path: everything between there and here is a nonlinearity that
+        // would distort them into harmonics of themselves. They join the finished
+        // signal further down instead, where the remaining stages are linear or
+        // gain-only.
+        std::array<float, 2> undertoneOutput {};
 
         for (int channel = 0; channel < activeChannels; ++channel)
         {
@@ -1814,26 +1854,29 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // ------------------------------------------------------------------
             //  Sub-Fundamental: the multi-stage undertone series with downward saturation.
             //
-            //  Injected here, immediately after the shaper, so it is part of the tape
-            //  signal proper - it then rides through the tape low-pass, the noise
-            //  floor, the glue compressors and the safety limiter exactly like the
-            //  rest of the recording. Injecting it at the output instead would make it
-            //  sit on top of the machine rather than inside it.
-            //
-            //  The generator is fed the SHAPER's output rather than the raw input, so
+            //  Generated here, from the SHAPER's output rather than the raw input, so
             //  it is excited by the signal that actually reached the magnetic domain,
-            //  and it is per-channel: one generator on the mono sum would collapse the
+            //  and per channel: one generator on the mono sum would collapse the
             //  stereo image at precisely the octave the control is meant to thicken.
+            //
+            //  The result is parked in undertoneOutput[] rather than summed into the
+            //  tape path. Everything between here and the output is a nonlinearity -
+            //  the bias-compression curve, the wow and flutter modulation, the output
+            //  glue compressor - and each of them will happily turn the undertones
+            //  into harmonics of themselves. That is the "regular harmonics are
+            //  generated from the subharmonic" report: the undertones went in as
+            //  partials and came out as a full harmonic series built on each of them.
+            //  They are added back where the rest of the chain is linear or gain-only.
             // ------------------------------------------------------------------
             auto& subharmonic = channel == 0 ? subharmonicL : subharmonicR;
-            const float subharmonicComponent = subharmonic.process (
+            undertoneOutput[static_cast<std::size_t> (channel)] = subharmonic.process (
                 shapedCore, driveAmountSmoothed.getCurrentValue(),
                 subFundamentalSmoothed.getCurrentValue(), engineSampleRate);
 
-            // Summed rather than blended, so the control reads as adding weight below
-            // the note instead of crossfading the tape away. The depth ramp keeps the
-            // level change from stepping the phase-locked oscillator.
-            const float withSubharmonic = shapedCore + subharmonicComponent;
+            // A parallel addition, not a blend: the control reads as adding weight
+            // below the note instead of crossfading the tape away. The depth ramp keeps
+            // the level change from stepping the phase-locked oscillator.
+            const float withSubharmonic = shapedCore;
 
             // Measure what the shaper actually produced, comparing its input against its
             // output. Harmonics are the reason this plugin exists, so the character is
@@ -2056,6 +2099,35 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         for (int channel = 0; channel < activeChannels; ++channel)
             outputSignal[static_cast<std::size_t> (channel)] =
                 tapeOutput[static_cast<std::size_t> (channel)] * stageGain * compensationGain;
+
+        // -------------------------------------------------------------------
+        //  SUBFUND joins here: the one point in the chain where the undertones
+        //  can enter without anything downstream turning them into harmonics of
+        //  themselves.
+        //
+        //  Upstream of here sit the three stages that caused the fault - the
+        //  bias-compression curve, the wow and flutter modulation and the output
+        //  glue compressor - which is why the sum was held back rather than added
+        //  at the shaper. Downstream of here every stage is linear or gain-only:
+        //  the stereo width, the OUTPUT trim, the safety limiter and the bypass
+        //  crossfade. The limiter still sees the undertones, so a genuine
+        //  overshoot is caught by it and the soft clipper stays a safety net
+        //  rather than a shaper of them.
+        //
+        //  Two scalings keep the control meaning what it says:
+        //
+        //    - `wetGain`, so MIX 0 is the untouched input and the undertones go
+        //      with it, exactly like the rest of the tape path;
+        //    - `finalOutputGain`, the machine's static output calibration, so the
+        //      knob holds the same level in the mix that it held when the sum ran
+        //      through the whole chain. The DYNAMIC part of the glue stage is
+        //      deliberately left out: a per-sample gain riding on the undertones
+        //      would pump them at the note rate, which is the same fault as letting
+        //      the compressor distort them.
+        // -------------------------------------------------------------------
+        for (int channel = 0; channel < activeChannels; ++channel)
+            outputSignal[static_cast<std::size_t> (channel)] +=
+                undertoneOutput[static_cast<std::size_t> (channel)] * wetGain * finalOutputGain;
 
         if (activeChannels == 2)
         {

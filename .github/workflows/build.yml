@@ -15,6 +15,33 @@ env:
 
 jobs:
   # ============================================================================
+  #  DSP regression harness - the SUBFUND stage
+  #
+  #  Deliberately first and deliberately cheap. The subharmonic defects this
+  #  guards - a series that does not fall off with division, a stage that turns
+  #  its own partials into harmonics, a stage that keeps generating with no
+  #  signal - are properties of the RENDERED AUDIO, not of the code as written.
+  #  Nothing short of rendering them catches a regression, and the three
+  #  platform builds below take far too long to be the place to find out.
+  #
+  #  The harness needs no JUCE, no audio backend and no host: it cuts the
+  #  shipping generator out of Source/ at build time and compiles it against a
+  #  small shim, so it cannot end up measuring a stale copy of the code. It
+  #  checks out without submodules for that reason - it never looks at JUCE/.
+  # ============================================================================
+  dsp-tests:
+    name: DSP regression harness
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+
+      - name: Run the subharmonic harness
+        run: bash tests/dsp/run.sh
+
+  # ============================================================================
   #  Windows - VST3
   # ============================================================================
   build-windows:
