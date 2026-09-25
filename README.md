@@ -44,6 +44,7 @@ playback EQ tilt -> output glue compressor (always on) -> output trim (dB) -> st
 | Wow | 0 to 100 % | Slow transport pitch wander |
 | Flutter | 0 to 100 % | Fast transport shimmer |
 | Mix | 0 to 100 % | True dry/wet crossfade: 0 % is dry, 100 % is fully tape. Displayed as a percentage; default 50 % |
+| Sub-Fundamental (SUBFUND) | 0 to 100 % | Subharmonic saturation: an eight-stage undertone cascade (1/2 ... 1/9 of the tracked bass fundamental) summed under the tape signal, per channel. Default OFF |
 | Output | -32 to +32 dB | Calibrated output trim in dB |
 | Width | 0 to 100 % | Mono through natural to extra wide |
 | Bypass | on/off | Ramps the whole tape engine out without clicking |
@@ -138,20 +139,25 @@ still runs on top of these bases, as described below in the header documentation
 
 ## Noise floor
 
-The tape hiss is a continuous band-limited noise floor whose **pause level is calibrated
-below -32 dBFS** - inaudible by design - and whose level under signal can only ever go
-**down**, never up: once per block, the mean gain reduction the output glue stage and the
-safety limiter apply is measured, smoothed over about 250 ms, and the floor is ducked by
-that amount (with a hard cap so the leveller can never lift the hiss back above its pause
-level). So in a pause you hear the machine's quiet calibrated floor, and while material
-plays the hiss sits even lower, hidden under the programme. The noise never swells and
-never outweighs the signal - the floor is a property of the machine, not of the momentary
-programme.
+The tape hiss is a continuous band-limited noise floor whose level under signal can only
+ever go **down**, never up: once per block, the mean gain reduction the output glue stage
+and the safety limiter apply is measured, smoothed over about 250 ms, and the floor is
+ducked by that amount (with a hard cap so the leveller can never lift the hiss back above
+its resting level). While material plays the hiss sits hidden under the programme. The
+noise never swells and never outweighs the signal - the floor is a property of the
+machine, not of the momentary programme.
 
-The fine tape-surface **grain modulation is gated by the transport**: with both Wow and
-Flutter closed, no modulation of any kind reaches the wet signal - there is no hidden
-"noise generator" running when the transport is switched off. It fades in only as the
-transport controls are opened, like real tape mechanics.
+**The floor is gated by the transport.** Tape hiss is the sound of oxide moving across
+the playback gap, so a machine at rest is silent: with both Wow and Flutter closed the
+floor coasts down to true silence (a slow 750 ms fade, never a mute-switch drop), and
+opening either control spins the machine up and the hiss back. Earlier builds left the
+floor always-on, which was audible as noise during a pause even with the transport
+controls at zero - fixed.
+
+The fine tape-surface **grain modulation is gated by the same transport gate**: with both
+Wow and Flutter closed, nothing at all is generated - no modulation, no floor, no hidden
+"noise generator". Both fade in only as the transport controls are opened, like real tape
+mechanics.
 
 The wet path is AC-coupled at the playback end (an 8 Hz DC blocker, exactly like the
 coupling capacitors in real playback electronics), so the asymmetric shaper's DC
@@ -415,7 +421,7 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
 
 - Audio plugin: **VST3**, **Audio Unit** and **AUv3**
 - Framework: JUCE 9.0.2 (pinned as a git submodule)
-- Target platforms: Windows (x64), macOS (universal: arm64 + x86_64)
+- Target platforms: Windows (x64), macOS (universal: arm64 + x86_64), Linux (x64, VST3)
 - Build system: **CMake** (3.22+), driving MSVC on Windows and Xcode on macOS
 
 AU and AUv3 are macOS-only formats. JUCE compiles them to nothing on Windows, which is why
@@ -628,6 +634,30 @@ This needs a paid Apple Developer account and the certificate stored as a CI sec
   favour of Metal but still functional.
 - **No platform-specific code in `Source/`.** There are no `_WIN32` guards and no
   Windows-only APIs; the only platform branches are JUCE's own macros.
+
+### Linux
+
+Linux builds the VST3 through the same CMake script. JUCE's Linux deps are detected
+through pkg-config, so the development packages must be installed first - on current
+Ubuntu/Debian (22.04+) that is:
+
+```sh
+sudo apt install build-essential cmake git \
+  libasound2-dev libjack-jackd2-dev \
+  libfreetype6-dev libfontconfig1-dev libcurl4-openssl-dev \
+  libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+  libxinerama-dev libxrandr-dev libxrender-dev \
+  libgl1-mesa-dev libglu1-mesa-dev \
+  libgtk-3-dev libwebkit2gtk-4.1-dev
+```
+
+Two of these are worth calling out because their absence fails in confusing places:
+`libfontconfig1-dev` (without it juceaide itself fails to compile with
+`ft2build.h: No such file or directory`, which looks like a freetype problem but is
+fontconfig's pkg-config file missing) and `libwebkit2gtk-4.1-dev` (the `webkit2gtk-4.0`
+package from older Ubuntu releases no longer exists on 24.04 and JUCE 9 probes the 4.1
+module; the same applies to `libgtk-3-dev` for `gtk+-x11-3.0`). The CI Linux job
+installs exactly this set.
 
 ## Repository notes
 
