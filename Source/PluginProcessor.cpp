@@ -226,6 +226,55 @@ namespace
         input actually drives it, so it follows what is playing and stays silent when
         nothing is.
     */
+
+    // ==========================================================================
+    //  Saved-state format
+    //
+    //  MIX moved from 0..1 to 0..100, to match the percentage the panel shows. That
+    //  rescale is visible in everything already saved, because
+    //  AudioProcessorValueTreeState stores DENORMALISED values: ParameterAdapter::
+    //  flushToTree writes `unnormalisedValue` into the tree, and setNewState reads
+    //  the "value" property back through setDenormalisedValue. The tree is raw, not
+    //  normalised, so a session saved at MIX 0.5 comes back as 0.5 PERCENT once the
+    //  parameter's range is 0..100 - the machine all but disappears.
+    //
+    //  Old states are told apart by the absence of a marker property, never by the
+    //  value. A value test cannot work here: 0.5 is a perfectly good 0.5% and was
+    //  also a perfectly good 50%, so any threshold either rewrites a legitimate
+    //  setting or misses a real one. The marker is stamped on the way out, so every
+    //  state this build writes is already current and the migration only ever runs
+    //  once per file.
+    //
+    //  Unknown properties on the tree root are ignored by AudioProcessorValueTree-
+    //  State, so this rides along without touching the parameters or the editor.
+    // ==========================================================================
+    constexpr const char* stateFormatProperty = "j37StateFormat";
+    constexpr int currentStateFormat = 2;   // 1 = MIX as 0..1, 2 = MIX as 0..100
+
+    void migrateStateFormat (juce::ValueTree& tree)
+    {
+        // The cast is not decoration: getProperty returns a juce::var, and var against
+        // an int has several viable implicit conversions, so `>=` is ambiguous
+        // without it.
+        if (static_cast<int> (tree.getProperty (stateFormatProperty, 1)) >= currentStateFormat)
+            return;
+
+        if (auto mixChild = tree.getChildWithProperty ("id", "mix"); mixChild.isValid())
+        {
+            const auto stored = static_cast<float> (mixChild.getProperty ("value", 50.0f));
+            mixChild.setProperty ("value", stored <= 1.0f ? stored * 100.0f : stored, nullptr);
+        }
+
+        tree.setProperty (stateFormatProperty, currentStateFormat, nullptr);
+    }
+
+    /** copyState() with the format marker attached, for writing out. */
+    juce::ValueTree captureState (juce::AudioProcessorValueTreeState& parameters)
+    {
+        auto tree = parameters.copyState();
+        tree.setProperty (stateFormatProperty, currentStateFormat, nullptr);
+        return tree;
+    }
 }
 
 //==============================================================================
@@ -400,7 +449,11 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
             { "character",     character },
             { "wow",           wow },
             { "flutter",       flutter },
-            { "mix",           mix <= 1.0f ? mix * 100.0f : mix },
+            // Raw parameter values, not normalised ones - see the saved-state format
+            // note above. The MIX values in the table below are already percentages,
+            // so nothing scales them here; a value test would only ever misfire on a
+            // preset that genuinely asks for less than 1% wet.
+            { "mix",           mix },
             { "output",        outputDb },
             { "stereo_width",  width },
             { "tape_type",     static_cast<float> (tapeType) },
@@ -449,16 +502,21 @@ void FirstAudioProcessor::applyFactoryPreset (int index)
 
     for (const auto& valuePair : values)
     {
-        if (auto* parameter = parameters.getParameter (valuePair.first))
+        // The lookup is only a guard against an id the plugin does not have; the
+        // value itself goes in RAW. The tree stores denormalised values, so
+        // normalising here and writing the result made every factory preset load
+        // the wrong setting: a -3 dB INPUT came back as 0.45 dB, and once MIX became
+        // a 0..100 percentage, 100 came back as 1.0 - i.e. 1%, which is why the
+        // factory presets had all but gone dry.
+        if (parameters.getParameter (valuePair.first) != nullptr)
         {
-            const auto normalised = parameter->convertTo0to1 (valuePair.second);
             for (int i = 0; i < target.getNumChildren(); ++i)
             {
                 auto parameterChild = target.getChild (i);
                 if (parameterChild.hasProperty (idProperty)
                     && parameterChild.getProperty (idProperty).toString() == valuePair.first)
                 {
-                    parameterChild.setProperty (valueProperty, normalised, nullptr);
+                    parameterChild.setProperty (valueProperty, valuePair.second, nullptr);
                     break;
                 }
             }
@@ -551,13 +609,21 @@ bool FirstAudioProcessor::saveUserPreset (const juce::String& name)
     // slash cannot escape the preset directory.
     juce::String safe;
     for (const auto character : sanitised)
-        if (character != '/' && character != '\\' && character != ':' && character != '?')
+        // The full set Windows itself refuses: / \\ : * ? " < > |. A name holding any
+        // of the extra five would otherwise survive sanitisation on macOS and Linux
+        // and then fail the write on Windows, where the save returns false with no
+        // explanation.
+        if (character != '/' && character != '\\' && character != ':' && character != '?'
+            && character != '*' && character != '"' && character != '<'
+            && character != '>' && character != '|')
             safe += character;
     safe = safe.trim();
     if (safe.isEmpty())
         return false;
 
-    auto state = parameters.copyState();
+    // captureState stamps the saved-state format marker, so a preset this build
+    // writes never has to be migrated again.
+    auto state = captureState (parameters);
     std::unique_ptr<juce::XmlElement> xml (state.createXml());
     if (xml == nullptr)
         return false;
@@ -580,13 +646,13 @@ bool FirstAudioProcessor::applyUserPreset (const juce::String& name)
     if (! restored.isValid())
         return false;
 
-    // Migrate old user preset files where mix was stored in 0..1 range
-    if (auto mixChild = restored.getChildWithProperty ("id", "mix"); mixChild.isValid())
-    {
-        const float val = static_cast<float> (mixChild.getProperty ("value", 50.0f));
-        if (val <= 1.0f && val >= 0.0f)
-            mixChild.setProperty ("value", val * 100.0f, nullptr);
-    }
+    // Brought up to the current saved-state format before it is applied, so a preset
+    // written by an older build loads the setting the user actually saved. See the
+    // format note at the top of this file: the old code decided whether to rescale
+    // from the stored value, and every value this plugin can store is <= 1.0 at MIX's
+    // old scale, so it rewrote 50% presets as 100% and a preset saved at 1% as 50%.
+    // The marker makes it a decision about the FILE rather than about the number.
+    migrateStateFormat (restored);
 
     applyStateWithUndo (restored, "User preset: " + name);
     lastPresetIndex.store (-1, std::memory_order_relaxed);
@@ -650,12 +716,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
                                                             0.5f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
-    layout.add (std::make_unique<juce::AudioParameterChoice> ("tape_type", "Tape Type",
+    // Every parameter carries a versioned ParameterID. The plain-String constructor
+    // the controls below used before is deprecated in JUCE 9 and, more importantly,
+    // it leaves the parameter unversioned, so a host has no way to tell a future
+    // meaning change from the current one. The id strings are unchanged, so saved
+    // sessions and presets resolve exactly as before.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "tape_type", 1 }, "Tape Type",
                                                             juce::StringArray { "J37", "Ampex 456", "Studer A800",
                                                                                  "Chrome", "Type 111", "GP9",
                                                                                  "Quantegy 499", "RTM SM911" },
                                                             0));
-    layout.add (std::make_unique<juce::AudioParameterChoice> ("speed", "Speed",
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "speed", 1 }, "Speed",
                                                             juce::StringArray { "7.5 ips", "15 ips", "30 ips" },
                                                             1));
 
@@ -673,9 +744,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
         return range;
     };
 
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("drive", "Drive", percentageRange (0.45f), 0.42f,
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "drive", 1 }, "Drive", percentageRange (0.45f), 0.42f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("bias", "Bias", percentageRange (0.40f), 0.36f,
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "bias", 1 }, "Bias", percentageRange (0.40f), 0.36f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
     // OVERSAMPLING: a host-visible quality switch. OFF keeps the latency at zero;
     // 2x/4x run the tape engine at a higher internal rate so the magnetic shaper
@@ -689,14 +760,30 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     // name shown in the host and on the panel is BRIGHTNESS. Artists reach for brightness
     // first, and "tone" is vague enough that it reads as a different thing (tilt, midrange,
     // character) depending on who is looking at it.
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("tone", "Brightness", percentageRange (0.50f), 0.58f,
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "tone", 1 }, "Brightness", percentageRange (0.50f), 0.58f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("wow", "Wow", percentageRange (0.35f), 0.14f,
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "wow", 1 }, "Wow", percentageRange (0.35f), 0.14f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("flutter", "Flutter", percentageRange (0.35f), 0.18f,
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "flutter", 1 }, "Flutter", percentageRange (0.35f), 0.18f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
 
     // MIX is a true crossfade from 0 % (pure dry) to 100 % (pure wet), default 50 %.
+    //
+    // The range is 0..100 so the stored number is the percentage the panel shows.
+    // Two consequences are handled elsewhere and one is not handled here at all:
+    //
+    //   - Saved states and presets are migrated on load, by migrateStateFormat().
+    //   - Factory presets store raw values, which is what the tree expects.
+    //   - AUTOMATION LANES ALREADY WRITTEN IN A SAVED PROJECT cannot be migrated
+    //     from inside the plugin. The host owns those numbers and hands them over
+    //     already scaled, so an old lane spanning 0..1 now sweeps 0%..1% and the
+    //     effect all but vanishes. The ParameterID version below is the only
+    //     signal a host gets that this parameter's meaning changed, and it is why
+    //     it is spelled { "mix", 1 } rather than left as a bare id: hosts that
+    //     support parameter mapping use it to offer a conversion. They are not
+    //     obliged to, so opening an old project may need MIX re-recorded or the
+    //     lane scaled by hand. That is a deliberate, documented limitation -
+    //     there is no portable way for a plugin to rescale its own automation.
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "mix", 1 }, "Mix",
                                                             juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
                                                             50.0f,
@@ -709,7 +796,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     // SPEED switch and the head electronics set is blended between those two states,
     // which is exactly how the machine's own speed/eq macro behaves on the hardware.
     // The ID is "character" because "tone" is already taken by Brightness above.
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("character", "Tone", percentageRange (0.50f), 0.50f,
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "character", 1 }, "Tone", percentageRange (0.50f), 0.50f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
 
     return layout;
@@ -814,6 +901,8 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     widthSmoothed.reset (sampleRateToUse, smoothingSeconds);
     widthSmoothed.setCurrentAndTargetValue (widthParam != nullptr ? widthParam->load() * 2.0f : 1.0f);
     bypassSmoothed.reset (sampleRateToUse, 0.01);
+    // Start from the state the parameter restores: a session saved with BYPASS on
+    // must not spend its first 10 ms ramping from the dry position.
     bypassSmoothed.setCurrentAndTargetValue (bypassParam != nullptr && bypassParam->load() >= 0.5f ? 0.0f : 1.0f);
 
     inputPeakLevel.store (0.0f, std::memory_order_relaxed);
@@ -1841,11 +1930,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // for both of them, as computed once above the loop.
             const float inputTrimmed = inputTrimmedByChannel[static_cast<std::size_t> (channel)];
 
-            // Track the power of the post-INPUT, pre-first-compressor signal. Only the
-            // first channel contributes so the reference is a mono measurement, which
-            // keeps it independent of how the stereo material is panned.
-            if (channel == 0)
-                referenceBlockPower += inputTrimmed * inputTrimmed;
+            // Track the power of the post-INPUT, pre-first-compressor signal, summed
+            // over every active channel and averaged right after the loop. The old
+            // first-channel-only reference was a different scale from the averaged
+            // post-compressor power it is compared against, so a hard-panned right
+            // channel could hide a genuine level loss and switch the compensation off.
+            referenceBlockPower += inputTrimmed * inputTrimmed;
             const float x = inputTrimmed * inputCompressionGain;
 
             const float wowLfo = std::sin (wowPhase);
@@ -2056,6 +2146,10 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             const float dryMix = x * dryGain;
             tapeOutput[static_cast<std::size_t> (channel)] = dryMix + wetMix;
         }
+
+        // The reference is a per-channel average now, the same scale the
+        // post-compressor power below is measured on.
+        referenceBlockPower /= static_cast<float> (juce::jmax (1, activeChannels));
 
         // ---------------------------------------------------------------------
         //  Output stage glue compressor. It is immediately before the output trim,
@@ -2427,7 +2521,9 @@ juce::AudioProcessorEditor* FirstAudioProcessor::createEditor()
 //==============================================================================
 void FirstAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 {
-    auto state = parameters.copyState();
+    // Stamped with the current format, so the session this saves never needs
+    // migrating when it is opened again.
+    auto state = captureState (parameters);
     std::unique_ptr<juce::XmlElement> xml (state.createXml());
     copyXmlToBinary (*xml, destData);
 }
@@ -2437,7 +2533,17 @@ void FirstAudioProcessor::setStateInformation (const void* data, int sizeInBytes
     std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, static_cast<size_t> (sizeInBytes)));
 
     if (xmlState != nullptr)
-        parameters.replaceState (juce::ValueTree::fromXml (*xmlState));
+    {
+        // This is the path every existing DAW project arrives on, and the one the
+        // MIX rescale hits hardest. The tree holds RAW parameter values, so a
+        // session saved at MIX 0.5 would be read as 0.5 PERCENT by the new 0..100
+        // range and the machine would come back all but silent. Migrated here,
+        // before the state reaches the parameters, and only for states written
+        // before the format marker existed.
+        auto tree = juce::ValueTree::fromXml (*xmlState);
+        migrateStateFormat (tree);
+        parameters.replaceState (tree);
+    }
 
     // A freshly loaded session defines both A/B slots: the loaded state becomes
     // the active side and both slots are seeded with it, so compare starts clean.

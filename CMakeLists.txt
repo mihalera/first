@@ -125,9 +125,8 @@ juce_generate_juce_header(first)
 # ------------------------------------------------------------------------------
 #  Sources
 #
-#  Source/PluginProcessor.cpp and PluginEditor.cpp are the plugin. Main.cpp and
-#  MainComponent.cpp are the standalone-application entry point and are NOT
-#  part of any plugin target: JUCE supplies the plugin entry points itself.
+#  Source/PluginProcessor.cpp and PluginEditor.cpp are the whole plugin: JUCE
+#  supplies the plugin entry points itself, so there is no main() in any target.
 # ------------------------------------------------------------------------------
 target_sources(first PRIVATE
     Source/PluginProcessor.cpp
