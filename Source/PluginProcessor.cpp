@@ -595,14 +595,14 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             "Auto Gain", true));
 
     // SUBFUND: the subharmonic generator. Every other stage here makes overtones - a
-    // 100 Hz note gains 200, 300, 400 Hz. This one makes the DESCENDANT: weight an
-    // octave BELOW the note, so 100 Hz also gains 50 Hz. Real tape does this through
-    // bias leakage, domain-wall motion and scrape flutter, none of which a saturating
-    // curve can produce, because a curve has no timescale of its own and therefore
-    // cannot generate anything below the frequency it is fed. See SubharmonicGenerator.
+    // 100 Hz note gains 200, 300, 400 Hz. This one produces the subharmonic series:
+    // multi-frequency downward harmonics (1/2, 1/3, 1/4, 1/5 - 50, 33.3, 25, 20 Hz)
+    // with analogue saturation in the other direction. Real tape does this through
+    // bias leakage, domain-wall motion and scrape flutter, none of which a static
+    // curve can produce. See SubharmonicGenerator.
     //
     // Defaults to OFF: it is a colour, not a correction, and a plugin should not add
-    // octave-down weight to every session that has not asked for it.
+    // subharmonic weight to every session that has not asked for it.
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "subfund", 1 },
                                                             "Sub-Fundamental",
                                                             juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
@@ -1789,7 +1789,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             hysteresisMemory[0] = shapedCore;
 
             // ------------------------------------------------------------------
-            //  Sub-Fundamental: the octave BELOW the note.
+            //  Sub-Fundamental: the multi-stage undertone series with downward saturation.
             //
             //  Injected here, immediately after the shaper, so it is part of the tape
             //  signal proper - it then rides through the tape low-pass, the noise

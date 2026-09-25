@@ -340,8 +340,9 @@ private:
 
     Everything else in this plugin produces OVERtones: harmonics at integer multiples
     of the input frequency. A 100 Hz tone gets 200, 300, 400 Hz and so on. This stage
-    is the opposite - it produces the component at HALF the input frequency, so a
-    100 Hz note also gains weight at 50 Hz.
+    is the opposite - it produces the subharmonic series (undertones at 1/2, 1/3, 1/4,
+    1/5 of the fundamental), so a 100 Hz note gains weight at 50, 33.3, 25 and 20 Hz,
+    with warm analog saturation running in the opposite direction.
 
     This cannot come out of the saturating curve, and it is worth being clear why,
     because it looks like it should. `tanh (sin (wt))` is a curve applied to a value,
@@ -361,16 +362,11 @@ private:
         resonances, modulating the effective head-to-tape speed.
 
     All three are the same shape mathematically: a slow, signal-dependent modulation
-    of the transfer curve. The implementation below is a bi-stable follower - a
-    phase-locked relaxation oscillator - which is how a domain-wall group behaves: it
-    holds one state through a half cycle, then flips under sufficient drive, giving an
-    output that completes one cycle for every TWO input cycles and is therefore an
-    octave below the note.
-
-    Phase-locking is the point. A free-running oscillator would drone at a fixed pitch
-    under everything, which is an artefact rather than a tape; this only flips when the
-    input actually drives it, so it follows what is playing and stays silent when
-    nothing is.
+    of the transfer curve. The implementation below uses a phase-locked cascade of
+    undertones (1/2, 1/3, 1/4, 1/5) excited by the fundamental bass envelope.
+    Drive excites both the depth and the saturation of the subharmonics, producing
+    warm inter-harmonic body and massive low-end weight while staying strictly
+    locked to what is playing.
 
     This lives in the header rather than in an anonymous namespace in the .cpp because
     the processor holds two of them by value as members, and a member's type has to be
@@ -378,151 +374,187 @@ private:
 */
 struct SubharmonicGenerator
 {
-    // A five-stage divider cascade. Stage n produces the component at
-    // fundamental / (n + 1), so the family is 1/2, 1/3, 1/4, 1/5 and 1/6 of the note.
+    // A four-stage undertone cascade. The stages produce the subharmonic series:
+    // fundamental / 2, fundamental / 3, fundamental / 4, and fundamental / 5.
     //
-    //  Real tape does not produce a single subharmonic either. Domain-wall groups of
-    //  different sizes sit at different division ratios, and the machine's mechanical
-    //  resonances pick out several of them at once, which is why a real tape sometimes
-    //  sounds like it has a low octave-plus-fifth under a note rather than a clean
-    //  octave. Feeding each stage from the one above it also means the cascade can
-    //  lock to the previous stage where two ratios agree, which is what makes the
-    //  family sound related rather than like five independent tones.
-    static constexpr int numStages = 5;
+    // For a 100 Hz fundamental:
+    //   - Stage 0 (/2): 50.0 Hz  (sub-octave -1: foundational sub-bass weight)
+    //   - Stage 1 (/3): 33.3 Hz  (1 octave + 5th down: low-mid harmonic thickness)
+    //   - Stage 2 (/4): 25.0 Hz  (sub-octave -2: deep sub rumble)
+    //   - Stage 3 (/5): 20.0 Hz  (2 octaves + major 3rd down: seismic undertone)
+    static constexpr int numStages = 4;
+    static constexpr int dividers[numStages] { 2, 3, 4, 5 };
 
-    float state[numStages] {};      // Bi-stable output per stage, -1 .. +1.
-    float output[numStages] {};     // Smoothed value per stage, before the mix.
-    float idleCounter[numStages] {};
+    // Detector filter states (2-pole Butterworth low-pass at ~240 Hz).
+    // Filters out upper harmonics, cymbals, guitars and noise so that cycle
+    // detection locks cleanly onto the true fundamental bass note.
+    float lp1 = 0.0f;
+    float lp2 = 0.0f;
 
-    // A decaying PEAK follower, not an averaging one. A one-pole on |x| tracks
-    // something closer to the RMS than to the peak, and if the trigger is derived
-    // from a value BELOW the signal's actual peaks then the comparison is satisfied
-    // almost continuously and the generator free-runs instead of following the note.
-    // That was the bug: the output measured a constant 0.57 RMS from a 0.1 input as
-    // well as from a 1.0 input - a self-oscillating square, unrelated to the music.
-    //
-    // Fast attack, slow release gives a follower that sits at the real peak.
-    float peakTrack = 0.0f;
+    // Follower tracking the dynamic envelope of the bass fundamental.
+    // Scales the generated subharmonics so they breathe with the music and
+    // decay smoothly to silence.
+    float detPeak = 0.0f;
 
-    bool armed[numStages] {};
-    float previousInput[numStages] {};
+    // Period tracker and Schmitt-trigger zero crossing detector
+    float period = 441.0f;
+    float samplesSinceCrossing = 0.0f;
+    float prevDet = 0.0f;
+    bool armed = true;
+    int crossingCount = 0;
+
+    // Running phase per subharmonic stage in [0, 1)
+    float phases[numStages] {};
+
+    // Cached sample-rate-dependent filter coefficients
+    float cachedSampleRate = 0.0f;
+    float lpCoeff = 0.0f;
+    float attackCoeff = 0.0f;
+    float releaseCoeff = 0.0f;
 
     void reset() noexcept
     {
-        for (int stage = 0; stage < numStages; ++stage)
-        {
-            state[stage] = (stage == 0) ? -1.0f : -1.0f;
-            output[stage] = 0.0f;
-            idleCounter[stage] = 0.0f;
-            armed[stage] = true;
-            previousInput[stage] = 0.0f;
-        }
+        lp1 = 0.0f;
+        lp2 = 0.0f;
+        detPeak = 0.0f;
+        period = 441.0f;
+        samplesSinceCrossing = 0.0f;
+        prevDet = 0.0f;
+        armed = true;
+        crossingCount = 0;
+        cachedSampleRate = 0.0f;
 
-        peakTrack = 0.0f;
+        for (int s = 0; s < numStages; ++s)
+            phases[s] = 0.0f;
+    }
+
+    void updateSampleRate (float currentSampleRate) noexcept
+    {
+        if (std::abs (currentSampleRate - cachedSampleRate) < 0.1f)
+            return;
+
+        cachedSampleRate = currentSampleRate;
+        const float safeRate = juce::jmax (1.0f, currentSampleRate);
+        lpCoeff = 1.0f - std::exp (-juce::MathConstants<float>::twoPi * 240.0f / safeRate);
+        attackCoeff = 1.0f - std::exp (-1.0f / (safeRate * 0.003f));
+        releaseCoeff = 1.0f - std::exp (-1.0f / (safeRate * 0.060f));
     }
 
     /**
-        Feeds one sample and returns the summed subharmonic family, roughly -1 .. +1.
+        Feeds one sample and returns the multi-frequency subharmonic component with
+        downward saturation ("сатурація в інший бік").
 
-        `driveAmount` sets how close to the peak each stage has to be driven before it
-        commits, and `depth` is the caller's overall level for the effect. A `depth` of
-        zero short-circuits the whole thing so nothing is computed when the control is
-        down.
+        `driveAmount` drives the deeper undertone stages and increases the saturation
+        of the subharmonics.
+        `depth` scales the overall injected subharmonic level.
     */
     float process (float x, float driveAmount, float depth, float sampleRate) noexcept
     {
-        if (depth <= 0.0f)
+        if (depth <= 0.0f || ! std::isfinite (x))
             return 0.0f;
 
+        updateSampleRate (sampleRate);
         const float safeRate = juce::jmax (1.0f, sampleRate);
 
         // ----------------------------------------------------------------------
-        //  Peak follower: fast up, slow down.
-        //
-        //  The attack is a few milliseconds because the follower has to reach the
-        //  crest of the waveform it is measuring; the release is a few tens of
-        //  milliseconds so the trigger does not collapse between cycles.
+        //  1. Two-pole low-pass filter (~240 Hz) on detector path.
+        //  Isolates the fundamental bass note from highs and overtones so the
+        //  cycle detector never mistriggers on treble content.
         // ----------------------------------------------------------------------
-        const float absInput = std::abs (x);
-        const float attackCoefficient  = 1.0f - std::exp (-1.0f / (safeRate * 0.003f));
-        const float releaseCoefficient = 1.0f - std::exp (-1.0f / (safeRate * 0.060f));
-        peakTrack += (absInput - peakTrack)
-                   * (absInput > peakTrack ? attackCoefficient : releaseCoefficient);
+        lp1 += (x - lp1) * lpCoeff;
+        lp2 += (lp1 - lp2) * lpCoeff;
+        const float det = lp2;
 
-        // Below this there is no note to divide, so every stage is drained and the
-        // generator goes quiet rather than droning on whatever residue is left.
-        constexpr float silenceFloor = 2.0e-4f;
+        // ----------------------------------------------------------------------
+        //  2. Dynamic envelope follower of the fundamental bass band.
+        //  Ensures level proportionality: quiet notes get quiet subharmonics,
+        //  and silence decays cleanly without droning.
+        // ----------------------------------------------------------------------
+        const float absDet = std::abs (det);
+        detPeak += (absDet - detPeak) * (absDet > detPeak ? attackCoeff : releaseCoeff);
 
-        const float triggerFraction = juce::jlimit (0.25f, 0.95f, 0.80f - driveAmount * 0.35f);
-        const float trigger = peakTrack * triggerFraction;
+        constexpr float silenceFloor = 1.0e-4f;
+        if (detPeak < silenceFloor)
+            return 0.0f;
 
+        // ----------------------------------------------------------------------
+        //  3. Schmitt-trigger crossing detector with hysteresis.
+        //  Measures fundamental period and triggers Phase-Locked Loop (PLL).
+        // ----------------------------------------------------------------------
+        samplesSinceCrossing += 1.0f;
+        const float triggerThreshold = detPeak * 0.10f;
+
+        if (det > triggerThreshold && prevDet <= triggerThreshold && armed)
+        {
+            armed = false;
+            // Valid fundamental range: 25 Hz up to 500 Hz
+            const float minPeriod = safeRate / 500.0f;
+            const float maxPeriod = safeRate / 25.0f;
+
+            if (samplesSinceCrossing >= minPeriod && samplesSinceCrossing <= maxPeriod)
+                period += (samplesSinceCrossing - period) * 0.25f;
+
+            samplesSinceCrossing = 0.0f;
+            ++crossingCount;
+
+            // Phase-Locked Loop (PLL): gently align phase to the crossing boundary
+            // to ensure zero phase drift over extended playback.
+            for (int s = 0; s < numStages; ++s)
+            {
+                const int d = dividers[s];
+                const float targetPhase = static_cast<float> (crossingCount % d) / static_cast<float> (d);
+                float phaseError = targetPhase - phases[s];
+                if (phaseError > 0.5f)  phaseError -= 1.0f;
+                if (phaseError < -0.5f) phaseError += 1.0f;
+                phases[s] += phaseError * 0.10f;
+                if (phases[s] >= 1.0f) phases[s] -= 1.0f;
+                if (phases[s] < 0.0f)  phases[s] += 1.0f;
+            }
+        }
+        else if (det < -triggerThreshold)
+        {
+            armed = true;
+        }
+        prevDet = det;
+
+        // ----------------------------------------------------------------------
+        //  4. Continuous phase advancement and subharmonic synthesis.
+        // ----------------------------------------------------------------------
+        const float safePeriod = juce::jlimit (safeRate / 500.0f, safeRate / 25.0f, period);
+        const float baseStep = 1.0f / safePeriod;
+
+        // Stage weighting: stage 0 (octave down) is always present;
+        // higher drive progressively activates stages 1, 2, 3 (1/3, 1/4, 1/5).
+        const float clampedDrive = juce::jlimit (0.0f, 1.0f, driveAmount);
+        const float w0 = 1.0f;
+        const float w1 = 0.25f + 0.35f * clampedDrive;
+        const float w2 = 0.15f + 0.30f * clampedDrive;
+        const float w3 = 0.05f + 0.20f * clampedDrive;
+        const float weights[numStages] { w0, w1, w2, w3 };
+        const float weightSum = w0 + w1 + w2 + w3;
+
+        // Downward saturation ("сатурація в інший бік"):
+        // Saturating the subharmonics produces warm analog inter-harmonics that
+        // glue the sub frequencies directly into the note's fundamental.
+        const float driveScale = 1.0f + clampedDrive * 1.5f;
         float sum = 0.0f;
 
-        for (int stage = 0; stage < numStages; ++stage)
+        for (int s = 0; s < numStages; ++s)
         {
-            if (peakTrack < silenceFloor || trigger < silenceFloor)
-            {
-                // Fade the stage out instead of cutting it, so silence does not click.
-                output[stage] += (0.0f - output[stage]) * 0.0005f;
-                sum += output[stage];
-                continue;
-            }
+            phases[s] += baseStep / static_cast<float> (dividers[s]);
+            if (phases[s] >= 1.0f)
+                phases[s] -= 1.0f;
 
-            // ------------------------------------------------------------------
-            //  Edge-triggered, armed, and fed by the stage above.
-            //
-            //  Stage 0 divides the input by two. Stage n divides the output of stage
-            //  n-1 by two again, which compounds to 1/4, 1/8 ... if each stage runs
-            //  freely. To land on 1/3, 1/4, 1/5 rather than the powers of two, the
-            //  trigger for each stage is taken from that stage's OWN dividing signal
-            //  and combined with the one below it, so the ratios interleave instead of
-            //  doubling.
-            //
-            //  This is also why the stages are not independent oscillators: each one
-            //  is locked to the signal it is fed, so the family stays in tune with the
-            //  note rather than drifting into a chord of its own.
-            // ------------------------------------------------------------------
-            const float source = (stage == 0) ? x : output[stage - 1];
-            const float sourcePeak = (stage == 0) ? peakTrack
-                                                  : juce::jmax (peakTrack * 0.5f, 1.0e-5f);
-            const float stageTrigger = sourcePeak * triggerFraction;
+            // Continuous cosine waveform
+            const float osc = std::cos (juce::MathConstants<float>::twoPi * phases[s]);
 
-            const bool crossedUp = source > stageTrigger && previousInput[stage] <= stageTrigger;
-            previousInput[stage] = source;
-
-            if (crossedUp && armed[stage])
-            {
-                state[stage] = -state[stage];
-                armed[stage] = false;
-            }
-
-            if (source < -stageTrigger)
-                armed[stage] = true;
-
-            // Per-stage smoothing. Later stages are slower, which both keeps the
-            // waveform continuous and keeps the deeper tones from sounding as bright
-            // as the octave - they should read as weight underneath, not as new notes.
-            const float stageTime = 0.004f * static_cast<float> (stage + 1);
-            const float smoothing = 1.0f - std::exp (-1.0f / (safeRate * stageTime));
-            output[stage] += (state[stage] - output[stage]) * smoothing;
-
-            // ------------------------------------------------------------------
-            //  Progressive attenuation.
-            //
-            //  Each stage down is quieter than the one above: on a real machine the
-            //  further a domain-wall group divides, the less energy it carries. Without
-            //  this the five stages sum into a loud buzzy stack rather than a weighted
-            //  family, and the deepest tones would dominate.
-            // ------------------------------------------------------------------
-            const float stageGain = 1.0f / static_cast<float> (stage + 1);
-            sum += output[stage] * stageGain;
+            // Soft-clip saturation on subharmonic
+            const float saturated = std::tanh (osc * driveScale);
+            sum += saturated * weights[s];
         }
 
-        // Normalised so the control reads as "amount of extra weight" rather than as
-        // "five oscillators at once". The divisor is the sum of the stage gains.
-        constexpr float gainSum = 1.0f + 0.5f + 0.333333f + 0.25f + 0.2f;
-
-        return (sum / gainSum) * depth;
+        // Dynamically scaled by the fundamental bass envelope and user depth
+        return (sum / weightSum) * detPeak * depth;
     }
 };
 

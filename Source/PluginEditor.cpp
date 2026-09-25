@@ -1041,16 +1041,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "50 percent is the natural stereo width, 100 percent is extra "
                        "wide. Default 50 percent.") + hints;
             if (id == "subfund")
-                return juce::String ("SUBFUND - adds weight an octave BELOW the note. A 100 Hz "
-                       "bass note gains 50 Hz, which is the one thing saturation "
-                       "cannot do: a curve bends the note into its own overtones "
-                       "(200, 300 Hz) but has no timescale of its own, so it can "
-                       "never reach below the frequency it is fed. Real tape gets "
-                       "there through bias leakage, domain-wall motion and scrape "
-                       "flutter, all modelled here. The generator is locked to "
-                       "what you play, so it follows the part instead of droning "
-                       "at a fixed pitch. Default 0 percent - it is a colour, not "
-                       "a correction.") + hints;
+                return juce::String ("SUBFUND - subharmonic saturation (downward harmonics). "
+                       "Generates the subharmonic undertone family (1/2, 1/3, 1/4, 1/5) "
+                       "below the note, adding deep multi-layered weight and warmth that regular "
+                       "saturation cannot reach. While standard tape drive pushes harmonics upward, "
+                       "this saturates in the opposite direction with warm analog soft-clipping, "
+                       "phase-locked dynamically to the bass performance. Default 0 percent - "
+                       "it is a colour, not a correction.") + hints;
             return hints;
         };
         slider.setTooltip (parameterTooltip (controlIds[static_cast<int> (i)]));
