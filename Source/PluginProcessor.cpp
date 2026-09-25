@@ -253,7 +253,10 @@ namespace
 
     void migrateStateFormat (juce::ValueTree& tree)
     {
-        if (tree.getProperty (stateFormatProperty, 1) >= currentStateFormat)
+        // The cast is not decoration: getProperty returns a juce::var, and var against
+        // an int has several viable implicit conversions, so `>=` is ambiguous
+        // without it.
+        if (static_cast<int> (tree.getProperty (stateFormatProperty, 1)) >= currentStateFormat)
             return;
 
         if (auto mixChild = tree.getChildWithProperty ("id", "mix"); mixChild.isValid())
