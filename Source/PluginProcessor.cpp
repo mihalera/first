@@ -235,6 +235,11 @@ FirstAudioProcessor::FirstAudioProcessor()
     oversamplingParam = parameters.getRawParameterValue ("oversampling");
     polarityParam  = parameters.getRawParameterValue ("polarity");
     autoGainParam  = parameters.getRawParameterValue ("auto_gain");
+    // SUBFUND's depth parameter. Without this the pointer stayed null and the engine
+    // read depth 0 through the nullptr guard - the generator was built, fed and
+    // scaled correctly but multiplied by zero forever, so no subharmonic ever left it
+    // no matter where the control was set (the "SUBFUND does nothing" report).
+    subFundamentalParam = parameters.getRawParameterValue ("subfund");
 
     // Four fixed oversampling engines (off / 2x / 4x / 8x). Each owns its own filter
     // state, so switching between them is glitch-free even mid-render, and the
@@ -894,7 +899,11 @@ void FirstAudioProcessor::resetSampleRateDependentState()
     driveAmountSmoothed.reset (sampleRate, 0.02);
     hfPostSmoothed.reset (sampleRate, 0.02);
     headGapSmoothed.reset (sampleRate, 0.02);
-    hissGainSmoothed.reset (sampleRate, 0.02);
+    // The noise floor ramps far slower than the controls: its gain is also the
+    // transport gate (see processTapeEngine), so this window is how long the floor
+    // takes to coast down when the machine comes to rest and back up when it spins
+    // again - a fade, never a mute-switch drop.
+    hissGainSmoothed.reset (sampleRate, 0.75);
     shaperDriveSmoothed.reset (sampleRate, 0.02);
     shaperAsymmetrySmoothed.reset (sampleRate, 0.02);
 
@@ -1391,12 +1400,14 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const float flutterDepth = flutterCurve * (0.08f + speedScale * 0.09f);
     const float speedBias = 0.84f + speedScale * 0.30f;
 
-    // How much the transport is actually modulating: 0 when both Wow and Flutter are
-    // off, rising as either opens. The tape-surface grain below is gated by this, so
-    // with the transport switched off NOTHING moves the wet signal - previously the
-    // grain ran unconditionally and read as a mystery noise generator whenever both
-    // controls were closed.
-    const float transportActivity = juce::jlimit (0.0f, 1.0f, (wowCurve + flutterCurve) * 2.0f);
+    // The transport activity gate: 0 when both Wow and Flutter are closed, 1 from
+    // roughly 50 % on either. The machine only makes a sound of any kind while its
+    // transport moves, so EVERYTHING the transport does is gated by this one factor:
+    // the tape-surface grain in the loop below (which used to run unconditionally
+    // and read as a mystery noise generator whenever both controls were closed),
+    // and - since the "hiss while paused" report - the noise floor as well, whose
+    // gain is multiplied by it further down. Nothing in the engine is always-on.
+    const float transportActivityGate = juce::jlimit (0.0f, 1.0f, (wowCurve + flutterCurve) * 2.0f);
 
     // Tone tilt: 0 = warm/soft, 1 = open/bright. The coefficients are cached by
     // updateToneCoefficients, which also derives the TONE-macro machine-state scalars
@@ -1453,6 +1464,17 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //      exactly the bug this replaces.
     const float hissGain = tapeHiss * 0.00042f;
 
+    // The floor is gated by the transport. Tape hiss exists only while the tape is
+    // actually MOVING across the head: a machine at rest is silent, because the
+    // oxide never passes the playback gap. When both Wow and Flutter are closed the
+    // machine is at rest and the floor coasts down to silence; opening either
+    // control spins it back up. The fade itself is the hiss ramp's own slow window
+    // (750 ms, see resetSampleRateDependentState), so a stop between takes reads as
+    // the machine coasting to rest rather than a mute-switch drop. This is the fix
+    // for the "noise while paused with Wow and Flutter at zero" report: the floor
+    // was the only ungated always-on source left in the engine.
+    const float gatedHissGain = hissGain * transportActivityGate;
+
     // Every control-derived coefficient the block needs is in scope by now, so the
     // ramps are fed once here and read per sample with getCurrentValue(): no
     // multiplier and no pole in the wet path can step from one block to the next.
@@ -1466,7 +1488,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // read while tapeTypeSwitching is true, so feeding it every block costs nothing
     // when no formula change is happening.
     headDampingSwitchSmoothed.setTargetValue (hfPostCoefficient);
-    hissGainSmoothed.setTargetValue (hissGain);
+    hissGainSmoothed.setTargetValue (gatedHissGain);
     subFundamentalSmoothed.setTargetValue (subFundamentalParam != nullptr
                                                ? subFundamentalParam->load() : 0.0f);
 
@@ -1765,7 +1787,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             const float wowMod = 1.0f + wowLfo * wowDepth;
             const float flutterMod = 1.0f + flutterLfo * flutterDepth
                                        * flutterScaleSmoothed.getCurrentValue();
-            const float grainMod = 1.0f + tapeHiss * 0.10f * transportActivity * grainLfo;
+            const float grainMod = 1.0f + tapeHiss * 0.10f * transportActivityGate * grainLfo;
 
             // Record head: pre-emphasis, tape bias offset and drive. With DRIVE at zero
             // this is exactly unity, so the saturator sees the signal at the level the
