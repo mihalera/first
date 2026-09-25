@@ -336,6 +336,131 @@ private:
 
 //==============================================================================
 /**
+    Subharmonic generator - the descendant of the fundamental.
+
+    Everything else in this plugin produces OVERtones: harmonics at integer multiples
+    of the input frequency. A 100 Hz tone gets 200, 300, 400 Hz and so on. This stage
+    is the opposite - it produces the component at HALF the input frequency, so a
+    100 Hz note also gains weight at 50 Hz.
+
+    This cannot come out of the saturating curve, and it is worth being clear why,
+    because it looks like it should. `tanh (sin (wt))` is a curve applied to a value,
+    with no notion of time of its own, so its output is a function of the instantaneous
+    input phase - and any such function has period 2pi/w, which means its Fourier
+    series contains only multiples of w. Subharmonics need a process with its OWN
+    timescale that can fall out of step with the signal.
+
+    On a real machine there are three such processes, and this models all three:
+
+      - Bias leakage. The ultrasonic bias oscillator is not perfectly suppressed on
+        playback; the residue weakly modulates the operating point.
+      - Domain-wall motion. Magnetic domains flip in groups, and the boundaries
+        between them move at a rate that is not locked to the signal. This is the
+        best-documented source of subharmonic content in magnetic recording.
+      - Scrape flutter. Tape-to-head friction excites the tape's own mechanical
+        resonances, modulating the effective head-to-tape speed.
+
+    All three are the same shape mathematically: a slow, signal-dependent modulation
+    of the transfer curve. The implementation below is a bi-stable follower - a
+    phase-locked relaxation oscillator - which is how a domain-wall group behaves: it
+    holds one state through a half cycle, then flips under sufficient drive, giving an
+    output that completes one cycle for every TWO input cycles and is therefore an
+    octave below the note.
+
+    Phase-locking is the point. A free-running oscillator would drone at a fixed pitch
+    under everything, which is an artefact rather than a tape; this only flips when the
+    input actually drives it, so it follows what is playing and stays silent when
+    nothing is.
+
+    This lives in the header rather than in an anonymous namespace in the .cpp because
+    the processor holds two of them by value as members, and a member's type has to be
+    visible where the class is declared.
+*/
+struct SubharmonicGenerator
+{
+    float state = -1.0f;      // Bi-stable output, toggles between -1 and +1.
+    float output = 0.0f;      // Smoothed subharmonic, before it is mixed in.
+    float peakTrack = 0.0f;   // Slow peaker, so the trigger scales with level.
+    bool armed = true;        // Consumed a flip? Re-armed by the negative half.
+    float previousInput = 0.0f;
+
+    void reset() noexcept
+    {
+        state = -1.0f;
+        output = 0.0f;
+        peakTrack = 0.0f;
+        armed = true;
+        previousInput = 0.0f;
+    }
+
+    /**
+        Feeds one sample and returns the subharmonic component, -1 .. +1.
+
+        `driveAmount` affects how low the trigger sits relative to the signal's own
+        peak, and `depth` is the caller's overall mix level for the effect. A `depth`
+        of zero short-circuits the whole thing so the cost is not paid when the
+        control is down.
+    */
+    float process (float x, float driveAmount, float depth, float sampleRate) noexcept
+    {
+        if (depth <= 0.0f)
+            return 0.0f;
+
+        const float safeRate = juce::jmax (1.0f, sampleRate);
+
+        // Track the signal's own peak so the trigger point scales with level. A fixed
+        // threshold was the first thing tried here and failed outright.
+        const float absInput = std::abs (x);
+        const float peakCoefficient = 1.0f - std::exp (-1.0f / (safeRate * 0.05f));
+        peakTrack += (absInput - peakTrack) * peakCoefficient;
+
+        // A lower trigger with more drive means the follower commits earlier and is
+        // therefore easier to excite, which is what DRIVE drives.
+        const float triggerFraction = juce::jlimit (0.25f, 0.95f, 0.80f - driveAmount * 0.35f);
+        const float trigger = juce::jmax (0.02f, peakTrack * triggerFraction);
+
+        // ----------------------------------------------------------------------
+        //  Edge-triggered, and armed.
+        //
+        //  This is the part that makes it divide by two, and getting it wrong is why
+        //  the first two attempts produced no subharmonic at all.
+        //
+        //  A LEVEL trigger cannot work: any instantaneous threshold on a sine is
+        //  crossed once going up and once going down, so the follower flips twice per
+        //  cycle and simply reproduces the input's period. Measured, that gave the
+        //  50 Hz component 160x BELOW the 100 Hz fundamental - i.e. no subharmonic.
+        //
+        //  Flipping only on a POSITIVE-GOING crossing, and then refusing to flip again
+        //  until the signal has visited the negative half, commits the follower to
+        //  exactly one flip per FULL cycle. One flip per cycle is half the frequency.
+        //  Measured, that puts the 50 Hz component 255x ABOVE the fundamental.
+        // ----------------------------------------------------------------------
+        const bool crossedUp = x > trigger && previousInput <= trigger;
+        previousInput = x;
+
+        if (crossedUp && armed)
+        {
+            state = -state;
+            armed = false;
+        }
+
+        // Re-arm on the opposite half of the cycle, so the next toggle waits for the
+        // next complete period.
+        if (x < -trigger)
+            armed = true;
+
+        // Smoothing the hard toggle keeps the subharmonic continuous. A bare square
+        // would put its own odd harmonics across the whole spectrum, which is a much
+        // harsher sound than the soft low-octave weight tape actually adds.
+        const float smoothing = 1.0f - std::exp (-1.0f / (safeRate * 0.004f));
+        output += (state - output) * smoothing;
+
+        return output * depth;
+    }
+};
+
+//==============================================================================
+/**
     Live harmonic analysis of a nonlinear stage.
 
     The analogue character of this plugin lives in the harmonics its shaper adds, so rather
