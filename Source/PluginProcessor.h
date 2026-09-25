@@ -1203,9 +1203,8 @@ private:
     SampleClock sampleClock;
     SampleSmoother inputGainSmoothed { sampleClock, true };
     SampleSmoother outputGainSmoothed { sampleClock };
-    // The raised-cosine expression assigns sin() to dry and cos() to wet, so the
-    // user-facing MIX ramp is presented inverted: 0 % remains dry and 100 % wet.
-    SampleSmoother mixSmoothed { sampleClock, false, true };
+    // Raised-cosine dry/wet mix ramp (0 % = dry, 100 % = wet).
+    SampleSmoother mixSmoothed { sampleClock, false, false, 0.5f };
     SampleSmoother widthSmoothed { sampleClock };
     SampleSmoother bypassSmoothed { sampleClock };
 
@@ -1313,7 +1312,7 @@ private:
     // the control always does something audible and predictable at every setting.
     float toneShelfCoefficient = 0.5f;
     float toneShelfGain = 1.0f;
-    float toneShelfState = 0.0f;
+    std::array<float, 2> toneShelfState {};
 
     // Smoothed copies of the two coefficients that MULTIPLY the signal from a control:
     // the BRIGHTNESS shelf gain and the TONE macro's record-head pre-bias. Their raw
