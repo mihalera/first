@@ -37,7 +37,15 @@ jobs:
           # Studio release and a wrong one fails the configure step outright -
           # which already happened once here. Letting CMake pick the newest
           # installed generator keeps this working across runner image updates.
-          cmake -S . -B build -A x64 -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+          #
+          # J37_FAST_WINDOWS_BUILD drops /GL + /LTCG. Those are the single largest
+          # avoidable cost in a Windows build: whole-program optimisation makes MSVC
+          # write and re-read an intermediate representation for every object, roughly
+          # doubling the work. CI is a compile check, not a release build, so the
+          # speed is worth more here than the last few percent of optimisation.
+          cmake -S . -B build -A x64 `
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
+            -DJ37_FAST_WINDOWS_BUILD=ON
 
       - name: Show which toolchain CMake selected
         shell: pwsh
@@ -49,6 +57,12 @@ jobs:
       - name: Build
         shell: pwsh
         run: |
+          # /MP inside the project plus MSBuild-level parallelism: without both,
+          # MSBuild only parallelises across projects and this solution has few, so
+          # most of the runner's cores sit idle on a build this size.
+          $env:CMAKE_BUILD_PARALLEL_LEVEL = [Environment]::ProcessorCount
+          $env:CL_MPCount = [Environment]::ProcessorCount
+
           # --parallel with no count lets MSBuild scale to the runner. Nothing is printed
           # for a translation unit that succeeds, which is what kept this log enormous:
           # a full JUCE build is hundreds of files, and every one of them was a line.

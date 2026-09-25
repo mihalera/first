@@ -299,6 +299,78 @@ if(WIN32)
     # silently drift apart.
     if(MSVC)
         target_compile_options(first PRIVATE /W4 /permissive-)
+
+        # ------------------------------------------------------------------
+        #  Why a Windows build is much slower than the macOS one, and what
+        #  actually helps.
+        #
+        #  Three separate costs, only one of which is about compiling code:
+        #
+        #   1. juceaide. Windows runs juceaide DURING configure - to emit the
+        #      .rc resource script and the .ico - so configure has to build
+        #      juceaide.exe from source first. macOS produces its plists with
+        #      plain configure_file() and never invokes juceaide at configure
+        #      time. That is why `cmake -S . -B build` alone can cost as much
+        #      as an entire Mac build. It cannot be avoided, but it is worth
+        #      knowing that the time is spent before any of your code is
+        #      touched, not in it.
+        #
+        #   2. /GL + /LTCG. Whole-program optimisation makes MSVC write and
+        #      then re-read intermediate representation for every object, which
+        #      roughly doubles the work. Clang on macOS does LTO with the same
+        #      flag and markedly less overhead. This is by far the largest
+        #      avoidable item, and it is only worth its cost on release
+        #      binaries. Set J37_FAST_WINDOWS_BUILD=ON to drop it for
+        #      iteration; a distributable build should leave it off.
+        #
+        #   3. Parallelism. MSBuild defaults to a small number of concurrent
+        #      CL processes. /MP scales to the machine, and CMAKE_BUILD_PARALLEL_LEVEL
+        #      controls MSBuild's own parallelism for the overall build.
+        # ------------------------------------------------------------------
+
+        option(J37_FAST_WINDOWS_BUILD "Windows: skip link-time code generation for faster iteration" ON)
+
+        if(J37_FAST_WINDOWS_BUILD)
+            # ------------------------------------------------------------------
+            #  The LTO flags do not live on this target, so they cannot be removed
+            #  from it. JUCE puts them on the INTERFACE of juce_recommended_lto_flags
+            #  as generator expressions:
+            #
+            #     target_compile_options(... INTERFACE $<$<CONFIG:Release>:-GL>)
+            #     target_link_libraries(... INTERFACE $<$<CONFIG:Release>:-LTCG>)
+            #
+            #  Three consequences, all of which an earlier attempt at this got wrong:
+            #
+            #   - The flags arrive through a linked library, so filtering this
+            #     target's own COMPILE_OPTIONS/LINK_OPTIONS finds nothing at all.
+            #   - They are generator expressions, so matching on the literal "-GL"
+            #     never matches either.
+            #   - The link flag is added with target_link_libraries, not
+            #     target_link_options, so it is not in LINK_OPTIONS to begin with.
+            #
+            #  Clearing the interface is the only thing that takes effect. It is safe
+            #  here because this target is the only consumer of that helper in this
+            #  project, and it is scoped inside an opt-out the user can flip.
+            # ------------------------------------------------------------------
+            if(TARGET juce_recommended_lto_flags)
+                set_property(TARGET juce_recommended_lto_flags PROPERTY
+                             INTERFACE_COMPILE_OPTIONS "")
+                set_property(TARGET juce_recommended_lto_flags PROPERTY
+                             INTERFACE_LINK_LIBRARIES "")
+            endif()
+
+            message(STATUS "Windows fast build: LTO disabled (J37_FAST_WINDOWS_BUILD=ON)")
+            message(STATUS "  Set -DJ37_FAST_WINDOWS_BUILD=OFF for a distributable build.")
+        endif()
+
+        # /MP: compile translation units in parallel within one project. Without it
+        # MSBuild parallelises across projects, and this plugin is only a handful of
+        # projects, so most cores sit idle.
+        target_compile_options(first PRIVATE /MP)
+
+        # /Zf: generate debug info in parallel. Harmless and noticeable on a build
+        # with this many translation units.
+        target_compile_options(first PRIVATE /Zf)
     endif()
 endif()
 

@@ -559,6 +559,35 @@ matching top-of-file `#include` in every participating source all agree; when th
 MSVC reports it as `C2857` plus `C1010` rather than as one readable error. `CMakeLists.txt`
 passes no PCH options at all, so that failure mode cannot occur.
 
+### Why the Windows build is slower than the macOS one
+
+Three separate costs, and only one of them is about compiling your code:
+
+1. **`juceaide` runs during configure.** Windows needs `juceaide.exe` while *configuring*,
+to generate the `.rc` resource script and the icon. macOS produces its plists with plain
+`configure_file()` and never invokes juceaide at configure time. This is why `cmake -S . -B build`
+on its own can cost as much as a whole Mac build - the time is spent before any source file is
+touched, not inside it. It cannot be avoided.
+
+2. **`/GL` + `/LTCG`.** Whole-program optimisation makes MSVC write an intermediate
+representation for every object and read it back at link time, roughly doubling the work.
+Clang on macOS does LTO with the same flag and markedly less overhead. This is the largest
+*avoidable* item, and it is only worth its cost for a release binary.
+
+   `CMakeLists.txt` exposes `J37_FAST_WINDOWS_BUILD` (default `ON`) which clears the
+   `juce_recommended_lto_flags` interface, dropping both flags. Configure with
+   `-DJ37_FAST_WINDOWS_BUILD=OFF` for a distributable build.
+
+   Note for anyone editing that block: the flags arrive through a linked **interface**
+target as generator expressions (`$<$<CONFIG:Release>:-GL>` for compile, and the link flag
+is attached with `target_link_libraries`, not `target_link_options`). Filtering this
+target's own `COMPILE_OPTIONS` or `LINK_OPTIONS`, or matching the literal `-GL`, finds
+nothing. Clearing the interface is the only thing that takes effect.
+
+3. **Parallelism.** MSBuild parallelises across *projects* by default, and this solution has
+only a handful, so most cores sit idle. `/MP` parallelises within a project and
+`CMAKE_BUILD_PARALLEL_LEVEL` controls the build-level parallelism. Both are set.
+
 ### Warning flags
 
 `juce::juce_recommended_warning_flags` is enabled. One warning is deliberately kept
