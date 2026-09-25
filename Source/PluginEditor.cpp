@@ -1015,8 +1015,9 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "even harmonics: low bias is edgy and thin, higher bias is "
                        "warmer and fuller. Default 36 percent.") + hints;
             if (id == "tone")
-                return juce::String ("BRIGHTNESS - the playback high-shelf above 8 kHz. Low is warm "
-                       "and rounded, high is open and airy. Default 58 percent.") + hints;
+                return juce::String ("BRIGHTNESS - the record top-end and the playback "
+                       "high-shelf above 8 kHz. Low is warm and rounded, high is open "
+                       "and airy. Default 58 percent.") + hints;
             if (id == "character")
                 return juce::String ("TONE - the machine-state macro. It crossfades the whole deck "
                        "between the classic slow machine (soft head gap, relaxed "
