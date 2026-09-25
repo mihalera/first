@@ -609,7 +609,13 @@ bool FirstAudioProcessor::saveUserPreset (const juce::String& name)
     // slash cannot escape the preset directory.
     juce::String safe;
     for (const auto character : sanitised)
-        if (character != '/' && character != '\\' && character != ':' && character != '?')
+        // The full set Windows itself refuses: / \\ : * ? " < > |. A name holding any
+        // of the extra five would otherwise survive sanitisation on macOS and Linux
+        // and then fail the write on Windows, where the save returns false with no
+        // explanation.
+        if (character != '/' && character != '\\' && character != ':' && character != '?'
+            && character != '*' && character != '"' && character != '<'
+            && character != '>' && character != '|')
             safe += character;
     safe = safe.trim();
     if (safe.isEmpty())
@@ -710,12 +716,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
                                                             0.5f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
-    layout.add (std::make_unique<juce::AudioParameterChoice> ("tape_type", "Tape Type",
+    // Every parameter carries a versioned ParameterID. The plain-String constructor
+    // the controls below used before is deprecated in JUCE 9 and, more importantly,
+    // it leaves the parameter unversioned, so a host has no way to tell a future
+    // meaning change from the current one. The id strings are unchanged, so saved
+    // sessions and presets resolve exactly as before.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "tape_type", 1 }, "Tape Type",
                                                             juce::StringArray { "J37", "Ampex 456", "Studer A800",
                                                                                  "Chrome", "Type 111", "GP9",
                                                                                  "Quantegy 499", "RTM SM911" },
                                                             0));
-    layout.add (std::make_unique<juce::AudioParameterChoice> ("speed", "Speed",
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "speed", 1 }, "Speed",
                                                             juce::StringArray { "7.5 ips", "15 ips", "30 ips" },
                                                             1));
 
@@ -733,9 +744,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
         return range;
     };
 
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("drive", "Drive", percentageRange (0.45f), 0.42f,
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "drive", 1 }, "Drive", percentageRange (0.45f), 0.42f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("bias", "Bias", percentageRange (0.40f), 0.36f,
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "bias", 1 }, "Bias", percentageRange (0.40f), 0.36f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
     // OVERSAMPLING: a host-visible quality switch. OFF keeps the latency at zero;
     // 2x/4x run the tape engine at a higher internal rate so the magnetic shaper
@@ -749,11 +760,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     // name shown in the host and on the panel is BRIGHTNESS. Artists reach for brightness
     // first, and "tone" is vague enough that it reads as a different thing (tilt, midrange,
     // character) depending on who is looking at it.
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("tone", "Brightness", percentageRange (0.50f), 0.58f,
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "tone", 1 }, "Brightness", percentageRange (0.50f), 0.58f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("wow", "Wow", percentageRange (0.35f), 0.14f,
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "wow", 1 }, "Wow", percentageRange (0.35f), 0.14f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("flutter", "Flutter", percentageRange (0.35f), 0.18f,
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "flutter", 1 }, "Flutter", percentageRange (0.35f), 0.18f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
 
     // MIX is a true crossfade from 0 % (pure dry) to 100 % (pure wet), default 50 %.
@@ -785,7 +796,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     // SPEED switch and the head electronics set is blended between those two states,
     // which is exactly how the machine's own speed/eq macro behaves on the hardware.
     // The ID is "character" because "tone" is already taken by Brightness above.
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("character", "Tone", percentageRange (0.50f), 0.50f,
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "character", 1 }, "Tone", percentageRange (0.50f), 0.50f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
 
     return layout;
@@ -890,6 +901,8 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     widthSmoothed.reset (sampleRateToUse, smoothingSeconds);
     widthSmoothed.setCurrentAndTargetValue (widthParam != nullptr ? widthParam->load() * 2.0f : 1.0f);
     bypassSmoothed.reset (sampleRateToUse, 0.01);
+    // Start from the state the parameter restores: a session saved with BYPASS on
+    // must not spend its first 10 ms ramping from the dry position.
     bypassSmoothed.setCurrentAndTargetValue (bypassParam != nullptr && bypassParam->load() >= 0.5f ? 0.0f : 1.0f);
 
     inputPeakLevel.store (0.0f, std::memory_order_relaxed);
@@ -1917,11 +1930,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // for both of them, as computed once above the loop.
             const float inputTrimmed = inputTrimmedByChannel[static_cast<std::size_t> (channel)];
 
-            // Track the power of the post-INPUT, pre-first-compressor signal. Only the
-            // first channel contributes so the reference is a mono measurement, which
-            // keeps it independent of how the stereo material is panned.
-            if (channel == 0)
-                referenceBlockPower += inputTrimmed * inputTrimmed;
+            // Track the power of the post-INPUT, pre-first-compressor signal, summed
+            // over every active channel and averaged right after the loop. The old
+            // first-channel-only reference was a different scale from the averaged
+            // post-compressor power it is compared against, so a hard-panned right
+            // channel could hide a genuine level loss and switch the compensation off.
+            referenceBlockPower += inputTrimmed * inputTrimmed;
             const float x = inputTrimmed * inputCompressionGain;
 
             const float wowLfo = std::sin (wowPhase);
@@ -2132,6 +2146,10 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             const float dryMix = x * dryGain;
             tapeOutput[static_cast<std::size_t> (channel)] = dryMix + wetMix;
         }
+
+        // The reference is a per-channel average now, the same scale the
+        // post-compressor power below is measured on.
+        referenceBlockPower /= static_cast<float> (juce::jmax (1, activeChannels));
 
         // ---------------------------------------------------------------------
         //  Output stage glue compressor. It is immediately before the output trim,
