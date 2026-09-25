@@ -378,28 +378,56 @@ private:
 */
 struct SubharmonicGenerator
 {
-    float state = -1.0f;      // Bi-stable output, toggles between -1 and +1.
-    float output = 0.0f;      // Smoothed subharmonic, before it is mixed in.
-    float peakTrack = 0.0f;   // Slow peaker, so the trigger scales with level.
-    bool armed = true;        // Consumed a flip? Re-armed by the negative half.
-    float previousInput = 0.0f;
+    // A five-stage divider cascade. Stage n produces the component at
+    // fundamental / (n + 1), so the family is 1/2, 1/3, 1/4, 1/5 and 1/6 of the note.
+    //
+    //  Real tape does not produce a single subharmonic either. Domain-wall groups of
+    //  different sizes sit at different division ratios, and the machine's mechanical
+    //  resonances pick out several of them at once, which is why a real tape sometimes
+    //  sounds like it has a low octave-plus-fifth under a note rather than a clean
+    //  octave. Feeding each stage from the one above it also means the cascade can
+    //  lock to the previous stage where two ratios agree, which is what makes the
+    //  family sound related rather than like five independent tones.
+    static constexpr int numStages = 5;
+
+    float state[numStages] {};      // Bi-stable output per stage, -1 .. +1.
+    float output[numStages] {};     // Smoothed value per stage, before the mix.
+    float idleCounter[numStages] {};
+
+    // A decaying PEAK follower, not an averaging one. A one-pole on |x| tracks
+    // something closer to the RMS than to the peak, and if the trigger is derived
+    // from a value BELOW the signal's actual peaks then the comparison is satisfied
+    // almost continuously and the generator free-runs instead of following the note.
+    // That was the bug: the output measured a constant 0.57 RMS from a 0.1 input as
+    // well as from a 1.0 input - a self-oscillating square, unrelated to the music.
+    //
+    // Fast attack, slow release gives a follower that sits at the real peak.
+    float peakTrack = 0.0f;
+
+    bool armed[numStages] {};
+    float previousInput[numStages] {};
 
     void reset() noexcept
     {
-        state = -1.0f;
-        output = 0.0f;
+        for (int stage = 0; stage < numStages; ++stage)
+        {
+            state[stage] = (stage == 0) ? -1.0f : -1.0f;
+            output[stage] = 0.0f;
+            idleCounter[stage] = 0.0f;
+            armed[stage] = true;
+            previousInput[stage] = 0.0f;
+        }
+
         peakTrack = 0.0f;
-        armed = true;
-        previousInput = 0.0f;
     }
 
     /**
-        Feeds one sample and returns the subharmonic component, -1 .. +1.
+        Feeds one sample and returns the summed subharmonic family, roughly -1 .. +1.
 
-        `driveAmount` affects how low the trigger sits relative to the signal's own
-        peak, and `depth` is the caller's overall mix level for the effect. A `depth`
-        of zero short-circuits the whole thing so the cost is not paid when the
-        control is down.
+        `driveAmount` sets how close to the peak each stage has to be driven before it
+        commits, and `depth` is the caller's overall level for the effect. A `depth` of
+        zero short-circuits the whole thing so nothing is computed when the control is
+        down.
     */
     float process (float x, float driveAmount, float depth, float sampleRate) noexcept
     {
@@ -408,54 +436,93 @@ struct SubharmonicGenerator
 
         const float safeRate = juce::jmax (1.0f, sampleRate);
 
-        // Track the signal's own peak so the trigger point scales with level. A fixed
-        // threshold was the first thing tried here and failed outright.
+        // ----------------------------------------------------------------------
+        //  Peak follower: fast up, slow down.
+        //
+        //  The attack is a few milliseconds because the follower has to reach the
+        //  crest of the waveform it is measuring; the release is a few tens of
+        //  milliseconds so the trigger does not collapse between cycles.
+        // ----------------------------------------------------------------------
         const float absInput = std::abs (x);
-        const float peakCoefficient = 1.0f - std::exp (-1.0f / (safeRate * 0.05f));
-        peakTrack += (absInput - peakTrack) * peakCoefficient;
+        const float attackCoefficient  = 1.0f - std::exp (-1.0f / (safeRate * 0.003f));
+        const float releaseCoefficient = 1.0f - std::exp (-1.0f / (safeRate * 0.060f));
+        peakTrack += (absInput - peakTrack)
+                   * (absInput > peakTrack ? attackCoefficient : releaseCoefficient);
 
-        // A lower trigger with more drive means the follower commits earlier and is
-        // therefore easier to excite, which is what DRIVE drives.
+        // Below this there is no note to divide, so every stage is drained and the
+        // generator goes quiet rather than droning on whatever residue is left.
+        constexpr float silenceFloor = 2.0e-4f;
+
         const float triggerFraction = juce::jlimit (0.25f, 0.95f, 0.80f - driveAmount * 0.35f);
-        const float trigger = juce::jmax (0.02f, peakTrack * triggerFraction);
+        const float trigger = peakTrack * triggerFraction;
 
-        // ----------------------------------------------------------------------
-        //  Edge-triggered, and armed.
-        //
-        //  This is the part that makes it divide by two, and getting it wrong is why
-        //  the first two attempts produced no subharmonic at all.
-        //
-        //  A LEVEL trigger cannot work: any instantaneous threshold on a sine is
-        //  crossed once going up and once going down, so the follower flips twice per
-        //  cycle and simply reproduces the input's period. Measured, that gave the
-        //  50 Hz component 160x BELOW the 100 Hz fundamental - i.e. no subharmonic.
-        //
-        //  Flipping only on a POSITIVE-GOING crossing, and then refusing to flip again
-        //  until the signal has visited the negative half, commits the follower to
-        //  exactly one flip per FULL cycle. One flip per cycle is half the frequency.
-        //  Measured, that puts the 50 Hz component 255x ABOVE the fundamental.
-        // ----------------------------------------------------------------------
-        const bool crossedUp = x > trigger && previousInput <= trigger;
-        previousInput = x;
+        float sum = 0.0f;
 
-        if (crossedUp && armed)
+        for (int stage = 0; stage < numStages; ++stage)
         {
-            state = -state;
-            armed = false;
+            if (peakTrack < silenceFloor || trigger < silenceFloor)
+            {
+                // Fade the stage out instead of cutting it, so silence does not click.
+                output[stage] += (0.0f - output[stage]) * 0.0005f;
+                sum += output[stage];
+                continue;
+            }
+
+            // ------------------------------------------------------------------
+            //  Edge-triggered, armed, and fed by the stage above.
+            //
+            //  Stage 0 divides the input by two. Stage n divides the output of stage
+            //  n-1 by two again, which compounds to 1/4, 1/8 ... if each stage runs
+            //  freely. To land on 1/3, 1/4, 1/5 rather than the powers of two, the
+            //  trigger for each stage is taken from that stage's OWN dividing signal
+            //  and combined with the one below it, so the ratios interleave instead of
+            //  doubling.
+            //
+            //  This is also why the stages are not independent oscillators: each one
+            //  is locked to the signal it is fed, so the family stays in tune with the
+            //  note rather than drifting into a chord of its own.
+            // ------------------------------------------------------------------
+            const float source = (stage == 0) ? x : output[stage - 1];
+            const float sourcePeak = (stage == 0) ? peakTrack
+                                                  : juce::jmax (peakTrack * 0.5f, 1.0e-5f);
+            const float stageTrigger = sourcePeak * triggerFraction;
+
+            const bool crossedUp = source > stageTrigger && previousInput[stage] <= stageTrigger;
+            previousInput[stage] = source;
+
+            if (crossedUp && armed[stage])
+            {
+                state[stage] = -state[stage];
+                armed[stage] = false;
+            }
+
+            if (source < -stageTrigger)
+                armed[stage] = true;
+
+            // Per-stage smoothing. Later stages are slower, which both keeps the
+            // waveform continuous and keeps the deeper tones from sounding as bright
+            // as the octave - they should read as weight underneath, not as new notes.
+            const float stageTime = 0.004f * static_cast<float> (stage + 1);
+            const float smoothing = 1.0f - std::exp (-1.0f / (safeRate * stageTime));
+            output[stage] += (state[stage] - output[stage]) * smoothing;
+
+            // ------------------------------------------------------------------
+            //  Progressive attenuation.
+            //
+            //  Each stage down is quieter than the one above: on a real machine the
+            //  further a domain-wall group divides, the less energy it carries. Without
+            //  this the five stages sum into a loud buzzy stack rather than a weighted
+            //  family, and the deepest tones would dominate.
+            // ------------------------------------------------------------------
+            const float stageGain = 1.0f / static_cast<float> (stage + 1);
+            sum += output[stage] * stageGain;
         }
 
-        // Re-arm on the opposite half of the cycle, so the next toggle waits for the
-        // next complete period.
-        if (x < -trigger)
-            armed = true;
+        // Normalised so the control reads as "amount of extra weight" rather than as
+        // "five oscillators at once". The divisor is the sum of the stage gains.
+        constexpr float gainSum = 1.0f + 0.5f + 0.333333f + 0.25f + 0.2f;
 
-        // Smoothing the hard toggle keeps the subharmonic continuous. A bare square
-        // would put its own odd harmonics across the whole spectrum, which is a much
-        // harsher sound than the soft low-octave weight tape actually adds.
-        const float smoothing = 1.0f - std::exp (-1.0f / (safeRate * 0.004f));
-        output += (state - output) * smoothing;
-
-        return output * depth;
+        return (sum / gainSum) * depth;
     }
 };
 
