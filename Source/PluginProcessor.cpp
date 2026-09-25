@@ -372,7 +372,7 @@ void FirstAudioProcessor::applyStateWithUndo (const juce::ValueTree& targetState
 //==============================================================================
 //  Factory presets.
 //
-//  Twelve starting points covering the machine's real range. Each returns the full
+//  Eighteen starting points covering the machine's real range. Each returns the full
 //  parameter map it represents - nothing is patched onto the user's current state
 //  beyond the listed values, so a preset changes the machine, not the session.
 //==============================================================================
@@ -388,11 +388,12 @@ juce::StringArray FirstAudioProcessor::getPresetNames()
 std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int index)
 {
     // Local helper so every row below reads like the sound it names.
-    auto row = [] (float inputDb, float drive, float bias, float tone, float character,
-                   float wow, float flutter, float mix, float outputDb, float width,
-                   int tapeType, int speed, int oversampling)
+    auto row = [] (float subfund, float inputDb, float drive, float bias, float tone,
+                   float character, float wow, float flutter, float mix, float outputDb,
+                   float width, int tapeType, int speed, int oversampling)
     {
         return std::map<juce::String, float> {
+            { "subfund",       subfund },
             { "input",         inputDb },
             { "drive",         drive },
             { "bias",          bias },
@@ -411,24 +412,24 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
 
     switch (index)
     {
-        case 0:  return row (0.0f, 0.42f, 0.36f, 0.58f, 0.50f, 0.14f, 0.18f, 100.0f,  0.0f, 0.50f, 0, 1, 1); // Default Tape
-        case 1:  return row (-3.0f, 0.28f, 0.30f, 0.48f, 0.30f, 0.10f, 0.12f, 65.0f, -1.0f, 0.50f, 0, 1, 1); // Gentle Warmth
-        case 2:  return row (+1.5f, 0.62f, 0.48f, 0.66f, 0.62f, 0.16f, 0.22f, 100.0f, -0.5f, 0.55f, 1, 1, 1); // Bus Glue Tape
-        case 3:  return row (0.0f, 0.75f, 0.42f, 0.74f, 0.70f, 0.12f, 0.20f, 100.0f, -1.0f, 0.50f, 2, 2, 2); // Drum Slam
-        case 4:  return row (0.0f, 0.35f, 0.34f, 0.55f, 0.45f, 0.22f, 0.28f, 70.0f,  0.0f, 0.50f, 0, 0, 1); // Vintage Lo-Fi
-        case 5:  return row (0.0f, 0.40f, 0.38f, 0.62f, 0.55f, 0.18f, 0.24f, 55.0f,  0.0f, 0.62f, 0, 1, 1); // Wide Master
-        case 6:  return row (-6.0f, 0.22f, 0.30f, 0.50f, 0.35f, 0.10f, 0.14f, 45.0f,  0.0f, 0.50f, 3, 2, 1); // Clean Glue
-        case 7:  return row (+3.0f, 0.85f, 0.52f, 0.70f, 0.78f, 0.14f, 0.26f, 100.0f, -1.5f, 0.45f, 1, 2, 2); // Saturated Crunch
-        case 8:  return row (0.0f, 0.48f, 0.40f, 0.60f, 0.50f, 0.30f, 0.34f, 100.0f,  0.0f, 0.50f, 0, 0, 1); // Wobbly Cassette
-        case 9:  return row (-1.0f, 0.55f, 0.44f, 0.68f, 0.58f, 0.12f, 0.16f, 100.0f, -0.5f, 0.58f, 2, 2, 1); // Bright Air Tape
-        case 10: return row (+1.0f, 0.68f, 0.46f, 0.64f, 0.66f, 0.16f, 0.20f, 100.0f, -1.0f, 0.40f, 1, 1, 2); // Mix Saturation
-        case 11: return row (0.0f, 0.50f, 0.40f, 0.62f, 0.52f, 0.15f, 0.19f, 100.0f,  0.0f, 0.50f, 0, 1, 2); // Master Bounce
-        case 12: return row (+1.0f, 0.38f, 0.42f, 0.60f, 0.42f, 0.08f, 0.10f, 70.0f, -1.0f, 0.50f, 0, 1, 1); // Vocal Rail
-        case 13: return row (+2.0f, 0.55f, 0.50f, 0.45f, 0.38f, 0.18f, 0.22f, 100.0f, -1.0f, 0.50f, 1, 0, 1); // Drum Room Warm
-        case 14: return row (+2.5f, 0.48f, 0.36f, 0.42f, 0.35f, 0.06f, 0.08f, 100.0f, -2.0f, 0.50f, 2, 2, 2); // Bass Weight
-        case 15: return row (0.0f, 0.30f, 0.32f, 0.66f, 0.62f, 0.05f, 0.07f, 100.0f,  0.0f, 0.55f, 3, 2, 2); // Master Safety
-        case 16: return row (+4.0f, 0.62f, 0.30f, 0.28f, 0.30f, 0.26f, 0.32f, 65.0f, -4.0f, 0.35f, 3, 0, 1); // Lo-Fi Radio
-        case 17: return row (0.0f, 0.44f, 0.38f, 0.55f, 0.50f, 0.10f, 0.13f, 100.0f,  0.0f, 0.52f, 7, 1, 1); // Ferric Master
+        case 0:  return row (0.00f,  0.0f, 0.42f, 0.36f, 0.58f, 0.50f, 0.14f, 0.18f, 100.0f,  0.0f, 0.50f, 0, 1, 1); // Default Tape
+        case 1:  return row (0.15f, -3.0f, 0.28f, 0.30f, 0.48f, 0.30f, 0.10f, 0.12f, 65.0f, -1.0f, 0.50f, 0, 1, 1); // Gentle Warmth
+        case 2:  return row (0.20f, +1.5f, 0.62f, 0.48f, 0.66f, 0.62f, 0.16f, 0.22f, 100.0f, -0.5f, 0.55f, 1, 1, 1); // Bus Glue Tape
+        case 3:  return row (0.35f,  0.0f, 0.75f, 0.42f, 0.74f, 0.70f, 0.12f, 0.20f, 100.0f, -1.0f, 0.50f, 2, 2, 2); // Drum Slam
+        case 4:  return row (0.00f,  0.0f, 0.35f, 0.34f, 0.55f, 0.45f, 0.22f, 0.28f, 70.0f,  0.0f, 0.50f, 0, 0, 1); // Vintage Lo-Fi
+        case 5:  return row (0.12f,  0.0f, 0.40f, 0.38f, 0.62f, 0.55f, 0.18f, 0.24f, 55.0f,  0.0f, 0.62f, 0, 1, 1); // Wide Master
+        case 6:  return row (0.00f, -6.0f, 0.22f, 0.30f, 0.50f, 0.35f, 0.10f, 0.14f, 45.0f,  0.0f, 0.50f, 3, 2, 1); // Clean Glue
+        case 7:  return row (0.25f, +3.0f, 0.85f, 0.52f, 0.70f, 0.78f, 0.14f, 0.26f, 100.0f, -1.5f, 0.45f, 1, 2, 2); // Saturated Crunch
+        case 8:  return row (0.10f,  0.0f, 0.48f, 0.40f, 0.60f, 0.50f, 0.30f, 0.34f, 100.0f,  0.0f, 0.50f, 0, 0, 1); // Wobbly Cassette
+        case 9:  return row (0.00f, -1.0f, 0.55f, 0.44f, 0.68f, 0.58f, 0.12f, 0.16f, 100.0f, -0.5f, 0.58f, 2, 2, 1); // Bright Air Tape
+        case 10: return row (0.20f, +1.0f, 0.68f, 0.46f, 0.64f, 0.66f, 0.16f, 0.20f, 100.0f, -1.0f, 0.40f, 1, 1, 2); // Mix Saturation
+        case 11: return row (0.10f,  0.0f, 0.50f, 0.40f, 0.62f, 0.52f, 0.15f, 0.19f, 100.0f,  0.0f, 0.50f, 0, 1, 2); // Master Bounce
+        case 12: return row (0.00f, +1.0f, 0.38f, 0.42f, 0.60f, 0.42f, 0.08f, 0.10f, 70.0f, -1.0f, 0.50f, 0, 1, 1); // Vocal Rail
+        case 13: return row (0.18f, +2.0f, 0.55f, 0.50f, 0.45f, 0.38f, 0.18f, 0.22f, 100.0f, -1.0f, 0.50f, 1, 0, 1); // Drum Room Warm
+        case 14: return row (0.65f, +2.5f, 0.48f, 0.36f, 0.42f, 0.35f, 0.06f, 0.08f, 100.0f, -2.0f, 0.50f, 2, 2, 2); // Bass Weight
+        case 15: return row (0.00f,  0.0f, 0.30f, 0.32f, 0.66f, 0.62f, 0.05f, 0.07f, 100.0f,  0.0f, 0.55f, 3, 2, 2); // Master Safety
+        case 16: return row (0.00f, +4.0f, 0.62f, 0.30f, 0.28f, 0.30f, 0.26f, 0.32f, 65.0f, -4.0f, 0.35f, 3, 0, 1); // Lo-Fi Radio
+        case 17: return row (0.12f,  0.0f, 0.44f, 0.38f, 0.55f, 0.50f, 0.10f, 0.13f, 100.0f,  0.0f, 0.52f, 7, 1, 1); // Ferric Master
         default: break;
     }
     return {};
@@ -1024,9 +1025,11 @@ void FirstAudioProcessor::updateToneCoefficients (float toneValue, float engineS
     // 5-16 Hz and made the whole wet path sub-audio.)
     const auto toneCurve = std::pow (toneValue, 0.92f);
 
-    // Record-side roll-off: the magnetic medium itself. 6.5 kHz at warm keeps the
-    // classic rounded top, 18 kHz at bright keeps essentially everything.
-    toneLpAc = onePoleCoefficientHz (6500.0f + 11500.0f * toneCurve, engineSampleRate);
+    // Record-side roll-off: the magnetic medium itself. 5 kHz at warm gives the
+    // classic rounded top real weight, 26 kHz at bright leaves the record path
+    // effectively open. The 5.2x travel is what makes the knob a statement rather
+    // than a nudge (the previous 6.5-18 kHz span could barely be heard end to end).
+    toneLpAc = onePoleCoefficientHz (5000.0f + 21000.0f * toneCurve, engineSampleRate);
 
     // BRIGHTNESS playback shelf: a high-shelf whose corner sits at a FIXED 8 kHz
     // while its GAIN follows the control. Previously the corner frequency itself
@@ -1036,7 +1039,7 @@ void FirstAudioProcessor::updateToneCoefficients (float toneValue, float engineS
     // ramp makes the behaviour monotonic, audible at every setting and independent
     // of the TONE macro.
     toneShelfCoefficient = onePoleCoefficientHz (8000.0f, engineSampleRate);
-    toneShelfGain = 1.0f + toneCurve * 0.42f; // up to about +8.5 dB of top-end lift
+    toneShelfGain = 1.0f + toneCurve * 1.1f; // up to +6.4 dB of high-band lift at bright
     previousTone = toneValue;
 
     // TONE macro crossfade, between machine states rather than dry/wet:
