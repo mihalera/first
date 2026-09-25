@@ -264,3 +264,88 @@ jobs:
           name: J37-TapeSaturator-macOS
           path: ${{ runner.temp }}/artifacts
           if-no-files-found: error
+
+  # ============================================================================
+  #  Linux - VST3
+  # ============================================================================
+  build-linux:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify JUCE submodule is present
+        run: |
+          if [ ! -f "JUCE/CMakeLists.txt" ]; then
+            echo "JUCE submodule missing - CMakeLists.txt adds it via add_subdirectory(JUCE)."
+            echo "Run: git submodule update --init --recursive"
+            exit 1
+          fi
+
+      - name: Install Linux audio and GUI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libjack-jackd2-dev \
+            libfreetype6-dev \
+            libx11-dev \
+            libxcomposite-dev \
+            libxcursor-dev \
+            libxext-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxrender-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev
+
+      - name: Configure CMake
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+
+      - name: Build
+        run: |
+          set -o pipefail
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 2>&1 |
+            grep -E 'error|warning|Error|FAILED|BUILD' || true
+
+          # Second pass to verify actual exit code
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel > /dev/null 2>&1 || {
+            echo "Build failed - re-running with full output:"
+            cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+            exit 1
+          }
+
+      - name: Verify VST3 bundle was produced
+        id: vst3
+        run: |
+          set -euo pipefail
+          BASE="build/first_artefacts/${{ env.BUILD_TYPE }}/VST3"
+          bundle=$(find "$BASE" -maxdepth 1 -name "*.vst3" -print -quit 2>/dev/null || true)
+          if [ -z "$bundle" ]; then
+            echo "No .vst3 bundle found under $BASE"
+            find build/first_artefacts -maxdepth 4 2>/dev/null || true
+            exit 1
+          fi
+          echo "Found bundle: $bundle"
+          binary=$(find "$bundle" -name "*.so" -print -quit 2>/dev/null || true)
+          if [ -z "$binary" ]; then
+            echo "No .so binary found inside $bundle"
+            find "$bundle" || true
+            exit 1
+          fi
+          echo "Found binary: $binary"
+          file "$binary"
+          echo "bundle=$bundle" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Linux VST3 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: J37-TapeSaturator-VST3-Linux
+          path: ${{ steps.vst3.outputs.bundle }}
+          if-no-files-found: error
+

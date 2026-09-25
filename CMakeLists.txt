@@ -8,11 +8,12 @@
 #   build reads directly instead of as generated files that can drift.
 #
 #   Supported configurations
-#     Windows : Visual Studio / x64        -> VST3
+#     Windows : Visual Studio / x64                -> VST3
 #     macOS   : Xcode / universal (arm64 + x86_64) -> VST3, AU, AUv3
+#     Linux   : GCC / Clang x64                    -> VST3
 #
 #   AU and AUv3 are Apple-only formats. JUCE compiles them to nothing on
-#   Windows, so the FORMATS list below is safe to share between platforms.
+#   Windows and Linux, so the FORMATS list below is safe to share between platforms.
 #
 # ==============================================================================
 
