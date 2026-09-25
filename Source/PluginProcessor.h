@@ -1204,25 +1204,21 @@ private:
     SampleSmoother inputGainSmoothed { sampleClock, true };
     SampleSmoother outputGainSmoothed { sampleClock };
     // MIX is the control itself, not its inverse. What this returns is the MIX
-    // position, and the crossfade in processTapeEngine is built from it directly:
-    // dry = cos (angle), wet = sin (angle), so 0 % is dry at unity and 100 % is wet
-    // at unity. There is no inversion here, and there must not be one.
+    // position, and the crossfade in processTapeEngine is built from it directly -
+    // dry = cos (angle), wet = sin (angle) - so 0 % is dry at unity and 100 % is
+    // wet at unity. The 0.5 initial value is the neutral centre of the 0..1 space
+    // the ramp is fed in after the percentage is scaled down.
     //
-    // It used to read `{ sampleClock, false, true }`, with the comment "sin() to
-    // dry and cos() to wet, so the ramp is presented inverted". That flag was not
-    // a design decision, it was a patch over a crossfade that had its two gains on
-    // the wrong sides: with sin on dry the control ran backwards, and inverting the
-    // smoother cancelled it. Correcting the expression to dry = cos / wet = sin -
-    // which is what an equal-power MIX actually is - left the patch in place and
-    // turned it into a second inversion, so the two ends of the control swapped
-    // over: MIX 0 became fully wet and MIX 100 fully dry.
-    //
-    // The pairing was the actual hazard: a compensation flag and a formula that
-    // each assumed the other, with nothing tying them together. The formula is now
-    // right on its own and needs no compensation, so the flag is gone rather than
-    // flipped. If a future change moves sin and cos across again, this must move
-    // with it.
-    SampleSmoother mixSmoothed { sampleClock };
+    // There is deliberately no invertOutput flag here, and there must not be one.
+    // There used to be, and it was not a design decision: it was a patch over a
+    // crossfade that had sin() on the dry side and cos() on the wet one, and the
+    // two cancelled so the control happened to read correctly. Correcting the
+    // expression to dry = cos, wet = sin - which is what an equal-power MIX is -
+    // turned that patch into a second inversion and swapped the two ends of the
+    // control: MIX 0 became fully wet and MIX 100 fully dry. The formula and the
+    // flag were a pair that had to move together with nothing tying them together.
+    // The formula is right on its own now, so there is no flag left to keep.
+    SampleSmoother mixSmoothed { sampleClock, false, false, 0.5f };
     SampleSmoother widthSmoothed { sampleClock };
     SampleSmoother bypassSmoothed { sampleClock };
 

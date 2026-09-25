@@ -400,7 +400,7 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
             { "character",     character },
             { "wow",           wow },
             { "flutter",       flutter },
-            { "mix",           mix },
+            { "mix",           mix <= 1.0f ? mix * 100.0f : mix },
             { "output",        outputDb },
             { "stereo_width",  width },
             { "tape_type",     static_cast<float> (tapeType) },
@@ -411,24 +411,24 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
 
     switch (index)
     {
-        case 0:  return row (0.0f, 0.42f, 0.36f, 0.58f, 0.50f, 0.14f, 0.18f, 1.00f,  0.0f, 0.50f, 0, 1, 1); // Default Tape
-        case 1:  return row (-3.0f, 0.28f, 0.30f, 0.48f, 0.30f, 0.10f, 0.12f, 0.65f, -1.0f, 0.50f, 0, 1, 1); // Gentle Warmth
-        case 2:  return row (+1.5f, 0.62f, 0.48f, 0.66f, 0.62f, 0.16f, 0.22f, 1.00f, -0.5f, 0.55f, 1, 1, 1); // Bus Glue Tape
-        case 3:  return row (0.0f, 0.75f, 0.42f, 0.74f, 0.70f, 0.12f, 0.20f, 1.00f, -1.0f, 0.50f, 2, 2, 2); // Drum Slam
-        case 4:  return row (0.0f, 0.35f, 0.34f, 0.55f, 0.45f, 0.22f, 0.28f, 0.70f,  0.0f, 0.50f, 0, 0, 1); // Vintage Lo-Fi
-        case 5:  return row (0.0f, 0.40f, 0.38f, 0.62f, 0.55f, 0.18f, 0.24f, 0.55f,  0.0f, 0.62f, 0, 1, 1); // Wide Master
-        case 6:  return row (-6.0f, 0.22f, 0.30f, 0.50f, 0.35f, 0.10f, 0.14f, 0.45f,  0.0f, 0.50f, 3, 2, 1); // Clean Glue
-        case 7:  return row (+3.0f, 0.85f, 0.52f, 0.70f, 0.78f, 0.14f, 0.26f, 1.00f, -1.5f, 0.45f, 1, 2, 2); // Saturated Crunch
-        case 8:  return row (0.0f, 0.48f, 0.40f, 0.60f, 0.50f, 0.30f, 0.34f, 1.00f,  0.0f, 0.50f, 0, 0, 1); // Wobbly Cassette
-        case 9:  return row (-1.0f, 0.55f, 0.44f, 0.68f, 0.58f, 0.12f, 0.16f, 1.00f, -0.5f, 0.58f, 2, 2, 1); // Bright Air Tape
-        case 10: return row (+1.0f, 0.68f, 0.46f, 0.64f, 0.66f, 0.16f, 0.20f, 1.00f, -1.0f, 0.40f, 1, 1, 2); // Mix Saturation
-        case 11: return row (0.0f, 0.50f, 0.40f, 0.62f, 0.52f, 0.15f, 0.19f, 1.00f,  0.0f, 0.50f, 0, 1, 2); // Master Bounce
-        case 12: return row (+1.0f, 0.38f, 0.42f, 0.60f, 0.42f, 0.08f, 0.10f, 0.70f, -1.0f, 0.50f, 0, 1, 1); // Vocal Rail
-        case 13: return row (+2.0f, 0.55f, 0.50f, 0.45f, 0.38f, 0.18f, 0.22f, 1.00f, -1.0f, 0.50f, 1, 0, 1); // Drum Room Warm
-        case 14: return row (+2.5f, 0.48f, 0.36f, 0.42f, 0.35f, 0.06f, 0.08f, 1.00f, -2.0f, 0.50f, 2, 2, 2); // Bass Weight
-        case 15: return row (0.0f, 0.30f, 0.32f, 0.66f, 0.62f, 0.05f, 0.07f, 1.00f,  0.0f, 0.55f, 3, 2, 2); // Master Safety
-        case 16: return row (+4.0f, 0.62f, 0.30f, 0.28f, 0.30f, 0.26f, 0.32f, 0.65f, -4.0f, 0.35f, 3, 0, 1); // Lo-Fi Radio
-        case 17: return row (0.0f, 0.44f, 0.38f, 0.55f, 0.50f, 0.10f, 0.13f, 1.00f,  0.0f, 0.52f, 7, 1, 1); // Ferric Master
+        case 0:  return row (0.0f, 0.42f, 0.36f, 0.58f, 0.50f, 0.14f, 0.18f, 100.0f,  0.0f, 0.50f, 0, 1, 1); // Default Tape
+        case 1:  return row (-3.0f, 0.28f, 0.30f, 0.48f, 0.30f, 0.10f, 0.12f, 65.0f, -1.0f, 0.50f, 0, 1, 1); // Gentle Warmth
+        case 2:  return row (+1.5f, 0.62f, 0.48f, 0.66f, 0.62f, 0.16f, 0.22f, 100.0f, -0.5f, 0.55f, 1, 1, 1); // Bus Glue Tape
+        case 3:  return row (0.0f, 0.75f, 0.42f, 0.74f, 0.70f, 0.12f, 0.20f, 100.0f, -1.0f, 0.50f, 2, 2, 2); // Drum Slam
+        case 4:  return row (0.0f, 0.35f, 0.34f, 0.55f, 0.45f, 0.22f, 0.28f, 70.0f,  0.0f, 0.50f, 0, 0, 1); // Vintage Lo-Fi
+        case 5:  return row (0.0f, 0.40f, 0.38f, 0.62f, 0.55f, 0.18f, 0.24f, 55.0f,  0.0f, 0.62f, 0, 1, 1); // Wide Master
+        case 6:  return row (-6.0f, 0.22f, 0.30f, 0.50f, 0.35f, 0.10f, 0.14f, 45.0f,  0.0f, 0.50f, 3, 2, 1); // Clean Glue
+        case 7:  return row (+3.0f, 0.85f, 0.52f, 0.70f, 0.78f, 0.14f, 0.26f, 100.0f, -1.5f, 0.45f, 1, 2, 2); // Saturated Crunch
+        case 8:  return row (0.0f, 0.48f, 0.40f, 0.60f, 0.50f, 0.30f, 0.34f, 100.0f,  0.0f, 0.50f, 0, 0, 1); // Wobbly Cassette
+        case 9:  return row (-1.0f, 0.55f, 0.44f, 0.68f, 0.58f, 0.12f, 0.16f, 100.0f, -0.5f, 0.58f, 2, 2, 1); // Bright Air Tape
+        case 10: return row (+1.0f, 0.68f, 0.46f, 0.64f, 0.66f, 0.16f, 0.20f, 100.0f, -1.0f, 0.40f, 1, 1, 2); // Mix Saturation
+        case 11: return row (0.0f, 0.50f, 0.40f, 0.62f, 0.52f, 0.15f, 0.19f, 100.0f,  0.0f, 0.50f, 0, 1, 2); // Master Bounce
+        case 12: return row (+1.0f, 0.38f, 0.42f, 0.60f, 0.42f, 0.08f, 0.10f, 70.0f, -1.0f, 0.50f, 0, 1, 1); // Vocal Rail
+        case 13: return row (+2.0f, 0.55f, 0.50f, 0.45f, 0.38f, 0.18f, 0.22f, 100.0f, -1.0f, 0.50f, 1, 0, 1); // Drum Room Warm
+        case 14: return row (+2.5f, 0.48f, 0.36f, 0.42f, 0.35f, 0.06f, 0.08f, 100.0f, -2.0f, 0.50f, 2, 2, 2); // Bass Weight
+        case 15: return row (0.0f, 0.30f, 0.32f, 0.66f, 0.62f, 0.05f, 0.07f, 100.0f,  0.0f, 0.55f, 3, 2, 2); // Master Safety
+        case 16: return row (+4.0f, 0.62f, 0.30f, 0.28f, 0.30f, 0.26f, 0.32f, 65.0f, -4.0f, 0.35f, 3, 0, 1); // Lo-Fi Radio
+        case 17: return row (0.0f, 0.44f, 0.38f, 0.55f, 0.50f, 0.10f, 0.13f, 100.0f,  0.0f, 0.52f, 7, 1, 1); // Ferric Master
         default: break;
     }
     return {};
@@ -580,6 +580,14 @@ bool FirstAudioProcessor::applyUserPreset (const juce::String& name)
     if (! restored.isValid())
         return false;
 
+    // Migrate old user preset files where mix was stored in 0..1 range
+    if (auto mixChild = restored.getChildWithProperty ("id", "mix"); mixChild.isValid())
+    {
+        const float val = static_cast<float> (mixChild.getProperty ("value", 50.0f));
+        if (val <= 1.0f && val >= 0.0f)
+            mixChild.setProperty ("value", val * 100.0f, nullptr);
+    }
+
     applyStateWithUndo (restored, "User preset: " + name);
     lastPresetIndex.store (-1, std::memory_order_relaxed);
     markPresetClean (name.trim());
@@ -688,10 +696,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     layout.add (std::make_unique<juce::AudioParameterFloat> ("flutter", "Flutter", percentageRange (0.35f), 0.18f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
 
-    // MIX is a true crossfade, so 50 % is the neutral centre. The default sits there
-    // rather than at 62 %, where the control looked like it was doing nothing because
-    // the wet path was almost fully in already.
-    layout.add (std::make_unique<juce::AudioParameterFloat> ("mix", "Mix", minTrack, maxTrack, 0.50f));
+    // MIX is a true crossfade from 0 % (pure dry) to 100 % (pure wet), default 50 %.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "mix", 1 }, "Mix",
+                                                            juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+                                                            50.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
 
     // TONE is the added macro: a crossfade BETWEEN TAPE SETTINGS rather than between
     // dry and wet. At 0 % the transport behaves like the classic slow machine - soft
@@ -777,6 +786,16 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     const auto requestedOversampling = oversamplingParam != nullptr
         ? static_cast<OversamplingFactor> (static_cast<int> (oversamplingParam->load()))
         : currentOversampling;
+    // Pre-initialize all oversampler engines so processBlock never needs to reallocate
+    for (auto* oversampler : oversamplers)
+    {
+        if (oversampler != nullptr)
+        {
+            oversampler->initProcessing (static_cast<size_t> (juce::jmax (1, samplesPerBlock)));
+            oversampler->reset();
+        }
+    }
+
     setOversamplingFactor (requestedOversampling, juce::jmax (1, samplesPerBlock));
     // Stated as a double on purpose: SmoothedValue::reset takes the ramp length in seconds
     // as a double, and `auto` here would have deduced the same type silently. Naming it
@@ -790,7 +809,8 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     outputGainSmoothed.setCurrentAndTargetValue (juce::Decibels::decibelsToGain (
         outputDbParam != nullptr ? outputDbParam->load() : 0.0f));
     mixSmoothed.reset (sampleRateToUse, smoothingSeconds);
-    mixSmoothed.setCurrentAndTargetValue (mixParam != nullptr ? mixParam->load() : 0.50f);
+    const float initialMix = (mixParam != nullptr ? mixParam->load() : 50.0f) * 0.01f;
+    mixSmoothed.setCurrentAndTargetValue (juce::jlimit (0.0f, 1.0f, initialMix));
     widthSmoothed.reset (sampleRateToUse, smoothingSeconds);
     widthSmoothed.setCurrentAndTargetValue (widthParam != nullptr ? widthParam->load() * 2.0f : 1.0f);
     bypassSmoothed.reset (sampleRateToUse, 0.01);
@@ -961,8 +981,9 @@ void FirstAudioProcessor::resetSampleRateDependentState()
 
 void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int samplesPerBlock)
 {
-    const auto clamped = (factor == OversamplingFactor::x2 || factor == OversamplingFactor::x4
-                            || factor == OversamplingFactor::x8)
+    const auto clamped = (factor == OversamplingFactor::x2
+                          || factor == OversamplingFactor::x4
+                          || factor == OversamplingFactor::x8)
                        ? factor : OversamplingFactor::off;
     const auto clampedIndex = static_cast<int> (clamped);
 
@@ -984,9 +1005,11 @@ void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int 
         // The dummy stage adds no delay; the real ones report their filter latency
         // so every DAW can compensate sample-accurately. setLatencySamples is the
         // inherited non-virtual host-notification setter.
-        AudioProcessor::setLatencySamples (clamped == OversamplingFactor::off
-                                             ? 0
-                                             : juce::roundToInt (oversampler->getLatencyInSamples()));
+        const int newLatency = (clamped == OversamplingFactor::off)
+                                   ? 0
+                                   : juce::roundToInt (oversampler->getLatencyInSamples());
+        if (getLatencySamples() != newLatency)
+            AudioProcessor::setLatencySamples (newLatency);
     }
 
     currentOversampling = clamped;
@@ -1215,7 +1238,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto character = characterParam != nullptr ? characterParam->load() : 0.5f;
     const auto wow = wowParam->load();
     const auto flutter = flutterParam->load();
-    const auto mix = mixParam->load();
+    const auto mix = (mixParam != nullptr ? mixParam->load() : 50.0f) * 0.01f;
     const auto outputDb = outputDbParam->load();
     const auto inputDb = inputDbParam->load();
     const auto stereoWidth = widthParam->load() * 2.0f;
@@ -1228,7 +1251,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
     inputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (inputDb));
     outputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (outputDb));
-    mixSmoothed.setTargetValue (mix);
+    mixSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, mix));
     widthSmoothed.setTargetValue (stereoWidth);
     bypassSmoothed.setTargetValue (bypassRequested ? 0.0f : 1.0f);
 

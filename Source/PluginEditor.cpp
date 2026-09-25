@@ -1041,13 +1041,17 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "50 percent is the natural stereo width, 100 percent is extra "
                        "wide. Default 50 percent.") + hints;
             if (id == "subfund")
-                return juce::String ("SUBFUND - subharmonic saturation (downward harmonics). "
-                       "Generates up to 8 subharmonic undertones (1/2 through 1/9) "
+                return juce::String ("SUBFUND - subharmonics. "
+                       "Generates up to 8 undertones (1/2 through 1/9) "
                        "below the note when signal frequency permits, adding deep multi-layered "
-                       "weight and warmth that regular saturation cannot reach. Stages falling "
+                       "weight and warmth that regular saturation cannot reach. They fall away in a "
+                       "staircase as they divide further, so the octave below is the strongest and "
+                       "1/9 is 42 dB under it. Stages falling "
                        "below audible sub-bass (< 14-22 Hz) are smoothly attenuated to prevent DC "
-                       "rumble. While standard drive pushes harmonics upward, this saturates in the "
-                       "opposite direction with warm analog soft-clipping. Default 0 percent - "
+                       "rumble, and the whole series stops with the note rather than continuing to "
+                       "sound under it. They are added to the signal after the tape's own "
+                       "saturation, so they stay clean partials instead of feeding it and coming "
+                       "back out as a harmonic series. Default 0 percent - "
                        "it is a colour, not a correction.") + hints;
             return hints;
         };
