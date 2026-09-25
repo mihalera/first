@@ -136,8 +136,12 @@ private:
         juce::Rectangle<int> meters;
     };
 
-    static constexpr std::size_t controlCount = 10;
-    static constexpr int controlColumns = 5;
+    // Eleven controls: the nine original machine controls plus the A/B TONE macro,
+    // SUBFUND and WIDTH. A 4 x 3 grid holds twelve, and the layout stretches the last
+    // column and row to fill, so the three unused cells cost nothing visually.
+    // The old 5 x 2 arrangement cannot take an eleventh without splitting a row.
+    static constexpr std::size_t controlCount = 11;
+    static constexpr int controlColumns = 4;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     void timerCallback() override;

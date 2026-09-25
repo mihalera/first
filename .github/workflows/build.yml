@@ -42,12 +42,28 @@ jobs:
       - name: Show which toolchain CMake selected
         shell: pwsh
         run: |
-          Get-Content build/CMakeCache.txt | Select-String -Pattern "CMAKE_GENERATOR:|CMAKE_CXX_COMPILER:"
+          # One line each, rather than dumping the whole cache.
+          Select-String -Path build/CMakeCache.txt -Pattern '^CMAKE_GENERATOR:|^CMAKE_CXX_COMPILER:' |
+              ForEach-Object { $_.Line }
 
       - name: Build
         shell: pwsh
         run: |
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+          # --parallel with no count lets MSBuild scale to the runner. Nothing is printed
+          # for a translation unit that succeeds, which is what kept this log enormous:
+          # a full JUCE build is hundreds of files, and every one of them was a line.
+          # A failure still prints in full, which is the only part worth reading.
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 2>&1 |
+            ForEach-Object {
+                # Drop the per-file progress chatter, keep warnings and errors.
+                if ($_ -match 'cl : .*warning|error|Error|warning [A-Z]+[0-9]+') { $_ }
+            }
+
+          # The pipeline above hides the exit code, so check it explicitly.
+          if ($LASTEXITCODE -ne 0) {
+              Write-Error "Build failed with exit code $LASTEXITCODE"
+              exit $LASTEXITCODE
+          }
 
       # JUCE's CMake build writes the bundles to
       #   <build>/first_artefacts/<Config>/<FORMAT>/<PRODUCT_NAME>.<ext>
@@ -136,7 +152,22 @@ jobs:
 
       - name: Build
         run: |
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+          # Quietened for the same reason as the Windows job: a universal build of a
+          # full JUCE plugin is hundreds of translation units across two architectures,
+          # and printing every one of them buried the actual result. Only warnings and
+          # errors are kept.
+          set -o pipefail
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 2>&1 |
+            grep -E 'error|warning|Error|FAILED|BUILD' || true
+
+          # grep returns 1 when it matches nothing, so the pipeline status cannot be
+          # trusted alone. Re-run the build's own status check instead: a no-op second
+          # pass costs a second and reports the real exit code.
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel > /dev/null 2>&1 || {
+            echo "Build failed - re-running with full output:"
+            cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+            exit 1
+          }
 
       # JUCE's CMake build lays the bundles out as
       #   <build>/first_artefacts/<Config>/<FORMAT>/<PRODUCT_NAME>.<extension>

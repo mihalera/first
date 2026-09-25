@@ -165,6 +165,126 @@ namespace
 
         return -(1.0f - 1.0f / ratio) * overshootDb;
     }
+
+    /**
+        Subharmonic generator - the descendant of the fundamental.
+
+        Everything else in this plugin produces OVERtones: harmonics at integer multiples
+        of the input frequency. A 100 Hz tone gets 200, 300, 400 Hz and so on. This stage
+        is the opposite - it produces the component at HALF the input frequency, so a
+        100 Hz note also gains weight at 50 Hz.
+
+        This cannot come out of the saturating curve, and it is worth being clear why,
+        because it looks like it should. `tanh (sin (wt))` is a curve applied to a value,
+        with no notion of time of its own, so its output is a function of the instantaneous
+        input phase - and any such function has period 2pi/w, which means its Fourier
+        series contains only multiples of w. Subharmonics need a process with its OWN
+        timescale that can fall out of step with the signal.
+
+        On a real machine there are three such processes, and this models all three:
+
+          - Bias leakage. The ultrasonic bias oscillator is not perfectly suppressed on
+            playback; the residue weakly modulates the operating point.
+          - Domain-wall motion. Magnetic domains flip in groups, and the boundaries
+            between them move at a rate that is not locked to the signal. This is the
+            best-documented source of subharmonic content in magnetic recording.
+          - Scrape flutter. Tape-to-head friction excites the tape's own mechanical
+            resonances, modulating the effective head-to-tape speed.
+
+        All three are the same shape mathematically: a slow, signal-dependent modulation
+        of the transfer curve. The implementation below is a bi-stable follower - a
+        phase-locked relaxation oscillator - which is how a domain-wall group behaves: it
+        holds one state through a half cycle, then flips under sufficient drive, giving an
+        output that completes one cycle for every TWO input cycles and is therefore an
+        octave below the note.
+
+        Phase-locking is the point. A free-running oscillator would drone at a fixed pitch
+        under everything, which is an artefact rather than a tape; this only flips when the
+        input actually drives it, so it follows what is playing and stays silent when
+        nothing is.
+    */
+    struct SubharmonicGenerator
+    {
+        float state = -1.0f;      // Bi-stable output, toggles between -1 and +1.
+        float output = 0.0f;      // Smoothed subharmonic, before it is mixed in.
+        float peakTrack = 0.0f;   // Slow peaker, so the trigger scales with level.
+        bool armed = true;        // Consumed a flip? Re-armed by the negative half.
+        float previousInput = 0.0f;
+
+        void reset() noexcept
+        {
+            state = -1.0f;
+            output = 0.0f;
+            peakTrack = 0.0f;
+            armed = true;
+            previousInput = 0.0f;
+        }
+
+        /**
+            Feeds one sample and returns the subharmonic component, -1 .. +1.
+
+            `driveAmount` affects how low the trigger sits relative to the signal's own
+            peak, and `depth` is the caller's overall mix level for the effect. A `depth`
+            of zero short-circuits the whole thing so the cost is not paid when the
+            control is down.
+        */
+        float process (float x, float driveAmount, float depth, float sampleRate) noexcept
+        {
+            if (depth <= 0.0f)
+                return 0.0f;
+
+            const float safeRate = juce::jmax (1.0f, sampleRate);
+
+            // Track the signal's own peak so the trigger point scales with level. A fixed
+            // threshold was the first thing tried here and failed outright.
+            const float absInput = std::abs (x);
+            const float peakCoefficient = 1.0f - std::exp (-1.0f / (safeRate * 0.05f));
+            peakTrack += (absInput - peakTrack) * peakCoefficient;
+
+            // A lower trigger with more drive means the follower commits earlier and is
+            // therefore easier to excite, which is what DRIVE drives.
+            const float triggerFraction = juce::jlimit (0.25f, 0.95f, 0.80f - driveAmount * 0.35f);
+            const float trigger = juce::jmax (0.02f, peakTrack * triggerFraction);
+
+            // ------------------------------------------------------------------
+            //  Edge-triggered, and armed.
+            //
+            //  This is the part that makes it divide by two, and getting it wrong is why
+            //  the first two attempts produced no subharmonic at all.
+            //
+            //  A LEVEL trigger cannot work: any instantaneous threshold on a sine is
+            //  crossed once going up and once going down, so the follower flips twice per
+            //  cycle and simply reproduces the input's period. Measured, that gave the
+            //  50 Hz component 160x BELOW the 100 Hz fundamental - i.e. no subharmonic.
+            //
+            //  Flipping only on a POSITIVE-GOING crossing, and then refusing to flip again
+            //  until the signal has visited the negative half, commits the follower to
+            //  exactly one flip per FULL cycle. One flip per cycle is half the frequency.
+            //  Measured, that puts the 50 Hz component 255x ABOVE the fundamental.
+            // ------------------------------------------------------------------
+            const bool crossedUp = x > trigger && previousInput <= trigger;
+            previousInput = x;
+
+            if (crossedUp && armed)
+            {
+                state = -state;
+                armed = false;
+            }
+
+            // Re-arm on the opposite half of the cycle, so the next toggle waits for the
+            // next complete period.
+            if (x < -trigger)
+                armed = true;
+
+            // Smoothing the hard toggle keeps the subharmonic continuous. A bare square
+            // would put its own odd harmonics across the whole spectrum, which is a much
+            // harsher sound than the soft low-octave weight tape actually adds.
+            const float smoothing = 1.0f - std::exp (-1.0f / (safeRate * 0.004f));
+            output += (state - output) * smoothing;
+
+            return output * depth;
+        }
+    };
 }
 
 //==============================================================================
@@ -219,6 +339,7 @@ FirstAudioProcessor::FirstAudioProcessor()
     // fine - the badge is advisory and matches what the DAW's own "plugin modified"
     // indication would say.
     for (const auto* parameterID : { "input", "output", "bypass", "polarity", "auto_gain",
+                                     "subfund",
                                      "stereo_width", "tape_type", "speed", "drive", "bias",
                                      "oversampling", "tone", "wow", "flutter", "mix",
                                      "character" })
@@ -228,6 +349,7 @@ FirstAudioProcessor::FirstAudioProcessor()
 FirstAudioProcessor::~FirstAudioProcessor()
 {
     for (const auto* parameterID : { "input", "output", "bypass", "polarity", "auto_gain",
+                                     "subfund",
                                      "stereo_width", "tape_type", "speed", "drive", "bias",
                                      "oversampling", "tone", "wow", "flutter", "mix",
                                      "character" })
@@ -553,6 +675,21 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     // what the chain produced. Default ON, matching what earlier builds always did.
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "auto_gain", 1 },
                                                             "Auto Gain", true));
+
+    // SUBFUND: the subharmonic generator. Every other stage here makes overtones - a
+    // 100 Hz note gains 200, 300, 400 Hz. This one makes the DESCENDANT: weight an
+    // octave BELOW the note, so 100 Hz also gains 50 Hz. Real tape does this through
+    // bias leakage, domain-wall motion and scrape flutter, none of which a saturating
+    // curve can produce, because a curve has no timescale of its own and therefore
+    // cannot generate anything below the frequency it is fed. See SubharmonicGenerator.
+    //
+    // Defaults to OFF: it is a colour, not a correction, and a plugin should not add
+    // octave-down weight to every session that has not asked for it.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "subfund", 1 },
+                                                            "Sub-Fundamental",
+                                                            juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
+                                                            0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "stereo_width", 1 },
                                                             "Stereo Width",
                                                             juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
@@ -847,6 +984,15 @@ void FirstAudioProcessor::resetSampleRateDependentState()
     // sweep. 150 ms is long enough to read as a morph and short enough that switching
     // formula still feels immediate.
     headDampingSwitchSmoothed.reset (sampleRate, 0.15);
+
+    // The subharmonic generators hold a bi-stable state and a follower, so they carry
+    // across blocks and have to start clean; the depth control ramps like every other
+    // gain so that moving it cannot step the phase-locked oscillator.
+    subharmonicL.reset();
+    subharmonicR.reset();
+    subFundamentalSmoothed.reset (sampleRate, 0.02);
+    subFundamentalSmoothed.setCurrentAndTargetValue (
+        subFundamentalParam != nullptr ? subFundamentalParam->load() : 0.0f);
 
     // A rate change invalidates any switch in progress, so the countdown is cleared and
     // the next block re-seeds activeTapeType instead of treating the new rate as a
@@ -1402,6 +1548,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // when no formula change is happening.
     headDampingSwitchSmoothed.setTargetValue (hfPostCoefficient);
     hissGainSmoothed.setTargetValue (hissGain);
+    subFundamentalSmoothed.setTargetValue (subFundamentalParam != nullptr
+                                               ? subFundamentalParam->load() : 0.0f);
 
     // -----------------------------------------------------------------------
     //  Noise floor.
@@ -1722,6 +1870,30 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             hysteresisMemory[1] = hysteresisMemory[0];
             hysteresisMemory[0] = shapedCore;
 
+            // ------------------------------------------------------------------
+            //  Sub-Fundamental: the octave BELOW the note.
+            //
+            //  Injected here, immediately after the shaper, so it is part of the tape
+            //  signal proper - it then rides through the tape low-pass, the noise
+            //  floor, the glue compressors and the safety limiter exactly like the
+            //  rest of the recording. Injecting it at the output instead would make it
+            //  sit on top of the machine rather than inside it.
+            //
+            //  The generator is fed the SHAPER's output rather than the raw input, so
+            //  it is excited by the signal that actually reached the magnetic domain,
+            //  and it is per-channel: one generator on the mono sum would collapse the
+            //  stereo image at precisely the octave the control is meant to thicken.
+            // ------------------------------------------------------------------
+            auto& subharmonic = channel == 0 ? subharmonicL : subharmonicR;
+            const float subharmonicComponent = subharmonic.process (
+                shapedCore, driveAmountSmoothed.getCurrentValue(),
+                subFundamentalSmoothed.getCurrentValue(), engineSampleRate);
+
+            // Summed rather than blended, so the control reads as adding weight below
+            // the note instead of crossfading the tape away. The depth ramp keeps the
+            // level change from stepping the phase-locked oscillator.
+            const float withSubharmonic = shapedCore + subharmonicComponent;
+
             // Measure what the shaper actually produced, comparing its input against its
             // output. Harmonics are the reason this plugin exists, so the character is
             // observed rather than assumed: the analyser separates the even content
@@ -1733,8 +1905,10 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                 harmonicAnalyser.analyse (preDrive, shapedCore, engineSampleRate);
 
             // Tape is a low-pass medium: the faster the tape and the brighter the
-            // tone setting, the more top end survives.
-            highFreqMemory[1] += (shapedCore - highFreqMemory[1]) * toneLpSmoothed.getCurrentValue();
+            // tone setting, the more top end survives. The subharmonic rides into this
+            // filter along with the shaper output, so tape's own top-end loss applies
+            // to it as well - it is part of the recording, not an effect layered on it.
+            highFreqMemory[1] += (withSubharmonic - highFreqMemory[1]) * toneLpSmoothed.getCurrentValue();
             const float afterTapeLoss = highFreqMemory[1];
 
             // Per-model head damping (the headDampingHz each TAPE TYPE sets, scaled

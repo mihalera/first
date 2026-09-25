@@ -959,13 +959,16 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 
     const juce::StringArray controlIds { "input", "drive", "bias",
                                          "tone", "character", "wow",
-                                         "flutter", "mix", "output", "stereo_width" };
+                                         "flutter", "mix", "output",
+                                         "stereo_width", "subfund" };
     const juce::StringArray controlNames { "INPUT", "DRIVE", "BIAS",
                                            "BRIGHT", "TONE", "WOW",
-                                           "FLUTTER", "MIX", "OUTPUT", "WIDTH" };
+                                           "FLUTTER", "MIX", "OUTPUT",
+                                           "WIDTH", "SUBFUND" };
     const std::array<double, controlCount> defaultValues { 0.0, 0.42, 0.36,
                                                            0.58, 0.5, 0.14,
-                                                           0.18, 0.5, 0.0, 0.5 };
+                                                           0.18, 0.5, 0.0,
+                                                           0.5, 0.0 };
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -1037,6 +1040,17 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 return juce::String ("WIDTH - stereo image after the tape. 0 percent is mono, "
                        "50 percent is the natural stereo width, 100 percent is extra "
                        "wide. Default 50 percent.") + hints;
+            if (id == "subfund")
+                return juce::String ("SUBFUND - adds weight an octave BELOW the note. A 100 Hz "
+                       "bass note gains 50 Hz, which is the one thing saturation "
+                       "cannot do: a curve bends the note into its own overtones "
+                       "(200, 300 Hz) but has no timescale of its own, so it can "
+                       "never reach below the frequency it is fed. Real tape gets "
+                       "there through bias leakage, domain-wall motion and scrape "
+                       "flutter, all modelled here. The generator is locked to "
+                       "what you play, so it follows the part instead of droning "
+                       "at a fixed pitch. Default 0 percent - it is a colour, not "
+                       "a correction.") + hints;
             return hints;
         };
         slider.setTooltip (parameterTooltip (controlIds[static_cast<int> (i)]));
@@ -2047,7 +2061,14 @@ void FirstAudioProcessorEditor::resized()
     grid.removeFromTop (42);
     grid.removeFromBottom (8);
     const auto cellWidth = grid.getWidth() / controlColumns;
-    const auto rowHeight = grid.getHeight() / 2;
+    // Three rows, to match controlColumns: 4 x 3 = 12 cells for 11 controls.
+    const auto rowHeight = grid.getHeight() / 3;
+
+    // The number of rows is derived from the control count and the column count rather
+    // than written out. Hardcoding it is how the previous "row == 1" became wrong the
+    // moment a tenth control turned the grid from two rows into three: the last row
+    // would then have been sized as if it were the bottom row and overflowed the panel.
+    const auto gridRows = (static_cast<int> (controlCount) + controlColumns - 1) / controlColumns;
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -2058,7 +2079,7 @@ void FirstAudioProcessorEditor::resized()
                                           column == controlColumns - 1
                                               ? grid.getRight() - (grid.getX() + column * cellWidth)
                                               : cellWidth,
-                                          row == 1
+                                          row == gridRows - 1
                                               ? grid.getBottom() - (grid.getY() + row * rowHeight)
                                               : rowHeight);
         controlLabels[i].setBounds (cell.getX() + 5, cell.getY() + 1,

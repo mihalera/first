@@ -815,6 +815,7 @@ private:
     std::atomic<float>* speedParam = nullptr;
     std::atomic<float>* polarityParam = nullptr;
     std::atomic<float>* autoGainParam = nullptr;
+    std::atomic<float>* subFundamentalParam = nullptr;
 
     float sampleRate = 44100.0f;
     // Every smoother below is advanced exactly once at the top of each sample frame.
@@ -1002,6 +1003,17 @@ private:
     // -------------------------------------------------------------------------
     int activeTapeType = -1;
     int tapeTypeChangeCountdown = 0;
+
+    // One subharmonic generator per channel. They are NOT shared, because each one
+    // commits to a flip from its own channel's waveform: running a single generator on
+    // the mono sum would collapse the stereo image at exactly the octave the effect is
+    // meant to add weight to.
+    SubharmonicGenerator subharmonicL;
+    SubharmonicGenerator subharmonicR;
+
+    // The depth control is read per sample, so it ramps like every other gain. A raw
+    // step here would put a discontinuity into an already phase-locked oscillator.
+    SampleSmoother subFundamentalSmoothed { sampleClock };
 
     // Per-instance tape noise generator. Kept as an object member rather than a
     // thread_local static so that instances never share one stream and the output
