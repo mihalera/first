@@ -780,12 +780,6 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // stream whose content would depend on how many instances happen to exist.
     noiseState = 0x1b873593u;
 
-    // The noise-path leveller also starts neutral, so the first block does not
-    // inherit a stale floor from a previous session or sample rate. Duck 1 / lift 1
-    // is the paused, open-stages state.
-    noiseDuckState = 1.0f;
-    noiseHissLevelCompensation = 1.0f;
-
     // The safety limiter must start open, otherwise a stale gain from the previous
     // session would duck the first block audibly.
     preLimiterDetector = 0.0f;
@@ -847,6 +841,18 @@ void FirstAudioProcessor::resetSampleRateDependentState()
     hissGainSmoothed.reset (sampleRate, 0.02);
     shaperDriveSmoothed.reset (sampleRate, 0.02);
     shaperAsymmetrySmoothed.reset (sampleRate, 0.02);
+
+    // The formula-switch ramp is deliberately slower than the control ramps: it has to
+    // move the head-damping pole by up to 8 kHz without that travel being an audible
+    // sweep. 150 ms is long enough to read as a morph and short enough that switching
+    // formula still feels immediate.
+    headDampingSwitchSmoothed.reset (sampleRate, 0.15);
+
+    // A rate change invalidates any switch in progress, so the countdown is cleared and
+    // the next block re-seeds activeTapeType instead of treating the new rate as a
+    // formula change.
+    activeTapeType = -1;
+    tapeTypeChangeCountdown = 0;
 
     // The oversampling filters hold per-rate state (their half-band coefficients are
     // tuned to the incoming rate), so they must be flushed on a rate change or the
@@ -1262,6 +1268,43 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     headDampingHz = juce::jlimit (4000.0f, 26000.0f, headDampingHz);
     hysteresis = juce::jlimit (0.1f, 0.7f, hysteresis);
 
+    // -------------------------------------------------------------------------
+    //  Tape-type change.
+    //
+    //  Detected once per switch so the shaper's memory can be released at exactly
+    //  that moment, and so the head-damping pole can be moved on the slow ramp instead
+    //  of the 20 ms control ramp. See the note on activeTapeType in the header for why
+    //  ramping the coefficients alone cannot make this continuous: the hysteresis term
+    //  feeds the previous output back through a non-linear function, so stale memory
+    //  inside a new curve is a step no amount of coefficient smoothing can remove.
+    //
+    //  The memory is faded rather than zeroed. Writing zeros would itself be a step -
+    //  the curve would be evaluated against silence for one frame. Halving the three
+    //  history slots lets the state unwind into the new curve over a few samples
+    //  instead of jumping, which is inaudible at any level.
+    // -------------------------------------------------------------------------
+    const bool tapeTypeChanged = (activeTapeType != tapeType);
+
+    if (tapeTypeChanged)
+    {
+        activeTapeType = tapeType;
+
+        for (auto& memory : hystL) memory *= 0.5f;
+        for (auto& memory : hystR) memory *= 0.5f;
+
+        // Hold the slow ramp open long enough to cover the whole travel. The countdown
+        // is in samples, so it scales with the rate like every other time constant.
+        tapeTypeChangeCountdown = juce::roundToInt (engineSampleRate * 0.15f);
+    }
+
+    // The switch ramp is only consulted while its countdown is running. Outside that
+    // window the ordinary control ramp owns the pole, so moving a knob keeps its 20 ms
+    // response and only a formula change pays for the slower one.
+    const bool tapeTypeSwitching = tapeTypeChangeCountdown > 0;
+
+    if (tapeTypeSwitching)
+        tapeTypeChangeCountdown -= numSamples;
+
     // DRIVE has no floor. It used to start at 0.28, which meant the signal was pushed
     // 38 % harder into the saturator even with the control at zero - a large part of why
     //    the plugin sounded overdriven at every setting. Now zero drive means unity gain
@@ -1353,30 +1396,21 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     hfPostSmoothed.setTargetValue (hfPostCoefficient);
     headGapSmoothed.setTargetValue (headGapCoefficient);
     flutterScaleSmoothed.setTargetValue (flutterScale);
+
+    // The switch ramp tracks the same pole but over a much longer window. It is only
+    // read while tapeTypeSwitching is true, so feeding it every block costs nothing
+    // when no formula change is happening.
+    headDampingSwitchSmoothed.setTargetValue (hfPostCoefficient);
     hissGainSmoothed.setTargetValue (hissGain);
 
     // -----------------------------------------------------------------------
-    //  Noise-path levelling - the hiss must be INAUDIBLE in a pause.
+    //  Noise floor.
     //
-    //  The hiss sits in the wet path BELOW the output glue compressor and the
-    //  safety limiter. Those are programme-dependent gains: while signal plays they
-    //  duck everything including the hiss, and in a pause they open again.
-    //
-    //  The floor's calibrated level is chosen so that the compensated pause level is
-    //  below -32 dBFS (the user's explicit requirement), i.e. well under the audibility
-    //  threshold at the nominal operating level. While signal plays, the measured duck
-    //  (mean output-stage gain and limiter gain of the block, smoothed over ~250 ms)
-    //  ducks the floor further - it never swells above its pause level, so the noise
-    //  is always quieter under the programme than beside it.
+    //  The hiss is a constant, band-limited floor - the sound of the medium. It is
+    //  deliberately NOT programme-dependent: tracking the signal would make the
+    //  noise breathe with the music, and the hiss must sound the same in a pause as
+    //  under the programme.
     // -----------------------------------------------------------------------
-    const float noiseDuckSmoothing = 1.0f - std::exp (
-        -1.0f / (engineSampleRate * 0.25f));
-
-    // Pause cap on the leveller: the compensated floor can never exceed this level,
-    // so a stray frame of open stages cannot push the hiss back up. With the retuned
-    // hiss gain (-21 dB pre-compensation) the floor sits near -32 dBFS or below with
-    // the stage open, and ducks further under signal.
-    constexpr float noisePauseCeiling = 1.05f;
 
     // onePoleCoefficient takes MILLISECONDS, so the 16 kHz corner is converted to the
     // equivalent time constant first: 1 / (2*pi*f). Passing 16000 here would be read as a
@@ -1431,9 +1465,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const float finalOutputGain = 0.78f * driveGainCompensation * (0.94f + speedScale * 0.08f);
 
     // Continuous pseudo-random tape noise: a 32-bit LCG held per instance, so the
-    // hiss is uncorrelated between instances and reproducible for a given one. A
-    // thread_local stream would instead couple all plugin instances together and
-    // make the noise depend on how many of them happen to be running.
+    // hiss is uncorrelated between instances and reproducible for a given one.
+    // The floor itself is constant - see the note in the tape loop for why there is
+    // no programme-dependent levelling.
     const auto nextNoise = [] (std::uint32_t& state) -> float
     {
         state = state * 1664525u + 1013904223u;
@@ -1457,11 +1491,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     float inputPeakReductionDb = 0.0f;
     float inputEnvelopeActivity = 0.0f;
     float driftAccumulator = 0.0f;
-
-    // Noise-floor levelling accumulator: sums the per-sample duck the output glue
-    // stage and safety limiter apply (their combined gain, 0..1), so the block's
-    // mean duck can be measured once, after the loop, for the leveller update.
-    float duckAccumulator = 0.0f;
 
     // Reference power for the final gain compensation: the power of the signal straight
     // after the INPUT trim, before the first glue compressor touches it. That is the
@@ -1711,7 +1740,25 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // Per-model head damping (the headDampingHz each TAPE TYPE sets, scaled
             // by the transport speed). This pole used to be computed and then never
             // applied - the formulas' damping figures were a no-op.
-            highFreqMemory[2] += (afterTapeLoss - highFreqMemory[2]) * hfPostSmoothed.getCurrentValue();
+            //
+            // Two ramps share this target: the ordinary 20 ms control ramp, and the
+            // slow one used while a tape formula is being switched. A formula change
+            // moves this pole by up to 8 kHz, and 20 ms of that travel is an audible
+            // sweep rather than a crossfade, which is why the slow ramp exists.
+            const float dampingCoefficient = tapeTypeSwitching
+                ? headDampingSwitchSmoothed.getCurrentValue()
+                : hfPostSmoothed.getCurrentValue();
+
+            // Both ramps must advance every sample even when one is idle, or the unused
+            // one would resume from a stale value on the next switch. Reading advances
+            // it lazily through the shared sample clock, so touching the other one here
+            // is enough.
+            if (tapeTypeSwitching)
+                hfPostSmoothed.getCurrentValue();
+            else
+                headDampingSwitchSmoothed.getCurrentValue();
+
+            highFreqMemory[2] += (afterTapeLoss - highFreqMemory[2]) * dampingCoefficient;
             const float dampedLoss = highFreqMemory[2];
 
             // Playback head gap loss: the TONE macro's crossfade of the head itself.
@@ -1749,12 +1796,17 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // The band limit costs most of the noise power, so the gain is compensated by
             // the inverse of the filter's RMS response. Deriving it from the coefficient
             // rather than a fixed number keeps the perceived level flat at every rate.
-            // The block-level leveller (noiseHissLevelCompensation) then lifts the floor
-            // by the amount the glue compressors and limiter duck it, so the floor is
-            // constant with and without signal.
+            //
+            // NOTE: there is deliberately no programme-dependent levelling here. An
+            // earlier version divided the floor back up by the amount the glue stages had
+            // ducked, with the intent of holding the level constant between pause and
+            // signal. The maths was inverted - the compensation ran from 1.0 in a pause up
+            // to a 1.05 ceiling under signal - so the hiss was loudest when nothing was
+            // playing and slightly louder still when the compressors clamped down. Tape
+            // hiss is simply a constant floor; tracking the programme makes it breathe
+            // with the music, which is the one thing a noise floor must not do.
             const float bandLimitCompensation = 1.0f / std::sqrt (juce::jmax (0.05f, hissBandLimit));
-            const float noiseFloor = hissLowPass * bandLimitCompensation
-                                   * noiseHissLevelCompensation;
+            const float noiseFloor = hissLowPass * bandLimitCompensation;
 
             const float motioned = (compressedBias + noiseFloor) * wowMod * flutterMod * grainMod;
 
@@ -1940,12 +1992,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                      : 1.0f - std::exp (-1.0f / (engineSampleRate * 0.120f));
         limiterGain += (requiredGain - limiterGain) * gainSmoothing;
 
-        // Noise-floor levelling: this frame's total duck is the combined gain the
-        // output stage and the limiter applied to the programme (and to the hiss
-        // riding with it). Accumulated across the block so the leveller can lift the
-        // floor by the block's mean duck once, after the loop.
-        duckAccumulator += juce::jlimit (0.0f, 1.0f, compressionGain * limiterGain);
-
         for (int channel = 0; channel < activeChannels; ++channel)
             outputSignal[static_cast<std::size_t> (channel)] *= limiterGain;
 
@@ -2019,26 +2065,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                 * squeezeDriveSmoothing;
     }
 
-    // Noise-floor levelling update, applied ONCE PER BLOCK: the mean duck the output
-    // glue stage and safety limiter applied to this block is folded into a smoothed
-    // state, and the hiss floor is lifted by its inverse. Signal present -> stages
-    // duck -> the floor sits below its pause level, hidden under the programme.
-    // Pause -> stages open -> the floor settles at its calibrated (sub -32 dBFS)
-    // level, capped so it can never rise above that. The noise therefore never
-    // outweighs the signal in either state.
-    {
-        const auto meanDuck = numSamples > 0
-            ? duckAccumulator / static_cast<float> (numSamples)
-            : 1.0f;
-        noiseDuckState += (meanDuck - noiseDuckState) * noiseDuckSmoothing;
-        // Pause cap: the compensated floor can never rise above noisePauseCeiling,
-        // so even a frame of fully-open stages cannot push the hiss past its
-        // calibrated pause level (below -32 dBFS with the retuned hiss gain).
-        const auto targetCompensation = juce::jmin (noisePauseCeiling,
-                                                    1.0f / juce::jmax (0.25f, noiseDuckState));
-        noiseHissLevelCompensation += (targetCompensation - noiseHissLevelCompensation)
-                                    * noiseDuckSmoothing;
-    }
+    // Noise-floor levelling is deliberately absent. See the note in the tape loop:
+    // the hiss is a constant band-limited floor, not a programme-tracking one.
 
     const auto retainPeakUntilConsumed = [] (std::atomic<float>& publishedPeak, float blockPeak)
     {

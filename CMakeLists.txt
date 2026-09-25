@@ -290,17 +290,15 @@ if(WIN32)
     # in its default mode. The Projucer project set this too.
     target_compile_definitions(first PRIVATE _CRT_SECURE_NO_WARNINGS)
 
-    # Release builds use full optimisation with speed preferred, matching the
-    # Projucer configuration.
+    # Warning level and conformance only. The optimisation flags that used to be here
+    # (/O2 /Ob3 /GL /LTCG) have been removed: juce_recommended_config_flags and
+    # juce_recommended_lto_flags already set all four, so re-stating them only produced
+    #     warning D9025: overriding '/Ob2' with '/Ob3'
+    # on every single translation unit. JUCE's own settings are correct; the duplicate
+    # was noise, and duplicating build flags is how configured and actual optimisation
+    # silently drift apart.
     if(MSVC)
-        target_compile_options(first PRIVATE
-            $<$<CONFIG:Release>:/O2 /Ob3 /GL>
-            /W4 /permissive-)
-        target_link_options(first PRIVATE
-            $<$<CONFIG:Release>:/LTCG>)
-        # Multi-processor compilation: JUCE's CMake build already passes /MP via
-        # the recommended config flags, but the count is left to the toolchain
-        # so it scales with the machine instead of a hard-coded value.
+        target_compile_options(first PRIVATE /W4 /permissive-)
     endif()
 endif()
 

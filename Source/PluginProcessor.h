@@ -969,22 +969,48 @@ private:
     SampleSmoother flutterScaleSmoothed { sampleClock, false, false, 1.0f };
     SampleSmoother hissGainSmoothed { sampleClock };
 
+    // The head-damping pole gets a SECOND, much slower ramp that is only used when the
+    // tape formula changes. A control move wants the 20 ms feel; a formula switch moves
+    // this pole by up to 6 kHz, and 20 ms of that is a fast sweep rather than a
+    // crossfade. Both ramps track the same target, and the tape loop reads the switch
+    // ramp only on the block where a change was detected, so ordinary knob movement
+    // keeps its original responsiveness.
+    SampleSmoother headDampingSwitchSmoothed { sampleClock, false, false, 0.5f };
+
+    // -------------------------------------------------------------------------
+    //  Tape-type change handling.
+    //
+    //  Switching tape formula is a MUCH bigger step than moving a control: the
+    //  model offset moves the saturation curve, the bias asymmetry, the head-damping
+    //  pole by up to 6 kHz, the hysteresis thickness and the noise floor all at once.
+    //
+    //  Two things are needed for that to crossfade instead of cracking:
+    //
+    //   1. A slower ramp than the 20 ms used for controls, so a 6 kHz pole move reads
+    //      as a morph rather than a fast sweep. That is headDampingSwitchSmoothed above.
+    //   2. The shaper's own memory cleared at the moment of the change. The hysteresis
+    //      term feeds the previous shaped output back into a NON-LINEAR function, so
+    //      even with every coefficient ramping perfectly, old memory inside a new
+    //      curve is an instantaneous discontinuity. Ramping the coefficients cannot
+    //      fix that; the state has to be let go of.
+    //
+    //  `activeTapeType` caches the last seen index so the change is detected exactly
+    //  once, and negative means "nothing seen yet", so the very first block seeds
+    //  itself instead of being treated as a switch. `tapeTypeChangeCountdown` holds the
+    //  number of samples the slow ramp is allowed to run for, which is what keeps the
+    //  switch ramp from affecting ordinary knob movement.
+    // -------------------------------------------------------------------------
+    int activeTapeType = -1;
+    int tapeTypeChangeCountdown = 0;
+
     // Per-instance tape noise generator. Kept as an object member rather than a
     // thread_local static so that instances never share one stream and the output
     // is reproducible for a given instance.
     std::uint32_t noiseState = 0x1b873593u;
 
-    // Noise-floor levelling, run ONCE PER BLOCK (see processBlock). The hiss sits in
-    // the wet path before the output glue compressor and the safety limiter, so the
-    // signal-dependent gain those stages apply also modulates the floor. The block's
-    // mean duck is measured (noiseDuckState, smoothed over ~250 ms) and the floor is
-    // lifted by its inverse (noiseHissLevelCompensation), so the hiss level is the
-    // SAME with and without signal: in a pause the stages are open (duck 1, lift 1)
-    // and under signal the duck is cancelled by the lift. Earlier follower-based
-    // schemes lifted the floor in the pause itself, which is what made silence
-    // noisier than programme. Audio-thread only, hence plain floats.
-    float noiseDuckState = 1.0f;
-    float noiseHissLevelCompensation = 1.0f;
+    // There is deliberately no noise-floor levelling state here. The hiss is a
+    // constant band-limited floor; an earlier programme-tracking leveller made the
+    // floor loudest in a pause, which is the opposite of what a noise floor should do.
 
     // Per-channel DC-blocker state for the wet path. The asymmetric shaper and its
     // bias offset leave a small DC component on the tape signal; on a real machine
