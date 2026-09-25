@@ -319,7 +319,14 @@ struct ChainReplica
         dcY = dcBlocked;
 
         // Raised-cosine crossfade: MIX 0 is the untouched input, MIX 1 is all tape.
-        const auto mixAngle = settings.mix * juce::MathConstants<float>::halfPi;
+        //
+        // SUBFUND_MIX_INVERTS is read out of the real `mixSmoothed` declaration by
+        // extract.py rather than assumed here, because the inversion and this
+        // formula were a pair that cancelled each other once and then stopped. A
+        // replica that hard-codes the intended behaviour reports the control as
+        // working no matter what the processor does with the parameter.
+        const auto mixPosition = SUBFUND_MIX_INVERTS ? 1.0f - settings.mix : settings.mix;
+        const auto mixAngle = mixPosition * juce::MathConstants<float>::halfPi;
         const float dryGain = std::cos (mixAngle);
         const float wetGain = std::sin (mixAngle);
         const float tapeOutput = dcBlocked * wetGain + x * dryGain;
@@ -709,6 +716,67 @@ void testSilenceIsSilent()
 }
 
 // -----------------------------------------------------------------------------
+//  4. MIX runs the way round the control says it does
+// -----------------------------------------------------------------------------
+
+/**
+    MIX is a crossfade between the untouched input and the whole tape path, so it
+    is measurable rather than a matter of taste: the dry signal is a pure sine and
+    the tape path is a saturator, so the second harmonic of the test tone is
+    content that exists only on the wet side. Where that harmonic sits therefore
+    says which end of the control is where.
+
+    This is the check for the two-inversion fault: the smoother's `invertOutput`
+    flag existed to cancel a crossfade that had sin() on the dry side and cos() on
+    the wet one. Correcting that expression and leaving the flag in place made the
+    two ends swap - MIX 0 became fully wet and MIX 100 fully dry - and the flag is
+    read straight out of the real declaration, so putting it back fails here.
+*/
+void testMixDirection()
+{
+    std::printf ("\n4. MIX 0 is dry and MIX 100 is wet\n");
+
+    const auto measure = [] (float mix, double frequency)
+    {
+        ChainSettings settings;
+        settings.mix = mix;
+        settings.subfund = 0.0f;   // isolate the crossfade from the undertone sum
+        const auto signal = render (settings, 400.0, 0.5, 2.5, 0.0);
+        const auto window = static_cast<std::size_t> (1.5 * kSampleRate);
+        return toDb (measureToneAmplitude (signal, signal.size() - window, window, frequency));
+    };
+
+    const double dryFundamental = measure (0.0f, 400.0);
+    const double dryHarmonic = measure (0.0f, 800.0);
+    const double wetFundamental = measure (1.0f, 400.0);
+    const double wetHarmonic = measure (1.0f, 800.0);
+
+    std::printf ("     MIX 0    fundamental %7.2f dB, 2nd harmonic %7.2f dB (%+.1f dB)\n",
+                 dryFundamental, dryHarmonic, dryHarmonic - dryFundamental);
+    std::printf ("     MIX 100  fundamental %7.2f dB, 2nd harmonic %7.2f dB (%+.1f dB)\n",
+                 wetFundamental, wetHarmonic, wetHarmonic - wetFundamental);
+
+    char label[160];
+
+    std::snprintf (label, sizeof label,
+                   "MIX 0 is dry: the tape's 2nd harmonic is %.1f dB down (want > 60)",
+                   dryFundamental - dryHarmonic);
+    check (dryFundamental - dryHarmonic > 60.0, label);
+
+    std::snprintf (label, sizeof label,
+                   "MIX 100 is wet: the tape's 2nd harmonic is only %.1f dB down (want < 45)",
+                   wetFundamental - wetHarmonic);
+    check (wetFundamental - wetHarmonic < 45.0, label);
+
+    // An equal-power crossfade puts unity at both ends, so neither one may be
+    // quieter than the other by more than the taper allows.
+    std::snprintf (label, sizeof label,
+                   "both ends of MIX sit at unity: %.1f dB dry against %.1f dB wet (want within 3)",
+                   dryFundamental, wetFundamental);
+    check (std::fabs (dryFundamental - wetFundamental) < 3.0, label);
+}
+
+// -----------------------------------------------------------------------------
 //  Reference: what the old arrangement did, printed but not asserted
 // -----------------------------------------------------------------------------
 
@@ -740,6 +808,7 @@ int main()
     testUndertoneOrdering();
     testNoHarmonicsFromUndertones();
     testSilenceIsSilent();
+    testMixDirection();
     showOldArrangement();
     printChainSpectrum();
 

@@ -1203,9 +1203,26 @@ private:
     SampleClock sampleClock;
     SampleSmoother inputGainSmoothed { sampleClock, true };
     SampleSmoother outputGainSmoothed { sampleClock };
-    // The raised-cosine expression assigns sin() to dry and cos() to wet, so the
-    // user-facing MIX ramp is presented inverted: 0 % remains dry and 100 % wet.
-    SampleSmoother mixSmoothed { sampleClock, false, true };
+    // MIX is the control itself, not its inverse. What this returns is the MIX
+    // position, and the crossfade in processTapeEngine is built from it directly:
+    // dry = cos (angle), wet = sin (angle), so 0 % is dry at unity and 100 % is wet
+    // at unity. There is no inversion here, and there must not be one.
+    //
+    // It used to read `{ sampleClock, false, true }`, with the comment "sin() to
+    // dry and cos() to wet, so the ramp is presented inverted". That flag was not
+    // a design decision, it was a patch over a crossfade that had its two gains on
+    // the wrong sides: with sin on dry the control ran backwards, and inverting the
+    // smoother cancelled it. Correcting the expression to dry = cos / wet = sin -
+    // which is what an equal-power MIX actually is - left the patch in place and
+    // turned it into a second inversion, so the two ends of the control swapped
+    // over: MIX 0 became fully wet and MIX 100 fully dry.
+    //
+    // The pairing was the actual hazard: a compensation flag and a formula that
+    // each assumed the other, with nothing tying them together. The formula is now
+    // right on its own and needs no compensation, so the flag is gone rather than
+    // flipped. If a future change moves sin and cos across again, this must move
+    // with it.
+    SampleSmoother mixSmoothed { sampleClock };
     SampleSmoother widthSmoothed { sampleClock };
     SampleSmoother bypassSmoothed { sampleClock };
 
@@ -1313,7 +1330,13 @@ private:
     // the control always does something audible and predictable at every setting.
     float toneShelfCoefficient = 0.5f;
     float toneShelfGain = 1.0f;
-    float toneShelfState = 0.0f;
+    // One state per channel, like every other filter in the engine. As a single
+    // float it was shared: the left channel filtered into it, and the right
+    // channel then carried on from where the left had left off. That is
+    // crosstalk rather than a stereo shelf - a signal on one side reappears on
+    // the other 8 kHz up, half a frame late - and the shelf's attack and release
+    // run at twice the rate in stereo that they run in mono.
+    std::array<float, 2> toneShelfState {};
 
     // Smoothed copies of the two coefficients that MULTIPLY the signal from a control:
     // the BRIGHTNESS shelf gain and the TONE macro's record-head pre-bias. Their raw
