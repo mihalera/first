@@ -211,10 +211,15 @@ CPMAddPackage(
 # SOURCE_DIR is pinned for the same reason as melatonin_inspector: juce_add_modules
 # derives the header name it must find (foleys_gui_magic.h) from the directory
 # name, and CPM's default "-src" suffix would break that.
+# Pinned to a master commit rather than v1.4.0: the tagged release still calls
+# juce::Font::getStringWidth, which JUCE 9 removed (its own modules do not
+# compile against this project's JUCE). Upstream fixed it on master via
+# juce::GlyphArrangement::getStringWidth and has not tagged since; this commit
+# is the fix. Re-pin to a tag when one appears.
 CPMAddPackage(
     NAME foleys_gui_magic
     GITHUB_REPOSITORY ffAudio/foleys_gui_magic
-    GIT_TAG v1.4.0
+    GIT_TAG d53d998e2bc3fb3ca394f1ee5b0c2f3886a67331
     SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/foleys_gui_magic"
     SOURCE_SUBDIR modules
     EXCLUDE_FROM_ALL YES

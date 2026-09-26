@@ -258,6 +258,14 @@ struct ChainReplica
         outputDriveLoad = outputLoad;
         outputAttackSeconds = 0.20f;
         outputReleaseSeconds = 1.00f;
+
+        // The block-rate coefficients the new detector API takes: everything
+        // they depend on is fixed for the whole replica, so they are built
+        // here exactly as processTapeEngine builds them once per block.
+        inputCompressorCoefficients = GlueCompressor::makeCoefficients (
+            sr, inputAttackSeconds, inputReleaseSeconds, inputDriveLoad);
+        outputCompressorCoefficients = GlueCompressor::makeCoefficients (
+            sr, outputAttackSeconds, outputReleaseSeconds, outputDriveLoad);
     }
 
     float processSample (float rawInput)
@@ -267,7 +275,7 @@ struct ChainReplica
         // ---- input stage ---------------------------------------------------
         const float inputTrimmed = rawInput * inputGain;
         const auto inputEnvelopeDb = inputCompressor.processDetection (
-            inputTrimmed * inputTrimmed, sr, inputAttackSeconds, inputReleaseSeconds, inputDriveLoad);
+            inputTrimmed * inputTrimmed, sr, inputCompressorCoefficients);
         const auto inputReductionDb = juce::jmax (
             inputReductionLimitDb,
             softKneeReductionDb (inputEnvelopeDb, inputThresholdDb, inputKneeDb, inputCompressorRatio));
@@ -333,7 +341,7 @@ struct ChainReplica
 
         // ---- output stage glue compressor -----------------------------------
         const auto envelopeDb = outputCompressor.processDetection (
-            tapeOutput * tapeOutput, sr, outputAttackSeconds, outputReleaseSeconds, outputDriveLoad);
+            tapeOutput * tapeOutput, sr, outputCompressorCoefficients);
         const auto reductionDb = juce::jmax (
             outputReductionLimitDb,
             softKneeReductionDb (envelopeDb, outputThresholdDb, outputKneeDb, outputCompressorRatio));
@@ -375,6 +383,8 @@ struct ChainReplica
     SubharmonicGenerator generator;
     GlueCompressor inputCompressor;
     GlueCompressor outputCompressor;
+    GlueCompressor::Coefficients inputCompressorCoefficients;
+    GlueCompressor::Coefficients outputCompressorCoefficients;
 
     float hysteresisMemory = 0.0f;
     float tapeHighFreq = 0.0f;

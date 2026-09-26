@@ -208,6 +208,7 @@ private:
     juce::Label transportLabel;
     juce::TextButton glButton { "GL ON" };
     juce::ToggleButton bypassButton { "BYPASS" };
+    juce::ToggleButton deltaButton { "DELTA" };
     juce::TextButton themeButton { "DARK THEME" };
 
 #if JUCE_DEBUG
@@ -253,6 +254,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> transportAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversamplingAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> deltaAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> polarityAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoGainAttachment;
 

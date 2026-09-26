@@ -29,6 +29,7 @@ python3 "${HERE}/extract.py" "${BUILD}/extracted_dsp.inc"
 # checks it out under one of these, depending on how the cache is configured.
 NANOBENCH_INC=""
 for candidate in \
+    "${REPO}/.cpm-cache/nanobench/"*/src/include \
     "${REPO}/.cpm-cache/nanobench/src/include" \
     "${REPO}/build/_deps/nanobench-src/src/include" \
     "${REPO}/build/deps/nanobench/src/include" \
