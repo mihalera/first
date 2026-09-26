@@ -31,6 +31,7 @@ MIX_SMOOTHER = re.compile(
 
 HEADER_PIECES = [
     ("GlueCompressor", "struct GlueCompressor"),
+    ("LoudnessMeter", "struct LoudnessMeter"),
     ("SubharmonicGenerator", "struct SubharmonicGenerator"),
 ]
 
