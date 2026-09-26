@@ -93,8 +93,63 @@ add_subdirectory(JUCE)
 #  Adopting them is a per-piece decision that has to be made against a profile
 #  and a listening test, not against a library list.
 # ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+#  CPM configuration
+#
+#  Reproducibility first, network second. Everything below is about making a
+#  configure work the same way twice, and about surviving a GitHub outage.
+#
+#   CPM_SOURCE_CACHE - where CPM keeps the checkouts it downloads. Without this
+#   every configure starts from scratch in build/_deps, so a clean rebuild
+#   re-clones every dependency and a machine without network cannot build at all.
+#   Pointing it at a directory that survives "rm -rf build" means the second
+#   configure is instant and the build works offline. Set it from the
+#   environment (CPM_SOURCE_CACHE) if you prefer it outside the tree.
+#
+#   CPM_USE_LOCAL_PACKAGES - off deliberately. A system-installed chowdsp or
+#   xsimd of the wrong version would silently win over the pinned one, which is
+#   exactly the "works on my machine" failure the pinning exists to prevent.
+#
+#   J37_OFFLINE - when ON, CPM is forbidden from reaching the network at all. It
+#   then builds ONLY from what is already in CPM_SOURCE_CACHE, and a missing
+#   package fails with a clear message instead of a timeout. This is the switch
+#   for air-gapped machines and for CI runs that should not depend on GitHub.
+#
+#  On pinning: the tags below are tags, not hashes. A tag is a moving reference -
+#  upstream can retag it - so the last word in reproducibility is to replace each
+#  GIT_TAG with the 40-character commit SHA it currently points at. That is a
+#  deliberate one-line change per package and is left to the reader rather than
+#  done blindly here, because a wrong SHA breaks the build for everyone.
+#  To get the SHA for a tag:
+#
+#     git ls-remote --tags <repo-url> <tag>
+#
+#  melatonin_inspector is already pinned that way (it publishes no tags).
+# ------------------------------------------------------------------------------
 set(CPM_DOWNLOAD_VERSION 0.40.2)
+
+if(NOT DEFINED CPM_SOURCE_CACHE AND DEFINED ENV{CPM_SOURCE_CACHE})
+    set(CPM_SOURCE_CACHE "$ENV{CPM_SOURCE_CACHE}" CACHE PATH "CPM package cache")
+endif()
+if(NOT DEFINED CPM_SOURCE_CACHE)
+    set(CPM_SOURCE_CACHE "${CMAKE_SOURCE_DIR}/.cpm-cache" CACHE PATH
+        "CPM package cache - survives a build/ wipe, enables offline configures")
+endif()
+set(CPM_USE_LOCAL_PACKAGES OFF CACHE BOOL "Never prefer a system package over the pinned one")
+
+option(J37_OFFLINE "Build only from CPM_SOURCE_CACHE; never touch the network" OFF)
+if(J37_OFFLINE)
+    set(CPM_LOCAL_PACKAGES_ONLY ON CACHE BOOL "" FORCE)
+    message(STATUS "J37_OFFLINE=ON: CPM will use only cached packages")
+endif()
+
 if(NOT EXISTS "${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
+    if(J37_OFFLINE)
+        message(FATAL_ERROR
+            "J37_OFFLINE=ON but CPM.cmake itself is not present at "
+            "${CMAKE_BINARY_DIR}/cmake/CPM.cmake.\n"
+            "Run one online configure first, or copy CPM.cmake there by hand.")
+    endif()
     file(DOWNLOAD
          "https://github.com/cpm-cmake/CPM.cmake/releases/download/v${CPM_DOWNLOAD_VERSION}/CPM.cmake"
          "${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
