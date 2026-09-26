@@ -50,6 +50,60 @@ endif()
 add_subdirectory(JUCE)
 
 # ------------------------------------------------------------------------------
+#  Third-party libraries (CPM.cmake)
+#
+#  Everything below JUCE itself is fetched by CPM at configure time and pinned
+#  by tag, so a fresh clone builds the same thing forever:
+#
+#    chowdsp_utils       Chowdhury DSP's toolbox for JUCE plugins - cached DSP
+#                        primitives, SIMD wrappers, smoother and parameter
+#                        helpers a generation ahead of the hand-rolled
+#                        equivalents. Linked into the plugin target so the
+#                        engine can adopt its pieces incrementally.
+#
+#    melatonin_inspector Sudara's JUCE component inspector. The module is
+#                        compiled and linked so a debug session can embed its
+#                        component with no further setup; it stays passive in
+#                        the shipped build.
+#
+#  The tanh/SIMD advice from the library review is recorded where the tanh
+#  stages live in PluginProcessor.cpp: approximating tanh only pays once
+#  profiling shows the shaper is the hot loop, and chowdsp_utils' SIMD types
+#  are the vehicle if that day comes.
+# ------------------------------------------------------------------------------
+set(CPM_DOWNLOAD_VERSION 0.40.2)
+if(NOT EXISTS "${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
+    file(DOWNLOAD
+         "https://github.com/cpm-cmake/CPM.cmake/releases/download/v${CPM_DOWNLOAD_VERSION}/CPM.cmake"
+         "${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
+endif()
+include("${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
+
+# chowdsp_utils: linked as JUCE modules (chowdsp::chowdsp_dsp_utils,
+# chowdsp::chowdsp_math) - the official integration is a plain add_subdirectory
+# AFTER add_subdirectory(JUCE), which the order here guarantees.
+CPMAddPackage(
+    NAME chowdsp_utils
+    GITHUB_REPOSITORY Chowdhury-DSP/chowdsp_utils
+    GIT_TAG v2.4.0
+    EXCLUDE_FROM_ALL YES
+    SYSTEM YES
+    OPTIONS
+        "CHOWDSP_ENABLE_TESTING OFF"
+        "CHOWDSP_ENABLE_BENCHMARKS OFF"
+        "CHOWDSP_ENABLE_EXAMPLES OFF")
+
+# melatonin_inspector: a JUCE module, fetched with a pinned commit hash (the
+# repository publishes no version tags). Its CMake creates the
+# melatonin_inspector target the link line below expects.
+CPMAddPackage(
+    NAME melatonin_inspector
+    GITHUB_REPOSITORY sudara/melatonin_inspector
+    GIT_TAG 9c483f865854d83fe9873e1c20e3fd772f695f80
+    EXCLUDE_FROM_ALL YES
+    SYSTEM YES)
+
+# ------------------------------------------------------------------------------
 #  Plugin target metadata
 #
 #  These values are the ones the Projucer project carried, preserved exactly so
@@ -155,6 +209,10 @@ target_link_libraries(first
         juce::juce_gui_extra
         juce::juce_opengl
         juce::juce_box2d
+        chowdsp::chowdsp_dsp_utils
+        chowdsp::chowdsp_math
+        chowdsp::chowdsp_simd
+        melatonin_inspector
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
