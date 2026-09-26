@@ -1321,19 +1321,22 @@ private:
     float preDriveGain = 1.0f;
     float flutterScale = 1.0f;
 
-    // BRIGHTNESS playback shelf, cached with the other coefficients: a fixed 8 kHz
-    // high-shelf corner whose GAIN follows the Brightness control. The gain itself is
-    // a per-sample scalar (slope at warm = 0 dB, at bright = +9.6 dB peak lift), so
-    // the control always does something audible and predictable at every setting.
+    // BRIGHTNESS playback TILT, cached with the other coefficients: a fixed 1.6 kHz
+    // pivot low-passes the wet signal itself, and a matched gain PAIR follows the
+    // Brightness control - the band above the pivot and the band below move in
+    // opposite directions, up to +/-12 dB at the extremes, with BOTH gains exactly
+    // unity at the 50 percent pivot. Both gains are per-sample scalars carried by
+    // smoothers, so the tilt can never step the waveform.
     float toneShelfCoefficient = 0.5f;
-    float toneShelfGain = 1.0f;
+    float toneShelfGain = 1.0f;   // gain applied to the band BELOW the pivot
+    float toneShelfBoost = 1.0f;  // gain applied to the band ABOVE the pivot
     // One state per channel, like every other filter in the engine. As a single
     // float it was shared: the left channel filtered into it, and the right
     // channel then carried on from where the left had left off. That is
     // crosstalk rather than a stereo shelf - a signal on one side reappears on
     // the other 8 kHz up, half a frame late - and the shelf's attack and release
     // run at twice the rate in stereo that they run in mono.
-    std::array<float, 2> toneShelfState {};
+    std::array<float, 2> toneShelfSplit {};  // pivot low-pass state, per channel
 
     // Smoothed copies of the two coefficients that MULTIPLY the signal from a control:
     // the BRIGHTNESS shelf gain and the TONE macro's record-head pre-bias. Their raw
@@ -1342,6 +1345,7 @@ private:
     // block boundary while the knob was dragged - that was the crackle. These ramp over
     // 20 ms instead, so the control still feels immediate but never steps the signal.
     SampleSmoother toneShelfGainSmoothed { sampleClock, false, false, 1.0f };
+    SampleSmoother toneShelfBoostSmoothed { sampleClock, false, false, 1.0f };
     SampleSmoother preDriveGainSmoothed { sampleClock, false, false, 1.0f };
 
     // The two arguments that shape the magnetic curve itself. BIAS was the loudest

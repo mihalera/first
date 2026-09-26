@@ -467,24 +467,24 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
 
     switch (index)
     {
-        case 0:  return row (0.00f,  0.0f, 0.42f, 0.36f, 0.58f, 0.50f, 0.14f, 0.18f, 100.0f,  0.0f, 0.50f, 0, 1, 0, 1); // Default Tape
+        case 0:  return row (0.00f,  0.0f, 0.28f, 0.42f, 0.50f, 0.50f, 0.14f, 0.18f, 100.0f,  0.0f, 0.50f, 0, 1, 0, 1); // Default Tape
         case 1:  return row (0.15f, -3.0f, 0.28f, 0.30f, 0.48f, 0.30f, 0.10f, 0.12f, 65.0f, -1.0f, 0.50f, 0, 1, 0, 1); // Gentle Warmth
         case 2:  return row (0.20f, +1.5f, 0.62f, 0.48f, 0.66f, 0.62f, 0.16f, 0.22f, 100.0f, -0.5f, 0.55f, 1, 1, 0, 1); // Bus Glue Tape
-        case 3:  return row (0.35f,  0.0f, 0.75f, 0.42f, 0.74f, 0.70f, 0.12f, 0.20f, 100.0f, -1.0f, 0.50f, 2, 2, 0, 2); // Drum Slam
+        case 3:  return row (0.35f,  0.0f, 0.75f, 0.42f, 0.74f, 0.70f, 0.12f, 0.20f, 100.0f, -1.0f, 0.50f, 2, 2, 5, 2); // Drum Slam
         case 4:  return row (0.00f,  0.0f, 0.35f, 0.34f, 0.55f, 0.45f, 0.22f, 0.28f, 70.0f,  0.0f, 0.50f, 0, 0, 3, 1); // Vintage Lo-Fi
-        case 5:  return row (0.12f,  0.0f, 0.40f, 0.38f, 0.62f, 0.55f, 0.18f, 0.24f, 55.0f,  0.0f, 0.62f, 0, 1, 0, 1); // Wide Master
+        case 5:  return row (0.12f,  0.0f, 0.32f, 0.44f, 0.62f, 0.55f, 0.18f, 0.24f, 55.0f,  0.0f, 0.62f, 0, 1, 0, 1); // Wide Master
         case 6:  return row (0.00f, -6.0f, 0.22f, 0.30f, 0.50f, 0.35f, 0.10f, 0.14f, 45.0f,  0.0f, 0.50f, 3, 2, 0, 1); // Clean Glue
         case 7:  return row (0.25f, +3.0f, 0.85f, 0.52f, 0.70f, 0.78f, 0.14f, 0.26f, 100.0f, -1.5f, 0.45f, 1, 2, 3, 2); // Saturated Crunch
-        case 8:  return row (0.10f,  0.0f, 0.48f, 0.40f, 0.60f, 0.50f, 0.30f, 0.34f, 100.0f,  0.0f, 0.50f, 0, 0, 3, 1); // Wobbly Cassette
+        case 8:  return row (0.10f,  0.0f, 0.36f, 0.45f, 0.60f, 0.50f, 0.30f, 0.34f, 100.0f,  0.0f, 0.50f, 0, 0, 3, 1); // Wobbly Cassette
         case 9:  return row (0.00f, -1.0f, 0.55f, 0.44f, 0.68f, 0.58f, 0.12f, 0.16f, 100.0f, -0.5f, 0.58f, 2, 2, 4, 1); // Bright Air Tape
         case 10: return row (0.20f, +1.0f, 0.68f, 0.46f, 0.64f, 0.66f, 0.16f, 0.20f, 100.0f, -1.0f, 0.40f, 1, 1, 0, 2); // Mix Saturation
-        case 11: return row (0.10f,  0.0f, 0.50f, 0.40f, 0.62f, 0.52f, 0.15f, 0.19f, 100.0f,  0.0f, 0.50f, 0, 1, 0, 2); // Master Bounce
+        case 11: return row (0.10f,  0.0f, 0.40f, 0.45f, 0.62f, 0.52f, 0.15f, 0.19f, 100.0f,  0.0f, 0.50f, 0, 1, 0, 2); // Master Bounce
         case 12: return row (0.00f, +1.0f, 0.38f, 0.42f, 0.60f, 0.42f, 0.08f, 0.10f, 70.0f, -1.0f, 0.50f, 0, 1, 1, 1); // Vocal Rail
-        case 13: return row (0.18f, +2.0f, 0.55f, 0.50f, 0.45f, 0.38f, 0.18f, 0.22f, 100.0f, -1.0f, 0.50f, 1, 0, 0, 1); // Drum Room Warm
+        case 13: return row (0.18f, +2.0f, 0.55f, 0.50f, 0.45f, 0.38f, 0.18f, 0.22f, 100.0f, -1.0f, 0.50f, 1, 0, 5, 1); // Drum Room Warm
         case 14: return row (0.65f, +2.5f, 0.48f, 0.36f, 0.42f, 0.35f, 0.06f, 0.08f, 100.0f, -2.0f, 0.50f, 2, 2, 2, 2); // Bass Weight
-        case 15: return row (0.00f,  0.0f, 0.30f, 0.32f, 0.66f, 0.62f, 0.05f, 0.07f, 100.0f,  0.0f, 0.55f, 3, 2, 0, 2); // Master Safety
+        case 15: return row (0.00f,  0.0f, 0.25f, 0.40f, 0.66f, 0.62f, 0.05f, 0.07f, 100.0f,  0.0f, 0.55f, 3, 2, 0, 2); // Master Safety
         case 16: return row (0.00f, +4.0f, 0.62f, 0.30f, 0.28f, 0.30f, 0.26f, 0.32f, 65.0f, -4.0f, 0.35f, 3, 0, 3, 1); // Lo-Fi Radio
-        case 17: return row (0.12f,  0.0f, 0.44f, 0.38f, 0.55f, 0.50f, 0.10f, 0.13f, 100.0f,  0.0f, 0.52f, 7, 1, 0, 1); // Ferric Master
+        case 17: return row (0.12f,  0.0f, 0.34f, 0.44f, 0.55f, 0.50f, 0.10f, 0.13f, 100.0f,  0.0f, 0.52f, 7, 1, 0, 1); // Ferric Master
         default: break;
     }
     return {};
@@ -714,6 +714,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
                                                             0.0f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
+    // WIDTH's 50 percent default is NOT a typo: the control multiplies by 2 in
+    // the engine, so 0.5 maps to a 1.0 multiplier - the natural stereo image,
+    // with mono at 0 and extra-wide at 100. The panel reading 50 percent is
+    // exactly what a natural image should say.
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "stereo_width", 1 },
                                                             "Stereo Width",
                                                             juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
@@ -738,10 +742,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     // piano: how hard the record head is pushed, how thick the magnetic memory runs,
     // how much top end survives, how loud the floor sits and how steady the transport
     // runs (bass pitch wobble is audible immediately, guitar wobble is character).
-    // MASTER BUS is the neutral calibration the presets and the panel assume.
+    // MASTER BUS is the neutral calibration the presets and the panel assume; DRUMS
+    // is the slam calibration - a harder bend, an open head and tight magnetic
+    // memory so transients keep their crack.
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "instrument", 1 }, "Instrument",
                                                             juce::StringArray { "Master Bus", "Vocal", "Bass",
-                                                                                 "Guitar", "Piano" },
+                                                                                 "Guitar", "Piano", "Drums" },
                                                             0));
 
     // Knob taper only. This skew shapes how knob travel maps onto the parameter value;
@@ -758,9 +764,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
         return range;
     };
 
-    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "drive", 1 }, "Drive", percentageRange (0.45f), 0.42f,
+    // DRIVE defaults to the studio-default 30 percent: an audible but polite
+    // thickening that leaves a mastered mix believable. The old 42 read "hot out
+    // of the box" and made every fresh instance fight the mix it was dropped on.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "drive", 1 }, "Drive", percentageRange (0.45f), 0.30f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
-    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "bias", 1 }, "Bias", percentageRange (0.40f), 0.36f,
+    // BIAS defaults to 42 percent, close to the flattest, most transparent part
+    // of the transfer curve: a fresh instance is audibly neutral until the user
+    // asks for the edge (low) or the warmth (high). The old 36 sat on the edgy
+    // slope, so "doing nothing" was never actually nothing.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "bias", 1 }, "Bias", percentageRange (0.40f), 0.42f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
     // OVERSAMPLING: a host-visible quality switch. OFF keeps the latency at zero;
     // 2x/4x run the tape engine at a higher internal rate so the magnetic shaper
@@ -774,7 +787,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     // name shown in the host and on the panel is BRIGHTNESS. Artists reach for brightness
     // first, and "tone" is vague enough that it reads as a different thing (tilt, midrange,
     // character) depending on who is looking at it.
-    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "tone", 1 }, "Brightness", percentageRange (0.50f), 0.58f,
+    // BRIGHTNESS defaults to its neutral pivot. With the tilt design the middle
+    // of the travel now leaves the spectral balance untouched, and 58 would print
+    // a +4 dB smile on every fresh instance before the user touched anything.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "tone", 1 }, "Brightness", percentageRange (0.50f), 0.50f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "wow", 1 }, "Wow", percentageRange (0.35f), 0.14f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
@@ -961,7 +977,7 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     previousTone = -1.0f;
     previousCharacter = -1.0f;
     toneLpAc = 0.0f;
-    toneShelfState.fill (0.0f);
+    toneShelfSplit.fill (0.0f);
     headGapHz = 24000.0f;
     preDriveGain = 1.0f;
     flutterScale = 1.0f;
@@ -1035,6 +1051,8 @@ void FirstAudioProcessor::resetSampleRateDependentState()
     // per-block targets are reached through the normal 20 ms ramps.
     toneShelfGainSmoothed.reset (sampleRate, 0.02);
     toneShelfGainSmoothed.setCurrentAndTargetValue (toneShelfGain);
+    toneShelfBoostSmoothed.reset (sampleRate, 0.02);
+    toneShelfBoostSmoothed.setCurrentAndTargetValue (toneShelfBoost);
     preDriveGainSmoothed.reset (sampleRate, 0.02);
     preDriveGainSmoothed.setCurrentAndTargetValue (preDriveGain);
     toneLpSmoothed.reset (sampleRate, 0.02);
@@ -1127,21 +1145,35 @@ void FirstAudioProcessor::updateToneCoefficients (float toneValue, float engineS
     // 5-16 Hz and made the whole wet path sub-audio.)
     const auto toneCurve = std::pow (toneValue, 0.92f);
 
-    // Record-side roll-off: the magnetic medium itself. 4 kHz at warm is a genuinely
-    // dark medium, 30 kHz at bright leaves the record path effectively open. The 7.5x
-    // travel is what makes the knob a statement rather than a nudge (the original
-    // 6.5-18 kHz span could barely be heard end to end).
-    toneLpAc = onePoleCoefficientHz (4000.0f + 26000.0f * toneCurve, engineSampleRate);
+    // BRIGHTNESS is a true TILT: ONE control sweeping the machine's whole spectral
+    // balance around a fixed pivot, not a shelf bolted on top of a fixed roll-off.
+    // Both halves move together - the record roll-off pole AND the playback tilt
+    // gains - from the same curve:
+    //
+    //   - record side: the magnetic medium's roll-off travels 3 kHz -> 30 kHz, so
+    //     warm genuinely darkens the source and bright opens the record path wide.
+    //
+    //   - playback side: a fixed-PIVOT tilt stage low-passes the WET SIGNAL
+    //     itself at 1.6 kHz and applies a matched gain PAIR - the band above the
+    //     pivot and the band below move in opposite directions from the same
+    //     Brightness value, up to +/-12 dB at the extremes. 50 percent is exactly
+    //     neutral (both gains unity). The pivot split is taken from the signal
+    //     itself, NOT from a filtered copy: the previous "shelf" split the signal
+    //     against its own already-low-passed output, so the "high band" it
+    //     boosted was mostly hiss residue - which is why the knob never showed up
+    //     on an analyser no matter how far it travelled.
+    toneLpAc = onePoleCoefficientHz (3000.0f + 27000.0f * toneCurve, engineSampleRate);
 
-    // BRIGHTNESS playback shelf: a high-shelf whose corner sits at a FIXED 8 kHz
-    // while its GAIN follows the control. Previously the corner frequency itself
-    // was what the control moved - and because that coefficient was then used as a
-    // one-pole GAIN inside the tilt stage, the audible result was a barely-perceptible
-    // smear around 9-24 kHz: the knob "worked strangely". A fixed corner plus a gain
-    // ramp makes the behaviour monotonic, audible at every setting and independent
-    // of the TONE macro.
-    toneShelfCoefficient = onePoleCoefficientHz (8000.0f, engineSampleRate);
-    toneShelfGain = 1.0f + toneCurve * 2.0f; // up to +9.6 dB of high-band lift at bright
+    toneShelfCoefficient = onePoleCoefficientHz (1600.0f, engineSampleRate);
+
+    // Matched tilt gains around the 1.6 kHz pivot: u sweeps -1..+1 as Brightness
+    // sweeps 0..1, and each band moves 12 dB in the opposite direction of the
+    // other. u is built from the raw control (not the record-side curve), so at
+    // the 50 percent pivot u is exactly 0, both gains are unity and the playback
+    // passes through untouched - the neutral default.
+    const auto tiltU = 2.0f * toneValue - 1.0f;
+    toneShelfGain  = std::pow (10.0f, -0.6f * tiltU); // low band:  +12 dB warm .. -12 dB bright
+    toneShelfBoost = std::pow (10.0f,  0.6f * tiltU); // high band: -12 dB warm .. +12 dB bright
     previousTone = toneValue;
 
     // TONE macro crossfade, between machine states rather than dry/wet:
@@ -1531,6 +1563,16 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             hysteresis -= 0.06f;
             instrumentTransportScale = 0.85f;
             break;
+        case 5: // Drums: the slam calibration - a harder bend and an open head for
+                // the crack, tight magnetic memory so transients do not smear, and
+                // a steady transport (wow under a kick drum reads as a fault)
+            tapeCurve += 0.10f;
+            tapeAsymmetry -= 0.04f;
+            tapeHiss += 0.01f;
+            headDampingHz += 3000.0f;
+            hysteresis -= 0.08f;
+            instrumentTransportScale = 0.90f;
+            break;
         case 0: // Master Bus: the machine exactly as calibrated
         default:
             break;
@@ -1626,6 +1668,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // (DRIVE, BIAS), an oscillator (WOW, FLUTTER) or an already-smoothed value
     // (INPUT, OUTPUT, MIX, WIDTH, BYPASS), none of which can step the waveform.
     toneShelfGainSmoothed.setTargetValue (toneShelfGain);
+    toneShelfBoostSmoothed.setTargetValue (toneShelfBoost);
     preDriveGainSmoothed.setTargetValue (preDriveGain);
 
     // The magnetic curve's own two arguments ramp for the same reason: BIAS shifts the
@@ -2168,17 +2211,19 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
             const float motioned = (compressedBias + noiseFloor) * wowMod * flutterMod * grainMod;
 
-            // Playback EQ: the BRIGHTNESS shelf. A one-pole low-pass at the fixed
-            // 8 kHz shelf corner splits the signal into its low and high bands; the
-            // high band is boosted by the Brightness gain and the bands are summed
-            // back. Low settings lift nothing (warm), high settings lift the top
-            // octaves (open) - linear in between, so the knob behaves like the EQ
-            // it is drawn as.
-            const float lowBand = highFreqMemory[0];
-            auto& shelfState = toneShelfState[static_cast<std::size_t> (channel)];
-            shelfState += (motioned - lowBand - shelfState) * toneShelfCoefficient;
-            const float shelfLift = shelfState * (toneShelfGainSmoothed.getCurrentValue() - 1.0f);
-            const float deEmphasised = motioned + shelfLift;
+            // Playback EQ: the BRIGHTNESS tilt. A one-pole low-pass at the fixed
+            // 1.6 kHz pivot splits the wet signal ITSELF into low and high bands
+            // (the old code split it against its own filtered copy, so the "high
+            // band" was hiss residue and the control was inaudible on an
+            // analyser). The matched gain pair then moves the two bands in
+            // opposite directions - +/-12 dB at the extremes, exactly unity at
+            // the 50 percent pivot. Both smoothers advance every sample, so the
+            // tilt can never step the waveform.
+            auto& pivotLow = toneShelfSplit[static_cast<std::size_t> (channel)];
+            pivotLow += (motioned - pivotLow) * toneShelfCoefficient;
+            const float highBand = motioned - pivotLow;
+            const float deEmphasised = pivotLow * toneShelfGainSmoothed.getCurrentValue()
+                                     + highBand * toneShelfBoostSmoothed.getCurrentValue();
 
             // -------------------------------------------------------------------
             //  Playback AC coupling (DC blocker) - the fix for "MIX at maximum

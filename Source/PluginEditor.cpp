@@ -965,8 +965,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                            "BRIGHT", "TONE", "WOW",
                                            "FLUTTER", "MIX", "OUTPUT",
                                            "WIDTH", "SUBFUND" };
-    const std::array<double, controlCount> defaultValues { 0.0, 0.42, 0.36,
-                                                           0.58, 0.5, 0.14,
+    const std::array<double, controlCount> defaultValues { 0.0, 0.30, 0.42,
+                                                           0.50, 0.5, 0.14,
                                                            0.18, 0.5, 0.0,
                                                            0.5, 0.0 };
 
@@ -1009,15 +1009,17 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
             if (id == "drive")
                 return juce::String ("DRIVE - the amount of magnetic saturation. At 0 percent the "
                        "machine is clean; higher settings bend the signal like tape "
-                       "and add harmonics. Default 42 percent.") + hints;
+                       "and add harmonics. Default 30 percent.") + hints;
             if (id == "bias")
                 return juce::String ("BIAS - the record head's ultra-sonic offset. It shapes the "
                        "even harmonics: low bias is edgy and thin, higher bias is "
-                       "warmer and fuller. Default 36 percent.") + hints;
+                       "warmer and fuller. Default 42 percent.") + hints;
             if (id == "tone")
-                return juce::String ("BRIGHTNESS - the record top-end and the playback "
-                       "high-shelf above 8 kHz. Low is warm and rounded, high is open "
-                       "and airy. Default 58 percent.") + hints;
+                return juce::String ("BRIGHTNESS - a true tilt around the 1.6 kHz pivot: "
+                       "low settings darken the machine (highs dip, lows lift), high "
+                       "settings open it up (highs lift, lows pull back), +/-12 dB at "
+                       "the extremes. 50 percent is the neutral pivot, so the spectral "
+                       "balance passes through untouched. Default 50 percent.") + hints;
             if (id == "character")
                 return juce::String ("TONE - the machine-state macro. It crossfades the whole deck "
                        "between the classic slow machine (soft head gap, relaxed "
@@ -1172,11 +1174,12 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 true, juce::Justification::left);
     addAndMakeVisible (instrumentLabel);
     instrumentBox.addItemList (juce::StringArray { "Master Bus", "Vocal", "Bass",
-                                                   "Guitar", "Piano" }, 1);
+                                                   "Guitar", "Piano", "Drums" }, 1);
     instrumentBox.setTooltip ("Re-voices the machine for what is being recorded: how hard "
                               "the tape bends, how much top end survives, how loud the "
                               "floor sits and how steady the transport runs. Master Bus "
-                              "is the neutral calibration.");
+                              "is the neutral calibration. Drums is the slam "
+                              "calibration - harder bend, open head, tight memory.");
     instrumentBox.setLookAndFeel (&customLookAndFeel);
     instrumentAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "instrument", instrumentBox);
