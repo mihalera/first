@@ -175,6 +175,14 @@ private:
     juce::ToggleButton bypassButton { "BYPASS" };
     juce::TextButton themeButton { "DARK THEME" };
 
+#if JUCE_DEBUG
+    // Melatonin's component inspector, debug builds only (the module is linked
+    // by CMake in every config, but only this member and the editor include
+    // compile it into the plugin). Created at the end of the constructor,
+    // released first in the destructor so it never watches a dying tree.
+    std::unique_ptr<melatonin::Inspector> inspector;
+#endif
+
     // Premium workflow bar: oversampling switch, factory + user presets, A/B compare,
     // undo/redo, polarity and auto-gain switches.
     juce::ComboBox presetBox;

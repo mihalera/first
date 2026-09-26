@@ -10,6 +10,18 @@
 
 #include <JuceHeader.h>
 
+// chowdsp_utils (fetched by CPM in CMakeLists.txt). The approximation helpers
+// the engine uses live in the header-only chowdsp_math module; the include is
+// conditional so the DSP regression harness - which cuts structs out of this
+// header verbatim and compiles them against a shim, without chowdsp on its
+// include path - is never asked for it.
+#if ! defined (J37_DSP_HARNESS) && __has_include (<chowdsp_math/chowdsp_math.h>)
+ #include <chowdsp_math/chowdsp_math.h>
+ #define J37_HAS_CHOWDSP_MATH 1
+#else
+ #define J37_HAS_CHOWDSP_MATH 0
+#endif
+
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -1324,7 +1336,8 @@ private:
     // BRIGHTNESS playback TILT, cached with the other coefficients: a fixed 1.6 kHz
     // pivot low-passes the wet signal itself, and a matched gain PAIR follows the
     // Brightness control - the band above the pivot and the band below move in
-    // opposite directions, up to +/-12 dB at the extremes, with BOTH gains exactly
+    // opposite directions - removal is capped at a gentle ~4 dB while the
+    // opposite band opens up to +15 dB - with BOTH gains exactly
     // unity at the 50 percent pivot. Both gains are per-sample scalars carried by
     // smoothers, so the tilt can never step the waveform.
     float toneShelfCoefficient = 0.5f;

@@ -1156,7 +1156,8 @@ void FirstAudioProcessor::updateToneCoefficients (float toneValue, float engineS
     //   - playback side: a fixed-PIVOT tilt stage low-passes the WET SIGNAL
     //     itself at 1.6 kHz and applies a matched gain PAIR - the band above the
     //     pivot and the band below move in opposite directions from the same
-    //     Brightness value, up to +/-12 dB at the extremes. 50 percent is exactly
+    //     Brightness value - removal is capped at a gentle ~4 dB while the
+    //     opposite band opens up to +15 dB. 50 percent is exactly
     //     neutral (both gains unity). The pivot split is taken from the signal
     //     itself, NOT from a filtered copy: the previous "shelf" split the signal
     //     against its own already-low-passed output, so the "high band" it
@@ -1166,14 +1167,17 @@ void FirstAudioProcessor::updateToneCoefficients (float toneValue, float engineS
 
     toneShelfCoefficient = onePoleCoefficientHz (1600.0f, engineSampleRate);
 
-    // Matched tilt gains around the 1.6 kHz pivot: u sweeps -1..+1 as Brightness
-    // sweeps 0..1, and each band moves 12 dB in the opposite direction of the
-    // other. u is built from the raw control (not the record-side curve), so at
-    // the 50 percent pivot u is exactly 0, both gains are unity and the playback
-    // passes through untouched - the neutral default.
+    // Matched tilt gains around the 1.6 kHz pivot, deliberately ASYMMETRIC:
+    // a band never loses more than about 3.75 dB, while the opposite band opens
+    // up to +15 dB - the knob should take away a little and give a lot. u sweeps
+    // -1..+1 as Brightness sweeps 0..1 and is built from the raw control (not
+    // the record-side curve), so at the 50 percent pivot u is exactly 0, both
+    // gains are unity and the playback passes through untouched.
     const auto tiltU = 2.0f * toneValue - 1.0f;
-    toneShelfGain  = std::pow (10.0f, -0.6f * tiltU); // low band:  +12 dB warm .. -12 dB bright
-    toneShelfBoost = std::pow (10.0f,  0.6f * tiltU); // high band: -12 dB warm .. +12 dB bright
+    const auto tiltGive = 0.75f * juce::jmax (0.0f, tiltU);   // the band that opens: up to +15 dB
+    const auto tiltTake = 0.1875f * juce::jmin (0.0f, tiltU); // the band that yields: max ~-3.75 dB
+    toneShelfGain  = std::pow (10.0f, -tiltGive - tiltTake);  // low:  +15 dB warm .. -3.75 dB bright
+    toneShelfBoost = std::pow (10.0f,  tiltGive + tiltTake);  // high: -3.75 dB warm .. +15 dB bright
     previousTone = toneValue;
 
     // TONE macro crossfade, between machine states rather than dry/wet:
@@ -2216,8 +2220,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // (the old code split it against its own filtered copy, so the "high
             // band" was hiss residue and the control was inaudible on an
             // analyser). The matched gain pair then moves the two bands in
-            // opposite directions - +/-12 dB at the extremes, exactly unity at
-            // the 50 percent pivot. Both smoothers advance every sample, so the
+            // opposite directions - removals capped near 4 dB, boosts to +15 dB,
+            // exactly unity at the 50 percent pivot. Both smoothers advance every sample, so the
             // tilt can never step the waveform.
             auto& pivotLow = toneShelfSplit[static_cast<std::size_t> (channel)];
             pivotLow += (motioned - pivotLow) * toneShelfCoefficient;
@@ -2333,8 +2337,16 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             {
                 // How far the finished signal has fallen below the reference taken after
                 // the input trim. Positive means level was lost and needs paying back.
+                // chowdsp's polynomial dB approximation replaces libm's exp2/log2
+                // chain on the auto-gain hot path; the JUCE fallback below keeps any
+                // build without the chowdsp header identical in behaviour.
+#if J37_HAS_CHOWDSP_MATH
+                const auto levelRatioDb = chowdsp::DecibelsApprox::gainToDecibels (
+                    std::sqrt (referenceBlockPower / postCompressorPower), 0.0f);
+#else
                 const auto levelRatioDb = juce::Decibels::gainToDecibels (
                     std::sqrt (referenceBlockPower / postCompressorPower), 0.0f);
+#endif
 
                 // Only ever restore, never exaggerate: the correction may recover a loss
                 // but must not become an extra boost stage of its own.

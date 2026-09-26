@@ -42,6 +42,74 @@ jobs:
         run: bash tests/dsp/run.sh
 
   # ============================================================================
+  #  Editor Debug build - Linux VST3 with the Melatonin inspector embedded
+  #
+  #  The inspector is compiled only under JUCE_DEBUG, so no Release
+  #  configuration ever touches it and the shipped plugin carries nothing
+  #  extra. This job keeps that code path honest: it configures and compiles a
+  #  full Debug build (which also exercises CPM from a cold cache in a second
+  #  config) and keeps the VST3 as an artifact for local debugging sessions.
+  # ============================================================================
+  build-linux-debug:
+    name: build-linux-debug (Melatonin inspector)
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Linux audio and GUI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libjack-jackd2-dev \
+            libfreetype6-dev \
+            libfontconfig1-dev \
+            libfontconfig-dev \
+            libcurl4-openssl-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libx11-dev \
+            libxcomposite-dev \
+            libxcursor-dev \
+            libxext-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxrender-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev
+
+      - name: Configure CMake (Debug)
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Debug
+
+      - name: Compile (Debug)
+        run: |
+          cmake --build build --config Debug --parallel 2>&1 | tail -40
+          test ${PIPESTATUS[0]} -eq 0
+
+      - name: Verify the Debug VST3 bundle was produced
+        run: |
+          found=$(find build/first_artefacts/Debug -name "*.vst3" | head -1)
+          if [ -z "$found" ]; then
+            echo "No Debug VST3 bundle was produced"
+            exit 1
+          fi
+          echo "Debug VST3 bundle: $found"
+
+      - name: Upload Debug VST3 Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: first-linux-debug-vst3
+          path: build/first_artefacts/Debug/**/*.vst3
+          if-no-files-found: error
+
+  # ============================================================================
   #  Windows - VST3
   # ============================================================================
   build-windows:

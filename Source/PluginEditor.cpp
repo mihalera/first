@@ -1,6 +1,10 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+#if JUCE_DEBUG
+ #include <melatonin_inspector/melatonin_inspector.h>
+#endif
+
 namespace
 {
     // Symmetric decibel range shared by the input and output trims, matching the
@@ -870,6 +874,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     setResizeLimits (780, 640, 1400, 960);
     setSize (980, 690);
 
+#if JUCE_DEBUG
+    // The Melatonin component inspector, debug builds only. It is created after
+    // the whole panel exists so it can walk the finished component tree; it
+    // opens lazily and stays invisible unless asked for.
+    inspector = std::make_unique<melatonin::Inspector> (*this, false);
+#endif
+
     // Tooltips appear after a third of a second of hover: quick enough to be
     // discoverable, slow enough not to flash while the user sweeps the panel.
     tooltipWindow->setMillisecondsBeforeTipAppears (350);
@@ -1401,6 +1412,11 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     if (savePresetWindow != nullptr)
         savePresetWindow->exitModalState (0);
     savePresetWindow.reset();
+#if JUCE_DEBUG
+    // Release the inspector before the components it watches are destroyed.
+    inspector.reset();
+#endif
+
 }
 
 void FirstAudioProcessorEditor::refreshUserPresetList()
