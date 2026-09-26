@@ -1166,6 +1166,23 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (oversamplingBox);
 
     // ---------------------------------------------------------------
+    //  Instrument voicing selector, on the deck's second row.
+    // ---------------------------------------------------------------
+    styleLabel (instrumentLabel, "INSTRUMENT", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    addAndMakeVisible (instrumentLabel);
+    instrumentBox.addItemList (juce::StringArray { "Master Bus", "Vocal", "Bass",
+                                                   "Guitar", "Piano" }, 1);
+    instrumentBox.setTooltip ("Re-voices the machine for what is being recorded: how hard "
+                              "the tape bends, how much top end survives, how loud the "
+                              "floor sits and how steady the transport runs. Master Bus "
+                              "is the neutral calibration.");
+    instrumentBox.setLookAndFeel (&customLookAndFeel);
+    instrumentAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "instrument", instrumentBox);
+    addAndMakeVisible (instrumentBox);
+
+    // ---------------------------------------------------------------
     //  Premium workflow bar.
     // ---------------------------------------------------------------
     styleLabel (presetHeadingLabel, "PRESET", 9.0f, paletteFor (false).secondary,
@@ -1374,6 +1391,7 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     polarityButton.setLookAndFeel (nullptr);
     autoGainButton.setLookAndFeel (nullptr);
     oversamplingBox.setLookAndFeel (nullptr);
+    instrumentBox.setLookAndFeel (nullptr);
     savePresetButton.setLookAndFeel (nullptr);
     deletePresetButton.setLookAndFeel (nullptr);
 
@@ -1574,6 +1592,7 @@ void FirstAudioProcessorEditor::applyTheme()
     themeButton.setColour (juce::TextButton::textColourOffId, palette.text);
 
     styleCombo (oversamplingBox);
+    styleCombo (instrumentBox);
     styleWorkflowButton (copyAButton, audioProcessor.getActiveCompareSlot() == 0);
     styleWorkflowButton (copyBButton, audioProcessor.getActiveCompareSlot() == 1);
     styleWorkflowButton (compareButton, false);
@@ -1585,6 +1604,7 @@ void FirstAudioProcessorEditor::applyTheme()
     // and need no per-theme colour calls here.
     presetHeadingLabel.setColour (juce::Label::textColourId, palette.secondary);
     oversamplingLabel.setColour (juce::Label::textColourId, palette.secondary);
+    instrumentLabel.setColour (juce::Label::textColourId, palette.secondary);
     compareBadgeLabel.setColour (juce::Label::textColourId,
                                  audioProcessor.isCompareDirty() ? palette.accent : palette.secondary);
 
@@ -2014,6 +2034,8 @@ void FirstAudioProcessorEditor::resized()
     autoGainButton.setBounds (polarityButton.getRight() + 6, layout.deck.getY() + 74, 100, 32);
     oversamplingLabel.setBounds (autoGainButton.getRight() + 16, layout.deck.getY() + 83, 40, 16);
     oversamplingBox.setBounds (autoGainButton.getRight() + 58, layout.deck.getY() + 74, 72, 32);
+    instrumentLabel.setBounds (oversamplingBox.getRight() + 16, layout.deck.getY() + 83, 68, 16);
+    instrumentBox.setBounds (oversamplingBox.getRight() + 16, layout.deck.getY() + 74, 112, 32);
 
     const auto harmonicsWidth = 130;
     harmonicsLabel.setBounds (layout.deck.getRight() - harmonicsWidth - 14,

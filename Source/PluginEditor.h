@@ -171,6 +171,7 @@ private:
 
     juce::ComboBox tapeTypeBox;
     juce::ComboBox speedBox;
+    juce::ComboBox instrumentBox;
     juce::ToggleButton bypassButton { "BYPASS" };
     juce::TextButton themeButton { "DARK THEME" };
 
@@ -205,6 +206,7 @@ private:
     bool lastShownPresetDirty = false;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tapeTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> speedAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> instrumentAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversamplingAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> polarityAttachment;
@@ -219,6 +221,7 @@ private:
     juce::Label buildLabel;
     juce::Label tapeTypeLabel;
     juce::Label speedLabel;
+    juce::Label instrumentLabel;
     juce::Label deckHintLabel;
     juce::Label controlsHeadingLabel;
     juce::Label controlsHintLabel;
