@@ -1549,8 +1549,8 @@ public:
     /** Undo manager shared with the editor (wired to Ctrl+Z / Ctrl+Y there). */
     juce::UndoManager& getUndoManager() noexcept { return undoManager; }
 
-    /** Number of factory presets. */
-    static constexpr int numFactoryPresets = 18;
+    /** Number of factory presets, including the Minimum and Maximum range endpoints. */
+    static constexpr int numFactoryPresets = 20;
 
     /** Display names of the factory presets, in order. */
     static juce::StringArray getPresetNames();
