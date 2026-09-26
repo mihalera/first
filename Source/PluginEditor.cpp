@@ -1550,10 +1550,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // ---------------------------------------------------------------
     bypassButton.setTooltip ("Hard bypass: the tape engine and both glue compressors are "
                              "switched out. The switch is ramped, so toggling it never clicks.");
-    deltaButton.setTooltip ("DELTA listen: the output becomes wet minus dry, so you hear "
-                            "ONLY what the machine adds - harmonics, glue, transport "
-                            "wander. MIX keeps its meaning; digital silence means the "
-                            "machine is being transparent. Turn it off before you print.");
+    deltaButton.setTooltip ("DELTA listen: the output becomes the finished signal minus the "
+                            "machine's own dry signal, so you hear ONLY what the machine "
+                            "adds - harmonics, glue, transport wander. MIX keeps its meaning; "
+                            "digital silence means the machine is being transparent. The "
+                            "switch is ramped, and BYPASS fades the difference out rather "
+                            "than snapping back to the dry signal. Turn it off before you "
+                            "print.");
     polarityButton.setClickingTogglesState (true);
     polarityButton.setTooltip ("Inverts the output polarity (180-degree phase flip). "
                                "Use it to correct an inverted source or to align two "
