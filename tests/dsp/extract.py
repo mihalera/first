@@ -35,6 +35,12 @@ HEADER_PIECES = [
 ]
 
 IMPL_PIECES = [
+    # j37Tanh must come before magneticHysteresis: the shaper now calls it, so the
+    # harness needs the definition in the same translation unit. Under the harness
+    # J37_HAS_XSIMD is 0, so this extracts the exact std::tanh form the shipping
+    # build uses by default - the harness never measures the SIMD approximation,
+    # which is opt-in and deliberately not the default.
+    ("j37Tanh", "inline float j37Tanh"),
     ("magneticHysteresis", "inline float magneticHysteresis"),
     ("softClip", "inline float softClip"),
     ("softKneeReductionDb", "inline float softKneeReductionDb"),

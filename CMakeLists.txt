@@ -1,6 +1,7 @@
 # ==============================================================================
 #
-#   Analog Saturator - J37 tape machine emulation
+#   Nonlin Analog Saturator - tape machine emulation (J37, Ampex 456, Studer A800,
+#   Chrome, Type 111, GP9, Quantegy 499, RTM SM911)
 #
 #   This is the single source of truth for the build. The Projucer project
 #   (first.jucer) and its generated Builds/ folder have been retired: every
@@ -21,7 +22,7 @@ cmake_minimum_required(VERSION 3.22)
 
 project(first
     VERSION 1.0.0
-    DESCRIPTION "Analog Saturator"
+    DESCRIPTION "Nonlin Analog Saturator"
     LANGUAGES C CXX)
 
 # Keep the generated project files out of the source tree.
@@ -75,6 +76,12 @@ add_subdirectory(JUCE)
 #    melatonin_blur      Fast shadow/gradient blurring for JUCE Components.
 #                        Available to the editor's paint routines, which draw a
 #                        lot of soft analog shading by hand today.
+#
+#    foleys_gui_magic    Daniel Walz's declarative GUI framework for JUCE. The
+#                        editor can be described in XML and edited live, which is
+#                        what the hand-written resized()/paint() code in
+#                        PluginEditor.cpp is doing today. Fetched here as a
+#                        MODULE ONLY - see the note on the CPMAddPackage call.
 #
 #  The tanh/SIMD advice from the library review is recorded where the tanh
 #  stages live in PluginProcessor.cpp: approximating tanh only pays once
@@ -133,6 +140,28 @@ CPMAddPackage(
     GITHUB_REPOSITORY sudara/melatonin_blur
     GIT_TAG v1.4
     SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/melatonin_blur"
+    EXCLUDE_FROM_ALL YES
+    SYSTEM YES)
+
+# foleys_gui_magic: added from the repository's modules/ subdirectory, NOT from
+# its root. The root CMakeLists.txt is a standalone project: it calls
+# FetchContent_MakeAvailable(juce) for its OWN copy of JUCE and sets global
+# options (CMAKE_OSX_ARCHITECTURES, CMAKE_MSVC_RUNTIME_LIBRARY, CXX_VISIBILITY)
+# that would fight this project's settings and drag in a second JUCE checkout.
+# modules/ contains one line - juce_add_modules(foleys_gui_magic) - and nothing
+# else, so SOURCE_SUBDIR points CPM there and the JUCE added above is the only
+# one in the build. FOLEYS_BUILD_EXAMPLES/TESTS belong to the root project and so
+# are not options here at all; there is nothing to switch off.
+#
+# SOURCE_DIR is pinned for the same reason as melatonin_inspector: juce_add_modules
+# derives the header name it must find (foleys_gui_magic.h) from the directory
+# name, and CPM's default "-src" suffix would break that.
+CPMAddPackage(
+    NAME foleys_gui_magic
+    GITHUB_REPOSITORY ffAudio/foleys_gui_magic
+    GIT_TAG v1.4.0
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/foleys_gui_magic"
+    SOURCE_SUBDIR modules
     EXCLUDE_FROM_ALL YES
     SYSTEM YES)
 
@@ -202,7 +231,12 @@ endif()
 #    ManufacturerCode 0x4d616e75  ("Manu" - see the note below)
 #    PluginCode       0x5a793539  ("Zy59")
 #    Bundle ID        com.MCsmes.first
-#    Product name     Analog Saturator
+#    Product name     Nonlin Analog Saturator
+#
+#  Only PRODUCT_NAME and DESCRIPTION changed with the rename. The manufacturer
+#  code, the plugin code and the bundle ID are the plugin's identity to hosts and
+#  to saved sessions - they stay exactly as they are, so an existing session still
+#  finds the plugin after the rename and does not end up with two entries.
 # ------------------------------------------------------------------------------
 # Set to TRUE to copy the built plugins into the user plugin folders as part of
 # the build. Off by default so a CI build cannot silently write to the machine's
@@ -232,8 +266,8 @@ juce_add_plugin(first
     # it is, however odd it looks next to the company name.
     PLUGIN_MANUFACTURER_CODE    Manu
     PLUGIN_CODE                 Zy59
-    PRODUCT_NAME                "Analog Saturator"
-    DESCRIPTION                 "Tape machine saturation and J37-style coloration"
+    PRODUCT_NAME                "Nonlin Analog Saturator"
+    DESCRIPTION                 "Nonlinear analog tape saturation and magnetic coloration"
     FORMATS                     AU AUv3 VST3
     IS_SYNTH                    FALSE
     NEEDS_MIDI_INPUT            FALSE
@@ -289,11 +323,19 @@ target_include_directories(first PRIVATE Source)
 #    gui_extra         drawing extras used by the editor
 #    opengl            OpenGLContext, a best-effort accelerator for the panel
 #    box2d             the decorative physics particles on the tape deck
+#
+#  audio_devices and cryptography are not used by this plugin directly. They are
+#  listed because foleys_gui_magic DECLARES them as module dependencies in its own
+#  header, and juce_add_modules resolves a module's dependencies from the linking
+#  target's module list - leaving them out fails the configure with a missing
+#  module error rather than at link time.
 # ------------------------------------------------------------------------------
 target_link_libraries(first
     PRIVATE
         juce::juce_audio_processors
         juce::juce_audio_utils
+        juce::juce_audio_devices
+        juce::juce_cryptography
         juce::juce_dsp
         juce::juce_gui_extra
         juce::juce_opengl
@@ -303,6 +345,7 @@ target_link_libraries(first
         chowdsp::chowdsp_simd
         melatonin_inspector
         melatonin_blur
+        foleys::foleys_gui_magic
         xsimd
     PUBLIC
         juce::juce_recommended_config_flags
@@ -527,7 +570,7 @@ endif()
 #  Summary
 # ------------------------------------------------------------------------------
 message(STATUS "")
-message(STATUS "Analog Saturator (first) ${PROJECT_VERSION}")
+message(STATUS "Nonlin Analog Saturator (first) ${PROJECT_VERSION}")
 message(STATUS "  JUCE        : ${CMAKE_CURRENT_SOURCE_DIR}/JUCE")
 message(STATUS "  System      : ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Generator   : ${CMAKE_GENERATOR}")
@@ -539,7 +582,7 @@ if(APPLE)
 else()
     message(STATUS "  Formats     : VST3")
 endif()
-message(STATUS "  Libraries   : chowdsp_utils, melatonin_inspector, melatonin_blur, xsimd")
+message(STATUS "  Libraries   : chowdsp_utils, melatonin_inspector, melatonin_blur, foleys_gui_magic, xsimd")
 if(J37_BUILD_TESTS)
     message(STATUS "  Dev tests   : ON  (Catch2, nanobench)")
 else()

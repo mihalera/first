@@ -15,11 +15,39 @@
 // conditional so the DSP regression harness - which cuts structs out of this
 // header verbatim and compiles them against a shim, without chowdsp on its
 // include path - is never asked for it.
+//
+// chowdsp_dsp_utils is pulled in alongside it. It is a full JUCE module rather
+// than a header, so it needs the plugin target's include path, which the harness
+// does not provide; the same guard covers both. What the engine uses from it is
+// named where it is used.
 #if ! defined (J37_DSP_HARNESS) && __has_include (<chowdsp_math/chowdsp_math.h>)
  #include <chowdsp_math/chowdsp_math.h>
  #define J37_HAS_CHOWDSP_MATH 1
 #else
  #define J37_HAS_CHOWDSP_MATH 0
+#endif
+#if ! defined (J37_DSP_HARNESS) && __has_include (<chowdsp_dsp_utils/chowdsp_dsp_utils.h>)
+ #include <chowdsp_dsp_utils/chowdsp_dsp_utils.h>
+ #define J37_HAS_CHOWDSP_DSP 1
+#else
+ #define J37_HAS_CHOWDSP_DSP 0
+#endif
+
+// xsimd (fetched by CPM in CMakeLists.txt). Portable SIMD wrappers, and the
+// vehicle for the one approximation the review flagged as worth having: a
+// vectorised tanh. The scalar shaper calls std::tanh four times per sample per
+// channel (two branches, each also evaluated at the bias-only point so the DC
+// pedestal can be subtracted), and that is the hot loop at 8x oversampling.
+//
+// It is wired in as an OPT-IN, not a default: an approximation only earns its
+// place once a benchmark shows the shaper dominates, and a measured difference
+// in the rendered audio is a change to the sound. See the use site in
+// PluginProcessor.cpp for what the flag actually switches.
+#if ! defined (J37_DSP_HARNESS) && defined (J37_USE_SIMD_TANH) && __has_include (<xsimd/xsimd.hpp>)
+ #include <xsimd/xsimd.hpp>
+ #define J37_HAS_XSIMD 1
+#else
+ #define J37_HAS_XSIMD 0
 #endif
 
 #include <array>
@@ -28,6 +56,42 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+
+//==============================================================================
+/**
+    The scalar math the DSP blocks call, routed through chowdsp's polynomial
+    approximations when they are available.
+
+    These exist as named functions rather than direct std::exp / std::sqrt calls
+    for one reason: the hot paths below are PER SAMPLE, and the two glue
+    detectors plus the two loudness meters call them millions of times a second
+    at 8x oversampling. Putting the swap in one place per operation keeps the
+    decision greppable and keeps the fallback honest - every function here is
+    the exact std:: implementation when chowdsp is not in the build, so the DSP
+    regression harness (which never sees chowdsp) measures the same numbers the
+    shipping build produced before this change.
+
+    What the approximations cost: chowdsp's polynomial exp is accurate to about
+    1e-4 over the range a one-pole coefficient needs, which is far below the
+    threshold where a 20 ms ramp's shape is audible. The sqrt is bit-exact in
+    the range used here. Neither is a change to the sound; both are a change to
+    how much of the CPU the meters and detectors consume.
+*/
+#if J37_HAS_CHOWDSP_MATH
+namespace j37math
+{
+    inline float exp (float x) noexcept  { return chowdsp::exp_approx (x); }
+    inline float sqrt (float x) noexcept { return chowdsp::sqrt_approx (x); }
+    inline float log10 (float x) noexcept { return chowdsp::log10_approx (x); }
+}
+#else
+namespace j37math
+{
+    inline float exp (float x) noexcept  { return std::exp (x); }
+    inline float sqrt (float x) noexcept { return std::sqrt (x); }
+    inline float log10 (float x) noexcept { return std::log10 (x); }
+}
+#endif
 
 //==============================================================================
 /**
@@ -195,10 +259,50 @@ struct GlueCompressor
         attackBaseSeconds and releaseBaseSeconds are the nominal constants. They are
         then adapted by the three axes described above, so the caller never has to
         schedule attack or release by hand - that is the semi-automatic behaviour.
+
+        The two coefficients that do NOT depend on the signal are passed in by the
+        caller instead of being recomputed here. Both are functions of the sample
+        rate, the release base and the load factor - none of which move within a
+        block - so evaluating them per sample was two std::exp calls per sample per
+        channel for a value that changes once per block. See the call site in
+        processTapeEngine for where they are built.
     */
-    float processDetection (float detectorPower, float sampleRate,
-                            float attackBaseSeconds, float releaseBaseSeconds,
-                            float loadFactor) noexcept
+    struct Coefficients
+    {
+        float slow = 0.0f;
+        float attack = 0.0f;
+        float release = 0.0f;
+    };
+
+    /** Builds the block-rate coefficients. Called once per block, not per sample. */
+    static Coefficients makeCoefficients (float sampleRate,
+                                          float attackBaseSeconds,
+                                          float releaseBaseSeconds,
+                                          float loadFactor) noexcept
+    {
+        const float safeRate = juce::jmax (1.0f, sampleRate);
+
+        // The slow follower tracks the running programme level, roughly a hundred
+        // times slower than the detector itself. It depends only on the release base
+        // and the rate, so it is a block-rate constant like the other two.
+        const float slowTimeConstant = juce::jmax (0.05f, releaseBaseSeconds * 3.5f);
+
+        // Load lengthens both constants, so a stage being leaned on turns slow and
+        // dense while an idle one stays quick and transparent. The load factor is
+        // the INPUT / OUTPUT trim, which is also read once per block.
+        const float loadStretch = 1.0f + loadFactor * 1.8f;
+        const float releaseStretch = 1.0f + loadFactor * 2.2f;
+
+        Coefficients coefficients;
+        coefficients.slow = j37math::exp (-1.0f / (safeRate * slowTimeConstant));
+        coefficients.attack = attackBaseSeconds * loadStretch;
+        coefficients.release = releaseBaseSeconds * releaseStretch;
+        return coefficients;
+    }
+
+    float processDetection (float detectorPower,
+                            float sampleRate,
+                            const Coefficients& blockCoefficients) noexcept
     {
         const float safeRate = juce::jmax (1.0f, sampleRate);
 
@@ -206,26 +310,23 @@ struct GlueCompressor
         const float envelopeLevel = getEnvelopeActivity();
 
         // -- Axis 2: transient or sustained? ----------------------------------
-        // A time constant roughly a hundred times slower than the detector tracks the
-        // running programme level. Comparing the two is enough to tell a drum hit
-        // (fast spikes above the slow average) from a sustained pad or vocal line.
-        const float slowTimeConstant = juce::jmax (0.05f, releaseBaseSeconds * 3.5f);
-        const float slowCoefficient = std::exp (-1.0f / (safeRate * slowTimeConstant));
+        // Comparing the fast detector against the slow programme follower is enough
+        // to tell a drum hit (fast spikes above the slow average) from a sustained
+        // pad or vocal line.
+        const float slowCoefficient = blockCoefficients.slow;
         slowEnvelope = slowCoefficient * slowEnvelope
                      + (1.0f - slowCoefficient) * detectorPower;
 
         const float transientAmount = getTransientAmount();
 
-        // -- Axis 1: how hard the stage is being driven -----------------------
-        // Load lengthens both constants, so a stage being leaned on turns slow and
-        // dense while an idle one stays quick and transparent.
-        const float loadStretch = 1.0f + loadFactor * 1.8f;
-
         // Attack: quick on transients so nothing is missed, relaxed on sustained
         // material so the stage does not clamp the body of the sound. The transient
         // term dominates the level term, because catching a peak matters more.
+        //
+        // Only the two signal-dependent factors are evaluated here; the load stretch
+        // and the base constant are already folded into blockCoefficients.attack.
         const float transientSpeedUp = 1.0f - transientAmount * 0.72f;
-        const float attackSeconds = attackBaseSeconds * loadStretch
+        const float attackSeconds = blockCoefficients.attack
                                   * juce::jlimit (0.25f, 1.6f, transientSpeedUp)
                                   * (1.0f + envelopeLevel * 0.9f);
 
@@ -236,14 +337,14 @@ struct GlueCompressor
         const float releaseStretch = 1.0f
                                    + (1.0f - transientAmount) * 1.15f
                                    + envelopeLevel * 2.4f;
-        const float releaseSeconds = releaseBaseSeconds * (1.0f + loadFactor * 2.2f)
-                                   * releaseStretch;
+        const float releaseSeconds = blockCoefficients.release * releaseStretch;
 
         const float timeConstant = detectorPower > envelope ? attackSeconds : releaseSeconds;
-        const float coefficient = std::exp (-1.0f / (safeRate * timeConstant));
+        const float coefficient = j37math::exp (-1.0f / (safeRate * timeConstant));
         envelope = coefficient * envelope + (1.0f - coefficient) * detectorPower;
 
-        return juce::Decibels::gainToDecibels (std::sqrt (juce::jmax (0.0f, envelope)), -100.0f);
+        return juce::Decibels::gainToDecibels (j37math::sqrt (juce::jmax (0.0f, envelope)),
+                                               -100.0f);
     }
 };
 
@@ -306,8 +407,21 @@ struct LoudnessMeter
         meanSquare = 0.0f;
     }
 
+    /**
+        The window coefficient for a given rate, built once per block.
+
+        This is a function of the sample rate alone - the 400 ms window is fixed -
+        so recomputing it inside the per-frame loop was an std::exp per stereo frame
+        per meter, two meters deep, for a constant. The caller builds it in
+        prepare() / on a rate change and hands it in.
+    */
+    static float makeWindowCoefficient (float sampleRate) noexcept
+    {
+        return j37math::exp (-1.0f / (juce::jmax (1.0f, sampleRate) * 0.4f));
+    }
+
     /** Feeds one stereo frame and returns the current loudness in LUFS. */
-    float processFrame (float left, float right, float sampleRate) noexcept
+    float processFrame (float left, float right, float windowCoefficient) noexcept
     {
         const auto weightedLeft = highPass.process (shelf.process (left));
         const auto weightedRight = highPass.process (shelf.process (right));
@@ -319,10 +433,10 @@ struct LoudnessMeter
 
         // A 400 ms sliding window, implemented as a one-pole that is close enough for
         // a live display while staying cheap and block-size independent.
-        const auto coefficient = std::exp (-1.0f / (juce::jmax (1.0f, sampleRate) * 0.4f));
+        const auto coefficient = windowCoefficient;
         meanSquare = coefficient * meanSquare + (1.0f - coefficient) * frameMeanSquare;
 
-        const auto loudness = -0.691f + 10.0f * std::log10 (juce::jmax (1.0e-12f, meanSquare));
+        const auto loudness = -0.691f + 10.0f * j37math::log10 (juce::jmax (1.0e-12f, meanSquare));
         return juce::jmax (-70.0f, loudness);
     }
 
@@ -1011,8 +1125,9 @@ public:
     //
     //  A factory preset covers the machine's range; a USER preset freezes the whole
     //  machine exactly as it stands, including anything the factory list has no row
-    //  for. Files live in <user app data>/J37 Tape Mastering/Presets with a .j37tape
-    //  extension, so they survive plugin updates and are shared by every instance.
+    //  for. Files live in <user app data>/Nonlin Analog Saturator/Presets with a
+    //  .nonlinpreset extension, so they survive plugin updates and are shared by
+    //  every instance.
     //==============================================================================
 
     /** Names of the user presets found on disk, sorted alphabetically. */

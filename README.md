@@ -1,6 +1,6 @@
-# first
+# Nonlin Analog Saturator
 
-**J37 Tape Mastering** - a JUCE-based VST3 **mastering-grade tape saturation plugin** inspired by classic analog tape machines and J37-style coloration.
+**Nonlin Analog Saturator** - a JUCE-based **mastering-grade analog saturation plugin** built around a nonlinear magnetic tape model, with switchable tape stock, transport speed and tape-style coloration.
 
 This is, first and foremost, a **bus / mastering tool**: two independent glue compressors wrap the tape stage, the output level is calibrated in dB, the loudness metering is four-way (peak / RMS / LUFS / VU), and the output protection chain guarantees that what leaves the plugin is clean and controlled. Use it on the master bus, a drum bus or any programme material where you want the density and warmth of tape without losing control of the level.
 
@@ -54,7 +54,7 @@ playback EQ tilt -> output glue compressor (always on) -> output trim (dB) -> st
 | Polarity | on/off | Inverts the output polarity (180-degree flip), after the protection chain and the meters' magnitude path |
 | Auto Gain | on/off | Lets the slow programme compensator restore the level the INPUT trim dialled in; off leaves the output exactly at the level the chain produced |
 | Presets | 18 factory | Loaded from the preset box; each application is one undoable step |
-| User presets | unlimited | SAVE stores the whole machine state as a `.j37tape` file in the user's application-data directory; DEL removes the selected file; recall is one undoable step |
+| User presets | unlimited | SAVE stores the whole machine state as a `.nonlinpreset` file in the user's application-data directory; DEL removes the selected file; recall is one undoable step |
 | A/B compare | two slots | COPY A / COPY B store states, A/B swaps them live; an EDITED badge shows when the sides differ |
 | Undo / Redo | full state | Ctrl+Z / Ctrl+Y (or the panel buttons) step through preset and A/B history |
 
@@ -220,8 +220,8 @@ tape, including vocal, bass and mastering-safety starting points. A preset repla
 brings back exactly what was on screen before.
 
 **User presets** go further: SAVE freezes the whole machine exactly as it stands into a
-`.j37tape` file (an XML state tree, the same format the session stores) under
-`<user app data>/J37 Tape Mastering/Presets`. Files survive plugin updates, are shared by
+`.nonlinpreset` file (an XML state tree, the same format the session stores) under
+`<user app data>/Nonlin Analog Saturator/Presets`. Files survive plugin updates, are shared by
 every instance, and recall as one undoable step. A badge under the workflow row names the
 loaded preset and lights while the live state has drifted away from it - including when
 host automation moves a parameter.
@@ -463,7 +463,7 @@ Artefacts land in `build/first_artefacts/Release/`, one subfolder per plugin for
 each bundle named after `PRODUCT_NAME`:
 
 ```
-build/first_artefacts/Release/VST3/Analog Saturator.vst3/Contents/x86_64-win/...
+build/first_artefacts/Release/VST3/Nonlin Analog Saturator.vst3/Contents/x86_64-win/...
 ```
 
 > This is a real VST3 **bundle**, not a bare DLL. The old Projucer workflow produced a
@@ -496,9 +496,9 @@ Three formats are produced, one per format subfolder under `build/first_artefact
 
 | Artefact | Format | Hosts that load it |
 | --- | --- | --- |
-| `VST3/Analog Saturator.vst3` | VST3 | Reaper, Cubase, Studio One, Bitwig |
-| `AU/Analog Saturator.component` | Audio Unit | Logic Pro, GarageBand, Final Cut |
-| `AUv3/Analog Saturator.appex` | AUv3 | Logic Pro, GarageBand, iOS hosts |
+| `VST3/Nonlin Analog Saturator.vst3` | VST3 | Reaper, Cubase, Studio One, Bitwig |
+| `AU/Nonlin Analog Saturator.component` | Audio Unit | Logic Pro, GarageBand, Final Cut |
+| `AUv3/Nonlin Analog Saturator.appex` | AUv3 | Logic Pro, GarageBand, iOS hosts |
 
 AU and AUv3 matter for Mac users because **Logic and GarageBand cannot load VST3 at all**.
 Shipping only VST3 means the plugin does not exist for them.
@@ -517,8 +517,8 @@ Or copy by hand:
 
 ```
 Windows : C:\Program Files\Common Files\VST3\
-macOS   : ~/Library/Audio/Plug-Ins/VST3/Analog Saturator.vst3
-          ~/Library/Audio/Plug-Ins/Components/Analog Saturator.component
+macOS   : ~/Library/Audio/Plug-Ins/VST3/Nonlin Analog Saturator.vst3
+          ~/Library/Audio/Plug-Ins/Components/Nonlin Analog Saturator.component
 ```
 
 AUv3 is discovered through its containing app rather than copied by hand; run the app that
@@ -674,6 +674,58 @@ sudo apt install build-essential cmake git \
   libasound2-dev libjack-jackd2-dev \
   libfreetype6-dev libfontconfig1-dev libcurl4-openssl-dev \
   libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+  libxinerama-dev libxrandr-dev libxrender-dev \
+  libgl1-mesa-dev libglu1-mesa-dev \
+  libgtk-3-dev libwebkit2gtk-4.1-dev
+```
+
+Two of these are worth calling out because their absence fails in confusing places:
+`libfontconfig1-dev` (without it juceaide itself fails to compile with
+`ft2build.h: No such file or directory`, which looks like a freetype problem but is
+fontconfig's pkg-config file missing) and `libwebkit2gtk-4.1-dev` (the `webkit2gtk-4.0`
+package from older Ubuntu releases no longer exists on 24.04 and JUCE 9 probes the 4.1
+module; the same applies to `libgtk-3-dev` for `gtk+-x11-3.0`). The CI Linux job
+installs exactly this set.
+
+## Repository notes
+
+```
+CMakeLists.txt   the build, and the only place build settings live
+Source/          the plugin: PluginProcessor, PluginEditor, and DSP
+JUCE/            JUCE 9.0.2, pinned as a git submodule
+.github/         CI: builds VST3 on Windows, VST3 + AU + AUv3 on macOS
+```
+
+### Renaming note
+
+The plugin was renamed from *Analog Saturator* (repo `first`) to **Nonlin Analog
+Saturator**. Only `PRODUCT_NAME` and `DESCRIPTION` changed. The manufacturer code
+(`Manu`), the plugin code (`Zy59`) and the bundle ID (`com.MCsmes.first`) are the
+plugin's identity to hosts and to saved sessions and were deliberately left alone, so
+an existing session still finds the plugin after the rename instead of ending up with
+two entries side by side.
+
+Two user-visible names did change with it, both because they are the plugin's own
+namespace on disk:
+
+- the user-preset directory is now `<user app data>/Nonlin Analog Saturator/Presets`
+- the preset extension is now `.nonlinpreset`
+
+Presets saved under the old `J37 Tape Mastering` directory and `.j37tape` extension are
+not read by this build. Move the files and rename the extension to keep them.
+
+`J37` survives where it is a tape formula rather than a product name - the first entry
+in the TAPE TYPE list - and in the internal build-flag names (`J37_BUILD_TESTS`,
+`J37_BUILD_COMMIT`, `J37_FAST_WINDOWS_BUILD`), which are build configuration, not
+user-facing product identity.
+
+There are no generated project files in the repository. Open the folder directly in CLion,
+Visual Studio or VS Code with the CMake extension, and the IDE will configure itself from
+`CMakeLists.txt`.
+
+## License
+
+This repository is for project and development use.
   libxinerama-dev libxrandr-dev libxrender-dev \
   libgl1-mesa-dev libglu1-mesa-dev \
   libgtk-3-dev libwebkit2gtk-4.1-dev

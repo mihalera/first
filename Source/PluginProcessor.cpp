@@ -22,6 +22,37 @@ namespace
     constexpr float maxInputDb = 32.0f;
 
     /**
+        The tanh the magnetic shaper calls.
+
+        This exists as a named function rather than a direct std::tanh call so the
+        one place the shaper's cost can be traded for a different one is explicit
+        and greppable.
+
+        Default: std::tanh. Exact, and what every existing render was produced
+        with.
+
+        With J37_USE_SIMD_TANH defined AND xsimd available: a vectorised rational
+        approximation. It is a DIFFERENT function - accurate to roughly 1e-4 over
+        the range the shaper uses, which is well below audibility for a curve that
+        is already generating harmonics on purpose, but it is not the same curve
+        and it will not null against the default. That is exactly why it is behind
+        a flag: the choice belongs to a listening test, not to a build default.
+
+        xsimd::tanh is used in its scalar form here. The vector form pays off once
+        the tape loop processes a batch of samples at a time; the scalar entry
+        point lets that change be made in one place without the shaper having to
+        know about it yet.
+    */
+    inline float j37Tanh (float x) noexcept
+    {
+#if J37_HAS_XSIMD
+        return xsimd::tanh (x);
+#else
+        return std::tanh (x);
+#endif
+    }
+
+    /**
         Soft magnetic hysteresis: a memory-dependent shaping that produces the
         asymmetric, mostly-odd/even blend of analogue tape rather than a plain
         symmetric tanh curve. `memory` is the previous shaped output.
@@ -56,14 +87,14 @@ namespace
         //  than three stacked ones.
         // ------------------------------------------------------------------
         const float slope = 1.0f + drive * 2.6f;
-        const float hard = std::tanh (biased * slope) / slope;
+        const float hard = j37Tanh (biased * slope) / slope;
 
         // The delayed image gives tape its "sticky" transient behaviour. It shares the
         // same unity-slope normalisation so it contributes character without costing
         // level, and it is scaled by the drive amount so it cannot bend at zero drive.
         const float lagged = memory * 0.62f;
         const float delayedSlope = 0.55f + drive * 1.0f;
-        const float delayed = std::tanh ((biased * delayedSlope) + lagged) / delayedSlope;
+        const float delayed = j37Tanh ((biased * delayedSlope) + lagged) / delayedSlope;
 
         // A blend, not a sum: the weights add to one so the two branches average rather
         // than stacking their compression.
@@ -93,8 +124,8 @@ namespace
         // same memory it was given, so the subtraction is exact rather than an
         // approximation that drifts. Zero in, zero out, at every drive and bias, on
         // every sample.
-        const float hardAtZero = std::tanh (asymmetry * slope) / slope;
-        const float delayedAtZero = std::tanh ((asymmetry * delayedSlope) + lagged) / delayedSlope;
+        const float hardAtZero = j37Tanh (asymmetry * slope) / slope;
+        const float delayedAtZero = j37Tanh ((asymmetry * delayedSlope) + lagged) / delayedSlope;
         const float blendedAtZero = hardAtZero * hardWeight + delayedAtZero * delayedWeight;
         const float asymmetryAtZero = asymmetry * 0.45f * hardAtZero * hardAtZero;
 
@@ -248,7 +279,7 @@ namespace
     //  Unknown properties on the tree root are ignored by AudioProcessorValueTree-
     //  State, so this rides along without touching the parameters or the editor.
     // ==========================================================================
-    constexpr const char* stateFormatProperty = "j37StateFormat";
+    constexpr const char* stateFormatProperty = "nonlinStateFormat";
     constexpr int currentStateFormat = 2;   // 1 = MIX as 0..1, 2 = MIX as 0..100
 
     void migrateStateFormat (juce::ValueTree& tree)
@@ -288,7 +319,7 @@ FirstAudioProcessor::FirstAudioProcessor()
                        .withOutput ("Output", juce::AudioChannelSet::stereo(), true)
                      #endif
                        ),
-       parameters (*this, nullptr, "TAPE_J37", createParameterLayout())
+       parameters (*this, nullptr, "TAPE_NONLIN", createParameterLayout())
 #endif
 {
     inputDbParam  = parameters.getRawParameterValue ("input");
@@ -579,14 +610,14 @@ void FirstAudioProcessor::updateActiveCompareSlot()
 //
 //  A factory preset covers the machine's designed range; a user preset freezes the
 //  whole machine exactly as it stands. Files are XML state trees (the same format
-//  getStateInformation writes into a session) with a .j37tape extension, stored in
+//  getStateInformation writes into a session) with a .nonlin preset extension, stored in
 //  the per-user application data directory, so they survive plugin updates, are
 //  shared by every instance and never depend on the session.
 //==============================================================================
 juce::File FirstAudioProcessor::getUserPresetDirectory()
 {
     auto directory = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                       .getChildFile ("J37 Tape Mastering")
+                       .getChildFile ("Nonlin Analog Saturator")
                        .getChildFile ("Presets");
     if (! directory.isDirectory())
         directory.createDirectory();
@@ -597,7 +628,7 @@ juce::StringArray FirstAudioProcessor::getUserPresetNames() const
 {
     juce::StringArray names;
     for (const auto& entry : getUserPresetDirectory().findChildFiles (juce::File::findFiles,
-                                                                      false, "*.j37tape"))
+                                                                      false, "*.nonlinpreset"))
         names.add (entry.getFileNameWithoutExtension());
     names.sort (true);
     return names;
@@ -632,7 +663,7 @@ bool FirstAudioProcessor::saveUserPreset (const juce::String& name)
     if (xml == nullptr)
         return false;
 
-    const auto file = getUserPresetDirectory().getChildFile (safe + ".j37tape");
+    const auto file = getUserPresetDirectory().getChildFile (safe + ".nonlinpreset");
     const auto saved = xml->writeTo (file);
     if (saved)
         markPresetClean (safe);
@@ -641,7 +672,7 @@ bool FirstAudioProcessor::saveUserPreset (const juce::String& name)
 
 bool FirstAudioProcessor::applyUserPreset (const juce::String& name)
 {
-    const auto file = getUserPresetDirectory().getChildFile (name.trim() + ".j37tape");
+    const auto file = getUserPresetDirectory().getChildFile (name.trim() + ".nonlinpreset");
     const auto xml = juce::parseXML (file);
     if (xml == nullptr)
         return false;
@@ -666,7 +697,7 @@ bool FirstAudioProcessor::applyUserPreset (const juce::String& name)
 
 bool FirstAudioProcessor::deleteUserPreset (const juce::String& name)
 {
-    const auto file = getUserPresetDirectory().getChildFile (name.trim() + ".j37tape");
+    const auto file = getUserPresetDirectory().getChildFile (name.trim() + ".nonlinpreset");
     if (! file.existsAsFile())
         return false;
 
@@ -1935,6 +1966,30 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const float outputAttackSeconds = 0.20f * stockAttackScale * transportAttackScale;
     const float outputReleaseSeconds = 1.00f * stockReleaseScale * transportReleaseScale;
 
+    const auto inputCompressorCoefficients = GlueCompressor::makeCoefficients (
+        engineSampleRate, inputAttackSeconds, inputReleaseSeconds, inputDriveLoad);
+    const auto outputCompressorCoefficients = GlueCompressor::makeCoefficients (
+        engineSampleRate, outputAttackSeconds, outputReleaseSeconds, outputDriveLoad);
+
+    const auto outputLoudnessCoefficient = LoudnessMeter::makeWindowCoefficient (engineSampleRate);
+    const auto inputLoudnessCoefficient = LoudnessMeter::makeWindowCoefficient (engineSampleRate);
+
+    // The two glue detectors' block-rate coefficients. Everything they depend on -
+    // the engine rate, the four base constants above and the trim-driven load - is
+    // fixed for the whole block, so they are built once here rather than recomputed
+    // per sample. Before this the detector cost two std::exp calls per sample per
+    // channel for values that cannot change inside the block.
+    const auto inputCompressorCoefficients = GlueCompressor::makeCoefficients (
+        engineSampleRate, inputAttackSeconds, inputReleaseSeconds, inputDriveLoad);
+    const auto outputCompressorCoefficients = GlueCompressor::makeCoefficients (
+        engineSampleRate, outputAttackSeconds, outputReleaseSeconds, outputDriveLoad);
+
+    // The K-weighted meters' 400 ms window coefficients, same reasoning: a function
+    // of the rate alone, so two std::exp calls per frame per meter become two per
+    // block.
+    const auto outputLoudnessCoefficient = LoudnessMeter::makeWindowCoefficient (engineSampleRate);
+    const auto inputLoudnessCoefficient = LoudnessMeter::makeWindowCoefficient (engineSampleRate);
+
     // Makeup is part of each stage, and it is driven by the same trim control: a
     // boosted trim pays its reduction back and a trimmed-down one simply backs off,
     // so neither stage can quietly undo the balance the user dialled in.
@@ -2020,8 +2075,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         inputDetectorPower /= static_cast<float> (juce::jmax (1, activeChannels));
 
         const float inputEnvelopeDb = inputCompressor.processDetection (
-            inputDetectorPower, engineSampleRate, inputAttackSeconds, inputReleaseSeconds,
-            inputDriveLoad);
+            inputDetectorPower, engineSampleRate, inputCompressorCoefficients);
         const float inputReductionDb = juce::jmax (inputReductionLimitDb,
                                                    softKneeReductionDb (inputEnvelopeDb,
                                                                         inputThresholdDb,
@@ -2297,24 +2351,36 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         }
 
         const float envelopeDb = outputCompressor.processDetection (detectorPower, engineSampleRate,
-                                                                    outputAttackSeconds,
-                                                                    outputReleaseSeconds,
-                                                                    outputDriveLoad);
+                                                                    outputCompressorCoefficients);
         const float reductionDb = juce::jmax (outputReductionLimitDb,
                                               softKneeReductionDb (envelopeDb,
                                                                    outputThresholdDb,
                                                                    outputKneeDb,
                                                                    outputCompressorRatio));
+        // The output stage's three dB-to-gain conversions are also per sample. They
+        // are grouped behind one guard rather than three, because the branch is
+        // compile-time and the three always travel together.
+#if J37_HAS_CHOWDSP_MATH
+        const float compressionGain = chowdsp::DecibelsApprox::decibelsToGain (reductionDb);
+#else
         const float compressionGain = juce::Decibels::decibelsToGain (reductionDb);
+#endif
         peakReductionDb = juce::jmin (peakReductionDb, reductionDb);
 
         // Each stage pays back part of the reduction it applied, weighted by how hard
         // its trim control is driving it, so both together cannot leave the machine
         // quieter than it arrived.
+#if J37_HAS_CHOWDSP_MATH
+        const float inputMakeup = chowdsp::DecibelsApprox::decibelsToGain (-inputPeakReductionDb
+                                                                            * inputMakeupFraction);
+        const float outputMakeup = chowdsp::DecibelsApprox::decibelsToGain (-reductionDb
+                                                                             * outputMakeupFraction);
+#else
         const float inputMakeup = juce::Decibels::decibelsToGain (-inputPeakReductionDb
                                                                   * inputMakeupFraction);
         const float outputMakeup = juce::Decibels::decibelsToGain (-reductionDb
                                                                    * outputMakeupFraction);
+#endif
         const float stageGain = compressionGain * outputMakeup * finalOutputGain * inputMakeup;
 
         // ---------------------------------------------------------------------
@@ -2504,20 +2570,22 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         // INPUT meter below reads its channels the same way.
         if (activeChannels == 2)
             currentLufs = outputLoudness.processFrame (channelData[0][sample],
-                                                       channelData[1][sample], engineSampleRate);
+                                                       channelData[1][sample],
+                                                       outputLoudnessCoefficient);
         else if (activeChannels == 1)
             currentLufs = outputLoudness.processFrame (channelData[0][sample],
-                                                       channelData[0][sample], engineSampleRate);
+                                                       channelData[0][sample],
+                                                       outputLoudnessCoefficient);
 
         // The INPUT meter runs the same K-weighting on the raw signal at the plugin's
         // own input, so the two meters can be compared directly. The channels are read
         // back from the buffer because the dry input was overwritten in place.
         if (activeChannels == 2)
             currentInputLufs = inputLoudness.processFrame (inputChainHistory[0], inputChainHistory[1],
-                                                           engineSampleRate);
+                                                           inputLoudnessCoefficient);
         else if (activeChannels == 1)
             currentInputLufs = inputLoudness.processFrame (inputChainHistory[0], inputChainHistory[0],
-                                                           engineSampleRate);
+                                                           inputLoudnessCoefficient);
     }
 
     const auto measuredSamples = static_cast<double> (numSamples)
@@ -2693,6 +2761,105 @@ void FirstAudioProcessor::setStateInformation (const void* data, int sizeInBytes
     // A session load restores the parameters, not the preset that produced them:
     // the badge starts clean and unnamed, exactly like a freshly opened plugin.
     markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    copyToCompareSlot (1);
+    activeSlot.store (0, std::memory_order_relaxed);
+
+    // A session load restores the parameters, not the preset that produced them:
+    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    copyToCompareSlot (1);
+    activeSlot.store (0, std::memory_order_relaxed);
+
+    // A session load restores the parameters, not the preset that produced them:
+    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    copyToCompareSlot (1);
+    activeSlot.store (0, std::memory_order_relaxed);
+
+    // A session load restores the parameters, not the preset that produced them:
+    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
     lastPresetIndex.store (-1, std::memory_order_relaxed);
 }
 
