@@ -30,7 +30,69 @@ It provides a tape-saturation mastering workflow with:
 Input trim (dB) -> input glue compressor (always on) ->
 record head (pre-emphasis, bias, magnetic hysteresis with memory) ->
 tape low-pass and head-gap loss -> tape noise floor and wow/flutter modulation ->
-playback EQ tilt -> output glue compressor (always on) -> output trim (dB) -> stereo width.
+playback EQ tilt -> playback DC blocker -> second playback head (DELAY) ->
+stereo tape offset (ST OFFSET) -> output glue compressor (always on) ->
+output trim (dB) -> stereo width.
+
+The transport state (STOP / PLAY / START) scales the whole wet side of that path and
+the transport modulation together, so STOP is the machine coming to rest rather than a
+mute on the output.
+
+## Tape delay
+
+A spare playback head on a real deck is spaced away from the record head, so the same
+signal comes back a fixed interval later - the interval being set by the gap and the
+tape speed. DELAY is that spacing in milliseconds, and the range is short on purpose:
+at 15 ips a real head spacing gives tens of milliseconds, so the point is the slap and
+the comb colour a second head adds to a tape sound, not an echo unit.
+
+The repeat is taken **after** the tape, from the DC-blocked wet signal, which is what
+makes it a head on the machine rather than a parallel effect: the echo inherits the
+machine's own bandwidth and saturation, and each pass round the tape loses top end the
+way a real repeat does. It is a single interpolation-read circular buffer, sized once
+in `prepareToPlay` for the longest time the control can ask for at the highest rate the
+engine can run at, so the DELAY knob moves a read offset and never resizes a buffer on
+the audio thread.
+
+## Stereo tape offset
+
+On a real stereo deck the two tracks are recorded by separate head gaps a fraction of a
+millimetre apart, and the tape skews slightly across them. The result is that the
+channels are not perfectly time-aligned: one lags the other by a few tens of
+microseconds. It is a small effect and a large part of why a tape bounce sounds wide
+rather than merely being equalised wide.
+
+ST OFFSET sets that inter-channel delay directly in microseconds, positive meaning the
+right channel lags. It is a linear-interpolating buffer rather than an all-pass: an
+all-pass gives the same group delay for less memory but colours the phase differently
+across the band, and the point here is that the two channels differ by **time**, not by
+filter shape.
+
+## Transport: start, play, stop
+
+A tape machine has three states and the middle one is not "stopped":
+
+| State | What the machine does |
+| --- | --- |
+| **Stop** | The capstan is at rest. The tape is not moving, so there is no hiss, no modulation and no delay tail. The wet path coasts down and the machine reaches true silence - not a mute on the output, because the machine's own noise goes with it |
+| **Play** | Normal running. Everything the panel describes is active. This is the default and what every earlier build did |
+| **Start** | The moment of engagement. The capstan comes up to speed, so the transport runs flat, the modulation deepens and the pitch rides up into tune over about a second - the sound a deck makes when you hit play on a take |
+
+The ramp is advanced once per **frame**, not per channel: advancing it per channel would
+put the two sides a sample apart, which is a channel skew rather than a transport. A
+START from STOP gets a full one-second spin-up; a START from PLAY is a re-engagement and
+gets a much shorter re-lock, because a button press that changed nothing should not
+slide the pitch for a second.
+
+## Noise floor level
+
+TAPE TYPE sets each formula's own hiss floor as part of its character and that stays
+untouched. NOISE is a trim **on top of** it, so the floor can be lifted for a
+deliberately dirty bounce or pulled to a clinical black without changing which stock is
+loaded. 50 % is exactly the formula's own figure - the neutral position, not a change -
+and the trim is carried by a smoother, so dragging the knob glides the hiss instead of
+stepping it. Like the formula's own floor it is gated by the transport, so a machine at
+rest stays silent.
 
 ## Controls
 
