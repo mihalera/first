@@ -528,15 +528,22 @@ if(APPLE)
     # directly by the host process and must NOT carry the app-sandbox entitlement:
     # an Audio Unit that declares com.apple.security.app-sandbox is rejected by the
     # AU validation step and silently disappears from Logic's plug-in list.
+    # Xcode warns unless PRODUCT_BUNDLE_IDENTIFIER is byte-for-byte the
+    # CFBundleIdentifier already in the target's Info.plist. AUv3 is TWO targets and
+    # JUCE gives them two different ids, both derived from the plugin bundle id: the
+    # extension itself gets ".firstAUv3" and the helper framework it embeds gets
+    # ".internal". Setting only one of them just trades one warning for another, so both
+    # are set here, from the same J37_BUNDLE_ID the Info.plists were generated from.
     if(TARGET first_AUv3)
-        # PRODUCT_BUNDLE_IDENTIFIER has to MATCH the CFBundleIdentifier JUCE writes into
-        # the extension's Info.plist, which is the plugin id with ".internal" appended
-        # for the app extension. Xcode warned on every macOS build that the plist said
-        # 'com.MCsmes.first.internal' while the build setting was empty. Set it from the
-        # same value JUCE derived it from, so the two cannot drift apart.
         set_target_properties(first_AUv3 PROPERTIES
             XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS
             "${appex_support_target}/AUv3_AppExtension.entitlements"
+            XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER
+            "${J37_BUNDLE_ID}.firstAUv3")
+    endif()
+
+    if(TARGET first_AUv3_Framework)
+        set_target_properties(first_AUv3_Framework PROPERTIES
             XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER
             "${J37_BUNDLE_ID}.internal")
     endif()
@@ -560,6 +567,14 @@ if(APPLE)
         set_source_files_properties(${j37_foleys_sources} PROPERTIES COMPILE_OPTIONS
             "-Wno-implicit-int-float-conversion;-Wno-implicit-const-int-float-conversion;-Wno-unused-variable;-Wno-unused-but-set-variable;-Wno-unused-function;-Wno-missing-prototypes;-Wno-shorten-64-to-32")
     endif()
+
+    # The last warnings this build printed came from a single JUCE header:
+    # juce_FastMathApproximations.h converts integer magic constants to float in its
+    # SIMD helpers, which trips an opt-in Clang group that is NOT on by default. It is
+    # the only group silenced target-wide here, and only that one - everything the
+    # vendored module needs is attached per source file below, so a new warning of any
+    # other kind in this project's own Source/*.cpp is still reported.
+    target_compile_options(first PRIVATE -Wno-implicit-const-int-float-conversion)
 
     # The -Wshorten-64-to-32 that used to be enabled here is gone. It was switched on
     # to keep one specific conversion visible when it was the only warning in the
