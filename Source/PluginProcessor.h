@@ -553,10 +553,13 @@ struct SampleClock
 class SampleSmoother
 {
 public:
-    explicit SampleSmoother (SampleClock& clockToUse, bool startsSample = false,
-                             bool invertOutput = false, float initialValue = 0.0f)
-        : clock (clockToUse), startsSample (startsSample), invertOutput (invertOutput),
-          smoother (initialValue)
+    // The two flag parameters are named `should...` rather than after the fields they
+    // initialise: a constructor parameter with the same name as its field shadows it,
+    // and Clang flags that on macOS (it is how a silent self-assignment hides here).
+    explicit SampleSmoother (SampleClock& clockToUse, bool shouldStartAtSample = false,
+                             bool shouldInvertOutput = false, float initialValue = 0.0f)
+        : clock (clockToUse), startsSample (shouldStartAtSample),
+          invertOutput (shouldInvertOutput), smoother (initialValue)
     {
     }
 

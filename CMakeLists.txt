@@ -303,11 +303,17 @@ endif()
 # plugin directories.
 option(COPY_PLUGIN_AFTER_BUILD "Copy plugins to the user plugin folders after building" OFF)
 
+# The bundle id lives in a variable rather than inline in the juce_add_plugin call
+# because the AUv3 app extension needs it a second time, with ".internal" appended (see
+# the Apple block below). Written twice, the two copies drift and Xcode starts warning
+# that the Info.plist and the PRODUCT_BUNDLE_IDENTIFIER build setting disagree.
+set(J37_BUNDLE_ID "com.MCsmes.first")
+
 juce_add_plugin(first
     COMPANY_NAME                "MCsmes"
     COMPANY_WEBSITE             "https://www.MCsmes.com"
     COMPANY_EMAIL               ""
-    BUNDLE_ID                   "com.MCsmes.first"
+    BUNDLE_ID                   "${J37_BUNDLE_ID}"
 
     # These two codes are the plugin's identity to every host. They are
     # deliberately NOT "corrected" to match the company name:
@@ -523,15 +529,44 @@ if(APPLE)
     # an Audio Unit that declares com.apple.security.app-sandbox is rejected by the
     # AU validation step and silently disappears from Logic's plug-in list.
     if(TARGET first_AUv3)
+        # PRODUCT_BUNDLE_IDENTIFIER has to MATCH the CFBundleIdentifier JUCE writes into
+        # the extension's Info.plist, which is the plugin id with ".internal" appended
+        # for the app extension. Xcode warned on every macOS build that the plist said
+        # 'com.MCsmes.first.internal' while the build setting was empty. Set it from the
+        # same value JUCE derived it from, so the two cannot drift apart.
         set_target_properties(first_AUv3 PROPERTIES
             XCODE_ATTRIBUTE_CODE_SIGN_ENTITLEMENTS
-            "${appex_support_target}/AUv3_AppExtension.entitlements")
+            "${appex_support_target}/AUv3_AppExtension.entitlements"
+            XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER
+            "${J37_BUNDLE_ID}.internal")
     endif()
 
-    # Keep the size_t -> int conversion warning visible. It is harmless (the state
-    # blob is never near 2 GB) but it was the only warning in the whole build, so
-    # it is worth not losing.
-    target_compile_options(first PRIVATE -Wshorten-64-to-32)
+    # foleys_gui_magic is a JUCE MODULE, not a separate library, so its 55 translation
+    # units are compiled as part of `first` and its warnings land in our build log. Its
+    # SYSTEM YES in the CPMAddPackage call covers its HEADERS, not its .cpp files, and
+    # AppleClang is far stricter about implicit numeric conversions than the GCC build
+    # these sources were written against - between them they accounted for well over
+    # half of every warning this project printed.
+    #
+    # The suppression is attached per SOURCE FILE, never to the target, so a new
+    # warning of these kinds in the plugin's own Source/*.cpp is still reported and
+    # still worth fixing. A glob that matches nothing is a no-op, so a CPM path change
+    # degrades to "no suppression" rather than to a configure error.
+    file(GLOB j37_foleys_sources CONFIGURE_DEPENDS
+         "${CMAKE_BINARY_DIR}/deps/foleys_gui_magic/modules/foleys_gui_magic/*.cpp"
+         "${CMAKE_BINARY_DIR}/deps/foleys_gui_magic/modules/foleys_gui_magic/*/*.cpp")
+
+    if(j37_foleys_sources)
+        set_source_files_properties(${j37_foleys_sources} PROPERTIES COMPILE_OPTIONS
+            "-Wno-implicit-int-float-conversion;-Wno-implicit-const-int-float-conversion;-Wno-unused-variable;-Wno-unused-but-set-variable;-Wno-unused-function;-Wno-missing-prototypes;-Wno-shorten-64-to-32")
+    endif()
+
+    # The -Wshorten-64-to-32 that used to be enabled here is gone. It was switched on
+    # to keep one specific conversion visible when it was the only warning in the
+    # build; Clang does not enable that group by default, so asking for it by name
+    # only ever produced a warning nobody was reading. The conversion itself was fixed
+    # at the source instead (getXmlFromBinary takes an int, so the size_t cast that
+    # provoked it was simply wrong).
 endif()
 
 # ------------------------------------------------------------------------------
