@@ -35,6 +35,26 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # ------------------------------------------------------------------------------
+#  One Apple-only warning suppression, and it is deliberately set this early.
+#
+#  juce_FastMathApproximations.h converts integer magic constants to float in its
+#  SIMD helpers, which raises -Wimplicit-const-int-float-conversion four times per
+#  translation unit. That group is NOT enabled by Clang by default - it is opt-in -
+#  so silencing it costs this project nothing, and the only code it ever fires on is
+#  JUCE's own.
+#
+#  It has to be applied to CMAKE_CXX_FLAGS here, BEFORE add_subdirectory(JUCE) and
+#  before the CPM packages, rather than as a target_compile_options() later on: the
+#  warning is raised in a translation unit that does not belong to any of the plugin's
+#  targets, so per-target options never reached it and the build still printed all
+#  sixteen. Setting the flag up front is what makes it apply to every C++ compile in
+#  the project, JUCE's and the vendored modules' included.
+# ------------------------------------------------------------------------------
+if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-implicit-const-int-float-conversion")
+endif()
+
+# ------------------------------------------------------------------------------
 #  JUCE
 #
 #  JUCE is a git submodule pinned at 9.0.2, checked out at JUCE/ next to this
@@ -574,17 +594,10 @@ if(APPLE)
     # the only group silenced target-wide here, and only that one - everything the
     # vendored module needs is attached per source file below, so a new warning of any
     # other kind in this project's own Source/*.cpp is still reported.
-    #
-    # It has to go on the FORMAT targets as well as on `first`. JUCE compiles the shared
-    # code into `first`, but each of first_VST3 / first_AU / first_AUv3 compiles its own
-    # wrapper, which includes the processor header and so pulls the same JUCE header back
-    # in - setting it on `first` alone left four warnings per format, which is where the
-    # last sixteen came from.
-    foreach(j37_apple_target IN ITEMS first first_VST3 first_AU first_AUv3 first_AUv3_Framework)
-        if(TARGET ${j37_apple_target})
-            target_compile_options(${j37_apple_target} PRIVATE -Wno-implicit-const-int-float-conversion)
-        endif()
-    endforeach()
+    # (the flag itself is added near the top of this file, before JUCE and the CPM
+    #  packages are added, because the warning is raised while compiling a translation
+    #  unit that only ever includes the JUCE header - adding it per target afterwards
+    #  left all sixteen of them in place.)
 
     # The -Wshorten-64-to-32 that used to be enabled here is gone. It was switched on
     # to keep one specific conversion visible when it was the only warning in the
