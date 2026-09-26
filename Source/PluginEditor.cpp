@@ -886,8 +886,15 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // keep the knob grid and the 2 x 2 meters usable. The maximum is pulled in to
     // 1400 x 900: beyond that the analogue panel stops gaining legibility and only
     // looks sparse.
-    setResizeLimits (780, 640, 1400, 960);
-    setSize (980, 690);
+    // Re-sized for the five-row control grid. The window grew in HEIGHT rather than
+    // width because the extra rows are the constraint: five rows of knobs plus the
+    // meter panel need about 780 px of working height before anything is cramped,
+    // and widening further would only make the knob grid look sparse without
+    // giving the rows any more room. The minimum keeps every row usable; the
+    // maximum is where the analogue panel stops gaining legibility and only looks
+    // emptier.
+    setResizeLimits (860, 820, 1500, 1180);
+    setSize (1060, 900);
 
 #if JUCE_DEBUG
     // The Melatonin component inspector, debug builds only. It is created after
@@ -1004,14 +1011,21 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // DELAY, DLY LVL, ST OFFSET, NOISE. The array is sized by controlCount, so the
     // two must stay in step - a longer list is a compile error (C2078), which is the
     // behaviour wanted: a default that silently belongs to no control is worse.
+    // One default per controlIds entry, in the SAME order. The two lists are read
+    // side by side, so they are laid out to mirror each other:
+    //   row 1  input 0.0    drive 0.30   bias 0.42    tone 0.50   character 0.50
+    //   row 2  wow 0.14     flutter 0.18 mix 0.50     output 0.0  width 0.50
+    //   row 3  blend 0.0    shape 0.50   amp_bias 0.50 sag 0.0    presence 0.50
+    //   row 4  cabinet 0.0  delay 0.0    dly_lvl 0.0  st_offset 0.0 noise 0.50
+    //   row 5  subfund 0.0
     const std::array<double, controlCount> defaultValues { 0.0, 0.30, 0.42,
                                                            0.50, 0.5, 0.14,
                                                            0.18, 0.5, 0.0,
                                                            0.5, 0.0,
                                                            0.0, 0.0,
                                                            0.0, 0.5,
-                                                           0.0, 0.5,
-                                                           0.0, 0.5, 0.0 };
+                                                           0.0, 0.5, 0.50,
+                                                           0.0, 0.50, 0.0 };
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -1780,6 +1794,16 @@ void FirstAudioProcessorEditor::applyTheme()
     for (auto& label : controlLabels)
         label.setColour (juce::Label::textColourId, palette.secondary);
 
+    // The section captions carry the accent rather than the secondary colour: they
+    // are headings, not control names, and the accent is what marks a heading
+    // everywhere else on this panel.
+    machineSectionLabel.setColour (juce::Label::textColourId,
+                                   palette.accent.withAlpha (0.75f));
+    saturationSectionLabel.setColour (juce::Label::textColourId,
+                                      palette.accent.withAlpha (0.75f));
+    headSectionLabel.setColour (juce::Label::textColourId,
+                                palette.accent.withAlpha (0.75f));
+
     for (auto& slider : controls)
     {
         slider.setColour (juce::Slider::textBoxTextColourId, palette.text);
@@ -1892,6 +1916,15 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
         static_cast<float> (layout.header.getY() + 20), 184.0f, 30.0f);
     g.setColour (palette.raised.darker (0.16f));
     g.fillRoundedRectangle (statusBadge, 4.0f);
+
+    // A hairline rule under the header strip, inset from the badge, so the title
+    // block and the controls read as separate bands instead of one tall rectangle.
+    // It stops short of the status badge at both ends - running it beneath the badge
+    // would cut the badge's rounded bottom off.
+    g.setColour (palette.border.withAlpha (0.5f));
+    g.drawHorizontalLine (layout.header.getBottom() - 4,
+                          static_cast<float> (layout.header.getX() + 18),
+                          static_cast<float> (layout.header.getRight() - 222));
 
     // Status lamp: pulses with the compressor, so the header shows that the
     // plugin is alive and working even when no gain reduction is happening.
@@ -2312,6 +2345,33 @@ void FirstAudioProcessorEditor::resized()
                                               controlsHeadingLabel.getRight() + 24);
     controlsHintLabel.setBounds (controlsHintLeft, layout.controls.getY() + 10,
                                  juce::jmax (0, controlsHintRight - controlsHintLeft), 19);
+
+    // ------------------------------------------------------------------
+    //  Section captions inside the knob grid.
+    //
+    //  Twenty-one knobs in five rows read as one undifferentiated block without
+    //  them, and the three groups a user actually thinks in - the machine's own
+    //  controls, the saturation core, and the head/transport extras - would not be
+    //  visible anywhere. Each caption is a small right-aligned label sitting on the
+    //  row boundary ABOVE its group, so it names the group without taking a cell
+    //  away from a knob.
+    // ------------------------------------------------------------------
+    const auto captionHeight = 13;
+    const auto captionInset = 20;
+    const auto captionWidth = 150;
+
+    const auto placeSectionCaption = [&] (juce::Label& label, const juce::String& text,
+                                          int rowIndex, int gridTop, int rowHeight)
+    {
+        styleLabel (label, text, 7.5f, paletteFor (darkTheme).secondary,
+                    true, juce::Justification::centredRight);
+        addAndMakeVisible (label);
+        // Sits in the gap between the previous row and this one, so it never
+        // overlaps a knob or a knob's own caption.
+        label.setBounds (layout.controls.getRight() - captionInset - captionWidth,
+                         gridTop + rowIndex * rowHeight - captionHeight,
+                         captionWidth, captionHeight);
+    };
     metersHeadingLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 8, 130, 18);
     metersHintLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 27, 150, 14);
     const auto compressorLabelWidth = 120;
@@ -2324,6 +2384,17 @@ void FirstAudioProcessorEditor::resized()
     grid.removeFromTop (42);
     grid.removeFromBottom (8);
     const auto cellWidth = grid.getWidth() / controlColumns;
+
+    // The three section captions, placed on the row boundaries their groups start
+    // at. The grid is five rows: the machine's own controls are rows 0-1, the
+    // saturation core is row 2, and the head/transport extras are rows 3-4. The
+    // captions sit ABOVE their first row, in the gap the row spacing leaves.
+    {
+        const auto previewRowHeight = grid.getHeight() / 5;
+        placeSectionCaption (machineSectionLabel, "MACHINE", 0, grid.getY(), previewRowHeight);
+        placeSectionCaption (saturationSectionLabel, "SATURATION CORE", 2, grid.getY(), previewRowHeight);
+        placeSectionCaption (headSectionLabel, "HEAD / TRANSPORT", 3, grid.getY(), previewRowHeight);
+    }
     // Three rows, to match controlColumns: 4 x 3 = 12 cells for 11 controls.
     const auto rowHeight = grid.getHeight() / 3;
 

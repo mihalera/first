@@ -274,6 +274,11 @@ private:
     juce::Label deckHintLabel;
     juce::Label controlsHeadingLabel;
     juce::Label controlsHintLabel;
+    // Section captions inside the knob grid, so five rows of knobs read as three
+    // groups (machine / saturation core / head and transport) rather than one block.
+    juce::Label machineSectionLabel;
+    juce::Label saturationSectionLabel;
+    juce::Label headSectionLabel;
     juce::Label metersHeadingLabel;
     juce::Label metersHintLabel;
     juce::Label compressorLabel;
