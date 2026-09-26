@@ -96,6 +96,29 @@ is where the harmonics come from:
 
 Speed also changes head-gap damping, so a faster tape genuinely keeps more top end.
 
+### Tape formulas
+
+Twelve stocks, each biasing the blended machine state toward its own character
+rather than replacing it - so the TONE macro keeps its meaning on every one:
+
+| Formula | Character |
+| --- | --- |
+| **J37** | The classic EMI reference: soft, gentle bend, the most neutral starting point |
+| **Ampex 456** | Hotter, more low-order colour, an open head |
+| **Studer A800** | The darkest and densest saturation of the set |
+| **Chrome** | Clean and bright with a low noise floor |
+| **Type 111** | Gentle low-noise mastering stock: very quiet, soft top end |
+| **GP9** | Hot modern mastering formula: dense low end, a higher floor |
+| **Quantegy 499** | High-output studio workhorse: open top, firm glue |
+| **RTM SM911** | Broadcast reference: balanced, smooth, low noise |
+| **SM 468** | High-output low-noise studio stock: a firm bend with a notably quiet floor and an open head, so it reads as clean density rather than colour |
+| **888** | The hot, thick vintage stock: strong bias asymmetry and the thickest magnetic memory here, so it bends early and blooms hard. The formula to reach for when the saturation *is* the effect |
+| **815** | Dark, dense and quiet at the top: a soft head and a heavy low-mid bias make it the warmest of the new stocks without the extra hiss 888 brings. It thickens rather than drives |
+| **811** | The clean, open, low-noise mastering stock: the gentlest bend of the set with the most open head, so it stays transparent under level and keeps the top octave. A bus stock, not a colour |
+
+Every formula's figures are clamped with the INSTRUMENT voicing on top, so any
+combination of the two selectors stays inside the machine's designed operating range.
+
 The tape glue compressor is compressor-coupled in two places, and the two stages are
 completely independent processors: each has its own detector envelope and its own gain
 computer, and neither reads the other's state. Both are driven purely by the signal
@@ -750,6 +773,80 @@ JUCE/            JUCE 9.0.2, pinned as a git submodule
 
 There are no generated project files in the repository. Open the folder directly in CLion,
 Visual Studio or VS Code with the CMake extension, and the IDE will configure itself from
+`CMakeLists.txt`.
+
+## License
+
+This repository is for project and development use.
+
+## Repository notes
+
+```
+CMakeLists.txt   the build, and the only place build settings live
+Source/          the plugin: PluginProcessor, PluginEditor, and DSP
+JUCE/            JUCE 9.0.2, pinned as a git submodule
+.github/         CI: builds VST3 on Windows, VST3 + AU + AUv3 on macOS
+```
+
+### Renaming note
+
+The plugin was renamed from *Analog Saturator* (repo `first`) to **Nonlin Analog
+Saturator**. Only `PRODUCT_NAME` and `DESCRIPTION` changed. The manufacturer code
+(`Manu`), the plugin code (`Zy59`) and the bundle ID (`com.MCsmes.first`) are the
+plugin's identity to hosts and to saved sessions and were deliberately left alone, so
+an existing session still finds the plugin after the rename instead of ending up with
+two entries side by side.
+
+Two user-visible names did change with it, both because they are the plugin's own
+namespace on disk:
+
+- the user-preset directory is now `<user app data>/Nonlin Analog Saturator/Presets`
+- the preset extension is now `.nonlinpreset`
+
+Presets saved under the old `J37 Tape Mastering` directory and `.j37tape` extension are
+not read by this build. Move the files and rename the extension to keep them.
+
+`J37` survives where it is a tape formula rather than a product name - the first entry
+in the TAPE TYPE list - and in the internal build-flag names (`J37_BUILD_TESTS`,
+`J37_BUILD_COMMIT`, `J37_FAST_WINDOWS_BUILD`), which are build configuration, not
+user-facing product identity.
+
+There are no generated project files in the repository. Open the folder directly in CLion,
+Visual Studio or VS Code with the CMake extension, and the IDE will configure itself from
+`CMakeLists.txt`.
+
+## License
+
+This repository is for project and development use.
+  libxinerama-dev libxrandr-dev libxrender-dev \
+  libgl1-mesa-dev libglu1-mesa-dev \
+  libgtk-3-dev libwebkit2gtk-4.1-dev
+```
+
+Two of these are worth calling out because their absence fails in confusing places:
+`libfontconfig1-dev` (without it juceaide itself fails to compile with
+`ft2build.h: No such file or directory`, which looks like a freetype problem but is
+fontconfig's pkg-config file missing) and `libwebkit2gtk-4.1-dev` (the `webkit2gtk-4.0`
+package from older Ubuntu releases no longer exists on 24.04 and JUCE 9 probes the 4.1
+module; the same applies to `libgtk-3-dev` for `gtk+-x11-3.0`). The CI Linux job
+installs exactly this set.
+
+## Repository notes
+
+```
+CMakeLists.txt   the build, and the only place build settings live
+Source/          the plugin: PluginProcessor, PluginEditor, and DSP
+JUCE/            JUCE 9.0.2, pinned as a git submodule
+.github/         CI: builds VST3 on Windows, VST3 + AU + AUv3 on macOS
+```
+
+There are no generated project files in the repository. Open the folder directly in CLion,
+Visual Studio or VS Code with the CMake extension, and the IDE will configure itself from
+`CMakeLists.txt`.
+
+## License
+
+This repository is for project and development use.
 `CMakeLists.txt`.
 
 ## License

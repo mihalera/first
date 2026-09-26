@@ -160,12 +160,17 @@ private:
         juce::Rectangle<int> meters;
     };
 
-    // Eleven controls: the nine original machine controls plus the A/B TONE macro,
-    // SUBFUND and WIDTH. A 4 x 3 grid holds twelve, and the layout stretches the last
-    // column and row to fill, so the three unused cells cost nothing visually.
-    // The old 5 x 2 arrangement cannot take an eleventh without splitting a row.
-    static constexpr std::size_t controlCount = 11;
-    static constexpr int controlColumns = 4;
+    // Fourteen controls: the nine original machine controls plus the A/B TONE macro,
+    // SUBFUND, WIDTH, DELAY, DELAY LEVEL, ST OFFSET and NOISE. A 5 x 3 grid holds
+    // fifteen, and the layout stretches the last column and row to fill, so the one
+    // unused cell costs nothing visually.
+    //
+    // The old 4 x 3 arrangement could not take a fourteenth without splitting a row;
+    // widening to five columns keeps every knob in a real cell and still fits the
+    // 780 px minimum panel, because the grid is computed from the panel's own width
+    // rather than from fixed pixel positions.
+    static constexpr std::size_t controlCount = 14;
+    static constexpr int controlColumns = 5;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     void timerCallback() override;
@@ -196,6 +201,11 @@ private:
     juce::ComboBox tapeTypeBox;
     juce::ComboBox speedBox;
     juce::ComboBox instrumentBox;
+    // Transport: STOP / PLAY / START. A combo rather than three buttons, so the
+    // state is one host-visible parameter and the panel shows which state is
+    // engaged without a lamp per position.
+    juce::ComboBox transportBox;
+    juce::Label transportLabel;
     juce::TextButton glButton { "GL ON" };
     juce::ToggleButton bypassButton { "BYPASS" };
     juce::TextButton themeButton { "DARK THEME" };
@@ -240,6 +250,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tapeTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> speedAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> instrumentAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> transportAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversamplingAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> polarityAttachment;

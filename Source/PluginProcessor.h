@@ -1328,6 +1328,11 @@ private:
     std::atomic<float>* polarityParam = nullptr;
     std::atomic<float>* autoGainParam = nullptr;
     std::atomic<float>* subFundamentalParam = nullptr;
+    std::atomic<float>* delayTimeParam = nullptr;
+    std::atomic<float>* delayFeedbackParam = nullptr;
+    std::atomic<float>* stOffsetParam = nullptr;
+    std::atomic<float>* noiseParam = nullptr;
+    std::atomic<float>* transportParam = nullptr;
 
     float sampleRate = 44100.0f;
     // Every smoother below is advanced exactly once at the top of each sample frame.
@@ -1607,6 +1612,66 @@ private:
     // has the slow, forgiving movement that makes it useful for programme level.
     float vuAverage = 0.0f;
     float inputVuAverage = 0.0f;
+
+    // -----------------------------------------------------------------------
+    //  Playback head delay.
+    //
+    //  A fixed-size circular buffer per channel, sized in prepareToPlay for the
+    //  longest time the control can ask for at the highest rate the engine runs
+    //  at (250 ms at 8x oversampling of 192 kHz). Allocating it once and never
+    //  resizing is what keeps the audio thread free of allocation: the delay time
+    //  is a read offset into this buffer, not a change to its size.
+    //
+    //  The read position is smoothed, so sweeping the DELAY control glides like a
+    //  tape head being moved rather than stepping the waveform.
+    // -----------------------------------------------------------------------
+    juce::AudioBuffer<float> delayBuffer;
+    int delayWritePosition = 0;
+    int delayBufferLength = 0;
+    SampleSmoother delaySamplesSmoothed { sampleClock };
+    SampleSmoother delayFeedbackSmoothed { sampleClock };
+
+    // The delay's own feedback path is damped: each repeat loses top end, the way
+    // a real second head loses it through the same tape losses the main path has.
+    // Without this the repeats stack into a bright metallic ring.
+    std::array<float, 2> delayDampState {};
+    float delayDampCoefficient = 0.35f;
+
+    // -----------------------------------------------------------------------
+    //  Stereo tape offset.
+    //
+    //  A one-sample-capable fractional delay on the right channel only, driven by
+    //  ST OFFSET. It is deliberately tiny - a few tens of microseconds - and it is
+    //  what makes a tape bounce sit wide instead of merely being equalised wide.
+    //
+    //  A short linear-interpolating buffer rather than an all-pass: an all-pass
+    //  would give the same group delay with less memory but would colour the
+    //  phase differently across the band, and the whole point here is that the two
+    //  channels differ by TIME, not by filter shape.
+    // -----------------------------------------------------------------------
+    static constexpr int stOffsetBufferLength = 64;
+    std::array<float, stOffsetBufferLength> stOffsetBuffer {};
+    int stOffsetWritePosition = 0;
+    SampleSmoother stOffsetSamplesSmoothed { sampleClock };
+
+    // -----------------------------------------------------------------------
+    //  Transport state (STOP / PLAY / START).
+    //
+    //  `transportRamp` is 0 when the machine is at rest and 1 when it is running
+    //  at speed. STOP drives it to 0, PLAY holds it at 1, and START drives it
+    //  toward 1 from wherever it was, so hitting START from STOP is a genuine
+    //  spin-up and hitting it from PLAY is a brief re-lock rather than a jump.
+    //
+    //  It scales the whole wet path and the transport modulation together, which
+    //  is what makes STOP silent and START a pitch ramp instead of a gate.
+    // -----------------------------------------------------------------------
+    float transportRamp = 1.0f;
+    float transportRampCoefficient = 0.0f;
+    int lastTransportState = -1;
+
+    // Noise floor trim, smoothed like every other control-derived gain so moving
+    // the NOISE knob cannot step the hiss level.
+    SampleSmoother noiseTrimSmoothed { sampleClock, false, false, 1.0f };
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessor)

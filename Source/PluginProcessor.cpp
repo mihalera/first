@@ -344,6 +344,11 @@ FirstAudioProcessor::FirstAudioProcessor()
     // scaled correctly but multiplied by zero forever, so no subharmonic ever left it
     // no matter where the control was set (the "SUBFUND does nothing" report).
     subFundamentalParam = parameters.getRawParameterValue ("subfund");
+    delayTimeParam = parameters.getRawParameterValue ("delay_time");
+    delayFeedbackParam = parameters.getRawParameterValue ("delay_feedback");
+    stOffsetParam = parameters.getRawParameterValue ("st_offset");
+    noiseParam = parameters.getRawParameterValue ("noise");
+    transportParam = parameters.getRawParameterValue ("transport");
 
     // Four fixed oversampling engines (off / 2x / 4x / 8x). Each owns its own filter
     // state, so switching between them is glitch-free even mid-render, and the
@@ -860,6 +865,78 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "character", 1 }, "Tone", percentageRange (0.50f), 0.50f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
 
+    // -------------------------------------------------------------------------
+    //  Tape delay.
+    //
+    //  A second playback head spaced away from the record head, which is what a
+    //  spare head on a real deck IS: the tape takes time to travel between them,
+    //  so the same signal comes back a fixed interval later. The interval is set
+    //  by the gap and the speed, which is why the control is in milliseconds.
+    //
+    //  The range is short on purpose. This is not a dub delay: at 15 ips a real
+    //  head spacing gives tens of milliseconds, and the point is the slap and the
+    //  comb colour a second head adds to a tape sound, not an echo unit. Default
+    //  0 - a fresh instance has no second head engaged.
+    // -------------------------------------------------------------------------
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "delay_time", 1 }, "Delay",
+                                                            juce::NormalisableRange<float> (0.0f, 250.0f, 0.1f),
+                                                            0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("ms")));
+    // How much of the delayed signal is returned. 0 leaves the delay inaudible
+    // even with a time set, so the two controls cannot fight: TIME says where the
+    // head is, LEVEL says how loud its output is.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "delay_feedback", 1 }, "Delay Level",
+                                                            percentageRange (0.40f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+    // -------------------------------------------------------------------------
+    //  Stereo tape offset (ST OFFSET).
+    //
+    //  On a real stereo deck the two tracks are recorded by separate head gaps a
+    //  fraction of a millimetre apart, and the tape skews slightly across them.
+    //  The result is that the two channels are not perfectly time-aligned: one
+    //  lags the other by a few tens of microseconds. It is a small effect and it
+    //  is a large part of why a tape bounce sounds wide rather than merely
+    //  equalised.
+    //
+    //  The control sets that inter-channel delay directly in microseconds,
+    //  positive meaning the right channel lags. It is kept well under a
+    //  millisecond so it reads as width and never as an echo or a phase fault.
+    // -------------------------------------------------------------------------
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "st_offset", 1 }, "ST Offset",
+                                                            juce::NormalisableRange<float> (-500.0f, 500.0f, 1.0f),
+                                                            0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("us")));
+
+    // -------------------------------------------------------------------------
+    //  Noise floor level.
+    //
+    //  TAPE TYPE sets the machine's own hiss floor as part of its character and
+    //  that is untouched. This is a trim ON TOP of it, so the floor can be lifted
+    //  for effect (a deliberately dirty bounce) or pulled to a clinical black
+    //  without changing which stock is loaded. 50 percent is exactly the
+    //  formula's own floor - the neutral position, not a change.
+    // -------------------------------------------------------------------------
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "noise", 1 }, "Noise",
+                                                            percentageRange (0.50f), 0.50f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    //  Transport state: STOP / PLAY / START.
+    //
+    //  Three states rather than a play/stop pair, because a tape machine has three
+    //  and the middle one is not "stopped":
+    //
+    //    STOP  - the capstan is at rest. The tape is not moving, so there is no
+    //            hiss, no modulation and no delay tail: the machine is silent.
+    //    PLAY  - normal running, which is what every earlier build did.
+    //    START - the moment of engagement: the capstan comes up to speed, so the
+    //            transport runs flat, the modulation deepens and the pitch rides
+    //            up into tune over about a second. This is the sound a tape machine
+    //            makes when you hit play on a take.
+    // -------------------------------------------------------------------------
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "transport", 1 }, "Transport",
+                                                            juce::StringArray { "Stop", "Play", "Start" },
+                                                            1));
+
     return layout;
 }
 
@@ -1024,6 +1101,25 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // change, exactly like the analogue coupling capacitors do on power-up.
     dcBlockXState.fill (0.0f);
     dcBlockYState.fill (0.0f);
+
+    // Playback head delay line, sized once for the longest delay the control can
+    // ask for at the highest rate the engine can run at: 250 ms at 8x oversampling
+    // of 192 kHz. Allocating here and never resizing is what keeps the audio thread
+    // free of allocation - DELAY only moves a read offset inside this buffer.
+    const double maxEngineRate = juce::jmax (44100.0, sampleRateToUse) * 8.0;
+    delayBufferLength = juce::jmax (4, static_cast<int> (std::ceil (0.25 * maxEngineRate)) + 4);
+    delayBuffer.setSize (juce::jmax (1, juce::jmin (2, getTotalNumOutputChannels())),
+                         delayBufferLength, false, true, true);
+    delayBuffer.clear();
+    delayWritePosition = 0;
+
+    // The offset window is a fixed short array - hundreds of microseconds is far
+    // more than the tens the control asks for - so it costs no allocation.
+    stOffsetBuffer.fill (0.0f);
+    stOffsetWritePosition = 0;
+
+    transportRamp = 1.0f;
+    delayDampCoefficient = juce::jlimit (0.02f, 0.9f, toneLpAc + 0.08f);
 
     // Compressor-coupled saturation state restarts neutral, so the first block
     // after a rate switch is not coloured by a stale squeeze from the old rate.
@@ -1548,12 +1644,48 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             hysteresis += 0.08f;
             break;
         case 7: // RTM SM911 - broadcast reference: balanced, smooth, low noise
-        default:
             tapeCurve += 0.05f;
             tapeAsymmetry += 0.02f;
             tapeHiss -= 0.01f;
             headDampingHz += 3500.0f;
             hysteresis += 0.03f;
+            break;
+        case 8: // SM 468 - high-output low-noise studio stock. A firm bend with a
+                // notably quiet floor and an open head, so it reads as clean density
+                // rather than as colour.
+            tapeCurve += 0.09f;
+            tapeAsymmetry += 0.03f;
+            tapeHiss -= 0.055f;
+            headDampingHz += 7000.0f;
+            hysteresis += 0.04f;
+            break;
+        case 9: // 888 - the hot, thick vintage stock. Strong bias asymmetry and the
+                // thickest magnetic memory here, so it bends early and blooms hard:
+                // the formula to reach for when the saturation IS the effect.
+            tapeCurve += 0.19f;
+            tapeAsymmetry += 0.10f;
+            tapeHiss += 0.05f;
+            headDampingHz -= 1500.0f;
+            hysteresis += 0.14f;
+            break;
+        case 10: // 815 - dark, dense and quiet at the top. A soft head and a heavy
+                 // low-mid bias make it the warmest of the new stocks without the
+                 // extra hiss 888 brings: it thickens rather than drives.
+            tapeCurve += 0.13f;
+            tapeAsymmetry += 0.08f;
+            tapeHiss -= 0.02f;
+            headDampingHz -= 4500.0f;
+            hysteresis += 0.12f;
+            break;
+        case 11: // 811 - the clean, open, low-noise mastering stock. The gentlest bend
+                 // of the set with the most open head, so it stays transparent under
+                 // level and keeps the top octave: a bus stock, not a colour.
+        default:
+            tapeCurve -= 0.02f;
+            tapeAsymmetry += 0.01f;
+            tapeHiss -= 0.05f;
+            headDampingHz += 9000.0f;
+            hysteresis -= 0.03f;
             break;
     }
 
@@ -1754,6 +1886,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // for the "noise while paused with Wow and Flutter at zero" report: the floor
     // was the only ungated always-on source left in the engine.
     const float gatedHissGain = hissGain * transportActivityGate;
+
+    // The NOISE control trims the floor on top of the formula's own figure: 0.5 is
+    // unity, so the knob starts neutral and the stock's own character is unchanged
+    // unless the user asks for a different floor.
+    noiseTrimSmoothed.setTargetValue (juce::jlimit (0.0f, 2.0f, noiseAmount * 2.0f));
 
     // Every control-derived coefficient the block needs is in scope by now, so the
     // ramps are fed once here and read per sample with getCurrentValue(): no
@@ -2014,6 +2151,27 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         const auto dryGain = std::cos (mixAngle);
         const auto wetGain = std::sin (mixAngle);
 
+        // ------------------------------------------------------------------
+        //  Transport ramp.
+        //
+        //  Advanced once per FRAME and used for the whole frame, so both channels
+        //  ride the same capstan - advancing it per channel would put the sides a
+        //  sample apart, which is a channel skew, not a transport.
+        //
+        //  STOP drives it to 0, PLAY holds it at 1, and START lets it climb back
+        //  from wherever it was, which is what makes a fresh START from rest a
+        //  spin-up and a START from PLAY a brief re-lock.
+        // ------------------------------------------------------------------
+        const float transportTarget = (transportState == 0) ? 0.0f : 1.0f;
+        transportRamp += (transportTarget - transportRamp) * transportRampCoefficient;
+        if (transportTarget <= 0.0f && transportRamp < 1.0e-5f)
+            transportRamp = 0.0f;
+
+        // The spin-up pitch error: while the capstan is below speed the transport
+        // runs flat, and that is what makes the ramp read as a machine engaging
+        // rather than as a fade-in.
+        const float speedError = 1.0f - (1.0f - transportRamp) * 0.7f;
+
         std::array<float, 2> tapeOutput {};
 
         // The SUBFUND undertones, one per channel. They are generated from the
@@ -2118,9 +2276,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // is gated by the transport's actual activity: with Wow AND Flutter both at
             // zero the machine is mathematically still, so no modulation of any kind
             // reaches the signal.
-            const float wowMod = 1.0f + wowLfo * wowDepth;
-            const float flutterMod = 1.0f + flutterLfo * flutterDepth
-                                       * flutterScaleSmoothed.getCurrentValue();
+            const float wowMod = (1.0f + wowLfo * wowDepth) * speedError;
+            const float flutterMod = (1.0f + flutterLfo * flutterDepth
+                                        * flutterScaleSmoothed.getCurrentValue()) * speedError;
             const float grainMod = 1.0f + tapeHiss * 0.10f * transportActivityGate * grainLfo;
 
             // Record head: pre-emphasis, tape bias offset and drive. With DRIVE at zero
@@ -2257,7 +2415,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // hiss is simply a constant floor; tracking the programme makes it breathe
             // with the music, which is the one thing a noise floor must not do.
             const float bandLimitCompensation = 1.0f / std::sqrt (juce::jmax (0.05f, hissBandLimit));
-            const float noiseFloor = hissLowPass * bandLimitCompensation;
+            const float noiseFloor = hissLowPass * bandLimitCompensation
+                                   * noiseTrimSmoothed.getCurrentValue();
 
             const float motioned = (compressedBias + noiseFloor) * wowMod * flutterMod * grainMod;
 
@@ -2299,14 +2458,115 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             dcX = deEmphasised;
             dcY = dcBlocked;
 
+            // -------------------------------------------------------------------
+            //  Playback head delay.
+            //
+            //  The delayed signal is taken from the DC-blocked wet path, which is
+            //  the signal as it actually leaves the playback head - so the repeats
+            //  inherit the tape's own bandwidth and saturation rather than being a
+            //  clean digital echo of the input. That is the whole difference between
+            //  a second tape head and a delay unit.
+            //
+            //  The read offset is the smoothed delay in samples, read with linear
+            //  interpolation: the smoothing means the offset is almost never whole,
+            //  and a delay that snapped to whole samples would zipper as the knob
+            //  moved.
+            // -------------------------------------------------------------------
+            float delayed = 0.0f;
+            if (delayBufferLength > 0)
+            {
+                const float delaySamples = juce::jlimit (
+                    0.0f, static_cast<float> (delayBufferLength - 1),
+                    delaySamplesSmoothed.getCurrentValue());
+
+                float readPosition = static_cast<float> (delayWritePosition) - delaySamples;
+                if (readPosition < 0.0f)
+                    readPosition += static_cast<float> (delayBufferLength);
+
+                const int readIndex = static_cast<int> (readPosition);
+                const float fraction = readPosition - static_cast<float> (readIndex);
+                const int nextIndex = (readIndex + 1) % delayBufferLength;
+
+                const auto* delayRead = delayBuffer.getReadPointer (channel);
+                delayed = delayRead[readIndex]
+                        + (delayRead[nextIndex] - delayRead[readIndex]) * fraction;
+            }
+
+            // The repeat path is damped, so each pass round the tape loses top end
+            // the way a real second head does. Without it the repeats stack into a
+            // bright metallic ring rather than a tape echo.
+            auto& damp = delayDampState[static_cast<std::size_t> (channel)];
+            damp += (delayed - damp) * delayDampCoefficient;
+            const float delayTap = delayed * delayFeedbackSmoothed.getCurrentValue();
+
+            // What is written back into the line is the wet signal PLUS the damped
+            // repeat, which is what makes this a head on the machine rather than a
+            // parallel effect: the echo is recorded onto the tape, so it saturates
+            // on the way round.
+            if (delayBufferLength > 0)
+            {
+                auto* delayWrite = delayBuffer.getWritePointer (channel);
+                delayWrite[delayWritePosition] = dcBlocked + damp * delayFeedbackSmoothed.getCurrentValue();
+            }
+
+            const float withDelay = dcBlocked + delayTap;
+
+            // -------------------------------------------------------------------
+            //  Stereo tape offset.
+            //
+            //  A fractional-sample delay on ONE channel, set by ST OFFSET. It is
+            //  deliberately tiny - a few tens of microseconds - and it is what makes
+            //  a tape bounce sit wide instead of merely being equalised wide.
+            //
+            //  A linear-interpolating buffer rather than an all-pass: an all-pass
+            //  gives the same group delay for less memory but colours the phase
+            //  differently across the band, and the point here is that the two
+            //  channels differ by TIME, not by filter shape.
+            // -------------------------------------------------------------------
+            float aligned = withDelay;
+            const bool offsetThisChannel = (channel == 1) == offsetRightChannel;
+            if (offsetThisChannel && activeChannels > 1)
+            {
+                const float offsetSamples = juce::jlimit (
+                    0.0f, static_cast<float> (stOffsetBufferLength - 2),
+                    stOffsetSamplesSmoothed.getCurrentValue());
+
+                float readPosition = static_cast<float> (stOffsetWritePosition) - offsetSamples;
+                while (readPosition < 0.0f)
+                    readPosition += static_cast<float> (stOffsetBufferLength);
+
+                const int readIndex = static_cast<int> (readPosition);
+                const float fraction = readPosition - static_cast<float> (readIndex);
+                const int nextIndex = (readIndex + 1) % stOffsetBufferLength;
+
+                aligned = stOffsetBuffer[static_cast<std::size_t> (readIndex)]
+                        + (stOffsetBuffer[static_cast<std::size_t> (nextIndex)]
+                           - stOffsetBuffer[static_cast<std::size_t> (readIndex)]) * fraction;
+            }
+
+            // The offset buffer is written for the channel being delayed AND for the
+            // other one, so whichever side the control points at has a current sample
+            // to read. Both writes happen every frame, so the buffer never holds a
+            // stale side.
+            if (channel == 1)
+                stOffsetBuffer[static_cast<std::size_t> (stOffsetWritePosition)] = withDelay;
+
             // Raised-cosine crossfade between the dry input and the fully processed
             // tape signal, driven by the smoothed MIX. 0 % is a transparent dry signal
             // and 100 % is all tape, both at unity, with the level held across the
             // middle of the travel.
-            const float wetMix = dcBlocked * wetGain;
+            const float wetMix = aligned * wetGain * transportRamp;
             const float dryMix = x * dryGain;
             tapeOutput[static_cast<std::size_t> (channel)] = dryMix + wetMix;
         }
+
+        // One advance of the delay line's write head per FRAME, not per channel:
+        // advancing it inside the channel loop would move the line twice per stereo
+        // frame, halving every delay time and putting the two channels a sample
+        // apart. The ST OFFSET buffer advances with it so the two stay aligned.
+        if (delayBufferLength > 0)
+            delayWritePosition = (delayWritePosition + 1) % delayBufferLength;
+        stOffsetWritePosition = (stOffsetWritePosition + 1) % stOffsetBufferLength;
 
         // The reference is a per-channel average now, the same scale the
         // post-compressor power below is measured on.

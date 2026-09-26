@@ -986,15 +986,21 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     const juce::StringArray controlIds { "input", "drive", "bias",
                                          "tone", "character", "wow",
                                          "flutter", "mix", "output",
-                                         "stereo_width", "subfund" };
+                                         "stereo_width", "subfund",
+                                         "delay_time", "delay_feedback",
+                                         "st_offset", "noise" };
     const juce::StringArray controlNames { "INPUT", "DRIVE", "BIAS",
                                            "BRIGHT", "TONE", "WOW",
                                            "FLUTTER", "MIX", "OUTPUT",
-                                           "WIDTH", "SUBFUND" };
+                                           "WIDTH", "SUBFUND",
+                                           "DELAY", "DLY LVL",
+                                           "ST OFFSET", "NOISE" };
     const std::array<double, controlCount> defaultValues { 0.0, 0.30, 0.42,
                                                            0.50, 0.5, 0.14,
                                                            0.18, 0.5, 0.0,
-                                                           0.5, 0.0 };
+                                                           0.5, 0.0,
+                                                           0.0, 0.0,
+                                                           0.0, 0.5 };
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -1082,21 +1088,70 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "saturation, so they stay clean partials instead of feeding it and coming "
                        "back out as a harmonic series. Default 0 percent - "
                        "it is a colour, not a correction.") + hints;
+            if (id == "delay_time")
+                return juce::String ("DELAY - the spacing of a second playback head, in "
+                       "milliseconds. The tape takes time to travel between the record and "
+                       "playback gaps, so the signal returns as a slap rather than a dub "
+                       "echo: real head spacings give tens of milliseconds, and 250 ms is "
+                       "already the far end of the travel. The repeat is taken AFTER the "
+                       "tape, so it inherits the machine's own bandwidth and saturation. "
+                       "Default 0 ms - no second head engaged.") + hints;
+            if (id == "delay_feedback")
+                return juce::String ("DLY LVL - how loud the second head's output is. At 0 "
+                       "percent the delay is inaudible even with a time set, so TIME says "
+                       "where the head is and DLY LVL says how much of it you hear. Each "
+                       "pass round the tape loses top end, the way a real repeat does. "
+                       "Default 0 percent.") + hints;
+            if (id == "st_offset")
+                return juce::String ("ST OFFSET - the time offset between the two channels, "
+                       "in microseconds. On a real stereo deck the two tracks are recorded "
+                       "by separate head gaps a fraction of a millimetre apart and the tape "
+                       "skews slightly across them, so the channels are never perfectly "
+                       "aligned. Positive lags the right channel, negative the left. This "
+                       "is a large part of why a tape bounce sounds wide rather than "
+                       "merely equalised wide. Default 0 us.") + hints;
+            if (id == "noise")
+                return juce::String ("NOISE - the tape hiss floor, on top of whatever the "
+                       "loaded tape formula sets. The formula's own character is "
+                       "untouched: this trims it, so the floor can be lifted for a "
+                       "deliberately dirty bounce or pulled down to a clinical black "
+                       "without changing stock. It is gated by the transport, so a "
+                       "machine at rest is silent. Default 50 percent - the neutral "
+                       "position, not a change.") + hints;
             return hints;
         };
         slider.setTooltip (parameterTooltip (controlIds[static_cast<int> (i)]));
 
         // Index 8 is OUTPUT, not 7: the control order is INPUT, DRIVE, BIAS, BRIGHT,
-        // TONE, WOW, FLUTTER, MIX, OUTPUT, WIDTH. The old check (i == 7) handed MIX
-        // the -32..+32 dB range and suffix - which is why the Mix knob displayed dB -
-        // and left OUTPUT stuck in the 0..1 percentage branch, where its slider range
-        // clipped the real +/-32 dB parameter down to 0..1.
+        // TONE, WOW, FLUTTER, MIX, OUTPUT, WIDTH, SUBFUND, DELAY, DLY LVL, ST OFFSET,
+        // NOISE. The old check (i == 7) handed MIX the -32..+32 dB range and suffix -
+        // which is why the Mix knob displayed dB - and left OUTPUT stuck in the
+        // 0..1 percentage branch, where its slider range clipped the real +/-32 dB
+        // parameter down to 0..1.
+        //
+        // DELAY (11) and ST OFFSET (13) are the other two exceptions: they are real
+        // units (milliseconds and microseconds), not percentages, so a percentage
+        // range would make the knob unable to reach either end of its own parameter.
         if (i == 0 || i == 8)
         {
             // Input and Output are both calibrated decibel trims over the same range.
             slider.setRange (minStageDb, maxStageDb, 0.1);
             slider.setNumDecimalPlacesToDisplay (1);
             slider.setTextValueSuffix (" dB");
+        }
+        else if (i == 11)
+        {
+            // DELAY: the head spacing, in milliseconds.
+            slider.setRange (0.0, 250.0, 0.1);
+            slider.setNumDecimalPlacesToDisplay (1);
+            slider.setTextValueSuffix (" ms");
+        }
+        else if (i == 13)
+        {
+            // ST OFFSET: the inter-channel time offset, in microseconds.
+            slider.setRange (-500.0, 500.0, 1.0);
+            slider.setNumDecimalPlacesToDisplay (0);
+            slider.setTextValueSuffix (" us");
         }
         else
         {
@@ -1123,15 +1178,19 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     }
 
     tapeTypeBox.addItemList (juce::StringArray { "J37", "Ampex 456", "Studer A800", "Chrome",
-                                                 "Type 111", "GP9", "Quantegy 499", "RTM SM911" }, 1);
+                                                 "Type 111", "GP9", "Quantegy 499", "RTM SM911",
+                                                 "SM 468", "888", "815", "811" }, 1);
     speedBox.addItemList (juce::StringArray { "7.5 ips", "15 ips", "30 ips" }, 1);
     tapeTypeBox.setTextWhenNothingSelected ("Select tape");
     speedBox.setTextWhenNothingSelected ("Select speed");
     tapeTypeBox.setTooltip ("Tape formula. Each stock bends the sound differently: "
                             "J37 is soft and classic, Ampex and Studer are hotter, "
                             "Chrome and Type 111 are cleaner, GP9 and 499 are dense "
-                            "modern formulas, SM911 is the broadcast reference. The "
-                            "formula also shapes the glue compressors' timing.");
+                            "modern formulas, SM911 is the broadcast reference, "
+                            "SM 468 is high-output low-noise, 888 is the hot thick "
+                            "vintage stock, 815 is dark and dense, 811 is the clean "
+                            "open mastering stock. The formula also shapes the glue "
+                            "compressors' timing.");
     speedBox.setTooltip ("Transport speed. 7.5 ips is dark and loose, 15 ips is the "
                          "classic studio speed, 30 ips keeps the most top end and "
                          "the tightest glue. Speed also shapes the glue timing.");
@@ -1210,6 +1269,31 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     instrumentAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "instrument", instrumentBox);
     addAndMakeVisible (instrumentBox);
+
+    // ---------------------------------------------------------------
+    //  Transport: STOP / PLAY / START.
+    //
+    //  A three-state control rather than a play/stop pair, because a tape machine
+    //  has three states and the middle one is not "stopped". STOP lets the capstan
+    //  coast down, so the hiss, the modulation and the delay tail all go with it
+    //  and the machine reaches true silence. START is the moment of engagement:
+    //  the transport runs flat and the pitch rides up into tune over about a
+    //  second, which is the sound a deck makes when you hit play on a take.
+    // ---------------------------------------------------------------
+    styleLabel (transportLabel, "TRANSPORT", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    addAndMakeVisible (transportLabel);
+    transportBox.addItemList (juce::StringArray { "Stop", "Play", "Start" }, 1);
+    transportBox.setTooltip ("Transport state. STOP lets the machine coast to rest: "
+                             "no hiss, no wow, no delay tail - true silence, not a mute. "
+                             "PLAY is normal running. START spins the capstan up from "
+                             "rest, so the transport runs flat and the pitch climbs into "
+                             "tune over about a second, the way a deck sounds when you "
+                             "hit play on a take.");
+    transportBox.setLookAndFeel (&customLookAndFeel);
+    transportAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "transport", transportBox);
+    addAndMakeVisible (transportBox);
 
     // GL switch: the context is a best-effort accelerator (see the attach note
     // above), and this button hands the choice to the user - drivers, remote
@@ -1452,6 +1536,7 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     autoGainButton.setLookAndFeel (nullptr);
     oversamplingBox.setLookAndFeel (nullptr);
     instrumentBox.setLookAndFeel (nullptr);
+    transportBox.setLookAndFeel (nullptr);
     glButton.setLookAndFeel (nullptr);
     savePresetButton.setLookAndFeel (nullptr);
     deletePresetButton.setLookAndFeel (nullptr);
@@ -1659,6 +1744,7 @@ void FirstAudioProcessorEditor::applyTheme()
 
     styleCombo (oversamplingBox);
     styleCombo (instrumentBox);
+    styleCombo (transportBox);
     glButton.setColour (juce::TextButton::textColourOffId, palette.text);
     glButton.setColour (juce::TextButton::textColourOnId, palette.text);
     styleWorkflowButton (copyAButton, audioProcessor.getActiveCompareSlot() == 0);
@@ -1673,6 +1759,7 @@ void FirstAudioProcessorEditor::applyTheme()
     presetHeadingLabel.setColour (juce::Label::textColourId, palette.secondary);
     oversamplingLabel.setColour (juce::Label::textColourId, palette.secondary);
     instrumentLabel.setColour (juce::Label::textColourId, palette.secondary);
+    transportLabel.setColour (juce::Label::textColourId, palette.secondary);
     compareBadgeLabel.setColour (juce::Label::textColourId,
                                  audioProcessor.isCompareDirty() ? palette.accent : palette.secondary);
 
@@ -2104,7 +2191,17 @@ void FirstAudioProcessorEditor::resized()
     oversamplingBox.setBounds (autoGainButton.getRight() + 58, layout.deck.getY() + 74, 72, 32);
     instrumentLabel.setBounds (oversamplingBox.getRight() + 16, layout.deck.getY() + 83, 68, 16);
     instrumentBox.setBounds (oversamplingBox.getRight() + 16, layout.deck.getY() + 74, 112, 32);
-    glButton.setBounds (instrumentBox.getRight() + 14, layout.deck.getY() + 74, 64, 32);
+
+    // TRANSPORT sits after INSTRUMENT on the switches row. The harmonics readout is
+    // right-aligned on the same row, so the chain is width-accounted to stop short of
+    // it even at the 780 px minimum panel: 18 + 92 + 6 + 100 + 16 + 40 + 58 + 72 +
+    // 16 + 68 + 112 + 14 + 62 + 10 + 78 = 762 of the deck's 752 px is over budget, so
+    // GL moves to the row's right end beside the harmonics readout and TRANSPORT
+    // takes the slot GL vacated.
+    transportLabel.setBounds (instrumentBox.getRight() + 14, layout.deck.getY() + 83, 62, 16);
+    transportBox.setBounds (instrumentBox.getRight() + 14, layout.deck.getY() + 74, 78, 32);
+    glButton.setBounds (layout.deck.getRight() - harmonicsWidth - 14 - 72,
+                        layout.deck.getY() + 74, 64, 32);
 
     const auto harmonicsWidth = 130;
     harmonicsLabel.setBounds (layout.deck.getRight() - harmonicsWidth - 14,
