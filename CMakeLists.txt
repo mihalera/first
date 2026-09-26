@@ -94,12 +94,18 @@ CPMAddPackage(
         "CHOWDSP_ENABLE_EXAMPLES OFF")
 
 # melatonin_inspector: a JUCE module, fetched with a pinned commit hash (the
-# repository publishes no version tags). Its CMake creates the
-# melatonin_inspector target the link line below expects.
+# repository publishes no version tags). Its CMake calls juce_add_module on its
+# own directory, and JUCE derives the module name - and therefore the header it
+# must find, melatonin_inspector.h - from the LAST PATH COMPONENT of that
+# directory. CPM's default download folder is ".../melatonin_inspector-src",
+# which would make JUCE look for "melatonin_inspector-src.h" and abort every
+# configure; SOURCE_DIR pins the checkout to a properly named folder, exactly
+# as the project's own README prescribes.
 CPMAddPackage(
     NAME melatonin_inspector
     GITHUB_REPOSITORY sudara/melatonin_inspector
     GIT_TAG 9c483f865854d83fe9873e1c20e3fd772f695f80
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/melatonin_inspector"
     EXCLUDE_FROM_ALL YES
     SYSTEM YES)
 
