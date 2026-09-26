@@ -838,14 +838,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             juce::AudioParameterFloatAttributes().withLabel ("dB")));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "bypass", 1 },
                                                             "Bypass", false));
-    // DELTA listen: when on, the output becomes wet minus dry - only what the
-    // machine itself adds (harmonics, glue, transport wander) is heard. Both
-    // legs of the subtraction live on the SAME timeline (the dry signal is the
-    // host buffer being processed in place, the wet signal is finished further
-    // up in this very loop), so the difference is phase-perfect at every
-    // oversampling factor with no compensation delay of its own. The blend
-    // below ignores the bypass crossfade while the mode is on: delta of a
-    // bypassed machine is exactly zero, which is its own sanity check.
+    // DELTA listen: when on, the output becomes wet minus the machine's own dry
+    // signal - only what the machine itself adds (harmonics, glue, transport
+    // wander) is heard. The reference is the input after the INPUT trim and the
+    // input glue compressor, scaled by the same stage gain the wet leg gets, so
+    // every gain in the machine cancels in the subtraction: MIX 0 monitors as
+    // silence, which is its own sanity check. Both legs are formed on the SAME
+    // frame further up in this very loop, so the difference is phase-perfect at
+    // every oversampling factor with no compensation delay of its own. The
+    // mode is ramped, so pressing DELTA is a fade between two monitor positions
+    // rather than a step, and a bypassed machine fades the difference to silence
+    // over the BYPASS ramp instead of snapping back to the dry signal.
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "delta", 1 },
                                                             "Delta Listen", false));
     // POLARITY INVERT: a mastering staple. A full polarity flip on the output, so a
@@ -1219,6 +1222,10 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // Start from the state the parameter restores: a session saved with BYPASS on
     // must not spend its first 10 ms ramping from the dry position.
     bypassSmoothed.setCurrentAndTargetValue (bypassParam != nullptr && bypassParam->load() >= 0.5f ? 0.0f : 1.0f);
+    deltaListenSmoothed.reset (sampleRateToUse, smoothingSeconds);
+    // Same reasoning as BYPASS directly above: start from the state the parameter
+    // restores rather than ramping into it.
+    deltaListenSmoothed.setCurrentAndTargetValue (deltaParam != nullptr && deltaParam->load() >= 0.5f ? 1.0f : 0.0f);
 
     inputPeakLevel.store (0.0f, std::memory_order_relaxed);
     inputRmsLevel.store (0.0f, std::memory_order_relaxed);
@@ -1633,7 +1640,30 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         return parameter != nullptr && parameter->load() >= 0.5f;
     }();
 
-    if (bypassRequested && ! bypassSmoothed.isSmoothing() && bypassSmoothed.getCurrentValue() <= 0.0f)
+    // DELTA listen is read HERE, ahead of the early return below, because the two
+    // interact. Returning the untouched host buffer out of a fully bypassed engine
+    // snapped the monitor from "only what the machine adds" back to the full dry
+    // signal in a single block: with the blend below ignoring the bypass crossfade,
+    // the output was the difference on the last block through the engine and the
+    // raw input on the next one. A monitor that switches position with a step in the
+    // waveform clicks exactly like any other step.
+    //
+    // `deltaEngaged` is the OR of the parameter, the ramp and the current value, so
+    // the return is held off until the monitor has actually finished travelling.
+    // While DELTA is still in the block the engine keeps running and the crossfade
+    // down to silence further down does the rest - a bypassed machine makes no
+    // difference, which is what the delta monitor has to show.
+    const auto deltaListen = [&]
+    {
+        auto* parameter = deltaParam;
+        return parameter != nullptr && parameter->load() >= 0.5f;
+    }();
+    const bool deltaEngaged = deltaListen
+                           || deltaListenSmoothed.isSmoothing()
+                           || deltaListenSmoothed.getCurrentValue() > 0.0f;
+
+    if (bypassRequested && ! bypassSmoothed.isSmoothing() && bypassSmoothed.getCurrentValue() <= 0.0f
+        && ! deltaEngaged)
     {
         bypassActive.store (true, std::memory_order_relaxed);
 
@@ -1712,13 +1742,13 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // compensator (see the final gain compensation section below).
     const float polaritySign = (polarityParam != nullptr && polarityParam->load() >= 0.5f) ? -1.0f : 1.0f;
     const bool autoGainEnabled = autoGainParam == nullptr || autoGainParam->load() >= 0.5f;
-    const bool deltaListen = deltaParam != nullptr && deltaParam->load() >= 0.5f;
 
     inputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (inputDb));
     outputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (outputDb));
     mixSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, mix));
     widthSmoothed.setTargetValue (stereoWidth);
     bypassSmoothed.setTargetValue (bypassRequested ? 0.0f : 1.0f);
+    deltaListenSmoothed.setTargetValue (deltaListen ? 1.0f : 0.0f);
 
     // Delay, stereo offset, noise trim and transport state. All read once per block
     // and fed to smoothers, so none of them can step the signal.
@@ -2398,6 +2428,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         const float outputGain = outputGainSmoothed.getNextValue();
         const float currentWidth = widthSmoothed.getNextValue();
         const float bypassMix = bypassSmoothed.getNextValue();
+        const float deltaMix = deltaListenSmoothed.getNextValue();
 
         // Per-sample reference power for the final compensation, reset each iteration.
         referenceBlockPower = 0.0f;
@@ -2449,6 +2480,13 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         const float speedError = 1.0f - (1.0f - transportRamp) * 0.7f;
 
         std::array<float, 2> tapeOutput {};
+
+        // The machine's DRY leg, for DELTA listen: the signal after the input trim
+        // and the input glue compressor and nothing else - the same `x` the raised-
+        // cosine MIX crossfade feeds its dry side further down. Held per channel so
+        // it can be scaled by stageGain once that gain is known, which it is not at
+        // this point in the frame.
+        std::array<float, 2> machineDryInput {};
 
         // The SUBFUND undertones, one per channel. They are generated from the
         // shaper's output down in the tape loop but deliberately NOT summed into
@@ -2530,6 +2568,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // channel could hide a genuine level loss and switch the compensation off.
             referenceBlockPower += inputTrimmed * inputTrimmed;
             const float x = inputTrimmed * inputCompressionGain;
+            machineDryInput[static_cast<std::size_t> (channel)] = x;
 
             const float wowLfo = std::sin (wowPhase);
             const float flutterLfo = std::sin (flutterPhase);
@@ -3025,9 +3064,22 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         }
 
         std::array<float, 2> outputSignal {};
+        std::array<float, 2> machineDry {};
         for (int channel = 0; channel < activeChannels; ++channel)
-            outputSignal[static_cast<std::size_t> (channel)] =
-                tapeOutput[static_cast<std::size_t> (channel)] * stageGain * compensationGain;
+        {
+            const auto index = static_cast<std::size_t> (channel);
+            outputSignal[index] = tapeOutput[index] * stageGain * compensationGain;
+
+            // The same signal at MIX 0. Because it carries the identical
+            // stageGain * compensationGain, everything that is gain rather than
+            // character cancels in the subtraction below and DELTA shows only what
+            // the machine ADDS. Subtracting the raw host sample instead left all of
+            // it in the difference: the input trim, both compressors, both makeups,
+            // the compensator and the output trim all read as "character", so a
+            // perfectly dry MIX 0 still monitored as a loud level change rather than
+            // silence.
+            machineDry[index] = machineDryInput[index] * stageGain * compensationGain;
+        }
 
         // -------------------------------------------------------------------
         //  SUBFUND joins here: the one point in the chain where the undertones
@@ -3113,13 +3165,33 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
         for (int channel = 0; channel < activeChannels; ++channel)
         {
-            auto& destination = channelData[static_cast<std::size_t> (channel)][sample];
-            const auto difference = outputSignal[static_cast<std::size_t> (channel)] - destination;
-            // DELTA listen replaces the bypass crossfade with the difference
-            // itself; the meters keep reading the finished output path, so in
-            // this mode they show the level of what the machine adds.
-            const auto blended = deltaListen ? difference
-                                             : destination + difference * bypassMix;
+            const auto index = static_cast<std::size_t> (channel);
+            auto& destination = channelData[index][sample];
+
+            // DELTA listen: the finished signal minus the machine's own dry
+            // reference. Both legs are computed on this frame, in this loop, from
+            // the same input sample, so the subtraction is phase-perfect at every
+            // oversampling factor with no compensation delay of its own. The
+            // reference is the signal the machine WOULD have produced with the tape
+            // stage silent - same input trim, same input compressor, same static
+            // output gain - so what is left is character, not level.
+            const auto delta = outputSignal[index] - machineDry[index];
+
+            // Normal monitoring: the bypass crossfade, from the untouched host sample
+            // to the finished signal. DELTA applies the SAME crossfade to the
+            // difference rather than replacing it, so engaging BYPASS while DELTA
+            // listens ramps the difference to silence instead of snapping to the dry
+            // signal - and the early return above is held off until that ramp has
+            // finished, so there is no step at the end of it either.
+            const auto monitored = destination + (outputSignal[index] - destination) * bypassMix;
+            const auto deltaMonitored = delta * bypassMix;
+
+            // The two monitor positions themselves are crossfaded by the smoothed
+            // DELTA ramp, so switching the button in or out is a 20 ms fade between
+            // two continuous signals rather than a step. The meters keep reading the
+            // finished output path below, so in delta mode they show the level of what
+            // the machine adds.
+            const auto blended = monitored + (deltaMonitored - monitored) * deltaMix;
 
             // Protection for the output, in two stages:
             //

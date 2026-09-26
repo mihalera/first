@@ -1811,6 +1811,13 @@ private:
     SampleSmoother mixSmoothed { sampleClock, false, false, 0.5f };
     SampleSmoother widthSmoothed { sampleClock };
     SampleSmoother bypassSmoothed { sampleClock };
+    // DELTA listen is a monitor position rather than a level control, but it is
+    // still a change of CONTENT, and a step change of content is a step in the
+    // waveform - a click. Its target is the parameter, exactly like BYPASS's, and
+    // its value is the crossfade between the two monitor positions further down.
+    // Read once per SAMPLE next to bypassMix, for the same reason: one advance
+    // per frame, shared by both channels.
+    SampleSmoother deltaListenSmoothed { sampleClock };
 
     std::atomic<float> inputPeakLevel { 0.0f };
     std::atomic<float> inputRmsLevel { 0.0f };
