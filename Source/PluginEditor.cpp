@@ -181,6 +181,20 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     const auto haloAlpha = 0.05f + activity * 0.20f * (0.6f + 0.4f * breath);
     if (haloAlpha > 0.01f)
     {
+#if J37_HAS_MELATONIN_BLUR
+        // melatonin_blur draws the halo as one real blurred shadow rather than a
+        // stack of stroked rings. The API renders a Path, and the shadow is cached
+        // against that path, so the glow costs one blur the first time the radius
+        // changes and is reused on every frame after that.
+        melatonin::DropShadow glow;
+        glow.setColor (palette.accent.withAlpha (haloAlpha));
+        glow.setRadius (6.0 + activity * 6.0 * breath);
+
+        juce::Path haloPath;
+        haloPath.addEllipse (centre.x - radius, centre.y - radius,
+                             radius * 2.0f, radius * 2.0f);
+        glow.render (g, haloPath);
+#else
         for (int ring = 3; ring >= 1; --ring)
         {
             const auto haloRadius = outerRadius + static_cast<float> (ring) * 5.0f
@@ -189,6 +203,7 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
             g.drawEllipse (centre.x - haloRadius, centre.y - haloRadius,
                            haloRadius * 2.0f, haloRadius * 2.0f, 1.6f);
         }
+#endif
     }
 
     g.setColour (palette.knobEdge.withAlpha (0.22f));
@@ -897,8 +912,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         label.setInterceptsMouseClicks (false, false);
     };
 
-    styleLabel (brandLabel, "ANALOG TAPE", 9.0f, paletteFor (false).accent, true, juce::Justification::left);
-    titleLabel.setText ("J37", juce::dontSendNotification);
+    styleLabel (brandLabel, "NONLIN ANALOG", 9.0f, paletteFor (false).accent, true, juce::Justification::left);
+    titleLabel.setText ("Saturator", juce::dontSendNotification);
 
     // Serif display face with a cross-platform fallback chain. "Georgia" only exists on
     // Windows, so naming it alone made the title fall back to an arbitrary face (and an
@@ -908,7 +923,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                                        30.0f, juce::Font::bold)));
     titleLabel.setJustificationType (juce::Justification::left);
     titleLabel.setInterceptsMouseClicks (false, false);
-    styleLabel (subtitleLabel, "TAPE MACHINE  /  SATURATION", 10.0f,
+    styleLabel (subtitleLabel, "NONLINEAR ANALOG MACHINE  /  SATURATION", 10.0f,
                 paletteFor (false).secondary, true, juce::Justification::left);
     styleLabel (statusLabel, "STEREO / REAL TIME", 9.0f,
                 paletteFor (false).status, true, juce::Justification::centred);
@@ -933,7 +948,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 true, juce::Justification::left);
     styleLabel (deckHintLabel, "Tape formula and speed.", 9.0f,
                 paletteFor (false).secondary, false, juce::Justification::centredLeft);
-    styleLabel (controlsHeadingLabel, "TAPE CHARACTER", 10.0f, paletteFor (false).accent,
+    styleLabel (controlsHeadingLabel, "ANALOG CHARACTER", 10.0f, paletteFor (false).accent,
                 true, juce::Justification::left);
     styleLabel (controlsHintLabel, "Shift = fine tune", 9.0f,
                 paletteFor (false).secondary, false, juce::Justification::right);

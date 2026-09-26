@@ -1,6 +1,6 @@
 /*
   ==============================================================================
-    J37 tape processor editor.
+    Nonlin Analog Saturator processor editor.
   ==============================================================================
 */
 
@@ -14,6 +14,30 @@
 
 #include <juce_box2d/juce_box2d.h>
 #include <juce_opengl/juce_opengl.h>
+
+// melatonin_blur (fetched by CPM in CMakeLists.txt). Fast shadow and gradient
+// blurring for JUCE Components. Available to the paint routines below, which
+// draw the panel's soft analog shading by hand today; the include is conditional
+// so a build without the module on its include path still compiles.
+#if __has_include (<melatonin_blur/melatonin_blur.h>)
+ #include <melatonin_blur/melatonin_blur.h>
+ #define J37_HAS_MELATONIN_BLUR 1
+#else
+ #define J37_HAS_MELATONIN_BLUR 0
+#endif
+
+// foleys_gui_magic (fetched by CPM in CMakeLists.txt). Daniel Walz's declarative
+// GUI framework: the editor's controls can be described in XML and edited live,
+// instead of every position being computed by hand in resized(). It is linked and
+// its header is available here so a MagicProcessor-style editor can be built on
+// top of it; the current editor is still the hand-written one, so this is the
+// seam rather than a replacement.
+#if __has_include (<foleys_gui_magic/foleys_gui_magic.h>)
+ #include <foleys_gui_magic/foleys_gui_magic.h>
+ #define J37_HAS_FOLEYS 1
+#else
+ #define J37_HAS_FOLEYS 0
+#endif
 
 class J37LookAndFeel final : public juce::LookAndFeel_V4
 {

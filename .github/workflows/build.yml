@@ -211,7 +211,7 @@ jobs:
       - name: Upload VST3 Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: J37-TapeSaturator-VST3-Windows
+          name: NonlinAnalogSaturator-VST3-Windows
           path: ${{ steps.vst3.outputs.bundle }}
           if-no-files-found: error
 
@@ -356,7 +356,7 @@ jobs:
       - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: J37-TapeSaturator-macOS
+          name: NonlinAnalogSaturator-macOS
           path: ${{ runner.temp }}/artifacts
           if-no-files-found: error
 
@@ -445,7 +445,7 @@ jobs:
       - name: Upload Linux VST3 Artifact
         uses: actions/upload-artifact@v4
         with:
-          name: J37-TapeSaturator-VST3-Linux
+          name: NonlinAnalogSaturator-VST3-Linux
           path: ${{ steps.vst3.outputs.bundle }}
           if-no-files-found: error
 

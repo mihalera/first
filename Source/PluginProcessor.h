@@ -15,11 +15,40 @@
 // conditional so the DSP regression harness - which cuts structs out of this
 // header verbatim and compiles them against a shim, without chowdsp on its
 // include path - is never asked for it.
+//
+// chowdsp_dsp_utils is pulled in alongside it. It is a full JUCE module rather
+// than a header, so it needs the plugin target's include path, which the harness
+// does not provide; the same guard covers both. What the engine uses from it is
+// named where it is used.
 #if ! defined (J37_DSP_HARNESS) && __has_include (<chowdsp_math/chowdsp_math.h>)
  #include <chowdsp_math/chowdsp_math.h>
  #define J37_HAS_CHOWDSP_MATH 1
 #else
  #define J37_HAS_CHOWDSP_MATH 0
+#endif
+
+#if ! defined (J37_DSP_HARNESS) && __has_include (<chowdsp_dsp_utils/chowdsp_dsp_utils.h>)
+ #include <chowdsp_dsp_utils/chowdsp_dsp_utils.h>
+ #define J37_HAS_CHOWDSP_DSP 1
+#else
+ #define J37_HAS_CHOWDSP_DSP 0
+#endif
+
+// xsimd (fetched by CPM in CMakeLists.txt). Portable SIMD wrappers, and the
+// vehicle for the one approximation the review flagged as worth having: a
+// vectorised tanh. The scalar shaper calls std::tanh four times per sample per
+// channel (two branches, each also evaluated at the bias-only point so the DC
+// pedestal can be subtracted), and that is the hot loop at 8x oversampling.
+//
+// It is wired in as an OPT-IN, not a default: an approximation only earns its
+// place once a benchmark shows the shaper dominates, and a measured difference
+// in the rendered audio is a change to the sound. See the use site in
+// PluginProcessor.cpp for what the flag actually switches.
+#if ! defined (J37_DSP_HARNESS) && defined (J37_USE_SIMD_TANH) && __has_include (<xsimd/xsimd.hpp>)
+ #include <xsimd/xsimd.hpp>
+ #define J37_HAS_XSIMD 1
+#else
+ #define J37_HAS_XSIMD 0
 #endif
 
 #include <array>
@@ -1011,8 +1040,9 @@ public:
     //
     //  A factory preset covers the machine's range; a USER preset freezes the whole
     //  machine exactly as it stands, including anything the factory list has no row
-    //  for. Files live in <user app data>/J37 Tape Mastering/Presets with a .j37tape
-    //  extension, so they survive plugin updates and are shared by every instance.
+    //  for. Files live in <user app data>/Nonlin Analog Saturator/Presets with a
+    //  .nonlinpreset extension, so they survive plugin updates and are shared by
+    //  every instance.
     //==============================================================================
 
     /** Names of the user presets found on disk, sorted alphabetically. */
