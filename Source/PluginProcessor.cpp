@@ -469,9 +469,14 @@ void FirstAudioProcessor::applyStateWithUndo (const juce::ValueTree& targetState
 //==============================================================================
 //  Factory presets.
 //
-//  Eighteen starting points covering the machine's real range. Each returns the full
-//  parameter map it represents - nothing is patched onto the user's current state
-//  beyond the listed values, so a preset changes the machine, not the session.
+//  Twenty starting points: the eighteen sounding machines, plus the two range
+//  endpoints the machine is checked against - MINIMUM is the plugin doing the
+//  least it can (MIX at zero, so the tape path is out of the signal entirely and the
+//  output is the input), and MAXIMUM is every control at the top of its range, which
+//  is the honest way to find out what the machine does when it is pushed hardest. Each
+//  returns the full parameter map it represents - nothing is patched onto the user's
+//  current state beyond the listed values, so a preset changes the machine, not the
+//  session.
 //==============================================================================
 juce::StringArray FirstAudioProcessor::getPresetNames()
 {
@@ -479,62 +484,155 @@ juce::StringArray FirstAudioProcessor::getPresetNames()
              "Vintage Lo-Fi", "Wide Master", "Clean Glue", "Saturated Crunch",
              "Wobbly Cassette", "Bright Air Tape", "Mix Saturation", "Master Bounce",
              "Vocal Rail", "Drum Room Warm", "Bass Weight", "Master Safety",
-             "Lo-Fi Radio", "Ferric Master" };
+             "Lo-Fi Radio", "Ferric Master", "Minimum", "Maximum" };
 }
 
 std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int index)
 {
-    // Local helper so every row below reads like the sound it names.
-    auto row = [] (float subfund, float inputDb, float drive, float bias, float tone,
-                   float character, float wow, float flutter, float mix, float outputDb,
-                   float width, int tapeType, int speed, int instrument, int oversampling)
+    // One preset as NAMED fields. The first eighteen rows were fifteen positional
+    // floats each, which is how a value ends up in the wrong slot with nothing to
+    // catch it; a name can only be in one place, and a field left out takes the
+    // machine default below, so the table reads as the sounds it names.
+    struct FactoryPreset
     {
-        return std::map<juce::String, float> {
-            { "subfund",       subfund },
-            { "input",         inputDb },
-            { "drive",         drive },
-            { "bias",          bias },
-            { "tone",          tone },
-            { "character",     character },
-            { "wow",           wow },
-            { "flutter",       flutter },
-            // Raw parameter values, not normalised ones - see the saved-state format
-            // note above. The MIX values in the table below are already percentages,
-            // so nothing scales them here; a value test would only ever misfire on a
-            // preset that genuinely asks for less than 1% wet.
-            { "mix",           mix },
-            { "output",        outputDb },
-            { "stereo_width",  width },
-            { "tape_type",     static_cast<float> (tapeType) },
-            { "speed",         static_cast<float> (speed) },
-            { "instrument",    static_cast<float> (instrument) },
-            { "oversampling",  static_cast<float> (oversampling) }
-        };
+        // The machine, and the transport it runs on.
+        float subfund    = 0.0f;   // sub-harmonic generator, 0..1
+        float inputDb    = 0.0f;   // input trim, -32..+32 dB
+        float drive      = 0.30f;  // how hard the tape is pushed, 0..1
+        float bias       = 0.42f;
+        float tone       = 0.50f;  // the parameter the host calls Brightness
+        float character  = 0.50f;  // the parameter the host calls Tone
+        float wow        = 0.14f;
+        float flutter    = 0.18f;
+        float mix        = 100.0f; // percent wet, 0..100 (a percentage, not 0..1)
+        float outputDb   = 0.0f;   // output trim, -32..+32 dB
+        float width      = 0.50f;  // stereo width, 0..1
+        int   tapeType   = 0;      // choice index: J37 .. RTM SM911
+        int   speed      = 1;      // choice index: 7.5 / 15 / 30 ips
+        int   instrument = 0;      // choice index: Master Bus .. Drums
+        int   oversampling = 0;    // choice index: Off / 2x / 4x / 8x
+
+        // Saturation core: the blend of tape, valve, cassette and amp, and the
+        // amp voicing. Added after the eighteen presets above were written, so
+        // every one of them leaves these at the machine defaults - pure tape,
+        // no voicing - and still loads the machine it was designed on.
+        float blend      = 0.0f;   // tape -> valve -> cassette -> amp, 0..1
+        float shape      = 0.50f;  // how concentrated that blend is
+        float ampBias    = 0.50f;  // the input stage's DC operating point
+        float sag        = 0.0f;   // supply droop under demand
+        float presence   = 0.50f;  // feedback top-end lift after the clipping
+        float cabinet    = 0.0f;   // the speaker and its box
+
+        // Head and transport extras.
+        float delayTime  = 0.0f;   // 0..250 ms
+        float delayLevel = 0.0f;   // feedback into the echo, 0..1
+        float stOffset   = 0.0f;   // head alignment, -500..500 samples
+        float noise      = 0.0f;   // tape floor, 0..1
     };
 
-    switch (index)
-    {
-        case 0:  return row (0.00f,  0.0f, 0.28f, 0.42f, 0.50f, 0.50f, 0.14f, 0.18f, 100.0f,  0.0f, 0.50f, 0, 1, 0, 1); // Default Tape
-        case 1:  return row (0.15f, -3.0f, 0.28f, 0.30f, 0.48f, 0.30f, 0.10f, 0.12f, 65.0f, -1.0f, 0.50f, 0, 1, 0, 1); // Gentle Warmth
-        case 2:  return row (0.20f, +1.5f, 0.62f, 0.48f, 0.66f, 0.62f, 0.16f, 0.22f, 100.0f, -0.5f, 0.55f, 1, 1, 0, 1); // Bus Glue Tape
-        case 3:  return row (0.35f,  0.0f, 0.75f, 0.42f, 0.74f, 0.70f, 0.12f, 0.20f, 100.0f, -1.0f, 0.50f, 2, 2, 5, 2); // Drum Slam
-        case 4:  return row (0.00f,  0.0f, 0.35f, 0.34f, 0.55f, 0.45f, 0.22f, 0.28f, 70.0f,  0.0f, 0.50f, 0, 0, 3, 1); // Vintage Lo-Fi
-        case 5:  return row (0.12f,  0.0f, 0.32f, 0.44f, 0.62f, 0.55f, 0.18f, 0.24f, 55.0f,  0.0f, 0.62f, 0, 1, 0, 1); // Wide Master
-        case 6:  return row (0.00f, -6.0f, 0.22f, 0.30f, 0.50f, 0.35f, 0.10f, 0.14f, 45.0f,  0.0f, 0.50f, 3, 2, 0, 1); // Clean Glue
-        case 7:  return row (0.25f, +3.0f, 0.85f, 0.52f, 0.70f, 0.78f, 0.14f, 0.26f, 100.0f, -1.5f, 0.45f, 1, 2, 3, 2); // Saturated Crunch
-        case 8:  return row (0.10f,  0.0f, 0.36f, 0.45f, 0.60f, 0.50f, 0.30f, 0.34f, 100.0f,  0.0f, 0.50f, 0, 0, 3, 1); // Wobbly Cassette
-        case 9:  return row (0.00f, -1.0f, 0.55f, 0.44f, 0.68f, 0.58f, 0.12f, 0.16f, 100.0f, -0.5f, 0.58f, 2, 2, 4, 1); // Bright Air Tape
-        case 10: return row (0.20f, +1.0f, 0.68f, 0.46f, 0.64f, 0.66f, 0.16f, 0.20f, 100.0f, -1.0f, 0.40f, 1, 1, 0, 2); // Mix Saturation
-        case 11: return row (0.10f,  0.0f, 0.40f, 0.45f, 0.62f, 0.52f, 0.15f, 0.19f, 100.0f,  0.0f, 0.50f, 0, 1, 0, 2); // Master Bounce
-        case 12: return row (0.00f, +1.0f, 0.38f, 0.42f, 0.60f, 0.42f, 0.08f, 0.10f, 70.0f, -1.0f, 0.50f, 0, 1, 1, 1); // Vocal Rail
-        case 13: return row (0.18f, +2.0f, 0.55f, 0.50f, 0.45f, 0.38f, 0.18f, 0.22f, 100.0f, -1.0f, 0.50f, 1, 0, 5, 1); // Drum Room Warm
-        case 14: return row (0.65f, +2.5f, 0.48f, 0.36f, 0.42f, 0.35f, 0.06f, 0.08f, 100.0f, -2.0f, 0.50f, 2, 2, 2, 2); // Bass Weight
-        case 15: return row (0.00f,  0.0f, 0.25f, 0.40f, 0.66f, 0.62f, 0.05f, 0.07f, 100.0f,  0.0f, 0.55f, 3, 2, 0, 2); // Master Safety
-        case 16: return row (0.00f, +4.0f, 0.62f, 0.30f, 0.28f, 0.30f, 0.26f, 0.32f, 65.0f, -4.0f, 0.35f, 3, 0, 3, 1); // Lo-Fi Radio
-        case 17: return row (0.12f,  0.0f, 0.34f, 0.44f, 0.55f, 0.50f, 0.10f, 0.13f, 100.0f,  0.0f, 0.52f, 7, 1, 0, 1); // Ferric Master
-        default: break;
-    }
-    return {};
+    static const std::array<FactoryPreset, numFactoryPresets> table {{
+                { .drive = 0.28f, .oversampling = 1 },  // Default Tape
+                { .subfund = 0.15f, .inputDb = -3.0f, .drive = 0.28f, .bias = 0.30f, .tone = 0.48f,
+          .character = 0.30f, .wow = 0.10f, .flutter = 0.12f, .mix = 65.0f, .outputDb = -1.0f,
+          .oversampling = 1 },  // Gentle Warmth
+                { .subfund = 0.20f, .inputDb = +1.5f, .drive = 0.62f, .bias = 0.48f, .tone = 0.66f,
+          .character = 0.62f, .wow = 0.16f, .flutter = 0.22f, .outputDb = -0.5f, .width = 0.55f,
+          .tapeType = 1, .oversampling = 1 },  // Bus Glue Tape
+                { .subfund = 0.35f, .drive = 0.75f, .tone = 0.74f, .character = 0.70f, .wow = 0.12f,
+          .flutter = 0.20f, .outputDb = -1.0f, .tapeType = 2, .speed = 2, .instrument = 5,
+          .oversampling = 2 },  // Drum Slam
+                { .drive = 0.35f, .bias = 0.34f, .tone = 0.55f, .character = 0.45f, .wow = 0.22f,
+          .flutter = 0.28f, .mix = 70.0f, .speed = 0, .instrument = 3, .oversampling = 1 },  // Vintage Lo-Fi
+                { .subfund = 0.12f, .drive = 0.32f, .bias = 0.44f, .tone = 0.62f, .character = 0.55f,
+          .wow = 0.18f, .flutter = 0.24f, .mix = 55.0f, .width = 0.62f, .oversampling = 1 },  // Wide Master
+                { .inputDb = -6.0f, .drive = 0.22f, .bias = 0.30f, .character = 0.35f, .wow = 0.10f,
+          .flutter = 0.14f, .mix = 45.0f, .tapeType = 3, .speed = 2, .oversampling = 1 },  // Clean Glue
+                { .subfund = 0.25f, .inputDb = +3.0f, .drive = 0.85f, .bias = 0.52f, .tone = 0.70f,
+          .character = 0.78f, .flutter = 0.26f, .outputDb = -1.5f, .width = 0.45f, .tapeType = 1,
+          .speed = 2, .instrument = 3, .oversampling = 2 },  // Saturated Crunch
+                { .subfund = 0.10f, .drive = 0.36f, .bias = 0.45f, .tone = 0.60f, .wow = 0.30f,
+          .flutter = 0.34f, .speed = 0, .instrument = 3, .oversampling = 1 },  // Wobbly Cassette
+                { .inputDb = -1.0f, .drive = 0.55f, .bias = 0.44f, .tone = 0.68f, .character = 0.58f,
+          .wow = 0.12f, .flutter = 0.16f, .outputDb = -0.5f, .width = 0.58f, .tapeType = 2,
+          .speed = 2, .instrument = 4, .oversampling = 1 },  // Bright Air Tape
+                { .subfund = 0.20f, .inputDb = +1.0f, .drive = 0.68f, .bias = 0.46f, .tone = 0.64f,
+          .character = 0.66f, .wow = 0.16f, .flutter = 0.20f, .outputDb = -1.0f, .width = 0.40f,
+          .tapeType = 1, .oversampling = 2 },  // Mix Saturation
+                { .subfund = 0.10f, .drive = 0.40f, .bias = 0.45f, .tone = 0.62f, .character = 0.52f,
+          .wow = 0.15f, .flutter = 0.19f, .oversampling = 2 },  // Master Bounce
+                { .inputDb = +1.0f, .drive = 0.38f, .tone = 0.60f, .character = 0.42f, .wow = 0.08f,
+          .flutter = 0.10f, .mix = 70.0f, .outputDb = -1.0f, .instrument = 1, .oversampling = 1 },  // Vocal Rail
+                { .subfund = 0.18f, .inputDb = +2.0f, .drive = 0.55f, .bias = 0.50f, .tone = 0.45f,
+          .character = 0.38f, .wow = 0.18f, .flutter = 0.22f, .outputDb = -1.0f, .tapeType = 1,
+          .speed = 0, .instrument = 5, .oversampling = 1 },  // Drum Room Warm
+                { .subfund = 0.65f, .inputDb = +2.5f, .drive = 0.48f, .bias = 0.36f, .tone = 0.42f,
+          .character = 0.35f, .wow = 0.06f, .flutter = 0.08f, .outputDb = -2.0f, .tapeType = 2,
+          .speed = 2, .instrument = 2, .oversampling = 2 },  // Bass Weight
+                { .drive = 0.25f, .bias = 0.40f, .tone = 0.66f, .character = 0.62f, .wow = 0.05f,
+          .flutter = 0.07f, .width = 0.55f, .tapeType = 3, .speed = 2, .oversampling = 2 },  // Master Safety
+                { .inputDb = +4.0f, .drive = 0.62f, .bias = 0.30f, .tone = 0.28f, .character = 0.30f,
+          .wow = 0.26f, .flutter = 0.32f, .mix = 65.0f, .outputDb = -4.0f, .width = 0.35f,
+          .tapeType = 3, .speed = 0, .instrument = 3, .oversampling = 1 },  // Lo-Fi Radio
+                { .subfund = 0.12f, .drive = 0.34f, .bias = 0.44f, .tone = 0.55f, .wow = 0.10f,
+          .flutter = 0.13f, .width = 0.52f, .tapeType = 7, .oversampling = 1 },  // Ferric Master
+
+        // MINIMUM - every control at its floor. MIX at zero is the point: the tape
+        // path leaves the signal completely, so this is the plugin's null test -
+        // what you hear is the input, untouched, and any difference from a bypass
+        // is a bug rather than a sound.
+                { .drive = 0.0f, .bias = 0.0f, .tone = 0.0f, .character = 0.0f, .wow = 0.0f, .flutter = 0.0f,
+          .mix = 0.0f, .width = 0.0f, .speed = 0, .shape = 0.0f, .ampBias = 0.0f, .presence = 0.0f },  // Minimum
+
+        // MAXIMUM - every control at the top of its range: the whole sub-fundamental
+        // generator, the amp end of the blend with the cabinet open, a quarter
+        // second of echo at full feedback, the head pushed 500 samples, the noise
+        // floor at its loudest, and 8x oversampling. The trims are the exception,
+        // +12 in and -12 out: a reference that clips the host on the way in tells
+        // you nothing about the machine, and this one is meant to be heard.
+                { .subfund = 1.0f, .inputDb = +12.0f, .drive = 1.0f, .bias = 1.0f, .tone = 1.0f,
+          .character = 1.0f, .wow = 1.0f, .flutter = 1.0f, .outputDb = -12.0f, .width = 1.0f,
+          .tapeType = 7, .speed = 2, .instrument = 5, .oversampling = 3, .blend = 1.0f, .shape = 1.0f,
+          .ampBias = 1.0f, .sag = 1.0f, .presence = 1.0f, .cabinet = 1.0f, .delayTime = 250.0f,
+          .delayLevel = 1.0f, .stOffset = 500.0f, .noise = 1.0f },  // Maximum
+    }};
+
+    // The same guard the switch used to provide: an index outside the list is not a
+    // preset, and reading past the end of the table would not answer that question.
+    if (index < 0 || index >= static_cast<int> (table.size()))
+        return {};
+
+    const auto& preset = table[static_cast<std::size_t> (index)];
+
+    // Raw parameter values, not normalised ones - see the saved-state format note
+    // above. The tree stores denormalised values, so normalising here is what made
+    // a -3 dB INPUT come back as 0.45 dB and MIX 100 as 1 %.
+    return {
+        { "subfund",        preset.subfund },
+        { "input",          preset.inputDb },
+        { "drive",          preset.drive },
+        { "bias",           preset.bias },
+        { "tone",           preset.tone },
+        { "character",      preset.character },
+        { "wow",            preset.wow },
+        { "flutter",        preset.flutter },
+        { "mix",            preset.mix },
+        { "output",         preset.outputDb },
+        { "stereo_width",   preset.width },
+        { "blend",          preset.blend },
+        { "shape",          preset.shape },
+        { "amp_bias",       preset.ampBias },
+        { "sag",            preset.sag },
+        { "presence",       preset.presence },
+        { "cabinet",        preset.cabinet },
+        { "delay_time",     preset.delayTime },
+        { "delay_feedback",  preset.delayLevel },
+        { "st_offset",      preset.stOffset },
+        { "noise",          preset.noise },
+        { "tape_type",      static_cast<float> (preset.tapeType) },
+        { "speed",          static_cast<float> (preset.speed) },
+        { "instrument",     static_cast<float> (preset.instrument) },
+        { "oversampling",   static_cast<float> (preset.oversampling) },
+    };
 }
 
 void FirstAudioProcessor::applyFactoryPreset (int index)
