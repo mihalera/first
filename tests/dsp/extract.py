@@ -37,9 +37,6 @@ MIX_SMOOTHER = re.compile(
 MATH_BRIDGE_START = "#if J37_HAS_CHOWDSP_MATH\nnamespace j37math"
 MATH_BRIDGE_END = "#endif\n"
 
-MATH_BRIDGE_START = "#if J37_HAS_CHOWDSP_MATH\nnamespace j37math"
-MATH_BRIDGE_END = "#endif\n"
-
 HEADER_PIECES = [
     ("GlueCompressor", "struct GlueCompressor"),
     ("LoudnessMeter", "struct LoudnessMeter"),
@@ -108,7 +105,7 @@ def extract_math_bridge(header: str) -> str:
     return header[start:end]
 
 
-def extract_math_bridge(header: str) -> str:
+
     """Cuts the j37math namespace block out of the header.
 
     The bridge is two guarded namespace blocks (chowdsp branch, std:: fallback).
@@ -136,9 +133,6 @@ def main() -> int:
     chunks.append("// ---- j37math bridge (PluginProcessor.h) " + "-" * 34)
     chunks.append(extract_math_bridge(header))
     chunks.append("")
-
-    chunks.append("// ---- j37math bridge (PluginProcessor.h) " + "-" * 34)
-    chunks.append(extract_math_bridge(header))
     chunks.append("")
 
     for name, declaration in HEADER_PIECES:
