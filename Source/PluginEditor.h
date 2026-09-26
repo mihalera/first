@@ -172,6 +172,7 @@ private:
     juce::ComboBox tapeTypeBox;
     juce::ComboBox speedBox;
     juce::ComboBox instrumentBox;
+    juce::TextButton glButton { "GL ON" };
     juce::ToggleButton bypassButton { "BYPASS" };
     juce::TextButton themeButton { "DARK THEME" };
 

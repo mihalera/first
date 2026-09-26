@@ -1196,6 +1196,15 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         (audioProcessor.parameters, "instrument", instrumentBox);
     addAndMakeVisible (instrumentBox);
 
+    // GL switch: the context is a best-effort accelerator (see the attach note
+    // above), and this button hands the choice to the user - drivers, remote
+    // sessions and VMs differ, and the software path draws the same panel.
+    glButton.setTooltip ("OpenGL - GPU-accelerated rendering of the panel. Turn off if "
+                         "your driver or remote session misbehaves; the software path "
+                         "draws the identical panel.");
+    glButton.setLookAndFeel (&customLookAndFeel);
+    addAndMakeVisible (glButton);
+
     // ---------------------------------------------------------------
     //  Premium workflow bar.
     // ---------------------------------------------------------------
@@ -1381,6 +1390,28 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     if (! openGLContext.isAttached())
         openGLContext.detach();
 
+    // The GL switch mirrors the context's real state rather than a wish: on
+    // machines where the context never came up the button reads OFF and the
+    // software renderer is what the user sees.
+    glButton.setButtonText (openGLContext.isAttached() ? "GL ON" : "GL OFF");
+    glButton.onClick = [this]
+    {
+        if (openGLContext.isAttached())
+        {
+            openGLContext.detach();
+            glButton.setButtonText ("GL OFF");
+        }
+        else
+        {
+            openGLContext.attachTo (*this);
+            // Detach again if the driver refused, so the button never lies.
+            if (! openGLContext.isAttached())
+                glButton.setButtonText ("GL OFF");
+            else
+                glButton.setButtonText ("GL ON");
+        }
+    };
+
     startTimerHz (30);
 }
 
@@ -1406,6 +1437,7 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     autoGainButton.setLookAndFeel (nullptr);
     oversamplingBox.setLookAndFeel (nullptr);
     instrumentBox.setLookAndFeel (nullptr);
+    glButton.setLookAndFeel (nullptr);
     savePresetButton.setLookAndFeel (nullptr);
     deletePresetButton.setLookAndFeel (nullptr);
 
@@ -1612,6 +1644,8 @@ void FirstAudioProcessorEditor::applyTheme()
 
     styleCombo (oversamplingBox);
     styleCombo (instrumentBox);
+    glButton.setColour (juce::TextButton::textColourOffId, palette.text);
+    glButton.setColour (juce::TextButton::textColourOnId, palette.text);
     styleWorkflowButton (copyAButton, audioProcessor.getActiveCompareSlot() == 0);
     styleWorkflowButton (copyBButton, audioProcessor.getActiveCompareSlot() == 1);
     styleWorkflowButton (compareButton, false);
@@ -2055,6 +2089,7 @@ void FirstAudioProcessorEditor::resized()
     oversamplingBox.setBounds (autoGainButton.getRight() + 58, layout.deck.getY() + 74, 72, 32);
     instrumentLabel.setBounds (oversamplingBox.getRight() + 16, layout.deck.getY() + 83, 68, 16);
     instrumentBox.setBounds (oversamplingBox.getRight() + 16, layout.deck.getY() + 74, 112, 32);
+    glButton.setBounds (instrumentBox.getRight() + 14, layout.deck.getY() + 74, 64, 32);
 
     const auto harmonicsWidth = 130;
     harmonicsLabel.setBounds (layout.deck.getRight() - harmonicsWidth - 14,
