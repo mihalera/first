@@ -569,7 +569,7 @@ a listening test.
 | --- | --- | --- |
 | `chowdsp_utils` | `v2.4.0` | Chowdhury DSP's toolbox. Provides `SmoothedBufferValue`, `LoudnessMeter`, `PitchDetector`, `Compressor`/`LevelDetector`, `Noise`, `Upsampler`, `SineWave` - a generation ahead of the hand-rolled equivalents in `PluginProcessor.h` |
 | `melatonin_inspector` | commit `9c483f86` | JUCE component inspector, compiled under `JUCE_DEBUG` only. Passive in the shipped build |
-| `melatonin_blur` | `v1.0.1` | Fast shadow/gradient blurring for JUCE Components - the editor draws a lot of soft analog shading by hand today |
+| `melatonin_blur` | `v1.4` | Fast shadow/gradient blurring for JUCE Components - the editor draws a lot of soft analog shading by hand today |
 | `xsimd` | `13.0.0` | Portable SIMD wrappers (SSE/AVX/NEON). `chowdsp::chowdsp_simd` already wraps xsimd, so this is the same code path rather than a second SIMD layer |
 
 Two dev-only libraries are **off by default**, so a plugin build never drags a test

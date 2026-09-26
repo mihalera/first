@@ -139,12 +139,19 @@ CPMAddPackage(
 # xsimd: header-only portable SIMD. Pinned by tag like everything else, so a
 # fresh clone resolves the same version forever. SYSTEM YES keeps its headers out
 # of the warning sweep - it is third-party code and is not ours to fix.
+#
+# BUILD_TESTS is already OFF by default upstream, but it is stated here anyway:
+# it pulls in xsimd's own test suite, and a plugin build must not pay for that.
 CPMAddPackage(
     NAME xsimd
     GITHUB_REPOSITORY xtensor-stack/xsimd
     GIT_TAG 13.0.0
     EXCLUDE_FROM_ALL YES
-    SYSTEM YES)
+    SYSTEM YES
+    OPTIONS
+        "BUILD_TESTS OFF"
+        "BUILD_BENCHMARK OFF"
+        "BUILD_EXAMPLES OFF")
 
 # ------------------------------------------------------------------------------
 #  Dev-only libraries - fetched only when J37_BUILD_TESTS is ON
