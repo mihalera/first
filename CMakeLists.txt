@@ -574,7 +574,17 @@ if(APPLE)
     # the only group silenced target-wide here, and only that one - everything the
     # vendored module needs is attached per source file below, so a new warning of any
     # other kind in this project's own Source/*.cpp is still reported.
-    target_compile_options(first PRIVATE -Wno-implicit-const-int-float-conversion)
+    #
+    # It has to go on the FORMAT targets as well as on `first`. JUCE compiles the shared
+    # code into `first`, but each of first_VST3 / first_AU / first_AUv3 compiles its own
+    # wrapper, which includes the processor header and so pulls the same JUCE header back
+    # in - setting it on `first` alone left four warnings per format, which is where the
+    # last sixteen came from.
+    foreach(j37_apple_target IN ITEMS first first_VST3 first_AU first_AUv3 first_AUv3_Framework)
+        if(TARGET ${j37_apple_target})
+            target_compile_options(${j37_apple_target} PRIVATE -Wno-implicit-const-int-float-conversion)
+        endif()
+    endforeach()
 
     # The -Wshorten-64-to-32 that used to be enabled here is gone. It was switched on
     # to keep one specific conversion visible when it was the only warning in the
