@@ -78,6 +78,76 @@ namespace
         return darkTheme ? charcoalPalette : ivoryPalette;
     }
 
+    // The three tabs the knob grid is split across. Each entry names a tab and lists
+    // the controlIds indices it holds, in the order they are drawn: the signal chain,
+    // left to right, then down. This table - not the order of controlIds - decides
+    // what the grid shows, and setCurrentTab() static_asserts it against
+    // controlCount, so a control no tab lists cannot slip through to sit in the panel
+    // where it can never be seen or reached.
+    struct TabSpec
+    {
+        const char* name;
+        const char* hint;
+        std::size_t count;
+        std::size_t controls[8];
+    };
+
+    constexpr std::array<TabSpec, 3> tabSpecs { {
+        { "MACHINE", "Input trim, tape drive and the machine's own colour.",
+                     8, { 0, 1, 2, 3, 4, 5, 6, 20 } },
+        { "SATURATION CORE", "The saturation path, how much of it you hear, and its trim.",
+                     7, { 10, 11, 12, 13, 7, 9, 8 } },
+        { "HEAD / TRANSPORT", "Playback head colour, echo, drift and tape noise.",
+                     6, { 14, 15, 16, 17, 18, 19 } }
+    } };
+
+    // Where the divider under the knob-grid heading sits, in pixels from the top of the
+    // panel. The tab bar lives between the heading and this line, so paint() and
+    // resized() both read it from here: it used to be a literal 42 px in paint(), which
+    // is precisely where the first tab button now is.
+    constexpr int controlsDividerOffset = 68;
+
+    // Does control `index` belong to `tab`?
+    bool controlIsInTab (std::size_t index, int tab)
+    {
+        const auto& spec = tabSpecs[static_cast<std::size_t> (tab)];
+
+        for (std::size_t i = 0; i < spec.count; ++i)
+            if (spec.controls[i] == index)
+                return true;
+
+        return false;
+    }
+
+    // Compile-time proof that the tabs partition the grid: every control index appears
+    // in exactly one tab, so no knob is orphaned (invisible and unreachable) or shown
+    // twice, and none of them is silently dropped.
+    constexpr bool tabsCoverAllControls (const std::array<TabSpec, 3>& tabs, std::size_t total)
+    {
+        std::array<int, 32> seen {};
+
+        for (const auto& tab : tabs)
+            for (std::size_t i = 0; i < tab.count; ++i)
+            {
+                if (tab.controls[i] >= seen.size())
+                    return false;
+
+                ++seen[tab.controls[i]];
+            }
+
+        std::size_t counted = 0;
+
+        for (const auto times : seen)
+        {
+            if (times > 1)
+                return false;
+
+            counted += static_cast<std::size_t> (times);
+        }
+
+        return counted == total;
+    }
+
     juce::String formatDb (float value)
     {
         // Round to one decimal BEFORE formatting, so a value like -0.04 (which is just
@@ -902,6 +972,51 @@ void FirstAudioProcessorEditor::styleGlButton (bool isOn)
     glButton.repaint();
 }
 
+// The tab bar's colours, by the same rule as styleGlButton: a plain TextButton's
+// getToggleState() is always false, so the selected tab's colours have to be written
+// to BOTH the ...Id and the ...OnId pair or the active tab renders with the
+// unselected text colour on top of the accent background.
+void FirstAudioProcessorEditor::styleTabButtons()
+{
+    const auto& palette = paletteFor (darkTheme);
+
+    for (int tab = 0; tab < numTabs; ++tab)
+    {
+        auto& button = tabButtons[static_cast<std::size_t> (tab)];
+        const auto isOn = tab == currentTab;
+
+        button.setColour (juce::TextButton::buttonColourId, isOn ? palette.accent : palette.raised);
+        button.setColour (juce::TextButton::buttonOnColourId, isOn ? palette.accent : palette.raised);
+        button.setColour (juce::TextButton::textColourOffId, isOn ? palette.readout : palette.secondary);
+        button.setColour (juce::TextButton::textColourOnId, isOn ? palette.readout : palette.secondary);
+        button.repaint();
+    }
+}
+
+void FirstAudioProcessorEditor::setCurrentTab (int newTab)
+{
+    // The tab table and the control list are two views of one set of knobs, and this is
+    // the place that depends on it holding. numTabs and tabSpecs drifting apart would
+    // leave a tab with no table entry; a control listed by no tab (or by two) would be
+    // a knob on the panel that is unreachable or duplicated.
+    static_assert (tabSpecs.size() == static_cast<std::size_t> (numTabs),
+                   "numTabs and tabSpecs must describe the same number of tabs");
+    static_assert (tabsCoverAllControls (tabSpecs, controlCount),
+                   "every knob must be listed by exactly one tab");
+
+    currentTab = juce::jlimit (0, numTabs - 1, newTab);
+
+    for (std::size_t i = 0; i < controlCount; ++i)
+    {
+        const auto onActiveTab = controlIsInTab (i, currentTab);
+        controls[i].setVisible (onActiveTab);
+        controlLabels[i].setVisible (onActiveTab);
+    }
+
+    styleTabButtons();
+    resized();
+}
+
 //==============================================================================
 FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
@@ -1076,14 +1191,11 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (harmonicsLabel);
     addAndMakeVisible (harmonicsReadout);
 
-    // The order of these two lists IS the knob grid: five controls per row, row by
-    // row, top to bottom, so it has to agree with the section captions placed in
-    // resized() (MACHINE on row 1, SATURATION CORE on row 3, HEAD / TRANSPORT on row
-    // 4) and with the row map in the header. It did not: SUBFUND sat in the middle of
-    // the grid and pushed the saturation core down to row 4, which left the BLEND /
-    // SHAPE / AMP BIAS / SAG / PRESENCE row captioned HEAD / TRANSPORT and the SUBFUND
-    // / DELAY / DLY LVL / ST OFFSET / NOISE row under it captioned SATURATION CORE -
-    // both captions on the wrong row, on the row that names the machine's character.
+    // These two lists are the grid's vocabulary, not its layout: their order no longer
+    // decides which row anything sits on, or even whether it is on screen. tabSpecs
+    // above says which tab each control belongs to and in which order it is drawn, and
+    // resized() lays out the active tab alone. What the list order still has to agree
+    // with is the defaultValues array below and controlCount in the header.
     //
     // BRIGHT and TONE are deliberately not swapped to line up with their ids: the
     // parameter called "tone" is registered as Brightness and the one called
@@ -1111,12 +1223,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // wrong-sounding reset rather than a harmless slip: ST OFFSET reset to 50 % of
     // its +-500-sample range while NOISE reset to silence. The array is sized by
     // controlCount, so a longer or shorter list is a compile error (C2078).
-    // The row map below is the knob grid, row by row:
-    //   row 1  input 0.0    drive 0.30   bias 0.42    tone 0.50   character 0.50
-    //   row 2  wow 0.14     flutter 0.18 mix 0.50     output 0.0  width 0.50
-    //   row 3  blend 0.0    shape 0.50   amp_bias 0.50 sag 0.0    presence 0.50
-    //   row 4  cabinet 0.0  delay 0.0    dly_lvl 0.0  st_offset 0.0 noise 0.50
-    //   row 5  subfund 0.0
+    // The map below is the knob grid as tabSpecs groups it, id then default:
+    //   MACHINE           input 0.0   drive 0.30  bias 0.42  tone 0.50
+    //                      character 0.50  wow 0.14  flutter 0.18  subfund 0.0
+    //   SATURATION CORE   blend 0.0   shape 0.50  amp_bias 0.50  sag 0.0
+    //                      mix 0.50  stereo_width 0.50  output 0.0
+    //   HEAD / TRANSPORT  presence 0.50  cabinet 0.0  delay_time 0.0
+    //                      delay_feedback 0.0  st_offset 0.0  noise 0.50
     const std::array<double, controlCount> defaultValues { 0.0, 0.30, 0.42,
                                                            0.50, 0.5, 0.14,
                                                            0.18, 0.5, 0.0,
@@ -1348,6 +1461,26 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         controlAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>
             (audioProcessor.parameters, controlIds[static_cast<int> (i)], slider);
     }
+
+    // The three tabs the knob grid is split across. Only the active tab's knobs are on
+    // screen: the other thirteen used to be laid out underneath it, invisible but still
+    // sitting in the panel, and crowding the grid is what the captions were there to
+    // hide. setCurrentTab() also does the first layout, now with the tab bar and a
+    // single tab's grid. (resized() has already run once by now - setSize() above
+    // triggers it - so this is an ordinary relayout, not a layout over unset members.)
+    for (int tab = 0; tab < numTabs; ++tab)
+    {
+        const auto& spec = tabSpecs[static_cast<std::size_t> (tab)];
+        auto& button = tabButtons[static_cast<std::size_t> (tab)];
+
+        button.setButtonText (spec.name);
+        button.setTooltip (spec.hint);
+        button.setLookAndFeel (&customLookAndFeel);
+        button.onClick = [this, tab] { setCurrentTab (tab); };
+        addAndMakeVisible (button);
+    }
+
+    setCurrentTab (currentTab);
 
     tapeTypeBox.addItemList (juce::StringArray { "J37", "Ampex 456", "Studer A800", "Chrome",
                                                  "Type 111", "GP9", "Quantegy 499", "RTM SM911",
@@ -1836,6 +1969,18 @@ bool FirstAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
         return true;
     }
     return Component::keyPressed (key);
+    // 1 / 2 / 3 switch knob-grid tabs, the way any other plugin pages its controls.
+    // Tested after the undo chords, and only without Shift, so a capitalised digit typed
+    // into a slider's editable text box is left alone.
+    if (! commandDown && ! key.getModifiers().isShiftDown())
+        for (int tab = 0; tab < numTabs; ++tab)
+            if (key.getKeyCode() == '1' + tab)
+            {
+                setCurrentTab (tab);
+                return true;
+            }
+
+    return Component::keyPressed (key);
 }
 
 FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayout() const
@@ -1902,15 +2047,9 @@ void FirstAudioProcessorEditor::applyTheme()
     for (auto& label : controlLabels)
         label.setColour (juce::Label::textColourId, palette.secondary);
 
-    // The section captions carry the accent rather than the secondary colour: they
-    // are headings, not control names, and the accent is what marks a heading
-    // everywhere else on this panel.
-    machineSectionLabel.setColour (juce::Label::textColourId,
-                                   palette.accent.withAlpha (0.75f));
-    saturationSectionLabel.setColour (juce::Label::textColourId,
-                                      palette.accent.withAlpha (0.75f));
-    headSectionLabel.setColour (juce::Label::textColourId,
-                                palette.accent.withAlpha (0.75f));
+    // The tab buttons carry the theme, and styleTabButtons() reads currentTab as well,
+    // so the selected tab keeps its accent highlight across a theme switch.
+    styleTabButtons();
 
     for (auto& slider : controls)
     {
@@ -2010,7 +2149,9 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
                 layout.header.getHeight() - 28);
 
     g.setColour (palette.border.withAlpha (0.75f));
-    g.drawHorizontalLine (layout.controls.getY() + 42,
+    // Under the tab bar, not through it: the divider used to sit 42 px down, which is
+    // where the first tab button now starts.
+    g.drawHorizontalLine (layout.controls.getY() + controlsDividerOffset,
                           static_cast<float> (layout.controls.getX() + 18),
                           static_cast<float> (layout.controls.getRight() - 18));
     g.drawHorizontalLine (layout.meters.getY() + 48,
@@ -2482,31 +2623,32 @@ void FirstAudioProcessorEditor::resized()
                                  juce::jmax (0, controlsHintRight - controlsHintLeft), 19);
 
     // ------------------------------------------------------------------
-    //  Section captions inside the knob grid.
+    //  The tab bar.
     //
-    //  Twenty-one knobs in five rows read as one undifferentiated block without
-    //  them, and the three groups a user actually thinks in - the machine's own
-    //  controls, the saturation core, and the head/transport extras - would not be
-    //  visible anywhere. Each caption is a small right-aligned label sitting on the
-    //  row boundary ABOVE its group, so it names the group without taking a cell
-    //  away from a knob.
+    //  The three groups used to be one five-row block of all twenty-one knobs, with a
+    //  small caption floating in the row gap above each group. Those were the panel's
+    //  worst-placed furniture: the gap above row 3 lies INSIDE row 2 and the gap above
+    //  row 4 lies inside row 3, so SATURATION CORE was painted on top of the row of
+    //  knobs above it and HEAD / TRANSPORT on top of the next one, and at 13 px tall
+    //  the text ran into the knob captions behind it. Nothing about that placement
+    //  could have been right - there is no row of its own for a caption to sit in when
+    //  the rows are full.
+    //
+    //  The captions are gone and the groups are real tabs, so each is named on a
+    //  button tall enough to read, the knobs underneath get a whole grid to
+    //  themselves, and only the selected tab's controls are on screen at all.
     // ------------------------------------------------------------------
-    const auto captionHeight = 13;
-    const auto captionInset = 20;
-    const auto captionWidth = 150;
+    const auto tabBarLeft = layout.controls.getX() + 14;
+    const auto tabBarTop = layout.controls.getY() + 34;
+    const auto tabBarHeight = 24;
+    const auto tabGap = 6;
+    const auto tabButtonWidth = (layout.controls.getWidth() - 28
+                                 - tabGap * (numTabs - 1)) / numTabs;
 
-    const auto placeSectionCaption = [&] (juce::Label& label, const juce::String& text,
-                                          int rowIndex, int gridTop, int rowHeight)
-    {
-        styleLabel (label, text, 7.5f, paletteFor (darkTheme).secondary,
-                    true, juce::Justification::centredRight);
-        addAndMakeVisible (label);
-        // Sits in the gap between the previous row and this one, so it never
-        // overlaps a knob or a knob's own caption.
-        label.setBounds (layout.controls.getRight() - captionInset - captionWidth,
-                         gridTop + rowIndex * rowHeight - captionHeight,
-                         captionWidth, captionHeight);
-    };
+    for (int tab = 0; tab < numTabs; ++tab)
+        tabButtons[static_cast<std::size_t> (tab)]
+            .setBounds (tabBarLeft + tab * (tabButtonWidth + tabGap),
+                        tabBarTop, tabButtonWidth, tabBarHeight);
     metersHeadingLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 8, 130, 18);
     metersHintLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 27, 150, 14);
     const auto compressorLabelWidth = 120;
@@ -2515,42 +2657,32 @@ void FirstAudioProcessorEditor::resized()
     compressorReadout.setBounds (layout.meters.getRight() - compressorLabelWidth - 14,
                                  layout.meters.getY() + 27, compressorLabelWidth, 14);
 
+    // The grid starts below the divider paint() drew, with a little air under it. The
+    // 14 px undoes the reduced() inset, so the offset is measured from the panel edge
+    // that controlsDividerOffset is measured from, not from the inset grid.
     auto grid = layout.controls.reduced (14);
-    grid.removeFromTop (42);
+    grid.removeFromTop (controlsDividerOffset - 14 + 8);
     grid.removeFromBottom (8);
-    const auto cellWidth = grid.getWidth() / controlColumns;
 
-    // The number of rows is derived from the control count and the column count rather
-    // than written out, and EVERY row calculation below divides by it. Hardcoding the
-    // row count is how the previous "row == 1" became wrong the moment a tenth control
-    // turned the grid from two rows into three, and it stayed wrong in the other
-    // direction: a leftover "/ 3" from the 11-control era sized every cell from a
-    // three-row grid while five rows were stacked on top of it, so the fourth and
-    // fifth rows (CABINET / DELAY / DLY LVL / ST OFFSET / NOISE, and SUBFUND) were
-    // placed a third of a grid BELOW the panel - drawn over the meters and off the
-    // bottom of the window.
-    const auto gridRows = (static_cast<int> (controlCount) + controlColumns - 1) / controlColumns;
+    // Only the ACTIVE tab is laid out, and its own control count decides the row
+    // count, so a tab is never sized as if it still had to hold the whole panel's
+    // knobs. Because every tab holds between five and nine of them and the grid is
+    // tabColumns wide, they all come to two rows - the grid does not resize or jump
+    // when the user switches tabs.
+    const auto& activeTab = tabSpecs[static_cast<std::size_t> (currentTab)];
+    const auto tabControlCount = static_cast<int> (activeTab.count);
+    const auto cellWidth = grid.getWidth() / tabColumns;
+    const auto gridRows = (tabControlCount + tabColumns - 1) / tabColumns;
     const auto rowHeight = grid.getHeight() / gridRows;
 
-    // The three section captions, placed on the row boundaries their groups start at.
-    // The grid is five rows: the machine's own controls are rows 0-1, the saturation
-    // core is row 2, and the head/transport extras are rows 3-4. The captions sit
-    // ABOVE their first row, in the gap the row spacing leaves - and they divide by
-    // the same rowHeight the cells do, because a caption placed on a different row
-    // grid than the knobs is a caption on the wrong row.
+    for (int slot = 0; slot < tabControlCount; ++slot)
     {
-        placeSectionCaption (machineSectionLabel, "MACHINE", 0, grid.getY(), rowHeight);
-        placeSectionCaption (saturationSectionLabel, "SATURATION CORE", 2, grid.getY(), rowHeight);
-        placeSectionCaption (headSectionLabel, "HEAD / TRANSPORT", 3, grid.getY(), rowHeight);
-    }
-
-    for (std::size_t i = 0; i < controlCount; ++i)
-    {
-        const auto row = static_cast<int> (i / controlColumns);
-        const auto column = static_cast<int> (i % controlColumns);
+        const auto i = activeTab.controls[slot];
+        const auto row = slot / tabColumns;
+        const auto column = slot % tabColumns;
         auto cell = juce::Rectangle<int> (grid.getX() + column * cellWidth,
                                           grid.getY() + row * rowHeight,
-                                          column == controlColumns - 1
+                                          column == tabColumns - 1
                                               ? grid.getRight() - (grid.getX() + column * cellWidth)
                                               : cellWidth,
                                           row == gridRows - 1
