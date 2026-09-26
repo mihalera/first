@@ -166,7 +166,7 @@ private:
     //   row 2  WOW      FLUTTER MIX     OUTPUT   WIDTH
     //   row 3  BLEND    SHAPE   AMP BIAS SAG     PRESENCE   (the saturation core)
     //   row 4  CABINET  DELAY   DLY LVL ST OFFSET NOISE
-    //   row 5  (the grid stretches the last cell to fill, which is what SUBFUND takes)
+    //   row 5  SUBFUND                  (the only control on a row of its own)
     //
     // The count here, the controlIds / controlNames lists and the defaultValues array
     // in the .cpp are four views of ONE list and must agree. That is why the array is
@@ -186,6 +186,12 @@ private:
     // there and the build failed to compile (C2065 on `styleLabel`).
     void styleLabel (juce::Label& label, const juce::String& text, float size,
                      juce::Colour colour, bool bold, juce::Justification justification);
+
+    // The GL switch's colours follow the context rather than the theme alone: it is a
+    // plain TextButton, so it needs a themed background (it was the one TextButton in
+    // the panel without one) and an explicit ON colour, since getToggleState() is
+    // always false for it.
+    void styleGlButton (bool isOn);
 
     void refreshPresetList();
     void refreshUserPresetList();

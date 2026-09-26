@@ -881,6 +881,28 @@ void FirstAudioProcessorEditor::styleLabel (juce::Label& label, const juce::Stri
 }
 
 //==============================================================================
+// The GL switch is the one panel control whose LOOK is its state, so both come from
+// the context. It is a plain TextButton, not a ToggleButton, which is what made it
+// look wrong in both states: it was the only TextButton in the panel never given a
+// themed buttonColourId, so it kept LookAndFeel_V4's light default background on a
+// dark panel, and because getToggleState() is always false for it, drawButtonText
+// read textColourOffId for ON as well - so GL ON and GL OFF were the same grey with
+// different words in them.
+void FirstAudioProcessorEditor::styleGlButton (bool isOn)
+{
+    const auto& palette = paletteFor (darkTheme);
+
+    glButton.setColour (juce::TextButton::buttonColourId, isOn ? palette.accent : palette.raised);
+    glButton.setColour (juce::TextButton::buttonOnColourId, isOn ? palette.accent : palette.raised);
+
+    // drawButtonText picks between textColourOnId and textColourOffId with
+    // getToggleState(), which is always false here, so OFF is the id that matters.
+    glButton.setColour (juce::TextButton::textColourOffId, isOn ? palette.readout : palette.text);
+    glButton.setColour (juce::TextButton::textColourOnId, isOn ? palette.readout : palette.text);
+    glButton.repaint();
+}
+
+//==============================================================================
 FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
@@ -1054,29 +1076,42 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (harmonicsLabel);
     addAndMakeVisible (harmonicsReadout);
 
+    // The order of these two lists IS the knob grid: five controls per row, row by
+    // row, top to bottom, so it has to agree with the section captions placed in
+    // resized() (MACHINE on row 1, SATURATION CORE on row 3, HEAD / TRANSPORT on row
+    // 4) and with the row map in the header. It did not: SUBFUND sat in the middle of
+    // the grid and pushed the saturation core down to row 4, which left the BLEND /
+    // SHAPE / AMP BIAS / SAG / PRESENCE row captioned HEAD / TRANSPORT and the SUBFUND
+    // / DELAY / DLY LVL / ST OFFSET / NOISE row under it captioned SATURATION CORE -
+    // both captions on the wrong row, on the row that names the machine's character.
+    //
+    // BRIGHT and TONE are deliberately not swapped to line up with their ids: the
+    // parameter called "tone" is registered as Brightness and the one called
+    // "character" as Tone (see createParameterLayout), so each cell carries the name
+    // the HOST shows for that parameter.
     const juce::StringArray controlIds { "input", "drive", "bias",
                                          "tone", "character", "wow",
                                          "flutter", "mix", "output",
-                                         "stereo_width", "subfund",
+                                         "stereo_width", "blend",
+                                         "shape", "amp_bias", "sag",
+                                         "presence", "cabinet",
                                          "delay_time", "delay_feedback",
-                                         "st_offset", "noise",
-                                         "blend", "shape", "amp_bias",
-                                         "sag", "presence", "cabinet" };
+                                         "st_offset", "noise", "subfund" };
     const juce::StringArray controlNames { "INPUT", "DRIVE", "BIAS",
                                            "BRIGHT", "TONE", "WOW",
                                            "FLUTTER", "MIX", "OUTPUT",
-                                           "WIDTH", "SUBFUND",
+                                           "WIDTH", "BLEND",
+                                           "SHAPE", "AMP BIAS", "SAG",
+                                           "PRESENCE", "CABINET",
                                            "DELAY", "DLY LVL",
-                                           "ST OFFSET", "NOISE",
-                                           "BLEND", "SHAPE", "AMP BIAS",
-                                           "SAG", "PRESENCE", "CABINET" };
-    // One default per entry in controlNames, in the same order:
-    // INPUT, DRIVE, BIAS, BRIGHT, TONE, WOW, FLUTTER, MIX, OUTPUT, WIDTH, SUBFUND,
-    // DELAY, DLY LVL, ST OFFSET, NOISE. The array is sized by controlCount, so the
-    // two must stay in step - a longer list is a compile error (C2078), which is the
-    // behaviour wanted: a default that silently belongs to no control is worse.
-    // One default per controlIds entry, in the SAME order. The two lists are read
-    // side by side, so they are laid out to mirror each other:
+                                           "ST OFFSET", "NOISE", "SUBFUND" };
+    // One double-click reset value per controlIds entry, in the SAME order, each one
+    // the default createParameterLayout() registers for that parameter. These are
+    // three views of ONE list, so a value that lands on a different control is a
+    // wrong-sounding reset rather than a harmless slip: ST OFFSET reset to 50 % of
+    // its +-500-sample range while NOISE reset to silence. The array is sized by
+    // controlCount, so a longer or shorter list is a compile error (C2078).
+    // The row map below is the knob grid, row by row:
     //   row 1  input 0.0    drive 0.30   bias 0.42    tone 0.50   character 0.50
     //   row 2  wow 0.14     flutter 0.18 mix 0.50     output 0.0  width 0.50
     //   row 3  blend 0.0    shape 0.50   amp_bias 0.50 sag 0.0    presence 0.50
@@ -1086,10 +1121,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                                            0.50, 0.5, 0.14,
                                                            0.18, 0.5, 0.0,
                                                            0.5, 0.0,
-                                                           0.0, 0.0,
-                                                           0.0, 0.5,
-                                                           0.0, 0.5, 0.50,
-                                                           0.0, 0.50, 0.0 };
+                                                           0.5, 0.50, 0.0,
+                                                           0.50, 0.0,
+                                                           0.0, 0.0, 0.0,
+                                                           0.50, 0.0 };
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -1640,22 +1675,20 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // machines where the context never came up the button reads OFF and the
     // software renderer is what the user sees.
     glButton.setButtonText (openGLContext.isAttached() ? "GL ON" : "GL OFF");
+    styleGlButton (openGLContext.isAttached());
     glButton.onClick = [this]
     {
         if (openGLContext.isAttached())
-        {
             openGLContext.detach();
-            glButton.setButtonText ("GL OFF");
-        }
         else
-        {
             openGLContext.attachTo (*this);
-            // Detach again if the driver refused, so the button never lies.
-            if (! openGLContext.isAttached())
-                glButton.setButtonText ("GL OFF");
-            else
-                glButton.setButtonText ("GL ON");
-        }
+
+        // One place decides what the switch says and how it looks, and both read the
+        // context's state afterwards: attachTo() can fail on a driver, a remote
+        // session or a VM, and a branch that assumed success would leave the button
+        // claiming GL is on while the software renderer is drawing the panel.
+        glButton.setButtonText (openGLContext.isAttached() ? "GL ON" : "GL OFF");
+        styleGlButton (openGLContext.isAttached());
     };
 
     startTimerHz (30);
@@ -1903,8 +1936,7 @@ void FirstAudioProcessorEditor::applyTheme()
     styleCombo (oversamplingBox);
     styleCombo (instrumentBox);
     styleCombo (transportBox);
-    glButton.setColour (juce::TextButton::textColourOffId, palette.text);
-    glButton.setColour (juce::TextButton::textColourOnId, palette.text);
+    styleGlButton (openGLContext.isAttached());
     styleWorkflowButton (copyAButton, audioProcessor.getActiveCompareSlot() == 0);
     styleWorkflowButton (copyBButton, audioProcessor.getActiveCompareSlot() == 1);
     styleWorkflowButton (compareButton, false);
