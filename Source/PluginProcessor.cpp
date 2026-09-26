@@ -890,10 +890,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     // it leaves the parameter unversioned, so a host has no way to tell a future
     // meaning change from the current one. The id strings are unchanged, so saved
     // sessions and presets resolve exactly as before.
+    // All TWELVE stocks, in the same order as the engine's switch and the panel's
+    // combo box. A choice list shorter than either of those does not fail the build,
+    // it just silently caps the control: ComboBoxAttachment clamps the selection to
+    // the number of choices the parameter itself declares, so SM 468, 888, 815 and
+    // 811 were drawn on the panel, implemented in the engine, and unreachable.
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "tape_type", 1 }, "Tape Type",
                                                             juce::StringArray { "J37", "Ampex 456", "Studer A800",
                                                                                  "Chrome", "Type 111", "GP9",
-                                                                                 "Quantegy 499", "RTM SM911" },
+                                                                                 "Quantegy 499", "RTM SM911",
+                                                                                 "SM 468", "888", "815", "811" },
                                                             0));
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "speed", 1 }, "Speed",
                                                             juce::StringArray { "7.5 ips", "15 ips", "30 ips" },
