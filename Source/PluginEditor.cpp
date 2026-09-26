@@ -895,24 +895,81 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // panel. The layout code below is all relative to getLocalBounds(), so it needs no
     // knowledge of DPI at all.
     //
-    // Re-tuned again after a second "interface is still too large" report. Two things
-    // shrank the real footprint: the 1024 x 640 opening size itself, and the outer
-    // furniture - getEditorLayout() previously kept 18 px on every edge of the window
-    // and a 78 px header, which alone cost more than a hundred rows of dead panel
-    // before any control appeared. The opening size is now 960 x 600 - the same
-    // proportion, one notch smaller - and the minimum is 780 x 540 so small hosts
-    // keep the knob grid and the 2 x 2 meters usable. The maximum is pulled in to
-    // 1400 x 900: beyond that the analogue panel stops gaining legibility and only
-    // looks sparse.
-    // Re-sized for the five-row control grid. The window grew in HEIGHT rather than
-    // width because the extra rows are the constraint: five rows of knobs plus the
-    // meter panel need about 780 px of working height before anything is cramped,
-    // and widening further would only make the knob grid look sparse without
-    // giving the rows any more room. The minimum keeps every row usable; the
-    // maximum is where the analogue panel stops gaining legibility and only looks
-    // emptier.
-    setResizeLimits (860, 820, 1500, 1180);
-    setSize (1060, 900);
+    // Sizing has TWO independent jobs, and confusing them is what left the editor unable
+    // to fit on a laptop screen:
+    //
+    //   1. The FLOOR is the layout's own minimum, derived from the fixed furniture in
+    //      getEditorLayout() and the three lines of controls in the deck. The deck needs
+    //      752 px of width, which is 780 px of window once the 14 px outer padding is
+    //      added, and the five knob rows need about 65 px each, which is 680 px of window
+    //      (header 70 + deck 164 + their two gaps, then the grid under a heading). The
+    //      old floor of 860 x 820 was above both, so on a 1366 x 768 laptop - a work area
+    //      of roughly 1366 x 688 - the window could not be shrunk to fit at all, and the
+    //      user could not get at the bottom of the preset row.
+    //
+    //   2. The OPENING size is the preferred size CLAMPED TO THE SCREEN IT OPENS ON.
+    //      A fixed 1060 x 900 fits a 27" monitor and nothing smaller, and the host is
+    //      under no obligation to shrink the window for us. So the display the editor
+    //      lands on decides: the preferred size when there is room, and the work area
+    //      minus a frame allowance when there is not, centred so the whole panel is
+    //      reachable instead of hanging off the bottom edge.
+    //
+    // A screen SMALLER than the floor still gets a window that fits (the clamp wins over
+    // the floor, because a window you cannot see is worse than a tight one); the floor
+    // only governs how far the user may drag the edges afterwards.
+    constexpr int minEditorWidth = 780;
+    constexpr int minEditorHeight = 680;
+    constexpr int preferredEditorWidth = 1060;
+    constexpr int preferredEditorHeight = 900;
+
+    // The horizontal margin keeps the frame off the edge of the display. The vertical
+    // one is larger because a decorated window's title bar and border sit OUTSIDE the
+    // size requested here - on Windows and GNOME that is another 30-45 px of screen the
+    // work area has to have room for, and forgetting it is how a window that "fits" ends
+    // up with its caption bar under the taskbar.
+    constexpr int screenMarginX = 16;
+    constexpr int screenMarginY = 48;
+
+    setResizeLimits (minEditorWidth, minEditorHeight, 1500, 1180);
+
+    const auto& displays = juce::Desktop::getInstance().getDisplays();
+    juce::Rectangle<int> workArea;
+
+    // The display under the mouse is the one the user is looking at, and the host will
+    // almost certainly put the editor near it. The other two cases are the mouse sitting
+    // outside every known display (a KVM switch, a locked session) and a headless build
+    // with no displays at all - in both of them there is nothing sensible to clamp to, so
+    // the preferred size is used unchanged.
+    if (const auto* display = displays.getDisplayForPoint (juce::Desktop::getMousePosition()))
+        workArea = display->userBounds.toNearestInt();
+    else if (const auto* primary = displays.getPrimaryDisplay())
+        workArea = primary->userBounds.toNearestInt();
+    else
+        workArea = displays.getTotalBounds (true);
+
+    if (workArea.isEmpty())
+    {
+        setSize (preferredEditorWidth, preferredEditorHeight);
+    }
+    else
+    {
+        // toNearestInt() above already rounded, so subtracting the margin afterwards
+        // cannot leave the window half a pixel - or a whole one - over the edge.
+        const auto openingWidth = juce::jlimit (minEditorWidth,
+                                                workArea.getWidth() - 2 * screenMarginX,
+                                                preferredEditorWidth);
+        const auto openingHeight = juce::jlimit (minEditorHeight,
+                                                 workArea.getHeight() - 2 * screenMarginY,
+                                                 preferredEditorHeight);
+
+        setSize (openingWidth, openingHeight);
+
+        // Centred only when the screen forced a smaller window. At the preferred size the
+        // host decides where the editor goes, and re-centring it here would fight the
+        // DAW's own window management.
+        if (openingWidth != preferredEditorWidth || openingHeight != preferredEditorHeight)
+            centreWithSize (openingWidth, openingHeight);
+    }
 
 #if JUCE_DEBUG
     // The Melatonin component inspector, debug builds only. It is created after
