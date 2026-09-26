@@ -1954,6 +1954,14 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const float outputAttackSeconds = 0.20f * stockAttackScale * transportAttackScale;
     const float outputReleaseSeconds = 1.00f * stockReleaseScale * transportReleaseScale;
 
+    const auto inputCompressorCoefficients = GlueCompressor::makeCoefficients (
+        engineSampleRate, inputAttackSeconds, inputReleaseSeconds, inputDriveLoad);
+    const auto outputCompressorCoefficients = GlueCompressor::makeCoefficients (
+        engineSampleRate, outputAttackSeconds, outputReleaseSeconds, outputDriveLoad);
+
+    const auto outputLoudnessCoefficient = LoudnessMeter::makeWindowCoefficient (engineSampleRate);
+    const auto inputLoudnessCoefficient = LoudnessMeter::makeWindowCoefficient (engineSampleRate);
+
     // The two glue detectors' block-rate coefficients. Everything they depend on -
     // the engine rate, the four base constants above and the trim-driven load - is
     // fixed for the whole block, so they are built once here rather than recomputed
