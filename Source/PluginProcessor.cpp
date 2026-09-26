@@ -1754,12 +1754,15 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         case 11: // 811 - the clean, open, low-noise mastering stock. The gentlest bend
                  // of the set with the most open head, so it stays transparent under
                  // level and keeps the top octave: a bus stock, not a colour.
-        default:
             tapeCurve -= 0.02f;
             tapeAsymmetry += 0.01f;
             tapeHiss -= 0.05f;
             headDampingHz += 9000.0f;
             hysteresis -= 0.03f;
+            break;
+        default:
+            // Unreachable: the choice parameter is clamped to 0..11. Present so the
+            // switch is exhaustive and a future entry cannot silently do nothing.
             break;
     }
 
@@ -2236,7 +2239,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         //  from wherever it was, which is what makes a fresh START from rest a
         //  spin-up and a START from PLAY a brief re-lock.
         // ------------------------------------------------------------------
-        const float transportTarget = (transportState == 0) ? 0.0f : 1.0f;
         transportRamp += (transportTarget - transportRamp) * transportRampCoefficient;
         if (transportTarget <= 0.0f && transportRamp < 1.0e-5f)
             transportRamp = 0.0f;

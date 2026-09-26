@@ -995,6 +995,11 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                            "WIDTH", "SUBFUND",
                                            "DELAY", "DLY LVL",
                                            "ST OFFSET", "NOISE" };
+    // One default per entry in controlNames, in the same order:
+    // INPUT, DRIVE, BIAS, BRIGHT, TONE, WOW, FLUTTER, MIX, OUTPUT, WIDTH, SUBFUND,
+    // DELAY, DLY LVL, ST OFFSET, NOISE. The array is sized by controlCount, so the
+    // two must stay in step - a longer list is a compile error (C2078), which is the
+    // behaviour wanted: a default that silently belongs to no control is worse.
     const std::array<double, controlCount> defaultValues { 0.0, 0.30, 0.42,
                                                            0.50, 0.5, 0.14,
                                                            0.18, 0.5, 0.0,
@@ -2204,22 +2209,23 @@ void FirstAudioProcessorEditor::resized()
     instrumentLabel.setBounds (oversamplingBox.getRight() + 16, layout.deck.getY() + 83, 68, 16);
     instrumentBox.setBounds (oversamplingBox.getRight() + 16, layout.deck.getY() + 74, 112, 32);
 
-    // TRANSPORT sits after INSTRUMENT on the switches row. The harmonics readout is
-    // right-aligned on the same row, so the chain is width-accounted to stop short of
-    // it even at the 780 px minimum panel: 18 + 92 + 6 + 100 + 16 + 40 + 58 + 72 +
-    // 16 + 68 + 112 + 14 + 62 + 10 + 78 = 762 of the deck's 752 px is over budget, so
-    // GL moves to the row's right end beside the harmonics readout and TRANSPORT
-    // takes the slot GL vacated.
+    // The harmonics readout is right-aligned on this row, so its width and the
+    // resulting left edge are computed FIRST and the controls that share the row are
+    // placed against them. Declaring `harmonicsWidth` after the GL button used it is
+    // what produced C2065 - the constant has to exist before its first reader.
+    const auto harmonicsWidth = 130;
+    const auto harmonicsLeft = layout.deck.getRight() - harmonicsWidth - 14;
+
+    harmonicsLabel.setBounds (harmonicsLeft, layout.deck.getY() + 70, harmonicsWidth, 15);
+    harmonicsReadout.setBounds (harmonicsLeft, layout.deck.getY() + 88, harmonicsWidth, 14);
+
+    // TRANSPORT sits after INSTRUMENT on the switches row, and GL moves to the right
+    // end of the row just left of the harmonics readout, so the chain fits the deck:
+    // 18 + 92 + 6 + 100 + 16 + 40 + 58 + 72 + 16 + 68 + 112 + 14 + 62 leaves about
+    // 78 px before the readout's 130 px block, which is what TRANSPORT takes.
     transportLabel.setBounds (instrumentBox.getRight() + 14, layout.deck.getY() + 83, 62, 16);
     transportBox.setBounds (instrumentBox.getRight() + 14, layout.deck.getY() + 74, 78, 32);
-    glButton.setBounds (layout.deck.getRight() - harmonicsWidth - 14 - 72,
-                        layout.deck.getY() + 74, 64, 32);
-
-    const auto harmonicsWidth = 130;
-    harmonicsLabel.setBounds (layout.deck.getRight() - harmonicsWidth - 14,
-                              layout.deck.getY() + 70, harmonicsWidth, 15);
-    harmonicsReadout.setBounds (layout.deck.getRight() - harmonicsWidth - 14,
-                                layout.deck.getY() + 88, harmonicsWidth, 14);
+    glButton.setBounds (harmonicsLeft - 10 - 64, layout.deck.getY() + 74, 64, 32);
 
     presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 119, 46, 16);
     presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 110, 128, 32);

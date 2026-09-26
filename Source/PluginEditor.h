@@ -160,16 +160,15 @@ private:
         juce::Rectangle<int> meters;
     };
 
-    // Fourteen controls: the nine original machine controls plus the A/B TONE macro,
+    // Fifteen controls: the nine original machine controls plus the A/B TONE macro,
     // SUBFUND, WIDTH, DELAY, DELAY LEVEL, ST OFFSET and NOISE. A 5 x 3 grid holds
-    // fifteen, and the layout stretches the last column and row to fill, so the one
-    // unused cell costs nothing visually.
+    // exactly fifteen, so every cell is used and the grid fills the panel.
     //
-    // The old 4 x 3 arrangement could not take a fourteenth without splitting a row;
-    // widening to five columns keeps every knob in a real cell and still fits the
-    // 780 px minimum panel, because the grid is computed from the panel's own width
-    // rather than from fixed pixel positions.
-    static constexpr std::size_t controlCount = 14;
+    // The count here, the controlIds / controlNames lists and the defaultValues array
+    // in the .cpp are four views of ONE list and must agree. That is why the array is
+    // sized by controlCount rather than by a literal: a mismatch is then a compile
+    // error (C2078) instead of a silent out-of-bounds read at run time.
+    static constexpr std::size_t controlCount = 15;
     static constexpr int controlColumns = 5;
     static constexpr std::size_t decorativeOrbCount = 6;
 
