@@ -553,10 +553,13 @@ struct SampleClock
 class SampleSmoother
 {
 public:
-    explicit SampleSmoother (SampleClock& clockToUse, bool startsSample = false,
-                             bool invertOutput = false, float initialValue = 0.0f)
-        : clock (clockToUse), startsSample (startsSample), invertOutput (invertOutput),
-          smoother (initialValue)
+    // The two flag parameters are named `should...` rather than after the fields they
+    // initialise: a constructor parameter with the same name as its field shadows it,
+    // and Clang flags that on macOS (it is how a silent self-assignment hides here).
+    explicit SampleSmoother (SampleClock& clockToUse, bool shouldStartAtSample = false,
+                             bool shouldInvertOutput = false, float initialValue = 0.0f)
+        : clock (clockToUse), startsSample (shouldStartAtSample),
+          invertOutput (shouldInvertOutput), smoother (initialValue)
     {
     }
 
@@ -1499,6 +1502,12 @@ public:
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
    #endif
 
+    // AudioProcessor declares BOTH a float and a double processBlock in the headless
+    // module. Overriding only the float one hid the double overload, which GCC reports
+    // as -Woverloaded-virtual: the base virtual becomes unreachable by name. The using
+    // declaration brings it back into scope; the double one is never called for a
+    // float-only plugin, but hiding it is still a real interface change.
+    using juce::AudioProcessor::processBlock;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
     /** The tape engine proper; processBlock routes into this, oversampled or not. */

@@ -68,7 +68,11 @@ namespace
             gradually with level instead of switching on at a threshold, so quiet
             passages stay clean and loud ones bloom - the behaviour of real tape.
     */
-    inline float magneticHysteresis (float x, float drive, float asymmetry, float memory)
+    // Superseded by the multi-stage curve below (see the note at its call site), so it
+    // has no caller left. Kept as the written-down reference for the single-branch
+    // design it was; [[maybe_unused]] says that on purpose instead of leaving a
+    // -Wunused-function warning in every build.
+    [[maybe_unused]] inline float magneticHysteresis (float x, float drive, float asymmetry, float memory)
     {
         const float biased = x + asymmetry;
 
@@ -3322,7 +3326,9 @@ void FirstAudioProcessor::getStateInformation (juce::MemoryBlock& destData)
 
 void FirstAudioProcessor::setStateInformation (const void* data, int sizeInBytes)
 {
-    std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, static_cast<size_t> (sizeInBytes)));
+    // sizeInBytes is already an int, and so is getXmlFromBinary()'s second parameter, so
+    // casting it to size_t only bought a size_t -> int narrowing warning.
+    std::unique_ptr<juce::XmlElement> xmlState (getXmlFromBinary (data, sizeInBytes));
 
     if (xmlState != nullptr)
     {

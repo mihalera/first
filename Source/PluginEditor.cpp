@@ -78,12 +78,27 @@ namespace
         return darkTheme ? charcoalPalette : ivoryPalette;
     }
 
-    // The three tabs the knob grid is split across. Each entry names a tab and lists
-    // the controlIds indices it holds, in the order they are drawn: the signal chain,
-    // left to right, then down. This table - not the order of controlIds - decides
-    // what the grid shows, and setCurrentTab() static_asserts it against
-    // controlCount, so a control no tab lists cannot slip through to sit in the panel
-    // where it can never be seen or reached.
+    // The three tabs the knob grid is split across. Each entry names a tab and lists the
+    // controlIds indices it holds, in the order they are drawn: left to right, then down.
+    //
+    // The order is SIGNAL FLOW, not the order the parameters happen to be declared in,
+    // and that is the whole point of the table. It used to group controls by where they
+    // sat in one five-row block, so MACHINE ended with SUBFUND (a low-frequency weight,
+    // read as if it were a modulation control) and the head/transport tab opened with
+    // PRESENCE before WOW and FLUTTER, which put the playback EQ in front of the tape
+    // speed controls it acts on. Now:
+    //
+    //   MACHINE           what goes in, the machine's tone, what comes out
+    //   SATURATION CORE   the level into the saturator, then everything that bends it
+    //   HEAD / TRANSPORT  the head, then the transport, then echo, then hiss
+    //
+    // Each tab reads in the order its own name states, and the three of them are
+    // consecutive slices of the same chain, so scanning left to right across the panel
+    // walks the signal from the input trim to the tape hiss.
+    //
+    // This table - not the order of controlIds - decides what the grid shows, and
+    // setCurrentTab() static_asserts it against controlCount, so a control no tab lists
+    // cannot slip through to sit in the panel where it can never be seen or reached.
     struct TabSpec
     {
         const char* name;
@@ -93,12 +108,16 @@ namespace
     };
 
     constexpr std::array<TabSpec, 3> tabSpecs { {
-        { "MACHINE", "Input trim, tape drive and the machine's own colour.",
-                     8, { 0, 1, 2, 3, 4, 5, 6, 20 } },
-        { "SATURATION CORE", "The saturation path, how much of it you hear, and its trim.",
-                     7, { 10, 11, 12, 13, 7, 9, 8 } },
-        { "HEAD / TRANSPORT", "Playback head colour, echo, drift and tape noise.",
-                     6, { 14, 15, 16, 17, 18, 19 } }
+        //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
+        { "MACHINE", "What goes in, how the machine colours it, and what comes out.",
+                     6, { 0, 3, 4, 7, 9, 8 } },
+        //  drive, bias, subfund, blend, shape, amp_bias, sag
+        { "SATURATION CORE", "Everything that bends the signal: level into the core, "
+                            "then its colour and curve.",
+                     7, { 1, 2, 20, 10, 11, 12, 13 } },
+        //  cabinet, presence, wow, flutter, st_offset, delay_time, delay_feedback, noise
+        { "HEAD / TRANSPORT", "Playback head, tape transport, echo and hiss.",
+                     8, { 15, 14, 5, 6, 18, 16, 17, 19 } }
     } };
 
     // Where the divider under the knob-grid heading sits, in pixels from the top of the
@@ -774,7 +793,7 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // left-aligned label started and the right-aligned value ended two pixels from the
     // border, which is what made the numbers look pasted onto the panel edge and the
     // column read as crooked.
-    const auto rowInset = juce::jmax (5, juce::roundToInt (getWidth() * 0.055f));
+    const auto rowInset = juce::jmax (5, juce::roundToInt (static_cast<float> (getWidth()) * 0.055f));
     const auto rowWidth = juce::jmax (1, getWidth() - 2 * rowInset);
 
     const auto drawReadoutRow = [&] (const juce::String& label, float value,
@@ -1077,7 +1096,9 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // outside every known display (a KVM switch, a locked session) and a headless build
     // with no displays at all - in both of them there is nothing sensible to clamp to, so
     // the preferred size is used unchanged.
-    if (const auto* display = displays.getDisplayForPoint (juce::Desktop::getMousePosition()))
+    // The Point<float> overload: the Point<int> one is deprecated, and Clang says so on
+    // every macOS build. Same screen, same result - only the coordinate type differs.
+    if (const auto* display = displays.getDisplayForPoint (juce::Desktop::getMousePosition().toFloat()))
         workArea = display->userBounds.toNearestInt();
     else if (const auto* primary = displays.getPrimaryDisplay())
         workArea = primary->userBounds.toNearestInt();
@@ -1224,12 +1245,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // its +-500-sample range while NOISE reset to silence. The array is sized by
     // controlCount, so a longer or shorter list is a compile error (C2078).
     // The map below is the knob grid as tabSpecs groups it, id then default:
-    //   MACHINE           input 0.0   drive 0.30  bias 0.42  tone 0.50
-    //                      character 0.50  wow 0.14  flutter 0.18  subfund 0.0
-    //   SATURATION CORE   blend 0.0   shape 0.50  amp_bias 0.50  sag 0.0
+    //   MACHINE           input 0.0   tone 0.50  character 0.50
     //                      mix 0.50  stereo_width 0.50  output 0.0
-    //   HEAD / TRANSPORT  presence 0.50  cabinet 0.0  delay_time 0.0
-    //                      delay_feedback 0.0  st_offset 0.0  noise 0.50
+    //   SATURATION CORE   drive 0.30  bias 0.42  subfund 0.0  blend 0.0
+    //                      shape 0.50  amp_bias 0.50  sag 0.0
+    //   HEAD / TRANSPORT  cabinet 0.0  presence 0.50  wow 0.14  flutter 0.18
+    //                      st_offset 0.0  delay_time 0.0  delay_feedback 0.0
+    //                      noise 0.50
     const std::array<double, controlCount> defaultValues { 0.0, 0.30, 0.42,
                                                            0.50, 0.5, 0.14,
                                                            0.18, 0.5, 0.0,
@@ -1968,10 +1990,13 @@ bool FirstAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
         updateWorkflowButtons();
         return true;
     }
-    return Component::keyPressed (key);
+
     // 1 / 2 / 3 switch knob-grid tabs, the way any other plugin pages its controls.
-    // Tested after the undo chords, and only without Shift, so a capitalised digit typed
-    // into a slider's editable text box is left alone.
+    // This has to sit BEFORE the fall-through return: it was added after it, which left
+    // the whole block unreachable and the digits doing nothing at all. Clang reported it
+    // as -Wunreachable-code on the macOS build, which is how it was noticed. Tested
+    // after the undo chords, and only without Shift, so a capitalised digit typed into
+    // a slider's editable text box is still left alone.
     if (! commandDown && ! key.getModifiers().isShiftDown())
         for (int tab = 0; tab < numTabs; ++tab)
             if (key.getKeyCode() == '1' + tab)
