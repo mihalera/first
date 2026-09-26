@@ -41,3 +41,13 @@ struct Decibels
     }
 };
 } // namespace juce
+
+// The plugin's j37math namespace falls back to these exact std:: calls when
+// chowdsp is not in the build - which is always the case under the harness -
+// so the extracted detector code measures the same numbers it always did.
+namespace j37math
+{
+inline float exp (float x) noexcept   { return std::exp (x); }
+inline float sqrt (float x) noexcept  { return std::sqrt (x); }
+inline float log10 (float x) noexcept { return std::log10 (x); }
+}
