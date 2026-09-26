@@ -117,9 +117,9 @@ struct SampleClock
 class SampleSmoother
 {
 public:
-    explicit SampleSmoother (SampleClock& clockToUse, bool startsSample = false,
-                             bool invertOutput = false, float initialValue = 0.0f)
-        : clock (clockToUse), startsSample (startsSample), invertOutput (invertOutput),
+    explicit SampleSmoother (SampleClock& clockToUse, bool shouldStartSample = false,
+                             bool shouldInvert = false, float initialValue = 0.0f)
+        : clock (clockToUse), startsSample (shouldStartSample), invertOutput (shouldInvert),
           smoother (initialValue)
     {
     }
@@ -1264,6 +1264,19 @@ public:
     /** True when the last processed block was fully bypassed. */
     bool isBypassed() const noexcept { return bypassActive.load (std::memory_order_relaxed); }
 
+    /**
+        DELTA listen's switch, as the 0..1 target its ramp is fed.
+
+        Three places need the same answer - the per-block ramp feed, the bypass
+        early-return guard and the rate-change seed - so it is named rather than
+        written out three times. Read through the getter, never the raw pointer,
+        like every other switch, so a host-side change cannot be seen half-applied.
+    */
+    float deltaListenTarget() const noexcept
+    {
+        return (deltaParam != nullptr && deltaParam->load() >= 0.5f) ? 1.0f : 0.0f;
+    }
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
@@ -1360,6 +1373,14 @@ private:
     SampleSmoother mixSmoothed { sampleClock, false, false, 0.5f };
     SampleSmoother widthSmoothed { sampleClock };
     SampleSmoother bypassSmoothed { sampleClock };
+    // DELTA listen is the one switch whose output step is as large as the programme
+    // itself: switching it on replaces the finished signal with (machine - the
+    // machine's own dry), so a bare boolean would move the output by that much
+    // inside a single sample and click. It therefore crossfades on the same 10 ms
+    // window the bypass switch uses, and - like every other switch here - it is
+    // seeded from the parameter in prepareToPlay, so a session that restores DELTA
+    // on does not spend its first block fading into it.
+    SampleSmoother deltaSmoothed { sampleClock };
 
     std::atomic<float> inputPeakLevel { 0.0f };
     std::atomic<float> inputRmsLevel { 0.0f };
@@ -1668,7 +1689,6 @@ private:
     // -----------------------------------------------------------------------
     float transportRamp = 1.0f;
     float transportRampCoefficient = 0.0f;
-    int lastTransportState = -1;
 
     // Noise floor trim, smoothed like every other control-derived gain so moving
     // the NOISE knob cannot step the hiss level.

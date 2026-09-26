@@ -375,7 +375,9 @@ FirstAudioProcessor::FirstAudioProcessor()
                                      "subfund",
                                      "stereo_width", "tape_type", "speed", "instrument", "drive", "bias",
                                      "oversampling", "tone", "wow", "flutter", "mix",
-                                     "character" })
+                                     "character", "delta",
+                                     "delay_time", "delay_feedback", "st_offset",
+                                     "noise", "transport" })
         parameters.addParameterListener (parameterID, this);
 }
 
@@ -385,7 +387,9 @@ FirstAudioProcessor::~FirstAudioProcessor()
                                      "subfund",
                                      "stereo_width", "tape_type", "speed", "instrument", "drive", "bias",
                                      "oversampling", "tone", "wow", "flutter", "mix",
-                                     "character" })
+                                     "character", "delta",
+                                     "delay_time", "delay_feedback", "st_offset",
+                                     "noise", "transport" })
         parameters.removeParameterListener (parameterID, this);
 }
 
@@ -728,12 +732,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             "Bypass", false));
     // DELTA listen: when on, the output becomes wet minus dry - only what the
     // machine itself adds (harmonics, glue, transport wander) is heard. Both
-    // legs of the subtraction live on the SAME timeline (the dry signal is the
-    // host buffer being processed in place, the wet signal is finished further
-    // up in this very loop), so the difference is phase-perfect at every
-    // oversampling factor with no compensation delay of its own. The blend
-    // below ignores the bypass crossfade while the mode is on: delta of a
-    // bypassed machine is exactly zero, which is its own sanity check.
+    // legs of the subtraction live on the SAME timeline (the dry leg is carried
+    // alongside the wet one and finished further up in this very loop), so the
+    // difference is phase-perfect at every oversampling factor with no
+    // compensation delay of its own. The dry leg is the machine's OWN dry - the
+    // INPUT trim and the input-stage compressor, carried through the same static
+    // gain and the same width/trim/limiter stages as the wet leg - so MIX 0
+    // cancels to digital silence and the trims do not show up in the difference
+    // as level. The difference is scaled by the bypass ramp, so a bypassed
+    // machine's delta is exactly zero, which is its own sanity check. The switch
+    // is ramped rather than stepped, because the distance between the two signals
+    // is the programme itself.
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "delta", 1 },
                                                             "Delta Listen", false));
     // POLARITY INVERT: a mastering staple. A full polarity flip on the output, so a
@@ -775,10 +784,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     // it leaves the parameter unversioned, so a host has no way to tell a future
     // meaning change from the current one. The id strings are unchanged, so saved
     // sessions and presets resolve exactly as before.
+    // All TWELVE stocks, in the same order as the engine's switch and the panel's
+    // combo box. A choice list shorter than either of those does not fail the build,
+    // it just silently caps the control: ComboBoxAttachment clamps the selection to
+    // the number of choices the parameter declares, so the four newest stocks were
+    // listed on the panel and could never be reached.
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "tape_type", 1 }, "Tape Type",
                                                             juce::StringArray { "J37", "Ampex 456", "Studer A800",
                                                                                  "Chrome", "Type 111", "GP9",
-                                                                                 "Quantegy 499", "RTM SM911" },
+                                                                                 "Quantegy 499", "RTM SM911",
+                                                                                 "SM 468", "888", "815", "811" },
                                                             0));
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "speed", 1 }, "Speed",
                                                             juce::StringArray { "7.5 ips", "15 ips", "30 ips" },
@@ -1053,6 +1068,10 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // Start from the state the parameter restores: a session saved with BYPASS on
     // must not spend its first 10 ms ramping from the dry position.
     bypassSmoothed.setCurrentAndTargetValue (bypassParam != nullptr && bypassParam->load() >= 0.5f ? 0.0f : 1.0f);
+    // DELTA listen starts where the parameter says it should, for the same reason:
+    // a session saved with DELTA on must not spend its first 10 ms crossfading in.
+    deltaSmoothed.reset (sampleRateToUse, 0.01);
+    deltaSmoothed.setCurrentAndTargetValue (deltaListenTarget());
 
     inputPeakLevel.store (0.0f, std::memory_order_relaxed);
     inputRmsLevel.store (0.0f, std::memory_order_relaxed);
@@ -1140,9 +1159,9 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     stOffsetWritePosition = 0;
 
     // A transport given no state yet starts at speed if the parameter says PLAY,
-    // so a fresh instance is not silent until the user touches the switch. The
-    // constructor leaves lastTransportState at -1, so seeding it here is what
-    // makes the first block land on the right ramp.
+    // so a fresh instance is not silent until the user touches the switch: the
+    // ramp is seeded AT speed and the first block lands on the running machine.
+    // A session that restores STOP simply ramps it down from here.
     transportRamp = 1.0f;
 
     // The delay's damping is tied to the machine's own low-pass so a dark tape
@@ -1467,7 +1486,25 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         return parameter != nullptr && parameter->load() >= 0.5f;
     }();
 
-    if (bypassRequested && ! bypassSmoothed.isSmoothing() && bypassSmoothed.getCurrentValue() <= 0.0f)
+    // DELTA listen is read and its ramp fed HERE, above the bypass early return
+    // below, because that return skips the whole engine: a switch whose ramp lived
+    // downstream of it would never advance on the blocks that take it.
+    deltaSmoothed.setTargetValue (deltaListenTarget());
+
+    // The early return is only safe while DELTA is out of the picture. It hands the
+    // host buffer back untouched, so with DELTA engaged it would replace the
+    // difference signal with the full dry signal - and it would do it at the instant
+    // the crossfade finished, a step the size of the whole programme. So the engine
+    // keeps running, and keeps advancing the DELTA ramp, until the switch is off AND
+    // its ramp has actually arrived at the dry position. Releasing BYPASS then ramps
+    // back out through the engine instead of cutting to the dry buffer, and the
+    // DELTA crossfade covers the hand-over in both directions.
+    const auto deltaFullyOff = deltaListenTarget() <= 0.0f
+                            && ! deltaSmoothed.isSmoothing()
+                            && deltaSmoothed.getCurrentValue() <= 0.0f;
+
+    if (bypassRequested && ! bypassSmoothed.isSmoothing()
+        && bypassSmoothed.getCurrentValue() <= 0.0f && deltaFullyOff)
     {
         bypassActive.store (true, std::memory_order_relaxed);
 
@@ -1541,12 +1578,17 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto inputDb = inputDbParam->load();
     const auto stereoWidth = widthParam->load() * 2.0f;
 
+    // The transport switch, read once per block before anything that consults it:
+    // STOP leaves the capstan at rest, PLAY runs the machine, and START is PLAY
+    // with a longer engagement ramp handled by the transport ramp further down.
+    const auto transportState = (transportParam != nullptr)
+                                    ? static_cast<int> (transportParam->load()) : 1;
+
     // Output-stage switches, read once per block: polarity is a pure sign flip on
     // whatever leaves the machine, and auto gain gates the slow programme
     // compensator (see the final gain compensation section below).
     const float polaritySign = (polarityParam != nullptr && polarityParam->load() >= 0.5f) ? -1.0f : 1.0f;
     const bool autoGainEnabled = autoGainParam == nullptr || autoGainParam->load() >= 0.5f;
-    const bool deltaListen = deltaParam != nullptr && deltaParam->load() >= 0.5f;
 
     inputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (inputDb));
     outputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (outputDb));
@@ -1673,7 +1715,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             hysteresis += 0.08f;
             break;
         case 7: // RTM SM911 - broadcast reference: balanced, smooth, low noise
-        default:
             tapeCurve += 0.05f;
             tapeAsymmetry += 0.02f;
             tapeHiss -= 0.01f;
@@ -1709,7 +1750,10 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             break;
         case 11: // 811 - the clean, open, low-noise mastering stock. The gentlest bend
                  // of the set with the most open head, so it stays transparent under
-                 // level and keeps the top octave: a bus stock, not a colour.
+                 // level and keeps the top octave: a bus stock, not a colour. This is
+                 // also the switch's default: an index from an older session that
+                 // named more stocks than this build knows lands here, on the
+                 // cleanest formula rather than on the hottest one.
         default:
             tapeCurve -= 0.02f;
             tapeAsymmetry += 0.01f;
@@ -1841,14 +1885,18 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                * instrumentTransportScale;
     const float speedBias = 0.84f + speedScale * 0.30f;
 
-    // The transport activity gate: 0 when both Wow and Flutter are closed, 1 from
-    // roughly 50 % on either. The machine only makes a sound of any kind while its
-    // transport moves, so EVERYTHING the transport does is gated by this one factor:
-    // the tape-surface grain in the loop below (which used to run unconditionally
-    // and read as a mystery noise generator whenever both controls were closed),
-    // and - since the "hiss while paused" report - the noise floor as well, whose
-    // gain is multiplied by it further down. Nothing in the engine is always-on.
-    const float transportActivityGate = juce::jlimit (0.0f, 1.0f, (wowCurve + flutterCurve) * 2.0f);
+    // The transport activity gate. The switch is the machine's rest/running state:
+    // STOP silences everything the transport does - the tape-surface grain in the
+    // loop below (which used to run unconditionally and read as a mystery noise
+    // generator), and the noise floor, whose gain is multiplied by it further down.
+    // PLAY and START run the machine, floor included. Nothing in the engine is
+    // always-on, and now nothing in it is on while the capstan itself is not. The
+    // floor's fade is the hiss ramp's own 750 ms window (see
+    // resetSampleRateDependentState), so a STOP reads as the machine coasting to
+    // rest rather than a mute-switch drop, and a START fades up over the same
+    // window - the fix for the "noise while paused" report, now driven by the
+    // switch itself.
+    const float transportActivityGate = (transportState == 0) ? 0.0f : 1.0f;
 
     // Tone tilt: 0 = warm/soft, 1 = open/bright. The coefficients are cached by
     // updateToneCoefficients, which also derives the TONE-macro machine-state scalars
@@ -1920,7 +1968,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // The NOISE control trims the floor on top of the formula's own figure: 0.5 is
     // unity, so the knob starts neutral and the stock's own character is unchanged
     // unless the user asks for a different floor.
-    noiseTrimSmoothed.setTargetValue (juce::jlimit (0.0f, 2.0f, noiseAmount * 2.0f));
+    const auto noiseSource = (noiseParam != nullptr) ? noiseParam->load() : 0.5f;
+    noiseTrimSmoothed.setTargetValue (juce::jlimit (0.0f, 2.0f, noiseSource * 2.0f));
 
     // Every control-derived coefficient the block needs is in scope by now, so the
     // ramps are fed once here and read per sample with getCurrentValue(): no
@@ -1936,6 +1985,21 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // when no formula change is happening.
     headDampingSwitchSmoothed.setTargetValue (hfPostCoefficient);
     hissGainSmoothed.setTargetValue (gatedHissGain);
+
+    // The three new heads get their ramps fed here as well, alongside every other
+    // control-derived value: DELAY in samples (a buffer lookup only understands
+    // samples, so the ms control is converted once per block at the rate the
+    // engine actually runs at), DELAY LEVEL in 0..1, and ST OFFSET in samples too -
+    // its control is in microseconds, so the engine rate carries the conversion
+    // exactly as it carries every other time constant in the machine.
+    if (delayTimeParam != nullptr && engineSampleRate > 0.0f)
+        delaySamplesSmoothed.setTargetValue (delayTimeParam->load() * 0.001f
+                                             * engineSampleRate);
+    if (delayFeedbackParam != nullptr)
+        delayFeedbackSmoothed.setTargetValue (delayFeedbackParam->load());
+    if (stOffsetParam != nullptr && engineSampleRate > 0.0f)
+        stOffsetSamplesSmoothed.setTargetValue (stOffsetParam->load() * 1.0e-6f
+                                                * engineSampleRate);
     subFundamentalSmoothed.setTargetValue (subFundamentalParam != nullptr
                                                ? subFundamentalParam->load() : 0.0f);
 
@@ -1953,6 +2017,14 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // 16-second time constant, which would all but remove the hiss instead of shaping it.
     const float hissBandLimit = onePoleCoefficient (1000.0f / (juce::MathConstants<float>::twoPi * 16000.0f),
                                                     engineSampleRate);
+
+    // The STOP/START glide is a pure rate conversion, so its one-pole coefficient is
+    // built here next to the other block constants: 300 ms of real time at every
+    // rate, a spin-down and spin-up that reads as the capstan rather than as a
+    // mute switch. PLAY leaves the coefficient alone, so the ramp simply holds
+    // wherever the previous state left it.
+    if (transportState != 1)
+        transportRampCoefficient = onePoleCoefficient (300.0f, engineSampleRate);
 
     // Playback AC coupling: an 8 Hz one-pole DC blocker, rebuilt per block from the
     // rate. The standard form is y = x - x1 + R*y; R = 1 - 2*pi*fc/rate puts the
@@ -2151,6 +2223,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         const float outputGain = outputGainSmoothed.getNextValue();
         const float currentWidth = widthSmoothed.getNextValue();
         const float bypassMix = bypassSmoothed.getNextValue();
+        // DELTA listen's own ramp position for this sample. Read here beside the
+        // bypass ramp because the output crossfade below needs both, every sample.
+        const float deltaMix = deltaSmoothed.getNextValue();
 
         // Per-sample reference power for the final compensation, reset each iteration.
         referenceBlockPower = 0.0f;
@@ -2197,10 +2272,14 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         if (transportTarget <= 0.0f && transportRamp < 1.0e-5f)
             transportRamp = 0.0f;
 
-        // The spin-up pitch error: while the capstan is below speed the transport
-        // runs flat, and that is what makes the ramp read as a machine engaging
-        // rather than as a fade-in.
+        // The spin-up pitch error: while the capstan is below speed the tape runs
+        // SLOW, so every modulation phase this frame advances by less than its
+        // at-speed step and the pitch sits under the note until the capstan locks.
+        // The error fades to exactly zero as the ramp reaches 1, so it is a spin-up
+        // and a re-lock, never a standing detune on a running machine.
         const float speedError = 1.0f - (1.0f - transportRamp) * 0.7f;
+        const float wowStep = (twoPi * wowFreq) / engineSampleRate * speedError;
+        const float flutterStep = (twoPi * flutterFreq) / engineSampleRate * speedError;
 
         std::array<float, 2> tapeOutput {};
 
@@ -2211,6 +2290,17 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         // signal further down instead, where the remaining stages are linear or
         // gain-only.
         std::array<float, 2> undertoneOutput {};
+
+        // The machine's own dry leg, per channel: exactly the signal the tape path
+        // carries at MIX 0 - the INPUT trim and the input-stage compressor, and
+        // nothing else. DELTA listen subtracts THIS instead of the raw host buffer,
+        // which is what makes the two things the control promises actually true:
+        // MIX 0 has to come out as digital silence, and the difference has to hold
+        // the machine's character rather than its gain staging. Subtracting the raw
+        // buffer put the whole INPUT trim, the input compressor and the machine's
+        // static output calibration into the difference, so an otherwise untouched
+        // MIX 0 read as a quiet inverted copy of the programme instead of silence.
+        std::array<float, 2> machineDry {};
 
         // ------------------------------------------------------------------
         //  Input stage glue compressor, detected ONCE per frame.
@@ -2284,14 +2374,15 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // channel could hide a genuine level loss and switch the compensation off.
             referenceBlockPower += inputTrimmed * inputTrimmed;
             const float x = inputTrimmed * inputCompressionGain;
+            machineDry[static_cast<std::size_t> (channel)] = x;
 
             const float wowLfo = std::sin (wowPhase);
             const float flutterLfo = std::sin (flutterPhase);
             const float grainLfo = std::sin (wowPhase * 0.8f + flutterPhase * 1.3f
                                              + static_cast<float> (channel) * 2.4f);
 
-            wowPhase += (twoPi * wowFreq) / engineSampleRate;
-            flutterPhase += (twoPi * flutterFreq) / engineSampleRate;
+            wowPhase += wowStep;
+            flutterPhase += flutterStep;
             // Wrap rather than a single subtraction: at very low rates, or with a
             // high wow/flutter setting, one increment can exceed a full turn and a
             // lone `-= twoPi` would leave the phase running away unbounded.
@@ -2407,7 +2498,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
             // Scale compensation, gentle level-dependent bias compression and the
             // tape noise floor ride on the modulated signal.
-            const float compensation = tapeCurve / 1.30f;
+            const float compensation = tapeCurve / 1.30f * noiseTrimSmoothed.getCurrentValue();
 
             // Nonlinearity costs level, but only when the shaper is actually working. The
             // corrected shaper is near-unity at low drive, so this correction scales with
@@ -2443,7 +2534,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // to a 1.05 ceiling under signal - so the hiss was loudest when nothing was
             // playing and slightly louder still when the compressors clamped down. Tape
             // hiss is simply a constant floor; tracking the programme makes it breathe
-            // with the music, which is the one thing a noise floor must not do.
+            // with the music, which is the one thing a noise floor must not do. The NOISE
+            // knob then scales the whole trimmed floor, its own ramp advanced once per
+            // frame like every other control gain.
             const float bandLimitCompensation = 1.0f / std::sqrt (juce::jmax (0.05f, hissBandLimit));
             const float noiseFloor = hissLowPass * bandLimitCompensation;
 
@@ -2551,14 +2644,26 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             //  gives the same group delay for less memory but colours the phase
             //  differently across the band, and the point here is that the two
             //  channels differ by TIME, not by filter shape.
+            //
+            //  The sign picks the side: positive lags the right channel, negative
+            //  the left - the convention the control's own tooltip states.
             // -------------------------------------------------------------------
             float aligned = withDelay;
-            const bool offsetThisChannel = (channel == 1) == offsetRightChannel;
+            const float offsetSigned = stOffsetSamplesSmoothed.getCurrentValue();
+            const float offsetMagnitude = std::abs (offsetSigned);
+
+            // A negative offset is a LEFT-head offset and a positive one a RIGHT-head
+            // offset, so the sign alone picks the side; the magnitude test keeps the
+            // centre position (exactly 0) from offsetting either channel. Written as
+            // "signed < 0 == (channel == 0)" rather than "!=" so the test is an
+            // ordering against zero instead of a float equality.
+            const bool offsetThisChannel = offsetMagnitude > 0.0f
+                && ((offsetSigned < 0.0f) == (channel == 0));
             if (offsetThisChannel && activeChannels > 1)
             {
                 const float offsetSamples = juce::jlimit (
                     0.0f, static_cast<float> (stOffsetBufferLength - 2),
-                    stOffsetSamplesSmoothed.getCurrentValue());
+                    offsetMagnitude);
 
                 float readPosition = static_cast<float> (stOffsetWritePosition) - offsetSamples;
                 while (readPosition < 0.0f)
@@ -2704,10 +2809,21 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             }
         }
 
+        // Two signals leave the machine's gain stage and they differ only in which
+        // leg carries the character: outputSignal is the finished wet path, and
+        // deltaSignal is that same path with the machine's own dry removed. The dry
+        // leg is scaled by the SAME stageGain and compensationGain, which is what
+        // cancels the static output calibration and the auto-gain compensator out of
+        // the difference instead of leaving them sitting in it.
         std::array<float, 2> outputSignal {};
+        std::array<float, 2> deltaSignal {};
+        const auto machineGain = stageGain * compensationGain;
         for (int channel = 0; channel < activeChannels; ++channel)
-            outputSignal[static_cast<std::size_t> (channel)] =
-                tapeOutput[static_cast<std::size_t> (channel)] * stageGain * compensationGain;
+        {
+            const auto index = static_cast<std::size_t> (channel);
+            outputSignal[index] = tapeOutput[index] * machineGain;
+            deltaSignal[index] = (tapeOutput[index] - machineDry[index]) * machineGain;
+        }
 
         // -------------------------------------------------------------------
         //  SUBFUND joins here: the one point in the chain where the undertones
@@ -2735,15 +2851,29 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         //      the compressor distort them.
         // -------------------------------------------------------------------
         for (int channel = 0; channel < activeChannels; ++channel)
-            outputSignal[static_cast<std::size_t> (channel)] +=
-                undertoneOutput[static_cast<std::size_t> (channel)] * wetGain * finalOutputGain;
+        {
+            const auto index = static_cast<std::size_t> (channel);
+            const auto undertones = undertoneOutput[index] * wetGain * finalOutputGain;
+            outputSignal[index] += undertones;
+            // The undertones are something the machine ADDS, so all of them belongs
+            // in the difference: the dry leg has no counterpart to cancel them with.
+            deltaSignal[index] += undertones;
+        }
+
+        // The width stage runs on both legs, so the difference holds the width
+        // change the machine made rather than losing it against the dry side.
+        const auto applyWidth = [] (std::array<float, 2>& signal, float width)
+        {
+            const float mid = 0.5f * (signal[0] + signal[1]);
+            const float side = 0.5f * (signal[0] - signal[1]) * width;
+            signal[0] = mid + side;
+            signal[1] = mid - side;
+        };
 
         if (activeChannels == 2)
         {
-            const float mid = 0.5f * (outputSignal[0] + outputSignal[1]);
-            const float side = 0.5f * (outputSignal[0] - outputSignal[1]) * currentWidth;
-            outputSignal[0] = mid + side;
-            outputSignal[1] = mid - side;
+            applyWidth (outputSignal, currentWidth);
+            applyWidth (deltaSignal, currentWidth);
         }
 
         // Apply the output trim before limiting, not after. The limiter has to be the last
@@ -2751,7 +2881,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         // the signal straight past the ceiling it just established and the clipper would
         // be doing the work instead.
         for (int channel = 0; channel < activeChannels; ++channel)
-            outputSignal[static_cast<std::size_t> (channel)] *= outputGain;
+        {
+            const auto index = static_cast<std::size_t> (channel);
+            outputSignal[index] *= outputGain;
+            deltaSignal[index] *= outputGain;
+        }
 
         // ---------------------------------------------------------------------
         //  Program-dependent safety limiter.
@@ -2788,18 +2922,43 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                      : 1.0f - std::exp (-1.0f / (engineSampleRate * 0.120f));
         limiterGain += (requiredGain - limiterGain) * gainSmoothing;
 
+        // The limiter's gain rides on both legs. It is one output-stage gain with
+        // one detector, and the difference is that same stage's contribution, so
+        // sharing the gain keeps the two legs in step and means the difference can
+        // never be pushed past what the wet path itself already passed.
         for (int channel = 0; channel < activeChannels; ++channel)
-            outputSignal[static_cast<std::size_t> (channel)] *= limiterGain;
+        {
+            const auto index = static_cast<std::size_t> (channel);
+            outputSignal[index] *= limiterGain;
+            deltaSignal[index] *= limiterGain;
+        }
 
         for (int channel = 0; channel < activeChannels; ++channel)
         {
-            auto& destination = channelData[static_cast<std::size_t> (channel)][sample];
-            const auto difference = outputSignal[static_cast<std::size_t> (channel)] - destination;
-            // DELTA listen replaces the bypass crossfade with the difference
-            // itself; the meters keep reading the finished output path, so in
-            // this mode they show the level of what the machine adds.
-            const auto blended = deltaListen ? difference
-                                             : destination + difference * bypassMix;
+            const auto index = static_cast<std::size_t> (channel);
+            auto& destination = channelData[index][sample];
+            const auto difference = outputSignal[index] - destination;
+
+            // The ordinary output: the finished path crossfaded against the dry
+            // buffer the host handed over. This is what BYPASS rides.
+            const auto normalOut = destination + difference * bypassMix;
+
+            // DELTA listen: what the machine adds, and nothing else. Its dry leg is
+            // the machine's OWN dry (see machineDry above), so MIX 0 cancels to
+            // digital silence and the INPUT/OUTPUT trims and the auto-gain
+            // compensator do not appear in the difference as level.
+            //
+            // It is scaled by the bypass ramp for the same reason the ordinary path
+            // is: a bypassed machine adds nothing, so its difference is zero, and
+            // scaling by the ramp makes that true continuously rather than only at
+            // the two ends of the crossfade.
+            const auto deltaOut = deltaSignal[index] * bypassMix;
+
+            // Crossfaded on deltaSmoothed's 10 ms ramp instead of switched, because
+            // the step between these two signals is the programme itself - a bare
+            // boolean here is a guaranteed click on every toggle. At deltaMix 0 this
+            // is exactly normalOut, so the non-DELTA path is bit-for-bit unchanged.
+            const auto blended = normalOut + (deltaOut - normalOut) * deltaMix;
 
             // Protection for the output, in two stages:
             //
@@ -2958,6 +3117,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     mixSmoothed.skip (numSamples);
     widthSmoothed.skip (numSamples);
     bypassSmoothed.skip (numSamples);
+    deltaSmoothed.skip (numSamples);
 
     // Glue compressor telemetry: worst-case reduction this block plus an activity
     // envelope the UI can animate, both read without locking. Each stage publishes
@@ -3037,501 +3197,4 @@ void FirstAudioProcessor::setStateInformation (const void* data, int sizeInBytes
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
 }

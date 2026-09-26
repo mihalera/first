@@ -999,8 +999,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                                            0.50, 0.5, 0.14,
                                                            0.18, 0.5, 0.0,
                                                            0.5, 0.0,
-                                                           0.0, 0.0,
-                                                           0.0, 0.5 };
+                                                           0.0, 0.0, 0.0,
+                                                           0.5 };
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -2212,10 +2212,10 @@ void FirstAudioProcessorEditor::resized()
     // takes the slot GL vacated.
     transportLabel.setBounds (instrumentBox.getRight() + 14, layout.deck.getY() + 83, 62, 16);
     transportBox.setBounds (instrumentBox.getRight() + 14, layout.deck.getY() + 74, 78, 32);
+    const auto harmonicsWidth = 130;
+
     glButton.setBounds (layout.deck.getRight() - harmonicsWidth - 14 - 72,
                         layout.deck.getY() + 74, 64, 32);
-
-    const auto harmonicsWidth = 130;
     harmonicsLabel.setBounds (layout.deck.getRight() - harmonicsWidth - 14,
                               layout.deck.getY() + 70, harmonicsWidth, 15);
     harmonicsReadout.setBounds (layout.deck.getRight() - harmonicsWidth - 14,
