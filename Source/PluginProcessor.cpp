@@ -336,6 +336,7 @@ FirstAudioProcessor::FirstAudioProcessor()
     speedParam     = parameters.getRawParameterValue ("speed");
     instrumentParam = parameters.getRawParameterValue ("instrument");
     bypassParam   = parameters.getRawParameterValue ("bypass");
+    deltaParam    = parameters.getRawParameterValue ("delta");
     oversamplingParam = parameters.getRawParameterValue ("oversampling");
     polarityParam  = parameters.getRawParameterValue ("polarity");
     autoGainParam  = parameters.getRawParameterValue ("auto_gain");
@@ -720,6 +721,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             juce::AudioParameterFloatAttributes().withLabel ("dB")));
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "bypass", 1 },
                                                             "Bypass", false));
+    // DELTA listen: when on, the output becomes wet minus dry - only what the
+    // machine itself adds (harmonics, glue, transport wander) is heard. Both
+    // legs of the subtraction live on the SAME timeline (the dry signal is the
+    // host buffer being processed in place, the wet signal is finished further
+    // up in this very loop), so the difference is phase-perfect at every
+    // oversampling factor with no compensation delay of its own. The blend
+    // below ignores the bypass crossfade while the mode is on: delta of a
+    // bypassed machine is exactly zero, which is its own sanity check.
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "delta", 1 },
+                                                            "Delta Listen", false));
     // POLARITY INVERT: a mastering staple. A full polarity flip on the output, so a
     // 180-degree mis-wiring between two sources can be corrected without re-patching.
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "polarity", 1 },
@@ -1422,6 +1433,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // compensator (see the final gain compensation section below).
     const float polaritySign = (polarityParam != nullptr && polarityParam->load() >= 0.5f) ? -1.0f : 1.0f;
     const bool autoGainEnabled = autoGainParam == nullptr || autoGainParam->load() >= 0.5f;
+    const bool deltaListen = deltaParam != nullptr && deltaParam->load() >= 0.5f;
 
     inputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (inputDb));
     outputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (outputDb));
@@ -2505,8 +2517,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         for (int channel = 0; channel < activeChannels; ++channel)
         {
             auto& destination = channelData[static_cast<std::size_t> (channel)][sample];
-            const auto blended = destination + (outputSignal[static_cast<std::size_t> (channel)]
-                                                 - destination) * bypassMix;
+            const auto difference = outputSignal[static_cast<std::size_t> (channel)] - destination;
+            // DELTA listen replaces the bypass crossfade with the difference
+            // itself; the meters keep reading the finished output path, so in
+            // this mode they show the level of what the machine adds.
+            const auto blended = deltaListen ? difference
+                                             : destination + difference * bypassMix;
 
             // Protection for the output, in two stages:
             //
@@ -2737,105 +2753,6 @@ void FirstAudioProcessor::setStateInformation (const void* data, int sizeInBytes
     // A session load restores the parameters, not the preset that produced them:
     // the badge starts clean and unnamed, exactly like a freshly opened plugin.
     markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
     lastPresetIndex.store (-1, std::memory_order_relaxed);
 }
 

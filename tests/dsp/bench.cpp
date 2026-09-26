@@ -53,6 +53,10 @@
 
 // nanobench is header-only. It is fetched by CPM only when J37_BUILD_TESTS=ON,
 // so its include path is supplied by the build command rather than assumed here.
+// nanobench is header + one implementation TU: this file is it. Without the
+// IMPLEMENT define the Bench methods have declarations but no definitions and
+// the link dies with a page of undefined references.
+#define ANKERL_NANOBENCH_IMPLEMENT
 #include <nanobench.h>
 
 #include "extracted_dsp.inc"

@@ -1321,6 +1321,7 @@ private:
     std::atomic<float>* outputDbParam = nullptr;
     std::atomic<float>* widthParam = nullptr;
     std::atomic<float>* bypassParam = nullptr;
+    std::atomic<float>* deltaParam = nullptr;
     std::atomic<float>* oversamplingParam = nullptr;
     std::atomic<float>* tapeTypeParam = nullptr;
     std::atomic<float>* speedParam = nullptr;

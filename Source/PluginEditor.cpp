@@ -1144,6 +1144,12 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     bypassAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
         (audioProcessor.parameters, "bypass", bypassButton);
 
+    deltaButton.setClickingTogglesState (true);
+    deltaButton.setLookAndFeel (&customLookAndFeel);
+    deltaAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (audioProcessor.parameters, "delta", deltaButton);
+    addAndMakeVisible (deltaButton);
+
     themeButton.setButtonText ("DARK THEME");
     themeButton.setTooltip ("Switch between the ivory and charcoal front panels.");
     themeButton.setLookAndFeel (&customLookAndFeel);
@@ -1158,6 +1164,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // ---------------------------------------------------------------
     bypassButton.setTooltip ("Hard bypass: the tape engine and both glue compressors are "
                              "switched out. The switch is ramped, so toggling it never clicks.");
+    deltaButton.setTooltip ("DELTA listen: the output becomes wet minus dry, so you hear "
+                            "ONLY what the machine adds - harmonics, glue, transport "
+                            "wander. MIX keeps its meaning; digital silence means the "
+                            "machine is being transparent. Turn it off before you print.");
     polarityButton.setClickingTogglesState (true);
     polarityButton.setTooltip ("Inverts the output polarity (180-degree phase flip). "
                                "Use it to correct an inverted source or to align two "
@@ -1441,6 +1451,7 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     tapeTypeBox.setLookAndFeel (nullptr);
     speedBox.setLookAndFeel (nullptr);
     bypassButton.setLookAndFeel (nullptr);
+    deltaButton.setLookAndFeel (nullptr);
     themeButton.setLookAndFeel (nullptr);
     presetBox.setLookAndFeel (nullptr);
     copyAButton.setLookAndFeel (nullptr);
@@ -2096,7 +2107,8 @@ void FirstAudioProcessorEditor::resized()
     speedLabel.setBounds (tapeTypeBox.getRight() + 16, layout.deck.getY() + 41, 45, 16);
     speedBox.setBounds (tapeTypeBox.getRight() + 62, layout.deck.getY() + 32, 104, 32);
     bypassButton.setBounds (speedBox.getRight() + 18, layout.deck.getY() + 32, 92, 32);
-    deckHintLabel.setBounds (bypassButton.getRight() + 14, layout.deck.getY() + 34, 160, 28);
+    deltaButton.setBounds (bypassButton.getRight() + 6, layout.deck.getY() + 32, 74, 32);
+    deckHintLabel.setBounds (deltaButton.getRight() + 14, layout.deck.getY() + 34, 160, 28);
 
     polarityButton.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 74, 92, 32);
     autoGainButton.setBounds (polarityButton.getRight() + 6, layout.deck.getY() + 74, 100, 32);
