@@ -181,6 +181,12 @@ private:
     void applyTheme();
     EditorLayout getEditorLayout() const;
 
+    // Shared by the constructor and by resized(): the knob-grid section captions
+    // are created while laying out, so a constructor-local helper was out of scope
+    // there and the build failed to compile (C2065 on `styleLabel`).
+    void styleLabel (juce::Label& label, const juce::String& text, float size,
+                     juce::Colour colour, bool bold, juce::Justification justification);
+
     void refreshPresetList();
     void refreshUserPresetList();
     void updateWorkflowButtons();

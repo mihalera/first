@@ -863,6 +863,24 @@ void FirstAudioProcessorEditor::CompressorMeter::paint (juce::Graphics& g)
 }
 
 //==============================================================================
+// The shared label look: text, font size and weight, colour, alignment, and no
+// mouse interception so a caption never steals a click from the control under it.
+// This is a member function, not a constructor-local lambda, because resized()
+// styles the knob-grid section captions too and a lambda declared in the
+// constructor is out of scope there - which is what broke the Linux, Windows and
+// macOS builds with C2065.
+void FirstAudioProcessorEditor::styleLabel (juce::Label& label, const juce::String& text,
+                                            float size, juce::Colour colour,
+                                            bool bold, juce::Justification justification)
+{
+    label.setText (text, juce::dontSendNotification);
+    label.setFont (juce::Font (juce::FontOptions (size, bold ? juce::Font::bold : juce::Font::plain)));
+    label.setColour (juce::Label::textColourId, colour);
+    label.setJustificationType (justification);
+    label.setInterceptsMouseClicks (false, false);
+}
+
+//==============================================================================
 FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
@@ -907,17 +925,6 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // discoverable, slow enough not to flash while the user sweeps the panel.
     tooltipWindow->setMillisecondsBeforeTipAppears (350);
     createDecorativePhysics();
-
-    const auto styleLabel = [] (juce::Label& label, const juce::String& text,
-                                float size, juce::Colour colour,
-                                bool bold, juce::Justification justification)
-    {
-        label.setText (text, juce::dontSendNotification);
-        label.setFont (juce::Font (juce::FontOptions (size, bold ? juce::Font::bold : juce::Font::plain)));
-        label.setColour (juce::Label::textColourId, colour);
-        label.setJustificationType (justification);
-        label.setInterceptsMouseClicks (false, false);
-    };
 
     styleLabel (brandLabel, "NONLIN ANALOG", 9.0f, paletteFor (false).accent, true, juce::Justification::left);
     titleLabel.setText ("Saturator", juce::dontSendNotification);
