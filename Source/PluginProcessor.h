@@ -71,24 +71,29 @@
     regression harness (which never sees chowdsp) measures the same numbers the
     shipping build produced before this change.
 
-    What the approximations cost: chowdsp's polynomial exp is accurate to about
-    1e-4 over the range a one-pole coefficient needs, which is far below the
-    threshold where a 20 ms ramp's shape is audible. The sqrt is bit-exact in
-    the range used here. Neither is a change to the sound; both are a change to
-    how much of the CPU the meters and detectors consume.
+    What the approximations cost: chowdsp's polynomial exp and log are accurate to
+    roughly 1e-4 over the ranges a one-pole coefficient and a dB readout need, which
+    is far below the threshold where a 20 ms ramp's shape or a meter digit is
+    audible. Neither is a change to the sound; both are a change to how much of the
+    CPU the meters and detectors consume.
+
+    On sqrt: chowdsp has no scalar sqrt approximation - only Math::rsqrt, which is
+    a reciprocal and would need a division to undo. There is no version of that
+    trade worth making here, so sqrt stays std::sqrt. It is listed in the bridge
+    anyway so every scalar op the hot paths use has one place to look.
 */
 #if J37_HAS_CHOWDSP_MATH
 namespace j37math
 {
-    inline float exp (float x) noexcept  { return chowdsp::exp_approx (x); }
-    inline float sqrt (float x) noexcept { return chowdsp::sqrt_approx (x); }
-    inline float log10 (float x) noexcept { return chowdsp::log10_approx (x); }
+    inline float exp (float x) noexcept   { return chowdsp::PowApprox::exp (x); }
+    inline float sqrt (float x) noexcept  { return std::sqrt (x); }
+    inline float log10 (float x) noexcept { return chowdsp::LogApprox::log10 (x); }
 }
 #else
 namespace j37math
 {
-    inline float exp (float x) noexcept  { return std::exp (x); }
-    inline float sqrt (float x) noexcept { return std::sqrt (x); }
+    inline float exp (float x) noexcept   { return std::exp (x); }
+    inline float sqrt (float x) noexcept  { return std::sqrt (x); }
     inline float log10 (float x) noexcept { return std::log10 (x); }
 }
 #endif

@@ -42,6 +42,50 @@ jobs:
         run: bash tests/dsp/run.sh
 
   # ============================================================================
+  #  DSP micro-benchmarks - measurement, never a gate
+  #
+  #  Runs after the regression harness and is allowed to fail the job only if it
+  #  cannot BUILD. The numbers it prints are machine-dependent, so treating a
+  #  slower measurement as a build failure would make CI flaky and would push the
+  #  threshold down until it meant nothing. What it is for is the record: every
+  #  run logs the frame cost and the realtime headroom, so "did this change make
+  #  the engine cheaper or dearer" has an answer that is not a guess.
+  #
+  #  It needs nanobench, which CPM fetches only under -DJ37_BUILD_TESTS=ON, so
+  #  the job configures once with that flag before running the script.
+  # ============================================================================
+  dsp-bench:
+    name: DSP micro-benchmarks (informational)
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    continue-on-error: true
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Linux audio and GUI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev libjack-jackd2-dev libfreetype6-dev \
+            libfontconfig1-dev libcurl4-openssl-dev libx11-dev \
+            libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev \
+            libxrandr-dev libxrender-dev libgl1-mesa-dev libglu1-mesa-dev \
+            libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Configure with the dev tests enabled (fetches nanobench)
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DJ37_BUILD_TESTS=ON
+
+      - name: Run the DSP micro-benchmarks
+        run: bash tests/dsp/run_bench.sh
+
+  # ============================================================================
   #  Editor Debug build - Linux VST3 with the Melatonin inspector embedded
   #
   #  The inspector is compiled only under JUCE_DEBUG, so no Release

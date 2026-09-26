@@ -21,6 +21,12 @@ CMakeFiles/
 CMakeCache.txt
 cmake_install.cmake
 CTestTestfile.cmake
+
+# CPM's package cache. It holds downloaded third-party checkouts, so it is build
+# input, not source - but unlike build/ it is meant to SURVIVE a wipe, which is
+# what makes an offline configure possible. Never commit it: it is hundreds of
+# megabytes of other people's repositories.
+.cpm-cache/
 _deps/
 install_manifest.txt
 *.ninja
