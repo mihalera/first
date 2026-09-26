@@ -107,10 +107,15 @@ rest stays silent.
 | Flutter | 0 to 100 % | Fast transport shimmer |
 | Mix | 0 to 100 % | True dry/wet crossfade: 0 % is dry, 100 % is fully tape. Displayed as a percentage; default 50 % |
 | Sub-Fundamental (SUBFUND) | 0 to 100 % | Subharmonic saturation: an eight-stage undertone cascade (1/2 ... 1/9 of the tracked bass fundamental) summed under the tape signal, per channel. Default OFF |
+| Delay | 0 to 250 ms | The spacing of a second playback head. The tape takes time to travel between the record and playback gaps, so the signal returns as a slap rather than a dub echo. The repeat is taken after the tape, so it inherits the machine's own bandwidth and saturation. Default 0 ms (no second head) |
+| Delay Level | 0 to 100 % | How loud the second head's output is. Each pass round the tape loses top end, the way a real repeat does. Default 0 % |
+| ST Offset | -500 to +500 us | Inter-channel time offset. Real stereo decks record the two tracks with separate head gaps a fraction of a millimetre apart and the tape skews across them, so the channels are never perfectly aligned. Positive lags the right channel. Default 0 us |
+| Noise | 0 to 100 % | A trim on top of whatever floor the loaded tape formula sets. The formula's own character is untouched, so the floor can be lifted for a dirty bounce or pulled to a clinical black without changing stock. Gated by the transport. Default 50 % (neutral) |
+| Transport | Stop / Play / Start | The machine's three states. STOP lets the capstan coast to rest - no hiss, no wow, no delay tail: true silence, not a mute. START spins up from rest, running flat and climbing into tune over about a second |
 | Output | -32 to +32 dB | Calibrated output trim in dB |
 | Width | 0 to 100 % | Mono through natural to extra wide |
 | Bypass | on/off | Ramps the whole tape engine out without clicking |
-| Tape Type | J37 / Ampex 456 / Studer A800 / Chrome / Type 111 / GP9 / Quantegy 499 / RTM SM911 | Model character (also shapes the glue time constants) |
+| Tape Type | J37 / Ampex 456 / Studer A800 / Chrome / Type 111 / GP9 / Quantegy 499 / RTM SM911 / SM 468 / 888 / 815 / 811 | Model character (also shapes the glue time constants) |
 | Speed | 7.5 / 15 / 30 ips | Transport speed, affects modulation, top end and glue timing |
 | Oversampling | Off / 2x / 4x / 8x | Runs the tape engine at a higher internal rate to reduce aliasing; the added latency is reported to the host |
 | Polarity | on/off | Inverts the output polarity (180-degree flip), after the protection chain and the meters' magnitude path |
