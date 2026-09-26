@@ -1954,6 +1954,22 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const float outputAttackSeconds = 0.20f * stockAttackScale * transportAttackScale;
     const float outputReleaseSeconds = 1.00f * stockReleaseScale * transportReleaseScale;
 
+    // The two glue detectors' block-rate coefficients. Everything they depend on -
+    // the engine rate, the four base constants above and the trim-driven load - is
+    // fixed for the whole block, so they are built once here rather than recomputed
+    // per sample. Before this the detector cost two std::exp calls per sample per
+    // channel for values that cannot change inside the block.
+    const auto inputCompressorCoefficients = GlueCompressor::makeCoefficients (
+        engineSampleRate, inputAttackSeconds, inputReleaseSeconds, inputDriveLoad);
+    const auto outputCompressorCoefficients = GlueCompressor::makeCoefficients (
+        engineSampleRate, outputAttackSeconds, outputReleaseSeconds, outputDriveLoad);
+
+    // The K-weighted meters' 400 ms window coefficients, same reasoning: a function
+    // of the rate alone, so two std::exp calls per frame per meter become two per
+    // block.
+    const auto outputLoudnessCoefficient = LoudnessMeter::makeWindowCoefficient (engineSampleRate);
+    const auto inputLoudnessCoefficient = LoudnessMeter::makeWindowCoefficient (engineSampleRate);
+
     // Makeup is part of each stage, and it is driven by the same trim control: a
     // boosted trim pays its reduction back and a trimmed-down one simply backs off,
     // so neither stage can quietly undo the balance the user dialled in.
@@ -2039,8 +2055,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         inputDetectorPower /= static_cast<float> (juce::jmax (1, activeChannels));
 
         const float inputEnvelopeDb = inputCompressor.processDetection (
-            inputDetectorPower, engineSampleRate, inputAttackSeconds, inputReleaseSeconds,
-            inputDriveLoad);
+            inputDetectorPower, engineSampleRate, inputCompressorCoefficients);
         const float inputReductionDb = juce::jmax (inputReductionLimitDb,
                                                    softKneeReductionDb (inputEnvelopeDb,
                                                                         inputThresholdDb,
@@ -2316,9 +2331,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         }
 
         const float envelopeDb = outputCompressor.processDetection (detectorPower, engineSampleRate,
-                                                                    outputAttackSeconds,
-                                                                    outputReleaseSeconds,
-                                                                    outputDriveLoad);
+                                                                    outputCompressorCoefficients);
         const float reductionDb = juce::jmax (outputReductionLimitDb,
                                               softKneeReductionDb (envelopeDb,
                                                                    outputThresholdDb,
@@ -2533,20 +2546,22 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         // INPUT meter below reads its channels the same way.
         if (activeChannels == 2)
             currentLufs = outputLoudness.processFrame (channelData[0][sample],
-                                                       channelData[1][sample], engineSampleRate);
+                                                       channelData[1][sample],
+                                                       outputLoudnessCoefficient);
         else if (activeChannels == 1)
             currentLufs = outputLoudness.processFrame (channelData[0][sample],
-                                                       channelData[0][sample], engineSampleRate);
+                                                       channelData[0][sample],
+                                                       outputLoudnessCoefficient);
 
         // The INPUT meter runs the same K-weighting on the raw signal at the plugin's
         // own input, so the two meters can be compared directly. The channels are read
         // back from the buffer because the dry input was overwritten in place.
         if (activeChannels == 2)
             currentInputLufs = inputLoudness.processFrame (inputChainHistory[0], inputChainHistory[1],
-                                                           engineSampleRate);
+                                                           inputLoudnessCoefficient);
         else if (activeChannels == 1)
             currentInputLufs = inputLoudness.processFrame (inputChainHistory[0], inputChainHistory[0],
-                                                           engineSampleRate);
+                                                           inputLoudnessCoefficient);
     }
 
     const auto measuredSamples = static_cast<double> (numSamples)
@@ -2792,6 +2807,31 @@ juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 }
 
 //==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new FirstAudioProcessor();
