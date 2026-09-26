@@ -1717,7 +1717,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             hysteresis += 0.08f;
             break;
         case 7: // RTM SM911 - broadcast reference: balanced, smooth, low noise
-        default:
             tapeCurve += 0.05f;
             tapeAsymmetry += 0.02f;
             tapeHiss -= 0.01f;
