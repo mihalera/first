@@ -350,6 +350,12 @@ FirstAudioProcessor::FirstAudioProcessor()
     stOffsetParam = parameters.getRawParameterValue ("st_offset");
     noiseParam = parameters.getRawParameterValue ("noise");
     transportParam = parameters.getRawParameterValue ("transport");
+    blendParam = parameters.getRawParameterValue ("blend");
+    shapeParam = parameters.getRawParameterValue ("shape");
+    sagParam = parameters.getRawParameterValue ("sag");
+    presenceParam = parameters.getRawParameterValue ("presence");
+    cabinetParam = parameters.getRawParameterValue ("cabinet");
+    ampBiasParam = parameters.getRawParameterValue ("amp_bias");
 
     // Four fixed oversampling engines (off / 2x / 4x / 8x). Each owns its own filter
     // state, so switching between them is glitch-free even mid-render, and the
@@ -375,7 +381,9 @@ FirstAudioProcessor::FirstAudioProcessor()
                                      "subfund",
                                      "stereo_width", "tape_type", "speed", "instrument", "drive", "bias",
                                      "oversampling", "tone", "wow", "flutter", "mix",
-                                     "character" })
+                                     "character", "delta", "delay_time", "delay_feedback",
+                                     "st_offset", "noise", "transport",
+                                     "blend", "shape", "sag", "presence", "cabinet", "amp_bias" })
         parameters.addParameterListener (parameterID, this);
 }
 
@@ -385,7 +393,9 @@ FirstAudioProcessor::~FirstAudioProcessor()
                                      "subfund",
                                      "stereo_width", "tape_type", "speed", "instrument", "drive", "bias",
                                      "oversampling", "tone", "wow", "flutter", "mix",
-                                     "character" })
+                                     "character", "delta", "delay_time", "delay_feedback",
+                                     "st_offset", "noise", "transport",
+                                     "blend", "shape", "sag", "presence", "cabinet", "amp_bias" })
         parameters.removeParameterListener (parameterID, this);
 }
 
@@ -947,6 +957,60 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "transport", 1 }, "Transport",
                                                             juce::StringArray { "Stop", "Play", "Start" },
                                                             1));
+
+    // -------------------------------------------------------------------------
+    //  Saturation blend.
+    //
+    //  The plugin's shaper has always been ONE curve - magnetic hysteresis. These
+    //  two controls turn it into a blend of the four mechanisms a real analogue
+    //  chain uses: tape, valve, cassette and amp. See SaturationCore for what each
+    //  one is and why they are genuinely different shapes.
+    //
+    //  BLEND sweeps the weighting across the four in a fixed order, tape -> valve
+    //  -> cassette -> amp, so the control has one direction. Default 0 - pure
+    //  tape, which is exactly what every earlier build did, so an existing session
+    //  or preset loads the machine it was saved with.
+    // -------------------------------------------------------------------------
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "blend", 1 }, "Blend",
+                                                            percentageRange (0.50f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    // SHAPE decides how concentrated the blend is: low picks one principle at a
+    // time (an obvious, focused character), high spreads the weighting so all four
+    // contribute and the result reads as one compound machine. Default 50 - an
+    // even spread, which is the useful starting point once BLEND is moved.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "shape", 1 }, "Shape",
+                                                            percentageRange (0.50f), 0.50f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+    // -------------------------------------------------------------------------
+    //  Guitar-amplifier features. See AmpVoicing for what each one is.
+    //
+    //  They are OFF by default: the plugin is calibrated as a tape machine, and an
+    //  amp's cabinet and sag on a mastering bus would be a surprise rather than a
+    //  feature. They are there for the sources that want them.
+    // -------------------------------------------------------------------------
+    // SAG: how much the supply droops under sustained demand. 0 is a stiff,
+    // regulated supply (no give at all); 100 is a small amp being leaned on hard.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "sag", 1 }, "Sag",
+                                                            percentageRange (0.50f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    // PRESENCE: the feedback network's top-end lift, applied after the clipping.
+    // 50 percent is the flat, neutral position; above it sharpens, below it
+    // darkens the way a lower presence setting does on a real amp.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "presence", 1 }, "Presence",
+                                                            percentageRange (0.50f), 0.50f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    // CABINET: the speaker and its box. 0 is the raw amp output (a DI, essentially);
+    // 100 is a closed 4x12. Default 0 so the tape machine is unchanged.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "cabinet", 1 }, "Cabinet",
+                                                            percentageRange (0.50f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    // AMP BIAS: the input stage's DC operating point. Cold is tight and crossover-
+    // distorted, hot is fat and compressed. 50 percent is the neutral centre, so
+    // the control is a character sweep rather than a one-way effect.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "amp_bias", 1 }, "Amp Bias",
+                                                            percentageRange (0.50f), 0.50f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
 
     return layout;
 }
@@ -1582,6 +1646,41 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // NOISE is a trim on top of the formula's own floor. 0.5 is unity - the neutral
     // position - so the control can lift the floor to 2x or take it to silence.
     noiseTrimSmoothed.setTargetValue (juce::jlimit (0.0f, 2.0f, noiseAmount * 2.0f));
+
+    // -----------------------------------------------------------------------
+    //  Saturation blend and the amp voicing.
+    //
+    //  All six are read once per block and fed to smoothers, so none of them can
+    //  step the curve. The blend weights themselves are applied inside the core
+    //  from the SMOOTHED values, per sample, so sweeping BLEND morphs the
+    //  harmonics continuously rather than switching between four curves.
+    // -----------------------------------------------------------------------
+    const auto blendAmount = blendParam != nullptr ? blendParam->load() : 0.0f;
+    const auto shapeAmount = shapeParam != nullptr ? shapeParam->load() : 0.5f;
+    const auto sagAmount = sagParam != nullptr ? sagParam->load() : 0.0f;
+    const auto presenceAmount = presenceParam != nullptr ? presenceParam->load() : 0.5f;
+    const auto cabinetAmount = cabinetParam != nullptr ? cabinetParam->load() : 0.0f;
+    const auto ampBiasAmount = ampBiasParam != nullptr ? ampBiasParam->load() : 0.5f;
+
+    blendSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, blendAmount));
+    shapeSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, shapeAmount));
+    sagSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, sagAmount));
+    presenceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, presenceAmount));
+    cabinetSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, cabinetAmount));
+    ampBiasSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, ampBiasAmount));
+
+    // The cabinet's poles. The roll-off sits where a 12-inch speaker's cone mass
+    // puts it (about 5 kHz at the default cabinet setting, opening toward 9 kHz as
+    // CABINET is turned down) and the resonance tracks the cabinet's own tuning,
+    // which is the 80-120 Hz thump a closed box adds.
+    const float cabinetHz = 9000.0f - cabinetAmount * 4000.0f;
+    cabinetLowCoefficient = onePoleCoefficientHz (cabinetHz, engineSampleRate);
+    // The resonance pole is deliberately much slower than the roll-off, so the
+    // peak it adds is a broad lift rather than a narrow ring.
+    cabinetPeakCoefficient = onePoleCoefficientHz (110.0f, engineSampleRate);
+    // Presence is a high-pass split at 2.2 kHz: everything above it is the band the
+    // feedback network lifts.
+    presenceCoefficient = onePoleCoefficientHz (2200.0f, engineSampleRate);
 
     // Transport: the ramp target is 0 for STOP and 1 for PLAY or START. The
     // coefficient sets how fast it gets there - a spin-up takes about a second, which
@@ -2374,13 +2473,74 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // continuously instead of stepping it on every block boundary - BIAS was
             // the loudest of all, because its asymmetry term shifts the whole curve
             // rather than merely scaling it.
-            const float shapedCore = magneticHysteresis (preDrive,
-                                                         shaperDriveSmoothed.getCurrentValue(),
-                                                         shaperAsymmetrySmoothed.getCurrentValue(),
-                                                         hysteresisMemory[0]);
+            // ------------------------------------------------------------------
+            //  The saturation core.
+            //
+            //  This replaces the single magneticHysteresis call. It runs the same
+            //  DRIVE and BIAS arguments the old shaper took - so both controls keep
+            //  their meaning and their existing calibration - but weights four
+            //  distinct curve shapes together: tape, valve, cassette and amp. See
+            //  SaturationCore for what each one is and why they are genuinely
+            //  different mechanisms rather than four settings of one.
+            //
+            //  The weights come from the SMOOTHED blend controls and are applied
+            //  per sample, so sweeping BLEND morphs the harmonics continuously
+            //  instead of stepping between four curves on a block boundary.
+            //
+            //  SAG acts on the DRIVE, not on the output, because that is what the
+            //  supply does: it is the gain that droops under sustained demand. The
+            //  sag envelope follows the signal's own power, so a held chord gives
+            //  and then recovers while a short transient never moves it - which is
+            //  exactly how a real amplifier behaves.
+            // ------------------------------------------------------------------
+            auto& saturation = channel == 0 ? saturationL : saturationR;
+            auto& amp = channel == 0 ? ampL : ampR;
+
+            saturation.setBlend (blendSmoothed.getCurrentValue(),
+                                 shapeSmoothed.getCurrentValue());
+
+            // Sag: the supply envelope. A slow attack (the supply takes time to
+            // droop) and a slower release (it takes longer to recover), both
+            // scaled by the SAG control so 0 leaves the envelope still.
+            const float sagAmountNow = sagSmoothed.getCurrentValue();
+            const float sagAttack = 1.0f - j37math::exp (-1.0f / (engineSampleRate * 0.060f));
+            const float sagRelease = 1.0f - j37math::exp (-1.0f / (engineSampleRate * 0.240f));
+            // The demand the supply sees is the signal ARRIVING at the stage, not
+            // what leaves it: a real supply droops in proportion to how hard it is
+            // being asked to work, which is the input to the gain stage.
+            const float demand = std::abs (preDrive);
+            const float sagCoefficient = demand > amp.sagEnvelope ? sagAttack : sagRelease;
+            amp.sagEnvelope += (demand - amp.sagEnvelope) * sagCoefficient;
+            amp.sagGain = 1.0f - sagAmountNow * 0.35f
+                              * juce::jlimit (0.0f, 1.0f, amp.sagEnvelope * 3.0f);
+
+            const float driveWithSag = shaperDriveSmoothed.getCurrentValue() * amp.sagGain;
+
+            const float shapedCore = saturation.process (preDrive, driveWithSag,
+                                                         shaperAsymmetrySmoothed.getCurrentValue());
+
+            // The amp's post-curve voicing: cabinet, then presence. It is applied
+            // only in proportion to how much amp is in the blend, so a pure tape
+            // setting is bit-for-bit the machine it always was.
+            const float ampShare = juce::jlimit (0.0f, 1.0f, saturation.ampWeight);
+            float voicedCore = shapedCore;
+            if (ampShare > 1.0e-4f)
+            {
+                const float voiced = amp.process (shapedCore,
+                                                  cabinetLowCoefficient,
+                                                  cabinetPeakCoefficient,
+                                                  presenceCoefficient,
+                                                  (presenceSmoothed.getCurrentValue() - 0.5f) * 2.0f
+                                                      * 0.6f);
+                // Crossfade rather than switch, so the voicing fades in with the
+                // amp share and there is no step at any BLEND position.
+                voicedCore = shapedCore + (voiced - shapedCore)
+                                          * ampShare * cabinetSmoothed.getCurrentValue();
+            }
+
             hysteresisMemory[2] = hysteresisMemory[1];
             hysteresisMemory[1] = hysteresisMemory[0];
-            hysteresisMemory[0] = shapedCore;
+            hysteresisMemory[0] = voicedCore;
 
             // ------------------------------------------------------------------
             //  Sub-Fundamental: the multi-stage undertone series with downward saturation.
@@ -2401,13 +2561,16 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // ------------------------------------------------------------------
             auto& subharmonic = channel == 0 ? subharmonicL : subharmonicR;
             undertoneOutput[static_cast<std::size_t> (channel)] = subharmonic.process (
-                shapedCore, driveAmountSmoothed.getCurrentValue(),
+                voicedCore, driveAmountSmoothed.getCurrentValue(),
                 subFundamentalSmoothed.getCurrentValue(), engineSampleRate);
 
             // A parallel addition, not a blend: the control reads as adding weight
             // below the note instead of crossfading the tape away. The depth ramp keeps
             // the level change from stepping the phase-locked oscillator.
-            const float withSubharmonic = shapedCore;
+            // The voiced core is what continues down the tape path: the cabinet and
+            // presence stages are part of the amp, so discarding them here would
+            // compute the whole voicing and then throw it away.
+            const float withSubharmonic = voicedCore;
 
             // Measure what the shaper actually produced, comparing its input against its
             // output. Harmonics are the reason this plugin exists, so the character is
@@ -2417,7 +2580,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // identically and doubling the analyser would cost twice as much for the same
             // reading.
             if (channel == 0)
-                harmonicAnalyser.analyse (preDrive, shapedCore, engineSampleRate);
+                harmonicAnalyser.analyse (preDrive, voicedCore, engineSampleRate);
 
             // Tape is a low-pass medium: the faster the tape and the brighter the
             // tone setting, the more top end survives. The undertones are NOT part of
@@ -2465,7 +2628,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // no longer appropriate, which is part of why the plugin came out harsh and
             // loud. It now recovers a modest amount of the level the clamps removed and
             // stays close to unity when the machine is running clean.
-            const float shapedLevel = std::abs (shapedCore);
+            const float shapedLevel = std::abs (voicedCore);
             const float shaperLoss = juce::jlimit (0.0f, 1.0f,
                                                    driveCurve * 0.22f * (1.0f - shapedLevel * 0.7f));
             const float driveCompensation = 1.0f + shaperLoss;

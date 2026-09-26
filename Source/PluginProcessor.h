@@ -100,6 +100,442 @@ namespace j37math
 
 //==============================================================================
 /**
+    The four saturation principles, and the blend that combines them.
+
+    A tape machine is ONE of the ways analogue electronics bend a signal, and the
+    plugin was built around that one curve. The four below are the distinct
+    mechanisms a real signal chain uses, and they are genuinely different shapes
+    rather than four settings of one:
+
+      TAPE     - magnetic hysteresis: a MEMORY term, because the medium's state
+                 depends on where it has been. Gentle at low level, and the
+                 asymmetry is what makes the even harmonics.
+      VALVE    - thermionic: a soft, strongly ASYMMETRIC knee with a wide
+                 transition. Even-dominant, and it compresses rather than clips,
+                 so it thickens before it distorts.
+      CASSETTE - narrow-gauge, low-bias ferric: a HARD, early knee with a very
+                 limited headroom and a pronounced low-frequency bump. The
+                 "everything is louder and smaller" character.
+      AMP      - a guitar amplifier's input stage: a high-gain, nearly symmetric
+                 cascade that clips HARD and generates strong odd harmonics. It
+                 is the one that bites.
+
+    Blending them is not a gimmick: a real chain is exactly this. A guitar goes
+    into an amp (AMP), the amp into a desk and a tape machine (TAPE), a valve
+    compressor or a valve preamp somewhere in the path (VALVE), and the whole
+    thing may end up on a cassette (CASSETTE). The BLEND control moves the
+    weighting across those four, and the default sits on tape because that is
+    what the plugin is calibrated around.
+
+    Every curve is normalised to unity slope at the origin, exactly like
+    magneticHysteresis, so the blend cannot change the level - only the shape.
+    That property is what makes the control usable: moving it changes the
+    harmonics, not the gain, and the DRIVE control keeps its own meaning.
+*/
+struct SaturationCore
+{
+    // -----------------------------------------------------------------------
+    //  Weights. These are set once per block from the BLEND and SHAPE controls;
+    //  they are kept normalised so the four always sum to 1 and the blend is a
+    //  true crossfade rather than a stack.
+    // -----------------------------------------------------------------------
+    float tapeWeight = 1.0f;
+    float valveWeight = 0.0f;
+    float cassetteWeight = 0.0f;
+    float ampWeight = 0.0f;
+
+    // -----------------------------------------------------------------------
+    //  Per-principle state.
+    //
+    //  Tape needs the hysteresis memory (three slots, as before). The valve and
+    //  amp stages carry a bias-shift state, because a real stage's operating
+    //  point drifts with the signal - that drift is a slow envelope, not a
+    //  sample-by-sample term, so it is a one-pole per channel.
+    // -----------------------------------------------------------------------
+    float tapeMemory = 0.0f;
+    float valveBiasState = 0.0f;
+    float ampBiasState = 0.0f;
+    float cassetteBiasState = 0.0f;
+
+    void reset() noexcept
+    {
+        tapeMemory = 0.0f;
+        valveBiasState = 0.0f;
+        ampBiasState = 0.0f;
+        cassetteBiasState = 0.0f;
+    }
+
+    /** Sets the four weights from two controls. Both are 0..1. */
+    void setBlend (float blend, float shape) noexcept
+    {
+        // BLEND sweeps the weighting across the four principles in a fixed order,
+        // tape -> valve -> cassette -> amp, so the control has one direction and
+        // the ear can learn it. SHAPE skews the distribution: low concentrates on
+        // a single principle (a focused, obvious character), high spreads it
+        // evenly (a blend that reads as one compound machine).
+        const auto b = juce::jlimit (0.0f, 1.0f, blend);
+        const auto s = juce::jlimit (0.0f, 1.0f, shape);
+
+        // Each principle gets a triangular response centred on its own position
+        // along the sweep, so neighbouring ones overlap and the blend is smooth.
+        const auto triangle = [] (float x, float centre, float width)
+        {
+            return juce::jmax (0.0f, 1.0f - std::abs (x - centre) / width);
+        };
+
+        // Width grows with SHAPE: at 0 the triangles are narrow and the sweep
+        // snaps from one principle to the next; at 1 they are wide enough that all
+        // four contribute at every position.
+        const auto width = 0.25f + 0.75f * s;
+
+        tapeWeight     = triangle (b, 0.00f, width);
+        valveWeight    = triangle (b, 0.33f, width);
+        cassetteWeight = triangle (b, 0.66f, width);
+        ampWeight      = triangle (b, 1.00f, width);
+
+        // The ends of the sweep must not fall off the edge: at b = 0 only tape is
+        // in range of its own triangle, and the others are zero, which would leave
+        // the sum short and the normalisation below would divide by a small number.
+        // Seeding each end with its own principle keeps the extremes solid.
+        if (b < 0.02f) tapeWeight = 1.0f;
+        if (b > 0.98f) ampWeight = 1.0f;
+
+        const auto sum = tapeWeight + valveWeight + cassetteWeight + ampWeight;
+        if (sum > 1.0e-6f)
+        {
+            tapeWeight /= sum;
+            valveWeight /= sum;
+            cassetteWeight /= sum;
+            ampWeight /= sum;
+        }
+        else
+        {
+            tapeWeight = 1.0f;
+            valveWeight = cassetteWeight = ampWeight = 0.0f;
+        }
+    }
+
+    /** True when nothing is contributing, so the caller can skip the whole core. */
+    bool isIdle() const noexcept
+    {
+        return tapeWeight + valveWeight + cassetteWeight + ampWeight <= 1.0e-6f;
+    }
+
+    // -----------------------------------------------------------------------
+    //  The four curves. Each takes the driven input and returns a value with the
+    //  SAME unity slope at the origin, so they are interchangeable in the blend.
+    //  `biasState` is the principle's own slow operating-point memory.
+    // -----------------------------------------------------------------------
+
+    /**
+        TAPE - magnetic hysteresis with memory.
+
+        The reference curve: two tanh branches at different slopes, blended, plus
+        the asymmetry term that produces the even harmonics. `memory` is the
+        previous shaped output, which is what gives tape its "sticky" transient
+        behaviour - the curve knows where it has been, not just where it is.
+    */
+    float shapeTape (float x, float drive, float asymmetry) noexcept
+    {
+        const float biased = x + asymmetry;
+
+        const float slope = 1.0f + drive * 2.6f;
+        const float hard = std::tanh (biased * slope) / slope;
+
+        const float lagged = tapeMemory * 0.62f;
+        const float delayedSlope = 0.55f + drive * 1.0f;
+        const float delayed = std::tanh ((biased * delayedSlope) + lagged) / delayedSlope;
+
+        constexpr float hardWeight = 0.70f;
+        constexpr float delayedWeight = 0.30f;
+        const float blended = hard * hardWeight + delayed * delayedWeight;
+
+        const float asymmetryTerm = asymmetry * 0.45f * hard * hard;
+
+        // The zero-point correction, exactly as in magneticHysteresis: subtracting
+        // the curve's own value at zero input removes the DC pedestal the bias
+        // offset would otherwise leave, so zero in still means zero out.
+        const float hardAtZero = std::tanh (asymmetry * slope) / slope;
+        const float delayedAtZero = std::tanh ((asymmetry * delayedSlope) + lagged) / delayedSlope;
+        const float blendedAtZero = hardAtZero * hardWeight + delayedAtZero * delayedWeight;
+        const float asymmetryAtZero = asymmetry * 0.45f * hardAtZero * hardAtZero;
+
+        const float out = (blended - blendedAtZero) - (asymmetryTerm - asymmetryAtZero);
+        tapeMemory = out;
+        return out;
+    }
+
+    /**
+        VALVE - thermionic soft asymmetry.
+
+        A valve stage has a wide, gradual transition and a strong asymmetry: the
+        grid conducts on one half of the waveform long before the other half
+        compresses. That is why valve gear is described as warm rather than edgy -
+        the even harmonics dominate.
+
+        The curve is a single tanh with a bias offset, but with a much gentler
+        slope than tape and a bias that FOLLOWS the signal: a real stage's
+        operating point moves with the average level, which is what makes the
+        character level-dependent rather than static.
+    */
+    float shapeValve (float x, float drive, float asymmetry) noexcept
+    {
+        // The operating point drifts toward the signal's own average. A slow
+        // one-pole rather than the instantaneous value, because the drift is a
+        // thermal/electrical time constant in the real thing, not a waveform term.
+        valveBiasState += (x - valveBiasState) * 0.0008f;
+        const float driftingBias = asymmetry + valveBiasState * 0.25f;
+
+        const float biased = x + driftingBias;
+
+        // A gentler slope than tape's: the valve compresses across a wider range
+        // instead of bending early. The squared term is the valve's own soft knee.
+        const float slope = 1.0f + drive * 1.5f;
+        const float soft = std::tanh (biased * slope) / slope;
+
+        // The asymmetry here is stronger and applied to the whole curve rather
+        // than only to the hard branch, which is what makes the even content
+        // dominate instead of sitting under an odd-heavy fundamental.
+        const float asymmetryTerm = driftingBias * 0.65f * soft * soft;
+
+        const float softAtZero = std::tanh (driftingBias * slope) / slope;
+        const float asymmetryAtZero = driftingBias * 0.65f * softAtZero * softAtZero;
+
+        return (soft - softAtZero) - (asymmetryTerm - asymmetryAtZero);
+    }
+
+    /**
+        CASSETTE - narrow gauge, low bias, hard early knee.
+
+        A cassette is not "tape but worse": it is a different mechanism. The
+        narrow track and low bias current mean the medium saturates far earlier
+        and much more abruptly, so the curve has a tight linear region and then a
+        hard corner. That is the "everything is louder and smaller" character, and
+        it is what this models.
+
+        The corner is a smoothstep rather than a tanh: a polynomial transition
+        that reaches its asymptote quickly instead of approaching it
+        exponentially, which is exactly the difference in feel between the two.
+    */
+    float shapeCassette (float x, float drive, float asymmetry) noexcept
+    {
+        // A small bias drift again, but much faster than the valve's - a cassette's
+        // low bias means the operating point moves with the programme far more.
+        cassetteBiasState += (x - cassetteBiasState) * 0.004f;
+        const float biased = x + asymmetry * 0.5f + cassetteBiasState * 0.15f;
+
+        // The knee: at drive 0 it is at 0.9 (a wide, fairly clean region), and it
+        // closes fast as drive rises, which is the cassette's defining behaviour.
+        const float knee = juce::jlimit (0.12f, 0.95f, 0.9f - drive * 0.75f);
+
+        const float magnitude = std::abs (biased);
+        const float sign = biased < 0.0f ? -1.0f : 1.0f;
+
+        float shaped;
+        if (magnitude <= knee)
+        {
+            // Linear region, scaled so the slope is unity: y = x.
+            shaped = biased;
+        }
+        else
+        {
+            // Above the knee the curve walks to the asymptote over a short span.
+            const float overshoot = juce::jmin (1.0f, (magnitude - knee) / juce::jmax (0.05f, knee));
+            const float eased = overshoot * overshoot * (3.0f - 2.0f * overshoot); // smoothstep
+            shaped = sign * (knee + eased * (1.0f - knee));
+        }
+
+        // The cassette's low-frequency bump: the head bump and the narrow track
+        // both lift the bottom end, and it is part of the character rather than an
+        // artefact. Applied as a level-dependent term so it only shows under drive.
+        const float bump = 1.0f + drive * 0.12f * (1.0f - juce::jmin (1.0f, std::abs (shaped)));
+
+        const float out = shaped * bump;
+
+        // Zero-point correction, same rule as the others.
+        const float atZero = [&]
+        {
+            const float z = asymmetry * 0.5f;
+            const float m = std::abs (z);
+            const float s = z < 0.0f ? -1.0f : 1.0f;
+            if (m <= knee) return z;
+            const float o = juce::jmin (1.0f, (m - knee) / juce::jmax (0.05f, knee));
+            const float e = o * o * (3.0f - 2.0f * o);
+            return s * (knee + e * (1.0f - knee));
+        }();
+        const float atZeroBumped = atZero * (1.0f + drive * 0.12f
+                                             * (1.0f - juce::jmin (1.0f, std::abs (atZero))));
+
+        return out - atZeroBumped;
+    }
+
+    /**
+        AMP - a guitar amplifier's input stage.
+
+        The one that bites. A high-gain valve input clips HARD and nearly
+        symmetrically, which is why a distorted guitar is odd-harmonic dominant
+        and reads as aggressive rather than warm. The asymmetry here is small on
+        purpose: that is the difference between an amp and a valve preamp.
+
+        The second stage is what gives it the "cascade" character - two gain
+        stages in series compress twice, so the curve is flatter in the middle
+        than a single stage of the same total gain.
+    */
+    float shapeAmp (float x, float drive, float asymmetry) noexcept
+    {
+        // A small, fast bias drift: a high-gain stage's operating point moves
+        // quickly with the signal because the gain makes even a small shift
+        // audible.
+        ampBiasState += (x - ampBiasState) * 0.002f;
+        const float biased = x + asymmetry * 0.18f + ampBiasState * 0.10f;
+
+        // Stage one: high gain, hard clip. The slope is much steeper than tape's
+        // so the knee arrives early.
+        const float slope1 = 1.0f + drive * 4.5f;
+        const float stage1 = std::tanh (biased * slope1) / slope1;
+
+        // Stage two: the cascade. A second, gentler stage applied to the first
+        // stage's output, which is what flattens the middle of the curve.
+        const float slope2 = 1.0f + drive * 1.2f;
+        const float stage2 = std::tanh (stage1 * slope2) / slope2;
+
+        // Hard-clipped stages are nearly symmetric, so the asymmetry term is
+        // small - just enough to keep some even content rather than a pure odd
+        // series, which would read as a fuzz rather than an amp.
+        const float asymmetryTerm = asymmetry * 0.20f * stage2 * stage2;
+
+        const float s1Zero = std::tanh ((asymmetry * 0.18f) * slope1) / slope1;
+        const float s2Zero = std::tanh (s1Zero * slope2) / slope2;
+        const float asymmetryAtZero = asymmetry * 0.20f * s2Zero * s2Zero;
+
+        return (stage2 - s2Zero) - (asymmetryTerm - asymmetryAtZero);
+    }
+
+    /**
+        Runs the blend. `drive` and `asymmetry` are the same arguments the tape
+        shaper has always taken, so the existing controls keep their meaning; the
+        weighting is the only thing BLEND and SHAPE change.
+    */
+    float process (float x, float drive, float asymmetry) noexcept
+    {
+        if (isIdle())
+            return x;
+
+        float out = 0.0f;
+
+        if (tapeWeight > 1.0e-4f)
+            out += shapeTape (x, drive, asymmetry) * tapeWeight;
+
+        if (valveWeight > 1.0e-4f)
+            out += shapeValve (x, drive, asymmetry) * valveWeight;
+
+        if (cassetteWeight > 1.0e-4f)
+            out += shapeCassette (x, drive, asymmetry) * cassetteWeight;
+
+        if (ampWeight > 1.0e-4f)
+            out += shapeAmp (x, drive, asymmetry) * ampWeight;
+
+        return out;
+    }
+};
+
+//==============================================================================
+/**
+    Guitar-amplifier features: the parts of a real amp's behaviour that are not
+    the clipping curve.
+
+    A saturation curve alone does not sound like an amplifier. What does is the
+    behaviour AROUND the curve, and these are the four that matter most:
+
+      SAG         - the supply droops under sustained demand, so the gain falls
+                    a little and then recovers. It is why an amp "gives" under a
+                    held chord and why the attack feels spongy rather than
+                    immediate. Modelled as a slow envelope that pulls the drive
+                    down, with a recovery time long enough to hear.
+      PRESENCE    - the negative-feedback network's top-end lift. A bright,
+                    narrow boost in the upper mids that sits AFTER the clipping,
+                    so it sharpens what is already there rather than adding new
+                    harmonics.
+      CABINET     - the speaker and its box. A resonant low-pass, not a plain
+                    one: a peak around 80-120 Hz from the cabinet tuning and a
+                    roll-off above 4-6 kHz from the cone's mass. Without it a
+                    clipped signal is fizzy; with it, it reads as a speaker.
+      BIAS SHIFT  - the DC operating point of the input stage, which is the single
+                    most effective control on a real amp's character: cold is
+                    tight and crossover-distorted, hot is fat and compressed. It
+                    is the amp's own BIAS, separate from the tape BIAS.
+*/
+struct AmpVoicing
+{
+    // Sag: the supply envelope. `sagEnvelope` follows the signal's demand, and
+    // `sagGain` is the gain reduction it produces.
+    float sagEnvelope = 0.0f;
+    float sagGain = 1.0f;
+
+    // Cabinet: a two-pole resonant low-pass, per channel, plus its own state.
+    float cabinetLow1 = 0.0f;
+    float cabinetLow2 = 0.0f;
+    float cabinetPeak = 0.0f;
+
+    // Presence: a one-pole high-pass taken out of the signal and added back with
+    // gain, which is what the feedback network's lift actually does.
+    float presenceHighState = 0.0f;
+
+    void reset() noexcept
+    {
+        sagEnvelope = 0.0f;
+        sagGain = 1.0f;
+        cabinetLow1 = cabinetLow2 = cabinetPeak = 0.0f;
+        presenceHighState = 0.0f;
+    }
+
+    /**
+        Runs the amplifier behaviour around one sample.
+
+        `x` is the already-shaped signal; the return value is what leaves the amp.
+        All three coefficients are block-rate constants, built by the caller.
+
+        Order matters and follows the hardware: SAG acts on the DRIVE before the
+        curve (it is the supply), so it is applied by the caller to the drive
+        amount; here we run the POST-curve stages - cabinet first (the speaker is
+        the last thing in the amp), then presence (the feedback network taps the
+        output).
+    */
+    float process (float x,
+                   float cabinetLowCoefficient,
+                   float cabinetPeakCoefficient,
+                   float presenceCoefficient,
+                   float presenceAmount) noexcept
+    {
+        // -- Cabinet: a resonant low-pass ------------------------------------
+        // Two cascaded one-poles give the roll-off; the peak term adds the
+        // cabinet's own resonance on top by feeding back a little of the
+        // difference between the two poles, which is where the low-mid thump
+        // comes from.
+        cabinetLow1 += (x - cabinetLow1) * cabinetLowCoefficient;
+        cabinetLow2 += (cabinetLow1 - cabinetLow2) * cabinetLowCoefficient;
+
+        // The resonance is the difference between the two pole outputs: it is
+        // near zero for slow signals and rises where the cabinet's tuning sits.
+        const float resonance = (cabinetLow1 - cabinetLow2);
+        cabinetPeak += (resonance - cabinetPeak) * cabinetPeakCoefficient;
+
+        const float cabinetOut = cabinetLow2 + cabinetPeak * 0.85f;
+
+        // -- Presence: the feedback network's top-end lift ---------------------
+        // A one-pole high-pass: the difference between the signal and its own
+        // low-passed copy. Adding it back with gain is exactly what a presence
+        // control does, and because it sits after the clipping it sharpens the
+        // harmonics already present rather than generating new ones.
+        presenceHighState += (cabinetOut - presenceHighState) * presenceCoefficient;
+        const float highBand = cabinetOut - presenceHighState;
+
+        return cabinetOut + highBand * presenceAmount;
+    }
+};
+
+//==============================================================================
+/**
     A sample-clock adapter for JUCE's SmoothedValue.
 
     The engine uses one coefficient pair for both channels, so every ramp must advance
@@ -1334,6 +1770,12 @@ private:
     std::atomic<float>* stOffsetParam = nullptr;
     std::atomic<float>* noiseParam = nullptr;
     std::atomic<float>* transportParam = nullptr;
+    std::atomic<float>* blendParam = nullptr;
+    std::atomic<float>* shapeParam = nullptr;
+    std::atomic<float>* sagParam = nullptr;
+    std::atomic<float>* presenceParam = nullptr;
+    std::atomic<float>* cabinetParam = nullptr;
+    std::atomic<float>* ampBiasParam = nullptr;
 
     float sampleRate = 44100.0f;
     // Every smoother below is advanced exactly once at the top of each sample frame.
@@ -1673,6 +2115,39 @@ private:
     // Noise floor trim, smoothed like every other control-derived gain so moving
     // the NOISE knob cannot step the hiss level.
     SampleSmoother noiseTrimSmoothed { sampleClock, false, false, 1.0f };
+
+    // -----------------------------------------------------------------------
+    //  Saturation blend.
+    //
+    //  One core and one amp voicing per channel. They are NOT shared: both hold
+    //  signal-dependent state (the hysteresis memory and the three bias-drift
+    //  followers), and running one instance across a stereo pair would make the
+    //  right channel's character depend on the left's - crosstalk in the
+    //  nonlinearity itself, which is the one place it cannot be tolerated.
+    // -----------------------------------------------------------------------
+    SaturationCore saturationL;
+    SaturationCore saturationR;
+    AmpVoicing ampL;
+    AmpVoicing ampR;
+
+    // The two blend controls, ramped so moving either one morphs the harmonics
+    // continuously instead of stepping the curve on a block boundary.
+    SampleSmoother blendSmoothed { sampleClock };
+    SampleSmoother shapeSmoothed { sampleClock };
+
+    // The amp controls. PRESENCE and CABINET are coefficients rather than gains,
+    // so they are smoothed for the same reason every other pole is: a stepped
+    // pole is a discontinuity in the waveform.
+    SampleSmoother sagSmoothed { sampleClock };
+    SampleSmoother presenceSmoothed { sampleClock, false, false, 0.5f };
+    SampleSmoother cabinetSmoothed { sampleClock };
+    SampleSmoother ampBiasSmoothed { sampleClock, false, false, 0.5f };
+
+    // Cabinet coefficients, built once per block from the rate. Two poles for the
+    // roll-off and one for the resonance, so three numbers.
+    float cabinetLowCoefficient = 0.5f;
+    float cabinetPeakCoefficient = 0.02f;
+    float presenceCoefficient = 0.5f;
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessor)

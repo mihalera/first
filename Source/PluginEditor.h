@@ -160,15 +160,19 @@ private:
         juce::Rectangle<int> meters;
     };
 
-    // Fifteen controls: the nine original machine controls plus the A/B TONE macro,
-    // SUBFUND, WIDTH, DELAY, DELAY LEVEL, ST OFFSET and NOISE. A 5 x 3 grid holds
-    // exactly fifteen, so every cell is used and the grid fills the panel.
+    // Twenty-one controls, in five columns:
+    //
+    //   row 1  INPUT    DRIVE   BIAS    BRIGHT   TONE       (the machine's front panel)
+    //   row 2  WOW      FLUTTER MIX     OUTPUT   WIDTH
+    //   row 3  BLEND    SHAPE   AMP BIAS SAG     PRESENCE   (the saturation core)
+    //   row 4  CABINET  DELAY   DLY LVL ST OFFSET NOISE
+    //   row 5  (the grid stretches the last cell to fill, which is what SUBFUND takes)
     //
     // The count here, the controlIds / controlNames lists and the defaultValues array
     // in the .cpp are four views of ONE list and must agree. That is why the array is
     // sized by controlCount rather than by a literal: a mismatch is then a compile
     // error (C2078) instead of a silent out-of-bounds read at run time.
-    static constexpr std::size_t controlCount = 15;
+    static constexpr std::size_t controlCount = 21;
     static constexpr int controlColumns = 5;
     static constexpr std::size_t decorativeOrbCount = 6;
 

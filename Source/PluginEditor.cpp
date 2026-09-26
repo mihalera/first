@@ -988,13 +988,17 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                          "flutter", "mix", "output",
                                          "stereo_width", "subfund",
                                          "delay_time", "delay_feedback",
-                                         "st_offset", "noise" };
+                                         "st_offset", "noise",
+                                         "blend", "shape", "amp_bias",
+                                         "sag", "presence", "cabinet" };
     const juce::StringArray controlNames { "INPUT", "DRIVE", "BIAS",
                                            "BRIGHT", "TONE", "WOW",
                                            "FLUTTER", "MIX", "OUTPUT",
                                            "WIDTH", "SUBFUND",
                                            "DELAY", "DLY LVL",
-                                           "ST OFFSET", "NOISE" };
+                                           "ST OFFSET", "NOISE",
+                                           "BLEND", "SHAPE", "AMP BIAS",
+                                           "SAG", "PRESENCE", "CABINET" };
     // One default per entry in controlNames, in the same order:
     // INPUT, DRIVE, BIAS, BRIGHT, TONE, WOW, FLUTTER, MIX, OUTPUT, WIDTH, SUBFUND,
     // DELAY, DLY LVL, ST OFFSET, NOISE. The array is sized by controlCount, so the
@@ -1005,7 +1009,9 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                                            0.18, 0.5, 0.0,
                                                            0.5, 0.0,
                                                            0.0, 0.0,
-                                                           0.0, 0.5 };
+                                                           0.0, 0.5,
+                                                           0.0, 0.5,
+                                                           0.0, 0.5, 0.0 };
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -1123,6 +1129,54 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "without changing stock. It is gated by the transport, so a "
                        "machine at rest is silent. Default 50 percent - the neutral "
                        "position, not a change.") + hints;
+            if (id == "blend")
+                return juce::String ("BLEND - which saturation PRINCIPLE the machine bends "
+                       "with. The shaper is not one curve: it is four, blended. Left is "
+                       "magnetic TAPE (memory, gentle, warm), then VALVE (soft "
+                       "asymmetric compression, even-harmonic warmth), then CASSETTE "
+                       "(a hard early knee on narrow tape, small and loud) and right "
+                       "is AMP (a high-gain guitar input, hard and odd-harmonic - the "
+                       "one that bites). Every curve is normalised so the blend cannot "
+                       "change the level, only the character. Default 0 percent - pure "
+                       "tape, exactly what earlier builds did.") + hints;
+            if (id == "shape")
+                return juce::String ("SHAPE - how concentrated the BLEND is. Low picks "
+                       "one principle at a time, so the sweep snaps from tape to valve "
+                       "to cassette to amp and each is obvious. High spreads the "
+                       "weighting so all four contribute at every position and the "
+                       "result reads as one compound machine rather than four. Default "
+                       "50 percent.") + hints;
+            if (id == "amp_bias")
+                return juce::String ("AMP BIAS - the input valve's DC operating point, "
+                       "which is the single most effective control on a real amp's "
+                       "character. Cold (low) is tight and slightly crossover-distorted; "
+                       "hot (high) is fat, compressed and soft. 50 percent is the "
+                       "neutral centre, so it is a character sweep rather than a "
+                       "one-way effect. Only audible in proportion to how much AMP is "
+                       "in the blend.") + hints;
+            if (id == "sag")
+                return juce::String ("SAG - how much the amplifier's power supply droops "
+                       "under sustained demand. This is why a real amp 'gives' under a "
+                       "held chord and why the attack feels spongy: the supply sags, "
+                       "the gain falls a little, and then it recovers. 0 percent is a "
+                       "stiff, regulated supply with no give at all; high settings are "
+                       "a small amp being leaned on hard. Short transients never move "
+                       "it - only sustained programme does. Default 0 percent.") + hints;
+            if (id == "presence")
+                return juce::String ("PRESENCE - the negative-feedback network's top-end "
+                       "lift, the upper-mid bite that makes an amp cut through. It sits "
+                       "AFTER the clipping, so it sharpens harmonics already present "
+                       "rather than generating new ones. 50 percent is the flat, "
+                       "neutral position; above it sharpens, below it darkens the way "
+                       "a low presence setting does. Default 50 percent.") + hints;
+            if (id == "cabinet")
+                return juce::String ("CABINET - the speaker and its box. A resonant "
+                       "low-pass, not a plain one: a peak around 110 Hz from the "
+                       "cabinet's tuning and a roll-off from the cone's mass. Without "
+                       "it a clipped signal is fizzy; with it, it reads as a speaker "
+                       "rather than a circuit. The voicing fades in with however much "
+                       "AMP is in the blend, so a pure tape setting is untouched. "
+                       "Default 0 percent - a DI, the raw amp output.") + hints;
             return hints;
         };
         slider.setTooltip (parameterTooltip (controlIds[static_cast<int> (i)]));
