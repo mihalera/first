@@ -1192,6 +1192,7 @@ private:
     std::atomic<float>* oversamplingParam = nullptr;
     std::atomic<float>* tapeTypeParam = nullptr;
     std::atomic<float>* speedParam = nullptr;
+    std::atomic<float>* instrumentParam = nullptr;
     std::atomic<float>* polarityParam = nullptr;
     std::atomic<float>* autoGainParam = nullptr;
     std::atomic<float>* subFundamentalParam = nullptr;
@@ -1322,7 +1323,7 @@ private:
 
     // BRIGHTNESS playback shelf, cached with the other coefficients: a fixed 8 kHz
     // high-shelf corner whose GAIN follows the Brightness control. The gain itself is
-    // a per-sample scalar (slope at warm = 0 dB, at bright = +6.4 dB peak lift), so
+    // a per-sample scalar (slope at warm = 0 dB, at bright = +9.6 dB peak lift), so
     // the control always does something audible and predictable at every setting.
     float toneShelfCoefficient = 0.5f;
     float toneShelfGain = 1.0f;
