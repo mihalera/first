@@ -1554,6 +1554,50 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     widthSmoothed.setTargetValue (stereoWidth);
     bypassSmoothed.setTargetValue (bypassRequested ? 0.0f : 1.0f);
 
+    // Delay, stereo offset, noise trim and transport state. All read once per block
+    // and fed to smoothers, so none of them can step the signal.
+    const auto delayMs = delayTimeParam != nullptr ? delayTimeParam->load() : 0.0f;
+    const auto delayFeedback = delayFeedbackParam != nullptr ? delayFeedbackParam->load() : 0.0f;
+    const auto stOffsetUs = stOffsetParam != nullptr ? stOffsetParam->load() : 0.0f;
+    const auto noiseAmount = noiseParam != nullptr ? noiseParam->load() : 0.5f;
+    const auto transportState = transportParam != nullptr
+                                    ? static_cast<int> (transportParam->load()) : 1;
+
+    // The delay time is stored in milliseconds and converted to samples at the ENGINE
+    // rate, so a 100 ms head spacing is 100 ms of tape travel whether the engine runs
+    // at the session rate or at 8x it.
+    delaySamplesSmoothed.setTargetValue (
+        juce::jlimit (0.0f, static_cast<float> (juce::jmax (0, delayBufferLength - 1)),
+                      delayMs * 0.001f * engineSampleRate));
+    delayFeedbackSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, delayFeedback));
+
+    // ST OFFSET is given in microseconds and converted to samples the same way. Only
+    // the magnitude is the read offset; the sign decides WHICH channel is delayed, so
+    // a negative value lags the left channel instead of the right.
+    const float stOffsetSamples = std::abs (stOffsetUs) * 1.0e-6f * engineSampleRate;
+    stOffsetSamplesSmoothed.setTargetValue (
+        juce::jlimit (0.0f, static_cast<float> (stOffsetBufferLength - 2), stOffsetSamples));
+    const bool offsetRightChannel = stOffsetUs >= 0.0f;
+
+    // NOISE is a trim on top of the formula's own floor. 0.5 is unity - the neutral
+    // position - so the control can lift the floor to 2x or take it to silence.
+    noiseTrimSmoothed.setTargetValue (juce::jlimit (0.0f, 2.0f, noiseAmount * 2.0f));
+
+    // Transport: the ramp target is 0 for STOP and 1 for PLAY or START. The
+    // coefficient sets how fast it gets there - a spin-up takes about a second, which
+    // is what a capstan sounds like coming up to speed.
+    const float transportTarget = (transportState == 0) ? 0.0f : 1.0f;
+    if (transportState != lastTransportState)
+    {
+        // A fresh START from a standstill restarts the spin-up; a START from PLAY is a
+        // re-lock, so it gets a much shorter ramp rather than a full second of pitch
+        // slide for a button press that changed nothing.
+        const bool spinUpFromRest = (transportState == 2 && lastTransportState == 0);
+        const float rampSeconds = spinUpFromRest ? 1.0f : 0.35f;
+        transportRampCoefficient = 1.0f - std::exp (-1.0f / (engineSampleRate * rampSeconds));
+        lastTransportState = transportState;
+    }
+
     // -------------------------------------------------------------------------
     //  Analogue transfer curves.
     //
@@ -2306,9 +2350,13 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // is gated by the transport's actual activity: with Wow AND Flutter both at
             // zero the machine is mathematically still, so no modulation of any kind
             // reaches the signal.
-            const float wowMod = 1.0f + wowLfo * wowDepth;
-            const float flutterMod = 1.0f + flutterLfo * flutterDepth
-                                       * flutterScaleSmoothed.getCurrentValue();
+            // Every transport term is scaled by speedError, which is below 1 while
+            // START spins the capstan up. That is what turns the transport ramp into a
+            // PITCH ramp rather than a level fade: the modulation deepens and the whole
+            // wet path runs flat until the machine reaches speed.
+            const float wowMod = (1.0f + wowLfo * wowDepth) * speedError;
+            const float flutterMod = (1.0f + flutterLfo * flutterDepth
+                                        * flutterScaleSmoothed.getCurrentValue()) * speedError;
             const float grainMod = 1.0f + tapeHiss * 0.10f * transportActivityGate * grainLfo;
 
             // Record head: pre-emphasis, tape bias offset and drive. With DRIVE at zero
@@ -2445,7 +2493,13 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // hiss is simply a constant floor; tracking the programme makes it breathe
             // with the music, which is the one thing a noise floor must not do.
             const float bandLimitCompensation = 1.0f / std::sqrt (juce::jmax (0.05f, hissBandLimit));
-            const float noiseFloor = hissLowPass * bandLimitCompensation;
+            // The NOISE control trims the floor on top of the formula's own figure:
+            // 0.5 is unity, so the knob starts neutral and the stock's own character
+            // is unchanged unless the user asks for a different floor. The multiplier
+            // is carried by a smoother, so dragging the knob glides the hiss rather
+            // than stepping it.
+            const float noiseFloor = hissLowPass * bandLimitCompensation
+                                   * noiseTrimSmoothed.getCurrentValue();
 
             const float motioned = (compressedBias + noiseFloor) * wowMod * flutterMod * grainMod;
 
@@ -3037,501 +3091,4 @@ void FirstAudioProcessor::setStateInformation (const void* data, int sizeInBytes
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
     return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    copyToCompareSlot (1);
-    activeSlot.store (0, std::memory_order_relaxed);
-
-    // A session load restores the parameters, not the preset that produced them:
-    // the badge starts clean and unnamed, exactly like a freshly opened plugin.
-    markPresetClean ({});
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
-    lastPresetIndex.store (-1, std::memory_order_relaxed);
-}
-
-//==============================================================================
-juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
-{
-    return new FirstAudioProcessor();
-}
 }
