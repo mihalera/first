@@ -88,8 +88,8 @@ namespace
     // PRESENCE before WOW and FLUTTER, which put the playback EQ in front of the tape
     // speed controls it acts on. Now:
     //
-    //   MACHINE           INPUT -> DRIVE -> BIAS, then the tone pair, then SUBFUND
-    //   SATURATION CORE   how much, how it bends, then how the result is balanced
+    //   MACHINE           what goes in, the machine's tone, what comes out
+    //   SATURATION CORE   the level into the saturator, then everything that bends it
     //   HEAD / TRANSPORT  the head, then the transport, then echo, then hiss
     //
     // Each tab reads in the order its own name states, and the three of them are
@@ -108,12 +108,13 @@ namespace
     };
 
     constexpr std::array<TabSpec, 3> tabSpecs { {
-        //  input, drive, bias, subfund, tone (BRIGHT), character (TONE)
-        { "MACHINE", "Input trim, tape drive, and the machine's own colour.",
-                     6, { 0, 1, 2, 20, 3, 4 } },
-        //  blend, shape, amp_bias, sag, mix, stereo_width, output
-        { "SATURATION CORE", "The saturation path, how much of it you hear, and its trim.",
-                     7, { 10, 11, 12, 13, 7, 9, 8 } },
+        //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
+        { "MACHINE", "What goes in, how the machine colours it, and what comes out.",
+                     6, { 0, 3, 4, 7, 9, 8 } },
+        //  drive, bias, subfund, blend, shape, amp_bias, sag
+        { "SATURATION CORE", "Everything that bends the signal: level into the core, "
+                            "then its colour and curve.",
+                     7, { 1, 2, 20, 10, 11, 12, 13 } },
         //  cabinet, presence, wow, flutter, st_offset, delay_time, delay_feedback, noise
         { "HEAD / TRANSPORT", "Playback head, tape transport, echo and hiss.",
                      8, { 15, 14, 5, 6, 18, 16, 17, 19 } }
@@ -1244,10 +1245,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // its +-500-sample range while NOISE reset to silence. The array is sized by
     // controlCount, so a longer or shorter list is a compile error (C2078).
     // The map below is the knob grid as tabSpecs groups it, id then default:
-    //   MACHINE           input 0.0   drive 0.30  bias 0.42  subfund 0.0
-    //                      tone 0.50  character 0.50
-    //   SATURATION CORE   blend 0.0   shape 0.50  amp_bias 0.50  sag 0.0
+    //   MACHINE           input 0.0   tone 0.50  character 0.50
     //                      mix 0.50  stereo_width 0.50  output 0.0
+    //   SATURATION CORE   drive 0.30  bias 0.42  subfund 0.0  blend 0.0
+    //                      shape 0.50  amp_bias 0.50  sag 0.0
     //   HEAD / TRANSPORT  cabinet 0.0  presence 0.50  wow 0.14  flutter 0.18
     //                      st_offset 0.0  delay_time 0.0  delay_feedback 0.0
     //                      noise 0.50

@@ -163,9 +163,9 @@ private:
     // Twenty-one controls, split across three tabs of at most nine, in signal-flow
     // order: consecutive slices of one chain, read left to right.
     //
-    //   tab 1  MACHINE           INPUT  DRIVE  BIAS   SUBFUND BRIGHT TONE
-    //   tab 2  SATURATION CORE   BLEND  SHAPE  AMP BIAS SAG     MIX   WIDTH OUTPUT
-    //   tab 3  HEAD / TRANSPORT  CABINET PRESENCE WOW   FLUTTER  ST OFFSET
+    //   tab 1  MACHINE           INPUT  BRIGHT TONE   MIX   WIDTH OUTPUT
+    //   tab 2  SATURATION CORE   DRIVE  BIAS   SUBFUND BLEND  SHAPE  AMP BIAS SAG
+    //   tab 3  HEAD / TRANSPORT  CABINET PRESENCE WOW   FLUTTER ST OFFSET
     //                            DELAY DLY LVL NOISE
     //
     // Every tab holds between six and eight controls, so at tabColumns each they all

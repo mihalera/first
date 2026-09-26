@@ -35,25 +35,6 @@ set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
 
 # ------------------------------------------------------------------------------
-#  One Apple-only warning suppression, and it is deliberately set this early.
-#
-#  juce_FastMathApproximations.h converts integer magic constants to float in its
-#  SIMD helpers, which raises -Wimplicit-const-int-float-conversion four times per
-#  translation unit. That group is NOT enabled by Clang by default - it is opt-in -
-#  so silencing it costs this project nothing, and the only code it ever fires on is
-#  JUCE's own.
-#
-#  It has to be applied to CMAKE_CXX_FLAGS here, BEFORE add_subdirectory(JUCE) and
-#  before the CPM packages, rather than as a target_compile_options() later on: the
-#  warning is raised in a translation unit that does not belong to any of the plugin's
-#  targets, so per-target options never reached it and the build still printed all
-#  sixteen. Setting the flag up front is what makes it apply to every C++ compile in
-#  the project, JUCE's and the vendored modules' included.
-# ------------------------------------------------------------------------------
-if(APPLE AND CMAKE_CXX_COMPILER_ID MATCHES "Clang")
-    set(CMAKE_CXX_FLAGS "${CMAKE_CXX_FLAGS} -Wno-implicit-const-int-float-conversion")
-endif()
-
 # ------------------------------------------------------------------------------
 #  JUCE
 #
@@ -365,6 +346,79 @@ juce_add_plugin(first
     AU_MAIN_TYPE                kAudioUnitType_Effect)
 
 # ------------------------------------------------------------------------------
+#  Third-party warning suppression
+#
+#  foleys_gui_magic is a JUCE MODULE, not a separate library, so its 55 translation
+#  units are compiled as part of `first` and its warnings land in this project's build
+#  log on every platform. The SYSTEM YES on its CPMAddPackage covers its HEADERS, not
+#  its .cpp files. What it produces is eleven warnings on Linux and rather more on
+#  AppleClang: unused locals, shadowed members, and implicit int-to-float conversions
+#  in code this project does not own and does not patch.
+#
+#  The suppression is attached PER SOURCE FILE, never to the target, so a new warning
+#  of these kinds in the plugin's own Source/*.cpp is still reported and still worth
+#  fixing. A glob that matches nothing is a no-op, so a CPM path change degrades to
+#  "no suppression" rather than to a configure error. MSVC is skipped entirely: it
+#  spells the same warnings as /wdNNNN numbers, not -W flags.
+# ------------------------------------------------------------------------------
+if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+    set(j37_thirdparty_warnings -Wno-unused-variable -Wno-unused-but-set-variable
+                               -Wno-unused-function -Wno-missing-prototypes -Wno-shadow)
+
+    if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
+        # -Wshorten-64-to-32 and -Wimplicit-const-int-float-conversion are Clang-only
+        # spellings; GCC rejects them. -Wimplicit-const-int-float-conversion is not on
+        # by default in Clang, so silencing it costs this project nothing.
+        list(APPEND j37_thirdparty_warnings -Wno-implicit-int-float-conversion
+                                             -Wno-implicit-const-int-float-conversion
+                                             -Wno-shorten-64-to-32)
+    endif()
+
+    file(GLOB j37_thirdparty_sources CONFIGURE_DEPENDS
+         "${CMAKE_BINARY_DIR}/deps/foleys_gui_magic/modules/foleys_gui_magic/*.cpp"
+         "${CMAKE_BINARY_DIR}/deps/foleys_gui_magic/modules/foleys_gui_magic/*/*.cpp")
+
+    if(j37_thirdparty_sources)
+        set_source_files_properties(${j37_thirdparty_sources}
+            PROPERTIES COMPILE_OPTIONS "${j37_thirdparty_warnings}")
+    endif()
+
+    # The per-source flags above are not enough on their own, because most of these
+    # headers are parsed as part of THIS project's translation units: PluginEditor.h
+    # includes <foleys_gui_magic/foleys_gui_magic.h> behind a __has_include guard, and
+    # PluginProcessor.h pulls in chowdsp, so their headers are diagnosed while compiling
+    # Source/*.cpp. Marking those include directories SYSTEM is what actually silences
+    # them: a diagnostic raised INSIDE a system header is dropped, while a diagnostic in
+    # our own code is still reported. That is strictly more precise than widening the
+    # -Wno- list for our own sources, which is why the lists above stay as they are.
+    file(GLOB j37_thirdparty_include_dirs CONFIGURE_DEPENDS
+         "${CMAKE_BINARY_DIR}/deps/foleys_gui_magic/modules"
+         "${CMAKE_SOURCE_DIR}/.cpm-cache/chowdsp_utils/*/modules/*")
+
+    foreach(j37_include_dir IN LISTS j37_thirdparty_include_dirs)
+        if(IS_DIRECTORY "${j37_include_dir}")
+            target_include_directories(first SYSTEM PRIVATE "${j37_include_dir}")
+        endif()
+    endforeach()
+endif()
+
+# ------------------------------------------------------------------------------
+#  What is left, and why it stays
+#
+#  On macOS this build now prints sixteen warnings, all of them
+#  -Wimplicit-const-int-float-conversion from JUCE's own
+#  juce_FastMathApproximations.h, raised while building
+#  `juce_vst3_manifest_helper`. That is a NESTED CMake project JUCE generates and
+#  configures on its own during the build, so it inherits neither this file's
+#  CMAKE_CXX_FLAGS nor any per-target or per-source option set here - every way of
+#  passing the flag from this file was tried and none of them reached it. Silencing
+#  it would mean patching JUCE's generated helper, so the sixteen are left standing
+#  and documented instead. Nothing in Source/*.cpp or in the plugin's own targets
+#  warns on any platform.
+# ------------------------------------------------------------------------------
+
+
+# ------------------------------------------------------------------------------
 #  Generated JuceHeader.h
 #
 #  The plugin sources include <JuceHeader.h>, which is how the previous Projucer
@@ -568,36 +622,7 @@ if(APPLE)
             "${J37_BUNDLE_ID}.internal")
     endif()
 
-    # foleys_gui_magic is a JUCE MODULE, not a separate library, so its 55 translation
-    # units are compiled as part of `first` and its warnings land in our build log. Its
-    # SYSTEM YES in the CPMAddPackage call covers its HEADERS, not its .cpp files, and
-    # AppleClang is far stricter about implicit numeric conversions than the GCC build
-    # these sources were written against - between them they accounted for well over
-    # half of every warning this project printed.
-    #
-    # The suppression is attached per SOURCE FILE, never to the target, so a new
-    # warning of these kinds in the plugin's own Source/*.cpp is still reported and
-    # still worth fixing. A glob that matches nothing is a no-op, so a CPM path change
-    # degrades to "no suppression" rather than to a configure error.
-    file(GLOB j37_foleys_sources CONFIGURE_DEPENDS
-         "${CMAKE_BINARY_DIR}/deps/foleys_gui_magic/modules/foleys_gui_magic/*.cpp"
-         "${CMAKE_BINARY_DIR}/deps/foleys_gui_magic/modules/foleys_gui_magic/*/*.cpp")
-
-    if(j37_foleys_sources)
-        set_source_files_properties(${j37_foleys_sources} PROPERTIES COMPILE_OPTIONS
-            "-Wno-implicit-int-float-conversion;-Wno-implicit-const-int-float-conversion;-Wno-unused-variable;-Wno-unused-but-set-variable;-Wno-unused-function;-Wno-missing-prototypes;-Wno-shorten-64-to-32")
-    endif()
-
-    # The last warnings this build printed came from a single JUCE header:
-    # juce_FastMathApproximations.h converts integer magic constants to float in its
-    # SIMD helpers, which trips an opt-in Clang group that is NOT on by default. It is
-    # the only group silenced target-wide here, and only that one - everything the
-    # vendored module needs is attached per source file below, so a new warning of any
-    # other kind in this project's own Source/*.cpp is still reported.
-    # (the flag itself is added near the top of this file, before JUCE and the CPM
-    #  packages are added, because the warning is raised while compiling a translation
-    #  unit that only ever includes the JUCE header - adding it per target afterwards
-    #  left all sixteen of them in place.)
+    # (see the third-party warning block above, which now covers Apple too)
 
     # The -Wshorten-64-to-32 that used to be enabled here is gone. It was switched on
     # to keep one specific conversion visible when it was the only warning in the
