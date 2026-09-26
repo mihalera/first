@@ -160,20 +160,26 @@ private:
         juce::Rectangle<int> meters;
     };
 
-    // Twenty-one controls, in five columns:
+    // Twenty-one controls, split across three tabs of at most nine:
     //
-    //   row 1  INPUT    DRIVE   BIAS    BRIGHT   TONE       (the machine's front panel)
-    //   row 2  WOW      FLUTTER MIX     OUTPUT   WIDTH
-    //   row 3  BLEND    SHAPE   AMP BIAS SAG     PRESENCE   (the saturation core)
-    //   row 4  CABINET  DELAY   DLY LVL ST OFFSET NOISE
-    //   row 5  SUBFUND                  (the only control on a row of its own)
+    //   tab 1  MACHINE           INPUT DRIVE BIAS BRIGHT TONE WOW FLUTTER SUBFUND
+    //   tab 2  SATURATION CORE   BLEND SHAPE AMP BIAS SAG MIX WIDTH OUTPUT
+    //   tab 3  HEAD / TRANSPORT  PRESENCE CABINET DELAY DLY LVL ST OFFSET NOISE
     //
-    // The count here, the controlIds / controlNames lists and the defaultValues array
-    // in the .cpp are four views of ONE list and must agree. That is why the array is
-    // sized by controlCount rather than by a literal: a mismatch is then a compile
-    // error (C2078) instead of a silent out-of-bounds read at run time.
+    // Every tab holds between five and nine controls, so at tabColumns each they all
+    // come to two rows: no tab needs a third row, and the grid neither grows nor
+    // jumps when the user switches tabs.
+    //
+    // The count here, the controlIds / controlNames lists, the defaultValues array
+    // and the tabSpecs table in the .cpp are all views of ONE list and must agree.
+    // That is why the array is sized by controlCount rather than by a literal: a
+    // mismatch is then a compile error (C2078) instead of a silent out-of-bounds
+    // read at run time. The tab table is checked against controlCount by a
+    // static_assert too, so a knob that no tab lists is a build error, not a knob
+    // that silently disappears from the panel.
     static constexpr std::size_t controlCount = 21;
-    static constexpr int controlColumns = 5;
+    static constexpr int tabColumns = 4;
+    static constexpr int numTabs = 3;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     void timerCallback() override;
@@ -192,6 +198,14 @@ private:
     // the panel without one) and an explicit ON colour, since getToggleState() is
     // always false for it.
     void styleGlButton (bool isOn);
+
+    // Tabs. The grid used to be one five-row block of all twenty-one knobs with three
+    // small section captions floating in the gaps above rows 3 and 4 - which is to
+    // say, on top of the rows of knobs above them. The captions are gone and the
+    // three groups are real tabs, so only the active tab's controls are on screen
+    // and each group has a whole grid to itself.
+    void setCurrentTab (int newTab);
+    void styleTabButtons();
 
     void refreshPresetList();
     void refreshUserPresetList();
@@ -286,11 +300,10 @@ private:
     juce::Label deckHintLabel;
     juce::Label controlsHeadingLabel;
     juce::Label controlsHintLabel;
-    // Section captions inside the knob grid, so five rows of knobs read as three
-    // groups (machine / saturation core / head and transport) rather than one block.
-    juce::Label machineSectionLabel;
-    juce::Label saturationSectionLabel;
-    juce::Label headSectionLabel;
+    // The three knob-grid tabs, in the order tabSpecs lists them. Clicking one shows
+    // that group's controls and hides every other knob.
+    std::array<juce::TextButton, numTabs> tabButtons;
+    int currentTab = 0;
     juce::Label metersHeadingLabel;
     juce::Label metersHintLabel;
     juce::Label compressorLabel;
