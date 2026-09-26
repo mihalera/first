@@ -66,10 +66,25 @@ add_subdirectory(JUCE)
 #                        component with no further setup; it stays passive in
 #                        the shipped build.
 #
+#    xsimd               Portable SIMD wrappers (SSE/AVX/NEON). Linked into the
+#                        plugin so the per-sample tape loop can be vectorised
+#                        when profiling says it is worth it. chowdsp::chowdsp_simd
+#                        already wraps xsimd, so this is the same code path the
+#                        DSP helpers use rather than a second SIMD layer.
+#
+#    melatonin_blur      Fast shadow/gradient blurring for JUCE Components.
+#                        Available to the editor's paint routines, which draw a
+#                        lot of soft analog shading by hand today.
+#
 #  The tanh/SIMD advice from the library review is recorded where the tanh
 #  stages live in PluginProcessor.cpp: approximating tanh only pays once
 #  profiling shows the shaper is the hot loop, and chowdsp_utils' SIMD types
 #  are the vehicle if that day comes.
+#
+#  NOTHING BELOW IS ADOPTED YET. These packages are fetched and linked so that
+#  the pieces are available in the build; the engine still uses its own code.
+#  Adopting them is a per-piece decision that has to be made against a profile
+#  and a listening test, not against a library list.
 # ------------------------------------------------------------------------------
 set(CPM_DOWNLOAD_VERSION 0.40.2)
 if(NOT EXISTS "${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
@@ -108,6 +123,67 @@ CPMAddPackage(
     SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/melatonin_inspector"
     EXCLUDE_FROM_ALL YES
     SYSTEM YES)
+
+# melatonin_blur: same source family as the inspector, same SOURCE_DIR reason -
+# it is a JUCE module, and JUCE derives the header name it must find
+# (melatonin_blur.h) from the LAST PATH COMPONENT of the module directory, so
+# CPM's default "-src" suffix would abort every configure.
+CPMAddPackage(
+    NAME melatonin_blur
+    GITHUB_REPOSITORY sudara/melatonin_blur
+    GIT_TAG v1.4
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/melatonin_blur"
+    EXCLUDE_FROM_ALL YES
+    SYSTEM YES)
+
+# xsimd: header-only portable SIMD. Pinned by tag like everything else, so a
+# fresh clone resolves the same version forever. SYSTEM YES keeps its headers out
+# of the warning sweep - it is third-party code and is not ours to fix.
+CPMAddPackage(
+    NAME xsimd
+    GITHUB_REPOSITORY xtensor-stack/xsimd
+    GIT_TAG 13.0.0
+    EXCLUDE_FROM_ALL YES
+    SYSTEM YES)
+
+# ------------------------------------------------------------------------------
+#  Dev-only libraries - fetched only when J37_BUILD_TESTS is ON
+#
+#  Catch2    - the C++ test framework. The DSP harness in tests/dsp/ compiles
+#              the shipping code against a shim and checks RENDERED AUDIO; that
+#              is the right tool for a signal-path regression. Catch2 is for the
+#              unit-sized pieces underneath it - a single shaper, a single
+#              loudness filter, a single compressor detector - where the question
+#              is "does this function still return what it returned yesterday",
+#              not "does the plugin still sound right".
+#
+#  nanobench - micro-benchmarks. The reason this is here at all: the shaper runs
+#              two std::tanh calls per sample per channel (four with the
+#              zero-point correction), and at 8x oversampling that is the hot
+#              loop. Approximating tanh or vectorising it is a real complexity
+#              cost, and it should only be paid once a benchmark shows the shaper
+#              actually dominates - not because it looks expensive on paper.
+#
+#  Both are OFF by default: a plugin build must not drag a test framework into
+#  its dependency graph. Enable with -DJ37_BUILD_TESTS=ON.
+# ------------------------------------------------------------------------------
+option(J37_BUILD_TESTS "Fetch Catch2 and nanobench and build the DSP unit tests" OFF)
+
+if(J37_BUILD_TESTS)
+    CPMAddPackage(
+        NAME Catch2
+        GITHUB_REPOSITORY catchorg/Catch2
+        GIT_TAG v3.7.1
+        EXCLUDE_FROM_ALL YES
+        SYSTEM YES)
+
+    CPMAddPackage(
+        NAME nanobench
+        GITHUB_REPOSITORY martinus/nanobench
+        GIT_TAG v4.3.11
+        EXCLUDE_FROM_ALL YES
+        SYSTEM YES)
+endif()
 
 # ------------------------------------------------------------------------------
 #  Plugin target metadata
@@ -219,6 +295,8 @@ target_link_libraries(first
         chowdsp::chowdsp_math
         chowdsp::chowdsp_simd
         melatonin_inspector
+        melatonin_blur
+        xsimd
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
@@ -453,6 +531,12 @@ if(APPLE)
     message(STATUS "  Formats     : VST3, AU, AUv3")
 else()
     message(STATUS "  Formats     : VST3")
+endif()
+message(STATUS "  Libraries   : chowdsp_utils, melatonin_inspector, melatonin_blur, xsimd")
+if(J37_BUILD_TESTS)
+    message(STATUS "  Dev tests   : ON  (Catch2, nanobench)")
+else()
+    message(STATUS "  Dev tests   : OFF (-DJ37_BUILD_TESTS=ON to enable Catch2 + nanobench)")
 endif()
 message(STATUS "")
 message(STATUS "Artifacts land in: ${CMAKE_BINARY_DIR}")

@@ -557,6 +557,34 @@ Projucer project enabled:
 | `juce_opengl` | `OpenGLContext`, the best-effort panel accelerator |
 | `juce_box2d` | decorative physics particles on the tape deck |
 
+### Third-party libraries
+
+Everything below JUCE is fetched by **CPM** at configure time and pinned by tag or
+commit, so a fresh clone resolves the same versions forever. They are linked into the
+plugin target so the pieces are *available*; the engine still uses its own code, and
+adopting any piece is a per-piece decision that has to be made against a profile and
+a listening test.
+
+| Library | Pinned at | Why it is in the build |
+| --- | --- | --- |
+| `chowdsp_utils` | `v2.4.0` | Chowdhury DSP's toolbox. Provides `SmoothedBufferValue`, `LoudnessMeter`, `PitchDetector`, `Compressor`/`LevelDetector`, `Noise`, `Upsampler`, `SineWave` - a generation ahead of the hand-rolled equivalents in `PluginProcessor.h` |
+| `melatonin_inspector` | commit `9c483f86` | JUCE component inspector, compiled under `JUCE_DEBUG` only. Passive in the shipped build |
+| `melatonin_blur` | `v1.0.1` | Fast shadow/gradient blurring for JUCE Components - the editor draws a lot of soft analog shading by hand today |
+| `xsimd` | `13.0.0` | Portable SIMD wrappers (SSE/AVX/NEON). `chowdsp::chowdsp_simd` already wraps xsimd, so this is the same code path rather than a second SIMD layer |
+
+Two dev-only libraries are **off by default**, so a plugin build never drags a test
+framework into its dependency graph. Enable with `-DJ37_BUILD_TESTS=ON`:
+
+| Library | Pinned at | Why |
+| --- | --- | --- |
+| `Catch2` | `v3.7.1` | Unit tests for the pieces underneath the DSP harness - a single shaper, a single loudness filter, a single compressor detector |
+| `nanobench` | `v4.3.11` | Micro-benchmarks. The shaper runs two `std::tanh` calls per sample per channel, so approximating or vectorising it is a real complexity cost that should only be paid once a benchmark shows the shaper actually dominates |
+
+What is deliberately **not** here: an FFT library (the harmonic analyser needs three
+bins, and a full transform would be slower than the Goertzel it uses) and a pitch
+detection library (the sub-bass detector's zero-crossing tracker already works, and a
+heavier tracker would add latency to a stage that is supposed to be tight).
+
 ### Precompiled headers
 
 Not used, and never were in the final setup. Every translation unit compiles its own copy
