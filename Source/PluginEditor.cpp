@@ -1676,8 +1676,19 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // software renderer is what the user sees.
     glButton.setButtonText (openGLContext.isAttached() ? "GL ON" : "GL OFF");
     styleGlButton (openGLContext.isAttached());
+
+    // OpenGL is ON by default, and a failed first attach is usually not a final
+    // answer: the host may not have created the editor's native peer yet, and there
+    // is no context to attach to without one. The timer keeps trying for a few
+    // seconds and then gives up, because a driver, a remote session or a VM that
+    // cannot create a context will not manage on the last attempt either.
+    glAttachAttemptsLeft = openGLContext.isAttached() ? 0 : 90;
     glButton.onClick = [this]
     {
+        // Whatever the user asked for wins: stop the startup retries, or they would
+        // switch the accelerator back on seconds after the user turned it off.
+        glAttachAttemptsLeft = 0;
+
         if (openGLContext.isAttached())
             openGLContext.detach();
         else
@@ -1920,6 +1931,10 @@ void FirstAudioProcessorEditor::applyTheme()
     styleCombo (tapeTypeBox);
     styleCombo (speedBox);
     styleCombo (presetBox);
+    // The user-preset combo is the seventh ComboBox and was the one left out of this
+    // list - and of the one in applyTheme() below - so it kept LookAndFeel_V4's light
+    // default background on a dark panel and never followed the theme toggle.
+    styleCombo (userPresetBox);
 
     const auto styleWorkflowButton = [&palette] (juce::TextButton& button, bool emphasised)
     {
@@ -1936,6 +1951,7 @@ void FirstAudioProcessorEditor::applyTheme()
     styleCombo (oversamplingBox);
     styleCombo (instrumentBox);
     styleCombo (transportBox);
+    styleCombo (userPresetBox);
     styleGlButton (openGLContext.isAttached());
     styleWorkflowButton (copyAButton, audioProcessor.getActiveCompareSlot() == 0);
     styleWorkflowButton (copyBButton, audioProcessor.getActiveCompareSlot() == 1);
@@ -2183,6 +2199,29 @@ void FirstAudioProcessorEditor::createDecorativePhysics()
 
 void FirstAudioProcessorEditor::timerCallback()
 {
+    // The startup retry for the OpenGL context, bounded and then forgotten. It runs
+    // first so a context that comes up is live before the meters ask for a repaint.
+    if (glAttachAttemptsLeft > 0)
+    {
+        --glAttachAttemptsLeft;
+
+        if (openGLContext.isAttached())
+        {
+            glAttachAttemptsLeft = 0;
+        }
+        else
+        {
+            openGLContext.attachTo (*this);
+
+            if (openGLContext.isAttached())
+            {
+                glAttachAttemptsLeft = 0;
+                glButton.setButtonText ("GL ON");
+                styleGlButton (true);
+            }
+        }
+    }
+
     // Four meters: the two level meters each show the full four-way loudness reading
     // (peak dB, RMS, LUFS, VU and their equal-weighted combination), and each glue
     // compressor stage gets its own reduction meter fed from its own telemetry, so the
@@ -2481,24 +2520,29 @@ void FirstAudioProcessorEditor::resized()
     grid.removeFromBottom (8);
     const auto cellWidth = grid.getWidth() / controlColumns;
 
-    // The three section captions, placed on the row boundaries their groups start
-    // at. The grid is five rows: the machine's own controls are rows 0-1, the
-    // saturation core is row 2, and the head/transport extras are rows 3-4. The
-    // captions sit ABOVE their first row, in the gap the row spacing leaves.
-    {
-        const auto previewRowHeight = grid.getHeight() / 5;
-        placeSectionCaption (machineSectionLabel, "MACHINE", 0, grid.getY(), previewRowHeight);
-        placeSectionCaption (saturationSectionLabel, "SATURATION CORE", 2, grid.getY(), previewRowHeight);
-        placeSectionCaption (headSectionLabel, "HEAD / TRANSPORT", 3, grid.getY(), previewRowHeight);
-    }
-    // Three rows, to match controlColumns: 4 x 3 = 12 cells for 11 controls.
-    const auto rowHeight = grid.getHeight() / 3;
-
     // The number of rows is derived from the control count and the column count rather
-    // than written out. Hardcoding it is how the previous "row == 1" became wrong the
-    // moment a tenth control turned the grid from two rows into three: the last row
-    // would then have been sized as if it were the bottom row and overflowed the panel.
+    // than written out, and EVERY row calculation below divides by it. Hardcoding the
+    // row count is how the previous "row == 1" became wrong the moment a tenth control
+    // turned the grid from two rows into three, and it stayed wrong in the other
+    // direction: a leftover "/ 3" from the 11-control era sized every cell from a
+    // three-row grid while five rows were stacked on top of it, so the fourth and
+    // fifth rows (CABINET / DELAY / DLY LVL / ST OFFSET / NOISE, and SUBFUND) were
+    // placed a third of a grid BELOW the panel - drawn over the meters and off the
+    // bottom of the window.
     const auto gridRows = (static_cast<int> (controlCount) + controlColumns - 1) / controlColumns;
+    const auto rowHeight = grid.getHeight() / gridRows;
+
+    // The three section captions, placed on the row boundaries their groups start at.
+    // The grid is five rows: the machine's own controls are rows 0-1, the saturation
+    // core is row 2, and the head/transport extras are rows 3-4. The captions sit
+    // ABOVE their first row, in the gap the row spacing leaves - and they divide by
+    // the same rowHeight the cells do, because a caption placed on a different row
+    // grid than the knobs is a caption on the wrong row.
+    {
+        placeSectionCaption (machineSectionLabel, "MACHINE", 0, grid.getY(), rowHeight);
+        placeSectionCaption (saturationSectionLabel, "SATURATION CORE", 2, grid.getY(), rowHeight);
+        placeSectionCaption (headSectionLabel, "HEAD / TRANSPORT", 3, grid.getY(), rowHeight);
+    }
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {

@@ -324,6 +324,15 @@ private:
     juce::SpinLock renderOrbsLock;
     juce::OpenGLContext openGLContext;
 
+    // OpenGL is ON by default, but the first attach in the constructor can fail for a
+    // reason that does not apply a moment later - the host has not necessarily created
+    // the editor's native peer yet, and there is no context to attach to without one.
+    // So the timer keeps trying for a few seconds and then stops for good: a driver, a
+    // remote session or a VM that cannot create a context will not manage on the last
+    // attempt either, and retrying forever would burn a frame every 33 ms for a panel
+    // that will never use it. Zero once the context is up, or once the user says OFF.
+    int glAttachAttemptsLeft = 0;
+
     std::unique_ptr<juce::AlertWindow> savePresetWindow;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessorEditor)
