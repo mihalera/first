@@ -168,9 +168,9 @@ private:
     //   tab 3  HEAD / TRANSPORT  CABINET PRESENCE WOW   FLUTTER ST OFFSET
     //                            DELAY DLY LVL NOISE
     //
-    // Every tab holds between six and eight controls, so at tabColumns each they all
-    // come to two rows: no tab needs a third row, and the grid neither grows nor
-    // jumps when the user switches tabs.
+    // Tabs hold between three and nine controls, so at tabColumns wide most come to
+    // two rows and NOISE to three: the grid sizes its own row count from the active
+    // tab, so neither grows nor jumps when the user switches tabs.
     //
     // The count here, the controlIds / controlNames lists, the defaultValues array
     // and the tabSpecs table in the .cpp are all views of ONE list and must agree.

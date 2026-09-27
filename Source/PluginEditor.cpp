@@ -132,15 +132,20 @@ namespace
         { "DRIVE", "The gain stages in front of the tape, then everything that bends "
                    "the signal.",
                      9, { 21, 22, 1, 2, 10, 11, 12, 13, 20 } },
-        //  flux, wear, mechanics, cabinet, presence, wow, flutter
-        { "TAPE", "The head, the medium's condition and the transport's.",
-                     7, { 23, 24, 25, 15, 14, 5, 6 } },
-        //  noise, noise_lvl, vinyl, vinyl_crackle, vinyl_rumble
-        { "NOISE", "Every noise source the machine and the record make, and the two "
-                   "controls that answer for all of them: NOISE is how much of the "
-                   "noise section is in the output, NOISE LVL is how loud the sources "
-                   "themselves run.",
-                     5, { 19, 31, 28, 29, 30 } },
+        //  flux, cabinet, presence
+        { "TAPE", "The head and the medium's tone.",
+                     3, { 23, 15, 14 } },
+        //  noise, noise_lvl, wow, flutter, wear, mechanics, vinyl, vinyl_crackle,
+        //  vinyl_rumble - everything that is a departure from a clean signal,
+        //  which is what noise means in the widest sense. Wow and flutter are
+        //  the transport's noise, wear and mechanics are the medium's and the
+        //  mechanism's, and they share the transport gate with the hiss.
+        { "NOISE", "Everything that departs from a clean signal. NOISE MIX sets how "
+                   "much of it is in the output and NOISE LVL how loud the sources "
+                   "run; WOW and FLUTTER are the transport's noise, WEAR and "
+                   "MECHANICS the medium's and the mechanism's, and the vinyl row "
+                   "is the record's.",
+                     9, { 19, 31, 5, 6, 24, 25, 28, 29, 30 } },
         //  delay_time, delay_feedback, st_offset, reverb, reverb_size
         { "SPACE", "The two time-based stages: the second head, then the room.",
                      5, { 16, 17, 18, 26, 27 } }
@@ -2168,6 +2173,11 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (compareBadgeLabel);
 
     addAndMakeVisible (tapeTypeBox);
+    addAndMakeVisible (valveTypeBox);
+    addAndMakeVisible (ampTypeBox);
+    addAndMakeVisible (transformerTypeBox);
+    addAndMakeVisible (digitalTypeBox);
+    addAndMakeVisible (vinylTypeBox);
     addAndMakeVisible (speedBox);
     addAndMakeVisible (bypassButton);
     addAndMakeVisible (themeButton);
@@ -3231,9 +3241,8 @@ void FirstAudioProcessorEditor::resized()
 
     // Only the ACTIVE tab is laid out, and its own control count decides the row
     // count, so a tab is never sized as if it still had to hold the whole panel's
-    // knobs. Because every tab holds between five and nine of them and the grid is
-    // tabColumns wide, they all come to two rows - the grid does not resize or jump
-    // when the user switches tabs.
+    // knobs. Tabs hold between three and nine controls; NOISE, the fullest, comes
+    // to three rows of tabColumns, the rest to two.
     const auto& activeTab = tabSpecs[static_cast<std::size_t> (currentTab)];
     const auto tabControlCount = static_cast<int> (activeTab.count);
     const auto cellWidth = grid.getWidth() / tabColumns;
