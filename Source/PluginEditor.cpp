@@ -230,6 +230,15 @@ namespace
     {
         const auto rect = area.toFloat();
 
+        // Skip a panel the clip cannot reach. Without this every repaint rebuilds
+        // all five gradients and re-fills all five panels however small the dirty
+        // rectangle was, because the geometry and the gradient setup are paid for
+        // whether or not the rasteriser then clips the result away. That fixed cost
+        // per repaint is what the panel's 30 Hz animation pays, and attaching a
+        // context makes every one of those repaints a render of this component.
+        if (! rect.intersects (g.getClipBounds().toFloat()))
+            return;
+
         // ------------------------------------------------------------------
         //  Drop shadow. The light source is up-and-left, consistently with the
         //  knob highlights and the screw slots, so the shadow falls down-and-
@@ -2193,6 +2202,15 @@ void FirstAudioProcessorEditor::applyTheme()
 void FirstAudioProcessorEditor::paint (juce::Graphics& g)
 {
     const auto& palette = paletteFor (darkTheme);
+
+    // The band this paint actually has to cover. The panel is repainted in bands
+    // (see timerCallback) and most of what this function draws never changes, so
+    // the clip is used to skip whole sections instead of drawing them and letting
+    // the rasteriser discard the pixels - the draw calls, the geometry and the
+    // trigonometry are all still paid for if they are issued.
+    const auto clip = g.getClipBounds();
+    const auto inClip = [&clip] (const juce::Rectangle<int>& area) { return area.intersects (clip); };
+
     g.fillAll (palette.background);
 
     const auto layout = getEditorLayout();
@@ -2212,15 +2230,25 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     const auto grainAlpha = darkTheme ? 0.016f : 0.022f;
     const auto grainColour = palette.text.withAlpha (grainAlpha);
 
+    // Two passes over the whole chassis is a few hundred rules, and the panels are
+    // drawn over the top of them immediately afterwards - so most of them are
+    // covered within the same paint. Skipping the ones the clip cannot see is what
+    // keeps that affordable at 30 Hz with a context attached, where every one of
+    // these repaints is a render of this component.
+    const auto grainTop = clip.getY();
+    const auto grainBottom = clip.getBottom();
+
     g.setColour (grainColour);
     for (float y = chassis.getY() + 2.0f; y < chassis.getBottom(); y += 3.0f)
-        g.drawHorizontalLine (juce::roundToInt (y),
-                              chassis.getX() + 6.0f, chassis.getRight() - 6.0f);
+        if (y >= grainTop && y <= grainBottom)
+            g.drawHorizontalLine (juce::roundToInt (y),
+                                  chassis.getX() + 6.0f, chassis.getRight() - 6.0f);
 
     g.setColour (palette.text.withAlpha (grainAlpha * 0.6f));
     for (float y = chassis.getY() + 7.0f; y < chassis.getBottom(); y += 12.0f)
-        g.drawHorizontalLine (juce::roundToInt (y),
-                              chassis.getX() + 6.0f, chassis.getRight() - 6.0f);
+        if (y >= grainTop && y <= grainBottom)
+            g.drawHorizontalLine (juce::roundToInt (y),
+                                  chassis.getX() + 6.0f, chassis.getRight() - 6.0f);
 
 
     drawPanel (g, getLocalBounds().reduced (8), palette, 7.0f);
@@ -2290,6 +2318,14 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
                               juce::Point<float> (headerX + 9.0f, headerBottom - 9.0f),
                               juce::Point<float> (headerRight - 9.0f, headerBottom - 9.0f) })
         drawScrew (g, point.x, point.y, palette);
+
+    // The reel, the spokes, the tape ribbon and the orbs are the deck's, and they
+    // are the most expensive thing in here: six spokes' worth of cos/sin, a path
+    // stroke, and a copy of the particle array out from under its spin lock. They
+    // are also the last thing this function draws, so when the clip is the header
+    // band there is nothing after them to skip and this can simply stop.
+    if (! inClip (layout.deck))
+        return;
 
     // The decorative reel lives in the deck's TOP-RIGHT corner, in the heading band
     // (y + 6..22) where no control sits, and clear of the harmonics readout, which is
@@ -2565,12 +2601,21 @@ void FirstAudioProcessorEditor::timerCallback()
     customLookAndFeel.setDrift (driftAmount);
     customLookAndFeel.advanceFrame();
 
-    // Repaint only what actually animates: the header lamp, the deck (reel +
-    // particles) and the control area (knob halos and tracers).
+    // Repaint only what actually animates: the header lamp, and the deck (reel,
+    // ribbon, particles).
+    //
+    // The control band used to be in this list, for the knob halos and tracers.
+    // repaint() on a parent never repaints its children in JUCE - the sliders are
+    // child components and repaint themselves when their own value changes - so that
+    // call never reached a knob. What it did redraw, thirty times a second, was this
+    // component's own static content in that band: the panel gradient, the grain and
+    // the divider. With a context attached, each of those is a separate render of the
+    // panel, so it was roughly a third of the per-frame work for a picture that never
+    // changed. The knobs look the same without it, because they were never coming
+    // from here.
     const auto layout = getEditorLayout();
     repaint (layout.header);
     repaint (layout.deck);
-    repaint (layout.controls);
 
     // Workflow state is cheap to poll at 30 Hz and makes the panel self-healing:
     // if the host, a session load or a preset change moves anything, the buttons,

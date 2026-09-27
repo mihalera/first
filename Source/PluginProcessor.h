@@ -1967,11 +1967,25 @@ struct SubharmonicGenerator
 
         for (int s = 0; s < numStages; ++s)
         {
-            // The stage's phase is the master phase divided by its divider. The
-            // accumulator is still kept so the loop can advance it when the
-            // detector is unlocked, but the master is authoritative whenever the
-            // track is confident.
-            phases[s] = fundamentalPhase / static_cast<float> (dividers[s]);
+            // The stage runs its OWN accumulator, advanced at baseStep/divider and
+            // wrapped at 1.0 independently of the master.
+            //
+            // It cannot simply be sampled from the master, which is the obvious way
+            // to express "locked" and was tried: fundamentalPhase / dividers[s] only
+            // ever spans [0, 1/d) before the master wraps back to 0, so the cosine
+            // traced a half-wave and returned instead of running continuously. Every
+            // stage became a rectified pulse rather than a sinusoid, and the whole
+            // staircase lost about 190 dB - the 1/2 stage measured -220 dB where it
+            // should be -29. A divided oscillator needs a period of its own: it gets
+            // 1/d of a cycle per master period, and those d pieces have to be joined
+            // into one continuous cycle, which is exactly what the accumulator does.
+            //
+            // The master is still authoritative for LOCK - it is what the PLL
+            // corrects against and what nudgeMasterPhase moves - it just cannot
+            // supply the running phase.
+            phases[s] += baseStep / static_cast<float> (dividers[s]);
+            if (phases[s] >= 1.0f)
+                phases[s] -= 1.0f;
 
             const float subFreq = trackedFundamentalHz / static_cast<float> (dividers[s]);
 

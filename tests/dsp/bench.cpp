@@ -120,22 +120,23 @@ int main()
     const auto signal = makeSignal (kBlockSize);
 
     // -------------------------------------------------------------------------
-    //  1. The magnetic shaper, in isolation.
+    //  1. The saturation core, in isolation.
     //
-    //  `memory` is fed back from the previous output, so each call depends on the
-    //  last and cannot be vectorised away. drive 0.30 and asymmetry 0.42 are the
-    //  factory defaults, so this is the cost at the settings a user actually runs.
+    //  This is the shaper the engine actually calls, and it is stateful, so each
+    //  call depends on the last and cannot be vectorised away. drive 0.30 and
+    //  asymmetry 0.42 are the factory defaults, so this is the cost at the
+    //  settings a user actually runs.
+    //
+    //  It replaces the standalone magneticHysteresis, which the engine stopped
+    //  calling. extract.py no longer pulls that out of the plugin precisely so the
+    //  bench cannot go on measuring a curve the plugin no longer plays.
     // -------------------------------------------------------------------------
-    bench.run ("magneticHysteresis (default drive/bias)", [&]
+    bench.run ("SaturationCore::process (default drive/bias)", [&]
     {
-        float memory = 0.0f;
+        SaturationCore core;
         float sink = 0.0f;
         for (const auto sample : signal)
-        {
-            const auto shaped = magneticHysteresis (sample, 0.30f, 0.42f, memory);
-            memory = shaped;
-            sink += shaped;
-        }
+            sink += core.process (sample, 0.30f, 0.42f);
         ankerl::nanobench::doNotOptimizeAway (sink);
     });
 
@@ -168,7 +169,7 @@ int main()
     // -------------------------------------------------------------------------
     bench.run ("full frame (shaper + detector + LUFS meter)", [&]
     {
-        float memory = 0.0f;
+        SaturationCore core;
         GlueCompressor detector;
         LoudnessMeter meter;
         const auto coefficients = makeDetectorCoefficients();
@@ -177,8 +178,7 @@ int main()
 
         for (const auto sample : signal)
         {
-            const auto shaped = magneticHysteresis (sample, 0.30f, 0.42f, memory);
-            memory = shaped;
+            const auto shaped = core.process (sample, 0.30f, 0.42f);
 
             sink += detector.processDetection (shaped * shaped, kSampleRate, coefficients);
             sink += meter.processFrame (shaped, shaped, windowCoefficient);
@@ -239,7 +239,7 @@ int main()
     // full-frame loop measured above, re-run once outside the harness so the
     // printed headroom figure is a plain number rather than a parsed result.
     {
-        float memory = 0.0f;
+        SaturationCore core;
         GlueCompressor detector;
         LoudnessMeter meter;
         const auto coefficients = makeDetectorCoefficients();
@@ -252,8 +252,7 @@ int main()
         {
             for (const auto sample : signal)
             {
-                const auto shaped = magneticHysteresis (sample, 0.30f, 0.42f, memory);
-                memory = shaped;
+                const auto shaped = core.process (sample, 0.30f, 0.42f);
                 sink += detector.processDetection (shaped * shaped, kSampleRate, coefficients);
                 sink += meter.processFrame (shaped, shaped, windowCoefficient);
             }
