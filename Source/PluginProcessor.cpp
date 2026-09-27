@@ -3931,6 +3931,15 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     inputCombinedDb.store (inputCombinedValue, std::memory_order_relaxed);
     inputClipping.store (inputClippingThisBlock, std::memory_order_relaxed);
 
+    // Subharmonic telemetry: what the undertone cascade is doing. Published once
+    // per block from the LEFT generator, because the two are locked to the same
+    // note by construction - the anti-phase protection keeps them together, and
+    // reporting both would only invite the reader to compare two numbers that are
+    // supposed to agree.
+    subfundTrackedHz.store (subharmonicL.getTrackedFrequency (engineSampleRate),
+                            std::memory_order_relaxed);
+    subfundConfidence.store (subharmonicL.getCycleConfidence(), std::memory_order_relaxed);
+
     // Harmonic character, measured on the shaper earlier in the block. Published so the
     // panel can show the even/odd balance the tape stage is actually producing.
     evenHarmonicRatio.store (harmonicAnalyser.getEvenRatio(), std::memory_order_relaxed);
