@@ -1504,9 +1504,12 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 
     setCurrentTab (currentTab);
 
-    tapeTypeBox.addItemList (juce::StringArray { "J37", "Ampex 456", "Studer A800", "Chrome",
-                                                 "Type 111", "GP9", "Quantegy 499", "RTM SM911",
-                                                 "SM 468", "888", "815", "811" }, 1);
+    // The same tapeStockNameList() the choice parameter is built from, so the panel
+    // cannot offer a stock the parameter would refuse to select. It did once: the
+    // panel drew twelve and the parameter accepted eight, so the last four were
+    // drawn, implemented and unreachable. The default row is overwritten by the
+    // attachment below, which syncs the box to the parameter.
+    tapeTypeBox.addItemList (tapeStockNameList(), 1);
     speedBox.addItemList (juce::StringArray { "7.5 ips", "15 ips", "30 ips" }, 1);
     tapeTypeBox.setTextWhenNothingSelected ("Select tape");
     speedBox.setTextWhenNothingSelected ("Select speed");
