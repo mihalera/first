@@ -244,6 +244,329 @@ CPMAddPackage(
         "BUILD_EXAMPLES OFF")
 
 # ------------------------------------------------------------------------------
+#  Header-only checkouts that ship no CMake at all are registered through this
+#  one helper: an INTERFACE target carrying a SYSTEM include path, so the link
+#  line below reads like every other dependency and the third-party headers
+#  stay out of the warning sweep.
+# ------------------------------------------------------------------------------
+function(j37_declare_header_only_library name include_dir)
+    if(NOT TARGET ${name})
+        add_library(${name} INTERFACE)
+        target_include_directories(${name} SYSTEM INTERFACE "${include_dir}")
+    endif()
+endfunction()
+
+# ------------------------------------------------------------------------------
+#  Signalsmith DSP - header-only DSP toolkit (stretch, EQ and overlap-add
+#  conveniences sit beside chowdsp's).
+#
+#  The NAME stays "signalsmith-dsp" because that is how the library reads in
+#  prose, but the repository is Signalsmith-Audio/signalsmith-stretch: no
+#  "signalsmith-dsp" repository exists on GitHub, and configuring against it
+#  fails with GitHub's "could not read Username" prompt (its way of saying
+#  404). Pinned to the 1.4.0 tag. Every published tag of it carries a CMake
+#  file demanding CMake >= 3.24, which this project cannot raise without
+#  breaking machines that ship 3.22, so it is downloaded WITHOUT being
+#  configured and registered as a header-only target instead - the library is
+#  one self-contained header (include/signalsmith-stretch.h) and needs nothing
+#  else, not even the "linear" sibling its CMake would FetchContent.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME signalsmith-dsp
+    GITHUB_REPOSITORY Signalsmith-Audio/signalsmith-stretch
+    GIT_TAG 1.4.0
+    DOWNLOAD_ONLY YES)
+
+j37_declare_header_only_library(signalsmith-stretch
+    "${signalsmith-dsp_SOURCE_DIR}/include")
+
+# ------------------------------------------------------------------------------
+#  FFTConvolver (HiFi-LOFi) - the streaming partitioned convolution engine
+#  behind many long-reverb implementations.
+#
+#  The checkout ships no CMakeLists.txt (the default branch is "non-uniform"
+#  and there are no tags), so CPM only downloads it and its four translation
+#  units - all flat at the repository root - are compiled here into a static
+#  library: the two-stage convolver itself, the single-shot variant, the
+#  AudioFFT backend it delegates the transforms to, and its small Utilities.
+#  Includes are flat ("FFTConvolver.h"), so one include dir - the root.
+#  Pinned to the commit the default branch pointed at when this was written
+#  (the hash that sat here before was invented and never resolved).
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME fftconvolver
+    GITHUB_REPOSITORY HiFi-LOFi/FFTConvolver
+    GIT_TAG f2cdeb04c42141d2caec19ca4f137398b2a76b85
+    DOWNLOAD_ONLY YES)
+
+if(NOT TARGET fftconvolver)
+    add_library(fftconvolver STATIC EXCLUDE_FROM_ALL
+        "${fftconvolver_SOURCE_DIR}/TwoStageFFTConvolver.cpp"
+        "${fftconvolver_SOURCE_DIR}/FFTConvolver.cpp"
+        "${fftconvolver_SOURCE_DIR}/AudioFFT.cpp"
+        "${fftconvolver_SOURCE_DIR}/Utilities.cpp")
+    target_include_directories(fftconvolver SYSTEM PUBLIC
+        "${fftconvolver_SOURCE_DIR}")
+endif()
+
+# ------------------------------------------------------------------------------
+#  Dear ImGui - immediate-mode GUI toolkit.
+#
+#  ocornut/imgui deliberately ships no CMakeLists.txt at its root, so a plain
+#  CPMAddPackage would die at configure ("no CMakeLists.txt"). It is downloaded
+#  only and the four core translation units are built here as a static library.
+#  The backends/ folder is NOT compiled: none of the platform backends can own
+#  a window a JUCE plugin already owns, and core ImGui compiles alone. Pinned
+#  to the v1.91.5 tag.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME imgui
+    GITHUB_REPOSITORY ocornut/imgui
+    GIT_TAG v1.91.5
+    DOWNLOAD_ONLY YES)
+
+if(NOT TARGET imgui)
+    add_library(imgui STATIC EXCLUDE_FROM_ALL
+        "${imgui_SOURCE_DIR}/imgui.cpp"
+        "${imgui_SOURCE_DIR}/imgui_draw.cpp"
+        "${imgui_SOURCE_DIR}/imgui_tables.cpp"
+        "${imgui_SOURCE_DIR}/imgui_widgets.cpp")
+    target_include_directories(imgui SYSTEM PUBLIC "${imgui_SOURCE_DIR}")
+endif()
+
+# ------------------------------------------------------------------------------
+#  iPlug2 - a full C++ plugin framework with its own UI and wrapper layers.
+#
+#  It cannot be LINKED into a JUCE plugin: both frameworks want to own the
+#  window and the audio wrapper. None of its subdirectories is a stand-alone
+#  CMake project either (its builds are generated projects), so it is fetched
+#  as a source-only reference for its DSP modules and utility headers; no
+#  target of it is ever linked. The newest tag upstream is v1.0.0-beta - the
+#  "v2.1.0" that sat here before does not exist.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME iPlug2
+    GITHUB_REPOSITORY iPlug2/iPlug2
+    GIT_TAG b1aac7ecd6778b37599b90d1d32766545fc2010f
+    DOWNLOAD_ONLY YES)
+
+# ------------------------------------------------------------------------------
+#  Melatonin Vector Graphics - REQUESTED BUT DOES NOT EXIST.
+#  Sudara's melatonin family on GitHub is exactly four repositories:
+#  melatonin_inspector, melatonin_blur, melatonin_parameters and
+#  melatonin_audio_sparklines. None of them is a vector-graphics library and
+#  nobody else publishes one under that name (GitHub search returns nothing).
+#  The two melatonin libraries that exist and fit this panel - inspector and
+#  blur - are already fetched above; there is nothing further to add.
+# ------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
+#  ChowCentaur - Chowdhury's Centaur overdrive (the modelled Klon KS-12).
+#  The repository is a JUCE PLUGIN project driven by a JUCEPluginTemplate
+#  checkout, not a stand-alone CMake library, so it cannot simply be dropped
+#  into this build. It is fetched SOURCE ONLY: adopting a stage from it means
+#  adding its Source/*.cpp files to target_sources(first ...) deliberately,
+#  a per-stage decision against a listening test, not a blanket link. Pinned
+#  to the current main head.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME chowcentaur
+    GITHUB_REPOSITORY AviateAudio/ChowDSP_ChowCentaur
+    GIT_TAG 2c0414f3c81089247f1c295b1b1be922410a1fb2
+    DOWNLOAD_ONLY YES)
+
+# ------------------------------------------------------------------------------
+#  VCV Prototype - VCVRack/VCV-Prototype, the source of VCV's scriptable
+#  prototype module (the Lua / Faust / Python embeds). It is a plugin for a
+#  different host (the Rack runtime) and its build is a Rack-plugin Makefile,
+#  so none of it can link into a JUCE plugin; fetched SOURCE ONLY as reference
+#  for the interpreter integrations it carries. Pinned to the v1 branch head.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME vcv_prototype
+    GITHUB_REPOSITORY VCVRack/VCV-Prototype
+    GIT_TAG 7cb75fda2faffb5b2b469cec1cc6183fcd1d7af0
+    DOWNLOAD_ONLY YES)
+
+# ------------------------------------------------------------------------------
+#  Rack DSP - VCVRack/Rack, the VCV Rack SDK: the DSP utilities (SVF, filters,
+#  quantizers, envelopes, resamplers) plus the whole module engine. The DSP
+#  half is header-only and JUCE-independent, so its include directory is
+#  exposed for the engine to adopt piece by piece. The ENGINE half must never
+#  be linked - it owns the module runtime no other host can host. Pinned to
+#  the v2.6.6 tag.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME rack
+    GITHUB_REPOSITORY VCVRack/Rack
+    GIT_TAG v2.6.6
+    DOWNLOAD_ONLY YES)
+
+j37_declare_header_only_library(rack_dsp "${rack_SOURCE_DIR}/include")
+
+# ------------------------------------------------------------------------------
+#  Soundpipe - paulbatchelor/soundpipe, the C DSP module library behind Sporth
+#  (132 modules: filters, reverbs, envelopes, oscillators). Upstream BUILDS by
+#  generating h/soundpipe.h and config.h from its Makefile; the bare checkout
+#  does not compile, so it is SOURCE ONLY. Adopting a module means generating
+#  those two files first and then adding modules/<name>.c with its
+#  dependencies to the build.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME soundpipe
+    GITHUB_REPOSITORY paulbatchelor/soundpipe
+    GIT_TAG 3efb43bdabd0ed23b17c694292b5a79f1692a3ea
+    DOWNLOAD_ONLY YES)
+
+# ------------------------------------------------------------------------------
+#  Intel IPP and Apple vDSP - requested, and correctly NOT fetched.
+#  Neither is a GitHub library: IPP is a proprietary Intel download under a
+#  licence this project cannot vendor, and vDSP ships with the OS on Apple
+#  platforms only. Both are already reachable where they exist:
+#  chowdsp::chowdsp_simd wraps the vector accelerators chowdsp supports, and
+#  melatonin_blur selects its own IPP/vDSP blur backends. Cross-platform FFT
+#  needs are covered by KISS FFT / PocketFFT / PFFFT below.
+# ------------------------------------------------------------------------------
+
+# ------------------------------------------------------------------------------
+#  farbot - hogliux/farbot, "FAbian's Realtime Box o' Tricks": the
+#  realtime-safe patterns (RealtimeObject, fifo, AsyncCaller) presented at
+#  Meeting C++. The library part is HEADER-ONLY (its CMake only builds tests,
+#  and googletest is a submodule this build never initialises), so it is
+#  downloaded and exposed as an include-only target. Pinned to the current
+#  master head.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME farbot
+    GITHUB_REPOSITORY hogliux/farbot
+    GIT_TAG d8f132c2e2ac44b379632e452700abe71ca3a92e
+    DOWNLOAD_ONLY YES)
+
+j37_declare_header_only_library(farbot "${farbot_SOURCE_DIR}/include")
+
+# ------------------------------------------------------------------------------
+#  moodycamel::ReaderWriterQueue - cameron314/readerwriterqueue, the lock-free
+#  single-producer/single-consumer queue (the blocking sibling lives in the
+#  same checkout). Its CMake target is INTERFACE, i.e. header-only. Pinned to
+#  the v1.0.7 tag.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME readerwriterqueue
+    GITHUB_REPOSITORY cameron314/readerwriterqueue
+    GIT_TAG v1.0.7
+    EXCLUDE_FROM_ALL YES
+    SYSTEM YES)
+
+# ------------------------------------------------------------------------------
+#  KISS FFT - mborgerding/kissfft, the "keep it simple, stupid" FFT. A real
+#  CMake project, so it is configured like any other package: static, no
+#  OpenMP, no pkg-config files, no command-line tools, no tests. Pinned to
+#  the 131.1.0 tag.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME kissfft
+    GITHUB_REPOSITORY mborgerding/kissfft
+    GIT_TAG 131.1.0
+    EXCLUDE_FROM_ALL YES
+    SYSTEM YES
+    OPTIONS
+        "KISSFFT_STATIC ON"
+        "KISSFFT_OPENMP OFF"
+        "KISSFFT_TEST OFF"
+        "KISSFFT_TOOLS OFF"
+        "KISSFFT_PKGCONFIG OFF")
+
+# ------------------------------------------------------------------------------
+#  PocketFFT - mreineck/pocketfft, the FFT behind NumPy: exact transforms for
+#  arbitrary sizes out of one header. The "cpp" branch is the header-only
+#  edition (pocketfft_hdronly.h at the repository root); the master branch is
+#  the C/Fortran hybrid, which is not what a plugin wants. Pinned to the cpp
+#  branch head.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME pocketfft
+    GITHUB_REPOSITORY mreineck/pocketfft
+    GIT_TAG c90e55b3d529f8efa40ed01a20de22405f45fc65
+    DOWNLOAD_ONLY YES)
+
+j37_declare_header_only_library(pocketfft "${pocketfft_SOURCE_DIR}")
+
+# ------------------------------------------------------------------------------
+#  yasio - yasio/yasio, a compact asynchronous TCP/UDP/KCP socket library used
+#  by game and audio-networking clients. A real CMake project: static, tests
+#  and examples off. YASIO_SSL_BACKEND 0 selects its "no TLS" build: the
+#  default backend would download a prebuilt OpenSSL archive from the network
+#  at CONFIGURE time, which a reproducible plugin build must not do (and
+#  mbedtls would drag a second crypto library in behind JUCE's). Re-enable a
+#  backend if a feature ever needs TLS. Pinned to the v4.4.1 tag.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME yasio
+    GITHUB_REPOSITORY yasio/yasio
+    GIT_TAG v4.4.1
+    EXCLUDE_FROM_ALL YES
+    SYSTEM YES
+    OPTIONS
+        "YASIO_BUILD_SHARED_LIBS OFF"
+        "YASIO_BUILD_TESTS OFF"
+        "YASIO_BUILD_EXAMPLES OFF"
+        "YASIO_SSL_BACKEND 0")
+
+# ------------------------------------------------------------------------------
+#  DywaPitchTrack - the Dynamic Wavelet Algorithm pitch tracker (Antoine
+#  Schmitt's dywapitchtrack, MIT). The author's own repository is GONE from
+#  GitHub (antoineschmitt/dywapitchtrack answers 404), so this fetches
+#  hzeller/pitch-hero, a checkout that vendors the two library files
+#  unmodified. There is nothing to compile until a caller includes
+#  dywapitchtrack.c, so it is exposed include-only. Pinned to its master head.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME dywapitchtrack
+    GITHUB_REPOSITORY hzeller/pitch-hero
+    GIT_TAG a05bef4b9941d19d4721ceaf2cb50ab12a764629
+    DOWNLOAD_ONLY YES)
+
+j37_declare_header_only_library(dywapitchtrack "${dywapitchtrack_SOURCE_DIR}")
+
+# ------------------------------------------------------------------------------
+#  Aubio - aubio/aubio, the C library for audio labelling: pitch (YIN/YINFFT),
+#  onset, tempo and beat tracking. Its sources #include a GENERATED config.h
+#  and expect waf/autoconf to produce it, so the bare checkout does not
+#  compile; it is fetched SOURCE ONLY. Adopting it means generating config.h
+#  once (vendoring the generated file is the usual shortcut) and building
+#  src/*.c into a small static library here. Pinned to the current master head.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME aubio
+    GITHUB_REPOSITORY aubio/aubio
+    GIT_TAG ad5cf975aed08cc4562dd008cf9f83b12b82ffb8
+    DOWNLOAD_ONLY YES)
+
+# ------------------------------------------------------------------------------
+#  PFFFT - "Pretty Fast (and Furious) FFT", Julien Pommier's SIMD-friendly
+#  convolution-grade transform. His own GitHub repository is gone; the
+#  maintained CMake packaging is marton78/pffft. Float precision, SIMD on,
+#  double off: the tape engine works in float and the double variant doubles
+#  the compile for nothing yet. Pinned to the current master head.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME pffft
+    GITHUB_REPOSITORY marton78/pffft
+    GIT_TAG e1dbebc9fbf74247d12f094accbbc470aaee8715
+    EXCLUDE_FROM_ALL YES
+    SYSTEM YES
+    OPTIONS
+        "PFFFT_USE_TYPE_FLOAT ON"
+        "PFFFT_USE_TYPE_DOUBLE OFF"
+        "PFFFT_USE_SIMD ON"
+        "INSTALL_PFFFT OFF"
+        "INSTALL_PFDSP OFF"
+        "INSTALL_PFFASTCONV OFF"
+        "PFFFT_USE_BENCH_FFTW OFF"
+        "PFFFT_USE_BENCH_GREEN OFF"
+        "PFFFT_USE_BENCH_KISS OFF")
+
+# ------------------------------------------------------------------------------
 #  Dev-only libraries - fetched only when J37_BUILD_TESTS is ON
 #
 #  Catch2    - the C++ test framework. The DSP harness in tests/dsp/ compiles
@@ -487,6 +810,17 @@ target_link_libraries(first
         melatonin_blur
         foleys::foleys_gui_magic
         xsimd
+        signalsmith-stretch
+        fftconvolver
+        imgui
+        farbot
+        rack_dsp
+        readerwriterqueue
+        kissfft
+        pocketfft
+        yasio
+        dywapitchtrack
+        PFFFT
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
@@ -741,6 +1075,9 @@ else()
     message(STATUS "  Formats     : VST3")
 endif()
 message(STATUS "  Libraries   : chowdsp_utils, melatonin_inspector, melatonin_blur, foleys_gui_magic, xsimd")
+message(STATUS "                signalsmith-stretch, fftconvolver, imgui, iPlug2 (source only)")
+message(STATUS "                chowcentaur, vcv_prototype, rack, soundpipe, aubio (source only)")
+message(STATUS "                farbot, readerwriterqueue, kissfft, pocketfft, yasio, dywapitchtrack, pffft")
 if(J37_BUILD_TESTS)
     message(STATUS "  Dev tests   : ON  (Catch2, nanobench)")
 else()

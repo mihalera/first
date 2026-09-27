@@ -107,7 +107,7 @@ namespace
         std::size_t controls[16];
     };
 
-    // Five pages, in signal order, because the panel now carries thirty-one knobs and
+    // Six pages, in signal order, because the panel now carries thirty-one knobs and
     // one surface cannot hold them legibly. The split follows the CHAIN rather than an
     // arbitrary grouping, so walking the tabs left to right walks the signal:
     //
@@ -129,7 +129,7 @@ namespace
     // on SETTINGS, and the delay TYPE / RATE / SYNC trio shows on SPACE. They are
     // not knobs - the grid below cannot place them - so their visibility is
     // managed in setCurrentTab beside the knobs'.
-    constexpr std::array<TabSpec, 7> tabSpecs { {
+    constexpr std::array<TabSpec, 6> tabSpecs { {
         //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
         { "MACHINE", "What goes in, how the machine colours it, and what comes out.",
                      7, { 0, 3, 4, 7, 9, 8, 32 } },
@@ -189,7 +189,7 @@ namespace
     // twice, and none of them is silently dropped.
     // The tab count is written once, here, and the static_assert that guards coverage
 // reads it from the same constant - so adding a page cannot leave this behind.
-constexpr std::size_t numTabPages = 7;
+constexpr std::size_t numTabPages = 6;
 
 constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tabs,
                                      std::size_t total)
@@ -216,6 +216,22 @@ constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tab
         }
 
         return counted == total;
+    }
+
+    // The tabSpecs table is the single source of truth for what a tab is called and
+    // where it sits, so code that needs "the SETTINGS tab" looks it up here instead of
+    // carrying a number that drifts the moment a tab is added or reordered. Returns
+    // numTabPages when the name is not in the table, which never compares equal to a
+    // currentTab in range - the caller's switches simply stay hidden. (numTabPages
+    // rather than the editor's own numTabs: this is a free function, and the
+    // static_assert in setCurrentTab keeps the two counts identical.)
+    int index_of_tab_named (const char* name)
+    {
+        for (int tab = 0; tab < numTabPages; ++tab)
+            if (std::strcmp (tabSpecs[static_cast<std::size_t> (tab)].name, name) == 0)
+                return tab;
+
+        return numTabPages;
     }
 
     juce::String formatDb (float value)
@@ -1122,9 +1138,12 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
     }
 
     // The deck's non-knob switches are FULL MEMBERS of their tabs: resized() lays
-    // them out on the same grid the knobs use. The delay trio belongs to the second
-    // head, GL and OVERSAMPLING to the engine itself. Their visibility is decided
-    // in resized() - see the note there - so this function only records the tab.
+    // them out on the same grid the knobs use AND re-asserts which of them are on
+    // screen - the visibility note lives beside that layout. Without the resized()
+    // call a tab switch changed currentTab and drew nothing, and without
+    // styleTabButtons() the selected tab never took its selected colours.
+    styleTabButtons();
+    resized();
 }
 
 //==============================================================================
@@ -3375,8 +3394,12 @@ void FirstAudioProcessorEditor::resized()
     // - BEFORE some of these widgets had a parent - and a show/hide decision made
     // only at tab-switch time left the switches permanently visible on tabs that
     // were not theirs. The active tab decides; every resize re-applies it.
-    const auto settingsTab = currentTab == 6;
-    const auto spaceTab = currentTab == 4;
+    // Tab indexes are no longer hard-coded: the numbers came from the order of the
+    // tabSpecs table, which once drifted from the buttons on screen and left the
+    // SETTINGS switches appearing on the nameless seventh tab. The table is the one
+    // source of truth; looking the tab up by name cannot drift from it.
+    const auto settingsTab = index_of_tab_named ("SETTINGS") == currentTab;
+    const auto spaceTab = index_of_tab_named ("SPACE") == currentTab;
     oversamplingLabel.setVisible (settingsTab);
     oversamplingBox.setVisible (settingsTab);
     glButton.setVisible (settingsTab);
