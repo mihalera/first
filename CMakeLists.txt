@@ -419,14 +419,77 @@ CPMAddPackage(
     DOWNLOAD_ONLY YES)
 
 # ------------------------------------------------------------------------------
-#  Intel IPP and Apple vDSP - requested, and correctly NOT fetched.
-#  Neither is a GitHub library: IPP is a proprietary Intel download under a
-#  licence this project cannot vendor, and vDSP ships with the OS on Apple
-#  platforms only. Both are already reachable where they exist:
-#  chowdsp::chowdsp_simd wraps the vector accelerators chowdsp supports, and
-#  melatonin_blur selects its own IPP/vDSP blur backends. Cross-platform FFT
-#  needs are covered by KISS FFT / PocketFFT / PFFFT below.
+#  Intel IPP and Apple vDSP - the two vendor vector libraries.
+#
+#  Neither is a GitHub repository, so neither can be fetched through CPM, and
+#  neither needs to be: each is already present on a machine that has it, and
+#  each is integrated here the only way such a library can be.
+#
+#  vDSP  - part of Apple's Accelerate framework, shipped with the OS on every
+#          Apple platform. There is nothing to download, so the whole
+#          integration is the system framework on the link line plus
+#          J37_HAVE_VDSP, under which the DSP takes its vDSP path. Everywhere
+#          else vDSP does not exist, so everywhere else this is a no-op rather
+#          than a fallback: that is the same arrangement JUCE itself uses.
+#
+#  IPP  - Intel's oneAPI primitives, installed on the developer's machine under
+#          a licence this project cannot vendor into its own configure, so it
+#          is DISCOVERED rather than shipped. When the SDK is present,
+#          find_package(ipp) hands over its imported targets; when it is not,
+#          the build carries on without it and J37_HAVE_IPP is never defined.
+#          That asymmetry is the whole design: a contributor on Windows or
+#          Linux has no IPP installed and their build must not need one, while a
+#          contributor who has it gets the real library from the same
+#          configure, with no extra step. J37_ENABLE_IPP=OFF opts out for a
+#          machine that has the SDK but does not want it.
+#
+#  Both are therefore ADDITIVE: they accelerate kernels that are also compiled
+#  in portable form, so the engine keeps working identically on a platform that
+#  has neither - which is precisely what chowdsp::chowdsp_simd already does
+#  with its own accelerator backends, and what the portable FFTs below (KISS
+#  FFT / PocketFFT / PFFFT) are here for.
 # ------------------------------------------------------------------------------
+option(J37_ENABLE_IPP "Use Intel IPP when the oneAPI SDK is found on this machine" ON)
+
+set(J37_HAVE_VDSP OFF)
+set(J37_HAVE_IPP OFF)
+set(J37_ACCELERATE_FRAMEWORK "")
+
+if(APPLE)
+    find_library(J37_ACCELERATE_FRAMEWORK Accelerate)
+
+    if(J37_ACCELERATE_FRAMEWORK)
+        set(J37_HAVE_VDSP ON)
+    else()
+        # Accelerate is part of macOS and cannot be missing from a real install;
+        # saying so loudly beats silently compiling the portable path and
+        # leaving the developer to wonder why the vDSP path never runs.
+        message(WARNING
+            "Apple platform, but the Accelerate framework was not found. "
+            "Building without vDSP - check the Xcode command line tools.")
+    endif()
+endif()
+
+if(J37_ENABLE_IPP)
+    # oneAPI installs into its own prefix. Honour the two names Intel and its
+    # documentation use, so a developer who has run Intel's setvars.sh - or who
+    # simply has IPPROOT exported - needs to pass nothing to this build.
+    foreach(j37_ipp_prefix "$ENV{IPPROOT}" "$ENV{IPP_ROOT}")
+        if(j37_ipp_prefix)
+            list(APPEND CMAKE_PREFIX_PATH
+                "${j37_ipp_prefix}"
+                "${j37_ipp_prefix}/lib/cmake")
+        endif()
+    endforeach()
+
+    # QUIET and not REQUIRED: the library is genuinely optional, and a missing
+    # package must read as a normal outcome of the search, not as an error.
+    find_package(ipp CONFIG QUIET)
+
+    if(ipp_FOUND)
+        set(J37_HAVE_IPP ON)
+    endif()
+endif()
 
 # ------------------------------------------------------------------------------
 #  farbot - hogliux/farbot, "FAbian's Realtime Box o' Tricks": the
@@ -827,6 +890,41 @@ target_link_libraries(first
         juce::juce_recommended_warning_flags)
 
 # ------------------------------------------------------------------------------
+#  Wiring the vendor vector libraries to the target.
+#
+#  The search for them is up with the rest of the dependency story; this is
+#  where the result reaches the build. Both are PRIVATE: they accelerate this
+#  plugin's own DSP and are none of a consumer of the target's business.
+#
+#  The IPP targets are checked individually rather than named blindly, because
+#  which of them an installed oneAPI ships varies by version and by the
+#  components that were installed with it - a missing optional component must
+#  skip itself instead of failing the link.
+# ------------------------------------------------------------------------------
+if(J37_HAVE_VDSP)
+    target_link_libraries(first PRIVATE "${J37_ACCELERATE_FRAMEWORK}")
+endif()
+
+if(J37_HAVE_IPP)
+    foreach(j37_ipp_target ipp::ipps ipp::ippi ipp::ippcore)
+        if(TARGET ${j37_ipp_target})
+            target_link_libraries(first PRIVATE ${j37_ipp_target})
+        endif()
+    endforeach()
+endif()
+
+# The macros the DSP code tests. Undefined when the library is absent, which is
+# the point: one set of sources, three answers - vDSP on Apple, IPP where the
+# SDK is installed, the portable kernels everywhere else.
+if(J37_HAVE_VDSP)
+    target_compile_definitions(first PRIVATE J37_HAVE_VDSP=1)
+endif()
+
+if(J37_HAVE_IPP)
+    target_compile_definitions(first PRIVATE J37_HAVE_IPP=1)
+endif()
+
+# ------------------------------------------------------------------------------
 #  Compile definitions
 #
 #  JUCE_VST3_CAN_REPLACE_VST2 and JUCE_STRICT_REFCOUNTEDPOINTER were both set in
@@ -1078,6 +1176,20 @@ message(STATUS "  Libraries   : chowdsp_utils, melatonin_inspector, melatonin_bl
 message(STATUS "                signalsmith-stretch, fftconvolver, imgui, iPlug2 (source only)")
 message(STATUS "                chowcentaur, vcv_prototype, rack, soundpipe, aubio (source only)")
 message(STATUS "                farbot, readerwriterqueue, kissfft, pocketfft, yasio, dywapitchtrack, pffft")
+if(J37_HAVE_VDSP)
+    message(STATUS "  Vector libs : Apple vDSP (Accelerate)")
+elseif(APPLE)
+    message(STATUS "  Vector libs : Apple vDSP NOT found - portable paths only")
+else()
+    message(STATUS "  Vector libs : Apple vDSP (Apple only, not this platform)")
+endif()
+if(J37_HAVE_IPP)
+    message(STATUS "                Intel IPP (oneAPI SDK found)")
+elseif(J37_ENABLE_IPP)
+    message(STATUS "                Intel IPP not installed - portable paths only")
+else()
+    message(STATUS "                Intel IPP disabled by J37_ENABLE_IPP=OFF")
+endif()
 if(J37_BUILD_TESTS)
     message(STATUS "  Dev tests   : ON  (Catch2, nanobench)")
 else()
