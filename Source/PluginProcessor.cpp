@@ -466,7 +466,7 @@ void FirstAudioProcessor::applyStateWithUndo (const juce::ValueTree& targetState
 //==============================================================================
 juce::StringArray FirstAudioProcessor::getPresetNames()
 {
-    return { "Default Tape", "Minimum", "Maximum",
+    return { "Default", "Minimum", "Maximum",
              "Gentle Warmth", "Bus Glue Tape", "Drum Slam",
              "Vintage Lo-Fi", "Wide Master", "Clean Glue", "Saturated Crunch",
              "Wobbly Cassette", "Bright Air Tape", "Mix Saturation", "Master Bounce",
@@ -529,7 +529,7 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
     };
 
     static const std::array<FactoryPreset, numFactoryPresets> table {{
-                { .drive = 0.28f, .oversampling = 1 },  // Default Tape
+                { .drive = 0.28f, .oversampling = 1 },  // Default
 
         // MINIMUM - every control at its floor. MIX at zero is the point: the tape
         // path leaves the signal completely, so this is the plugin's null test -

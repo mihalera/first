@@ -276,6 +276,8 @@ private:
     // knob because the three are discrete machines, not points on a scale.
     juce::ComboBox delayTypeBox;
     juce::Label delayTypeLabel;
+    juce::Label delaySyncLabel;
+    juce::Label glLabel;
 
     // Tempo sync: a switch plus the note value. A combo rather than a knob
     // because the note values are discrete and a knob through them would be a
