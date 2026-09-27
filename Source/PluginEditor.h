@@ -179,9 +179,9 @@ private:
     // read at run time. The tab table is checked against controlCount by a
     // static_assert too, so a knob that no tab lists is a build error, not a knob
     // that silently disappears from the panel.
-    static constexpr std::size_t controlCount = 32;
+    static constexpr std::size_t controlCount = 33;
     static constexpr int tabColumns = 4;
-    static constexpr int numTabs = 5;
+    static constexpr int numTabs = 6;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     void timerCallback() override;
@@ -230,6 +230,11 @@ private:
                controlCount> controlAttachments;
 
     juce::ComboBox tapeTypeBox;
+    juce::ComboBox valveTypeBox;
+    juce::ComboBox ampTypeBox;
+    juce::ComboBox transformerTypeBox;
+    juce::ComboBox digitalTypeBox;
+    juce::ComboBox vinylTypeBox;
     juce::ComboBox speedBox;
     juce::ComboBox instrumentBox;
     // Transport: STOP / PLAY / START. A combo rather than three buttons, so the
@@ -297,6 +302,11 @@ private:
     juce::String lastShownUserPreset;
     bool lastShownPresetDirty = false;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tapeTypeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> valveTypeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> ampTypeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> transformerTypeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> digitalTypeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> vinylTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> speedAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> instrumentAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> transportAttachment;
@@ -319,6 +329,11 @@ private:
     /** The commit this binary was built from, shown at the top of the deck. */
     juce::Label buildLabel;
     juce::Label tapeTypeLabel;
+    juce::Label valveTypeLabel;
+    juce::Label ampTypeLabel;
+    juce::Label transformerTypeLabel;
+    juce::Label digitalTypeLabel;
+    juce::Label vinylTypeLabel;
     juce::Label speedLabel;
     juce::Label instrumentLabel;
     juce::Label deckHintLabel;

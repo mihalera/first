@@ -123,24 +123,27 @@ namespace
     //   14 presence  15 cabinet  16 delay_time  17 delay_feedback  18 st_offset
     //   19 noise  20 subfund  21 preamp  22 distortion  23 flux  24 wear
     //   25 mechanics  26 reverb  27 reverb_size  28 vinyl  29 vinyl_crackle
-    //   30 vinyl_rumble
-    constexpr std::array<TabSpec, 5> tabSpecs { {
+    //   30 vinyl_rumble  31 noise_lvl
+    constexpr std::array<TabSpec, 6> tabSpecs { {
         //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
         { "MACHINE", "What goes in, how the machine colours it, and what comes out.",
-                     7, { 0, 3, 4, 7, 9, 8, 31 } },
+                     7, { 0, 3, 4, 7, 9, 8, 32 } },
         //  preamp, distortion, drive, bias, blend, shape, amp_bias, sag, subfund
         { "DRIVE", "The gain stages in front of the tape, then everything that bends "
                    "the signal.",
                      9, { 21, 22, 1, 2, 10, 11, 12, 13, 20 } },
-        //  flux, wear, mechanics, cabinet, presence, wow, flutter, noise
+        //  flux, wear, mechanics, cabinet, presence, wow, flutter
         { "TAPE", "The head, the medium's condition and the transport's.",
-                     8, { 23, 24, 25, 15, 14, 5, 6, 19 } },
+                     7, { 23, 24, 25, 15, 14, 5, 6 } },
+        //  noise, noise_lvl, vinyl, vinyl_crackle, vinyl_rumble
+        { "NOISE", "Every noise source the machine and the record make, and the two "
+                   "controls that answer for all of them: NOISE is how much of the "
+                   "noise section is in the output, NOISE LVL is how loud the sources "
+                   "themselves run.",
+                     5, { 19, 31, 28, 29, 30 } },
         //  delay_time, delay_feedback, st_offset, reverb, reverb_size
         { "SPACE", "The two time-based stages: the second head, then the room.",
-                     5, { 16, 17, 18, 26, 27 } },
-        //  vinyl, vinyl_crackle, vinyl_rumble
-        { "VINYL", "The record-playing end of the chain.",
-                     3, { 28, 29, 30 } }
+                     5, { 16, 17, 18, 26, 27 } }
     } };
 
     // Where the divider under the knob-grid heading sits, in pixels from the top of the
@@ -166,12 +169,12 @@ namespace
     // twice, and none of them is silently dropped.
     // The tab count is written once, here, and the static_assert that guards coverage
 // reads it from the same constant - so adding a page cannot leave this behind.
-constexpr std::size_t numTabPages = 5;
+constexpr std::size_t numTabPages = 6;
 
 constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tabs,
                                      std::size_t total)
     {
-        std::array<int, 32> seen {};
+        std::array<int, 33> seen {};
 
         for (const auto& tab : tabs)
             for (std::size_t i = 0; i < tab.count; ++i)
@@ -1239,6 +1242,16 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 true, juce::Justification::centredRight);
     styleLabel (tapeTypeLabel, "MODEL", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
+    styleLabel (valveTypeLabel, "VALVE", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (ampTypeLabel, "AMP", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (transformerTypeLabel, "XFMR", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (digitalTypeLabel, "DIGITAL", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (vinylTypeLabel, "VINYL", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
     styleLabel (speedLabel, "SPEED", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
     styleLabel (deckHintLabel, "Tape formula and speed.", 9.0f,
@@ -1271,6 +1284,11 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (deckHeadingLabel);
     addAndMakeVisible (buildLabel);
     addAndMakeVisible (tapeTypeLabel);
+    addAndMakeVisible (valveTypeLabel);
+    addAndMakeVisible (ampTypeLabel);
+    addAndMakeVisible (transformerTypeLabel);
+    addAndMakeVisible (digitalTypeLabel);
+    addAndMakeVisible (vinylTypeLabel);
     addAndMakeVisible (speedLabel);
     addAndMakeVisible (deckHintLabel);
     addAndMakeVisible (controlsHeadingLabel);
@@ -1306,7 +1324,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                          "flux", "wear", "mechanics",
                                          "reverb", "reverb_size",
                                          "vinyl", "vinyl_crackle", "vinyl_rumble",
-                                         "st_link" };
+                                         "noise_lvl", "st_link" };
     const juce::StringArray controlNames { "INPUT", "DRIVE", "BIAS",
                                            "BRIGHT", "TONE", "WOW",
                                            "FLUTTER", "MIX", "OUTPUT",
@@ -1319,7 +1337,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                            "FLUX", "WEAR", "MECHANICS",
                                            "REVERB", "RVB SIZE",
                                            "VINYL", "CRACKLE", "RUMBLE",
-                                           "ST LINK" };
+                                           "NOISE LVL", "ST LINK" };
     // One double-click reset value per controlIds entry, in the SAME order, each one
     // the default createParameterLayout() registers for that parameter. These are
     // three views of ONE list, so a value that lands on a different control is a
@@ -1350,7 +1368,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                                            0.50, 0.0, 0.0,
                                                            0.0, 0.40,
                                                            0.0, 0.50, 0.35,
-                                                           1.0 };
+                                                           1.0, 1.0 };
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -1461,13 +1479,24 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "is a large part of why a tape bounce sounds wide rather than "
                        "merely equalised wide. Default 0 us.") + hints;
             if (id == "noise")
-                return juce::String ("NOISE - the tape hiss floor, on top of whatever the "
-                       "loaded tape formula sets. The formula's own character is "
-                       "untouched: this trims it, so the floor can be lifted for a "
-                       "deliberately dirty bounce or pulled down to a clinical black "
-                       "without changing stock. It is gated by the transport, so a "
+                return juce::String ("NOISE MIX - how much of the noise SECTION is in the "
+                       "output, exactly as MIX is how much of the tape section is. The "
+                       "section it governs is every noise source at once: the tape "
+                       "hiss floor, the vinyl crackle, the rumble and the groove "
+                       "surface. The loaded tape formula's own character is "
+                       "untouched - the formula sets the floor's shape, this sets how "
+                       "much of it you hear. It is gated by the transport, so a "
                        "machine at rest is silent. Default 50 percent - the neutral "
                        "position, not a change.") + hints;
+            if (id == "noise_lvl")
+                return juce::String ("NOISE LVL - the level of the noise SOURCES "
+                       "themselves, tape and vinyl together. NOISE MIX is how much of "
+                       "the noise section sits in the output; this is how loud what is "
+                       "in that section actually runs, so it answers for every noise "
+                       "source the machine makes, including the vinyl ones the old "
+                       "NOISE control never reached. 100 percent is the calibrated "
+                       "level the formulas and the record types were voiced at. "
+                       "Default 100 percent.") + hints;
             if (id == "blend")
                 return juce::String ("BLEND - which saturation PRINCIPLE the machine bends "
                        "with. The shaper is not one curve: it is six, blended. Left is "
@@ -1594,6 +1623,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "from the crackle and is scaled separately, because a worn "
                        "bearing and a dusty record are independent faults. Default "
                        "35 percent.") + hints;
+            if (id == "vinyl_speed")
+                return juce::String ("VINYL SPEED - the speed of the turntable's motor, "
+                       "not of the record: the VINYL TYPE describes the disc, this "
+                       "describes what drives it. Each speed carries its own wow rate "
+                       "and depth, so the same record wanders differently at 33 and "
+                       "45, and a 78's wind-up motor wobbles hardest. 33 RPM is the "
+                       "default.") + hints;
             return hints;
         };
         slider.setTooltip (parameterTooltip (controlIds[static_cast<int> (i)]));
@@ -1687,6 +1723,11 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // drawn, implemented and unreachable. The default row is overwritten by the
     // attachment below, which syncs the box to the parameter.
     tapeTypeBox.addItemList (tapeStockNameList(), 1);
+    valveTypeBox.addItemList (valveTypeNameList(), 1);
+    ampTypeBox.addItemList (ampTypeNameList(), 1);
+    transformerTypeBox.addItemList (transformerTypeNameList(), 1);
+    digitalTypeBox.addItemList (digitalTypeNameList(), 1);
+    vinylTypeBox.addItemList (vinylTypeNameList(), 1);
     speedBox.addItemList (juce::StringArray { "7.5 ips", "15 ips", "30 ips" }, 1);
     tapeTypeBox.setTextWhenNothingSelected ("Select tape");
     speedBox.setTextWhenNothingSelected ("Select speed");
@@ -1701,7 +1742,39 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     speedBox.setTooltip ("Transport speed. 7.5 ips is dark and loose, 15 ips is the "
                          "classic studio speed, 30 ips keeps the most top end and "
                          "the tightest glue. Speed also shapes the glue timing.");
+    valveTypeBox.setTooltip ("VALVE TYPE - the voice of the VALVE principle. Only "
+                             "audible in proportion to how much VALVE is in the "
+                             "BLEND: a 12AX7 runs cold and tight, an EL34 or 6L6 "
+                             "is fatter and more compressed, a 300B is the softest "
+                             "and most even, a KT88 has the widest drift.");
+    ampTypeBox.setTooltip ("AMP TYPE - the voice of the AMP principle. Only audible "
+                           "in proportion to how much AMP is in the BLEND: the "
+                           "Blackface is clean and firm, the Plexi bites, the AC30 "
+                           "chimes, the Recto slams hardest in the second stage.");
+    transformerTypeBox.setTooltip ("TRANSFORMER TYPE - the voice of the TRANSFORMER "
+                                   "principle. Only audible in proportion to how much "
+                                   "TRANSFORMER is in the BLEND: the types set how "
+                                   "fast the core tracks and how early it starts to "
+                                   "saturate - a nickel core bends earlier, steel "
+                                   "later and harder.");
+    digitalTypeBox.setTooltip ("DIGITAL TYPE - the voice of the DIGITAL principle. "
+                               "Only audible in proportion to how much DIGITAL is in "
+                               "the BLEND: the types shorten the word length and "
+                               "deepen the sample-and-hold, from a 16-bit ceiling to "
+                               "full bit-crush.");
+    vinylTypeBox.setTooltip ("VINYL TYPE - the record itself, not the machine: how it "
+                             "was pressed and how worn it is. Audible whenever VINYL "
+                             "is up, and independent of the BLEND. Shellac 78 plays "
+                             "with loud surface between every note, a dubplate is a "
+                             "fresh loud lacquer, a half-speed master is nearly "
+                             "silent between the grooves. The speed of the motor is "
+                             "VINYL SPEED.");
     tapeTypeBox.setLookAndFeel (&customLookAndFeel);
+    valveTypeBox.setLookAndFeel (&customLookAndFeel);
+    ampTypeBox.setLookAndFeel (&customLookAndFeel);
+    transformerTypeBox.setLookAndFeel (&customLookAndFeel);
+    digitalTypeBox.setLookAndFeel (&customLookAndFeel);
+    vinylTypeBox.setLookAndFeel (&customLookAndFeel);
     speedBox.setLookAndFeel (&customLookAndFeel);
 
     bypassButton.setClickingTogglesState (true);
@@ -2100,6 +2173,16 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (themeButton);
     tapeTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "tape_type", tapeTypeBox);
+    valveTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "valve_type", valveTypeBox);
+    ampTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "amp_type", ampTypeBox);
+    transformerTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "transformer_type", transformerTypeBox);
+    digitalTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "digital_type", digitalTypeBox);
+    vinylTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "vinyl_type", vinylTypeBox);
     speedAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "speed", speedBox);
 
@@ -2170,6 +2253,11 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
         slider.setLookAndFeel (nullptr);
 
     tapeTypeBox.setLookAndFeel (nullptr);
+    valveTypeBox.setLookAndFeel (nullptr);
+    ampTypeBox.setLookAndFeel (nullptr);
+    transformerTypeBox.setLookAndFeel (nullptr);
+    digitalTypeBox.setLookAndFeel (nullptr);
+    vinylTypeBox.setLookAndFeel (nullptr);
     speedBox.setLookAndFeel (nullptr);
     bypassButton.setLookAndFeel (nullptr);
     deltaButton.setLookAndFeel (nullptr);
@@ -2325,13 +2413,13 @@ FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayo
     EditorLayout layout;
 
     // Header and deck are fixed-height, so they keep their proportions at small panel
-    // sizes and on high-DPI displays. The deck is three control lines tall - transport,
-    // then switches / oversampling, then presets and the A/B cluster - plus a badge
-    // band at the bottom, so no two groups ever share a row and nothing can overlap
-    // even at the minimum panel size (752 px of deck width fits every line exactly).
+    // sizes and on high-DPI displays. The deck is four control lines tall - transport,
+    // then switches / oversampling, then the five type switches, then presets and the
+    // A/B cluster - plus a badge band at the bottom, so no two groups ever share a row
+    // and nothing can overlap even at the minimum panel size.
     layout.header = remaining.removeFromTop (70);
     remaining.removeFromTop (8);
-    layout.deck = remaining.removeFromTop (164);
+    layout.deck = remaining.removeFromTop (200);
     remaining.removeFromTop (8);
 
     // The meters panel has to hold a 2 x 2 grid of dials, so it claims a share of the
@@ -2399,6 +2487,11 @@ void FirstAudioProcessorEditor::applyTheme()
         box.setColour (juce::ComboBox::focusedOutlineColourId, palette.accent);
     };
     styleCombo (tapeTypeBox);
+    styleCombo (valveTypeBox);
+    styleCombo (ampTypeBox);
+    styleCombo (transformerTypeBox);
+    styleCombo (digitalTypeBox);
+    styleCombo (vinylTypeBox);
     styleCombo (speedBox);
     styleCombo (presetBox);
     // The user-preset combo is the seventh ComboBox and was the one left out of this
@@ -2423,6 +2516,11 @@ void FirstAudioProcessorEditor::applyTheme()
     styleCombo (transportBox);
     styleCombo (delayTypeBox);
     styleCombo (delayRateBox);
+    styleCombo (valveTypeBox);
+    styleCombo (ampTypeBox);
+    styleCombo (transformerTypeBox);
+    styleCombo (digitalTypeBox);
+    styleCombo (vinylTypeBox);
     // modernModeButton and lofiModeButton are ToggleButtons drawn by
     // drawToggleButton, which reads the palette live and needs no calls here.
     styleCombo (userPresetBox);
@@ -2962,18 +3060,17 @@ void FirstAudioProcessorEditor::resized()
     themeButton.setBounds (layout.header.getRight() - 348, layout.header.getY() + 20, 126, 30);
     statusLabel.setBounds (layout.header.getRight() - 202, layout.header.getY() + 20, 181, 30);
 
-    // The deck has three dedicated lines, each chain widths are tuned to fit the
-    // minimum deck width (752 px at a 780 px window) without any overlap:
+    // The deck has four dedicated lines, each chain width tuned to fit the minimum
+    // deck width without any overlap:
     //   line 1 (y + 32) - transport: MODEL | tape box | SPEED | speed box | BYPASS | hint
-    //                     chain ends at x + 664 of 752.
-    //   line 2 (y + 74) - POLARITY | AUTO GAIN | OVER | oversampling box (ends x + 324);
-    //                     the harmonics readout takes the right end (x + 608..x + 738).
-    //   line 3 (y + 110)- PRESET | factory box | USER box | SAVE | DEL | A/B | undo | redo
-    //                     | badge (ends x + 751 of 752).
-    // Line 3 sits at y + 110 rather than y + 116 so the preset badge is not jammed
-    // against the controls, and the badge itself sits at y + 146 with clear air both
-    // above and below it. The deck divider is drawn at y + 163 (just above the panel
-    // edge) so the divider never crosses the badge text either.
+    //   line 2 (y + 96) - the five type switches: VALVE | AMP | XFMR | DIGITAL | VINYL,
+    //                     each label above its box, five boxes of 118 px on 14 px gaps.
+    //   line 3 (y + 74) - POLARITY | AUTO GAIN | OVER | oversampling box; the harmonics
+    //                     readout takes the right end.
+    //   line 4 (y + 146)- PRESET | factory box | USER box | SAVE | DEL | A/B | undo | redo
+    //                     | badge.
+    // The badge keeps clear air above and below it, and the deck divider never
+    // crosses it: the deck is now 200 px, so the divider rides at the bottom of line 4.
     deckHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 6, 150, 16);
 
     // The build id rides the deck's heading strip, right-aligned and stopping short of
@@ -2991,6 +3088,22 @@ void FirstAudioProcessorEditor::resized()
     bypassButton.setBounds (speedBox.getRight() + 18, layout.deck.getY() + 32, 92, 32);
     deltaButton.setBounds (bypassButton.getRight() + 6, layout.deck.getY() + 32, 74, 32);
     deckHintLabel.setBounds (deltaButton.getRight() + 14, layout.deck.getY() + 34, 160, 28);
+
+    // The five type switches share a second deck row, under the model row. Their
+    // labels ride the same convention - text above, control below - so the row
+    // reads as the model row's continuation rather than a new idea. Five boxes at
+    // 118 px plus four 14 px gaps fill the 646 px the model row's controls span,
+    // which keeps the two rows reading as one deck.
+    valveTypeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 80, 45, 16);
+    valveTypeBox.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 96, 118, 30);
+    ampTypeLabel.setBounds (valveTypeBox.getRight() + 14, layout.deck.getY() + 80, 45, 16);
+    ampTypeBox.setBounds (valveTypeBox.getRight() + 14, layout.deck.getY() + 96, 118, 30);
+    transformerTypeLabel.setBounds (ampTypeBox.getRight() + 14, layout.deck.getY() + 80, 45, 16);
+    transformerTypeBox.setBounds (ampTypeBox.getRight() + 14, layout.deck.getY() + 96, 118, 30);
+    digitalTypeLabel.setBounds (transformerTypeBox.getRight() + 14, layout.deck.getY() + 80, 45, 16);
+    digitalTypeBox.setBounds (transformerTypeBox.getRight() + 14, layout.deck.getY() + 96, 118, 30);
+    vinylTypeLabel.setBounds (digitalTypeBox.getRight() + 14, layout.deck.getY() + 80, 45, 16);
+    vinylTypeBox.setBounds (digitalTypeBox.getRight() + 14, layout.deck.getY() + 96, 118, 30);
 
     polarityButton.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 74, 92, 32);
     autoGainButton.setBounds (polarityButton.getRight() + 6, layout.deck.getY() + 74, 100, 32);
@@ -3028,7 +3141,7 @@ void FirstAudioProcessorEditor::resized()
     // and the harmonics block starts at x + 608, so there is a genuine gap between
     // them on the switches row - which is where these three go, stacked against
     // the readout rather than competing with the transport chain on the left.
-    const auto modeRowY = layout.deck.getY() + 110;
+    const auto modeRowY = layout.deck.getY() + 146;
     const auto modeRight = layout.deck.getRight() - 14;
     lofiModeButton.setBounds (modeRight - 74, modeRowY, 74, 32);
     modernModeButton.setBounds (lofiModeButton.getX() - 6 - 82, modeRowY, 82, 32);
@@ -3042,17 +3155,17 @@ void FirstAudioProcessorEditor::resized()
     delayRateLabel.setBounds (delayRateBox.getX() - 6 - 34, modeRowY + 9, 34, 15);
     delaySyncButton.setBounds (delayRateLabel.getX() - 8 - 64, modeRowY, 64, 32);
 
-    presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 119, 46, 16);
-    presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 110, 128, 32);
-    userPresetBox.setBounds (presetBox.getRight() + 6, layout.deck.getY() + 110, 100, 32);
-    savePresetButton.setBounds (userPresetBox.getRight() + 5, layout.deck.getY() + 110, 40, 32);
-    deletePresetButton.setBounds (savePresetButton.getRight() + 4, layout.deck.getY() + 110, 38, 32);
-    copyAButton.setBounds (deletePresetButton.getRight() + 10, layout.deck.getY() + 110, 64, 32);
-    copyBButton.setBounds (copyAButton.getRight() + 5, layout.deck.getY() + 110, 64, 32);
-    compareButton.setBounds (copyBButton.getRight() + 5, layout.deck.getY() + 110, 54, 32);
-    undoButton.setBounds (compareButton.getRight() + 5, layout.deck.getY() + 110, 44, 32);
-    redoButton.setBounds (undoButton.getRight() + 5, layout.deck.getY() + 110, 44, 32);
-    compareBadgeLabel.setBounds (redoButton.getRight() + 8, layout.deck.getY() + 110, 54, 32);
+    presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 155, 46, 16);
+    presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 146, 128, 32);
+    userPresetBox.setBounds (presetBox.getRight() + 6, layout.deck.getY() + 146, 100, 32);
+    savePresetButton.setBounds (userPresetBox.getRight() + 5, layout.deck.getY() + 146, 40, 32);
+    deletePresetButton.setBounds (savePresetButton.getRight() + 4, layout.deck.getY() + 146, 38, 32);
+    copyAButton.setBounds (deletePresetButton.getRight() + 10, layout.deck.getY() + 146, 64, 32);
+    copyBButton.setBounds (copyAButton.getRight() + 5, layout.deck.getY() + 146, 64, 32);
+    compareButton.setBounds (copyBButton.getRight() + 5, layout.deck.getY() + 146, 54, 32);
+    undoButton.setBounds (compareButton.getRight() + 5, layout.deck.getY() + 146, 44, 32);
+    redoButton.setBounds (undoButton.getRight() + 5, layout.deck.getY() + 146, 44, 32);
+    compareBadgeLabel.setBounds (redoButton.getRight() + 8, layout.deck.getY() + 146, 54, 32);
 
     // The badge band is inset further than the other deck text (22 px instead of 18)
     // and its caption is fitted to the width it actually has, so neither "FACTORY

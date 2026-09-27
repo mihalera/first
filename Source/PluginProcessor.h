@@ -174,6 +174,163 @@ inline juce::StringArray tapeStockNameList()
     return names;
 }
 
+
+//==============================================================================
+/*
+    The four non-tape saturation principles each carry their own type list, on
+    exactly the pattern tapeStock established: one count, one name array, one
+    completeness check and one StringArray conversion. The same three-way rule
+    applies - the parameter reads the list, the panel reads the list, and the
+    engine's switch is the one the compiler cannot count, so it carries a jassert.
+
+    The names are types rather than brands: unlike tape formulas, which really are
+    twelve different oxides, a valve or a transformer is best offered as a
+    recognisable kind of the thing. Each entry changes how its core's curve is
+    biased - a colder valve is tighter and thinner, a 6L6 is fatter than an EL34 -
+    so the switch is a voice selector, not a rename.
+*/
+
+// -- VALVE ------------------------------------------------------------------
+inline constexpr int valveTypeCount = 6;
+
+inline constexpr std::array<const char*, valveTypeCount> valveTypeNames
+{
+    "12AX7", "ECC82", "EL34", "6L6", "300B", "KT88"
+};
+
+inline constexpr bool valveTypeNamesAreComplete()
+{
+    for (const auto* name : valveTypeNames)
+        if (name == nullptr)
+            return false;
+    return true;
+}
+
+static_assert (valveTypeNamesAreComplete(),
+               "valveTypeCount and valveTypeNames must describe the same number of valve types");
+
+inline juce::StringArray valveTypeNameList()
+{
+    juce::StringArray names;
+    for (const auto* name : valveTypeNames)
+        names.add (juce::String (name));
+    return names;
+}
+
+// -- AMP ---------------------------------------------------------------------
+inline constexpr int ampTypeCount = 6;
+
+inline constexpr std::array<const char*, ampTypeCount> ampTypeNames
+{
+    "Fender Blackface", "Marshall Plexi", "Vox AC30", "Hiwatt DR103", "Mesa Recto", "Matchless HC30"
+};
+
+inline constexpr bool ampTypeNamesAreComplete()
+{
+    for (const auto* name : ampTypeNames)
+        if (name == nullptr)
+            return false;
+    return true;
+}
+
+static_assert (ampTypeNamesAreComplete(),
+               "ampTypeCount and ampTypeNames must describe the same number of amp types");
+
+inline juce::StringArray ampTypeNameList()
+{
+    juce::StringArray names;
+    for (const auto* name : ampTypeNames)
+        names.add (juce::String (name));
+    return names;
+}
+
+// -- TRANSFORMER ---------------------------------------------------------------
+inline constexpr int transformerTypeCount = 5;
+
+inline constexpr std::array<const char*, transformerTypeCount> transformerTypeNames
+{
+    "Jensen JT-11P", "Cinemag CM-7510", "Lundahl LL1544", "OEP A262", "Sowter 4381"
+};
+
+inline constexpr bool transformerTypeNamesAreComplete()
+{
+    for (const auto* name : transformerTypeNames)
+        if (name == nullptr)
+            return false;
+    return true;
+}
+
+static_assert (transformerTypeNamesAreComplete(),
+               "transformerTypeCount and transformerTypeNames must describe the same number of transformer types");
+
+inline juce::StringArray transformerTypeNameList()
+{
+    juce::StringArray names;
+    for (const auto* name : transformerTypeNames)
+        names.add (juce::String (name));
+    return names;
+}
+
+// -- DIGITAL -------------------------------------------------------------------
+inline constexpr int digitalTypeCount = 5;
+
+inline constexpr std::array<const char*, digitalTypeCount> digitalTypeNames
+{
+    "16-bit", "12-bit", "8-bit", "Bit Crush", "Sample Hold"
+};
+
+inline constexpr bool digitalTypeNamesAreComplete()
+{
+    for (const auto* name : digitalTypeNames)
+        if (name == nullptr)
+            return false;
+    return true;
+}
+
+static_assert (digitalTypeNamesAreComplete(),
+               "digitalTypeCount and digitalTypeNames must describe the same number of digital types");
+
+inline juce::StringArray digitalTypeNameList()
+{
+    juce::StringArray names;
+    for (const auto* name : digitalTypeNames)
+        names.add (juce::String (name));
+    return names;
+}
+
+// -- VINYL ---------------------------------------------------------------------
+// Vinyl is the odd family: its "type" is not a voice on one curve but a record
+// condition, and it does not bias a curve inside SaturationCore at all. The
+// VinylStage the engine already runs carries the mechanism - crackle, rumble and
+// the RIAA playback character - and the VINYL TYPE switch re-voices that stage:
+// how a record is pressed, how worn it is and how the cutting lathe was set up
+// are genuinely different sounds, which is exactly what a type selector means.
+inline constexpr int vinylTypeCount = 6;
+
+inline constexpr std::array<const char*, vinylTypeCount> vinylTypeNames
+{
+    "Standard LP", "Single", "Shellac 78", "Worn Classic", "Dubplate", "Half-Speed Master"
+};
+
+inline constexpr bool vinylTypeNamesAreComplete()
+{
+    for (const auto* name : vinylTypeNames)
+        if (name == nullptr)
+            return false;
+    return true;
+}
+
+static_assert (vinylTypeNamesAreComplete(),
+               "vinylTypeCount and vinylTypeNames must describe the same number of vinyl types");
+
+inline juce::StringArray vinylTypeNameList()
+{
+    juce::StringArray names;
+    for (const auto* name : vinylTypeNames)
+        names.add (juce::String (name));
+    return names;
+}
+
 //==============================================================================
 /**
     The four saturation principles, and the blend that combines them.
@@ -398,13 +555,30 @@ struct SaturationCore
         operating point moves with the average level, which is what makes the
         character level-dependent rather than static.
     */
+    // The valve family's voice, set once per block from VALVE TYPE. Defaults are
+    // the ECC82-ish centre the engine shipped with, so type 0..5 map across it:
+    // lower types run colder and tighter, higher ones fatter and softer.
+    float valveColdness = 0.5f;      // how cold the stage runs (bias point)
+    float valveSag      = 0.5f;      // how much the operating point drifts
+
+    void setValveVoice (int type) noexcept
+    {
+        static constexpr float cold[6] = { 0.30f, 0.40f, 0.55f, 0.65f, 0.80f, 0.45f };
+        static constexpr float sag [6] = { 0.35f, 0.50f, 0.45f, 0.65f, 0.30f, 0.75f };
+        valveColdness = cold[type];
+        valveSag      = sag [type];
+    }
+
     float shapeValve (float x, float drive, float asymmetry) noexcept
     {
         // The operating point drifts toward the signal's own average. A slow
         // one-pole rather than the instantaneous value, because the drift is a
         // thermal/electrical time constant in the real thing, not a waveform term.
-        valveBiasState += (x - valveBiasState) * 0.0008f;
-        const float driftingBias = asymmetry + valveBiasState * 0.25f;
+        // The type sets how much of that drift there is.
+        valveBiasState += (x - valveBiasState) * (0.0004f + 0.0008f * valveSag);
+        const float driftingBias = asymmetry
+                                 + valveBiasState * 0.25f
+                                 - valveColdness * 0.030f;
 
         const float biased = x + driftingBias;
 
@@ -521,6 +695,19 @@ struct SaturationCore
         stages in series compress twice, so the curve is flatter in the middle
         than a single stage of the same total gain.
     */
+    // The amp family's voice, from AMP TYPE. gain1/gain2 move the two cascade
+    // gains apart - a tweed is loose in stage one, a recto slams in stage two.
+    float ampGain1 = 4.5f;
+    float ampGain2 = 1.2f;
+
+    void setAmpVoice (int type) noexcept
+    {
+        static constexpr float g1[6] = { 3.2f, 4.8f, 3.8f, 4.0f, 5.6f, 4.2f };
+        static constexpr float g2[6] = { 1.0f, 1.4f, 1.1f, 1.3f, 1.6f, 1.2f };
+        ampGain1 = g1[type];
+        ampGain2 = g2[type];
+    }
+
     float shapeAmp (float x, float drive, float asymmetry) noexcept
     {
         // A small, fast bias drift: a high-gain stage's operating point moves
@@ -530,13 +717,13 @@ struct SaturationCore
         const float biased = x + asymmetry * 0.18f + ampBiasState * 0.10f;
 
         // Stage one: high gain, hard clip. The slope is much steeper than tape's
-        // so the knee arrives early.
-        const float slope1 = 1.0f + drive * 4.5f;
+        // so the knee arrives early, and the type sets how much steeper.
+        const float slope1 = 1.0f + drive * ampGain1;
         const float stage1 = std::tanh (biased * slope1) / slope1;
 
         // Stage two: the cascade. A second, gentler stage applied to the first
         // stage's output, which is what flattens the middle of the curve.
-        const float slope2 = 1.0f + drive * 1.2f;
+        const float slope2 = 1.0f + drive * ampGain2;
         const float stage2 = std::tanh (stage1 * slope2) / slope2;
 
         // Hard-clipped stages are nearly symmetric, so the asymmetry term is
@@ -559,6 +746,20 @@ struct SaturationCore
     // flux following the drive - long enough that the memory is felt, short
     // enough that it does not smear the note.
     static constexpr float transformerCore = 0.02f;
+
+    // The transformer family's voice, from TRANSFORMER TYPE: how fast the core
+    // tracks (a function of the core material and the winding's own resistance)
+    // and how hard it is to push into saturation.
+    float transformerSpeed    = 0.02f;
+    float transformerSoftness = 1.0f;   // slope multiplier on the core's bend
+
+    void setTransformerVoice (int type) noexcept
+    {
+        static constexpr float spd[5] = { 0.016f, 0.020f, 0.024f, 0.014f, 0.022f };
+        static constexpr float sft[5] = { 1.15f, 1.05f, 0.95f, 1.25f, 0.90f };
+        transformerSpeed    = spd[type];
+        transformerSoftness = sft[type];
+    }
 
     /**
         TRANSFORMER - a passive input transformer, driven into its core.
@@ -598,7 +799,7 @@ struct SaturationCore
         // decoration: a saturating primary's added impedance is itself a
         // low-frequency effect, so low-passing the drive is the cheapest honest
         // model of the mechanism rather than a band-splitting shortcut around it.
-        transformerFlux += (x - transformerFlux) * transformerCore;
+        transformerFlux += (x - transformerFlux) * transformerSpeed;
 
         const float core = transformerFlux;
         const float air  = x - core;      // the part the winding never carried
@@ -624,7 +825,7 @@ struct SaturationCore
         // to rather than from an assumed one.
         const auto load = juce::jlimit (0.0f, shaperDriveRange, drive)
                             / shaperDriveRange;
-        const float slope = 1.0f + load * 1.1f;
+        const float slope = 1.0f + load * 1.1f * transformerSoftness;
         const float bent = std::tanh (core * slope) / slope;
 
         // How loaded the core is, which gates the two effects below. This is a
@@ -685,6 +886,20 @@ struct SaturationCore
     // clamp would.
     static constexpr float digitalCorner = 0.06f;
 
+    // The converter family's voice, from DIGITAL TYPE: how deep the word length
+    // is cut (which is where the ceiling falls) and how long the output holds
+    // (a sample-and-hold at depth 0 is the identity).
+    float digitalDepth = 0.0f;    // 0 = full code, 1 = 8-bit grind
+    float digitalHoldAmount = 0.0f;
+
+    void setDigitalVoice (int type) noexcept
+    {
+        static constexpr float dep[5] = { 0.00f, 0.35f, 0.80f, 1.00f, 0.60f };
+        static constexpr float hld[5] = { 0.00f, 0.10f, 0.30f, 0.20f, 1.00f };
+        digitalDepth      = dep[type];
+        digitalHoldAmount = hld[type];
+    }
+
     /**
         DIGITAL - a converter's ceiling.
 
@@ -713,7 +928,8 @@ struct SaturationCore
         // level as it moves along the sweep.
         const float threshold = 1.0f - (juce::jlimit (0.0f, shaperDriveRange, drive)
                                              / shaperDriveRange) * 0.55f
-                                - digitalCorner;
+                                - digitalCorner
+                                - digitalDepth * 0.12f;
 
         const float sign = biased < 0.0f ? -1.0f : 1.0f;
         const auto over = std::abs (biased) - threshold;
@@ -738,7 +954,8 @@ struct SaturationCore
         // band instead of on the tape's low ones. The mix is a convex one, so the
         // output can never leave the range the two inputs already span.
         const float held = digitalHold;
-        const float out = clipped + (held - clipped) * engaged * (drive * 0.35f);
+        const float out = clipped + (held - clipped) * engaged
+                                        * (drive * 0.35f + digitalHoldAmount * 1.6f);
         digitalHold = clipped;
 
         // The zero-point correction, the same rule as the other four, walked along
@@ -1357,6 +1574,17 @@ struct PlateReverb
 */
 struct VinylStage
 {
+    // The voice the VINYL TYPE switch sets. RIAA is the cutting standard's own
+    // tilt, so it belongs to the DISC, not to the playback chain's error - a 78
+    // was not cut to the RIAA curve at all, and a half-speed master has more of
+    // it because the lathe tracked properly.
+    float riaaAmount = 0.45f;
+    float rumbleAmount = 1.0f;       // multiplier on the caller's rumble level
+    float crackleAmount = 1.0f;      // multiplier on the caller's crackle level
+    float crackleDecay = 0.9985f;    // per-sample: how long a tick rings
+    float surfaceNoise = 0.0f;       // groove hiss between the ticks
+    float speedModulation = 0.0f;    // vinyl SPEED: wow/flutter depth on the stage
+
     // Rumble: a low-frequency one-pole, per channel.
     float rumbleL = 0.0f;
     float rumbleR = 0.0f;
@@ -1369,11 +1597,19 @@ struct VinylStage
     float crackleEnvelopeL = 0.0f;
     float crackleEnvelopeR = 0.0f;
 
+    // The disc's own wow phase, per channel. The increment is set per block from
+    // the speed the VINYL SPEED control selects, exactly as the transport's phases
+    // are - a 33 RPM disc wanders at a different rate than a 45.
+    float vinylWowPhaseL = 0.0f;
+    float vinylWowPhaseR = 0.0f;
+    float vinylWowIncrement = 0.02f;
+
     void reset() noexcept
     {
         rumbleL = rumbleR = 0.0f;
         warmthLowL = warmthLowR = 0.0f;
         crackleEnvelopeL = crackleEnvelopeR = 0.0f;
+        vinylWowPhaseL = vinylWowPhaseR = 0.0f;
     }
 
     /**
@@ -1384,7 +1620,7 @@ struct VinylStage
         playback character is applied. `random` is the caller's noise source.
     */
     float process (float x, int channel,
-                   float crackleAmount, float rumbleAmount, float warmth,
+                   float crackleControl, float rumbleControl, float warmth,
                    float rumbleCoefficient, float warmthCoefficient,
                    std::uint32_t& random) noexcept
     {
@@ -1411,8 +1647,9 @@ struct VinylStage
             crackleEnvelope += amplitude * 0.35f;
         }
 
-        // A fast decay: a tick is over in a millisecond or two.
-        crackleEnvelope *= 0.9985f;
+        // A tick is over in a millisecond or two, unless the type says otherwise -
+        // a worn shellac rings longer than a fresh half-speed master.
+        crackleEnvelope *= crackleDecay;
 
         // -- RUMBLE: the turntable's low-frequency floor ------------------------
         auto& rumble = channel == 0 ? rumbleL : rumbleR;
@@ -1420,8 +1657,20 @@ struct VinylStage
         const float rumbleNoise = static_cast<float> ((random >> 8) & 0x00ffffffu)
                                 * (1.0f / 8388608.0f) - 1.0f;
         // A one-pole low-pass on white noise gives the thump; the coefficient is
-        // built by the caller so it is the same at every rate.
-        rumble += (rumbleNoise * rumbleAmount * 0.020f - rumble) * rumbleCoefficient;
+        // built by the caller so it is the same at every rate. The type's own
+        // rumble multiplier sits on top of the control.
+        rumble += (rumbleNoise * rumbleControl * rumbleAmount * rumbleAmount * 0.020f - rumble) * rumbleCoefficient;
+
+        // Groove surface hiss - continuous, unlike the ticks. A shellac 78 has
+        // real surface between every transient; a half-speed master almost none.
+        float groove = 0.0f;
+        if (surfaceNoise > 0.0f)
+        {
+            random = random * 1664525u + 1013904223u;
+            const float hiss = static_cast<float> ((random >> 8) & 0x00ffffffu)
+                             * (1.0f / 8388608.0f) - 1.0f;
+            groove = hiss * surfaceNoise * 0.0080f;
+        }
 
         // -- WARMTH: the RIAA playback character --------------------------------
         // A one-pole split: the low band is lifted and the high band is left, which
@@ -1430,9 +1679,27 @@ struct VinylStage
         auto& warmthLow = channel == 0 ? warmthLowL : warmthLowR;
         warmthLow += (x - warmthLow) * warmthCoefficient;
         const float warmthHigh = x - warmthLow;
-        const float warmed = warmthLow * (1.0f + warmth * 0.45f) + warmthHigh * (1.0f - warmth * 0.18f);
+        const float warmed = warmthLow * (1.0f + warmth * riaaAmount)
+                           + warmthHigh * (1.0f - warmth * riaaAmount * 0.4f);
 
-        return warmed + crackleEnvelope * crackleAmount * 0.6f + rumble;
+        // The disc's own speed error, as a slow amplitude wander. A record that is
+        // running off speed does not merely hiss - the whole groove's output rises
+        // and falls with the stylus's tracking error, which is what this term is.
+        // It is folded onto the stage's output rather than onto the dry path so
+        // that at VINYL 0 none of it exists.
+        float speedWander = 0.0f;
+        if (speedModulation > 0.0f)
+        {
+            float& phase = channel == 0 ? vinylWowPhaseL : vinylWowPhaseR;
+            phase += vinylWowIncrement;
+            if (phase >= 1.0f)
+                phase -= 1.0f;
+            speedWander = std::sin (phase * 6.2831853f) * speedModulation;
+        }
+
+        return (warmed + groove
+                     + crackleEnvelope * crackleControl * crackleAmount * crackleAmount * 0.6f
+                     + rumble) * (1.0f + speedWander);
     }
 };
 
@@ -2898,9 +3165,19 @@ private:
     // reasonable guess that does not match the API.
     std::atomic<float>* modernModeParam = nullptr;
     std::atomic<float>* lofiModeParam = nullptr;
+    std::atomic<float>* noiseLvlParam = nullptr;
     std::atomic<float>* vinylParam = nullptr;
     std::atomic<float>* vinylCrackleParam = nullptr;
     std::atomic<float>* vinylRumbleParam = nullptr;
+    std::atomic<float>* vinylSpeedParam = nullptr;
+
+    // The five type switches. Read once per block like every other choice, so the
+    // per-sample loops branch on plain ints rather than on atomics.
+    std::atomic<float>* valveTypeParam = nullptr;
+    std::atomic<float>* ampTypeParam = nullptr;
+    std::atomic<float>* transformerTypeParam = nullptr;
+    std::atomic<float>* digitalTypeParam = nullptr;
+    std::atomic<float>* vinylTypeParam = nullptr;
     std::atomic<float>* stLinkParam = nullptr;
     std::atomic<float>* delaySyncParam = nullptr;
     std::atomic<float>* delayRateParam = nullptr;
@@ -3403,6 +3680,7 @@ private:
     VinylStage vinylR;
 
     SampleSmoother vinylSmoothed { sampleClock };
+    SampleSmoother noiseLvlSmoothed { sampleClock, false, false, 1.0f };
     SampleSmoother vinylCrackleSmoothed { sampleClock, false, false, 0.5f };
     SampleSmoother vinylRumbleSmoothed { sampleClock, false, false, 0.35f };
 
@@ -3417,6 +3695,16 @@ private:
     //  `lofiMode` are the two machine-voicing switches, read once per block.
     // -----------------------------------------------------------------------
     int delayTypeCached = 0;
+
+    // The five type switches, cached per block for the same reason the delay's is:
+    // the per-sample work below must branch on a register, not on an atomic. The
+    // vinyl type also drives the per-block voice fields on the VinylStages, which
+    // are written once here and only read in the loop.
+    int valveTypeCached = 0;
+    int ampTypeCached = 0;
+    int transformerTypeCached = 0;
+    int digitalTypeCached = 0;
+    int vinylTypeCached = 0;
     bool modernMode = false;
     bool lofiMode = false;
 

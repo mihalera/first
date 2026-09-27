@@ -42,6 +42,10 @@ HEADER_PIECES = [
     ("LoudnessMeter", "struct LoudnessMeter"),
     ("SaturationCore", "struct SaturationCore"),
     ("SubharmonicGenerator", "struct SubharmonicGenerator"),
+    # The vinyl stage is extracted for the same reason the saturation core is:
+    # the noise tab's controls act on it, so a check that the NOISE trims and the
+    # VINYL SPEED do what they claim has to run the shipping stage, not a copy.
+    ("VinylStage", "struct VinylStage"),
 ]
 
 IMPL_PIECES = [

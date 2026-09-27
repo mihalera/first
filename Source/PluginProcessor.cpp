@@ -285,6 +285,7 @@ FirstAudioProcessor::FirstAudioProcessor()
     delayFeedbackParam = parameters.getRawParameterValue ("delay_feedback");
     stOffsetParam = parameters.getRawParameterValue ("st_offset");
     noiseParam = parameters.getRawParameterValue ("noise");
+    noiseLvlParam = parameters.getRawParameterValue ("noise_lvl");
     transportParam = parameters.getRawParameterValue ("transport");
     blendParam = parameters.getRawParameterValue ("blend");
     shapeParam = parameters.getRawParameterValue ("shape");
@@ -305,6 +306,12 @@ FirstAudioProcessor::FirstAudioProcessor()
     vinylParam = parameters.getRawParameterValue ("vinyl");
     vinylCrackleParam = parameters.getRawParameterValue ("vinyl_crackle");
     vinylRumbleParam = parameters.getRawParameterValue ("vinyl_rumble");
+    vinylSpeedParam = parameters.getRawParameterValue ("vinyl_speed");
+    valveTypeParam = parameters.getRawParameterValue ("valve_type");
+    ampTypeParam = parameters.getRawParameterValue ("amp_type");
+    transformerTypeParam = parameters.getRawParameterValue ("transformer_type");
+    digitalTypeParam = parameters.getRawParameterValue ("digital_type");
+    vinylTypeParam = parameters.getRawParameterValue ("vinyl_type");
     stLinkParam = parameters.getRawParameterValue ("st_link");
     delaySyncParam = parameters.getRawParameterValue ("delay_sync");
     delayRateParam = parameters.getRawParameterValue ("delay_rate");
@@ -334,11 +341,14 @@ FirstAudioProcessor::FirstAudioProcessor()
                                      "stereo_width", "tape_type", "speed", "instrument", "drive", "bias",
                                      "oversampling", "tone", "wow", "flutter", "mix",
                                      "character", "delta", "delay_time", "delay_feedback",
-                                     "st_offset", "noise", "transport",
+                                     "st_offset", "noise", "noise_lvl", "transport",
                                      "blend", "shape", "sag", "presence", "cabinet", "amp_bias",
                                      "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
                                      "delay_type", "distortion", "modern_mode", "lofi_mode",
-                                     "vinyl", "vinyl_crackle", "vinyl_rumble", "st_link",
+                                     "vinyl", "vinyl_crackle", "vinyl_rumble", "vinyl_speed",
+                                     "st_link",
+                                     "valve_type", "amp_type", "transformer_type",
+                                     "digital_type", "vinyl_type",
                                      "delay_sync", "delay_rate" })
         parameters.addParameterListener (parameterID, this);
 }
@@ -350,11 +360,14 @@ FirstAudioProcessor::~FirstAudioProcessor()
                                      "stereo_width", "tape_type", "speed", "instrument", "drive", "bias",
                                      "oversampling", "tone", "wow", "flutter", "mix",
                                      "character", "delta", "delay_time", "delay_feedback",
-                                     "st_offset", "noise", "transport",
+                                     "st_offset", "noise", "noise_lvl", "transport",
                                      "blend", "shape", "sag", "presence", "cabinet", "amp_bias",
                                      "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
                                      "delay_type", "distortion", "modern_mode", "lofi_mode",
-                                     "vinyl", "vinyl_crackle", "vinyl_rumble", "st_link",
+                                     "vinyl", "vinyl_crackle", "vinyl_rumble", "vinyl_speed",
+                                     "st_link",
+                                     "valve_type", "amp_type", "transformer_type",
+                                     "digital_type", "vinyl_type",
                                      "delay_sync", "delay_rate" })
         parameters.removeParameterListener (parameterID, this);
 }
@@ -503,6 +516,16 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
         float delayLevel = 0.0f;   // feedback into the echo, 0..1
         float stOffset   = 0.0f;   // head alignment, -500..500 samples
         float noise      = 0.0f;   // tape floor, 0..1
+
+        // The five type switches. The defaults are the machine every preset above
+        // was designed on, so they are left at 0 here and overridden only where a
+        // preset asks for a voice.
+        int   valveType       = 0;
+        int   ampType         = 0;
+        int   transformerType = 0;
+        int   digitalType     = 0;
+        int   vinylType       = 0;
+        int   vinylSpeed      = 0;
     };
 
     static const std::array<FactoryPreset, numFactoryPresets> table {{
@@ -607,6 +630,12 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
         { "speed",          static_cast<float> (preset.speed) },
         { "instrument",     static_cast<float> (preset.instrument) },
         { "oversampling",   static_cast<float> (preset.oversampling) },
+        { "valve_type",       static_cast<float> (preset.valveType) },
+        { "amp_type",         static_cast<float> (preset.ampType) },
+        { "transformer_type", static_cast<float> (preset.transformerType) },
+        { "digital_type",     static_cast<float> (preset.digitalType) },
+        { "vinyl_type",       static_cast<float> (preset.vinylType) },
+        { "vinyl_speed",      static_cast<float> (preset.vinylSpeed) },
     };
 }
 
@@ -1015,8 +1044,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     //  without changing which stock is loaded. 50 percent is exactly the
     //  formula's own floor - the neutral position, not a change.
     // -------------------------------------------------------------------------
-    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "noise", 1 }, "Noise",
+    // NOISE is the MIX of every noise source the machine makes: how much of the
+    // noise section sits in the final output, exactly as MIX is how much of the
+    // tape section does. NOISE LVL is the level of the sources themselves - it
+    // trims the tape floor and the vinyl noise together, because they are one
+    // noise department rather than two.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "noise", 1 }, "Noise Mix",
                                                             percentageRange (0.50f), 0.50f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "noise_lvl", 1 }, "Noise Level",
+                                                            percentageRange (0.50f), 1.0f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
     //  Transport state: STOP / PLAY / START.
     //
@@ -1263,6 +1300,42 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vinyl_rumble", 1 }, "Rumble",
                                                             percentageRange (0.45f), 0.35f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
+    // VINYL SPEED - the turntable's speed, which is a transport property rather
+    // than a disc property: the type selectors describe the record, this describes
+    // the motor driving it. Each speed carries its own wow rate and depth, so the
+    // same record wanders differently at 33 and 45.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "vinyl_speed", 1 }, "Vinyl Speed",
+                                                            juce::StringArray { "33 RPM", "45 RPM", "78 RPM" },
+                                                            0));
+
+    // -------------------------------------------------------------------------
+    //  The five type switches, one per saturation principle plus vinyl.
+    //
+    //  Each is built from its own single-sourced name list in PluginProcessor.h -
+    //  the same list the panel's combo box reads - so the parameter and the panel
+    //  cannot drift the way tape's two copies once did. The engine's switch is
+    //  guarded by a jassert, because C++ cannot count case labels.
+    //
+    //  VALVE / AMP / TRANSFORMER / DIGITAL re-voice their core's existing curve,
+    //  so they only mean anything when their principle is actually in the BLEND.
+    //  VINYL re-voices the VinylStage at the end of the chain, so it is audible
+    //  whenever VINYL is up, and says nothing about the blend at all.
+    // -------------------------------------------------------------------------
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "valve_type", 1 }, "Valve Type",
+                                                            valveTypeNameList(),
+                                                            0));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "amp_type", 1 }, "Amp Type",
+                                                            ampTypeNameList(),
+                                                            0));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "transformer_type", 1 }, "Transformer Type",
+                                                            transformerTypeNameList(),
+                                                            0));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "digital_type", 1 }, "Digital Type",
+                                                            digitalTypeNameList(),
+                                                            0));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "vinyl_type", 1 }, "Vinyl Type",
+                                                            vinylTypeNameList(),
+                                                            0));
 
     // =========================================================================
     //  ST LINK - whether the two glue compressors share one gain or run two.
@@ -2004,6 +2077,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto delayFeedback = delayFeedbackParam != nullptr ? delayFeedbackParam->load() : 0.0f;
     const auto stOffsetUs = stOffsetParam != nullptr ? stOffsetParam->load() : 0.0f;
     const auto noiseAmount = noiseParam != nullptr ? noiseParam->load() : 0.5f;
+    const auto noiseLvlAmount = noiseLvlParam != nullptr ? noiseLvlParam->load() : 1.0f;
     const auto transportState = transportParam != nullptr
                                     ? static_cast<int> (transportParam->load()) : 1;
 
@@ -2156,6 +2230,82 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // register rather than reading an atomic.
     delayTypeCached = delayTypeParam != nullptr
                           ? static_cast<int> (delayTypeParam->load()) : 0;
+
+    // The five type switches, cached for the same reason. Each is clamped to its
+    // own list before it reaches the engine: a choice parameter should never
+    // exceed its list, but a restored state that predates the parameter could
+    // hand back anything, and every one of these indexes a static table.
+    valveTypeCached = juce::jlimit (0, valveTypeCount - 1,
+                          valveTypeParam != nullptr
+                              ? static_cast<int> (valveTypeParam->load()) : 0);
+    ampTypeCached = juce::jlimit (0, ampTypeCount - 1,
+                        ampTypeParam != nullptr
+                            ? static_cast<int> (ampTypeParam->load()) : 0);
+    transformerTypeCached = juce::jlimit (0, transformerTypeCount - 1,
+                                transformerTypeParam != nullptr
+                                    ? static_cast<int> (transformerTypeParam->load()) : 0);
+    digitalTypeCached = juce::jlimit (0, digitalTypeCount - 1,
+                            digitalTypeParam != nullptr
+                                ? static_cast<int> (digitalTypeParam->load()) : 0);
+    vinylTypeCached = juce::jlimit (0, vinylTypeCount - 1,
+                          vinylTypeParam != nullptr
+                              ? static_cast<int> (vinylTypeParam->load()) : 0);
+
+    // The vinyl type re-voices the two VinylStages, once per block. RIAA depth,
+    // crackle and rumble multipliers, tick decay and groove hiss all belong to
+    // the disc rather than to the controls, so they are written here and only
+    // read in the loop.
+    {
+        // riaa, rumble, crackle, decay, surface
+        static constexpr float voices[6][5] =
+        {
+            // Standard LP: the reference pressing. Full RIAA, quiet surface.
+            { 0.45f, 1.00f, 0.60f, 0.99850f, 0.00f },
+            // Single: less play per side, wider grooves, a little more top. The
+            // rumble is lower - a single spins faster and the bearing sees less
+            // time under the stylus.
+            { 0.42f, 0.80f, 0.70f, 0.99820f, 0.00f },
+            // Shellac 78: pre-vinyl. Shellac is abrasive, so the surface is
+            // LOUD between every note, the groove hiss is continuous, the
+            // rumble is a wind-up motor's, and there is no RIAA to undo - 78s
+            // predate the curve, so the tilt here is the rougher blunt one.
+            { 0.18f, 1.60f, 1.35f, 0.99700f, 1.00f },
+            // Worn Classic: a well-loved record. The ticks multiply and ring,
+            // the surface hiss rises, the top end has been played off.
+            { 0.40f, 1.15f, 1.60f, 0.99880f, 0.35f },
+            // Dubplate: soft lacquer, loud cut, played minutes after the cut.
+            // Crackle is nearly absent and the RIAA is hot - the lathe was
+            // pushed for a sound system.
+            { 0.55f, 0.90f, 0.25f, 0.99900f, 0.05f },
+            // Half-Speed Master: the cleanest pressing. The lathe tracked at
+            // half speed, so the RIAA is deep and the surface is almost silent.
+            { 0.55f, 0.70f, 0.30f, 0.99920f, 0.02f },
+        };
+        const auto& v = voices[vinylTypeCached];
+        for (auto* stage : { &vinylL, &vinylR })
+        {
+            stage->riaaAmount    = v[0];
+            stage->rumbleAmount  = v[1];
+            stage->crackleAmount = v[2];
+            stage->crackleDecay  = v[3];
+            stage->surfaceNoise  = v[4];
+        }
+
+        // VINYL SPEED sets how much the disc's own speed error modulates the
+        // stage - a slow wow on a 33, a tighter shimmer on a 45, and the wind-up
+        // motor's wobble on a 78. Zero is a perfectly steady turntable. The
+        // wander the type voices apply is folded on top of it, so a shellac at
+        // speed 0 is steady but still shellac.
+        const auto vinylSpeedNow = vinylSpeedParam != nullptr
+            ? static_cast<int> (vinylSpeedParam->load()) : 0;
+        static constexpr float wanderRate[3] = { 0.62f, 1.10f, 3.30f };   // Hz
+        static constexpr float wanderDepth[3] = { 0.010f, 0.016f, 0.028f };
+        for (auto* stage : { &vinylL, &vinylR })
+        {
+            stage->vinylWowIncrement = wanderRate[vinylSpeedNow] / engineSampleRate;
+            stage->speedModulation = wanderDepth[vinylSpeedNow];
+        }
+    }
 
     // The stage coefficients. Every frequency is converted with
     // onePoleCoefficientHz, so they mean the same thing at every sample rate.
@@ -2616,7 +2766,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //      exactly the bug this replaces.
     // MODERN mode lowers the floor, which is the single most obvious difference
     // between an old machine and a well-kept one. 1.0 when the mode is off.
-    const float hissGain = tapeHiss * 0.00042f * modernHissScale;
+    // NOISE LVL is the trim that acts on the floors themselves. NOISE is the
+    // mix of every noise source; this is the level both floors share. It rides
+    // the same smoother family, so a drag glides rather than steps.
+    const float hissGain = tapeHiss * 0.00042f * modernHissScale
+                         * noiseLvlSmoothed.getCurrentValue();
 
     // The floor is gated by the transport. Tape hiss exists only while the tape is
     // actually MOVING across the head: a machine at rest is silent, because the
@@ -2651,6 +2805,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // unity, so the knob starts neutral and the stock's own character is unchanged
     // unless the user asks for a different floor.
     noiseTrimSmoothed.setTargetValue (juce::jlimit (0.0f, 2.0f, noiseAmount * 2.0f));
+    noiseLvlSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, noiseLvlAmount));
 
     // ST LINK: 1.0 is fully linked (one shared detector per stage), 0.0 is fully
     // unlinked (two independent detectors). Ramped, because it scales the gain
@@ -3186,6 +3341,20 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
             saturation.setBlend (blendSmoothed.getCurrentValue(),
                                  shapeSmoothed.getCurrentValue());
+
+            // The type switches re-voice their own curve. Four of the five live
+            // here, because four of the five are voices on SaturationCore's
+            // curves; the vinyl type re-voices the VinylStage at the end of the
+            // chain instead and is applied once per block.
+            //
+            // Each switch is cheap - a table read into three floats - but it is
+            // still per sample here rather than per block so that sweeping a type
+            // control mid-note lands the same way the curve does: sample-locked
+            // to the block the host handed us, with no extra state to unwind.
+            saturation.setValveVoice (valveTypeCached);
+            saturation.setAmpVoice (ampTypeCached);
+            saturation.setTransformerVoice (transformerTypeCached);
+            saturation.setDigitalVoice (digitalTypeCached);
 
             // Sag: the supply envelope. The two coefficients are BLOCK-RATE
             // constants (see where they are built, above the loop) - rebuilding
@@ -4052,8 +4221,20 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                 if (vinylNow > 1.0e-5f)
                 {
                     auto& vinyl = channel == 0 ? vinylL : vinylR;
+                    // NOISE LVL scales the vinyl noise the same way it scales the
+                    // tape floor: the crackle and rumble CONTROLS set how much of
+                    // each source the record has, NOISE LVL sets how loud the
+                    // sources themselves are. NOISE (the mix) then sets how much
+                    // of that noise section reaches the output - the same
+                    // proportion the tape floor rides, so the two noise
+                    // departments answer to the same two controls. Applied here
+                    // rather than inside the stage so the stage's own type
+                    // voicing stays untouched by the shared trims.
+                    const float vinylNoiseLevel = noiseLvlSmoothed.getCurrentValue()
+                                                * noiseTrimSmoothed.getCurrentValue();
                     value = vinyl.process (value, channel,
-                                           crackleNow, rumbleNow, vinylNow,
+                                           crackleNow * vinylNoiseLevel,
+                                           rumbleNow * vinylNoiseLevel, vinylNow,
                                            vinylRumbleCoefficient, vinylWarmthCoefficient,
                                            vinylNoiseState);
                 }
