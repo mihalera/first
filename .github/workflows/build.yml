@@ -143,8 +143,10 @@ jobs:
           # The Windows and macOS jobs deliberately do NOT install it. Windows
           # has no package equivalent - oneAPI is a ~1.5 GB installer there -
           # and Intel no longer ships oneAPI for macOS at all, which is exactly
-          # why the vDSP path exists. Those two jobs are what prove the
-          # "library absent, portable path" branch still builds.
+          # why the vDSP path exists. Windows gets IPP from Intel's NuGet
+          # packages instead - there is no usable installer there - and the
+          # macOS job is what proves the "library absent, portable path" branch
+          # still builds.
           curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
             | sudo gpg --dearmor -o /usr/share/keyrings/oneAPI-archive-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/oneAPI-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
@@ -193,6 +195,38 @@ jobs:
           # the same source that the macOS job builds, so neither platform can
           # drift onto a different JUCE revision.
           submodules: recursive
+
+      - name: Install Intel IPP (NuGet static package)
+        shell: pwsh
+        run: |
+          # Intel's oneAPI installer is a ~1.5 GB GUI installer that does not
+          # work from a command line, oneAPI is not in winget (there is an open
+          # package request for it), and Chocolatey has nothing either - so
+          # none of those is an option on a runner. Intel publishes the same
+          # library as NuGet packages instead, and that is what this uses:
+          #
+          #   intelipp.static.win-x64   headers + the static libraries
+          #                             (ippsmt.lib, ippcoremt.lib, ...)
+          #   intelipp.devel.win-x64   headers + the DLLs, no import libs
+          #
+          # The static one is what a plugin wants: it links IPP into the binary,
+          # so no IPP DLL has to ship beside the .vst3. The version is read
+          # from the feed index rather than pinned, so this cannot rot into a
+          # version that stops resolving.
+          $ErrorActionPreference = "Stop"
+          $pkg = "intelipp.static.win-x64"
+          $ver = (Invoke-RestMethod "https://api.nuget.org/v3-flatcontainer/$pkg/index.json").versions[-1]
+          $root = Join-Path $env:RUNNER_TEMP "intelipp"
+          # A .nupkg IS a zip, so Expand-Archive unpacks it and no extra tooling
+          # has to be installed on the runner to do so.
+          Invoke-WebRequest "https://api.nuget.org/v3-flatcontainer/$pkg/$ver/$pkg.$ver.nupkg" -OutFile "$root.zip"
+          Expand-Archive "$root.zip" -DestinationPath $root
+          if (-not (Test-Path "$root/build/native/include/ipp.h")) { throw "IPP headers missing from $pkg $ver" }
+          if (-not (Test-Path "$root/build/native/win-x64/ippsmt.lib")) { throw "IPP static library missing from $pkg $ver" }
+          Write-Host "Intel IPP $ver unpacked to $root"
+          # A later step is a fresh shell, so the prefix has to travel through
+          # the environment file rather than a local variable.
+          "IPPROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Configure CMake
         shell: pwsh
@@ -488,8 +522,10 @@ jobs:
           # The Windows and macOS jobs deliberately do NOT install it. Windows
           # has no package equivalent - oneAPI is a ~1.5 GB installer there -
           # and Intel no longer ships oneAPI for macOS at all, which is exactly
-          # why the vDSP path exists. Those two jobs are what prove the
-          # "library absent, portable path" branch still builds.
+          # why the vDSP path exists. Windows gets IPP from Intel's NuGet
+          # packages instead - there is no usable installer there - and the
+          # macOS job is what proves the "library absent, portable path" branch
+          # still builds.
           curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
             | sudo gpg --dearmor -o /usr/share/keyrings/oneAPI-archive-keyring.gpg
           echo "deb [signed-by=/usr/share/keyrings/oneAPI-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \

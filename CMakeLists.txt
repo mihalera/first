@@ -453,6 +453,7 @@ option(J37_ENABLE_IPP "Use Intel IPP when the oneAPI SDK is found on this machin
 
 set(J37_HAVE_VDSP OFF)
 set(J37_HAVE_IPP OFF)
+set(J37_IPP_HOW "")
 set(J37_ACCELERATE_FRAMEWORK "")
 
 if(APPLE)
@@ -491,6 +492,8 @@ if(J37_ENABLE_IPP)
     #
     # macOS is deliberately absent: Intel stopped shipping oneAPI for macOS, so
     # there is no prefix to look for and the vDSP path is the one that exists.
+    set(j37_ipp_roots "")
+
     foreach(j37_ipp_prefix
             "$ENV{IPPROOT}"
             "$ENV{IPP_ROOT}"
@@ -499,6 +502,7 @@ if(J37_ENABLE_IPP)
             # reads the '(' as the start of a variable name and fails to parse.
             "$ENV{ProgramFiles\(x86\)}/Intel/oneAPI/ipp/latest")
         if(j37_ipp_prefix AND IS_DIRECTORY "${j37_ipp_prefix}")
+            list(APPEND j37_ipp_roots "${j37_ipp_prefix}")
             list(APPEND CMAKE_PREFIX_PATH
                 "${j37_ipp_prefix}"
                 "${j37_ipp_prefix}/lib/cmake")
@@ -518,6 +522,59 @@ if(J37_ENABLE_IPP)
 
     if(IPP_FOUND)
         set(J37_HAVE_IPP ON)
+        set(J37_IPP_HOW "oneAPI SDK config")
+    else()
+        # Fallback probe, for the layouts that ship NO CMake config at all.
+        # Intel publishes official NuGet packages of exactly that shape -
+        # intelipp.static.win-x64 is headers plus .lib files and nothing else -
+        # and they are the only practical way to get IPP onto a Windows CI
+        # runner, because the oneAPI installer is a ~1.5 GB GUI installer that
+        # Intel's own community threads report as not working from a command
+        # line. The probe is a plain find_path/find_library, so it works with
+        # any compiler, and the targets it defines are named exactly as Intel's
+        # own config names them, so the link line below cannot tell the two
+        # apart.
+        #
+        # The mt suffix is the multithreaded static variant, which is what the
+        # NuGet package ships and the only one there; the plain name is what
+        # the oneAPI installer ships. Both are tried so neither layout has to
+        # be special-cased at the call site.
+        unset(J37_IPP_INCLUDE_DIR CACHE)
+        unset(J37_IPP_IPPS_LIBRARY CACHE)
+        unset(J37_IPP_CORE_LIBRARY CACHE)
+
+        find_path(J37_IPP_INCLUDE_DIR
+            NAMES ipp.h
+            HINTS ${j37_ipp_roots}
+            PATH_SUFFIXES include build/native/include)
+
+        find_library(J37_IPP_IPPS_LIBRARY
+            NAMES ipps ippsmt
+            HINTS ${j37_ipp_roots}
+            PATH_SUFFIXES lib lib/intel64 build/native/win-x64)
+
+        find_library(J37_IPP_CORE_LIBRARY
+            NAMES ippcore ippcoremt
+            HINTS ${j37_ipp_roots}
+            PATH_SUFFIXES lib lib/intel64 build/native/win-x64)
+
+        if(J37_IPP_INCLUDE_DIR AND J37_IPP_IPPS_LIBRARY AND J37_IPP_CORE_LIBRARY)
+            add_library(IPP::ipps UNKNOWN IMPORTED)
+            set_target_properties(IPP::ipps PROPERTIES
+                IMPORTED_LOCATION "${J37_IPP_IPPS_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${J37_IPP_INCLUDE_DIR}")
+
+            add_library(IPP::ippcore UNKNOWN IMPORTED)
+            set_target_properties(IPP::ippcore PROPERTIES
+                IMPORTED_LOCATION "${J37_IPP_CORE_LIBRARY}"
+                INTERFACE_INCLUDE_DIRECTORIES "${J37_IPP_INCLUDE_DIR}")
+
+            # ippi (imaging) is deliberately NOT searched: a tape saturator has
+            # no imaging in it, and the NuGet static package spells it ippimt.lib
+            # for no benefit here.
+            set(J37_HAVE_IPP ON)
+            set(J37_IPP_HOW "headers + libraries found directly")
+        endif()
     endif()
 endif()
 
@@ -1220,7 +1277,7 @@ else()
     message(STATUS "  Vector libs : Apple vDSP (Apple only, not this platform)")
 endif()
 if(J37_HAVE_IPP)
-    message(STATUS "                Intel IPP (oneAPI SDK found)")
+    message(STATUS "                Intel IPP found: ${J37_IPP_HOW}")
 elseif(J37_ENABLE_IPP)
     message(STATUS "                Intel IPP not installed - portable paths only")
 else()
