@@ -517,6 +517,13 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
         float stOffset   = 0.0f;   // head alignment, -500..500 samples
         float noise      = 0.0f;   // tape floor, 0..1
 
+        // Head and transport extras, continued.
+        float reverb       = 0.0f; // the room's mix, 0..1
+        float reverbSize   = 0.40f;
+        float vinyl        = 0.0f; // the vinyl stage's mix, 0..1
+        float vinylCrackle = 0.50f;
+        float vinylRumble  = 0.35f;
+
         // The five type switches. The defaults are the machine every preset above
         // was designed on, so they are left at 0 here and overridden only where a
         // preset asks for a voice.
@@ -548,7 +555,9 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
           .character = 1.0f, .wow = 1.0f, .flutter = 1.0f, .outputDb = -12.0f, .width = 1.0f,
           .tapeType = 7, .speed = 2, .instrument = 5, .oversampling = 3, .blend = 1.0f, .shape = 1.0f,
           .ampBias = 1.0f, .sag = 1.0f, .presence = 1.0f, .cabinet = 1.0f, .delayTime = 250.0f,
-          .delayLevel = 1.0f, .stOffset = 500.0f, .noise = 1.0f },  // Maximum
+          .delayLevel = 1.0f, .stOffset = 500.0f, .noise = 1.0f, .valveType = 4,
+          .ampType = 4, .transformerType = 3, .digitalType = 3, .vinylType = 4,
+          .vinylSpeed = 2 },  // Maximum
                 { .subfund = 0.15f, .inputDb = -3.0f, .drive = 0.28f, .bias = 0.30f, .tone = 0.48f,
           .character = 0.30f, .wow = 0.10f, .flutter = 0.12f, .mix = 65.0f, .outputDb = -1.0f,
           .oversampling = 1 },  // Gentle Warmth
@@ -592,6 +601,61 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
           .tapeType = 3, .speed = 0, .instrument = 3, .oversampling = 1 },  // Lo-Fi Radio
                 { .subfund = 0.12f, .drive = 0.34f, .bias = 0.44f, .tone = 0.55f, .wow = 0.10f,
           .flutter = 0.13f, .width = 0.52f, .tapeType = 7, .oversampling = 1 },  // Ferric Master
+
+        // ---- The six built on the type selectors and the vinyl stage ------------
+
+        // BRITISH VALVE: the blend parked on the valve end, an EL34's fat drift,
+        // the transport gated to a whisper so the valve speaks alone.
+                { .drive = 0.55f, .bias = 0.58f, .tone = 0.52f, .character = 0.55f, .wow = 0.05f,
+          .flutter = 0.06f, .mix = 100.0f, .outputDb = -1.0f, .oversampling = 1,
+          .blend = 0.20f, .shape = 0.15f, .valveType = 2, .ampType = 1,
+          .transformerType = 1, .digitalType = 0, .vinylType = 0, .vinylSpeed = 0 },  // British Valve
+
+        // PLEXI BITE: the amp end, a Plexi's second-stage slam, bright head, tight
+        // memory, and the delay off - the bite needs no room.
+                { .inputDb = +2.0f, .drive = 0.72f, .bias = 0.40f, .tone = 0.62f, .character = 0.68f,
+          .wow = 0.08f, .flutter = 0.10f, .mix = 100.0f, .outputDb = -2.0f, .width = 0.45f,
+          .oversampling = 2, .blend = 0.60f, .shape = 0.12f, .valveType = 1,
+          .ampType = 1, .transformerType = 0, .digitalType = 0, .vinylType = 0,
+          .vinylSpeed = 1 },  // Plexi Bite
+
+        // IRON BLOOM: transformer-heavy, low end bent first, the LP's crackle
+        // riding under a warm tape floor. The thump preset.
+                { .inputDb = +1.0f, .drive = 0.48f, .bias = 0.50f, .tone = 0.42f, .character = 0.40f,
+          .wow = 0.14f, .flutter = 0.16f, .mix = 100.0f, .outputDb = -1.5f, .width = 0.60f,
+          .oversampling = 1, .blend = 0.80f, .shape = 0.18f, .vinyl = 0.35f,
+          .vinylRumble = 0.55f, .valveType = 3,
+          .ampType = 2, .transformerType = 1, .digitalType = 0, .vinylType = 0,
+          .vinylSpeed = 0 },  // Iron Bloom
+
+        // 12-BIT BOUNCE: the converter end, 12-bit ceiling with a little hold,
+        // a fast machine, echo at an eighth. The sampler-character preset.
+                { .inputDb = +1.5f, .drive = 0.52f, .bias = 0.38f, .tone = 0.58f, .character = 0.72f,
+          .wow = 0.06f, .flutter = 0.08f, .mix = 100.0f, .outputDb = -2.0f, .width = 0.40f,
+          .oversampling = 0, .blend = 1.0f,
+          .shape = 0.10f, .delayTime = 125.0f, .delayLevel = 0.35f, .valveType = 0,
+          .ampType = 4, .transformerType = 2, .digitalType = 1, .vinylType = 0,
+          .vinylSpeed = 1 },  // 12-bit Bounce
+
+        // DUBPLATE DUB: the vinyl stage front and centre - a fresh loud lacquer,
+        // deep RIAA, almost no crackle - over a hot tape floor and a big room.
+                { .inputDb = 0.0f, .drive = 0.42f, .bias = 0.46f, .tone = 0.48f, .character = 0.44f,
+          .wow = 0.18f, .flutter = 0.14f, .mix = 100.0f, .outputDb = -1.0f, .width = 0.65f,
+          .oversampling = 1, .blend = 0.35f,
+          .shape = 0.30f, .reverb = 0.22f, .reverbSize = 0.60f, .vinyl = 0.70f,
+          .vinylCrackle = 0.15f, .vinylRumble = 0.45f, .valveType = 4,
+          .ampType = 2, .transformerType = 1, .digitalType = 0, .vinylType = 4,
+          .vinylSpeed = 1 },  // Dubplate Dub
+
+        // SHELLAC RADIO: a 78 through everything, all at once - loud shellac
+        // surface, a wind-up motor's wander, the hot vintage stock and a dark head.
+                { .inputDb = +1.0f, .drive = 0.62f, .bias = 0.52f, .tone = 0.30f, .character = 0.35f,
+          .wow = 0.30f, .flutter = 0.26f, .mix = 100.0f, .outputDb = -3.0f, .width = 0.25f,
+          .oversampling = 0, .blend = 0.55f, .shape = 0.25f, .vinyl = 0.85f,
+          .vinylCrackle = 0.80f, .vinylRumble = 0.85f, .valveType = 2,
+          .ampType = 0, .transformerType = 4, .digitalType = 0, .vinylType = 2,
+          .vinylSpeed = 2 },
+          // Shellac Radio
     }};
 
     // The same guard the switch used to provide: an index outside the list is not a
@@ -636,6 +700,11 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
         { "digital_type",     static_cast<float> (preset.digitalType) },
         { "vinyl_type",       static_cast<float> (preset.vinylType) },
         { "vinyl_speed",      static_cast<float> (preset.vinylSpeed) },
+        { "reverb",           preset.reverb },
+        { "reverb_size",      preset.reverbSize },
+        { "vinyl",            preset.vinyl },
+        { "vinyl_crackle",    preset.vinylCrackle },
+        { "vinyl_rumble",     preset.vinylRumble },
     };
 }
 
@@ -2417,7 +2486,17 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // extra curve on it would only make the blend disagree with its own readout.
     const auto twoPi = juce::MathConstants<float>::twoPi;
     const auto speedScale = (speed == 0) ? 0.76f : (speed == 1) ? 1.0f : 1.34f;
-    const auto wowFreq = (0.15f + wowCurve * 1.36f) * speedScale;
+
+    // The wow rate is tempo-locked. A machine's speed irregularities read as
+    // musical when they land on the track's own timing, so the LFO is anchored to
+    // the host tempo - one wander cycle per BAR at WOW's centre - and the WOW
+    // control sweeps around that anchor instead of over an absolute rate. At 120
+    // BPM the centre is 0.5 Hz; double the tempo and the machine wanders twice as
+    // fast, which is what playing along with a faster track means for a deck.
+    // Without a host tempo the 120 BPM default keeps the machine where it was.
+    const auto barsPerSecond = static_cast<float> (hostTempoBpm) / 240.0f;
+    const auto tempoWowAnchor = juce::jlimit (0.10f, 3.0f, barsPerSecond);
+    const auto wowFreq = tempoWowAnchor * (0.30f + wowCurve * 1.40f) * speedScale;
     const auto flutterFreq = (1.9f + flutterCurve * 5.4f) * (1.0f + speedScale * 0.22f);
 
     // The TONE macro's blend curve, computed once per block. Declared BEFORE the tape
