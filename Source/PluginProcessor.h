@@ -212,13 +212,15 @@ struct SaturationCore
 {
     // -----------------------------------------------------------------------
     //  Weights. These are set once per block from the BLEND and SHAPE controls;
-    //  they are kept normalised so the four always sum to 1 and the blend is a
+    //  they are kept normalised so the six always sum to 1 and the blend is a
     //  true crossfade rather than a stack.
     // -----------------------------------------------------------------------
     float tapeWeight = 1.0f;
     float valveWeight = 0.0f;
     float cassetteWeight = 0.0f;
     float ampWeight = 0.0f;
+    float transformerWeight = 0.0f;
+    float digitalWeight = 0.0f;
 
     // -----------------------------------------------------------------------
     //  Per-principle state.
@@ -226,12 +228,17 @@ struct SaturationCore
     //  Tape needs the hysteresis memory (three slots, as before). The valve and
     //  amp stages carry a bias-shift state, because a real stage's operating
     //  point drifts with the signal - that drift is a slow envelope, not a
-    //  sample-by-sample term, so it is a one-pole per channel.
+    //  sample-by-sample term, so it is a one-pole per channel. The transformer
+    //  carries the core's own flux and the digital stage a held code: the first
+    //  because a core lags whatever is driving it, the second because a converter
+    //  keeps the value it picked for a whole sample period.
     // -----------------------------------------------------------------------
     float tapeMemory = 0.0f;
     float valveBiasState = 0.0f;
     float ampBiasState = 0.0f;
     float cassetteBiasState = 0.0f;
+    float transformerFlux = 0.0f;
+    float digitalHold = 0.0f;
 
     void reset() noexcept
     {
@@ -239,16 +246,21 @@ struct SaturationCore
         valveBiasState = 0.0f;
         ampBiasState = 0.0f;
         cassetteBiasState = 0.0f;
+        transformerFlux = 0.0f;
+        digitalHold = 0.0f;
     }
 
-    /** Sets the four weights from two controls. Both are 0..1. */
+    /** Sets the six weights from two controls. Both are 0..1. */
     void setBlend (float blend, float shape) noexcept
     {
-        // BLEND sweeps the weighting across the four principles in a fixed order,
-        // tape -> valve -> cassette -> amp, so the control has one direction and
-        // the ear can learn it. SHAPE skews the distribution: low concentrates on
-        // a single principle (a focused, obvious character), high spreads it
-        // evenly (a blend that reads as one compound machine).
+        // BLEND sweeps the weighting across the six principles in a fixed order,
+        // tape -> valve -> cassette -> amp -> transformer -> digital, so the
+        // control has one direction and the ear can learn it. The order is the
+        // signal path rather than a ranking: five machines you overload by pushing
+        // level into them, and then the converter that replaces all of them.
+        // SHAPE skews the distribution: low concentrates on a single principle
+        // (a focused, obvious character), high spreads it evenly (a blend that
+        // reads as one compound machine).
         const auto b = juce::jlimit (0.0f, 1.0f, blend);
         const auto s = juce::jlimit (0.0f, 1.0f, shape);
 
@@ -259,46 +271,78 @@ struct SaturationCore
             return juce::jmax (0.0f, 1.0f - std::abs (x - centre) / width);
         };
 
-        // Width grows with SHAPE: at 0 the triangles are narrow and the sweep
-        // snaps from one principle to the next; at 1 they are wide enough that all
-        // four contribute at every position.
-        const auto width = 0.25f + 0.75f * s;
+        // Six centres, so five intervals. Derived rather than typed in, because
+        // the spacing is what the narrow end of the width below is measured
+        // against, and a literal list of centres would let the two drift apart
+        // the moment a principle was added.
+        const auto step = 1.0f / 5.0f;
 
-        tapeWeight     = triangle (b, 0.00f, width);
-        valveWeight    = triangle (b, 0.33f, width);
-        cassetteWeight = triangle (b, 0.66f, width);
-        ampWeight      = triangle (b, 1.00f, width);
+        // Width grows with SHAPE: at 0 the triangles are exactly disjoint - each
+        // reaches half way to its neighbours - so the sweep snaps from one
+        // principle to the next; at 1 they are wide enough that all six
+        // contribute at every position. The narrow end is HALF THE SPACING rather
+        // than a fixed number, so tightening the spacing cannot quietly turn the
+        // "focused" end of the sweep into an overlapping one.
+        const auto width = step * 0.5f + (1.0f - step * 0.5f) * s;
 
-        // The ends of the sweep must not fall off the edge: at b = 0 only tape is
-        // in range of its own triangle, and the others are zero, which would leave
-        // the sum short and the normalisation below would divide by a small number.
-        // Seeding each end with its own principle keeps the extremes solid.
-        if (b < 0.02f) tapeWeight = 1.0f;
-        if (b > 0.98f) ampWeight = 1.0f;
+        tapeWeight        = triangle (b, 0 * step, width);
+        valveWeight       = triangle (b, 1 * step, width);
+        cassetteWeight    = triangle (b, 2 * step, width);
+        ampWeight         = triangle (b, 3 * step, width);
+        transformerWeight = triangle (b, 4 * step, width);
+        digitalWeight     = triangle (b, 5 * step, width);
 
-        const auto sum = tapeWeight + valveWeight + cassetteWeight + ampWeight;
+        // The ends of the sweep must not fall off the edge. At b = 0 only tape is
+        // centred on the sweep, but SHAPE widens the triangles, so at the default
+        // SHAPE the next principle is in range too - and leaving it in put roughly
+        // a third of the valve curve into a setting documented as pure tape, so an
+        // existing session did not load the machine it was saved with. Seeding an
+        // end therefore claims its own principle AND clears the others, rather
+        // than only overwriting its own. The sum is then exactly 1 at both ends
+        // and the normalisation below has nothing to do.
+        if (b < 0.02f) { tapeWeight = 1.0f; valveWeight = cassetteWeight = ampWeight
+                                                   = transformerWeight = digitalWeight = 0.0f; }
+        if (b > 0.98f) { digitalWeight = 1.0f; tapeWeight = valveWeight = cassetteWeight
+                                                    = ampWeight   = transformerWeight = 0.0f; }
+
+        const auto sum = tapeWeight + valveWeight + cassetteWeight + ampWeight
+                               + transformerWeight + digitalWeight;
         if (sum > 1.0e-6f)
         {
             tapeWeight /= sum;
             valveWeight /= sum;
             cassetteWeight /= sum;
             ampWeight /= sum;
+            transformerWeight /= sum;
+            digitalWeight /= sum;
         }
         else
         {
             tapeWeight = 1.0f;
-            valveWeight = cassetteWeight = ampWeight = 0.0f;
+            valveWeight = cassetteWeight = ampWeight = transformerWeight
+                        = digitalWeight = 0.0f;
         }
     }
 
     /** True when nothing is contributing, so the caller can skip the whole core. */
     bool isIdle() const noexcept
     {
-        return tapeWeight + valveWeight + cassetteWeight + ampWeight <= 1.0e-6f;
+        return tapeWeight + valveWeight + cassetteWeight + ampWeight
+                                    + transformerWeight + digitalWeight <= 1.0e-6f;
     }
 
     // -----------------------------------------------------------------------
-    //  The four curves. Each takes the driven input and returns a value with the
+    //  The range the engine's DRIVE argument actually runs to. It is not 0..1: it
+    //  is the drive curve times the tape formula (capped at 1.8) plus the
+    //  hysteresis term plus the compressor squeeze, so by the time the record
+    //  head is fully driven it is past 2.2. Two of the curves below have to map
+    //  their own threshold onto it, and a threshold that ran negative would not
+    //  bend a curve - it would fold it back on itself - so both of them take
+    //  their range from here rather than from an assumed 0..1.
+    // -----------------------------------------------------------------------
+    static constexpr float shaperDriveRange = 2.25f;
+
+    //  The six curves. Each takes the driven input and returns a value with the
     //  SAME unity slope at the origin, so they are interchangeable in the blend.
     //  `biasState` is the principle's own slow operating-point memory.
     // -----------------------------------------------------------------------
@@ -408,6 +452,7 @@ struct SaturationCore
         const float sign = biased < 0.0f ? -1.0f : 1.0f;
 
         float shaped;
+        float engaged = 0.0f;
         if (magnitude <= knee)
         {
             // Linear region, scaled so the slope is unity: y = x.
@@ -417,14 +462,23 @@ struct SaturationCore
         {
             // Above the knee the curve walks to the asymptote over a short span.
             const float overshoot = juce::jmin (1.0f, (magnitude - knee) / juce::jmax (0.05f, knee));
-            const float eased = overshoot * overshoot * (3.0f - 2.0f * overshoot); // smoothstep
+            const auto eased = overshoot * overshoot * (3.0f - 2.0f * overshoot); // smoothstep
             shaped = sign * (knee + eased * (1.0f - knee));
+            engaged = overshoot;
         }
 
         // The cassette's low-frequency bump: the head bump and the narrow track
         // both lift the bottom end, and it is part of the character rather than an
         // artefact. Applied as a level-dependent term so it only shows under drive.
-        const float bump = 1.0f + drive * 0.12f * (1.0f - juce::jmin (1.0f, std::abs (shaped)));
+        //
+        // Gated on `engaged`, so that it only shows under drive IN FACT. Ungated
+        // the bump multiplied the linear region as well, and since it is a gain on
+        // the curve that made this the one principle whose slope at the origin was
+        // not 1 - 1.27 at full drive, measured - so crossfading the cassette in
+        // changed the level as well as the character, which is the one thing this
+        // blend is not allowed to do. Below the knee the term is now exactly zero.
+        const float bump = 1.0f + drive * 0.12f * engaged
+                             * (1.0f - juce::jmin (1.0f, std::abs (shaped)));
 
         const float out = shaped * bump;
 
@@ -439,7 +493,17 @@ struct SaturationCore
             const float e = o * o * (3.0f - 2.0f * o);
             return s * (knee + e * (1.0f - knee));
         }();
-        const float atZeroBumped = atZero * (1.0f + drive * 0.12f
+        // The signal path above, walked again for the correction, bump and its gate
+        // included. Correcting for a bump the curve no longer applies would leave
+        // the pedestal in instead of removing it.
+        const auto atZeroEngaged = [&]
+        {
+            const float z = asymmetry * 0.5f;
+            if (std::abs (z) <= knee)
+                return 0.0f;
+            return juce::jmin (1.0f, (std::abs (z) - knee) / juce::jmax (0.05f, knee));
+        }();
+        const float atZeroBumped = atZero * (1.0f + drive * 0.12f * atZeroEngaged
                                              * (1.0f - juce::jmin (1.0f, std::abs (atZero))));
 
         return out - atZeroBumped;
@@ -487,6 +551,215 @@ struct SaturationCore
         return (stage2 - s2Zero) - (asymmetryTerm - asymmetryAtZero);
     }
 
+    // The core's time constant, as a per-sample one-pole coefficient. It is a
+    // fixed number rather than a rate-derived one for the same reason the valve's
+    // and the amp's drifts are: the curve is given drive and asymmetry and
+    // nothing else, so it has no rate to derive a time constant from. The value
+    // is a couple of milliseconds, which is the order of a small iron core's
+    // flux following the drive - long enough that the memory is felt, short
+    // enough that it does not smear the note.
+    static constexpr float transformerCore = 0.02f;
+
+    /**
+        TRANSFORMER - a passive input transformer, driven into its core.
+
+        The other odd one out, and for the opposite reason to DIGITAL: this is
+        pure analogue with no conversion anywhere in it, but it is not a machine
+        either. A Variac, a console line input, the iron ahead of a 1176 - there is
+        no valve, no bias supply and no transport. You overload it by turning the
+        level up and nothing else.
+
+        Three things separate it from the four beside it, and the first is the
+        signature:
+
+        1. It bends LOW FIRST. The primary's inductance is a series impedance, and
+           a series impedance takes its bite out of the bottom of the band, so
+           when the core starts to saturate it is the low end that is squeezed
+           while the top stays comparatively open. That is the opposite of the
+           amp, where the stage's gain makes the treble go first, and it is why
+           this curve is built from a split signal rather than from one tanh.
+
+        2. The memory is the core, not the signal. A core's flux lags whatever is
+           driving it, and it lags the low end hardest - so the state here is a
+           one-pole on the low-passed signal, not a per-sample lag the way the
+           tape shaper's is. It is the same one-pole that does the splitting, so
+           the stage costs one coefficient of state rather than two.
+
+        3. The asymmetry arrives late. A shorted secondary rectifies, and that is
+           where a transformer's even harmonics come from, but it produces
+           nothing until the core is properly loaded. So the second-harmonic term
+           is gated on level, which is the actual difference from the valve: an
+           unloaded transformer is close to perfectly symmetrical, and a curve
+           that leaked even content at low level would not sound like copper.
+    */
+    float shapeTransformer (float x, float drive, float asymmetry) noexcept
+    {
+        // The split, and the core's memory in one coefficient. The low-pass is not
+        // decoration: a saturating primary's added impedance is itself a
+        // low-frequency effect, so low-passing the drive is the cheapest honest
+        // model of the mechanism rather than a band-splitting shortcut around it.
+        transformerFlux += (x - transformerFlux) * transformerCore;
+
+        const float core = transformerFlux;
+        const float air  = x - core;      // the part the winding never carried
+
+        // The core's own bend, and the one place this curve deliberately is NOT
+        // like its neighbours. A cassette has a hard corner, a converter has a
+        // hard stop; a transformer has neither. Iron this size goes into
+        // saturation gradually and keeps compressing, so the curve is a soft
+        // compressor with no knee at all - which is exactly why so much
+        // material mixed on an old console has no audible edge on it, and why a
+        // transformer overloads into glue rather than into distortion.
+        //
+        // One tanh, with the slope rising as the drive does, and no asymptote
+        // below full scale. A knee-and-clamp shape here was measurably wrong: a
+        // low knee and a ceiling at 1.0 is a curve that EXPANDS everything
+        // between them, and this stage reached 2.8x gain on a 0.4 input before
+        // it started to give any level back. This one is monotonically
+        // compressive at every level, which is what a saturating core is.
+        //
+        // The drive is mapped from shaperDriveRange for the same reason the
+        // digital ceiling is: this core is handed the engine's drive, not a 0..1
+        // control, and the slope has to be built from the range it actually runs
+        // to rather than from an assumed one.
+        const auto load = juce::jlimit (0.0f, shaperDriveRange, drive)
+                            / shaperDriveRange;
+        const float slope = 1.0f + load * 1.1f;
+        const float bent = std::tanh (core * slope) / slope;
+
+        // How loaded the core is, which gates the two effects below. This is a
+        // guide rather than a corner in the curve - the bend above has no knee,
+        // so there is no threshold in the signal for this to be measured
+        // against. It is the level at which a core is meaningfully into
+        // saturation, and it falls as the drive rises, so the copper and the
+        // bloom arrive earlier and earlier the harder the transformer is worked.
+        const float onset = 0.35f - load * 0.25f;
+        const auto engaged = juce::jlimit (0.0f, 1.0f, (std::abs (core) - onset)
+                                                  / juce::jmax (0.05f, onset));
+
+        // Copper rectification, gated on how loaded the core is. See note 3 above:
+        // this term is zero until the signal is into the bend, which is what makes
+        // the stage's symmetry at low level honest rather than a convenient
+        // constant. Below the onset it is exactly zero, so an unloaded transformer
+        // adds no even content at all - measured at -140 dB and falling.
+        const float rectification = asymmetry * 0.30f * engaged * bent * bent;
+
+        // The bloom. A core that is saturating is a smaller impedance, and a
+        // smaller winding impedance lets more low end through, so the bend is not
+        // only compression but a gain. This is the thump every overloaded
+        // transformer has, and it is applied to the core path only, which is what
+        // keeps it a low-end event instead of turning into brightness.
+        //
+        // It is gated on `engaged` for the same reason the rectification is, and
+        // that gate is not cosmetic: ungated, the bloom multiplies the core at
+        // every level, so the curve's slope at the origin would be 1.15 rather
+        // than 1 and this stage would quietly be the one that changes the level
+        // when it is crossfaded in. An unloaded core is a linear inductor and
+        // cannot bloom at all, so gating it is also the truer model.
+        //
+        // The two together - compression here, bloom there - are what give the
+        // stage the shape a transformer actually has: the level still comes up
+        // when you push into one, but the INCREMENTAL gain collapses, and that
+        // is the part you hear.
+        const float bloom = 1.0f + load * 0.15f * engaged
+                              * (1.0f - juce::jmin (1.0f, std::abs (bent)));
+
+        const float out = air + bent * bloom + rectification;
+
+        // No zero-point correction, and that is not an oversight. Every other
+        // curve applies its BIAS to the input and has to take the pedestal back
+        // off the curve's own value at zero; here BIAS only modulates the
+        // rectification term, and that term is gated on `engaged`, which is
+        // gated on the core being past the onset. Zero in is therefore zero
+        // out by construction - the state is the low-pass of the input, so it is
+        // zero too - and a correction would only be the same number subtracted
+        // from itself.
+        return out;
+    }
+
+    // The corner the ceiling resolves over, in units of full scale. A mathematical
+    // clamp has a slope discontinuity at its threshold, and that is not a sound a
+    // converter can make: its output moves in whole code steps, so the transition
+    // is resolved over a sample or two rather than instantly. Resolving it over
+    // this corner is also what keeps the curve from aliasing as violently as a raw
+    // clamp would.
+    static constexpr float digitalCorner = 0.06f;
+
+    /**
+        DIGITAL - a converter's ceiling.
+
+        The odd one out, and deliberately the far end of the BLEND sweep: every
+        other principle is a machine that bends an analogue signal, and this one
+        does not have a medium, a head or an operating point at all. It has the two
+        things none of the others have - a ceiling that is a hard stop rather than a
+        knee, and a value the output HOLDS rather than a curve it draws. Both
+        matter, and for different reasons: the ceiling is where the odd harmonics
+        come from, and the hold is what puts them at the very top of the band
+        instead of on the tape's low orders.
+    */
+    float shapeDigital (float x, float drive, float asymmetry) noexcept
+    {
+        // A converter is symmetric by construction: there is no domain to remember
+        // and no bias that drifts with the programme, so BIAS is carried here as
+        // a small static trim and nothing more. That absence is most of the
+        // character - the valve's warmth comes from exactly the term this curve
+        // does not have.
+        const float biased = x + asymmetry * 0.08f;
+
+        // Full scale, and it falls as the gain rises: DRIVE's only job on this
+        // curve is to push more of the signal into the stop. Below the stop the
+        // path is the identity - bit-exact, unity slope - which is what makes the
+        // curve interchangeable in the blend and keeps the BLEND from changing
+        // level as it moves along the sweep.
+        const float threshold = 1.0f - (juce::jlimit (0.0f, shaperDriveRange, drive)
+                                             / shaperDriveRange) * 0.55f
+                                - digitalCorner;
+
+        const float sign = biased < 0.0f ? -1.0f : 1.0f;
+        const auto over = std::abs (biased) - threshold;
+
+        float clipped = biased;
+        float engaged = 0.0f;
+
+        if (over > 0.0f)
+        {
+            const auto t = juce::jlimit (0.0f, 1.0f, over / (2.0f * digitalCorner));
+            const auto eased = t * t * (3.0f - 2.0f * t);   // smoothstep
+            clipped = sign * (threshold + eased * (2.0f * digitalCorner));
+            engaged = t;
+        }
+
+        // The hold. A digital stage does not draw a curve, it picks a value and
+        // keeps it for the sample period, so a digital clip's flat top is genuinely
+        // held rather than merely compressed. Fading that hold in by `engaged` is
+        // what leaves the linear part of the transfer untouched, and it is this
+        // memory - not the ceiling - that is the digital counterpart of the tape
+        // shaper's hysteresis: it is what puts these orders at the very top of the
+        // band instead of on the tape's low ones. The mix is a convex one, so the
+        // output can never leave the range the two inputs already span.
+        const float held = digitalHold;
+        const float out = clipped + (held - clipped) * engaged * (drive * 0.35f);
+        digitalHold = clipped;
+
+        // The zero-point correction, the same rule as the other four, walked along
+        // the same path. Only the hold is absent from it - it is state, not a
+        // function of the input - exactly as the lagged branch is absent from
+        // shapeTape's correction.
+        const auto atZero = [&]
+        {
+            const float z = asymmetry * 0.08f;
+            if (std::abs (z) <= threshold)
+                return z;
+
+            const auto t = juce::jlimit (0.0f, 1.0f, (std::abs (z) - threshold)
+                                                    / (2.0f * digitalCorner));
+            const auto e = t * t * (3.0f - 2.0f * t);
+            return (z < 0.0f ? -1.0f : 1.0f) * (threshold + e * (2.0f * digitalCorner));
+        }();
+
+        return out - atZero;
+    }
+
     /**
         Runs the blend. `drive` and `asymmetry` are the same arguments the tape
         shaper has always taken, so the existing controls keep their meaning; the
@@ -510,6 +783,33 @@ struct SaturationCore
 
         if (ampWeight > 1.0e-4f)
             out += shapeAmp (x, drive, asymmetry) * ampWeight;
+
+        if (transformerWeight > 1.0e-4f)
+        {
+            out += shapeTransformer (x, drive, asymmetry) * transformerWeight;
+        }
+        else if (std::abs (transformerFlux) > 1.0e-9f)
+        {
+            // The same reason as the digital hold below: this curve is not called
+            // while it is out of the blend, so without this the core's one-pole
+            // would keep whatever it last saw and the first sample back on the
+            // transformer side of the sweep would be shaped around a stale flux.
+            transformerFlux = 0.0f;
+        }
+
+        if (digitalWeight > 1.0e-4f)
+        {
+            out += shapeDigital (x, drive, asymmetry) * digitalWeight;
+        }
+        else if (std::abs (digitalHold) > 1.0e-9f)
+        {
+            // Release the converter's held code when BLEND has left the digital
+            // end. shapeDigital is not called there, so without this the hold
+            // would keep whatever it last saw and the first sample back on the
+            // digital side of the sweep would be mixed toward a stale value from
+            // whenever the control was last there.
+            digitalHold = 0.0f;
+        }
 
         return out;
     }
