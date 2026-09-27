@@ -2577,8 +2577,13 @@ private:
     std::atomic<float>* reverbSizeParam = nullptr;
     std::atomic<float>* delayTypeParam = nullptr;
     std::atomic<float>* distortionParam = nullptr;
-    std::atomic<bool>* modernModeParam = nullptr;
-    std::atomic<bool>* lofiModeParam = nullptr;
+    // These are the RAW parameter values, which JUCE stores as floats for every
+    // parameter kind - including AudioParameterBool. So the type is
+    // atomic<float> and the value is read as `>= 0.5f`, exactly like the bypass
+    // and polarity switches above. Declaring them as atomic<bool> was a
+    // reasonable guess that does not match the API.
+    std::atomic<float>* modernModeParam = nullptr;
+    std::atomic<float>* lofiModeParam = nullptr;
     std::atomic<float>* vinylParam = nullptr;
     std::atomic<float>* vinylCrackleParam = nullptr;
     std::atomic<float>* vinylRumbleParam = nullptr;
@@ -3038,8 +3043,11 @@ private:
     bool lofiMode = false;
 
     // The BBD delay's clock noise and its bandwidth state, per channel.
-    float bbdNoiseStateL = 0.0f;
-    float bbdNoiseStateR = 0.0f;
+    // The BBD's clock-noise generator, per channel. A uint32_t LCG state like
+    // `noiseState` and `vinylNoiseState` - it is an integer recurrence, not a
+    // level, so float was simply the wrong type for it.
+    std::uint32_t bbdNoiseStateL = 0x85ebca6bu;
+    std::uint32_t bbdNoiseStateR = 0xc2b2ae35u;
     float bbdLowL = 0.0f;
     float bbdLowR = 0.0f;
 

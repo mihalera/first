@@ -1541,8 +1541,11 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     vinylL.reset();
     vinylR.reset();
 
-    bbdNoiseStateL = 0.0f;
-    bbdNoiseStateR = 0.0f;
+    // Reseeded rather than zeroed: zero is a degenerate LCG state, and the two
+    // channels get different seeds so their clock noise is uncorrelated - sharing
+    // one would put the BBD buzz in the centre of the image.
+    bbdNoiseStateL = 0x85ebca6bu;
+    bbdNoiseStateR = 0xc2b2ae35u;
     bbdLowL = bbdLowR = 0.0f;
     lofiLowL = lofiLowR = 0.0f;
     lofiHoldL = lofiHoldR = 0.0f;
@@ -2081,8 +2084,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // The two mode switches. They are mutually exclusive BY DESIGN - a machine
     // cannot be both a modern deck and a deliberately degraded one - so MODERN
     // wins when both are set, which is the safer of the two to be wrong about.
-    const bool modernRequested = modernModeParam != nullptr && modernModeParam->load();
-    const bool lofiRequested = lofiModeParam != nullptr && lofiModeParam->load();
+    // The raw value of a bool parameter is a float, so it is tested against 0.5 -
+    // exactly how `bypassParam` and `polarityParam` are read. Using it as a bool
+    // directly would compile only because of an implicit conversion and would
+    // read as "not zero", which happens to work here but hides the type.
+    const bool modernRequested = modernModeParam != nullptr && modernModeParam->load() >= 0.5f;
+    const bool lofiRequested = lofiModeParam != nullptr && lofiModeParam->load() >= 0.5f;
     modernMode = modernRequested;
     lofiMode = ! modernRequested && lofiRequested;
 
