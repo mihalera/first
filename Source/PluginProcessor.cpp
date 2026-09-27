@@ -2081,8 +2081,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // The two mode switches. They are mutually exclusive BY DESIGN - a machine
     // cannot be both a modern deck and a deliberately degraded one - so MODERN
     // wins when both are set, which is the safer of the two to be wrong about.
-    const bool modernRequested = modernModeParam != nullptr && modernModeParam->load();
-    const bool lofiRequested = lofiModeParam != nullptr && lofiModeParam->load();
+    // `>= 0.5f` rather than a bare truth test: the raw value of a bool parameter is
+    // a float, and a host is free to write any value in 0..1 to it, so anything at
+    // or above half way on is the switch being on. Same test as bypassParam and
+    // deltaParam.
+    const bool modernRequested = modernModeParam != nullptr && modernModeParam->load() >= 0.5f;
+    const bool lofiRequested = lofiModeParam != nullptr && lofiModeParam->load() >= 0.5f;
     modernMode = modernRequested;
     lofiMode = ! modernRequested && lofiRequested;
 

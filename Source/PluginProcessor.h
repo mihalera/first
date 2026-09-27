@@ -2577,8 +2577,14 @@ private:
     std::atomic<float>* reverbSizeParam = nullptr;
     std::atomic<float>* delayTypeParam = nullptr;
     std::atomic<float>* distortionParam = nullptr;
-    std::atomic<bool>* modernModeParam = nullptr;
-    std::atomic<bool>* lofiModeParam = nullptr;
+    // getRawParameterValue() hands back std::atomic<float>* for EVERY parameter
+    // type, including AudioParameterBool - a bool parameter still has a raw value,
+    // and it is 0.0 or 1.0. Declaring the pointer as atomic<bool>* therefore does
+    // not compile, and the switch is read as `>= 0.5f` like every other bool
+    // parameter here (bypassParam, deltaParam). These two were the only atomic<bool>*
+    // in the file, which is what let the mismatch reach a build at all.
+    std::atomic<float>* modernModeParam = nullptr;
+    std::atomic<float>* lofiModeParam = nullptr;
     std::atomic<float>* vinylParam = nullptr;
     std::atomic<float>* vinylCrackleParam = nullptr;
     std::atomic<float>* vinylRumbleParam = nullptr;
