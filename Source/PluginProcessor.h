@@ -100,6 +100,82 @@ namespace j37math
 
 //==============================================================================
 /**
+    TAPE TYPE's stock list, in one place, for the three places that need it.
+
+    The control is described three times over: the choice parameter the host reads
+    and the panel's attachment is bound to, the combo box that draws the names, and
+    the engine's switch that implements them. Only the last two are on screen, so a
+    disagreement between the parameter and the combo box hides from every angle that
+    is easy to check - the panel draws all twelve, the engine implements all twelve,
+    the DSP harness passes because it renders the engine directly rather than going
+    through the parameter, and the build is clean because a short choice list is
+    perfectly legal C++.
+
+    That is not a hypothetical. The parameter declared eight while the panel and the
+    engine had twelve, and because ComboBoxAttachment clamps the selection to the
+    number of choices the parameter itself declares, the four newest stocks were
+    listed on the panel, implemented in the engine, and impossible to select.
+
+    So the names live here, once, and the parameter and the panel both build their
+    lists from them; the two can no longer be written out of step. tapeStockCount is
+    the count they agree on and the array below is sized to it, so adding a name
+    without bumping the count - or bumping the count without adding a name - is a
+    compile error rather than a stock that cannot be selected.
+
+    The third list, the engine's switch, is checked at run time instead: C++ cannot
+    count case labels. See the jassert that guards it.
+*/
+inline constexpr int tapeStockCount = 12;
+
+inline constexpr std::array<const char*, tapeStockCount> tapeStockNames
+{
+    "J37", "Ampex 456", "Studer A800", "Chrome", "Type 111", "GP9",
+    "Quantegy 499", "RTM SM911", "SM 468", "888", "815", "811"
+};
+
+/**
+    Whether every slot of tapeStockNames was actually given a name.
+
+    std::array catches the count being too SMALL for the names - too many
+    initialisers is a hard error. It does not catch it being too LARGE: elements
+    past the initialiser list are value-initialised, so raising tapeStockCount
+    without adding a name compiles clean and quietly hands the list a null pointer
+    to hand to StringArray. This is that half, and it is the half that turns into a
+    crash rather than a diagnostic.
+*/
+inline constexpr bool tapeStockNamesAreComplete()
+{
+    for (const auto* name : tapeStockNames)
+        if (name == nullptr)
+            return false;
+
+    return true;
+}
+
+static_assert (tapeStockNamesAreComplete(),
+               "tapeStockCount and tapeStockNames must describe the same number of tape stocks");
+
+/**
+    The same list as the juce::StringArray that both sides of the control need.
+
+    A function rather than a constant because juce::StringArray is not a literal
+    type, and because the constructor takes one; the names above remain the single
+    source of truth and this is only the conversion. In the header rather than in
+    either .cpp because the parameter is built in the processor and the combo box in
+    the editor, and the whole point is that neither of them owns a copy.
+*/
+inline juce::StringArray tapeStockNameList()
+{
+    juce::StringArray names;
+
+    for (const auto* name : tapeStockNames)
+        names.add (name);
+
+    return names;
+}
+
+//==============================================================================
+/**
     The four saturation principles, and the blend that combines them.
 
     A tape machine is ONE of the ways analogue electronics bend a signal, and the

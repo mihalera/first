@@ -890,16 +890,11 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     // it leaves the parameter unversioned, so a host has no way to tell a future
     // meaning change from the current one. The id strings are unchanged, so saved
     // sessions and presets resolve exactly as before.
-    // All TWELVE stocks, in the same order as the engine's switch and the panel's
-    // combo box. A choice list shorter than either of those does not fail the build,
-    // it just silently caps the control: ComboBoxAttachment clamps the selection to
-    // the number of choices the parameter itself declares, so SM 468, 888, 815 and
-    // 811 were drawn on the panel, implemented in the engine, and unreachable.
+    // The stocks come from tapeStockNames in PluginProcessor.h, which the panel's
+    // combo box reads too. Spelling them out here separately is how the two drifted
+    // apart once already - see the note on that list for what that looked like.
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "tape_type", 1 }, "Tape Type",
-                                                            juce::StringArray { "J37", "Ampex 456", "Studer A800",
-                                                                                 "Chrome", "Type 111", "GP9",
-                                                                                 "Quantegy 499", "RTM SM911",
-                                                                                 "SM 468", "888", "815", "811" },
+                                                            tapeStockNameList(),
                                                             0));
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "speed", 1 }, "Speed",
                                                             juce::StringArray { "7.5 ips", "15 ips", "30 ips" },
@@ -1907,6 +1902,15 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // The TAPE TYPE switch keeps its own voice on top of the TONE macro: it biases the
     // blended state toward that formula's character (hotter formulas bend harder and
     // hiss less, the classic J37 stays soft) rather than replacing it.
+    //
+    // This switch is the third copy of the stock list and the only one the compiler
+    // cannot check: C++ has no way to count case labels, so nothing here ties the
+    // cases to tapeStockNames. Without an assert, a stock added to the table and
+    // forgotten here would fall through to default and sound exactly like stock 0 -
+    // a wrong tape rather than an error, which is the worst kind. tapeStockCount is
+    // the same constant the parameter and the panel read, so this fires in a debug
+    // build on the first block whenever the three stop agreeing.
+    jassert (tapeType >= 0 && tapeType < tapeStockCount);
     switch (tapeType)
     {
         case 0: // J37 - the classic EMI reference sound
@@ -1997,8 +2001,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             hysteresis -= 0.03f;
             break;
         default:
-            // Unreachable: the choice parameter is clamped to 0..11. Present so the
-            // switch is exhaustive and a future entry cannot silently do nothing.
+            // Unreachable while the assert above holds: the choice parameter is
+            // clamped to tapeStockCount, and the switch covers every index below it.
+            // Present so the switch is exhaustive and a future entry cannot silently
+            // do nothing.
+            jassertfalse;
             break;
     }
 
