@@ -102,7 +102,18 @@ void check (bool condition, const std::string& what)
         ++gFailures;
 }
 
-const int kDividers[SubharmonicGenerator::numStages] = { 2, 3, 4, 5, 6, 7, 8, 9 };
+// The stage table is NOT copied here. It used to be, as a local array sized
+// [SubharmonicGenerator::numStages] but written out longhand - and when a ninth
+// stage was added to the generator, the copy was not extended. The array is sized
+// FROM numStages, so the missing ninth initialiser was not an error the compiler
+// or the build would ever report: it was value-initialised to 0, and the tests
+// went on to look for an undertone at 500/0 Hz. Seven of them failed, every
+// measurement coming back -nan because the frequency was infinite, and the whole
+// report read like a DSP fault in the generator when the generator was correct.
+//
+// Every use below reads the generator's own table directly, so the test and the
+// thing under test can no longer describe different machines. A ninth stage is now
+// covered the moment it exists, with nothing to remember.
 
 /**
     True when `frequency` is a frequency the signal legitimately contains on its
@@ -124,7 +135,7 @@ bool isIntrinsicFrequency (double frequency, double f0)
             return true;
 
     for (int d = 0; d < SubharmonicGenerator::numStages; ++d)
-        if (matches (f0 / kDividers[d]))
+        if (matches (f0 / SubharmonicGenerator::dividers[d]))
             return true;
 
     return false;
@@ -482,14 +493,14 @@ void testUndertoneOrdering()
         double previous = 1.0e9;
         for (int s = 0; s < SubharmonicGenerator::numStages; ++s)
         {
-            const double frequency = 500.0 / kDividers[s];
+            const double frequency = 500.0 / SubharmonicGenerator::dividers[s];
             const double amplitude = measureToneAmplitude (signal, start, window, frequency);
-            std::printf ("       1/%d  %7.2f Hz  %7.2f dB%s\n", kDividers[s], frequency, toDb (amplitude),
+            std::printf ("       1/%d  %7.2f Hz  %7.2f dB%s\n", SubharmonicGenerator::dividers[s], frequency, toDb (amplitude),
                          s > 0 ? "" : "   <- top of the staircase");
 
             char label[160];
             std::snprintf (label, sizeof label, "at DRIVE %.2f, 1/%d is present and quieter than 1/%d",
-                           drive, kDividers[s], kDividers[s > 0 ? s - 1 : 0]);
+                           drive, SubharmonicGenerator::dividers[s], SubharmonicGenerator::dividers[s > 0 ? s - 1 : 0]);
             check (amplitude > 1.0e-6 && amplitude < previous, label);
             previous = amplitude;
         }
@@ -518,7 +529,7 @@ void reportUndertoneHarmonics (ChainSettings settings, double f0, const char* ca
 
     for (int s = 0; s < SubharmonicGenerator::numStages; ++s)
     {
-        const double undertone = f0 / kDividers[s];
+        const double undertone = f0 / SubharmonicGenerator::dividers[s];
         const double level = toDb (measureToneAmplitude (engaged, start, window, undertone));
 
         for (int harmonic = 2; harmonic <= 4; ++harmonic)
@@ -538,7 +549,7 @@ void reportUndertoneHarmonics (ChainSettings settings, double f0, const char* ca
 
             std::printf ("       1/%-2d %7.2f Hz (%6.1f dB)  ->  %dx = %7.1f Hz  %+6.1f dB from the "
                          "undertone, %+6.1f dB over the dry run\n",
-                         kDividers[s], undertone, level, harmonic, product,
+                         SubharmonicGenerator::dividers[s], undertone, level, harmonic, product,
                          engagedLevel - level, delta);
         }
     }
@@ -561,7 +572,7 @@ void testNoHarmonicsFromUndertones()
 
     for (int s = 0; s < SubharmonicGenerator::numStages; ++s)
     {
-        const double undertone = 400.0 / kDividers[s];
+        const double undertone = 400.0 / SubharmonicGenerator::dividers[s];
         const double undertoneLevel = toDb (measureToneAmplitude (engaged, start, window, undertone));
 
         for (int harmonic = 2; harmonic <= 4; ++harmonic)
@@ -587,7 +598,7 @@ void testNoHarmonicsFromUndertones()
             char label[160];
             std::snprintf (label, sizeof label,
                            "harmonic %d of 1/%d (%.1f Hz) sits %.1f dB below the undertone (want > 40)",
-                           harmonic, kDividers[s], product, margin);
+                           harmonic, SubharmonicGenerator::dividers[s], product, margin);
             check (margin > 40.0, label);
 
             worstDelta = juce::jmax (worstDelta, delta);
@@ -617,7 +628,7 @@ void testNoHarmonicsFromUndertones()
 
         for (int s = 0; s < SubharmonicGenerator::numStages; ++s)
         {
-            const double undertone = 400.0 / kDividers[s];
+            const double undertone = 400.0 / SubharmonicGenerator::dividers[s];
             const double level = toDb (measureToneAmplitude (signal, begin, window, undertone));
 
             for (int harmonic = 2; harmonic <= 4; ++harmonic)
@@ -665,7 +676,7 @@ void testSilenceIsSilent()
 
     for (int s = 0; s < SubharmonicGenerator::numStages; ++s)
     {
-        const double frequency = 500.0 / kDividers[s];
+        const double frequency = 500.0 / SubharmonicGenerator::dividers[s];
         const double amplitude = measureToneAmplitude (scenario, start, window, frequency);
         std::snprintf (label, sizeof label, "no undertone at %.1f Hz while silent (%.1f dB)",
                        frequency, toDb (amplitude));
