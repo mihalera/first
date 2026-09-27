@@ -3196,12 +3196,67 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                         + (delayRead[nextIndex] - delayRead[readIndex]) * fraction;
             }
 
-            // The repeat path is damped, so each pass round the tape loses top end
-            // the way a real second head does. Without it the repeats stack into a
-            // bright metallic ring rather than a tape echo.
+            // ------------------------------------------------------------------
+            //  The repeat's character: TAPE / BBD / MODERN.
+            //
+            //  DELAY and DLY LVL set the time and the level; this sets what the
+            //  repeats SOUND like, and the three are genuinely different machines
+            //  rather than three amounts of the same loss:
+            //
+            //    TAPE   - the original behaviour. Each pass round the loop loses
+            //             top end, because the repeat is recorded onto the tape and
+            //             played back through the same losses the main path has.
+            //    BBD    - a bucket-brigade chip, the analogue delay of the era.
+            //             Darker still, and its bandwidth narrows as the delay
+            //             lengthens - which is what a BBD physically does, because
+            //             the same number of buckets is being clocked more slowly.
+            //    MODERN - a clean digital delay: full bandwidth, no loss.
+            // ------------------------------------------------------------------
             auto& damp = delayDampState[static_cast<std::size_t> (channel)];
-            damp += (delayed - damp) * delayDampCoefficient;
-            const float delayTap = delayed * delayFeedbackSmoothed.getCurrentValue();
+            float delayCharacter = delayed;
+
+            if (delayTypeCached == 0)
+            {
+                // TAPE: the original damping, unchanged.
+                damp += (delayed - damp) * delayDampCoefficient;
+                delayCharacter = damp;
+            }
+            else if (delayTypeCached == 1)
+            {
+                // BBD: darker still, and the loss rises with the delay time - a
+                // long setting on a bucket brigade is a dull one, because the same
+                // buckets are being clocked more slowly and the anti-alias filter
+                // tracks the clock.
+                auto& bbdLow = channel == 0 ? bbdLowL : bbdLowR;
+                auto& bbdNoise = channel == 0 ? bbdNoiseStateL : bbdNoiseStateR;
+
+                const float delaySamplesNow = juce::jmax (1.0f, delaySamplesSmoothed.getCurrentValue());
+                const float clockRate = engineSampleRate / delaySamplesNow;
+                // The BBD's bandwidth is a fraction of its clock, which is the
+                // defining limitation of the technology.
+                const float bbdBandwidthHz = juce::jlimit (800.0f, 6000.0f, clockRate * 0.22f);
+                const float bbdCoefficient = onePoleCoefficientHz (bbdBandwidthHz, engineSampleRate);
+
+                bbdLow += (delayed - bbdLow) * bbdCoefficient;
+
+                // The clock's own noise: a small, high-frequency buzz riding on the
+                // repeats, which is the audible signature of a BBD.
+                bbdNoise = bbdNoise * 1664525u + 1013904223u;
+                const float clockNoise = (static_cast<float> ((bbdNoise >> 8) & 0x00ffffffu)
+                                            * (1.0f / 8388608.0f) - 1.0f) * 0.006f;
+
+                delayCharacter = bbdLow + clockNoise;
+                damp = bbdLow;
+            }
+            else
+            {
+                // MODERN: full bandwidth. The damping state is still advanced so
+                // switching back to TAPE does not resume from a stale value.
+                damp += (delayed - damp) * delayDampCoefficient;
+                delayCharacter = delayed;
+            }
+
+            const float delayTap = delayCharacter * delayFeedbackSmoothed.getCurrentValue();
 
             // What is written back into the line is the wet signal PLUS the damped
             // repeat, which is what makes this a head on the machine rather than a
@@ -3521,9 +3576,48 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             if (std::abs (blended) > 0.985f)
                 clippingThisBlock = true;
 
+            // ------------------------------------------------------------------
+            //  LO-FI mode: the deliberate degradation.
+            //
+            //  Where MODERN opens the machine up, LO-FI closes it down: a hard
+            //  bandwidth limit, a sample-and-hold quantisation (the bit-crush that
+            //  gives the mode its grit) and a raised noise floor. It runs on the
+            //  finished sample, after the protection chain, so the quantisation
+            //  cannot be smoothed away by the limiter - the point of the mode is
+            //  that it is a fault, and a fault should survive to the output.
+            // ------------------------------------------------------------------
+            float modeProcessed = blended;
+
+            if (lofiMode)
+            {
+                auto& lofiLow = channel == 0 ? lofiLowL : lofiLowR;
+                auto& lofiHold = channel == 0 ? lofiHoldL : lofiHoldR;
+
+                // The bandwidth limit: a 3.2 kHz one-pole, which is the telephone/
+                // cheap-radio band and the single most recognisable part of the
+                // mode.
+                lofiLow += (modeProcessed - lofiLow) * lofiLowCoefficient;
+
+                // The sample-and-hold: the signal is held for a few samples, which
+                // is a sample-rate reduction rather than a bit-depth one - it is
+                // the aliasing that gives the mode its edge. The hold counter is
+                // advanced once per frame by the caller, so both channels hold the
+                // same instants and the image does not smear.
+                // The counter is shared so both channels hold on the SAME instants -
+                // per-channel counters would sample the two sides at different times
+                // and smear the image. Each channel keeps its own held VALUE.
+                if (channel == 0 && --lofiCounter <= 0)
+                    lofiCounter = juce::jmax (1, lofiHoldSamples);
+
+                if (lofiCounter >= lofiHoldSamples || channel == 0)
+                    lofiHold = lofiLow;
+
+                modeProcessed = lofiHold;
+            }
+
             // The polarity switch flips the finished sample after the clipper, so a
             // 180-degree source mis-wiring is corrected at the very last stage.
-            const auto limitedOut = softClip (blended) * polaritySign;
+            const auto limitedOut = softClip (modeProcessed) * polaritySign;
             destination = limitedOut;
             outputPeak = juce::jmax (outputPeak, std::abs (limitedOut));
             outputSquares += static_cast<double> (limitedOut) * limitedOut;
