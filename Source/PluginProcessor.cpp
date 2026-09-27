@@ -1992,6 +1992,62 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     cabinetSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, cabinetAmount));
     ampBiasSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, ampBiasAmount));
 
+    // -----------------------------------------------------------------------
+    //  Preamp, distortion, tape condition, reverb, vinyl and the two modes.
+    //
+    //  All read once per block and fed to smoothers, so none of them can step
+    //  the signal. The modes are read as plain bools because they change the
+    //  MACHINE's voicing rather than a per-sample coefficient, and a mode is not
+    //  something a user sweeps.
+    // -----------------------------------------------------------------------
+    const auto preampAmount = preampParam != nullptr ? preampParam->load() : 0.0f;
+    const auto distortionAmount = distortionParam != nullptr ? distortionParam->load() : 0.0f;
+    const auto fluxAmount = fluxParam != nullptr ? fluxParam->load() : 0.5f;
+    const auto wearAmount = wearParam != nullptr ? wearParam->load() : 0.0f;
+    const auto mechanicsAmount = mechanicsParam != nullptr ? mechanicsParam->load() : 0.0f;
+    const auto reverbMix = reverbParam != nullptr ? reverbParam->load() : 0.0f;
+    const auto reverbSize = reverbSizeParam != nullptr ? reverbSizeParam->load() : 0.4f;
+    const auto vinylAmount = vinylParam != nullptr ? vinylParam->load() : 0.0f;
+    const auto vinylCrackle = vinylCrackleParam != nullptr ? vinylCrackleParam->load() : 0.5f;
+    const auto vinylRumble = vinylRumbleParam != nullptr ? vinylRumbleParam->load() : 0.35f;
+
+    preampSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, preampAmount));
+    distortionSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, distortionAmount));
+    fluxSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, fluxAmount));
+    wearSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, wearAmount));
+    mechanicsSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, mechanicsAmount));
+    reverbMixSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, reverbMix));
+    reverbSizeSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, reverbSize));
+    vinylSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, vinylAmount));
+    vinylCrackleSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, vinylCrackle));
+    vinylRumbleSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, vinylRumble));
+
+    // The two mode switches. They are mutually exclusive BY DESIGN - a machine
+    // cannot be both a modern deck and a deliberately degraded one - so MODERN
+    // wins when both are set, which is the safer of the two to be wrong about.
+    const bool modernRequested = modernModeParam != nullptr && modernModeParam->load();
+    const bool lofiRequested = lofiModeParam != nullptr && lofiModeParam->load();
+    modernMode = modernRequested;
+    lofiMode = ! modernRequested && lofiRequested;
+
+    // The delay character, cached as an int so the per-sample loop branches on a
+    // register rather than reading an atomic.
+    delayTypeCached = delayTypeParam != nullptr
+                          ? static_cast<int> (delayTypeParam->load()) : 0;
+
+    // The stage coefficients. Every frequency is converted with
+    // onePoleCoefficientHz, so they mean the same thing at every sample rate.
+    //   preamp low-cut  - the input transformer's roll-off, 40 Hz
+    //   flux shelf      - the split the FLUX control lifts, 220 Hz
+    //   wear loss       - the top-end the WEAR control removes, 6 kHz
+    //   vinyl rumble    - the turntable's low-frequency floor, 30 Hz
+    //   vinyl warmth    - the RIAA playback tilt's pivot, 400 Hz
+    preampLowCutCoefficient = onePoleCoefficientHz (40.0f, engineSampleRate);
+    fluxShelfCoefficient = onePoleCoefficientHz (220.0f, engineSampleRate);
+    wearLossCoefficient = onePoleCoefficientHz (6000.0f, engineSampleRate);
+    vinylRumbleCoefficient = onePoleCoefficientHz (30.0f, engineSampleRate);
+    vinylWarmthCoefficient = onePoleCoefficientHz (400.0f, engineSampleRate);
+
     // The cabinet's poles. The roll-off sits where a 12-inch speaker's cone mass
     // puts it (about 5 kHz at the default cabinet setting, opening toward 9 kHz as
     // CABINET is turned down) and the resonance tracks the cabinet's own tuning,
@@ -2770,7 +2826,28 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // post-compressor power it is compared against, so a hard-panned right
             // channel could hide a genuine level loss and switch the compensation off.
             referenceBlockPower += inputTrimmed * inputTrimmed;
-            const float x = inputTrimmed * inputCompressionGain;
+            float x = inputTrimmed * inputCompressionGain;
+
+            // ------------------------------------------------------------------
+            //  Preamp and distortion - the two gain stages in FRONT of the machine.
+            //
+            //  They run here, on the trimmed and glue-compressed input, so the tape
+            //  stage hears what they produced. That ordering is the whole point:
+            //  a distorted signal recorded to tape sounds like a record rather than
+            //  a pedal precisely because the machine smooths what the pedal did.
+            //
+            //  Both are level-matched internally (see InputStage), so neither
+            //  changes the operating level - the INPUT control remains the thing
+            //  that sets it, and these two only change the character.
+            // ------------------------------------------------------------------
+            auto& inputStage = channel == 0 ? inputStageL : inputStageR;
+            const float distortionNow = distortionSmoothed.getCurrentValue();
+            if (distortionNow > 1.0e-5f)
+                x = inputStage.processDistortion (x, distortionNow);
+
+            const float preampNow = preampSmoothed.getCurrentValue();
+            if (preampNow > 1.0e-5f)
+                x = inputStage.processPreamp (x, preampNow, preampLowCutCoefficient);
             machineDryInput[static_cast<std::size_t> (channel)] = x;
 
             const float wowLfo = std::sin (wowPhase);
@@ -2798,7 +2875,21 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // START spins the capstan up. That is what turns the transport ramp into a
             // PITCH ramp rather than a level fade: the modulation deepens and the whole
             // wet path runs flat until the machine reaches speed.
-            const float wowMod = (1.0f + wowLfo * wowDepth) * speedError;
+            // MECHANICS and WEAR both add irregularity on top of the periodic wow
+            // and flutter, and they are different mechanisms: MECHANICS is the
+            // transport (dry bearings, a slack belt), WEAR is the medium (patchy
+            // contact against the head). Both are folded in as extra depth rather
+            // than as separate oscillators, because that is what they do to the
+            // modulation that already exists - they make it less even, not more.
+            const float mechanicsNow = mechanicsSmoothed.getCurrentValue();
+            const float wearNowMod = wearSmoothed.getCurrentValue();
+            const float irregularDepth = wowDepth
+                                       + mechanicsNow * 0.006f
+                                       + wearNowMod * 0.003f;
+            const float irregularOffset = (channel == 0 ? tapeConditionL : tapeConditionR).driftState
+                                        * mechanicsNow * 0.010f;
+
+            const float wowMod = (1.0f + wowLfo * irregularDepth + irregularOffset) * speedError;
             const float flutterMod = (1.0f + flutterLfo * flutterDepth
                                         * flutterScaleSmoothed.getCurrentValue()) * speedError;
             const float grainMod = 1.0f + tapeHiss * 0.10f * transportActivityGate * grainLfo;
@@ -3025,6 +3116,28 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             const float deEmphasised = pivotLow * toneShelfGainSmoothed.getCurrentValue()
                                      + highBand * toneShelfBoostSmoothed.getCurrentValue();
 
+            // ------------------------------------------------------------------
+            //  Tape condition: FLUX and WEAR.
+            //
+            //  FLUX is the record head's depth into the oxide - more flux is more
+            //  low end and a stronger hysteresis memory, less is thin and bright.
+            //  WEAR is the state of the heads and the tape: a rounded gap and
+            //  patchy oxide lose top end.
+            //
+            //  They run here, after the playback tilt, because both are properties
+            //  of the RECORDED signal rather than of the electronics - the tilt is
+            //  the playback EQ, and these two are what the medium did before it.
+            // ------------------------------------------------------------------
+            auto& condition = channel == 0 ? tapeConditionL : tapeConditionR;
+            const float fluxNow = fluxSmoothed.getCurrentValue();
+            const float wearNow = wearSmoothed.getCurrentValue();
+
+            float conditioned = deEmphasised;
+            if (std::abs (fluxNow - 0.5f) > 1.0e-4f || wearNow > 1.0e-5f)
+                conditioned = condition.processTone (deEmphasised, channel,
+                                                     fluxNow, wearNow,
+                                                     fluxShelfCoefficient, wearLossCoefficient);
+
             // -------------------------------------------------------------------
             //  Playback AC coupling (DC blocker) - the fix for "MIX at maximum
             //  produces garbage instead of a warm signal".
@@ -3045,8 +3158,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // -------------------------------------------------------------------
             auto& dcX = dcBlockXState[static_cast<std::size_t> (channel)];
             auto& dcY = dcBlockYState[static_cast<std::size_t> (channel)];
-            const float dcBlocked = deEmphasised - dcX + dcBlockR * dcY;
-            dcX = deEmphasised;
+            const float dcBlocked = conditioned - dcX + dcBlockR * dcY;
+            dcX = conditioned;
             dcY = dcBlocked;
 
             // -------------------------------------------------------------------
