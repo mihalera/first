@@ -181,7 +181,10 @@ private:
     // that silently disappears from the panel.
     static constexpr std::size_t controlCount = 33;
     static constexpr int tabColumns = 4;
-    static constexpr int numTabs = 7;
+    // Six tabs: MACHINE, DRIVE, CHARACTER, NOISE, SPACE, SETTINGS. It was seven for
+    // one release: the seventh slot had no entry in the tabSpecs table, so it drew
+    // as a button with no name and could never show anything.
+    static constexpr int numTabs = 6;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     void timerCallback() override;
