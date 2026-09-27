@@ -456,17 +456,24 @@ set(J37_HAVE_IPP OFF)
 set(J37_ACCELERATE_FRAMEWORK "")
 
 if(APPLE)
-    find_library(J37_ACCELERATE_FRAMEWORK Accelerate)
-
-    if(J37_ACCELERATE_FRAMEWORK)
+    # find_library() is deliberately NOT used to locate this. It searches for
+    # LIBRARY FILES - lib<name>.dylib and friends - and a system framework has
+    # none: the framework is a directory, not a file. An earlier version of this
+    # block used find_library and the macOS CI runner, which has Accelerate
+    # installed like every Mac, reported "Apple vDSP NOT found" on it. A
+    # framework is a real directory on every Apple platform, so that is what is
+    # checked, and the framework path itself is what gets linked.
+    if(IS_DIRECTORY "/System/Library/Frameworks/Accelerate.framework")
+        set(J37_ACCELERATE_FRAMEWORK "/System/Library/Frameworks/Accelerate.framework")
         set(J37_HAVE_VDSP ON)
     else()
         # Accelerate is part of macOS and cannot be missing from a real install;
         # saying so loudly beats silently compiling the portable path and
         # leaving the developer to wonder why the vDSP path never runs.
         message(WARNING
-            "Apple platform, but the Accelerate framework was not found. "
-            "Building without vDSP - check the Xcode command line tools.")
+            "Apple platform, but /System/Library/Frameworks/Accelerate.framework "
+            "is missing. Building without vDSP - check the Xcode command line "
+            "tools and that the SDK is not damaged.")
     endif()
 endif()
 
@@ -902,6 +909,10 @@ target_link_libraries(first
 #  skip itself instead of failing the link.
 # ------------------------------------------------------------------------------
 if(J37_HAVE_VDSP)
+    # The full framework path, which CMake links directly. The alternative
+    # spelling is the raw "-framework Accelerate" flag; the path is used because
+    # it is the same string that was verified to exist above, so the link and
+    # the check can never disagree about what was found.
     target_link_libraries(first PRIVATE "${J37_ACCELERATE_FRAMEWORK}")
 endif()
 
