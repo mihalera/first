@@ -1573,13 +1573,15 @@ struct SubharmonicGenerator
     // 22 Hz and 14 Hz. Thus, when the signal allows (upper bass / low mids), all 8 stages
     // are fully active; when the note is already deep sub-bass, stages below the audible
     // limit fade out gracefully.
-    static constexpr int numStages = 8;
-    static constexpr int dividers[numStages] { 2, 3, 4, 5, 6, 7, 8, 9 };
+    static constexpr int numStages = 9;
+    static constexpr int dividers[numStages] { 2, 3, 4, 5, 6, 7, 8, 9, 10 };
 
-    // 2^-(divider - 1): 1/2 at 0 dB, 1/3 at -6, 1/4 at -12 ... 1/9 at -42.
+    // 2^-(divider - 1): 1/2 at 0 dB, 1/3 at -6, 1/4 at -12 ... 1/10 at -48.
+    // The staircase law is unchanged - the ninth stage simply continues it, so
+    // adding 1/10 does not alter the balance of the eight that were already there.
     static constexpr float baseWeights[numStages] { 0.5f, 0.25f, 0.125f, 0.0625f,
                                                      0.03125f, 0.015625f, 0.0078125f,
-                                                     0.00390625f };
+                                                     0.00390625f, 0.001953125f };
 
     // AC coupling in front of the detector. The magnetic shaper that excites this
     // stage is asymmetric on purpose, and an asymmetric transfer curve carries an
@@ -2387,6 +2389,19 @@ private:
     std::atomic<float>* presenceParam = nullptr;
     std::atomic<float>* cabinetParam = nullptr;
     std::atomic<float>* ampBiasParam = nullptr;
+    std::atomic<float>* preampParam = nullptr;
+    std::atomic<float>* fluxParam = nullptr;
+    std::atomic<float>* wearParam = nullptr;
+    std::atomic<float>* mechanicsParam = nullptr;
+    std::atomic<float>* reverbParam = nullptr;
+    std::atomic<float>* reverbSizeParam = nullptr;
+    std::atomic<float>* delayTypeParam = nullptr;
+    std::atomic<float>* distortionParam = nullptr;
+    std::atomic<bool>* modernModeParam = nullptr;
+    std::atomic<bool>* lofiModeParam = nullptr;
+    std::atomic<float>* vinylParam = nullptr;
+    std::atomic<float>* vinylCrackleParam = nullptr;
+    std::atomic<float>* vinylRumbleParam = nullptr;
 
     float sampleRate = 44100.0f;
     // Every smoother below is advanced exactly once at the top of each sample frame.
@@ -2766,6 +2781,92 @@ private:
     float cabinetLowCoefficient = 0.5f;
     float cabinetPeakCoefficient = 0.02f;
     float presenceCoefficient = 0.5f;
+
+    // -----------------------------------------------------------------------
+    //  Preamp and distortion - the two gain stages in front of the machine.
+    //  One per channel, because both carry signal-dependent bias state.
+    // -----------------------------------------------------------------------
+    InputStage inputStageL;
+    InputStage inputStageR;
+
+    SampleSmoother preampSmoothed { sampleClock };
+    SampleSmoother distortionSmoothed { sampleClock };
+
+    // The preamp's input-transformer low-cut, built once per block from the rate.
+    float preampLowCutCoefficient = 0.5f;
+
+    // -----------------------------------------------------------------------
+    //  Tape condition: FLUX, WEAR and MECHANICS.
+    // -----------------------------------------------------------------------
+    TapeCondition tapeConditionL;
+    TapeCondition tapeConditionR;
+
+    SampleSmoother fluxSmoothed { sampleClock, false, false, 0.5f };
+    SampleSmoother wearSmoothed { sampleClock };
+    SampleSmoother mechanicsSmoothed { sampleClock };
+
+    // The FLUX shelf and the WEAR loss, built once per block. Two frequencies
+    // because the two mechanisms sit in different places: flux is a low shelf,
+    // wear is a top-end loss.
+    float fluxShelfCoefficient = 0.5f;
+    float wearLossCoefficient = 0.5f;
+
+    // The WEAR contact noise, folded into the wow/flutter modulation as an extra
+    // slow irregularity. Kept separate from the MECHANICS drift because they are
+    // different mechanisms: one is the medium, the other is the transport.
+    float wearModulation = 0.0f;
+
+    // -----------------------------------------------------------------------
+    //  Reverb - one instance, two channels inside it. It is placed after the
+    //  machine, so it is a single stereo processor rather than two mono ones.
+    // -----------------------------------------------------------------------
+    PlateReverb reverb;
+    SampleSmoother reverbMixSmoothed { sampleClock };
+    SampleSmoother reverbSizeSmoothed { sampleClock, false, false, 0.4f };
+
+    // -----------------------------------------------------------------------
+    //  Vinyl stage. One per channel, because the crackle and the rumble are
+    //  uncorrelated between the two sides - sharing a generator would make the
+    //  ticks appear in the centre of the image instead of on the surface.
+    // -----------------------------------------------------------------------
+    VinylStage vinylL;
+    VinylStage vinylR;
+
+    SampleSmoother vinylSmoothed { sampleClock };
+    SampleSmoother vinylCrackleSmoothed { sampleClock, false, false, 0.5f };
+    SampleSmoother vinylRumbleSmoothed { sampleClock, false, false, 0.35f };
+
+    float vinylRumbleCoefficient = 0.5f;
+    float vinylWarmthCoefficient = 0.5f;
+
+    // -----------------------------------------------------------------------
+    //  Delay character (TAPE / BBD / MODERN) and the mode switches.
+    //
+    //  `delayTypeCached` mirrors the choice parameter so the per-sample loop can
+    //  branch on an int rather than reading an atomic; `modernMode` and
+    //  `lofiMode` are the two machine-voicing switches, read once per block.
+    // -----------------------------------------------------------------------
+    int delayTypeCached = 0;
+    bool modernMode = false;
+    bool lofiMode = false;
+
+    // The BBD delay's clock noise and its bandwidth state, per channel.
+    float bbdNoiseStateL = 0.0f;
+    float bbdNoiseStateR = 0.0f;
+    float bbdLowL = 0.0f;
+    float bbdLowR = 0.0f;
+
+    // The LO-FI mode's quantisation and bandwidth state, per channel.
+    float lofiLowL = 0.0f;
+    float lofiLowR = 0.0f;
+    float lofiHoldL = 0.0f;
+    float lofiHoldR = 0.0f;
+    int lofiCounter = 0;
+
+    // A second, independent noise generator for the vinyl stage. It is separate
+    // from `noiseState` so that turning VINYL on cannot change the tape hiss
+    // stream - the two are different sources and must stay uncorrelated.
+    std::uint32_t vinylNoiseState = 0x9e3779b9u;
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessor)

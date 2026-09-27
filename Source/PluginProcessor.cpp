@@ -360,6 +360,19 @@ FirstAudioProcessor::FirstAudioProcessor()
     presenceParam = parameters.getRawParameterValue ("presence");
     cabinetParam = parameters.getRawParameterValue ("cabinet");
     ampBiasParam = parameters.getRawParameterValue ("amp_bias");
+    preampParam = parameters.getRawParameterValue ("preamp");
+    fluxParam = parameters.getRawParameterValue ("flux");
+    wearParam = parameters.getRawParameterValue ("wear");
+    mechanicsParam = parameters.getRawParameterValue ("mechanics");
+    reverbParam = parameters.getRawParameterValue ("reverb");
+    reverbSizeParam = parameters.getRawParameterValue ("reverb_size");
+    delayTypeParam = parameters.getRawParameterValue ("delay_type");
+    distortionParam = parameters.getRawParameterValue ("distortion");
+    modernModeParam = parameters.getRawParameterValue ("modern_mode");
+    lofiModeParam = parameters.getRawParameterValue ("lofi_mode");
+    vinylParam = parameters.getRawParameterValue ("vinyl");
+    vinylCrackleParam = parameters.getRawParameterValue ("vinyl_crackle");
+    vinylRumbleParam = parameters.getRawParameterValue ("vinyl_rumble");
 
     // Four fixed oversampling engines (off / 2x / 4x / 8x). Each owns its own filter
     // state, so switching between them is glitch-free even mid-render, and the
@@ -387,7 +400,10 @@ FirstAudioProcessor::FirstAudioProcessor()
                                      "oversampling", "tone", "wow", "flutter", "mix",
                                      "character", "delta", "delay_time", "delay_feedback",
                                      "st_offset", "noise", "transport",
-                                     "blend", "shape", "sag", "presence", "cabinet", "amp_bias" })
+                                     "blend", "shape", "sag", "presence", "cabinet", "amp_bias",
+                                     "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
+                                     "delay_type", "distortion", "modern_mode", "lofi_mode",
+                                     "vinyl", "vinyl_crackle", "vinyl_rumble" })
         parameters.addParameterListener (parameterID, this);
 }
 
@@ -399,7 +415,10 @@ FirstAudioProcessor::~FirstAudioProcessor()
                                      "oversampling", "tone", "wow", "flutter", "mix",
                                      "character", "delta", "delay_time", "delay_feedback",
                                      "st_offset", "noise", "transport",
-                                     "blend", "shape", "sag", "presence", "cabinet", "amp_bias" })
+                                     "blend", "shape", "sag", "presence", "cabinet", "amp_bias",
+                                     "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
+                                     "delay_type", "distortion", "modern_mode", "lofi_mode",
+                                     "vinyl", "vinyl_crackle", "vinyl_rumble" })
         parameters.removeParameterListener (parameterID, this);
 }
 
