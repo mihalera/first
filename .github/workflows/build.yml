@@ -127,6 +127,32 @@ jobs:
             libgl1-mesa-dev \
             libglu1-mesa-dev
 
+      - name: Install Intel oneAPI IPP (exercises the Intel vector backend)
+        run: |
+          # IPP is the one optional dependency this project can actually put on
+          # a CI machine, so it IS put on one: without this step the build only
+          # ever proves the "IPP absent" path, and the Intel branch of
+          # CMakeLists.txt would go unexercised until a developer happened to
+          # have oneAPI installed locally.
+          #
+          # The unversioned intel-oneapi-ipp-devel metapackage tracks whatever
+          # the repository currently ships, so this does not rot into a pinned
+          # version that stops resolving. --no-install-recommends keeps the DPC++
+          # toolchain and the rest of oneAPI out of the runner.
+          #
+          # The Windows and macOS jobs deliberately do NOT install it. Windows
+          # has no package equivalent - oneAPI is a ~1.5 GB installer there -
+          # and Intel no longer ships oneAPI for macOS at all, which is exactly
+          # why the vDSP path exists. Those two jobs are what prove the
+          # "library absent, portable path" branch still builds.
+          curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+            | sudo gpg --dearmor -o /usr/share/keyrings/oneAPI-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/oneAPI-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
+            | sudo tee /etc/apt/sources.list.d/oneAPI.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends intel-oneapi-ipp-devel
+          test -f /opt/intel/oneapi/ipp/latest/include/ipp/ipps.h
+
       - name: Configure CMake (Debug)
         run: |
           cmake -S . -B build \
@@ -445,6 +471,32 @@ jobs:
             libxrender-dev \
             libgl1-mesa-dev \
             libglu1-mesa-dev
+
+      - name: Install Intel oneAPI IPP (exercises the Intel vector backend)
+        run: |
+          # IPP is the one optional dependency this project can actually put on
+          # a CI machine, so it IS put on one: without this step the build only
+          # ever proves the "IPP absent" path, and the Intel branch of
+          # CMakeLists.txt would go unexercised until a developer happened to
+          # have oneAPI installed locally.
+          #
+          # The unversioned intel-oneapi-ipp-devel metapackage tracks whatever
+          # the repository currently ships, so this does not rot into a pinned
+          # version that stops resolving. --no-install-recommends keeps the DPC++
+          # toolchain and the rest of oneAPI out of the runner.
+          #
+          # The Windows and macOS jobs deliberately do NOT install it. Windows
+          # has no package equivalent - oneAPI is a ~1.5 GB installer there -
+          # and Intel no longer ships oneAPI for macOS at all, which is exactly
+          # why the vDSP path exists. Those two jobs are what prove the
+          # "library absent, portable path" branch still builds.
+          curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
+            | sudo gpg --dearmor -o /usr/share/keyrings/oneAPI-archive-keyring.gpg
+          echo "deb [signed-by=/usr/share/keyrings/oneAPI-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
+            | sudo tee /etc/apt/sources.list.d/oneAPI.list > /dev/null
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends intel-oneapi-ipp-devel
+          test -f /opt/intel/oneapi/ipp/latest/include/ipp/ipps.h
 
       - name: Configure CMake
         run: |

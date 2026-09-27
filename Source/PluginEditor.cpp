@@ -227,11 +227,16 @@ constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tab
     // static_assert in setCurrentTab keeps the two counts identical.)
     int index_of_tab_named (const char* name)
     {
-        for (int tab = 0; tab < numTabPages; ++tab)
-            if (std::strcmp (tabSpecs[static_cast<std::size_t> (tab)].name, name) == 0)
-                return tab;
+        // tab is std::size_t because numTabPages is, and the table is indexed by
+        // it. It was an int, and the comparison against the size_t bound warned
+        // on every build that has -Wsign-compare on (Clang always, GCC in the
+        // debug job) - a signed int that can never reach an unsigned bound is
+        // the shape of a real bug even when this particular loop cannot trip it.
+        for (std::size_t tab = 0; tab < numTabPages; ++tab)
+            if (std::strcmp (tabSpecs[tab].name, name) == 0)
+                return static_cast<int> (tab);
 
-        return numTabPages;
+        return static_cast<int> (numTabPages);
     }
 
     juce::String formatDb (float value)
@@ -2668,8 +2673,10 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     // covered within the same paint. Skipping the ones the clip cannot see is what
     // keeps that affordable at 30 Hz with a context attached, where every one of
     // these repaints is a render of this component.
-    const auto grainTop = clip.getY();
-    const auto grainBottom = clip.getBottom();
+    // Float, to match the float y the loops below count with. getY()/getBottom()
+    // are int, and the implicit conversions warned on every Clang build.
+    const auto grainTop = static_cast<float> (clip.getY());
+    const auto grainBottom = static_cast<float> (clip.getBottom());
 
     g.setColour (grainColour);
     for (float y = chassis.getY() + 2.0f; y < chassis.getBottom(); y += 3.0f)

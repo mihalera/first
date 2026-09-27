@@ -478,22 +478,45 @@ if(APPLE)
 endif()
 
 if(J37_ENABLE_IPP)
-    # oneAPI installs into its own prefix. Honour the two names Intel and its
-    # documentation use, so a developer who has run Intel's setvars.sh - or who
-    # simply has IPPROOT exported - needs to pass nothing to this build.
-    foreach(j37_ipp_prefix "$ENV{IPPROOT}" "$ENV{IPP_ROOT}")
-        if(j37_ipp_prefix)
+    # oneAPI installs into its own prefix and, unless its setvars.sh has been
+    # run, nothing in the environment points at it. All three spellings are
+    # honoured, so a developer who has installed it gets a build that finds it
+    # without passing a single -D:
+    #
+    #   IPPROOT / IPP_ROOT   Intel's own environment variables
+    #   the stock locations   /opt/intel/oneapi/ipp/latest on Linux,
+    #                         C:/Program Files (x86)/Intel/oneAPI/ipp/latest on
+    #                         Windows (the 2024+ layout, the one the deb and
+    #                         the Windows installer both use)
+    #
+    # macOS is deliberately absent: Intel stopped shipping oneAPI for macOS, so
+    # there is no prefix to look for and the vDSP path is the one that exists.
+    foreach(j37_ipp_prefix
+            "$ENV{IPPROOT}"
+            "$ENV{IPP_ROOT}"
+            "/opt/intel/oneapi/ipp/latest"
+            # The parentheses in ProgramFiles(x86) have to be escaped or CMake
+            # reads the '(' as the start of a variable name and fails to parse.
+            "$ENV{ProgramFiles\(x86\)}/Intel/oneAPI/ipp/latest")
+        if(j37_ipp_prefix AND IS_DIRECTORY "${j37_ipp_prefix}")
             list(APPEND CMAKE_PREFIX_PATH
                 "${j37_ipp_prefix}"
                 "${j37_ipp_prefix}/lib/cmake")
         endif()
     endforeach()
 
-    # QUIET and not REQUIRED: the library is genuinely optional, and a missing
-    # package must read as a normal outcome of the search, not as an error.
-    find_package(ipp CONFIG QUIET)
+    # The package name is IPP, and the case is load-bearing in both directions:
+    # the file Intel ships is IPPConfig.cmake, and find_package(ipp) only ever
+    # looks for ippConfig.cmake and ipp-config.cmake. Asking for the lower-case
+    # name therefore CANNOT find it - it reported "not installed" on a machine
+    # with IPP 2026.0 installed in /opt, and the same targets come back spelled
+    # IPP::ipps, IPP::ippi, IPP::ippcore, which is what the link line below uses.
+    #
+    # QUIET and not REQUIRED: the library is genuinely optional, so a machine
+    # without it must read as a normal outcome of the search, not an error.
+    find_package(IPP CONFIG QUIET)
 
-    if(ipp_FOUND)
+    if(IPP_FOUND)
         set(J37_HAVE_IPP ON)
     endif()
 endif()
@@ -906,7 +929,9 @@ target_link_libraries(first
 #  The IPP targets are checked individually rather than named blindly, because
 #  which of them an installed oneAPI ships varies by version and by the
 #  components that were installed with it - a missing optional component must
-#  skip itself instead of failing the link.
+#  skip itself instead of failing the link. They are IMPORTED by Intel's own
+#  config file, so this works with GCC and Clang too, not only with the Intel
+#  compiler: ippsAbs_32f was compiled, linked and run against this on GCC 11.
 # ------------------------------------------------------------------------------
 if(J37_HAVE_VDSP)
     # The full framework path, which CMake links directly. The alternative
@@ -917,7 +942,7 @@ if(J37_HAVE_VDSP)
 endif()
 
 if(J37_HAVE_IPP)
-    foreach(j37_ipp_target ipp::ipps ipp::ippi ipp::ippcore)
+    foreach(j37_ipp_target IPP::ipps IPP::ippi IPP::ippcore)
         if(TARGET ${j37_ipp_target})
             target_link_libraries(first PRIVATE ${j37_ipp_target})
         endif()
