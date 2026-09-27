@@ -52,89 +52,21 @@ namespace
 #endif
     }
 
-    /**
-        Soft magnetic hysteresis: a memory-dependent shaping that produces the
-        asymmetric, mostly-odd/even blend of analogue tape rather than a plain
-        symmetric tanh curve. `memory` is the previous shaped output.
+        /**
+        NOTE: the single magneticHysteresis curve that used to live here has been
+        REMOVED, not merely superseded.
 
-        Harmonics are the whole point of this function, so the structure is deliberate:
+        The engine now runs SaturationCore, whose `shapeTape` branch is this curve
+        bit-for-bit - same slope, same memory term, same zero-point correction - so
+        keeping a second copy here would be dead code that a reader could easily
+        mistake for the live path. That is not a hypothetical risk: the DSP harness
+        kept calling this function for a while after the engine stopped, which made
+        it report a large regression that was only the test and the plugin
+        disagreeing about which curve they were measuring.
 
-          - A symmetric tanh generates only ODD harmonics (3rd, 5th...), which read as
-            "harder" or "edgier".
-          - The asymmetry offset biases the curve so it is no longer symmetric about
-            zero. That is what generates EVEN harmonics (2nd, 4th...), and even
-            harmonics are the ones heard as warmth, body and "bigger than the source".
-          - Two tanh stages with different slopes mean the harmonic content grows
-            gradually with level instead of switching on at a threshold, so quiet
-            passages stay clean and loud ones bloom - the behaviour of real tape.
+        Anything that needs the tape curve now reaches it through SaturationCore,
+        which is the one place it exists.
     */
-    // Superseded by the multi-stage curve below (see the note at its call site), so it
-    // has no caller left. Kept as the written-down reference for the single-branch
-    // design it was; [[maybe_unused]] says that on purpose instead of leaving a
-    // -Wunused-function warning in every build.
-    [[maybe_unused]] inline float magneticHysteresis (float x, float drive, float asymmetry, float memory)
-    {
-        const float biased = x + asymmetry;
-
-        // ------------------------------------------------------------------
-        //  One saturating branch, normalised so it is unity-slope at the origin.
-        //
-        //  The previous version summed three tanh terms whose weights added to 1.0. Each
-        //  term saturated independently, so the curves stacked and the transfer compressed
-        //  a full-scale input to 0.67 even with DRIVE at zero - the plugin saturated at
-        //  every setting, which is what made it sound overdriven no matter what.
-        //
-        //  `tanh (s*x) / s` is the right shape: its slope at zero is exactly 1, so quiet
-        //  signals pass through untouched, and its asymptote is 1/s, so the amount of
-        //  compression at the top is set purely by s - which is what DRIVE controls. With
-        //  DRIVE at zero, s is 1 and the curve is a gentle, single-tanh tape bend rather
-        //  than three stacked ones.
-        // ------------------------------------------------------------------
-        const float slope = 1.0f + drive * 2.6f;
-        const float hard = j37Tanh (biased * slope) / slope;
-
-        // The delayed image gives tape its "sticky" transient behaviour. It shares the
-        // same unity-slope normalisation so it contributes character without costing
-        // level, and it is scaled by the drive amount so it cannot bend at zero drive.
-        const float lagged = memory * 0.62f;
-        const float delayedSlope = 0.55f + drive * 1.0f;
-        const float delayed = j37Tanh ((biased * delayedSlope) + lagged) / delayedSlope;
-
-        // A blend, not a sum: the weights add to one so the two branches average rather
-        // than stacking their compression.
-        constexpr float hardWeight = 0.70f;
-        constexpr float delayedWeight = 0.30f;
-
-        const float blended = hard * hardWeight + delayed * delayedWeight;
-
-        // Remove the bias offset asymmetrically so the effect adds even harmonics instead
-        // of merely shifting the signal. The squared term makes the asymmetry
-        // level-dependent, mirroring how real bias interacts with signal amplitude.
-        const float asymmetryTerm = asymmetry * 0.45f * hard * hard;
-
-        // The bias is an OFFSET on this transfer curve, and an offset on a curve is
-        // also a DC pedestal coming out of it: at digital silence this function
-        // returned a constant of roughly -30 dBFS rather than zero. That pedestal is
-        // the last always-on source in the engine - the hiss is gated by the
-        // transport, but this was not - and it is a rumble, not a click: it arrives
-        // the instant the input goes quiet, sits there, and is then taken away
-        // again by the playback DC blocker some 20 ms later. On a pause that reads
-        // as the machine still making a sound with nothing playing.
-        //
-        // Subtracting the curve's own value at zero input removes the pedestal and
-        // nothing else. The even-harmonic asymmetry survives intact because only its
-        // AC part is kept - the difference between the asymmetry term now and the
-        // same term evaluated at zero - and the lagged branch is evaluated at the
-        // same memory it was given, so the subtraction is exact rather than an
-        // approximation that drifts. Zero in, zero out, at every drive and bias, on
-        // every sample.
-        const float hardAtZero = j37Tanh (asymmetry * slope) / slope;
-        const float delayedAtZero = j37Tanh ((asymmetry * delayedSlope) + lagged) / delayedSlope;
-        const float blendedAtZero = hardAtZero * hardWeight + delayedAtZero * delayedWeight;
-        const float asymmetryAtZero = asymmetry * 0.45f * hardAtZero * hardAtZero;
-
-        return (blended - blendedAtZero) - (asymmetryTerm - asymmetryAtZero);
-    }
 
     /** One-pole low-pass coefficient for a given time constant in milliseconds. */
     inline float onePoleCoefficient (float milliseconds, float sampleRate)

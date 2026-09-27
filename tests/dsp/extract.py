@@ -40,17 +40,22 @@ MATH_BRIDGE_END = "#endif\n"
 HEADER_PIECES = [
     ("GlueCompressor", "struct GlueCompressor"),
     ("LoudnessMeter", "struct LoudnessMeter"),
+    ("SaturationCore", "struct SaturationCore"),
     ("SubharmonicGenerator", "struct SubharmonicGenerator"),
 ]
 
 IMPL_PIECES = [
-    # j37Tanh must come before magneticHysteresis: the shaper now calls it, so the
-    # harness needs the definition in the same translation unit. Under the harness
-    # J37_HAS_XSIMD is 0, so this extracts the exact std::tanh form the shipping
-    # build uses by default - the harness never measures the SIMD approximation,
-    # which is opt-in and deliberately not the default.
+    # j37Tanh is still extracted because SaturationCore's curves may call it, and
+    # under the harness J37_HAS_XSIMD is 0 - so this is the exact std::tanh form
+    # the shipping build uses by default. The harness never measures the SIMD
+    # approximation, which is opt-in and deliberately not the default.
+    #
+    # magneticHysteresis is deliberately NOT extracted any more. The engine moved
+    # to SaturationCore and stopped calling it, and continuing to extract it would
+    # let the harness keep rendering the old curve while the plugin rendered the
+    # new one - which is precisely the drift this file exists to prevent. Leaving
+    # it out means the harness fails to compile if anything still reaches for it.
     ("j37Tanh", "inline float j37Tanh"),
-    ("magneticHysteresis", "inline float magneticHysteresis"),
     ("softClip", "inline float softClip"),
     ("softKneeReductionDb", "inline float softKneeReductionDb"),
     ("onePoleCoefficient", "inline float onePoleCoefficient"),

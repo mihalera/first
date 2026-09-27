@@ -30,7 +30,9 @@
 
 #include <algorithm>
 #include <cmath>
+#include <cstddef>
 #include <cstdio>
+#include <iterator>
 #include <string>
 #include <vector>
 
@@ -102,7 +104,24 @@ void check (bool condition, const std::string& what)
         ++gFailures;
 }
 
-const int kDividers[SubharmonicGenerator::numStages] = { 2, 3, 4, 5, 6, 7, 8, 9 };
+/**
+    The divider series, taken from the generator itself rather than retyped.
+
+    This was `{ 2, 3, 4, 5, 6, 7, 8, 9 }` in a `[numStages]` array. While the
+    generator had eight stages that was exactly right; when it gained a ninth
+    (1/10) the array grew to nine slots and the initialiser did not, so the last
+    element was VALUE-INITIALISED TO ZERO. The test then measured 500/0 = inf Hz,
+    read the noise floor there, and reported the whole staircase as failing - a
+    harness bug that looked exactly like a DSP regression.
+
+    `std::size` on the generator's own array means the two cannot drift again:
+    adding a stage to the generator extends this automatically, and removing one
+    is a compile error rather than a silent zero.
+*/
+constexpr auto kDividerCount = static_cast<std::size_t> (SubharmonicGenerator::numStages);
+
+static_assert (kDividerCount == std::size (SubharmonicGenerator::dividers),
+               "numStages and the generator's dividers array must describe the same series");
 
 /**
     True when `frequency` is a frequency the signal legitimately contains on its
@@ -124,7 +143,7 @@ bool isIntrinsicFrequency (double frequency, double f0)
             return true;
 
     for (int d = 0; d < SubharmonicGenerator::numStages; ++d)
-        if (matches (f0 / kDividers[d]))
+        if (matches (f0 / SubharmonicGenerator::dividers[d]))
             return true;
 
     return false;
@@ -188,6 +207,12 @@ struct ChainReplica
     {
         updateCoefficients();
     }
+
+    // The shipping shaper. It replaced the single magneticHysteresis curve, so the
+    // replica has to carry one too - otherwise the harness renders a signal path
+    // the plugin no longer uses, and reports a regression that is only a
+    // divergence between the test and the engine.
+    SaturationCore saturation;
 
     void updateCoefficients()
     {
@@ -282,8 +307,19 @@ struct ChainReplica
         const float x = inputTrimmed * juce::Decibels::decibelsToGain (inputReductionDb);
 
         // ---- record head and magnetic shaper --------------------------------
+        //
+        //  This calls the SHIPPING shaper, not the old magneticHysteresis. The
+        //  engine moved to SaturationCore when the blend was added, and the harness
+        //  kept rendering the previous curve - so it was measuring a signal path
+        //  the plugin no longer uses, which is exactly the drift the harness exists
+        //  to prevent. SaturationCore is extracted into the generated header from
+        //  the same struct the plugin compiles.
+        //
+        //  BLEND is left at its default (tape only), so the curve this produces is
+        //  the one the plugin produces at a default setting.
         const float preDrive = x * (1.0f + driveAmount * 1.2f * speedBias * preDriveGain);
-        const float shapedCore = magneticHysteresis (preDrive, shaperDrive, shaperAsymmetry, hysteresisMemory);
+        saturation.setBlend (0.0f, 0.5f);
+        const float shapedCore = saturation.process (preDrive, shaperDrive, shaperAsymmetry);
         hysteresisMemory = shapedCore;
 
         // ---- SUBFUND --------------------------------------------------------
@@ -450,7 +486,8 @@ std::vector<float> renderGenerator (ChainSettings settings, double frequency, do
         const double time = static_cast<double> (i) / kSampleRate;
         const float input = static_cast<float> (amplitude * std::sin (kTwoPi * frequency * time));
         const float preDrive = input * (1.0f + chain.driveAmount * 1.2f * chain.speedBias * chain.preDriveGain);
-        const float shaped = magneticHysteresis (preDrive, chain.shaperDrive, chain.shaperAsymmetry, 0.0f);
+        chain.saturation.setBlend (0.0f, 0.5f);
+        const float shaped = chain.saturation.process (preDrive, chain.shaperDrive, chain.shaperAsymmetry);
         out.push_back (chain.generator.process (shaped, chain.driveAmount, settings.subfund,
                                                 static_cast<float> (kSampleRate)));
     }
@@ -482,14 +519,14 @@ void testUndertoneOrdering()
         double previous = 1.0e9;
         for (int s = 0; s < SubharmonicGenerator::numStages; ++s)
         {
-            const double frequency = 500.0 / kDividers[s];
+            const double frequency = 500.0 / SubharmonicGenerator::dividers[s];
             const double amplitude = measureToneAmplitude (signal, start, window, frequency);
-            std::printf ("       1/%d  %7.2f Hz  %7.2f dB%s\n", kDividers[s], frequency, toDb (amplitude),
+            std::printf ("       1/%d  %7.2f Hz  %7.2f dB%s\n", SubharmonicGenerator::dividers[s], frequency, toDb (amplitude),
                          s > 0 ? "" : "   <- top of the staircase");
 
             char label[160];
             std::snprintf (label, sizeof label, "at DRIVE %.2f, 1/%d is present and quieter than 1/%d",
-                           drive, kDividers[s], kDividers[s > 0 ? s - 1 : 0]);
+                           drive, SubharmonicGenerator::dividers[s], SubharmonicGenerator::dividers[s > 0 ? s - 1 : 0]);
             check (amplitude > 1.0e-6 && amplitude < previous, label);
             previous = amplitude;
         }
@@ -518,7 +555,7 @@ void reportUndertoneHarmonics (ChainSettings settings, double f0, const char* ca
 
     for (int s = 0; s < SubharmonicGenerator::numStages; ++s)
     {
-        const double undertone = f0 / kDividers[s];
+        const double undertone = f0 / SubharmonicGenerator::dividers[s];
         const double level = toDb (measureToneAmplitude (engaged, start, window, undertone));
 
         for (int harmonic = 2; harmonic <= 4; ++harmonic)
@@ -538,7 +575,7 @@ void reportUndertoneHarmonics (ChainSettings settings, double f0, const char* ca
 
             std::printf ("       1/%-2d %7.2f Hz (%6.1f dB)  ->  %dx = %7.1f Hz  %+6.1f dB from the "
                          "undertone, %+6.1f dB over the dry run\n",
-                         kDividers[s], undertone, level, harmonic, product,
+                         SubharmonicGenerator::dividers[s], undertone, level, harmonic, product,
                          engagedLevel - level, delta);
         }
     }
@@ -561,7 +598,7 @@ void testNoHarmonicsFromUndertones()
 
     for (int s = 0; s < SubharmonicGenerator::numStages; ++s)
     {
-        const double undertone = 400.0 / kDividers[s];
+        const double undertone = 400.0 / SubharmonicGenerator::dividers[s];
         const double undertoneLevel = toDb (measureToneAmplitude (engaged, start, window, undertone));
 
         for (int harmonic = 2; harmonic <= 4; ++harmonic)
@@ -587,7 +624,7 @@ void testNoHarmonicsFromUndertones()
             char label[160];
             std::snprintf (label, sizeof label,
                            "harmonic %d of 1/%d (%.1f Hz) sits %.1f dB below the undertone (want > 40)",
-                           harmonic, kDividers[s], product, margin);
+                           harmonic, SubharmonicGenerator::dividers[s], product, margin);
             check (margin > 40.0, label);
 
             worstDelta = juce::jmax (worstDelta, delta);
@@ -617,7 +654,7 @@ void testNoHarmonicsFromUndertones()
 
         for (int s = 0; s < SubharmonicGenerator::numStages; ++s)
         {
-            const double undertone = 400.0 / kDividers[s];
+            const double undertone = 400.0 / SubharmonicGenerator::dividers[s];
             const double level = toDb (measureToneAmplitude (signal, begin, window, undertone));
 
             for (int harmonic = 2; harmonic <= 4; ++harmonic)
@@ -665,7 +702,7 @@ void testSilenceIsSilent()
 
     for (int s = 0; s < SubharmonicGenerator::numStages; ++s)
     {
-        const double frequency = 500.0 / kDividers[s];
+        const double frequency = 500.0 / SubharmonicGenerator::dividers[s];
         const double amplitude = measureToneAmplitude (scenario, start, window, frequency);
         std::snprintf (label, sizeof label, "no undertone at %.1f Hz while silent (%.1f dB)",
                        frequency, toDb (amplitude));
