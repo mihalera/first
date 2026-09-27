@@ -316,6 +316,13 @@ private:
     juce::Label harmonicsLabel;
     juce::Label harmonicsReadout;
 
+    // Subharmonic tracking readout. The cascade reports the note it is locked to
+    // and how solidly, so the panel can answer the one question a depth knob
+    // cannot: is the stage actually generating, or is it idle because the
+    // detector has not found a note? A depth of 60 % means nothing without it.
+    juce::Label subfundLabel;
+    juce::Label subfundReadout;
+
     // Four metering surfaces, arranged two by two:
     //   top row    - the INPUT and OUTPUT level VU meters
     //   bottom row - one gain-reduction meter per glue compressor stage

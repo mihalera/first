@@ -165,7 +165,107 @@ Two switches that re-voice the **whole machine**:
 They are mutually exclusive by design, because a machine cannot be both. MODERN wins
 when both are set, which is the safer of the two to be wrong about.
 
+## Subharmonics
+
+Everything else in this plugin produces **overtones** - harmonics at integer multiples
+of the input frequency. This stage is the opposite: it produces the **subharmonic
+series**, so a 100 Hz note gains weight at 50, 33.3, 25, 20 Hz and so on down to 1/10.
+
+That cannot come out of a saturating curve, and it is worth being clear why, because it
+looks like it should. `tanh(sin(wt))` is a curve applied to a *value*, with no notion of
+time of its own, so its output is a function of the instantaneous input phase - and any
+such function has period `2pi/w`, which means its Fourier series contains only multiples
+of `w`. Subharmonics need a process with its **own** timescale that can fall out of step
+with the signal.
+
+On a real machine there are three such processes, and this models all three: bias
+leakage (the ultrasonic bias oscillator is imperfectly suppressed on playback), domain-
+wall motion (magnetic domains flip in groups, at a rate not locked to the signal), and
+scrape flutter (tape-to-head friction modulates the effective head speed). All three are
+the same shape mathematically - a slow, signal-dependent modulation of the transfer
+curve.
+
+### The cascade
+
+Nine stages produce `f0/2` through `f0/10`. The level of each is fixed by a **staircase**
+law: a partial at `f0/d` is fed at `2^-(d-1)`, which is exactly **-6 dB per step of
+division** - 1/2 on top, 1/3 at -6 dB, 1/4 at -12 dB, down to 1/10 at -48 dB. The law is
+written in terms of the **divider** rather than the stage index so that it cannot invert.
+
+DRIVE tilts the series toward its deep end without ever breaking that order: the tilt
+grows with the divider but by at most 1.875x across the whole 2...10 range, so no two
+adjacent stages can swap places at any drive setting.
+
+Every stage is a **pure sinusoid**, and deliberately the only waveform the stage ever
+produces. An earlier version ran each partial through `tanh` first - "downward
+saturation" - but a memoryless waveshaper on a sinusoid is a harmonic generator, and a
+loud one: at the default DRIVE the 1/2 undertone was returning its own third harmonic
+only 16 dB down. That is a harmonic OF a subharmonic, which is exactly the fault it
+looks like. DRIVE keeps its musical job of tilting the weights, but it no longer shapes
+the waveform.
+
+### Tracking: a phase-locked subdivision
+
+The cascade has to know what note is playing, and it has to stay locked to it over a
+long take. The reference is a **fundamental phase accumulator** in turns, advanced
+continuously from the tracked period and pulled toward each detected zero-crossing by a
+gentle 8 % of the error. Every stage's phase is then derived from that one master by
+division - which is what a subdivision *is*.
+
+This replaced an earlier scheme that aligned each stage against
+`crossingCount % divider` - a running **count** of detected crossings rather than a
+phase. That had two faults, and both are why the rewrite was worth doing:
+
+- **It drifted permanently.** The count only ever increases, so a single missed crossing
+  (a quiet passage, a transient the detector skips) shifted every stage's reference for
+  the rest of the session. Nothing brought it back in step with the signal.
+- **It was quantised wrongly.** For any stage whose divider did not divide the count
+  evenly, the target phase was simply the wrong value, and the stage was pulled
+  off-frequency every time a crossing arrived.
+
+Deriving every stage from one master phase fixes both: the reference is always current,
+and a missed crossing costs one correction rather than a permanent offset.
+
+### The gate
+
+Two independent statements decide whether there is a note to double, and they fail
+**differently** - which is why both are required:
+
+| Term | Question |
+| --- | --- |
+| **Presence** | Is there still *level* in the fundamental band? |
+| **Cycle confidence** | Is the detector still getting *cycles* from it? |
+
+A sustained note whose level drops keeps producing crossings long after it is quiet, and
+a noisy signal can hold the level up while producing no usable cycles at all. Requiring
+both means the cascade releases when **either** stops being true, so it cannot drone at
+the last tracked pitch with nothing playing - which is the fault the presence gate was
+originally added to fix, now closed from both sides.
+
+### Anti-phase protection
+
+The 1/2 stage carries the most energy in the cascade, so it is also the one that does the
+most damage if the two channels disagree: two octaves in **opposite phase** cancel when
+the mix is summed to mono, and the low end the control was asked for simply disappears.
+That is not a fault in either generator - each is correctly locked to its own channel's
+waveform - but it is a fault in the result.
+
+The protection runs once per **frame**, after both channels have generated their
+undertones, because it is a statement about the *pair*. It compares the two octave phases
+and, only when they genuinely disagree, nudges one master phase back toward the other by
+a clamped amount. An already-aligned pair is untouched, and the nudge is small enough
+that it can never break the lock the PLL is holding.
+
+### Tracking readout
+
+The panel reports the note the cascade is locked to and how solidly, because a depth knob
+at 60 % looks identical whether the generator is producing a clean undertone series or
+sitting idle because the detector never found a note. The confidence percentage
+distinguishes those two states, and the tracked frequency says **which** note it locked
+to - which is how a user finds out that a mix is being read an octave low.
+
 ## Signal path
+
 
 
 Input trim (dB) -> input glue compressor (always on) ->
@@ -247,7 +347,7 @@ rest stays silent.
 | Wow | 0 to 100 % | Slow transport pitch wander |
 | Flutter | 0 to 100 % | Fast transport shimmer |
 | Mix | 0 to 100 % | True dry/wet crossfade: 0 % is dry, 100 % is fully tape. Displayed as a percentage; default 50 % |
-| Sub-Fundamental (SUBFUND) | 0 to 100 % | Subharmonic saturation: an eight-stage undertone cascade (1/2 ... 1/9 of the tracked bass fundamental) summed under the tape signal, per channel. Default OFF |
+| Sub-Fundamental (SUBFUND) | 0 to 100 % | Subharmonic saturation: a nine-stage undertone cascade (1/2 ... 1/10 of the tracked bass fundamental) summed under the tape signal, per channel. Default OFF |
 | Delay | 0 to 250 ms | The spacing of a second playback head. The tape takes time to travel between the record and playback gaps, so the signal returns as a slap rather than a dub echo. The repeat is taken after the tape, so it inherits the machine's own bandwidth and saturation. Default 0 ms (no second head) |
 | Delay Level | 0 to 100 % | How loud the second head's output is. Each pass round the tape loses top end, the way a real repeat does. Default 0 % |
 | ST Offset | -500 to +500 us | Inter-channel time offset. Real stereo decks record the two tracks with separate head gaps a fraction of a millimetre apart and the tape skews across them, so the channels are never perfectly aligned. Positive lags the right channel. Default 0 us |

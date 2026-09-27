@@ -1606,43 +1606,58 @@ void FirstAudioProcessor::resetSampleRateDependentState()
     if (toneParam != nullptr)
         updateToneCoefficients (toneParam->load(), sampleRate);
 
+    // The control ramp: 20 ms. Every control-derived coefficient in the wet path
+    // uses this one window, because it is the shortest that is reliably inaudible
+    // as a step while still feeling immediate on a knob. Naming it means the
+    // three other, deliberately DIFFERENT windows in this function (the 750 ms
+    // hiss gate and the 150 ms formula switch) cannot be mistaken for it.
+    constexpr double controlRampSeconds = 0.02;
+
     // Re-time the coefficient ramps for the new rate. The playback poles start from
     // neutral non-zero values, so the first wet block is audible while the exact
     // per-block targets are reached through the normal 20 ms ramps.
-    toneShelfGainSmoothed.reset (sampleRate, 0.02);
+    toneShelfGainSmoothed.reset (sampleRate, controlRampSeconds);
     toneShelfGainSmoothed.setCurrentAndTargetValue (toneShelfGain);
-    toneShelfBoostSmoothed.reset (sampleRate, 0.02);
+    toneShelfBoostSmoothed.reset (sampleRate, controlRampSeconds);
     toneShelfBoostSmoothed.setCurrentAndTargetValue (toneShelfBoost);
-    preDriveGainSmoothed.reset (sampleRate, 0.02);
+    preDriveGainSmoothed.reset (sampleRate, controlRampSeconds);
     preDriveGainSmoothed.setCurrentAndTargetValue (preDriveGain);
-    toneLpSmoothed.reset (sampleRate, 0.02);
+    toneLpSmoothed.reset (sampleRate, controlRampSeconds);
     toneLpSmoothed.setCurrentAndTargetValue (toneLpAc);
-    flutterScaleSmoothed.reset (sampleRate, 0.02);
+    flutterScaleSmoothed.reset (sampleRate, controlRampSeconds);
     flutterScaleSmoothed.setCurrentAndTargetValue (flutterScale);
 
-    driveAmountSmoothed.reset (sampleRate, 0.02);
-    hfPostSmoothed.reset (sampleRate, 0.02);
-    headGapSmoothed.reset (sampleRate, 0.02);
+    driveAmountSmoothed.reset (sampleRate, controlRampSeconds);
+    hfPostSmoothed.reset (sampleRate, controlRampSeconds);
+    headGapSmoothed.reset (sampleRate, controlRampSeconds);
     // The noise floor ramps far slower than the controls: its gain is also the
     // transport gate (see processTapeEngine), so this window is how long the floor
     // takes to coast down when the machine comes to rest and back up when it spins
     // again - a fade, never a mute-switch drop.
-    hissGainSmoothed.reset (sampleRate, 0.75);
-    shaperDriveSmoothed.reset (sampleRate, 0.02);
-    shaperAsymmetrySmoothed.reset (sampleRate, 0.02);
+    // The transport gate's own window: 750 ms. Deliberately far slower than the
+    // control ramp - it is the time the noise floor takes to coast down when the
+    // machine comes to rest, which should read as a fade rather than a mute.
+    constexpr double transportGateSeconds = 0.75;
+    hissGainSmoothed.reset (sampleRate, transportGateSeconds);
+    shaperDriveSmoothed.reset (sampleRate, controlRampSeconds);
+    shaperAsymmetrySmoothed.reset (sampleRate, controlRampSeconds);
 
     // The formula-switch ramp is deliberately slower than the control ramps: it has to
     // move the head-damping pole by up to 8 kHz without that travel being an audible
     // sweep. 150 ms is long enough to read as a morph and short enough that switching
     // formula still feels immediate.
-    headDampingSwitchSmoothed.reset (sampleRate, 0.15);
+    // The formula switch's own window: 150 ms. Slower than the control ramp because
+    // a formula change moves the head-damping pole by up to 8 kHz, and 20 ms of
+    // that travel is an audible sweep rather than a morph.
+    constexpr double formulaSwitchSeconds = 0.15;
+    headDampingSwitchSmoothed.reset (sampleRate, formulaSwitchSeconds);
 
     // The subharmonic generators hold a bi-stable state and a follower, so they carry
     // across blocks and have to start clean; the depth control ramps like every other
     // gain so that moving it cannot step the phase-locked oscillator.
     subharmonicL.reset();
     subharmonicR.reset();
-    subFundamentalSmoothed.reset (sampleRate, 0.02);
+    subFundamentalSmoothed.reset (sampleRate, controlRampSeconds);
     subFundamentalSmoothed.setCurrentAndTargetValue (
         subFundamentalParam != nullptr ? subFundamentalParam->load() : 0.0f);
 
@@ -2614,8 +2629,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //  see that stage's current-block reduction; it uses the previous block's
     //  value instead, which at one-block latency is indistinguishable musically.
     // -----------------------------------------------------------------------
-    const float squeezeDriveSmoothing = 1.0f - std::exp (
-        -1.0f / (engineSampleRate * 0.2f));
+    // 200 ms, stated as a duration rather than as a reciprocal.
+    const float squeezeDriveSmoothing = onePoleCoefficient (200.0f, engineSampleRate);
 
     // The static calibration stays as designed: the slow programme compensator after
     // the output stage already restores any residual broadband loss against the
@@ -2675,15 +2690,15 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // Slow one-pole coefficient for the compensation itself. Deliberately far slower
     // than either compressor, so the correction settles on the programme level instead
     // of pumping along with the transients.
-    const float compensationCoefficient = 1.0f - std::exp (
-        -1.0f / (engineSampleRate * 0.45f));
+    // 450 ms, stated as a duration rather than as a reciprocal.
+    const float compensationCoefficient = onePoleCoefficient (450.0f, engineSampleRate);
 
     // VU ballistics (300 ms) for the input and output meters. The coefficient is a
     // constant for the whole block - it depends only on the sample rate - so it is
     // computed once here instead of re-evaluating an exp() twice per sample inside
     // the loop below.
-    const float vuBallisticCoefficient = 1.0f - std::exp (
-        -1.0f / (engineSampleRate * 0.3f));
+    // 300 ms, stated as a duration rather than as a reciprocal.
+    const float vuBallisticCoefficient = onePoleCoefficient (300.0f, engineSampleRate);
 
     // -------------------------------------------------------------------------
     //  Glue compressor operating points.
@@ -3026,8 +3041,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // droop) and a slower release (it takes longer to recover), both
             // scaled by the SAG control so 0 leaves the envelope still.
             const float sagAmountNow = sagSmoothed.getCurrentValue();
-            const float sagAttack = 1.0f - j37math::exp (-1.0f / (engineSampleRate * 0.060f));
-            const float sagRelease = 1.0f - j37math::exp (-1.0f / (engineSampleRate * 0.240f));
+            // onePoleCoefficient() takes MILLISECONDS and does the same conversion;
+            // naming the durations here is what keeps 60 ms and 240 ms from being
+            // read as seconds.
+            const float sagAttack = onePoleCoefficient (60.0f, engineSampleRate);
+            const float sagRelease = onePoleCoefficient (240.0f, engineSampleRate);
             // The demand the supply sees is the signal ARRIVING at the stage, not
             // what leaves it: a real supply droops in proportion to how hard it is
             // being asked to work, which is the input to the gain stage.
@@ -3644,8 +3662,10 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         // A very fast attack catches transients before they overshoot; the release is
         // short enough to recover between events without pumping on sustained material.
         const auto limiterCeiling = 0.94f;
-        const auto detectorAttack = 1.0f - std::exp (-1.0f / (engineSampleRate * 0.0005f));
-        const auto detectorRelease = 1.0f - std::exp (-1.0f / (engineSampleRate * 0.080f));
+        // 0.5 ms attack, 80 ms release - stated as durations rather than as
+        // reciprocals, which is what they are.
+        const auto detectorAttack = onePoleCoefficient (0.5f, engineSampleRate);
+        const auto detectorRelease = onePoleCoefficient (80.0f, engineSampleRate);
         const auto detectorCoefficient = framePeak > preLimiterDetector ? detectorAttack
                                                                         : detectorRelease;
         preLimiterDetector += (framePeak - preLimiterDetector) * detectorCoefficient;
@@ -3655,9 +3675,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         const auto requiredGain = preLimiterDetector > limiterCeiling
                                     ? limiterCeiling / preLimiterDetector
                                     : 1.0f;
+        // 0.4 ms catch, 120 ms recovery. The asymmetry is the point: a limiter
+        // must catch instantly and let go slowly, or it pumps.
         const auto gainSmoothing = requiredGain < limiterGain
-                                     ? 1.0f - std::exp (-1.0f / (engineSampleRate * 0.0004f))
-                                     : 1.0f - std::exp (-1.0f / (engineSampleRate * 0.120f));
+                                     ? onePoleCoefficient (0.4f, engineSampleRate)
+                                     : onePoleCoefficient (120.0f, engineSampleRate);
         limiterGain += (requiredGain - limiterGain) * gainSmoothing;
 
         for (int channel = 0; channel < activeChannels; ++channel)

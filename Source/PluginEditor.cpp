@@ -229,13 +229,42 @@ namespace
                     const UiPalette& palette, float cornerSize)
     {
         const auto rect = area.toFloat();
-        juce::ColourGradient fill (palette.panel.brighter (0.08f), rect.getX(), rect.getY(),
-                                  palette.panel.darker (0.08f), rect.getRight(), rect.getBottom(), false);
+
+        // ------------------------------------------------------------------
+        //  Drop shadow. The light source is up-and-left, consistently with the
+        //  knob highlights and the screw slots, so the shadow falls down-and-
+        //  right. Drawn as three progressively wider, fainter rounded rectangles
+        //  rather than a blur: at this size a real blur is not distinguishable
+        //  and would cost a melatonin_blur pass on every frame.
+        // ------------------------------------------------------------------
+        for (int layer = 3; layer >= 1; --layer)
+        {
+            const auto spread = static_cast<float> (layer) * 1.5f;
+            g.setColour (juce::Colours::black.withAlpha (0.045f));
+            g.fillRoundedRectangle (rect.translated (spread * 0.6f, spread)
+                                        .expanded (spread * 0.5f),
+                                    cornerSize + spread * 0.5f);
+        }
+
+        // The face: a subtle vertical gradient, brighter at the top because that
+        // is where the light lands.
+        juce::ColourGradient fill (palette.panel.brighter (0.10f), rect.getX(), rect.getY(),
+                                  palette.panel.darker (0.10f), rect.getX(), rect.getBottom(), false);
         g.setGradientFill (fill);
         g.fillRoundedRectangle (rect, cornerSize);
+
+        // The top-edge highlight: one pixel, inset past the corners so it does not
+        // fight the rounded edge. This is what makes the panel read as RAISED.
+        g.setColour (palette.panel.brighter (0.30f).withAlpha (0.55f));
+        g.drawLine (rect.getX() + cornerSize, rect.getY() + 0.5f,
+                    rect.getRight() - cornerSize, rect.getY() + 0.5f, 1.0f);
+
+        // The outline, and an inner seam. The seam is darker than the face rather
+        // than lighter - it is the shadow the panel casts on the chassis, so it
+        // belongs on the inside of the border.
         g.setColour (palette.border);
         g.drawRoundedRectangle (rect.reduced (0.5f), cornerSize, 1.0f);
-        g.setColour (palette.panel.brighter (0.12f).withAlpha (0.8f));
+        g.setColour (palette.panel.darker (0.35f).withAlpha (0.7f));
         g.drawRoundedRectangle (rect.reduced (3.0f), juce::jmax (1.0f, cornerSize - 2.0f), 0.7f);
     }
 }
@@ -1193,6 +1222,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 true, juce::Justification::centredRight);
     styleLabel (harmonicsReadout, "even / odd", 8.0f, paletteFor (false).secondary,
                 false, juce::Justification::centredRight);
+    styleLabel (subfundLabel, "SUBFUND TRACK", 10.0f, paletteFor (false).accent,
+                true, juce::Justification::centredRight);
+    styleLabel (subfundReadout, "idle", 8.0f, paletteFor (false).secondary,
+                false, juce::Justification::centredRight);
 
     addAndMakeVisible (brandLabel);
     addAndMakeVisible (titleLabel);
@@ -1211,6 +1244,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (compressorReadout);
     addAndMakeVisible (harmonicsLabel);
     addAndMakeVisible (harmonicsReadout);
+    addAndMakeVisible (subfundLabel);
+    addAndMakeVisible (subfundReadout);
 
     // These two lists are the grid's vocabulary, not its layout: their order no longer
     // decides which row anything sits on, or even whether it is on screen. tabSpecs
@@ -2143,6 +2178,8 @@ void FirstAudioProcessorEditor::applyTheme()
     compressorReadout.setColour (juce::Label::textColourId, palette.secondary);
     harmonicsLabel.setColour (juce::Label::textColourId, palette.accent);
     harmonicsReadout.setColour (juce::Label::textColourId, palette.secondary);
+    subfundLabel.setColour (juce::Label::textColourId, palette.accent);
+    subfundReadout.setColour (juce::Label::textColourId, palette.secondary);
     compressorMeterIn.setDarkTheme (darkTheme);
     compressorMeterOut.setDarkTheme (darkTheme);
 
@@ -2159,21 +2196,38 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     g.fillAll (palette.background);
 
     const auto layout = getEditorLayout();
+    // ------------------------------------------------------------------
+    //  Chassis grain.
+    //
+    //  Drawn BEFORE the section panels so it sits on the chassis rather than over
+    //  the controls - the old version painted its 18 rules across the whole
+    //  window, which put lines through every panel and read as scratches rather
+    //  than as a surface.
+    //
+    //  Two passes: a fine 3 px weave for the texture, and a much fainter 12 px
+    //  one to break up the regularity. A single period reads as a pattern; two
+    //  beating against each other read as brushed metal.
+    // ------------------------------------------------------------------
+    const auto chassis = getLocalBounds().reduced (8).toFloat();
+    const auto grainAlpha = darkTheme ? 0.016f : 0.022f;
+    const auto grainColour = palette.text.withAlpha (grainAlpha);
+
+    g.setColour (grainColour);
+    for (float y = chassis.getY() + 2.0f; y < chassis.getBottom(); y += 3.0f)
+        g.drawHorizontalLine (juce::roundToInt (y),
+                              chassis.getX() + 6.0f, chassis.getRight() - 6.0f);
+
+    g.setColour (palette.text.withAlpha (grainAlpha * 0.6f));
+    for (float y = chassis.getY() + 7.0f; y < chassis.getBottom(); y += 12.0f)
+        g.drawHorizontalLine (juce::roundToInt (y),
+                              chassis.getX() + 6.0f, chassis.getRight() - 6.0f);
+
+
     drawPanel (g, getLocalBounds().reduced (8), palette, 7.0f);
     drawPanel (g, layout.header, palette, 5.0f);
     drawPanel (g, layout.deck, palette, 5.0f);
     drawPanel (g, layout.controls, palette, 5.0f);
     drawPanel (g, layout.meters, palette, 5.0f);
-
-    const auto outer = getLocalBounds().reduced (8);
-    const auto grainColour = palette.text.withAlpha (darkTheme ? 0.025f : 0.035f);
-    g.setColour (grainColour);
-    for (int line = 0; line < 18; ++line)
-    {
-        const auto y = outer.getY() + 9 + line * 4;
-        g.drawHorizontalLine (y, static_cast<float> (outer.getX() + 8),
-                              static_cast<float> (outer.getRight() - 8));
-    }
 
     g.setColour (palette.accent.withAlpha (0.85f));
     g.fillRect (layout.header.getX() + 17, layout.header.getY() + 14, 3,
@@ -2437,6 +2491,41 @@ void FirstAudioProcessorEditor::timerCallback()
                                 : evenRatio >= oddRatio ? harmonicPalette.status
                                                         : harmonicPalette.needle);
 
+    // ------------------------------------------------------------------
+    //  Subharmonic tracking readout.
+    //
+    //  Reports the note the cascade is locked to and how solidly. This is the
+    //  one piece of information the panel could not previously give: a depth
+    //  knob at 60 % looks identical whether the generator is producing a clean
+    //  undertone series or sitting idle because the detector never found a note
+    //  to derive one from. The confidence is what distinguishes those two
+    //  states, and the tracked frequency says WHICH note it locked to - which is
+    //  how a user finds out that a mix is being read an octave low.
+    // ------------------------------------------------------------------
+    const auto trackedHz = audioProcessor.getSubfundTrackedHz();
+    const auto confidence = audioProcessor.getSubfundConfidence();
+
+    if (confidence < 0.05f || trackedHz <= 0.0f)
+    {
+        subfundReadout.setText ("idle - no note tracked", juce::dontSendNotification);
+        subfundReadout.setColour (juce::Label::textColourId, harmonicPalette.secondary);
+    }
+    else
+    {
+        // The confidence is shown as a percentage rather than hidden, because a
+        // partial lock (say 40 %) is a real and useful state: the cascade IS
+        // generating, but it is following a signal that is not steady enough for
+        // a clean track, and the user should be able to see that.
+        subfundReadout.setText (juce::String (trackedHz, 1) + " Hz   "
+                                    + juce::String (juce::roundToInt (confidence * 100.0f)) + " %",
+                                juce::dontSendNotification);
+        // Green while the track is solid, amber while it is partial: the colour is
+        // the readout's own confidence bar.
+        subfundReadout.setColour (juce::Label::textColourId,
+                                  confidence > 0.75f ? harmonicPalette.status
+                                                     : harmonicPalette.needle);
+    }
+
     // Animated presentation state. Everything here is derived from audio
     // telemetry, so the panel visibly reacts to what the plugin is doing.
     glowPhase += 0.13f;
@@ -2612,6 +2701,12 @@ void FirstAudioProcessorEditor::resized()
 
     harmonicsLabel.setBounds (harmonicsLeft, layout.deck.getY() + 70, harmonicsWidth, 15);
     harmonicsReadout.setBounds (harmonicsLeft, layout.deck.getY() + 88, harmonicsWidth, 14);
+
+    // The subfund readout takes the switches row's remaining right-hand space,
+    // immediately below the harmonics pair. It is the same width so the two
+    // readouts line up as a column rather than as two unrelated labels.
+    subfundLabel.setBounds (harmonicsLeft, layout.deck.getY() + 108, harmonicsWidth, 14);
+    subfundReadout.setBounds (harmonicsLeft, layout.deck.getY() + 122, harmonicsWidth, 13);
 
     // TRANSPORT sits after INSTRUMENT on the switches row, and GL moves to the right
     // end of the row just left of the harmonics readout, so the chain fits the deck:
