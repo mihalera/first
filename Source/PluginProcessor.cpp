@@ -486,11 +486,12 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
         int   instrument = 0;      // choice index: Master Bus .. Drums
         int   oversampling = 0;    // choice index: Off / 2x / 4x / 8x
 
-        // Saturation core: the blend of tape, valve, cassette and amp, and the
-        // amp voicing. Added after the eighteen presets above were written, so
-        // every one of them leaves these at the machine defaults - pure tape,
-        // no voicing - and still loads the machine it was designed on.
-        float blend      = 0.0f;   // tape -> valve -> cassette -> amp, 0..1
+        // Saturation core: the blend of tape, valve, cassette, amp, transformer
+        // and digital, and the amp voicing. Added after the eighteen presets
+        // above were written, so every one of them leaves these at the machine
+        // defaults - pure tape, no voicing - and still loads the machine it was
+        // designed on.
+        float blend      = 0.0f;   // tape -> valve -> cassette -> amp -> transformer -> digital
         float shape      = 0.50f;  // how concentrated that blend is
         float ampBias    = 0.50f;  // the input stage's DC operating point
         float sag        = 0.0f;   // supply droop under demand
@@ -1038,20 +1039,24 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     //  Saturation blend.
     //
     //  The plugin's shaper has always been ONE curve - magnetic hysteresis. These
-    //  two controls turn it into a blend of the four mechanisms a real analogue
-    //  chain uses: tape, valve, cassette and amp. See SaturationCore for what each
-    //  one is and why they are genuinely different shapes.
+    //  two controls turn it into a blend of six mechanisms: the five a real
+    //  analogue chain runs through - tape, valve, cassette, amp, transformer - and
+    //  the converter that stands in for all of them when the programme is going
+    //  through a box instead of a machine. See SaturationCore for what each one is
+    //  and why they are genuinely different shapes.
     //
-    //  BLEND sweeps the weighting across the four in a fixed order, tape -> valve
-    //  -> cassette -> amp, so the control has one direction. Default 0 - pure
-    //  tape, which is exactly what every earlier build did, so an existing session
-    //  or preset loads the machine it was saved with.
+    //  BLEND sweeps the weighting across the six in a fixed order, tape -> valve
+    //  -> cassette -> amp -> transformer -> digital, so the control has one
+    //  direction: the order is the signal path, and the right end is where the
+    //  machines stop and the conversion begins. Default 0 - pure tape, which is
+    //  exactly what every earlier build did, so an existing session or preset
+    //  loads the machine it was saved with.
     // -------------------------------------------------------------------------
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "blend", 1 }, "Blend",
                                                             percentageRange (0.50f), 0.0f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
     // SHAPE decides how concentrated the blend is: low picks one principle at a
-    // time (an obvious, focused character), high spreads the weighting so all four
+    // time (an obvious, focused character), high spreads the weighting so all six
     // contribute and the result reads as one compound machine. Default 50 - an
     // even spread, which is the useful starting point once BLEND is moved.
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "shape", 1 }, "Shape",
@@ -2089,7 +2094,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //  All six are read once per block and fed to smoothers, so none of them can
     //  step the curve. The blend weights themselves are applied inside the core
     //  from the SMOOTHED values, per sample, so sweeping BLEND morphs the
-    //  harmonics continuously rather than switching between four curves.
+    //  harmonics continuously rather than switching between six curves.
     // -----------------------------------------------------------------------
     const auto blendAmount = blendParam != nullptr ? blendParam->load() : 0.0f;
     const auto shapeAmount = shapeParam != nullptr ? shapeParam->load() : 0.5f;
@@ -2215,6 +2220,14 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     limiterDetectorRelease = onePoleCoefficient (80.0f, engineSampleRate);
     limiterCatchCoefficient = onePoleCoefficient (0.4f, engineSampleRate);
     limiterRecoveryCoefficient = onePoleCoefficient (120.0f, engineSampleRate);
+    // The ceiling is a level, not a time constant, so it does not belong with the
+    // four one-pole coefficients above - but it is set here so the hand-off point
+    // and the coefficients that act on it are read from one place. It mirrors
+    // softClip's knee, which is the only value that makes this stage's own comment
+    // true, so that knee and this number have to move together: softClip declares
+    // its knee as a function-local constexpr, so a shared constant would have to
+    // be lifted out of a function the DSP harness cuts up on its own.
+    limiterCeiling = 0.70f;
 
     // Transport: the ramp target is 0 for STOP and 1 for PLAY or START. The
     // coefficient sets how fast it gets there - a spin-up takes about a second, which
@@ -3152,14 +3165,15 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             //
             //  This replaces the single magneticHysteresis call. It runs the same
             //  DRIVE and BIAS arguments the old shaper took - so both controls keep
-            //  their meaning and their existing calibration - but weights four
-            //  distinct curve shapes together: tape, valve, cassette and amp. See
-            //  SaturationCore for what each one is and why they are genuinely
-            //  different mechanisms rather than four settings of one.
+            //  their meaning and their existing calibration - but weights six
+            //  distinct curve shapes together: tape, valve, cassette, amp,
+            //  transformer and digital. See SaturationCore for what each one is
+            //  and why they are genuinely different mechanisms rather than six
+            //  settings of one.
             //
             //  The weights come from the SMOOTHED blend controls and are applied
             //  per sample, so sweeping BLEND morphs the harmonics continuously
-            //  instead of stepping between four curves on a block boundary.
+            //  instead of stepping between six curves on a block boundary.
             //
             //  SAG acts on the DRIVE, not on the output, because that is what the
             //  supply does: it is the gain that droops under sustained demand. The

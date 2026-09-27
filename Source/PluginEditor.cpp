@@ -1470,21 +1470,27 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "position, not a change.") + hints;
             if (id == "blend")
                 return juce::String ("BLEND - which saturation PRINCIPLE the machine bends "
-                       "with. The shaper is not one curve: it is four, blended. Left is "
+                       "with. The shaper is not one curve: it is six, blended. Left is "
                        "magnetic TAPE (memory, gentle, warm), then VALVE (soft "
                        "asymmetric compression, even-harmonic warmth), then CASSETTE "
-                       "(a hard early knee on narrow tape, small and loud) and right "
-                       "is AMP (a high-gain guitar input, hard and odd-harmonic - the "
-                       "one that bites). Every curve is normalised so the blend cannot "
-                       "change the level, only the character. Default 0 percent - pure "
-                       "tape, exactly what earlier builds did.") + hints;
+                       "(a hard early knee on narrow tape, small and loud), then AMP "
+                       "(a high-gain guitar input, hard and odd-harmonic - the one "
+                       "that bites), then TRANSFORMER (a passive input transformer: "
+                       "pure analogue but no machine, and the only principle that "
+                       "bends the low end first, because a saturating primary is a "
+                       "series impedance and a series impedance bites the bottom of "
+                       "the band) and right is DIGITAL (a converter's hard ceiling "
+                       "with a held code: the sweep ends where the machines stop and "
+                       "the conversion begins). Every curve is normalised so the "
+                       "blend cannot change the level, only the character. Default 0 "
+                       "percent - pure tape, exactly what earlier builds did.") + hints;
             if (id == "shape")
                 return juce::String ("SHAPE - how concentrated the BLEND is. Low picks "
                        "one principle at a time, so the sweep snaps from tape to valve "
-                       "to cassette to amp and each is obvious. High spreads the "
-                       "weighting so all four contribute at every position and the "
-                       "result reads as one compound machine rather than four. Default "
-                       "50 percent.") + hints;
+                       "to cassette to amp to transformer to digital and each is "
+                       "obvious. High spreads the weighting so all six contribute at "
+                       "every position and the result reads as one compound machine "
+                       "rather than six. Default 50 percent.") + hints;
             if (id == "amp_bias")
                 return juce::String ("AMP BIAS - the input valve's DC operating point, "
                        "which is the single most effective control on a real amp's "
