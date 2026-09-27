@@ -1531,6 +1531,33 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // after a rate switch is not coloured by a stale squeeze from the old rate.
     squeezeSaturationDrive = 0.0f;
 
+    // The new stages' state. Everything that carries signal history has to start
+    // clean on a rate change or the first block carries a stale tail - which for a
+    // reverb means an audible burst of the previous session's room.
+    inputStageL.reset();
+    inputStageR.reset();
+    tapeConditionL.reset();
+    tapeConditionR.reset();
+    vinylL.reset();
+    vinylR.reset();
+
+    bbdNoiseStateL = 0.0f;
+    bbdNoiseStateR = 0.0f;
+    bbdLowL = bbdLowR = 0.0f;
+    lofiLowL = lofiLowR = 0.0f;
+    lofiHoldL = lofiHoldR = 0.0f;
+    lofiCounter = 0;
+    wearModulation = 0.0f;
+
+    // The reverb is prepared for the rate (its comb lengths scale with it, so the
+    // room keeps the same physical size) and then flushed.
+    reverb.prepare (sampleRateToUse);
+    reverb.reset();
+
+    // The vinyl stage's generator gets its own seed, separate from the tape hiss,
+    // so the two noise sources are uncorrelated.
+    vinylNoiseState = 0x9e3779b9u;
+
     // The tape noise generator is a per-instance LCG so that every plugin instance
     // and every render pass is deterministic, rather than sharing one thread_local
     // stream whose content would depend on how many instances happen to exist.
@@ -2495,6 +2522,24 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // for the "noise while paused with Wow and Flutter at zero" report: the floor
     // was the only ungated always-on source left in the engine.
     const float gatedHissGain = hissGain * transportActivityGate;
+
+    // The two slow random sources - the MECHANICS drift and the WEAR contact
+    // noise - are advanced ONCE per block, not per sample. Both are sub-audio
+    // (the drift targets change every 120 ms, the contact noise follows over about
+    // half a second), so a block-rate update is not an approximation, it is the
+    // correct rate: a per-sample update would compute the same number a thousand
+    // times and then use it once.
+    //
+    // They share the tape noise generator rather than carrying their own, because
+    // a second LCG would double the state for no benefit - the two sources are
+    // already decorrelated by being sampled at different moments.
+    const int blockSamples = juce::jmax (1, numSamples);
+    tapeConditionL.updateSlowSources (mechanicsSmoothed.getCurrentValue(),
+                                      wearSmoothed.getCurrentValue(),
+                                      blockSamples, noiseState);
+    tapeConditionR.updateSlowSources (mechanicsSmoothed.getCurrentValue(),
+                                      wearSmoothed.getCurrentValue(),
+                                      blockSamples, noiseState);
 
     // The NOISE control trims the floor on top of the formula's own figure: 0.5 is
     // unity, so the knob starts neutral and the stock's own character is unchanged

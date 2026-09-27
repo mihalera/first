@@ -25,7 +25,148 @@ It provides a tape-saturation mastering workflow with:
 - four VU-style meters: input and output level, plus one reduction meter per compressor
 - a vintage analog-inspired UI with animated knobs, reel and level meters
 
+## Saturation: four principles, not one curve
+
+A tape machine is **one** of the ways analogue electronics bend a signal, and for a
+long time this plugin was built around that one curve. The shaper is now a blend of
+the four mechanisms a real chain uses, and they are genuinely different shapes:
+
+| Principle | Mechanism | Character |
+| --- | --- | --- |
+| **TAPE** | Magnetic hysteresis, with a **memory** term - the medium's state depends on where it has been | Gentle at low level; the asymmetry is what makes the even harmonics |
+| **VALVE** | Thermionic: a soft, strongly asymmetric knee with a wide transition | Even-dominant, and it compresses rather than clips - it thickens before it distorts |
+| **CASSETTE** | Narrow gauge, low bias: a **hard, early knee** with very limited headroom and a low-frequency bump | "Everything is louder and smaller" |
+| **AMP** | A guitar amplifier's input stage: a high-gain, nearly symmetric **cascade** | Clips hard, strong odd harmonics - the one that bites |
+
+Blending them is not a gimmick: a real chain **is** this. A guitar goes into an amp,
+the amp into a desk and a tape machine, a valve preamp sits somewhere in the path, and
+the whole thing may end up on a cassette.
+
+**BLEND** sweeps the weighting across the four in a fixed order (tape → valve →
+cassette → amp) so the control has one direction the ear can learn. **SHAPE** decides
+how concentrated it is: low picks one principle at a time, high spreads the weighting
+so all four contribute and the result reads as one compound machine.
+
+Every curve is normalised to **unity slope at the origin**, exactly like the original
+tape shaper, so the blend cannot change the level - only the shape. That property is
+what keeps DRIVE meaning what it says.
+
+Default BLEND is 0 % - pure tape, which is exactly what every earlier build did.
+
+## Guitar-amplifier features
+
+A saturation curve alone does not sound like an amplifier. What does is the behaviour
+**around** the curve:
+
+- **SAG** - the supply droops under sustained demand, so the gain falls a little and
+  then recovers. It is why an amp "gives" under a held chord and why the attack feels
+  spongy rather than immediate. Short transients never move it; only sustained
+  programme does.
+- **PRESENCE** - the negative-feedback network's top-end lift, the upper-mid bite that
+  makes an amp cut through. It sits **after** the clipping, so it sharpens harmonics
+  already present rather than generating new ones. 50 % is flat and neutral.
+- **CABINET** - the speaker and its box: a **resonant** low-pass, with a peak around
+  110 Hz from the cabinet's tuning and a roll-off from the cone's mass. Without it a
+  clipped signal is fizzy; with it, it reads as a speaker. The voicing fades in with
+  however much AMP is in the blend.
+- **AMP BIAS** - the input valve's DC operating point, the single most effective
+  control on a real amp's character. Cold is tight and slightly crossover-distorted,
+  hot is fat and compressed.
+
+All four are off or neutral by default, so a pure tape setting is untouched.
+
+## Preamp and distortion
+
+Two gain stages **in front of** the machine, and they do different jobs:
+
+- **PREAMP** is a valve-ish input stage: a gentle soft clip, a transformer's low-cut
+  and a slight top-end lift. It is a **stage**, not a gain - driving it changes the
+  colour as much as the level, and it is level-matched internally so INPUT stays the
+  control that sets the operating level.
+- **DISTORTION** is a diode clipper: a hard knee with a pre-gain, deliberately abrupt.
+  Where the saturation core bends, this **breaks**.
+
+Both sit ahead of the tape so the machine hears their output - which is the whole
+point: a distorted guitar recorded to tape sounds like a record rather than a pedal
+precisely because the tape smooths what the pedal produced.
+
+## Tape condition: flux, wear, mechanics
+
+Three separate physical facts about the machine, and they are genuinely separate
+rather than three amounts of the same thing:
+
+| Control | What it is | What it does |
+| --- | --- | --- |
+| **FLUX** | How deep into the oxide the record head magnetises | More flux is more low end and a stronger hysteresis memory; less is thin and bright. It is a different axis from DRIVE - DRIVE is how hard the signal is pushed into the curve, FLUX is how much of the medium's depth is used |
+| **WEAR** | The state of the heads and the tape | A rounded gap and patchy oxide lose top end and add contact noise. It reads as "an old machine", not as a fault |
+| **MECHANICS** | How well the transport holds its speed | Good order means smooth, periodic wow and flutter; dry bearings and a slack belt mean irregular drift and the occasional slip |
+
+MECHANICS and WEAR are folded into the modulation that already exists rather than
+being separate oscillators, because that is what they do - they make it less **even**,
+not more. Their slow random sources are updated **once per block**, which is not an
+approximation: both are sub-audio, so a per-sample update would compute the same
+number a thousand times and use it once.
+
+## Reverb and delay
+
+The two time-based stages live on their own tab because they are the same kind of
+decision.
+
+**Reverb** is a plate/room built from four Schroeder all-pass sections into two comb
+banks. The topology is the classic one because it is the one that sounds like a room
+for the least code: all-passes diffuse without colouring the spectrum, and the comb
+banks that follow set the decay. Two banks with different comb lengths are what gives
+the image its width - a single bank would collapse to mono. It sits **after** the
+machine, so it reverberates the processed signal rather than feeding back into the
+saturation; a reverb inside the nonlinearity would be pitch-shifted by the wow and
+would smear the harmonics the plugin exists to produce.
+
+**Delay** is the second playback head, and **DELAY TYPE** sets what its repeats sound
+like. The three are genuinely different machines:
+
+| Type | Character |
+| --- | --- |
+| **Tape** | Each pass round the loop loses top end, because the repeat is recorded onto the tape and played back through the same losses the main path has |
+| **BBD** | A bucket-brigade chip: darker still, with clock noise on the repeats and a bandwidth that **narrows as the delay lengthens** - which is what a BBD physically does, because the same number of buckets is being clocked more slowly |
+| **Modern** | A clean digital delay: full bandwidth, no loss, repeats that stack without getting dull |
+
+## Vinyl
+
+The record-playing end of the chain. A turntable adds three things nothing else here
+does, and they are what "vinyl" means as a sound:
+
+- **Crackle** - impulse noise, not hiss. A record surface is **ticks**, caused by dust
+  and by the stylus crossing the groove's imperfections, so the generator produces
+  sparse impulses with a fast decay rather than continuous noise. That is the
+  difference between a record and a noisy tape.
+- **Rumble** - a low-frequency thump from the bearing and the motor, which is why
+  vinyl has a bottom-end floor that a CD does not.
+- **Warmth** - the RIAA playback curve. A playback stage that is not perfectly
+  complementary to the cutting curve leaves the characteristic low-end lift and
+  top-end softness. It is a filter, not a colour.
+
+Each channel has its own noise generator, so the crackle and the rumble are
+uncorrelated between the sides - sharing one would put every tick in the centre of the
+image instead of on the surface.
+
+## Modes
+
+Two switches that re-voice the **whole machine**:
+
+- **MODERN** - a well-maintained 1990s deck. The head losses move further out of the
+  audio band, the floor drops, and the magnetic memory thins out. It changes the
+  machine's **calibration** rather than its level, so nothing else needs
+  recalibrating around it.
+- **LO-FI** - the deliberate degradation: a hard 3.2 kHz bandwidth limit and a
+  sample-and-hold quantisation. It runs on the finished sample, **after** the
+  protection chain, so the quantisation cannot be smoothed away by the limiter - the
+  point of the mode is that it is a fault, and a fault should survive to the output.
+
+They are mutually exclusive by design, because a machine cannot be both. MODERN wins
+when both are set, which is the safer of the two to be wrong about.
+
 ## Signal path
+
 
 Input trim (dB) -> input glue compressor (always on) ->
 record head (pre-emphasis, bias, magnetic hysteresis with memory) ->
