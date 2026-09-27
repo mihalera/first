@@ -1626,10 +1626,53 @@ struct SubharmonicGenerator
     float samplesSinceCrossing = 0.0f;
     float prevDet = 0.0f;
     bool armed = true;
-    int crossingCount = 0;
+
+    // ------------------------------------------------------------------------
+    //  Fundamental phase accumulator, in turns [0, 1).
+    //
+    //  This is the master clock the whole cascade is derived from, and it is the
+    //  upgrade that matters most. The previous version aligned each stage against
+    //  `crossingCount % divider` - a running COUNT of detected crossings rather
+    //  than a phase. That has two faults:
+    //
+    //    - It drifts permanently. `crossingCount` only ever increases, so a
+    //      single missed crossing (a quiet passage, a transient the detector
+    //      skips) shifts every stage's reference for the rest of the session.
+    //      The error never heals because nothing brings the count back in step
+    //      with the signal.
+    //
+    //    - It is only correct when the divider happens to divide the count
+    //      evenly. For the stages whose divider does not, the target phase is
+    //      quantised to the wrong value and the stage is pulled off-frequency
+    //      every time a crossing arrives.
+    //
+    //  A phase accumulator fixes both. It advances continuously from the tracked
+    //  period, so the reference is always current, and a missed crossing costs
+    //  one cycle of correction rather than a permanent offset - the PLL pulls
+    //  the phase back toward the crossing each time one arrives.
+    // ------------------------------------------------------------------------
+    float fundamentalPhase = 0.0f;
 
     // Running phase per subharmonic stage in [0, 1)
     float phases[numStages] {};
+
+    // ------------------------------------------------------------------------
+    //  Cycle-confidence tracker.
+    //
+    //  The detector's trigger threshold is a fraction of the tracked peak, so a
+    //  decaying note eventually stops producing crossings. When that happens the
+    //  cascade must not simply coast: it would keep generating at the last
+    //  tracked pitch, which is the drone the presence gate exists to prevent.
+    //  Counting the samples since the last crossing and folding that into the
+    //  presence gate makes the stage release as soon as the signal stops
+    //  driving it, rather than after a fixed envelope time.
+    // ------------------------------------------------------------------------
+    float samplesSinceLastCrossing = 0.0f;
+    float cycleConfidence = 0.0f;
+
+    // The confidence coefficients, built with the rate.
+    float confidenceAttackCoeff = 0.0f;
+    float confidenceReleaseCoeff = 0.0f;
 
     // Cached sample-rate-dependent filter coefficients
     float cachedSampleRate = 0.0f;
@@ -1649,7 +1692,9 @@ struct SubharmonicGenerator
         samplesSinceCrossing = 0.0f;
         prevDet = 0.0f;
         armed = true;
-        crossingCount = 0;
+        fundamentalPhase = 0.0f;
+        samplesSinceLastCrossing = 0.0f;
+        cycleConfidence = 0.0f;
         cachedSampleRate = 0.0f;
         detectorDcX = 0.0f;
         detectorDcY = 0.0f;
@@ -1678,6 +1723,13 @@ struct SubharmonicGenerator
         // enough that they are gone within a frame of the band going quiet.
         presenceAttackCoeff = 1.0f - std::exp (-1.0f / (safeRate * 0.003f));
         presenceReleaseCoeff = 1.0f - std::exp (-1.0f / (safeRate * 0.006f));
+
+        // Cycle confidence: rises over about 40 ms of steady crossings and falls
+        // over about 25 ms without one. Both are slower than the presence gate,
+        // because confidence is a statement about the TRACK, not about the level -
+        // it should not flicker on a single missed crossing.
+        confidenceAttackCoeff = 1.0f - std::exp (-1.0f / (safeRate * 0.040f));
+        confidenceReleaseCoeff = 1.0f - std::exp (-1.0f / (safeRate * 0.025f));
 
         // 5 Hz one-pole AC coupling, in the same form the playback DC blocker uses.
         // The detector accepts fundamentals from 15 Hz up, so this removes any
@@ -1751,9 +1803,28 @@ struct SubharmonicGenerator
         // and closes exactly where the follower does rather than at a level of its
         // own: below it there is no note, so there is nothing to double.
         constexpr float silenceFloor = 1.0e-4f;
-        const float presenceGain = juce::jlimit (0.0f, 1.0f, presence / silenceFloor);
+        // The gate is now the product of TWO independent statements about whether
+        // there is a note to double:
+        //
+        //   presenceGain     - is there still LEVEL in the fundamental band
+        //   cycleConfidence  - is the detector still getting CYCLES from it
+        //
+        // The second is the new one, and it matters because they fail differently.
+        // A sustained note whose level drops keeps producing crossings long after
+        // it is quiet, and a noisy signal can hold the level up while producing no
+        // usable cycles at all. Requiring both means the cascade releases when
+        // EITHER stops being true, which is the honest answer to "is there a note
+        // to derive undertones from".
+        const float confidenceCoefficient = samplesSinceLastCrossing < safeRate * 0.25f
+                                                ? confidenceAttackCoeff
+                                                : confidenceReleaseCoeff;
+        cycleConfidence += ((samplesSinceLastCrossing < safeRate * 0.25f ? 1.0f : 0.0f)
+                                - cycleConfidence) * confidenceCoefficient;
 
-        if (detPeak < silenceFloor || presenceGain <= 0.0f)
+        const float presenceGain = juce::jlimit (0.0f, 1.0f, presence / silenceFloor);
+        const float gateGain = presenceGain * cycleConfidence;
+
+        if (detPeak < silenceFloor || gateGain <= 0.0f)
             return 0.0f;
 
         // ----------------------------------------------------------------------
@@ -1761,6 +1832,7 @@ struct SubharmonicGenerator
         //  Measures fundamental period and triggers Phase-Locked Loop (PLL).
         // ----------------------------------------------------------------------
         samplesSinceCrossing += 1.0f;
+        samplesSinceLastCrossing += 1.0f;
         const float triggerThreshold = detPeak * 0.10f;
 
         if (det > triggerThreshold && prevDet <= triggerThreshold && armed)
@@ -1770,25 +1842,44 @@ struct SubharmonicGenerator
             const float minPeriod = safeRate / 500.0f;
             const float maxPeriod = safeRate / 15.0f;
 
+            // The period estimate is averaged rather than jumped to. A quarter
+            // weight per crossing is about four cycles of settling, which is fast
+            // enough to follow a line and slow enough to reject a single bad
+            // interval - and the interval is only accepted at all if it falls in
+            // the musical range, so a transient cannot pull the track off.
             if (samplesSinceCrossing >= minPeriod && samplesSinceCrossing <= maxPeriod)
                 period += (samplesSinceCrossing - period) * 0.25f;
 
             samplesSinceCrossing = 0.0f;
-            ++crossingCount;
+            samplesSinceLastCrossing = 0.0f;
 
-            // Phase-Locked Loop (PLL): gently align phase to the crossing boundary
-            // to ensure zero phase drift over extended playback.
-            for (int s = 0; s < numStages; ++s)
-            {
-                const int d = dividers[s];
-                const float targetPhase = static_cast<float> (crossingCount % d) / static_cast<float> (d);
-                float phaseError = targetPhase - phases[s];
-                if (phaseError > 0.5f)  phaseError -= 1.0f;
-                if (phaseError < -0.5f) phaseError += 1.0f;
-                phases[s] += phaseError * 0.10f;
-                if (phases[s] >= 1.0f) phases[s] -= 1.0f;
-                if (phases[s] < 0.0f)  phases[s] += 1.0f;
-            }
+            // ------------------------------------------------------------------
+            //  Phase-Locked Loop, on the FUNDAMENTAL.
+            //
+            //  The crossing is a known point of the waveform: at an upward
+            //  zero-crossing the fundamental's phase is exactly 0. So the
+            //  correction is simply "pull the accumulator toward 0", and every
+            //  stage's target follows from it by division - which is what a
+            //  subdivision IS.
+            //
+            //  This replaces the previous `crossingCount % divider` scheme. That
+            //  one used a running count rather than a phase, so it drifted
+            //  permanently after a single missed crossing and was quantised to the
+            //  wrong value for any divider that did not divide the count evenly.
+            //  Deriving every stage from one phase accumulator fixes both: the
+            //  reference is always current, and a missed crossing costs one
+            //  correction rather than a permanent offset.
+            // ------------------------------------------------------------------
+            float phaseError = -fundamentalPhase;
+            if (phaseError > 0.5f)  phaseError -= 1.0f;
+            if (phaseError < -0.5f) phaseError += 1.0f;
+
+            // A gentle pull: 8 % of the error per crossing. Tight enough to hold
+            // lock over a long take, loose enough that it never fights the
+            // continuous advancement and produces a jump.
+            fundamentalPhase += phaseError * 0.08f;
+            if (fundamentalPhase >= 1.0f) fundamentalPhase -= 1.0f;
+            if (fundamentalPhase < 0.0f)  fundamentalPhase += 1.0f;
         }
         else if (det < -triggerThreshold)
         {
