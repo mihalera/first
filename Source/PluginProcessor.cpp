@@ -43,7 +43,11 @@ namespace
         point lets that change be made in one place without the shaper having to
         know about it yet.
     */
-    inline float j37Tanh (float x) noexcept
+    // maybe_unused, and not deleted: this is the seam the opt-in flag switches
+    // at, and until J37_USE_SIMD_TANH is turned on nothing calls it, which
+    // Clang reports as an unused function on every build. The spelling is kept
+    // exactly as it is because tests/dsp/extract.py matches this line by name.
+    [[maybe_unused]] inline float j37Tanh (float x) noexcept
     {
 #if J37_HAS_XSIMD
         return xsimd::tanh (x);

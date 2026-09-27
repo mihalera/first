@@ -40,8 +40,8 @@
 //
 //  BUILD (see tests/dsp/run_bench.sh):
 //     python3 tests/dsp/extract.py <out.inc>
-//     g++ -std=c++17 -O2 -I tests/dsp -I <build> tests/dsp/bench.cpp \
-//         -I <nanobench>/src -o bench && ./bench
+//     g++ -std=c++17 -O2 -I tests/dsp -I <build> -I <nanobench>/src
+//         tests/dsp/bench.cpp -o bench && ./bench
 // =============================================================================
 
 #include "shim.h"

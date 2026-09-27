@@ -127,6 +127,49 @@ jobs:
             libgl1-mesa-dev \
             libglu1-mesa-dev
 
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Intel IPP (PyPI wheels)
+        run: |
+          # Intel's oneAPI installer is a ~1.5 GB GUI installer that does not work
+          # from a command line, and it is not needed: Intel publishes the same
+          # library on PyPI as ipp-static plus its ipp-include dependency, both
+          # maintained by Intel, and they are the only IPP distribution a GitHub
+          # runner can install at all. Without this step the build would only
+          # ever prove the "IPP absent" path.
+          #
+          # These wheels carry no CMake config package, so the prefix has to be
+          # found and handed to CMake as IPPROOT. It cannot be computed: a venv,
+          # a hosted-toolcache Python and a system Python each put it somewhere
+          # else, and sysconfig is no help because in a venv its 'include'
+          # reports the BASE interpreter's headers. So look for the header and
+          # take its prefix - the libraries land in the same tree.
+          #
+          # The wheels are unpinned on purpose: pip resolves the current release
+          # and there is no version to rot.
+          python -m pip install --upgrade pip
+          python -m pip install ipp-static
+          prefix=$(python - <<'PYIPP'
+          import glob, os, site
+          found = ""
+          for base in site.getsitepackages():
+              for up in range(1, 5):
+                  p = os.path.normpath(os.path.join(base, *[".."] * up))
+                  if glob.glob(os.path.join(p, "include", "ipp.h")):
+                      found = p
+                      break
+              if found:
+                  break
+          print(found)
+          PYIPP
+          )
+          test -n "$prefix" || { echo "could not locate the ipp-include prefix"; exit 1; }
+          echo "Intel IPP prefix: $prefix"
+          echo "IPPROOT=$prefix" >> "$GITHUB_ENV"
+
       - name: Configure CMake (Debug)
         run: |
           cmake -S . -B build \
@@ -167,6 +210,36 @@ jobs:
           # the same source that the macOS job builds, so neither platform can
           # drift onto a different JUCE revision.
           submodules: recursive
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Intel IPP (PyPI wheels)
+        shell: pwsh
+        run: |
+          # Same two Intel wheels the Linux jobs use, and the reason the
+          # mechanism is the same on both: the oneAPI installer is a ~1.5 GB GUI
+          # installer that does not work from a command line, oneAPI is not in
+          # winget (there is an open package request) and Chocolatey has
+          # nothing. The win_amd64 wheel puts its libraries in Library/lib as
+          # ippsmt.lib / ippcoremt.lib, which CMakeLists.txt searches for
+          # explicitly.
+          #
+          # The prefix has to be located rather than computed, for the reasons
+          # in the Linux job, and IPPROOT is what tells CMake where it is.
+          python -m pip install --upgrade pip
+          python -m pip install ipp-static
+          # One line on purpose. A PowerShell here-string works as an argument,
+          # but PowerShell mangles embedded newlines when it hands a string to a
+          # native command, and this is a native command. One line, no newlines,
+          # nothing to mangle.
+          $prefix = python -c "import glob,os,site;print(next((os.path.normpath(os.path.join(b,*['..']*u)) for b in site.getsitepackages() for u in range(1,5) if glob.glob(os.path.join(os.path.normpath(os.path.join(b,*['..']*u)),'include','ipp.h'))),''))"
+          $prefix = $prefix.Trim()
+          if (-not $prefix) { throw "could not locate the ipp-include prefix" }
+          Write-Host "Intel IPP prefix: $prefix"
+          "IPPROOT=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Configure CMake
         shell: pwsh
@@ -445,6 +518,49 @@ jobs:
             libxrender-dev \
             libgl1-mesa-dev \
             libglu1-mesa-dev
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Intel IPP (PyPI wheels)
+        run: |
+          # Intel's oneAPI installer is a ~1.5 GB GUI installer that does not work
+          # from a command line, and it is not needed: Intel publishes the same
+          # library on PyPI as ipp-static plus its ipp-include dependency, both
+          # maintained by Intel, and they are the only IPP distribution a GitHub
+          # runner can install at all. Without this step the build would only
+          # ever prove the "IPP absent" path.
+          #
+          # These wheels carry no CMake config package, so the prefix has to be
+          # found and handed to CMake as IPPROOT. It cannot be computed: a venv,
+          # a hosted-toolcache Python and a system Python each put it somewhere
+          # else, and sysconfig is no help because in a venv its 'include'
+          # reports the BASE interpreter's headers. So look for the header and
+          # take its prefix - the libraries land in the same tree.
+          #
+          # The wheels are unpinned on purpose: pip resolves the current release
+          # and there is no version to rot.
+          python -m pip install --upgrade pip
+          python -m pip install ipp-static
+          prefix=$(python - <<'PYIPP'
+          import glob, os, site
+          found = ""
+          for base in site.getsitepackages():
+              for up in range(1, 5):
+                  p = os.path.normpath(os.path.join(base, *[".."] * up))
+                  if glob.glob(os.path.join(p, "include", "ipp.h")):
+                      found = p
+                      break
+              if found:
+                  break
+          print(found)
+          PYIPP
+          )
+          test -n "$prefix" || { echo "could not locate the ipp-include prefix"; exit 1; }
+          echo "Intel IPP prefix: $prefix"
+          echo "IPPROOT=$prefix" >> "$GITHUB_ENV"
 
       - name: Configure CMake
         run: |
