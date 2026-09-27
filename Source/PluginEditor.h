@@ -357,6 +357,8 @@ private:
     // model is actually doing to the signal rather than what it is receiving.
     juce::Label harmonicsLabel;
     juce::Label harmonicsReadout;
+    juce::Label bpmLabel;
+    juce::Label bpmReadout;
 
     // Subharmonic tracking readout. The cascade reports the note it is locked to
     // and how solidly, so the panel can answer the one question a depth knob

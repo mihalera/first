@@ -2909,7 +2909,7 @@ public:
     juce::UndoManager& getUndoManager() noexcept { return undoManager; }
 
     /** Number of factory presets, including the Minimum and Maximum range endpoints. */
-    static constexpr int numFactoryPresets = 20;
+    static constexpr int numFactoryPresets = 26;
 
     /** Display names of the factory presets, in order. */
     static juce::StringArray getPresetNames();
@@ -3070,6 +3070,13 @@ public:
 
     /** The fundamental the cascade is locked to, in Hz. Zero when unlocked. */
     float getSubfundTrackedHz() const noexcept { return subfundTrackedHz.load (std::memory_order_relaxed); }
+
+    /** The tempo the deck is running at, for the panel's BPM readout. Read from
+        the message thread; the audio thread writes it as a plain double, which is
+        the same discipline every other published value here follows, and a torn
+        double read would only smear one displayed digit for one frame. */
+    double getDeckTempoBpm() const noexcept { return hostTempoBpm; }
+    bool   getDeckTempoValid() const noexcept { return hostTempoValid; }
 
     /** How solidly the detector is tracking, 0..1. Zero means nothing is being generated. */
     float getSubfundConfidence() const noexcept { return subfundConfidence.load (std::memory_order_relaxed); }

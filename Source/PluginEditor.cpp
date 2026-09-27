@@ -1122,22 +1122,9 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
     }
 
     // The deck's non-knob switches are FULL MEMBERS of their tabs: resized() lays
-    // them out on the same grid the knobs use, and this is what hides them on every
-    // other tab. The delay trio belongs to the second head, GL and OVERSAMPLING to
-    // the engine itself.
-    const auto settingsTab = currentTab == 6;
-    const auto spaceTab = currentTab == 4;
-    oversamplingLabel.setVisible (settingsTab);
-    oversamplingBox.setVisible (settingsTab);
-    glButton.setVisible (settingsTab);
-    delayTypeLabel.setVisible (spaceTab);
-    delayTypeBox.setVisible (spaceTab);
-    delayRateLabel.setVisible (spaceTab);
-    delayRateBox.setVisible (spaceTab);
-    delaySyncButton.setVisible (spaceTab);
-
-    styleTabButtons();
-    resized();
+    // them out on the same grid the knobs use. The delay trio belongs to the second
+    // head, GL and OVERSAMPLING to the engine itself. Their visibility is decided
+    // in resized() - see the note there - so this function only records the tab.
 }
 
 //==============================================================================
@@ -1295,6 +1282,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 true, juce::Justification::left);
     styleLabel (controlsHintLabel, "Shift = fine tune", 9.0f,
                 paletteFor (false).secondary, false, juce::Justification::right);
+    styleLabel (bpmLabel, "BPM", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (bpmReadout, "-", 9.0f, paletteFor (false).secondary,
+                false, juce::Justification::left);
     styleLabel (metersHeadingLabel, "LEVELS", 10.0f, paletteFor (false).accent,
                 true, juce::Justification::left);
     styleLabel (metersHintLabel, "dBFS / PEAK + RMS", 8.0f, paletteFor (false).secondary,
@@ -1335,6 +1326,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (compressorReadout);
     addAndMakeVisible (harmonicsLabel);
     addAndMakeVisible (harmonicsReadout);
+    addAndMakeVisible (bpmLabel);
+    addAndMakeVisible (bpmReadout);
     addAndMakeVisible (subfundLabel);
     addAndMakeVisible (subfundReadout);
 
@@ -2948,6 +2941,20 @@ void FirstAudioProcessorEditor::timerCallback()
                                 : evenRatio >= oddRatio ? harmonicPalette.status
                                                         : harmonicPalette.needle);
 
+    // The deck's tempo, as the host reports it. A host that offers no playhead
+    // (an offline render, a bare player) leaves the readout at the machine's
+    // default and says so, because a number that looks measured but is only a
+    // fallback is worse than an honest dash.
+    const auto deckBpm = audioProcessor.getDeckTempoBpm();
+    const auto deckBpmValid = audioProcessor.getDeckTempoValid();
+    bpmReadout.setText (deckBpmValid
+                            ? juce::String (deckBpm, 1) + " BPM"
+                            : juce::String (juce::roundToInt (deckBpm)) + " BPM (default)",
+                        juce::dontSendNotification);
+    bpmReadout.setColour (juce::Label::textColourId,
+                          deckBpmValid ? paletteFor (darkTheme).status
+                                       : paletteFor (darkTheme).secondary);
+
     // ------------------------------------------------------------------
     //  Subharmonic tracking readout.
     //
@@ -3191,6 +3198,13 @@ void FirstAudioProcessorEditor::resized()
     harmonicsLabel.setBounds (harmonicsLeft, layout.deck.getY() + 70, harmonicsWidth, 15);
     harmonicsReadout.setBounds (harmonicsLeft, layout.deck.getY() + 88, harmonicsWidth, 14);
 
+    // The BPM readout rides the deck row between the transport switches and the
+    // harmonics block: tempo is what the deck is running at, which is deck
+    // furniture, not a knob. Its left edge is the type row's own slot so it reads
+    // as that row's right-hand caption rather than a floating number.
+    bpmLabel.setBounds (autoGainButton.getRight() + 16, layout.deck.getY() + 41, 40, 16);
+    bpmReadout.setBounds (bpmLabel.getRight(), layout.deck.getY() + 38, 96, 18);
+
     // The subfund readout takes the switches row's remaining right-hand space,
     // immediately below the harmonics pair. It is the same width so the two
     // readouts line up as a column rather than as two unrelated labels.
@@ -3305,7 +3319,13 @@ void FirstAudioProcessorEditor::resized()
     const auto& activeTab = tabSpecs[static_cast<std::size_t> (currentTab)];
     const auto tabControlCount = static_cast<int> (activeTab.count);
     const auto cellWidth = grid.getWidth() / tabColumns;
-    const auto gridRows = (tabControlCount + tabColumns - 1) / tabColumns;
+    // SETTINGS holds no knobs of its own, which made gridRows evaluate to 0 and
+    // the row height below divide by it - a NaN cell rectangle, and a plugin plus
+    // DAW crash the first time that tab was opened. An empty knob grid is legal:
+    // the guard skips the loop and the tab's deck switches are laid out beneath.
+    const auto gridRows = tabControlCount == 0
+                              ? 1
+                              : (tabControlCount + tabColumns - 1) / tabColumns;
     const auto rowHeight = grid.getHeight() / gridRows;
 
     for (int slot = 0; slot < tabControlCount; ++slot)
@@ -3350,13 +3370,31 @@ void FirstAudioProcessorEditor::resized()
                        cell.getWidth() - 24, 30);
     };
 
-    if (currentTab == 6)
+    // Visibility for the deck switches is re-asserted here rather than only in
+    // setCurrentTab, because resized() also runs from setSize() in the constructor
+    // - BEFORE some of these widgets had a parent - and a show/hide decision made
+    // only at tab-switch time left the switches permanently visible on tabs that
+    // were not theirs. The active tab decides; every resize re-applies it.
+    const auto settingsTab = currentTab == 6;
+    const auto spaceTab = currentTab == 4;
+    oversamplingLabel.setVisible (settingsTab);
+    oversamplingBox.setVisible (settingsTab);
+    glButton.setVisible (settingsTab);
+    glLabel.setVisible (settingsTab);
+    delayTypeLabel.setVisible (spaceTab);
+    delayTypeBox.setVisible (spaceTab);
+    delayRateLabel.setVisible (spaceTab);
+    delayRateBox.setVisible (spaceTab);
+    delaySyncLabel.setVisible (spaceTab);
+    delaySyncButton.setVisible (spaceTab);
+
+    if (settingsTab)
     {
         // SETTINGS: GL and OVERSAMPLING, two cells on one row.
         placeDeckSwitch (glLabel, glButton, 0, 0, 1, "GL");
         placeDeckSwitch (oversamplingLabel, oversamplingBox, 1, 0, 1, "OVER");
     }
-    else if (currentTab == 4)
+    else if (spaceTab)
     {
         // SPACE: the delay trio rides the row under the five knobs.
         placeDeckSwitch (delayTypeLabel, delayTypeBox, 0, 1, 1, "TYPE");
