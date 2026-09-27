@@ -235,7 +235,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME xsimd
     GITHUB_REPOSITORY xtensor-stack/xsimd
-    GIT_TAG 13.0.0
+    GIT_TAG 14.3.0
     EXCLUDE_FROM_ALL YES
     SYSTEM YES
     OPTIONS
@@ -270,14 +270,14 @@ if(J37_BUILD_TESTS)
     CPMAddPackage(
         NAME Catch2
         GITHUB_REPOSITORY catchorg/Catch2
-        GIT_TAG v3.7.1
+        GIT_TAG v3.9.1
         EXCLUDE_FROM_ALL YES
         SYSTEM YES)
 
     CPMAddPackage(
         NAME nanobench
         GITHUB_REPOSITORY martinus/nanobench
-        GIT_TAG v4.3.11
+        GIT_TAG v4.6.0
         EXCLUDE_FROM_ALL YES
         SYSTEM YES)
 endif()
