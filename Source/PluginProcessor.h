@@ -2577,12 +2577,11 @@ private:
     std::atomic<float>* reverbSizeParam = nullptr;
     std::atomic<float>* delayTypeParam = nullptr;
     std::atomic<float>* distortionParam = nullptr;
-    // getRawParameterValue() hands back std::atomic<float>* for EVERY parameter
-    // type, including AudioParameterBool - a bool parameter still has a raw value,
-    // and it is 0.0 or 1.0. Declaring the pointer as atomic<bool>* therefore does
-    // not compile, and the switch is read as `>= 0.5f` like every other bool
-    // parameter here (bypassParam, deltaParam). These two were the only atomic<bool>*
-    // in the file, which is what let the mismatch reach a build at all.
+    // These are the RAW parameter values, which JUCE stores as floats for every
+    // parameter kind - including AudioParameterBool. So the type is
+    // atomic<float> and the value is read as `>= 0.5f`, exactly like the bypass
+    // and polarity switches above. Declaring them as atomic<bool> was a
+    // reasonable guess that does not match the API.
     std::atomic<float>* modernModeParam = nullptr;
     std::atomic<float>* lofiModeParam = nullptr;
     std::atomic<float>* vinylParam = nullptr;
@@ -3044,14 +3043,11 @@ private:
     bool lofiMode = false;
 
     // The BBD delay's clock noise and its bandwidth state, per channel.
-    // The BBD clock's LCG register, per channel. This is a stateful integer
-    // generator and not an audio value: the 1664525/1013904223 step and the `>> 8`
-    // below are integer operations on it, and the audio is taken from the result
-    // afterwards. Declared as a float the multiply happened to convert and compile,
-    // and the build only failed at the shift - which is where the mismatch finally
-    // showed up rather than where it started.
-    std::uint32_t bbdNoiseStateL = 0;
-    std::uint32_t bbdNoiseStateR = 0;
+    // The BBD's clock-noise generator, per channel. A uint32_t LCG state like
+    // `noiseState` and `vinylNoiseState` - it is an integer recurrence, not a
+    // level, so float was simply the wrong type for it.
+    std::uint32_t bbdNoiseStateL = 0x85ebca6bu;
+    std::uint32_t bbdNoiseStateR = 0xc2b2ae35u;
     float bbdLowL = 0.0f;
     float bbdLowR = 0.0f;
 
