@@ -612,6 +612,532 @@ struct AmpVoicing
 
 //==============================================================================
 /**
+    The preamp and the distortion stage - the two gain stages in FRONT of the
+    machine, and they do different jobs.
+
+    A real chain has a preamp before the recorder and, if the source wants it, a
+    distortion pedal before that. Both are placed ahead of the tape so the machine
+    hears their output, which is the whole point: a distorted guitar recorded to
+    tape sounds like a record rather than a pedal precisely because the tape
+    smooths what the pedal produced.
+
+    PREAMP is a valve-ish input stage: a gentle soft clip, a transformer's
+    low-cut, and a slight high-frequency lift. It is a STAGE, not a gain - driving
+    it changes the colour as much as the level.
+
+    DISTORTION is a diode clipper: a hard knee with a pre-gain, deliberately
+    abrupt. Where the saturation core bends, this breaks.
+*/
+struct InputStage
+{
+    // The preamp's transformer low-cut and its own soft-clip bias drift.
+    float preampLowState = 0.0f;
+    float preampBiasState = 0.0f;
+
+    // The distortion's own coupling state, so its hard clip does not leave a DC
+    // pedestal behind it for the tape stage to swallow.
+    float distortionLowState = 0.0f;
+
+    void reset() noexcept
+    {
+        preampLowState = 0.0f;
+        preampBiasState = 0.0f;
+        distortionLowState = 0.0f;
+    }
+
+    /**
+        Runs the preamp. `amount` is 0..1; at 0 the stage is a straight wire, so a
+        machine with no preamp engaged is bit-for-bit what it always was.
+
+        `lowCutCoefficient` is the transformer's low-cut, built by the caller.
+    */
+    float processPreamp (float x, float amount, float lowCutCoefficient) noexcept
+    {
+        if (amount <= 1.0e-5f)
+            return x;
+
+        // The transformer's low-cut: a one-pole high-pass taken out of the signal.
+        // It is what stops a driven preamp from stacking low end into the recorder.
+        preampLowState += (x - preampLowState) * lowCutCoefficient;
+        const float cut = x - preampLowState;
+
+        // The valve stage: a soft asymmetric clip whose operating point drifts a
+        // little with the signal, the same mechanism as the saturation core's valve
+        // but at a much lower gain - this is an input stage, not a fuzz.
+        preampBiasState += (cut - preampBiasState) * 0.0012f;
+        const float biased = cut + preampBiasState * 0.12f;
+
+        // Gain rises with the control, and the curve is normalised so the stage
+        // stays level-matched: PREAMP changes the character, and the INPUT control
+        // remains the thing that sets the level.
+        const float gain = 1.0f + amount * 3.2f;
+        const float driven = biased * gain;
+        const float clipped = std::tanh (driven) / std::tanh (gain);
+
+        // The slight top-end lift a good input transformer has. A one-pole
+        // difference against the cut signal, added back gently.
+        const float lift = (cut - preampLowState) * amount * 0.18f;
+
+        return clipped + lift;
+    }
+
+    /**
+        Runs the distortion. `amount` is 0..1; at 0 it is a straight wire.
+
+        A diode clipper is a hard knee, and the abruptness is the point: it is what
+        makes this read as a pedal rather than as more saturation.
+    */
+    float processDistortion (float x, float amount) noexcept
+    {
+        if (amount <= 1.0e-5f)
+            return x;
+
+        // Pre-gain, then the hard knee. The knee is fixed and the gain moves, which
+        // is how a real pedal's gain control works - the clipping threshold is set
+        // by the diodes, not by the knob.
+        const float gain = 1.0f + amount * 9.0f;
+        const float driven = x * gain;
+
+        // A hard clip with a very small soft shoulder. Perfectly square would alias
+        // badly; a shoulder of a few percent keeps it a diode clipper while staying
+        // band-limited enough for the oversampler to work with.
+        constexpr float knee = 0.92f;
+        const float magnitude = std::abs (driven);
+        float clipped;
+        if (magnitude <= knee)
+        {
+            clipped = driven;
+        }
+        else
+        {
+            // The shoulder: a short exponential walk to the asymptote.
+            const float excess = magnitude - knee;
+            const float compressed = knee + (1.0f - j37math::exp (-excess * 3.0f)) * (1.0f - knee);
+            clipped = driven < 0.0f ? -compressed : compressed;
+        }
+
+        // Undo the pre-gain so the stage stays level-matched, then AC-couple: a hard
+        // clipper leaves an offset, and the tape stage downstream must not be handed
+        // one.
+        const float scaled = clipped / gain;
+        distortionLowState += (scaled - distortionLowState) * 0.0006f;
+        return scaled - distortionLowState;
+    }
+};
+
+//==============================================================================
+/**
+    Tape condition: FLUX, WEAR and MECHANICS.
+
+    Three separate physical facts about the machine, and they are genuinely
+    separate rather than three amounts of the same thing:
+
+      FLUX      - how deep into the oxide the record head magnetises. More flux is
+                  more low end, more hysteresis memory and a quieter floor; less is
+                  thin and bright. It is the RECORD head's depth.
+      WEAR      - the state of the heads and the tape. A rounded gap and patchy
+                  oxide lose top end and add contact noise. It is the MEDIUM's
+                  condition.
+      MECHANICS - how well the transport holds its speed. Good order means smooth,
+                  periodic wow and flutter; worn bearings and a slack belt mean
+                  irregular drift and the occasional slip.
+
+    All three are slow, continuous controls with a neutral position, so they read
+    as calibration rather than as effects.
+*/
+struct TapeCondition
+{
+    // WEAR's contact noise: a slow random modulation of the high-frequency loss.
+    float wearNoiseState = 0.0f;
+    float wearNoisePhase = 0.0f;
+
+    // MECHANICS' irregular drift: a slow random walk added to the wow phase.
+    float driftState = 0.0f;
+    float driftTarget = 0.0f;
+    int driftCountdown = 0;
+
+    // The FLUX low shelf, per channel.
+    float fluxLowL = 0.0f;
+    float fluxLowR = 0.0f;
+
+    // The WEAR high-frequency loss, per channel.
+    float wearLowL = 0.0f;
+    float wearLowR = 0.0f;
+
+    void reset() noexcept
+    {
+        wearNoiseState = wearNoisePhase = 0.0f;
+        driftState = driftTarget = 0.0f;
+        driftCountdown = 0;
+        fluxLowL = fluxLowR = 0.0f;
+        wearLowL = wearLowR = 0.0f;
+    }
+
+    /**
+        Advances the slow random sources. Called once per block, not per sample:
+        the drift and the contact noise are both sub-audio, so a block-rate update
+        is not merely adequate, it is the correct rate - a per-sample update would
+        just be a slower way to compute the same number.
+
+        `random` is the caller's noise source, so this stage does not carry a
+        second generator.
+    */
+    void updateSlowSources (float mechanicsAmount, float wearAmount, int numSamples,
+                            std::uint32_t& randomState) noexcept
+    {
+        // -- MECHANICS: the drift target changes every few hundred milliseconds ---
+        driftCountdown -= numSamples;
+        if (driftCountdown <= 0)
+        {
+            // 120 ms between targets. Slow enough to read as a wandering transport
+            // rather than as noise, fast enough that a held note hears it move.
+            driftCountdown = juce::jmax (1, juce::roundToInt (0.12f * 48000.0f));
+
+            randomState = randomState * 1664525u + 1013904223u;
+            const float unit = static_cast<float> ((randomState >> 8) & 0x00ffffffu)
+                             * (1.0f / 8388608.0f) - 1.0f;
+
+            // A worn machine's drift is larger; in good order it is nearly zero.
+            driftTarget = unit * mechanicsAmount;
+        }
+
+        // The drift itself is a one-pole toward the target, so the walk is smooth.
+        driftState += (driftTarget - driftState) * 0.05f;
+
+        // -- WEAR: the contact noise is a slow random modulation -----------------
+        randomState = randomState * 1664525u + 1013904223u;
+        const float wearUnit = static_cast<float> ((randomState >> 8) & 0x00ffffffu)
+                             * (1.0f / 8388608.0f) - 1.0f;
+        wearNoiseState += (wearUnit * wearAmount - wearNoiseState) * 0.02f;
+    }
+
+    /**
+        The FLUX low shelf and the WEAR top-end loss, per sample.
+
+        Both are one-pole splits: FLUX lifts the low band, WEAR takes the high band
+        away. They are separate filters rather than one tilt because they are
+        separate mechanisms - one is the record head, the other is the medium.
+    */
+    float processTone (float x, int channel,
+                       float fluxAmount, float wearAmount,
+                       float fluxCoefficient, float wearCoefficient) noexcept
+    {
+        auto& fluxLow = channel == 0 ? fluxLowL : fluxLowR;
+        auto& wearLow = channel == 0 ? wearLowL : wearLowR;
+
+        // FLUX: the low band is the one-pole's output, the rest is everything above.
+        // Lifting the low band by up to +3 dB is what "more flux" sounds like.
+        fluxLow += (x - fluxLow) * fluxCoefficient;
+        const float fluxHigh = x - fluxLow;
+        const float fluxGain = 1.0f + (fluxAmount - 0.5f) * 0.6f;
+        const float fluxOut = fluxLow * fluxGain + fluxHigh;
+
+        // WEAR: a one-pole low-pass on the whole signal, crossfaded in by the wear
+        // amount. A worn head loses top end, so the more worn it is the more of the
+        // filtered copy is used.
+        wearLow += (fluxOut - wearLow) * wearCoefficient;
+        return fluxOut + (wearLow - fluxOut) * wearAmount;
+    }
+};
+
+//==============================================================================
+/**
+    A plate/room reverb, built from four Schroeder all-pass sections into two
+    comb banks.
+
+    The topology is the classic one because it is the one that sounds like a room
+    for the least code: all-passes diffuse the signal without colouring its
+    spectrum, and the comb banks that follow set the decay. Two banks, one per
+    channel, with different comb lengths, is what gives the stereo image its
+    width - a single bank would collapse to mono.
+
+    It sits AFTER the machine in the chain, so it reverberates the processed
+    signal rather than feeding back into the saturation. That keeps it clean and
+    predictable: a reverb inside the nonlinearity would be modulated by the wow
+    and would smear the harmonics the plugin exists to produce.
+
+    The buffers are fixed and allocated once; the controls only change gains and
+    feedback, so the audio thread never allocates.
+*/
+struct PlateReverb
+{
+    // Four all-passes per channel, then four combs per channel. The lengths are the
+    // classic Schroeder numbers scaled for a small room; they are prime-ish so the
+    // combs do not reinforce each other into a ringing pitch.
+    static constexpr int numAllPasses = 4;
+    static constexpr int numCombs = 4;
+    static constexpr int maxDelayLength = 4096;
+
+    struct AllPass
+    {
+        juce::AudioBuffer<float> buffer;
+        int writePosition = 0;
+        int length = 0;
+
+        void prepare (int len)
+        {
+            length = juce::jlimit (1, maxDelayLength, len);
+            buffer.setSize (1, maxDelayLength, false, true, true);
+            buffer.clear();
+            writePosition = 0;
+        }
+
+        float process (float x, float feedback)
+        {
+            if (length <= 0)
+                return x;
+
+            auto* data = buffer.getWritePointer (0);
+            const int readPosition = (writePosition - length + maxDelayLength) % maxDelayLength;
+            const float delayed = data[readPosition];
+
+            // The all-pass recurrence: a diffuser, not a delay. It passes every
+            // frequency at the same level and only spreads the phase, which is what
+            // turns a sparse early reflection into a smooth tail.
+            const float out = -x + delayed;
+            data[writePosition] = x + delayed * feedback;
+
+            writePosition = (writePosition + 1) % maxDelayLength;
+            return out;
+        }
+    };
+
+    struct Comb
+    {
+        juce::AudioBuffer<float> buffer;
+        int writePosition = 0;
+        int length = 0;
+        float lowState = 0.0f;
+
+        void prepare (int len)
+        {
+            length = juce::jlimit (1, maxDelayLength, len);
+            buffer.setSize (1, maxDelayLength, false, true, true);
+            buffer.clear();
+            writePosition = 0;
+            lowState = 0.0f;
+        }
+
+        float process (float x, float feedback, float damping)
+        {
+            if (length <= 0)
+                return x;
+
+            auto* data = buffer.getWritePointer (0);
+            const int readPosition = (writePosition - length + maxDelayLength) % maxDelayLength;
+            float delayed = data[readPosition];
+
+            // Damping: the tail loses top end as it decays, which is what a real
+            // room does and what stops a comb bank from sounding metallic. A
+            // one-pole on the feedback path is the standard way to do it.
+            lowState += (delayed - lowState) * damping;
+            delayed = lowState;
+
+            data[writePosition] = x + delayed * feedback;
+            writePosition = (writePosition + 1) % maxDelayLength;
+            return delayed;
+        }
+    };
+
+    std::array<std::array<AllPass, numAllPasses>, 2> allPasses;
+    std::array<std::array<Comb, numCombs>, 2> combs;
+    bool prepared = false;
+
+    // The comb and all-pass lengths, per channel. The two channels differ by a few
+    // samples, which is the whole of the stereo width.
+    static constexpr int allPassLengthsL[numAllPasses] { 225, 341, 441, 556 };
+    static constexpr int allPassLengthsR[numAllPasses] { 231, 348, 449, 563 };
+    static constexpr int combLengthsL[numCombs] { 1557, 1617, 1491, 1422 };
+    static constexpr int combLengthsR[numCombs] { 1580, 1642, 1511, 1447 };
+
+    void prepare (double sampleRate)
+    {
+        // The lengths are given for 44.1 kHz, so they are scaled for any other rate
+        // to keep the room the same physical size.
+        const auto scale = static_cast<double> (sampleRate) / 44100.0;
+        const auto scaled = [scale] (int base)
+        {
+            return juce::jlimit (1, maxDelayLength - 1, juce::roundToInt (base * scale));
+        };
+
+        for (int channel = 0; channel < 2; ++channel)
+        {
+            for (int i = 0; i < numAllPasses; ++i)
+                allPasses[static_cast<std::size_t> (channel)][static_cast<std::size_t> (i)]
+                    .prepare (scaled (channel == 0 ? allPassLengthsL[i] : allPassLengthsR[i]));
+
+            for (int i = 0; i < numCombs; ++i)
+                combs[static_cast<std::size_t> (channel)][static_cast<std::size_t> (i)]
+                    .prepare (scaled (channel == 0 ? combLengthsL[i] : combLengthsR[i]));
+        }
+
+        prepared = true;
+    }
+
+    void reset() noexcept
+    {
+        for (int channel = 0; channel < 2; ++channel)
+        {
+            for (auto& allPass : allPasses[static_cast<std::size_t> (channel)])
+            {
+                allPass.buffer.clear();
+                allPass.writePosition = 0;
+            }
+
+            for (auto& comb : combs[static_cast<std::size_t> (channel)])
+            {
+                comb.buffer.clear();
+                comb.writePosition = 0;
+                comb.lowState = 0.0f;
+            }
+        }
+    }
+
+    /**
+        One sample through the reverb.
+
+        `size` is 0..1 and sets the tail length; `mix` is 0..1 and is how much of
+        the reverberated signal is returned. At mix 0 the stage is bypassed
+        entirely, so a machine with no reverb is unchanged.
+    */
+    float process (float x, int channel, float size, float mix) noexcept
+    {
+        if (! prepared || mix <= 1.0e-5f)
+            return x;
+
+        const auto index = static_cast<std::size_t> (juce::jlimit (0, 1, channel));
+
+        // Decay rises with size. The ceiling is deliberately below 1.0: a comb bank
+        // at unity feedback never decays, and the difference between a long reverb
+        // and an infinite one is not a useful control.
+        const float feedback = 0.70f + size * 0.28f;
+
+        // Damping rises with size as well: a bigger room absorbs more top end per
+        // pass, so a long tail is a darker one. That is what keeps a large setting
+        // from sounding like a metal tank.
+        const float damping = 0.25f + size * 0.35f;
+
+        float diffused = x;
+        for (auto& allPass : allPasses[index])
+            diffused = allPass.process (diffused, 0.5f);
+
+        float out = 0.0f;
+        for (auto& comb : combs[index])
+            out += comb.process (diffused, feedback, damping);
+
+        // The comb bank sums four outputs, so it is scaled back to keep the reverb
+        // at a comparable level to the dry signal rather than four times it.
+        out *= 0.25f;
+
+        return x + out * mix;
+    }
+};
+
+//==============================================================================
+/**
+    The vinyl stage: surface noise, rumble and the RIAA playback curve.
+
+    These three are what "vinyl" means as a sound, and none of them is a tape
+    effect:
+
+      CRACKLE - impulse noise. A record surface is not hiss: it is ticks, caused by
+                dust and by the stylus crossing the groove's imperfections. So the
+                generator produces SPARSE IMPULSES rather than continuous noise,
+                which is the difference between a record and a noisy tape.
+      RUMBLE  - a low-frequency thump from the turntable's bearing and motor,
+                which is why vinyl has a bottom-end floor that a CD does not.
+      WARMTH  - the RIAA playback curve. The curve itself is a strong low-frequency
+                roll-off with a high-frequency boost (it is the inverse of the
+                cutting curve), and a playback stage that is not perfectly
+                complementary leaves the characteristic low-end lift and top-end
+                softness. That is the "warm" part, and it is a filter, not a colour.
+
+    Placed at the very end of the chain, after the protection stages, because a
+    turntable is the last thing in the signal path.
+*/
+struct VinylStage
+{
+    // Rumble: a low-frequency one-pole, per channel.
+    float rumbleL = 0.0f;
+    float rumbleR = 0.0f;
+
+    // The RIAA-ish playback tilt, per channel.
+    float warmthLowL = 0.0f;
+    float warmthLowR = 0.0f;
+
+    // Crackle: a short decaying envelope per impulse, per channel.
+    float crackleEnvelopeL = 0.0f;
+    float crackleEnvelopeR = 0.0f;
+
+    void reset() noexcept
+    {
+        rumbleL = rumbleR = 0.0f;
+        warmthLowL = warmthLowR = 0.0f;
+        crackleEnvelopeL = crackleEnvelopeR = 0.0f;
+    }
+
+    /**
+        One sample of surface noise and colour.
+
+        `crackleAmount` and `rumbleAmount` are 0..1 and scale the two noise
+        sources independently; `warmth` is 0..1 and sets how much of the RIAA
+        playback character is applied. `random` is the caller's noise source.
+    */
+    float process (float x, int channel,
+                   float crackleAmount, float rumbleAmount, float warmth,
+                   float rumbleCoefficient, float warmthCoefficient,
+                   std::uint32_t& random) noexcept
+    {
+        // -- CRACKLE: sparse impulses, not continuous noise ---------------------
+        // A tick happens when the stylus hits something, so it is an impulse with a
+        // fast decay rather than a steady hiss. The probability per sample is low
+        // and the amplitude is high, which is what makes it read as a record.
+        auto& crackleEnvelope = channel == 0 ? crackleEnvelopeL : crackleEnvelopeR;
+
+        random = random * 1664525u + 1013904223u;
+        const float unit = static_cast<float> ((random >> 8) & 0x00ffffffu)
+                         * (1.0f / 8388608.0f) - 1.0f;
+
+        // Roughly one impulse every few thousand samples at full crackle, so the
+        // ticks are distinct events rather than a buzz.
+        const float probability = 0.00008f * crackleAmount;
+        if (std::abs (unit) < probability)
+        {
+            // The impulse's own amplitude, also random, so the ticks are not all
+            // the same size.
+            random = random * 1664525u + 1013904223u;
+            const float amplitude = static_cast<float> ((random >> 8) & 0x00ffffffu)
+                                  * (1.0f / 8388608.0f) - 1.0f;
+            crackleEnvelope += amplitude * 0.35f;
+        }
+
+        // A fast decay: a tick is over in a millisecond or two.
+        crackleEnvelope *= 0.9985f;
+
+        // -- RUMBLE: the turntable's low-frequency floor ------------------------
+        auto& rumble = channel == 0 ? rumbleL : rumbleR;
+        random = random * 1664525u + 1013904223u;
+        const float rumbleNoise = static_cast<float> ((random >> 8) & 0x00ffffffu)
+                                * (1.0f / 8388608.0f) - 1.0f;
+        // A one-pole low-pass on white noise gives the thump; the coefficient is
+        // built by the caller so it is the same at every rate.
+        rumble += (rumbleNoise * rumbleAmount * 0.020f - rumble) * rumbleCoefficient;
+
+        // -- WARMTH: the RIAA playback character --------------------------------
+        // A one-pole split: the low band is lifted and the high band is left, which
+        // is the low-end lift and relative top-end softness of a playback stage
+        // that is not perfectly complementary to the cutting curve.
+        auto& warmthLow = channel == 0 ? warmthLowL : warmthLowR;
+        warmthLow += (x - warmthLow) * warmthCoefficient;
+        const float warmthHigh = x - warmthLow;
+        const float warmed = warmthLow * (1.0f + warmth * 0.45f) + warmthHigh * (1.0f - warmth * 0.18f);
+
+        return warmed + crackleEnvelope * crackleAmount * 0.6f + rumble;
+    }
+};
+
+//==============================================================================
+/**
     A sample-clock adapter for JUCE's SmoothedValue.
 
     The engine uses one coefficient pair for both channels, so every ramp must advance

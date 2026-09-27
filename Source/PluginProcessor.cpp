@@ -1118,6 +1118,177 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             percentageRange (0.50f), 0.50f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
 
+    // =========================================================================
+    //  PREAMP - the input stage in front of the machine.
+    //
+    //  A separate gain stage, not another drive: a real chain has a microphone
+    //  preamp before the recorder, and its character is its own. It is placed
+    //  BEFORE the tape so the machine hears the level the preamp delivers, which
+    //  is exactly what the INPUT control already does - except this one has the
+    //  preamp's own colour: a valve-ish soft clip and a low-cut from the input
+    //  transformer, so driving it does not just add level, it adds a stage.
+    //
+    //  Default 0 - no preamp engaged, so the machine is unchanged.
+    // =========================================================================
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "preamp", 1 }, "Preamp",
+                                                            percentageRange (0.45f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+    // =========================================================================
+    //  FLUX - the magnetic flux the record head actually puts on the tape.
+    //
+    //  On a real deck the bias current and the record-head gap together decide how
+    //  DEEP the magnetism goes into the oxide. More flux means the medium is
+    //  driven further from its rest state, which raises the low-frequency output
+    //  and lowers the noise floor, but also widens the hysteresis loop - so the
+    //  same signal is remembered more strongly and comes back with more low end
+    //  and a softer top. Less flux is thin, quiet and bright.
+    //
+    //  It is a different axis from DRIVE: DRIVE is how hard the signal is pushed
+    //  into the curve, FLUX is how much of the medium's depth is used. On the
+    //  hardware the two interact, and they do here too - FLUX scales the
+    //  hysteresis memory and the low-frequency shelf, DRIVE scales the curve.
+    //
+    //  50 percent is the calibrated, neutral flux.
+    // =========================================================================
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "flux", 1 }, "Flux",
+                                                            percentageRange (0.50f), 0.50f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+    // =========================================================================
+    //  WEAR - how worn the tape and the heads are.
+    //
+    //  A used machine is not a broken one: the heads have a slightly rounded gap,
+    //  the tape has lost some oxide at the edges, and the contact is less even.
+    //  The audible result is a gentle loss of top end, a little extra modulation
+    //  noise (the contact is no longer uniform), and a very slight compression of
+    //  the high frequencies - not distortion, but DULLING.
+    //
+    //  It is deliberately a slow, subtle control: at 100 percent it should read as
+    //  "an old machine" rather than "a fault". Default 0 - a fresh head and new
+    //  tape.
+    // =========================================================================
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "wear", 1 }, "Wear",
+                                                            percentageRange (0.50f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+    // =========================================================================
+    //  MECHANICS - the state of the transport's moving parts.
+    //
+    //  WOW and FLUTTER set how much pitch modulation there is; MECHANICS decides
+    //  how WELL the mechanism is holding it. At 0 the capstan, the pinch roller
+    //  and the reel motors are all in good order, so the modulation is smooth and
+    //  periodic. At 100 the bearings are dry, the belt is slack and the reel has a
+    //  flat spot: the modulation becomes irregular, with a slow random drift on top
+    //  of the periodic wow and an occasional slip.
+    //
+    //  In other words it is the difference between a studio deck's gentle flutter
+    //  and a tired consumer machine's wobble. Default 0.
+    // =========================================================================
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "mechanics", 1 }, "Mechanics",
+                                                            percentageRange (0.50f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+    // =========================================================================
+    //  REVERB - the room the machine is in.
+    //
+    //  Tape machines lived in rooms, and the room is part of the sound of a
+    //  recording made on one. This is a small-to-medium plate/room hybrid placed
+    //  AFTER the machine, so the reverb is of the processed signal rather than
+    //  feeding back into the saturation - which keeps it clean and predictable.
+    //
+    //  Default 0 - dry, no room.
+    // =========================================================================
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "reverb", 1 }, "Reverb",
+                                                            percentageRange (0.45f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    // How long the reverb's tail runs. A separate control because decay and level
+    // are genuinely independent decisions on a real reverb.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "reverb_size", 1 }, "Reverb Size",
+                                                            percentageRange (0.50f), 0.40f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+    // =========================================================================
+    //  DELAY TYPE - which kind of delay the second head behaves as.
+    //
+    //  DELAY and DLY LVL set the time and the level; this sets the CHARACTER of
+    //  the repeats, and the three are genuinely different machines:
+    //
+    //    TAPE  - the original behaviour: each pass round the loop loses top end,
+    //            because the repeat is recorded onto the tape and played back.
+    //    BBD   - a bucket-brigade chip, the analogue delay of the era. Darker
+    //            still, with a slight aliasing/clock noise on the repeats and a
+    //            bandwidth that narrows as the delay lengthens.
+    //    MODERN- a clean digital delay: full bandwidth, no loss, repeats that
+    //            stack without getting dull.
+    //
+    //  Default TAPE, which is what every earlier build did.
+    // =========================================================================
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "delay_type", 1 }, "Delay Type",
+                                                            juce::StringArray { "Tape", "BBD", "Modern" },
+                                                            0));
+
+    // =========================================================================
+    //  DISTORTION - a hard-clipping stage in front of the machine.
+    //
+    //  Where the saturation core bends, this breaks: a diode-clipper style hard
+    //  knee with a pre-gain, which is the sound of a distortion pedal rather than
+    //  an overdriven recorder. It is deliberately placed BEFORE the tape so the
+    //  machine can smooth what it produces - which is what makes a distorted
+    //  signal recorded to tape sound like a record rather than a pedal.
+    //
+    //  Default 0 - off.
+    // =========================================================================
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "distortion", 1 }, "Distortion",
+                                                            percentageRange (0.45f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+    // =========================================================================
+    //  MODES - the two "alternative machine" switches.
+    //
+    //  MODERN re-voices the whole machine for a modern, clean, wide-bandwidth
+    //  sound: the head losses open up, the noise floor drops, the hysteresis
+    //  memory thins out and the glue stages tighten. It is the difference between
+    //  a 1970s deck and a well-maintained 1990s one.
+    //
+    //  LO-FI goes the other way and then further: it narrows the bandwidth hard,
+    //  adds a bit-crush style quantisation, brings up the noise and the transport
+    //  instability, and rolls off both ends. It is the deliberate degradation
+    //  mode - an effect, not a calibration.
+    //
+    //  Both are off by default, and they are mutually exclusive by design: turning
+    //  one on releases the other, because a machine cannot be both.
+    // =========================================================================
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "modern_mode", 1 },
+                                                            "Modern", false));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "lofi_mode", 1 },
+                                                            "Lo-Fi", false));
+
+    // =========================================================================
+    //  VINYL - the record-playing end of the chain.
+    //
+    //  A turntable adds three things that nothing else in this plugin does, and
+    //  they are what "vinyl" means as a sound:
+    //
+    //    SURFACE - the crackle and the rumble of a record surface. The crackle is
+    //              impulse noise (ticks), not hiss; the rumble is a low-frequency
+    //              thump from the bearing and the motor.
+    //    RUMBLE  - how much of that low-frequency noise there is.
+    //    WARMTH  - the RIAA playback curve's low-end lift and top-end roll-off,
+    //              which is what makes vinyl read as warm rather than merely noisy.
+    //
+    //  SURFACE is the overall amount; at 0 the whole vinyl stage is bypassed.
+    // =========================================================================
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vinyl", 1 }, "Vinyl",
+                                                            percentageRange (0.45f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vinyl_crackle", 1 }, "Crackle",
+                                                            percentageRange (0.45f), 0.5f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vinyl_rumble", 1 }, "Rumble",
+                                                            percentageRange (0.45f), 0.35f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+
     return layout;
 }
 
