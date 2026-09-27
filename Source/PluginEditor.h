@@ -181,7 +181,7 @@ private:
     // that silently disappears from the panel.
     static constexpr std::size_t controlCount = 33;
     static constexpr int tabColumns = 4;
-    static constexpr int numTabs = 6;
+    static constexpr int numTabs = 7;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     void timerCallback() override;
@@ -235,6 +235,7 @@ private:
     juce::ComboBox transformerTypeBox;
     juce::ComboBox digitalTypeBox;
     juce::ComboBox vinylTypeBox;
+    juce::ComboBox vinylSpeedBox;
     juce::ComboBox speedBox;
     juce::ComboBox instrumentBox;
     // Transport: STOP / PLAY / START. A combo rather than three buttons, so the
@@ -279,7 +280,7 @@ private:
     // Tempo sync: a switch plus the note value. A combo rather than a knob
     // because the note values are discrete and a knob through them would be a
     // scale the user has to learn.
-    juce::ToggleButton delaySyncButton { "SYNC" };
+    juce::ToggleButton delaySyncButton { "SYNC DELAY" };
     juce::ComboBox delayRateBox;
     juce::Label delayRateLabel;
 
@@ -307,6 +308,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> transformerTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> digitalTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> vinylTypeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> vinylSpeedAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> speedAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> instrumentAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> transportAttachment;
@@ -334,6 +336,7 @@ private:
     juce::Label transformerTypeLabel;
     juce::Label digitalTypeLabel;
     juce::Label vinylTypeLabel;
+    juce::Label vinylSpeedLabel;
     juce::Label speedLabel;
     juce::Label instrumentLabel;
     juce::Label deckHintLabel;

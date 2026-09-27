@@ -2094,9 +2094,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //  it is a virtual call into the host and hosts are entitled to make it
     //  expensive.
     // -----------------------------------------------------------------------
-    if (auto* playHead = getPlayHead())
+    if (auto* hostPlayHead = getPlayHead())
     {
-        if (auto position = playHead->getPosition())
+        if (auto position = hostPlayHead->getPosition())
         {
             if (auto bpm = position->getBpm())
             {
