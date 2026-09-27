@@ -2062,6 +2062,27 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     vinylRumbleCoefficient = onePoleCoefficientHz (30.0f, engineSampleRate);
     vinylWarmthCoefficient = onePoleCoefficientHz (400.0f, engineSampleRate);
 
+    // The LO-FI mode's two constants. 3.2 kHz is the band limit - roughly a cheap
+    // radio, and the most recognisable part of the mode - and the hold is four
+    // samples, which is a 4x sample-rate reduction at any rate (it is expressed in
+    // samples rather than in Hz so it stays the same reduction as the rate moves).
+    lofiLowCoefficient = onePoleCoefficientHz (3200.0f, engineSampleRate);
+    lofiHoldSamples = 4;
+
+    // -----------------------------------------------------------------------
+    //  MODERN mode: the machine re-voiced for a well-maintained 1990s deck.
+    //
+    //  It moves the COEFFICIENTS rather than the signal, because that is what
+    //  actually differs about a modern machine: its head losses sit further out of
+    //  the audio band, its floor is lower, and its magnetic memory is thinner
+    //  because the tape is better. Applying these as block-rate scales means the
+    //  mode changes the machine's calibration, not its level, so nothing else has
+    //  to be recalibrated around it.
+    // -----------------------------------------------------------------------
+    modernHeadGapScale = modernMode ? 1.35f : 1.0f;
+    modernHissScale = modernMode ? 0.35f : 1.0f;
+    modernHysteresisScale = modernMode ? 0.75f : 1.0f;
+
     // The cabinet's poles. The roll-off sits where a 12-inch speaker's cone mass
     // puts it (about 5 kHz at the default cabinet setting, opening toward 9 kHz as
     // CABINET is turned down) and the resonance tracks the cabinet's own tuning,
@@ -2435,8 +2456,14 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // The head-gap pole is the TONE macro's own crossfade - slow/soft machine (4.3 kHz)
     // to fast/open machine (24 kHz) - divided by the selected speed's damping, so SPEED
     // and TONE keep their independent meaning on the same head.
-    const float headGapCoefficient = onePoleCoefficientHz (headGapHz * speedScale, engineSampleRate);
-    const float hfPostCoefficient = onePoleCoefficientHz (headDampingHz * speedScale, engineSampleRate);
+    // MODERN mode opens the head losses up: the gap and damping corners move
+    // further out of the audio band, which is what a better-maintained machine
+    // actually does. The scale is 1.0 when the mode is off, so the tape machine is
+    // bit-for-bit unchanged.
+    const float headGapCoefficient = onePoleCoefficientHz (headGapHz * speedScale * modernHeadGapScale,
+                                                           engineSampleRate);
+    const float hfPostCoefficient = onePoleCoefficientHz (headDampingHz * speedScale * modernHeadGapScale,
+                                                          engineSampleRate);
 
     // Tape hiss is a continuous noise floor, so its density is expressed per sample and
     // therefore scales with the sample rate.
@@ -2454,7 +2481,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //      as more samples were added per second. Adding it on top of the band limit would
     //      double-compensate and the hiss would get louder as the rate went up, which is
     //      exactly the bug this replaces.
-    const float hissGain = tapeHiss * 0.00042f;
+    // MODERN mode lowers the floor, which is the single most obvious difference
+    // between an old machine and a well-kept one. 1.0 when the mode is off.
+    const float hissGain = tapeHiss * 0.00042f * modernHissScale;
 
     // The floor is gated by the transport. Tape hiss exists only while the tape is
     // actually MOVING across the head: a machine at rest is silent, because the
@@ -3671,6 +3700,60 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         else if (activeChannels == 1)
             currentInputLufs = inputLoudness.processFrame (inputChainHistory[0], inputChainHistory[0],
                                                            inputLoudnessCoefficient);
+    }
+
+    // -------------------------------------------------------------------------
+    //  Post-machine stages: reverb, then vinyl.
+    //
+    //  Both run AFTER the per-sample loop, on the finished block, for one reason:
+    //  neither belongs inside the tape nonlinearity. A reverb inside the wow
+    //  modulation would be pitch-shifted with it and would smear the harmonics
+    //  the plugin exists to produce; a turntable is the last thing in the signal
+    //  path, so its surface noise must not be recorded onto the tape.
+    //
+    //  They are a second pass over the block rather than part of the main loop
+    //  because the reverb is a STEREO processor - its two comb banks have to see
+    //  both channels to produce the width - and the main loop is per-channel.
+    // -------------------------------------------------------------------------
+    const float reverbMixNow = reverbMixSmoothed.getCurrentValue();
+    const float vinylNow = vinylSmoothed.getCurrentValue();
+
+    if (activeChannels > 0
+        && (reverbMixNow > 1.0e-5f || vinylNow > 1.0e-5f))
+    {
+        const float reverbSizeNow = reverbSizeSmoothed.getCurrentValue();
+        const float crackleNow = vinylCrackleSmoothed.getCurrentValue() * vinylNow;
+        const float rumbleNow = vinylRumbleSmoothed.getCurrentValue() * vinylNow;
+
+        for (int sample = 0; sample < numSamples; ++sample)
+        {
+            for (int channel = 0; channel < activeChannels; ++channel)
+            {
+                float value = channelData[static_cast<std::size_t> (channel)][sample];
+
+                // -- Reverb: the room the machine is in --------------------------
+                // It is applied to the finished signal, so what reverberates is
+                // the record rather than the performance.
+                if (reverbMixNow > 1.0e-5f)
+                    value = reverb.process (value, channel, reverbSizeNow, reverbMixNow);
+
+                // -- Vinyl: surface, rumble and the RIAA playback character ------
+                // Each channel has its own VinylStage, so the crackle and the
+                // rumble are uncorrelated between the sides - sharing a generator
+                // would put every tick in the centre of the image instead of on
+                // the surface.
+                if (vinylNow > 1.0e-5f)
+                {
+                    auto& vinyl = channel == 0 ? vinylL : vinylR;
+                    value = vinyl.process (value, channel,
+                                           crackleNow, rumbleNow, vinylNow,
+                                           vinylRumbleCoefficient, vinylWarmthCoefficient,
+                                           vinylNoiseState);
+                }
+
+                channelData[static_cast<std::size_t> (channel)][sample] = value;
+            }
+        }
     }
 
     const auto measuredSamples = static_cast<double> (numSamples)

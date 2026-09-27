@@ -2856,12 +2856,26 @@ private:
     float bbdLowL = 0.0f;
     float bbdLowR = 0.0f;
 
-    // The LO-FI mode's quantisation and bandwidth state, per channel.
+    // The LO-FI mode's quantisation and bandwidth state, per channel. The hold
+    // counter is shared so both channels sample on the same instants; the held
+    // VALUES are per channel so the image is preserved.
     float lofiLowL = 0.0f;
     float lofiLowR = 0.0f;
     float lofiHoldL = 0.0f;
     float lofiHoldR = 0.0f;
     int lofiCounter = 0;
+
+    // The LO-FI band limit and its sample-and-hold length, built once per block
+    // from the rate so the mode sounds the same at 44.1 and 192 kHz.
+    float lofiLowCoefficient = 0.5f;
+    int lofiHoldSamples = 4;
+
+    // The MODERN mode's voicing offsets, applied to the block-rate coefficients
+    // rather than to the signal: a modern deck's head losses are further out of
+    // the audio band and its floor is lower, so it is the COEFFICIENTS that move.
+    float modernHeadGapScale = 1.0f;
+    float modernHissScale = 1.0f;
+    float modernHysteresisScale = 1.0f;
 
     // A second, independent noise generator for the vinyl stage. It is separate
     // from `noiseState` so that turning VINYL on cannot change the tape hiss
