@@ -138,7 +138,7 @@ namespace
                    "the signal.",
                      9, { 21, 22, 1, 2, 10, 11, 12, 13, 20 } },
         //  flux, cabinet, presence
-        { "TAPE", "The head and the medium's tone.",
+        { "CHARACTER", "The head and the medium's tone.",
                      3, { 23, 15, 14 } },
         //  noise, noise_lvl, wow, flutter, wear, mechanics, vinyl, vinyl_crackle,
         //  vinyl_rumble - everything that is a departure from a clean signal,
@@ -1121,10 +1121,10 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
         controlLabels[i].setVisible (onActiveTab);
     }
 
-    // The deck's non-knob switches follow the tabs as well. The delay trio is a
-    // statement about the second head, so it shows on SPACE; GL and OVERSAMPLING
-    // are engine-level, so they show on SETTINGS. Everything else about them -
-    // attachments, layout - keeps working; only who can see them changes.
+    // The deck's non-knob switches are FULL MEMBERS of their tabs: resized() lays
+    // them out on the same grid the knobs use, and this is what hides them on every
+    // other tab. The delay trio belongs to the second head, GL and OVERSAMPLING to
+    // the engine itself.
     const auto settingsTab = currentTab == 6;
     const auto spaceTab = currentTab == 4;
     oversamplingLabel.setVisible (settingsTab);
@@ -1260,7 +1260,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 paletteFor (false).secondary, true, juce::Justification::left);
     styleLabel (statusLabel, "STEREO / REAL TIME", 9.0f,
                 paletteFor (false).status, true, juce::Justification::centred);
-    styleLabel (deckHeadingLabel, "TAPE DECK", 10.0f, paletteFor (false).accent,
+    styleLabel (deckHeadingLabel, "Deck", 10.0f, paletteFor (false).accent,
                 true, juce::Justification::left);
 
     // Build identity, printed on the deck's heading strip. CMake resolves
@@ -1291,7 +1291,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 true, juce::Justification::left);
     styleLabel (deckHintLabel, "Tape formula and speed.", 9.0f,
                 paletteFor (false).secondary, false, juce::Justification::centredLeft);
-    styleLabel (controlsHeadingLabel, "ANALOG CHARACTER", 10.0f, paletteFor (false).accent,
+    styleLabel (controlsHeadingLabel, "TABS", 10.0f, paletteFor (false).accent,
                 true, juce::Justification::left);
     styleLabel (controlsHintLabel, "Shift = fine tune", 9.0f,
                 paletteFor (false).secondary, false, juce::Justification::right);
@@ -1944,6 +1944,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     styleLabel (delayTypeLabel, "DLY TYPE", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
     addAndMakeVisible (delayTypeLabel);
+    addAndMakeVisible (delaySyncLabel);
     delayTypeBox.addItemList (juce::StringArray { "Tape", "BBD", "Modern" }, 1);
     delayTypeBox.setTooltip ("What the second head's repeats sound like. TAPE loses "
                              "top end on every pass, because the repeat is recorded "
@@ -1986,6 +1987,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (delaySyncButton);
 
     styleLabel (delayRateLabel, "RATE", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (delaySyncLabel, "SYNC DELAY", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (glLabel, "GL", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
     addAndMakeVisible (delayRateLabel);
     delayRateBox.addItemList (juce::StringArray { "1/1", "1/2", "1/4", "1/8", "1/16",
@@ -2058,6 +2063,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                          "draws the identical panel.");
     glButton.setLookAndFeel (&customLookAndFeel);
     addAndMakeVisible (glButton);
+    addAndMakeVisible (glLabel);
 
     // ---------------------------------------------------------------
     //  Premium workflow bar.
@@ -3320,6 +3326,42 @@ void FirstAudioProcessorEditor::resized()
         auto sliderBounds = cell.reduced (5);
         sliderBounds.removeFromTop (18);
         controls[i].setBounds (sliderBounds);
+    }
+
+    // The deck's non-knob switches occupy grid cells of their own tab, exactly
+    // where a knob would sit - same cell arithmetic, same label-above-control
+    // convention - so they are laid out HERE rather than on the fixed deck rows.
+    // A combo is taller than a knob cell wants, so the box rides the cell's lower
+    // half under its label.
+    const auto placeDeckSwitch = [&] (juce::Label& label, juce::Component& box,
+                                      int column, int row, int columnsWide,
+                                      const juce::String& caption)
+    {
+        auto cell = juce::Rectangle<int> (grid.getX() + column * cellWidth,
+                                          grid.getY() + row * rowHeight,
+                                          columnsWide == tabColumns
+                                              ? grid.getRight() - (grid.getX() + column * cellWidth)
+                                              : columnsWide * cellWidth
+                                                  + (columnsWide - 1) * (cellWidth / columnsWide),
+                                          rowHeight);
+        label.setText (caption, juce::dontSendNotification);
+        label.setBounds (cell.getX() + 5, cell.getY() + 1, cell.getWidth() - 10, 17);
+        box.setBounds (cell.getX() + 12, cell.getY() + 20,
+                       cell.getWidth() - 24, 30);
+    };
+
+    if (currentTab == 6)
+    {
+        // SETTINGS: GL and OVERSAMPLING, two cells on one row.
+        placeDeckSwitch (glLabel, glButton, 0, 0, 1, "GL");
+        placeDeckSwitch (oversamplingLabel, oversamplingBox, 1, 0, 1, "OVER");
+    }
+    else if (currentTab == 4)
+    {
+        // SPACE: the delay trio rides the row under the five knobs.
+        placeDeckSwitch (delayTypeLabel, delayTypeBox, 0, 1, 1, "TYPE");
+        placeDeckSwitch (delaySyncLabel, delaySyncButton, 1, 1, 1, "SYNC DELAY");
+        placeDeckSwitch (delayRateLabel, delayRateBox, 2, 1, 1, "RATE");
     }
 
     // Four meters in a 2 x 2 grid inside the meters panel:
