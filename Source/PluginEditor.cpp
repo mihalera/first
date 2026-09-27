@@ -124,7 +124,12 @@ namespace
     //   19 noise  20 subfund  21 preamp  22 distortion  23 flux  24 wear
     //   25 mechanics  26 reverb  27 reverb_size  28 vinyl  29 vinyl_crackle
     //   30 vinyl_rumble  31 noise_lvl
-    constexpr std::array<TabSpec, 6> tabSpecs { {
+    //
+    // The deck's non-knob switches follow the tabs too: GL and OVERSAMPLING show
+    // on SETTINGS, and the delay TYPE / RATE / SYNC trio shows on SPACE. They are
+    // not knobs - the grid below cannot place them - so their visibility is
+    // managed in setCurrentTab beside the knobs'.
+    constexpr std::array<TabSpec, 7> tabSpecs { {
         //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
         { "MACHINE", "What goes in, how the machine colours it, and what comes out.",
                      7, { 0, 3, 4, 7, 9, 8, 32 } },
@@ -147,8 +152,18 @@ namespace
                    "is the record's.",
                      9, { 19, 31, 5, 6, 24, 25, 28, 29, 30 } },
         //  delay_time, delay_feedback, st_offset, reverb, reverb_size
-        { "SPACE", "The two time-based stages: the second head, then the room.",
-                     5, { 16, 17, 18, 26, 27 } }
+        { "SPACE", "The two time-based stages: the second head, then the room. The "
+                   "deck's TYPE / SYNC DELAY / RATE switches belong to the second "
+                   "head, so they show on this tab.",
+                     5, { 16, 17, 18, 26, 27 } },
+        //  No knobs of its own: SETTINGS is where the two engine-level switches
+        //  live - the GL accelerator and the oversampling factor - shown by
+        //  setCurrentTab, not by the grid.
+        { "SETTINGS", "The engine-level switches. OVERSAMPLING sets the internal "
+                      "rate the tape engine runs at, GL turns the GPU-accelerated "
+                      "panel rendering on and off. They sit on the deck, and this "
+                      "tab is when they are on screen.",
+                     0, {} }
     } };
 
     // Where the divider under the knob-grid heading sits, in pixels from the top of the
@@ -174,7 +189,7 @@ namespace
     // twice, and none of them is silently dropped.
     // The tab count is written once, here, and the static_assert that guards coverage
 // reads it from the same constant - so adding a page cannot leave this behind.
-constexpr std::size_t numTabPages = 6;
+constexpr std::size_t numTabPages = 7;
 
 constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tabs,
                                      std::size_t total)
@@ -1106,6 +1121,21 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
         controlLabels[i].setVisible (onActiveTab);
     }
 
+    // The deck's non-knob switches follow the tabs as well. The delay trio is a
+    // statement about the second head, so it shows on SPACE; GL and OVERSAMPLING
+    // are engine-level, so they show on SETTINGS. Everything else about them -
+    // attachments, layout - keeps working; only who can see them changes.
+    const auto settingsTab = currentTab == 6;
+    const auto spaceTab = currentTab == 4;
+    oversamplingLabel.setVisible (settingsTab);
+    oversamplingBox.setVisible (settingsTab);
+    glButton.setVisible (settingsTab);
+    delayTypeLabel.setVisible (spaceTab);
+    delayTypeBox.setVisible (spaceTab);
+    delayRateLabel.setVisible (spaceTab);
+    delayRateBox.setVisible (spaceTab);
+    delaySyncButton.setVisible (spaceTab);
+
     styleTabButtons();
     resized();
 }
@@ -1294,6 +1324,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (transformerTypeLabel);
     addAndMakeVisible (digitalTypeLabel);
     addAndMakeVisible (vinylTypeLabel);
+    addAndMakeVisible (vinylSpeedLabel);
     addAndMakeVisible (speedLabel);
     addAndMakeVisible (deckHintLabel);
     addAndMakeVisible (controlsHeadingLabel);
@@ -1733,6 +1764,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     transformerTypeBox.addItemList (transformerTypeNameList(), 1);
     digitalTypeBox.addItemList (digitalTypeNameList(), 1);
     vinylTypeBox.addItemList (vinylTypeNameList(), 1);
+    vinylSpeedBox.addItemList (juce::StringArray { "33 RPM", "45 RPM", "78 RPM" }, 1);
     speedBox.addItemList (juce::StringArray { "7.5 ips", "15 ips", "30 ips" }, 1);
     tapeTypeBox.setTextWhenNothingSelected ("Select tape");
     speedBox.setTextWhenNothingSelected ("Select speed");
@@ -1774,12 +1806,19 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                              "fresh loud lacquer, a half-speed master is nearly "
                              "silent between the grooves. The speed of the motor is "
                              "VINYL SPEED.");
+    vinylSpeedBox.setTooltip ("VINYL SPEED - the speed of the turntable's motor, not "
+                              "of the record: the VINYL TYPE describes the disc, this "
+                              "describes what drives it. Each speed carries its own "
+                              "wow rate and depth, so the same record wanders "
+                              "differently at 33 and 45, and a 78's wind-up motor "
+                              "wobbles hardest. 33 RPM is the default.");
     tapeTypeBox.setLookAndFeel (&customLookAndFeel);
     valveTypeBox.setLookAndFeel (&customLookAndFeel);
     ampTypeBox.setLookAndFeel (&customLookAndFeel);
     transformerTypeBox.setLookAndFeel (&customLookAndFeel);
     digitalTypeBox.setLookAndFeel (&customLookAndFeel);
     vinylTypeBox.setLookAndFeel (&customLookAndFeel);
+    vinylSpeedBox.setLookAndFeel (&customLookAndFeel);
     speedBox.setLookAndFeel (&customLookAndFeel);
 
     bypassButton.setClickingTogglesState (true);
@@ -2178,6 +2217,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (transformerTypeBox);
     addAndMakeVisible (digitalTypeBox);
     addAndMakeVisible (vinylTypeBox);
+    addAndMakeVisible (vinylSpeedBox);
     addAndMakeVisible (speedBox);
     addAndMakeVisible (bypassButton);
     addAndMakeVisible (themeButton);
@@ -2193,6 +2233,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         (audioProcessor.parameters, "digital_type", digitalTypeBox);
     vinylTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "vinyl_type", vinylTypeBox);
+    vinylSpeedAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "vinyl_speed", vinylSpeedBox);
     speedAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "speed", speedBox);
 
@@ -2268,6 +2310,7 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     transformerTypeBox.setLookAndFeel (nullptr);
     digitalTypeBox.setLookAndFeel (nullptr);
     vinylTypeBox.setLookAndFeel (nullptr);
+    vinylSpeedBox.setLookAndFeel (nullptr);
     speedBox.setLookAndFeel (nullptr);
     bypassButton.setLookAndFeel (nullptr);
     deltaButton.setLookAndFeel (nullptr);
@@ -2502,6 +2545,7 @@ void FirstAudioProcessorEditor::applyTheme()
     styleCombo (transformerTypeBox);
     styleCombo (digitalTypeBox);
     styleCombo (vinylTypeBox);
+    styleCombo (vinylSpeedBox);
     styleCombo (speedBox);
     styleCombo (presetBox);
     // The user-preset combo is the seventh ComboBox and was the one left out of this
@@ -2531,6 +2575,7 @@ void FirstAudioProcessorEditor::applyTheme()
     styleCombo (transformerTypeBox);
     styleCombo (digitalTypeBox);
     styleCombo (vinylTypeBox);
+    styleCombo (vinylSpeedBox);
     // modernModeButton and lofiModeButton are ToggleButtons drawn by
     // drawToggleButton, which reads the palette live and needs no calls here.
     styleCombo (userPresetBox);
@@ -3104,16 +3149,24 @@ void FirstAudioProcessorEditor::resized()
     // reads as the model row's continuation rather than a new idea. Five boxes at
     // 118 px plus four 14 px gaps fill the 646 px the model row's controls span,
     // which keeps the two rows reading as one deck.
-    valveTypeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 80, 45, 16);
-    valveTypeBox.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 96, 118, 30);
-    ampTypeLabel.setBounds (valveTypeBox.getRight() + 14, layout.deck.getY() + 80, 45, 16);
-    ampTypeBox.setBounds (valveTypeBox.getRight() + 14, layout.deck.getY() + 96, 118, 30);
-    transformerTypeLabel.setBounds (ampTypeBox.getRight() + 14, layout.deck.getY() + 80, 45, 16);
-    transformerTypeBox.setBounds (ampTypeBox.getRight() + 14, layout.deck.getY() + 96, 118, 30);
-    digitalTypeLabel.setBounds (transformerTypeBox.getRight() + 14, layout.deck.getY() + 80, 45, 16);
-    digitalTypeBox.setBounds (transformerTypeBox.getRight() + 14, layout.deck.getY() + 96, 118, 30);
-    vinylTypeLabel.setBounds (digitalTypeBox.getRight() + 14, layout.deck.getY() + 80, 45, 16);
-    vinylTypeBox.setBounds (digitalTypeBox.getRight() + 14, layout.deck.getY() + 96, 118, 30);
+    // The type row: six boxes of 100 px on 14 px gaps = 670 px, inside the 752 px
+    // deck minimum, so VINYL SPEED keeps its own slot beside VINYL TYPE instead of
+    // borrowing one from another row.
+    const auto typeRowX = layout.deck.getX() + 18;
+    const auto typeBoxWidth = 100;
+    const auto typeGap = 14;
+    vinylTypeLabel.setBounds (typeRowX, layout.deck.getY() + 80, 62, 16);
+    vinylTypeBox.setBounds (typeRowX, layout.deck.getY() + 96, typeBoxWidth, 30);
+    vinylSpeedLabel.setBounds (vinylTypeBox.getRight() + typeGap, layout.deck.getY() + 80, 62, 16);
+    vinylSpeedBox.setBounds (vinylTypeBox.getRight() + typeGap, layout.deck.getY() + 96, typeBoxWidth, 30);
+    valveTypeLabel.setBounds (vinylSpeedBox.getRight() + typeGap, layout.deck.getY() + 80, 45, 16);
+    valveTypeBox.setBounds (vinylSpeedBox.getRight() + typeGap, layout.deck.getY() + 96, typeBoxWidth, 30);
+    ampTypeLabel.setBounds (valveTypeBox.getRight() + typeGap, layout.deck.getY() + 80, 45, 16);
+    ampTypeBox.setBounds (valveTypeBox.getRight() + typeGap, layout.deck.getY() + 96, typeBoxWidth, 30);
+    transformerTypeLabel.setBounds (ampTypeBox.getRight() + typeGap, layout.deck.getY() + 80, 62, 16);
+    transformerTypeBox.setBounds (ampTypeBox.getRight() + typeGap, layout.deck.getY() + 96, typeBoxWidth, 30);
+    digitalTypeLabel.setBounds (transformerTypeBox.getRight() + typeGap, layout.deck.getY() + 80, 55, 16);
+    digitalTypeBox.setBounds (transformerTypeBox.getRight() + typeGap, layout.deck.getY() + 96, typeBoxWidth, 30);
 
     polarityButton.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 74, 92, 32);
     autoGainButton.setBounds (polarityButton.getRight() + 6, layout.deck.getY() + 74, 100, 32);
