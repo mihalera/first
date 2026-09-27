@@ -2892,7 +2892,13 @@ private:
     // almost never has to act. `preLimiterDetector` is a fast peak follower and
     // `limiterGain` is the smoothed gain it applies; keeping them separate gives the
     // classic brick-wall shape - instant catch, musical release.
+    //
+    // `limiterCeiling` is the level the limiter pulls back to. It sits exactly on
+    // softClip's knee (0.70), which is the only value that makes the hand-off
+    // claim true: below the knee the clipper is bit-for-bit transparent, so anything
+    // the limiter lets through is distortion the clipper would not have caused yet.
     float preLimiterDetector = 0.0f;
+    float limiterCeiling = 0.70f;
     float limiterGain = 1.0f;
 
     // Final gain compensation. `smoothedCompensationDb` is the slow, programme-level

@@ -2215,6 +2215,14 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     limiterDetectorRelease = onePoleCoefficient (80.0f, engineSampleRate);
     limiterCatchCoefficient = onePoleCoefficient (0.4f, engineSampleRate);
     limiterRecoveryCoefficient = onePoleCoefficient (120.0f, engineSampleRate);
+    // The ceiling is a level, not a time constant, so it does not belong with the
+    // four one-pole coefficients above - but it is set here so the hand-off point
+    // and the coefficients that act on it are read from one place. It mirrors
+    // softClip's knee, which is the only value that makes this stage's own comment
+    // true, so that knee and this number have to move together: softClip declares
+    // its knee as a function-local constexpr, so a shared constant would have to
+    // be lifted out of a function the DSP harness cuts up on its own.
+    limiterCeiling = 0.70f;
 
     // Transport: the ramp target is 0 for STOP and 1 for PLAY or START. The
     // coefficient sets how fast it gets there - a spin-up takes about a second, which
