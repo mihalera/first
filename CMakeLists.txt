@@ -525,15 +525,27 @@ if(J37_ENABLE_IPP)
         set(J37_IPP_HOW "oneAPI SDK config")
     else()
         # Fallback probe, for the layouts that ship NO CMake config at all.
-        # Intel publishes official NuGet packages of exactly that shape -
-        # intelipp.static.win-x64 is headers plus .lib files and nothing else -
-        # and they are the only practical way to get IPP onto a Windows CI
-        # runner, because the oneAPI installer is a ~1.5 GB GUI installer that
-        # Intel's own community threads report as not working from a command
-        # line. The probe is a plain find_path/find_library, so it works with
-        # any compiler, and the targets it defines are named exactly as Intel's
-        # own config names them, so the link line below cannot tell the two
-        # apart.
+        # There are two of them and they are the only practical way to put IPP
+        # on a CI runner, because the oneAPI installer is a ~1.5 GB GUI
+        # installer that Intel's own community threads report as not working
+        # from a command line, oneAPI is not in winget (open request) and
+        # Chocolatey has nothing:
+        #
+        #   Intel's PyPI wheels, ipp-static + ipp-include - the route CI uses.
+        #   Headers land in <prefix>/include/ipp.h, the manylinux wheel puts
+        #   libipps.a in <prefix>/lib and the win_amd64 wheel puts ippsmt.lib in
+        #   <prefix>/Library/lib. There is no macOS wheel at all, which is the
+        #   other half of why vDSP is the Apple path.
+        #
+        #   intelipp.static.win-x64 on NuGet - headers plus .lib files, nothing
+        #   else, under build/native.
+        #
+        # The probe is a plain find_path/find_library, so it works with any
+        # compiler, and the targets it defines are named exactly as Intel's own
+        # config names them, so the link line below cannot tell the routes
+        # apart. IPPROOT is what names the prefix: it is Intel's own variable
+        # for the installed SDK, and the CI step exports it for the wheels too,
+        # so one variable covers both.
         #
         # The mt suffix is the multithreaded static variant, which is what the
         # NuGet package ships and the only one there; the plain name is what
@@ -548,15 +560,20 @@ if(J37_ENABLE_IPP)
             HINTS ${j37_ipp_roots}
             PATH_SUFFIXES include build/native/include)
 
+        # The last suffix, Library/lib, is the one Intel's PyPI wheels use on
+        # Windows: ipp_static-<ver>.data/data/Library/lib/ippsmt.lib. The Linux
+        # wheel uses lib/libipps.a and the oneAPI install uses lib/intel64, and
+        # all three have to be searched or the route silently finds nothing on
+        # one platform and works on the others.
         find_library(J37_IPP_IPPS_LIBRARY
             NAMES ipps ippsmt
             HINTS ${j37_ipp_roots}
-            PATH_SUFFIXES lib lib/intel64 build/native/win-x64)
+            PATH_SUFFIXES lib lib/intel64 build/native/win-x64 Library/lib)
 
         find_library(J37_IPP_CORE_LIBRARY
             NAMES ippcore ippcoremt
             HINTS ${j37_ipp_roots}
-            PATH_SUFFIXES lib lib/intel64 build/native/win-x64)
+            PATH_SUFFIXES lib lib/intel64 build/native/win-x64 Library/lib)
 
         if(J37_IPP_INCLUDE_DIR AND J37_IPP_IPPS_LIBRARY AND J37_IPP_CORE_LIBRARY)
             add_library(IPP::ipps UNKNOWN IMPORTED)

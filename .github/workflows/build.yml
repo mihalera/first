@@ -127,33 +127,48 @@ jobs:
             libgl1-mesa-dev \
             libglu1-mesa-dev
 
-      - name: Install Intel oneAPI IPP (exercises the Intel vector backend)
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Intel IPP (PyPI wheels)
         run: |
-          # IPP is the one optional dependency this project can actually put on
-          # a CI machine, so it IS put on one: without this step the build only
-          # ever proves the "IPP absent" path, and the Intel branch of
-          # CMakeLists.txt would go unexercised until a developer happened to
-          # have oneAPI installed locally.
+          # Intel's oneAPI installer is a ~1.5 GB GUI installer that does not work
+          # from a command line, and it is not needed: Intel publishes the same
+          # library on PyPI as ipp-static plus its ipp-include dependency, both
+          # maintained by Intel, and they are the only IPP distribution a GitHub
+          # runner can install at all. Without this step the build would only
+          # ever prove the "IPP absent" path.
           #
-          # The unversioned intel-oneapi-ipp-devel metapackage tracks whatever
-          # the repository currently ships, so this does not rot into a pinned
-          # version that stops resolving. --no-install-recommends keeps the DPC++
-          # toolchain and the rest of oneAPI out of the runner.
+          # These wheels carry no CMake config package, so the prefix has to be
+          # found and handed to CMake as IPPROOT. It cannot be computed: a venv,
+          # a hosted-toolcache Python and a system Python each put it somewhere
+          # else, and sysconfig is no help because in a venv its 'include'
+          # reports the BASE interpreter's headers. So look for the header and
+          # take its prefix - the libraries land in the same tree.
           #
-          # The Windows and macOS jobs deliberately do NOT install it. Windows
-          # has no package equivalent - oneAPI is a ~1.5 GB installer there -
-          # and Intel no longer ships oneAPI for macOS at all, which is exactly
-          # why the vDSP path exists. Windows gets IPP from Intel's NuGet
-          # packages instead - there is no usable installer there - and the
-          # macOS job is what proves the "library absent, portable path" branch
-          # still builds.
-          curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
-            | sudo gpg --dearmor -o /usr/share/keyrings/oneAPI-archive-keyring.gpg
-          echo "deb [signed-by=/usr/share/keyrings/oneAPI-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
-            | sudo tee /etc/apt/sources.list.d/oneAPI.list > /dev/null
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends intel-oneapi-ipp-devel
-          test -f /opt/intel/oneapi/ipp/latest/include/ipp/ipps.h
+          # The wheels are unpinned on purpose: pip resolves the current release
+          # and there is no version to rot.
+          python -m pip install --upgrade pip
+          python -m pip install ipp-static
+          prefix=$(python - <<'PYIPP'
+          import glob, os, site
+          found = ""
+          for base in site.getsitepackages():
+              for up in range(1, 5):
+                  p = os.path.normpath(os.path.join(base, *[".."] * up))
+                  if glob.glob(os.path.join(p, "include", "ipp.h")):
+                      found = p
+                      break
+              if found:
+                  break
+          print(found)
+          PYIPP
+          )
+          test -n "$prefix" || { echo "could not locate the ipp-include prefix"; exit 1; }
+          echo "Intel IPP prefix: $prefix"
+          echo "IPPROOT=$prefix" >> "$GITHUB_ENV"
 
       - name: Configure CMake (Debug)
         run: |
@@ -196,37 +211,35 @@ jobs:
           # drift onto a different JUCE revision.
           submodules: recursive
 
-      - name: Install Intel IPP (NuGet static package)
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Intel IPP (PyPI wheels)
         shell: pwsh
         run: |
-          # Intel's oneAPI installer is a ~1.5 GB GUI installer that does not
-          # work from a command line, oneAPI is not in winget (there is an open
-          # package request for it), and Chocolatey has nothing either - so
-          # none of those is an option on a runner. Intel publishes the same
-          # library as NuGet packages instead, and that is what this uses:
+          # Same two Intel wheels the Linux jobs use, and the reason the
+          # mechanism is the same on both: the oneAPI installer is a ~1.5 GB GUI
+          # installer that does not work from a command line, oneAPI is not in
+          # winget (there is an open package request) and Chocolatey has
+          # nothing. The win_amd64 wheel puts its libraries in Library/lib as
+          # ippsmt.lib / ippcoremt.lib, which CMakeLists.txt searches for
+          # explicitly.
           #
-          #   intelipp.static.win-x64   headers + the static libraries
-          #                             (ippsmt.lib, ippcoremt.lib, ...)
-          #   intelipp.devel.win-x64   headers + the DLLs, no import libs
-          #
-          # The static one is what a plugin wants: it links IPP into the binary,
-          # so no IPP DLL has to ship beside the .vst3. The version is read
-          # from the feed index rather than pinned, so this cannot rot into a
-          # version that stops resolving.
-          $ErrorActionPreference = "Stop"
-          $pkg = "intelipp.static.win-x64"
-          $ver = (Invoke-RestMethod "https://api.nuget.org/v3-flatcontainer/$pkg/index.json").versions[-1]
-          $root = Join-Path $env:RUNNER_TEMP "intelipp"
-          # A .nupkg IS a zip, so Expand-Archive unpacks it and no extra tooling
-          # has to be installed on the runner to do so.
-          Invoke-WebRequest "https://api.nuget.org/v3-flatcontainer/$pkg/$ver/$pkg.$ver.nupkg" -OutFile "$root.zip"
-          Expand-Archive "$root.zip" -DestinationPath $root
-          if (-not (Test-Path "$root/build/native/include/ipp.h")) { throw "IPP headers missing from $pkg $ver" }
-          if (-not (Test-Path "$root/build/native/win-x64/ippsmt.lib")) { throw "IPP static library missing from $pkg $ver" }
-          Write-Host "Intel IPP $ver unpacked to $root"
-          # A later step is a fresh shell, so the prefix has to travel through
-          # the environment file rather than a local variable.
-          "IPPROOT=$root" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+          # The prefix has to be located rather than computed, for the reasons
+          # in the Linux job, and IPPROOT is what tells CMake where it is.
+          python -m pip install --upgrade pip
+          python -m pip install ipp-static
+          # One line on purpose. A PowerShell here-string works as an argument,
+          # but PowerShell mangles embedded newlines when it hands a string to a
+          # native command, and this is a native command. One line, no newlines,
+          # nothing to mangle.
+          $prefix = python -c "import glob,os,site;print(next((os.path.normpath(os.path.join(b,*['..']*u)) for b in site.getsitepackages() for u in range(1,5) if glob.glob(os.path.join(os.path.normpath(os.path.join(b,*['..']*u)),'include','ipp.h'))),''))"
+          $prefix = $prefix.Trim()
+          if (-not $prefix) { throw "could not locate the ipp-include prefix" }
+          Write-Host "Intel IPP prefix: $prefix"
+          "IPPROOT=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
 
       - name: Configure CMake
         shell: pwsh
@@ -506,33 +519,48 @@ jobs:
             libgl1-mesa-dev \
             libglu1-mesa-dev
 
-      - name: Install Intel oneAPI IPP (exercises the Intel vector backend)
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Intel IPP (PyPI wheels)
         run: |
-          # IPP is the one optional dependency this project can actually put on
-          # a CI machine, so it IS put on one: without this step the build only
-          # ever proves the "IPP absent" path, and the Intel branch of
-          # CMakeLists.txt would go unexercised until a developer happened to
-          # have oneAPI installed locally.
+          # Intel's oneAPI installer is a ~1.5 GB GUI installer that does not work
+          # from a command line, and it is not needed: Intel publishes the same
+          # library on PyPI as ipp-static plus its ipp-include dependency, both
+          # maintained by Intel, and they are the only IPP distribution a GitHub
+          # runner can install at all. Without this step the build would only
+          # ever prove the "IPP absent" path.
           #
-          # The unversioned intel-oneapi-ipp-devel metapackage tracks whatever
-          # the repository currently ships, so this does not rot into a pinned
-          # version that stops resolving. --no-install-recommends keeps the DPC++
-          # toolchain and the rest of oneAPI out of the runner.
+          # These wheels carry no CMake config package, so the prefix has to be
+          # found and handed to CMake as IPPROOT. It cannot be computed: a venv,
+          # a hosted-toolcache Python and a system Python each put it somewhere
+          # else, and sysconfig is no help because in a venv its 'include'
+          # reports the BASE interpreter's headers. So look for the header and
+          # take its prefix - the libraries land in the same tree.
           #
-          # The Windows and macOS jobs deliberately do NOT install it. Windows
-          # has no package equivalent - oneAPI is a ~1.5 GB installer there -
-          # and Intel no longer ships oneAPI for macOS at all, which is exactly
-          # why the vDSP path exists. Windows gets IPP from Intel's NuGet
-          # packages instead - there is no usable installer there - and the
-          # macOS job is what proves the "library absent, portable path" branch
-          # still builds.
-          curl -fsSL https://apt.repos.intel.com/intel-gpg-keys/GPG-PUB-KEY-INTEL-SW-PRODUCTS.PUB \
-            | sudo gpg --dearmor -o /usr/share/keyrings/oneAPI-archive-keyring.gpg
-          echo "deb [signed-by=/usr/share/keyrings/oneAPI-archive-keyring.gpg] https://apt.repos.intel.com/oneapi all main" \
-            | sudo tee /etc/apt/sources.list.d/oneAPI.list > /dev/null
-          sudo apt-get update
-          sudo apt-get install -y --no-install-recommends intel-oneapi-ipp-devel
-          test -f /opt/intel/oneapi/ipp/latest/include/ipp/ipps.h
+          # The wheels are unpinned on purpose: pip resolves the current release
+          # and there is no version to rot.
+          python -m pip install --upgrade pip
+          python -m pip install ipp-static
+          prefix=$(python - <<'PYIPP'
+          import glob, os, site
+          found = ""
+          for base in site.getsitepackages():
+              for up in range(1, 5):
+                  p = os.path.normpath(os.path.join(base, *[".."] * up))
+                  if glob.glob(os.path.join(p, "include", "ipp.h")):
+                      found = p
+                      break
+              if found:
+                  break
+          print(found)
+          PYIPP
+          )
+          test -n "$prefix" || { echo "could not locate the ipp-include prefix"; exit 1; }
+          echo "Intel IPP prefix: $prefix"
+          echo "IPPROOT=$prefix" >> "$GITHUB_ENV"
 
       - name: Configure CMake
         run: |
