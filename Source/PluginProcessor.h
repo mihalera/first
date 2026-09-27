@@ -3044,8 +3044,14 @@ private:
     bool lofiMode = false;
 
     // The BBD delay's clock noise and its bandwidth state, per channel.
-    float bbdNoiseStateL = 0.0f;
-    float bbdNoiseStateR = 0.0f;
+    // The BBD clock's LCG register, per channel. This is a stateful integer
+    // generator and not an audio value: the 1664525/1013904223 step and the `>> 8`
+    // below are integer operations on it, and the audio is taken from the result
+    // afterwards. Declared as a float the multiply happened to convert and compile,
+    // and the build only failed at the shift - which is where the mismatch finally
+    // showed up rather than where it started.
+    std::uint32_t bbdNoiseStateL = 0;
+    std::uint32_t bbdNoiseStateR = 0;
     float bbdLowL = 0.0f;
     float bbdLowR = 0.0f;
 

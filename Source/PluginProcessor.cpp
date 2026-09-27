@@ -1541,8 +1541,8 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     vinylL.reset();
     vinylR.reset();
 
-    bbdNoiseStateL = 0.0f;
-    bbdNoiseStateR = 0.0f;
+    bbdNoiseStateL = 0;
+    bbdNoiseStateR = 0;
     bbdLowL = bbdLowR = 0.0f;
     lofiLowL = lofiLowR = 0.0f;
     lofiHoldL = lofiHoldR = 0.0f;
