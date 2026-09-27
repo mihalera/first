@@ -1674,6 +1674,23 @@ struct SubharmonicGenerator
     float confidenceAttackCoeff = 0.0f;
     float confidenceReleaseCoeff = 0.0f;
 
+    // ------------------------------------------------------------------------
+    //  Octave-lock memory.
+    //
+    //  A subharmonic an octave below the note is the one that carries the most
+    //  energy, so it is also the one that can do the most damage: if the two
+    //  channels happen to generate it in opposite phase, summing the mix to mono
+    //  cancels it, and the low end disappears. That is not a fault in this stage,
+    //  but it IS a fault in the result, and it is preventable.
+    //
+    //  `octavePhaseAligned` records whether the 1/2 stage has stayed close to the
+    //  master's half-phase over the last few cycles. When the two channels agree,
+    //  the octave is reinforced; when they disagree, the two octaves are opposite
+    //  and the mono sum loses them. The caller can then bias the depth per channel
+    //  so the pair stays constructive.
+    // ------------------------------------------------------------------------
+    float octavePhaseError = 0.0f;
+
     // Cached sample-rate-dependent filter coefficients
     float cachedSampleRate = 0.0f;
     float lpCoeff = 0.0f;
@@ -1695,6 +1712,7 @@ struct SubharmonicGenerator
         fundamentalPhase = 0.0f;
         samplesSinceLastCrossing = 0.0f;
         cycleConfidence = 0.0f;
+        octavePhaseError = 0.0f;
         cachedSampleRate = 0.0f;
         detectorDcX = 0.0f;
         detectorDcY = 0.0f;
@@ -1739,8 +1757,42 @@ struct SubharmonicGenerator
     }
 
     /**
+        The 1/2 stage's phase relative to the master, in turns, signed to [-0.5, 0.5).
+        The caller reads this on both channels to decide whether their octaves are
+        in phase; see the field's own note for why that matters.
+    */
+    float getOctavePhaseError() const noexcept { return octavePhaseError; }
+
+    /** How well the detector is currently tracking, 0..1. Drives the UI readout. */
+    float getCycleConfidence() const noexcept { return cycleConfidence; }
+
+    /**
+        Rotates the master phase by a small amount, for the caller's anti-phase
+        protection. Deliberately tiny in effect and clamped: this is a nudge, not a
+        set, so it can never break the lock the PLL is holding - it only biases
+        which side of the lock the cascade settles on.
+    */
+    void nudgeMasterPhase (float turns) noexcept
+    {
+        fundamentalPhase += juce::jlimit (-0.01f, 0.01f, turns);
+        if (fundamentalPhase >= 1.0f) fundamentalPhase -= 1.0f;
+        if (fundamentalPhase < 0.0f)  fundamentalPhase += 1.0f;
+    }
+
+    /** The fundamental the cascade is locked to, in Hz. Zero when unlocked. */
+    float getTrackedFrequency (float sampleRate) const noexcept
+    {
+        if (cycleConfidence < 0.1f)
+            return 0.0f;
+
+        const float safeRate = juce::jmax (1.0f, sampleRate);
+        const float safePeriod = juce::jlimit (safeRate / 500.0f, safeRate / 15.0f, period);
+        return safeRate / safePeriod;
+    }
+
+    /**
         Feeds one sample and returns the multi-frequency subharmonic component: a
-        phase-locked series of pure sinusoids at f0/2, /3, /4 ... /9.
+        phase-locked series of pure sinusoids at f0/2, /3, /4 ... /10.
 
         `driveAmount` tilts the series towards its deep end, opening the lower
         dividers without ever reordering the staircase.
@@ -1894,6 +1946,20 @@ struct SubharmonicGenerator
         const float baseStep = 1.0f / safePeriod;
         const float trackedFundamentalHz = safeRate / safePeriod;
 
+        // ----------------------------------------------------------------------
+        //  Advance the fundamental phase, then re-derive every stage from it.
+        //
+        //  This is the second half of the PLL upgrade. The stages are no longer
+        //  free-running oscillators that get nudged; they are DIVISIONS of one
+        //  master phase. That is what keeps them locked to each other as well as
+        //  to the signal - with independent accumulators, two stages can drift
+        //  apart from each other even while both stay near the note, which shows
+        //  up as the series beating against itself.
+        // ----------------------------------------------------------------------
+        fundamentalPhase += baseStep;
+        if (fundamentalPhase >= 1.0f)
+            fundamentalPhase -= 1.0f;
+
         const float clampedDrive = juce::jlimit (0.0f, 1.0f, driveAmount);
 
         float sum = 0.0f;
@@ -1901,9 +1967,11 @@ struct SubharmonicGenerator
 
         for (int s = 0; s < numStages; ++s)
         {
-            phases[s] += baseStep / static_cast<float> (dividers[s]);
-            if (phases[s] >= 1.0f)
-                phases[s] -= 1.0f;
+            // The stage's phase is the master phase divided by its divider. The
+            // accumulator is still kept so the loop can advance it when the
+            // detector is unlocked, but the master is authoritative whenever the
+            // track is confident.
+            phases[s] = fundamentalPhase / static_cast<float> (dividers[s]);
 
             const float subFreq = trackedFundamentalHz / static_cast<float> (dividers[s]);
 
@@ -1968,13 +2036,19 @@ struct SubharmonicGenerator
             // but it no longer shapes the waveform.
             const float osc = std::cos (juce::MathConstants<float>::twoPi * phases[s]);
             sum += osc * effectiveWeight;
+
+            // The octave stage's phase error is recorded for the caller's
+            // anti-phase bias. Stage 0 is the 1/2 divider by construction, and the
+            // error is signed so the two channels can be compared.
+            if (s == 0)
+                octavePhaseError = phases[0] < 0.5f ? phases[0] : phases[0] - 1.0f;
         }
 
         if (weightSum <= 1.0e-4f)
             return 0.0f;
 
         const float fade = juce::jmin (1.0f, weightSum);
-        return (sum / weightSum) * detPeak * depth * fade * presenceGain;
+        return (sum / weightSum) * detPeak * depth * fade * gateGain;
     }
 };
 
@@ -2404,6 +2478,21 @@ public:
     /** True when the last processed block was fully bypassed. */
     bool isBypassed() const noexcept { return bypassActive.load (std::memory_order_relaxed); }
 
+    //==============================================================================
+    //  Subharmonic tracking telemetry.
+    //
+    //  Reports what the undertone cascade is actually doing, which is the one
+    //  thing about the stage a user cannot see from the panel: a depth knob at
+    //  60 % tells you nothing if the detector has not locked onto a note, and
+    //  until now there was no way to tell those two states apart.
+    //==============================================================================
+
+    /** The fundamental the cascade is locked to, in Hz. Zero when unlocked. */
+    float getSubfundTrackedHz() const noexcept { return subfundTrackedHz.load (std::memory_order_relaxed); }
+
+    /** How solidly the detector is tracking, 0..1. Zero means nothing is being generated. */
+    float getSubfundConfidence() const noexcept { return subfundConfidence.load (std::memory_order_relaxed); }
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
@@ -2553,6 +2642,13 @@ private:
     std::atomic<float> transportDrift { 0.5f };
     std::atomic<float> harmonicCharacter { 0.0f };
     std::atomic<bool> bypassActive { false };
+
+    // Subharmonic telemetry, published so the panel can show whether the cascade
+    // is actually locked and to what. Without it the only way to tell a stage that
+    // is tracking from one that is merely idling is to listen - and "is the
+    // subfund doing anything" is exactly the question the readout should answer.
+    std::atomic<float> subfundTrackedHz { 0.0f };
+    std::atomic<float> subfundConfidence { 0.0f };
 
     // -----------------------------------------------------------------------
     //  Premium workflow state.

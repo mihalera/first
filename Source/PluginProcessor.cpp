@@ -3407,6 +3407,47 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             tapeOutput[static_cast<std::size_t> (channel)] = dryMix + wetMix;
         }
 
+        // ------------------------------------------------------------------
+        //  Subharmonic anti-phase protection.
+        //
+        //  Runs once per FRAME, after both channels have generated their
+        //  undertones, because it is a statement about the PAIR - the channel loop
+        //  cannot see both sides at once.
+        //
+        //  The 1/2 stage carries the most energy of the whole cascade, so it is
+        //  the one that matters if the two sides disagree: two octaves in opposite
+        //  phase cancel when the mix is summed to mono, and the low end the
+        //  control was asked for simply disappears. That is not a fault in either
+        //  generator - each is correctly locked to its own channel's waveform -
+        //  but it is a fault in the result.
+        //
+        //  The fix is to pull the two octaves back together. The correction is a
+        //  small rotation of the master phase toward the other channel's, applied
+        //  only while the two are actually disagreeing and only in proportion to
+        //  how much they disagree, so an already-aligned pair is untouched.
+        // ------------------------------------------------------------------
+        if (activeChannels == 2)
+        {
+            const float errorL = subharmonicL.getOctavePhaseError();
+            const float errorR = subharmonicR.getOctavePhaseError();
+
+            // The signed difference, wrapped to [-0.5, 0.5): zero means the two
+            // octaves are in phase, +/-0.5 means they are exactly opposite.
+            float octaveError = errorL - errorR;
+            if (octaveError > 0.5f)  octaveError -= 1.0f;
+            if (octaveError < -0.5f) octaveError += 1.0f;
+
+            // Only correct a genuine disagreement, and only gently. A 0.05
+            // threshold means small tracking differences are left alone - they are
+            // not audible and correcting them would fight the per-channel lock -
+            // while a real opposition is pulled back over a few cycles.
+            if (std::abs (octaveError) > 0.05f)
+            {
+                const float correction = -octaveError * 0.02f;
+                subharmonicR.nudgeMasterPhase (correction);
+            }
+        }
+
         // One advance of the delay line's write head per FRAME, not per channel:
         // advancing it inside the channel loop would move the line twice per stereo
         // frame, halving every delay time and putting the two channels a sample
