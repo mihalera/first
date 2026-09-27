@@ -2601,6 +2601,9 @@ private:
     std::atomic<float>* vinylParam = nullptr;
     std::atomic<float>* vinylCrackleParam = nullptr;
     std::atomic<float>* vinylRumbleParam = nullptr;
+    std::atomic<float>* stLinkParam = nullptr;
+    std::atomic<float>* delaySyncParam = nullptr;
+    std::atomic<float>* delayRateParam = nullptr;
 
     float sampleRate = 44100.0f;
     // Every smoother below is advanced exactly once at the top of each sample frame.
@@ -2864,8 +2867,21 @@ private:
     // Two independent glue stages, each with its own detector envelope. The input
     // stage runs straight after the input trim, the output stage straight before
     // the output trim; neither reads the other's state.
+    //
+    // Each stage ALSO has a second, per-channel detector pair. ST LINK decides
+    // which pair is used: at 100 % the shared detector above supplies one gain for
+    // both sides (a stereo-linked bus compressor, and what every earlier build
+    // did); below that the two per-channel detectors take over, crossfaded in, so
+    // a loud left channel ducks only the left.
+    //
+    // The second pair is a separate object rather than two more fields on
+    // GlueCompressor because the linked path must keep running even while the
+    // unlinked one is in use - otherwise moving ST LINK would resume the shared
+    // detector from a stale envelope and step the gain.
     GlueCompressor inputCompressor;
     GlueCompressor outputCompressor;
+    std::array<GlueCompressor, 2> inputCompressorChannels;
+    std::array<GlueCompressor, 2> outputCompressorChannels;
 
     // Measures the harmonics the tape shaper is actually producing, separating even from
     // odd. This is the observable signature of the analogue character and drives the
@@ -2973,6 +2989,28 @@ private:
     // continuously instead of stepping the curve on a block boundary.
     SampleSmoother blendSmoothed { sampleClock };
     SampleSmoother shapeSmoothed { sampleClock };
+
+    // ST LINK, ramped like every other control-derived coefficient: it scales the
+    // gain difference between the linked and unlinked paths, and a step there is a
+    // step in the waveform.
+    SampleSmoother stLinkSmoothed { sampleClock, false, false, 1.0f };
+
+    // -----------------------------------------------------------------------
+    //  Tempo sync.
+    //
+    //  The host's tempo, read from the playhead once per block and cached here.
+    //  It is NOT an atomic: it is written and read on the audio thread only, and
+    //  the editor has no business seeing it - the panel shows the resulting note
+    //  value, which is a parameter, not the tempo.
+    //
+    //  `hostTempoValid` records whether the host actually supplied a tempo this
+    //  block. A host that offers no playhead, or one that is stopped and reports
+    //  nothing, leaves the previous value in place rather than resetting to zero:
+    //  falling back to 120 would make the delay jump every time the transport
+    //  stopped, which is worse than holding the last known tempo.
+    // -----------------------------------------------------------------------
+    double hostTempoBpm = 120.0;
+    bool hostTempoValid = false;
 
     // The amp controls. PRESENCE and CABINET are coefficients rather than gains,
     // so they are smoothed for the same reason every other pole is: a stepped

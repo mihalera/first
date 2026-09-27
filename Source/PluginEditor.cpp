@@ -127,7 +127,7 @@ namespace
     constexpr std::array<TabSpec, 5> tabSpecs { {
         //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
         { "MACHINE", "What goes in, how the machine colours it, and what comes out.",
-                     6, { 0, 3, 4, 7, 9, 8 } },
+                     7, { 0, 3, 4, 7, 9, 8, 31 } },
         //  preamp, distortion, drive, bias, blend, shape, amp_bias, sag, subfund
         { "DRIVE", "The gain stages in front of the tape, then everything that bends "
                    "the signal.",
@@ -1305,7 +1305,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                          "preamp", "distortion",
                                          "flux", "wear", "mechanics",
                                          "reverb", "reverb_size",
-                                         "vinyl", "vinyl_crackle", "vinyl_rumble" };
+                                         "vinyl", "vinyl_crackle", "vinyl_rumble",
+                                         "st_link" };
     const juce::StringArray controlNames { "INPUT", "DRIVE", "BIAS",
                                            "BRIGHT", "TONE", "WOW",
                                            "FLUTTER", "MIX", "OUTPUT",
@@ -1317,7 +1318,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                            "PREAMP", "DISTORT",
                                            "FLUX", "WEAR", "MECHANICS",
                                            "REVERB", "RVB SIZE",
-                                           "VINYL", "CRACKLE", "RUMBLE" };
+                                           "VINYL", "CRACKLE", "RUMBLE",
+                                           "ST LINK" };
     // One double-click reset value per controlIds entry, in the SAME order, each one
     // the default createParameterLayout() registers for that parameter. These are
     // three views of ONE list, so a value that lands on a different control is a
@@ -1347,7 +1349,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                                            0.0, 0.0,
                                                            0.50, 0.0, 0.0,
                                                            0.0, 0.40,
-                                                           0.0, 0.50, 0.35 };
+                                                           0.0, 0.50, 0.35,
+                                                           1.0 };
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -1833,6 +1836,49 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (delayTypeBox);
 
     // ---------------------------------------------------------------
+    //  DELAY SYNC + RATE - the second head locked to the host's tempo.
+    //
+    //  SYNC switches between a free time in milliseconds (what a real head
+    //  spacing gives) and a note value derived from the host's tempo. With SYNC
+    //  on, the repeat lands on the beat whatever the session is at, and follows a
+    //  tempo change without the user touching anything - the plugin reads the
+    //  tempo from the playhead every block.
+    //
+    //  RATE is the note value. The list is the one a delay is actually used with:
+    //  the straight divisions, the two common triplets, and the dotted quarter,
+    //  which is the one that gives the classic off-beat repeat.
+    // ---------------------------------------------------------------
+    delaySyncButton.setClickingTogglesState (true);
+    delaySyncButton.setTooltip ("SYNC - lock the delay to the host's tempo instead of "
+                                "a time in milliseconds. With SYNC on, RATE picks a "
+                                "note value and the repeat lands on the beat whatever "
+                                "the session is at, following a tempo change without "
+                                "the user touching anything. The tempo is read from "
+                                "the host's playhead every block. With SYNC off, "
+                                "DELAY is a free time in milliseconds, which is what a "
+                                "real head spacing gives.");
+    delaySyncButton.setLookAndFeel (&customLookAndFeel);
+    delaySyncAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (audioProcessor.parameters, "delay_sync", delaySyncButton);
+    addAndMakeVisible (delaySyncButton);
+
+    styleLabel (delayRateLabel, "RATE", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    addAndMakeVisible (delayRateLabel);
+    delayRateBox.addItemList (juce::StringArray { "1/1", "1/2", "1/4", "1/8", "1/16",
+                                                  "1/4 T", "1/8 T", "1/4 D" }, 1);
+    delayRateBox.setTooltip ("RATE - the note value the delay is locked to when SYNC "
+                             "is on. 1/4 is a quarter note, 1/4 T is a quarter-note "
+                             "triplet (a third of a beat faster) and 1/4 D is dotted "
+                             "(half again as long) - the one that gives the classic "
+                             "off-beat repeat. At 120 BPM a 1/4 is 500 ms and a 1/4 D "
+                             "is 750 ms.");
+    delayRateBox.setLookAndFeel (&customLookAndFeel);
+    delayRateAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "delay_rate", delayRateBox);
+    addAndMakeVisible (delayRateBox);
+
+    // ---------------------------------------------------------------
     //  The two whole-machine modes.
     //
     //  MODERN re-voices the deck for a well-maintained 1990s machine: the head
@@ -2134,6 +2180,8 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     instrumentBox.setLookAndFeel (nullptr);
     transportBox.setLookAndFeel (nullptr);
     delayTypeBox.setLookAndFeel (nullptr);
+    delayRateBox.setLookAndFeel (nullptr);
+    delaySyncButton.setLookAndFeel (nullptr);
     modernModeButton.setLookAndFeel (nullptr);
     lofiModeButton.setLookAndFeel (nullptr);
     glButton.setLookAndFeel (nullptr);
@@ -2368,6 +2416,7 @@ void FirstAudioProcessorEditor::applyTheme()
     styleCombo (instrumentBox);
     styleCombo (transportBox);
     styleCombo (delayTypeBox);
+    styleCombo (delayRateBox);
     // modernModeButton and lofiModeButton are ToggleButtons drawn by
     // drawToggleButton, which reads the palette live and needs no calls here.
     styleCombo (userPresetBox);
@@ -2386,6 +2435,7 @@ void FirstAudioProcessorEditor::applyTheme()
     instrumentLabel.setColour (juce::Label::textColourId, palette.secondary);
     transportLabel.setColour (juce::Label::textColourId, palette.secondary);
     delayTypeLabel.setColour (juce::Label::textColourId, palette.secondary);
+    delayRateLabel.setColour (juce::Label::textColourId, palette.secondary);
     compareBadgeLabel.setColour (juce::Label::textColourId,
                                  audioProcessor.isCompareDirty() ? palette.accent : palette.secondary);
 
@@ -2978,6 +3028,13 @@ void FirstAudioProcessorEditor::resized()
     modernModeButton.setBounds (lofiModeButton.getX() - 6 - 82, modeRowY, 82, 32);
     delayTypeLabel.setBounds (modernModeButton.getX() - 6 - 62, modeRowY + 9, 62, 15);
     delayTypeBox.setBounds (modernModeButton.getX() - 6 - 74, modeRowY, 74, 32);
+
+    // SYNC and RATE sit left of DELAY TYPE, on the same line: the three are one
+    // decision (which machine, and what time) and reading them as a group is the
+    // point.
+    delayRateBox.setBounds (delayTypeBox.getX() - 6 - 74, modeRowY, 74, 32);
+    delayRateLabel.setBounds (delayRateBox.getX() - 6 - 34, modeRowY + 9, 34, 15);
+    delaySyncButton.setBounds (delayRateLabel.getX() - 8 - 64, modeRowY, 64, 32);
 
     presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 119, 46, 16);
     presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 110, 128, 32);

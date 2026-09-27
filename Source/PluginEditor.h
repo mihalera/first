@@ -179,7 +179,7 @@ private:
     // read at run time. The tab table is checked against controlCount by a
     // static_assert too, so a knob that no tab lists is a build error, not a knob
     // that silently disappears from the panel.
-    static constexpr std::size_t controlCount = 31;
+    static constexpr std::size_t controlCount = 32;
     static constexpr int tabColumns = 4;
     static constexpr int numTabs = 5;
     static constexpr std::size_t decorativeOrbCount = 6;
@@ -271,6 +271,13 @@ private:
     juce::ComboBox delayTypeBox;
     juce::Label delayTypeLabel;
 
+    // Tempo sync: a switch plus the note value. A combo rather than a knob
+    // because the note values are discrete and a knob through them would be a
+    // scale the user has to learn.
+    juce::ToggleButton delaySyncButton { "SYNC" };
+    juce::ComboBox delayRateBox;
+    juce::Label delayRateLabel;
+
     // The two whole-machine mode switches. Rockers like BYPASS and POLARITY, drawn
     // by the panel's own LookAndFeel, because they are state rather than amount.
     juce::ToggleButton modernModeButton { "MODERN" };
@@ -294,6 +301,8 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> instrumentAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> transportAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> delayTypeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> delayRateAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> delaySyncAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> modernModeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> lofiModeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversamplingAttachment;

@@ -305,6 +305,9 @@ FirstAudioProcessor::FirstAudioProcessor()
     vinylParam = parameters.getRawParameterValue ("vinyl");
     vinylCrackleParam = parameters.getRawParameterValue ("vinyl_crackle");
     vinylRumbleParam = parameters.getRawParameterValue ("vinyl_rumble");
+    stLinkParam = parameters.getRawParameterValue ("st_link");
+    delaySyncParam = parameters.getRawParameterValue ("delay_sync");
+    delayRateParam = parameters.getRawParameterValue ("delay_rate");
 
     // Four fixed oversampling engines (off / 2x / 4x / 8x). Each owns its own filter
     // state, so switching between them is glitch-free even mid-render, and the
@@ -335,7 +338,8 @@ FirstAudioProcessor::FirstAudioProcessor()
                                      "blend", "shape", "sag", "presence", "cabinet", "amp_bias",
                                      "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
                                      "delay_type", "distortion", "modern_mode", "lofi_mode",
-                                     "vinyl", "vinyl_crackle", "vinyl_rumble" })
+                                     "vinyl", "vinyl_crackle", "vinyl_rumble", "st_link",
+                                     "delay_sync", "delay_rate" })
         parameters.addParameterListener (parameterID, this);
 }
 
@@ -350,7 +354,8 @@ FirstAudioProcessor::~FirstAudioProcessor()
                                      "blend", "shape", "sag", "presence", "cabinet", "amp_bias",
                                      "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
                                      "delay_type", "distortion", "modern_mode", "lofi_mode",
-                                     "vinyl", "vinyl_crackle", "vinyl_rumble" })
+                                     "vinyl", "vinyl_crackle", "vinyl_rumble", "st_link",
+                                     "delay_sync", "delay_rate" })
         parameters.removeParameterListener (parameterID, this);
 }
 
@@ -1254,6 +1259,62 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             percentageRange (0.45f), 0.35f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
 
+    // =========================================================================
+    //  ST LINK - whether the two glue compressors share one gain or run two.
+    //
+    //  Every other stage in this plugin is already per-channel: the saturation
+    //  core, the head losses, the transport modulation, the delay, the vinyl
+    //  noise and the reverb all keep independent state for the two sides. The
+    //  two GLUE stages are the exception, and deliberately so - a single detector
+    //  fed by the average of the channels is what stops a hard-panned transient
+    //  from pulling the image sideways, which is the classic reason a bus
+    //  compressor is stereo-linked.
+    //
+    //  But that is a CHOICE, not a law, and the two answers are genuinely
+    //  different tools:
+    //
+    //    LINKED (default, 100)  one detector, one gain, both channels. The image
+    //                           is rock steady and the compression is
+    //                           programme-wide - a bus compressor.
+    //    UNLINKED (0)           two detectors, two gains, independent. A loud
+    //                           left channel ducks only the left, which is what
+    //                           you want on a stereo source with wildly
+    //                           different sides - and what a dual-mono
+    //                           compressor does.
+    //
+    //  In between it crossfades, so the image can be tightened or loosened by
+    //  degree rather than switched. 100 is the default because it is what every
+    //  earlier build did, so an existing session loads unchanged.
+    // =========================================================================
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "st_link", 1 }, "ST Link",
+                                                            percentageRange (0.50f), 1.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+    // =========================================================================
+    //  DELAY RATE - the second head locked to the host's tempo.
+    //
+    //  DELAY is a free-running time in milliseconds, which is what a real head
+    //  spacing gives you. A DELAY that follows the music is a different tool, and
+    //  it needs the host's tempo rather than a number the user typed: the plugin
+    //  reads it from the playhead every block.
+    //
+    //  SYNC switches between the two. When it is on, RATE selects a note value
+    //  and the time is derived from the tempo - so the repeat lands on the beat
+    //  whatever the session is at, and follows a tempo change without the user
+    //  touching anything.
+    //
+    //  The note values are the ones a delay is actually used with: straight
+    //  divisions from a whole note down to a sixteenth, the two common triplets,
+    //  and the dotted eighth - which is the one that gives the classic
+    //  off-beat repeat.
+    // =========================================================================
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "delay_sync", 1 },
+                                                            "Delay Sync", false));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "delay_rate", 1 }, "Delay Rate",
+                                                            juce::StringArray { "1/1", "1/2", "1/4", "1/8", "1/16",
+                                                                                 "1/4 T", "1/8 T", "1/4 D" },
+                                                            2));
+
     return layout;
 }
 
@@ -1941,12 +2002,77 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto transportState = transportParam != nullptr
                                     ? static_cast<int> (transportParam->load()) : 1;
 
-    // The delay time is stored in milliseconds and converted to samples at the ENGINE
-    // rate, so a 100 ms head spacing is 100 ms of tape travel whether the engine runs
-    // at the session rate or at 8x it.
+    // -----------------------------------------------------------------------
+    //  Tempo, from the host.
+    //
+    //  Read once per block from the playhead. `getPlayHead()` may return null (a
+    //  host that does not offer one, or an offline render), and the position may
+    //  be absent even when the playhead exists - so both are checked, and the
+    //  last known tempo is kept when either is missing. Resetting to a default
+    //  instead would make the delay jump every time the transport stopped.
+    //
+    //  getPosition() is called ONCE here rather than per parameter read, because
+    //  it is a virtual call into the host and hosts are entitled to make it
+    //  expensive.
+    // -----------------------------------------------------------------------
+    if (auto* playHead = getPlayHead())
+    {
+        if (auto position = playHead->getPosition())
+        {
+            if (auto bpm = position->getBpm())
+            {
+                // Guard against a host reporting nonsense during a seek or a
+                // tempo ramp: a zero or negative tempo would divide by zero below.
+                if (*bpm > 1.0 && *bpm < 1000.0)
+                {
+                    hostTempoBpm = *bpm;
+                    hostTempoValid = true;
+                }
+            }
+        }
+    }
+
+    // -----------------------------------------------------------------------
+    //  The delay time, free-running or tempo-locked.
+    //
+    //  In free mode it is the DELAY control in milliseconds, converted to samples
+    //  at the ENGINE rate, so a 100 ms head spacing is 100 ms of tape travel
+    //  whether the engine runs at the session rate or at 8x it.
+    //
+    //  In sync mode the time is derived from the host's tempo and the note value
+    //  RATE selects. A quarter note at 120 BPM is 500 ms, which is the whole
+    //  calculation: one beat is 60000/tempo ms, and the ratio scales it.
+    // -----------------------------------------------------------------------
+    const bool delaySyncOn = delaySyncParam != nullptr && delaySyncParam->load() >= 0.5f;
+    const auto delayRateIndex = delayRateParam != nullptr
+                                    ? static_cast<int> (delayRateParam->load()) : 2;
+
+    float effectiveDelayMs = delayMs;
+
+    if (delaySyncOn)
+    {
+        // The note value as a fraction of a whole note. A quarter is 1/4, a
+        // dotted quarter is 1/4 * 1.5, a triplet quarter is 1/4 * 2/3.
+        //
+        //  1/1 = 1.0      1/2 = 0.5      1/4 = 0.25     1/8 = 0.125   1/16 = 0.0625
+        //  1/4 T (triplet) = 0.25 * 2/3  1/8 T = 0.125 * 2/3
+        //  1/4 D (dotted)  = 0.25 * 1.5
+        static constexpr float noteRatios[] { 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f,
+                                              0.25f * 2.0f / 3.0f,
+                                              0.125f * 2.0f / 3.0f,
+                                              0.25f * 1.5f };
+        constexpr int numNoteRatios = static_cast<int> (std::size (noteRatios));
+
+        const auto ratio = noteRatios[juce::jlimit (0, numNoteRatios - 1, delayRateIndex)];
+
+        // A whole note is four beats, so a whole note lasts 4 * 60000/tempo ms.
+        const auto wholeNoteMs = 4.0 * 60000.0 / juce::jmax (1.0, hostTempoBpm);
+        effectiveDelayMs = static_cast<float> (wholeNoteMs * static_cast<double> (ratio));
+    }
+
     delaySamplesSmoothed.setTargetValue (
         juce::jlimit (0.0f, static_cast<float> (juce::jmax (0, delayBufferLength - 1)),
-                      delayMs * 0.001f * engineSampleRate));
+                      effectiveDelayMs * 0.001f * engineSampleRate));
     delayFeedbackSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, delayFeedback));
 
     // ST OFFSET is given in microseconds and converted to samples the same way. Only
@@ -1956,10 +2082,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     stOffsetSamplesSmoothed.setTargetValue (
         juce::jlimit (0.0f, static_cast<float> (stOffsetBufferLength - 2), stOffsetSamples));
     const bool offsetRightChannel = stOffsetUs >= 0.0f;
-
-    // NOISE is a trim on top of the formula's own floor. 0.5 is unity - the neutral
-    // position - so the control can lift the floor to 2x or take it to silence.
-    noiseTrimSmoothed.setTargetValue (juce::jlimit (0.0f, 2.0f, noiseAmount * 2.0f));
 
     // -----------------------------------------------------------------------
     //  Saturation blend and the amp voicing.
@@ -2517,6 +2639,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // unless the user asks for a different floor.
     noiseTrimSmoothed.setTargetValue (juce::jlimit (0.0f, 2.0f, noiseAmount * 2.0f));
 
+    // ST LINK: 1.0 is fully linked (one shared detector per stage), 0.0 is fully
+    // unlinked (two independent detectors). Ramped, because it scales the gain
+    // difference between the two paths and a step there is a step in the waveform.
+    const auto stLinkAmount = stLinkParam != nullptr ? stLinkParam->load() : 1.0f;
+    stLinkSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, stLinkAmount));
+
     // Every control-derived coefficient the block needs is in scope by now, so the
     // ramps are fed once here and read per sample with getCurrentValue(): no
     // multiplier and no pole in the wet path can step from one block to the next.
@@ -2844,14 +2972,52 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         }
         inputDetectorPower /= static_cast<float> (juce::jmax (1, activeChannels));
 
+        // ------------------------------------------------------------------
+        //  Input stage glue, LINKED or per-channel.
+        //
+        //  The shared detector always runs: it is the linked answer, and it is the
+        //  path that has to stay warm so moving ST LINK cannot resume it from a
+        //  stale envelope. When ST LINK is below 100 % each channel's own detector
+        //  is advanced too, on that channel's own power, and the control blends
+        //  the two gains.
+        //
+        //  Both paths use the same coefficients, so the only thing that differs is
+        //  WHICH signal the detector sees: the channel average, or one side. That
+        //  is exactly the difference between a bus compressor and a dual-mono one.
+        //
+        //  The blend happens per channel below, where each side's gain is applied,
+        //  because the unlinked answer is different for L and R.
+        // ------------------------------------------------------------------
         const float inputEnvelopeDb = inputCompressor.processDetection (
             inputDetectorPower, engineSampleRate, inputCompressorCoefficients);
-        const float inputReductionDb = juce::jmax (inputReductionLimitDb,
-                                                   softKneeReductionDb (inputEnvelopeDb,
-                                                                        inputThresholdDb,
-                                                                        inputKneeDb,
-                                                                        inputCompressorRatio));
-        const float inputCompressionGain = juce::Decibels::decibelsToGain (inputReductionDb);
+        const float linkedReductionDb = juce::jmax (inputReductionLimitDb,
+                                                    softKneeReductionDb (inputEnvelopeDb,
+                                                                         inputThresholdDb,
+                                                                         inputKneeDb,
+                                                                         inputCompressorRatio));
+        const float inputReductionDb = linkedReductionDb;
+        const float linkNow = stLinkSmoothed.getCurrentValue();
+
+        // The per-channel reductions, valid only when the control is actually
+        // asking for them. At full link this array is unused and the detectors are
+        // left alone, so the default path costs nothing extra.
+        std::array<float, 2> inputPerChannelReductionDb {};
+        if (linkNow < 0.999f)
+        {
+            for (int channel = 0; channel < activeChannels; ++channel)
+            {
+                const auto trimmed = inputTrimmedByChannel[static_cast<std::size_t> (channel)];
+                const auto channelEnvelopeDb = inputCompressorChannels[static_cast<std::size_t> (channel)]
+                    .processDetection (trimmed * trimmed, engineSampleRate,
+                                       inputCompressorCoefficients);
+                inputPerChannelReductionDb[static_cast<std::size_t> (channel)] =
+                    juce::jmax (inputReductionLimitDb,
+                                softKneeReductionDb (channelEnvelopeDb, inputThresholdDb,
+                                                     inputKneeDb, inputCompressorRatio));
+            }
+        }
+
+        const float inputCompressionGain = juce::Decibels::decibelsToGain (linkedReductionDb);
 
         inputPeakReductionDb = juce::jmin (inputPeakReductionDb, inputReductionDb);
         inputEnvelopeActivity = juce::jmax (inputEnvelopeActivity,
@@ -2885,7 +3051,21 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // post-compressor power it is compared against, so a hard-panned right
             // channel could hide a genuine level loss and switch the compensation off.
             referenceBlockPower += inputTrimmed * inputTrimmed;
-            float x = inputTrimmed * inputCompressionGain;
+
+            // The glue gain for THIS channel. At full link it is the shared
+            // reduction, as it always was; below that it is a blend toward this
+            // channel's own reduction, so a loud left side ducks only the left.
+            float inputCompressionGainThisChannel = inputCompressionGain;
+            if (linkNow < 0.999f)
+            {
+                const auto unlinkedGain = juce::Decibels::decibelsToGain (
+                    inputPerChannelReductionDb[static_cast<std::size_t> (channel)]);
+                inputCompressionGainThisChannel = inputCompressionGain
+                                                + (unlinkedGain - inputCompressionGain)
+                                                      * (1.0f - linkNow);
+            }
+
+            float x = inputTrimmed * inputCompressionGainThisChannel;
 
             // ------------------------------------------------------------------
             //  Preamp and distortion - the two gain stages in FRONT of the machine.
@@ -3470,6 +3650,26 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                                                    outputThresholdDb,
                                                                    outputKneeDb,
                                                                    outputCompressorRatio));
+
+        // The output stage's per-channel detectors, on the same terms as the input
+        // stage's: advanced only when ST LINK is actually asking for them, so the
+        // default linked path costs nothing extra. They see the TAPE output, which
+        // is what this stage has always detected.
+        std::array<float, 2> outputPerChannelReductionDb {};
+        if (linkNow < 0.999f)
+        {
+            for (int channel = 0; channel < activeChannels; ++channel)
+            {
+                const auto signal = tapeOutput[static_cast<std::size_t> (channel)];
+                const auto channelEnvelopeDb = outputCompressorChannels[static_cast<std::size_t> (channel)]
+                    .processDetection (signal * signal, engineSampleRate,
+                                       outputCompressorCoefficients);
+                outputPerChannelReductionDb[static_cast<std::size_t> (channel)] =
+                    juce::jmax (outputReductionLimitDb,
+                                softKneeReductionDb (channelEnvelopeDb, outputThresholdDb,
+                                                     outputKneeDb, outputCompressorRatio));
+            }
+        }
         // The output stage's three dB-to-gain conversions are also per sample. They
         // are grouped behind one guard rather than three, because the branch is
         // compile-time and the three always travel together.
@@ -3496,6 +3696,22 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 #endif
         const float stageGain = compressionGain * outputMakeup * finalOutputGain * inputMakeup;
 
+        // The same blend for the output stage's gain, per channel. Held as an
+        // array so the loop below applies each side's own answer.
+        std::array<float, 2> stageGainPerChannel { stageGain, stageGain };
+        if (linkNow < 0.999f)
+        {
+            for (int channel = 0; channel < activeChannels; ++channel)
+            {
+                const auto unlinkedCompressionGain = juce::Decibels::decibelsToGain (
+                    outputPerChannelReductionDb[static_cast<std::size_t> (channel)]);
+                const auto blended = compressionGain
+                                   + (unlinkedCompressionGain - compressionGain) * (1.0f - linkNow);
+                stageGainPerChannel[static_cast<std::size_t> (channel)] =
+                    blended * outputMakeup * finalOutputGain * inputMakeup;
+            }
+        }
+
         // ---------------------------------------------------------------------
         //  Final gain compensation.
         //
@@ -3520,7 +3736,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             float postCompressorPower = 0.0f;
             for (int channel = 0; channel < activeChannels; ++channel)
             {
-                const auto signal = tapeOutput[static_cast<std::size_t> (channel)] * stageGain;
+                const auto signal = tapeOutput[static_cast<std::size_t> (channel)]
+                                  * stageGainPerChannel[static_cast<std::size_t> (channel)];
                 postCompressorPower += signal * signal;
             }
 
@@ -3553,7 +3770,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         for (int channel = 0; channel < activeChannels; ++channel)
         {
             const auto index = static_cast<std::size_t> (channel);
-            outputSignal[index] = tapeOutput[index] * stageGain * compensationGain;
+            outputSignal[index] = tapeOutput[index]
+                                * stageGainPerChannel[index] * compensationGain;
 
             // The same signal at MIX 0. Because it carries the identical
             // stageGain * compensationGain, everything that is gain rather than
@@ -3563,7 +3781,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // the compensator and the output trim all read as "character", so a
             // perfectly dry MIX 0 still monitored as a loud level change rather than
             // silence.
-            machineDry[index] = machineDryInput[index] * stageGain * compensationGain;
+            machineDry[index] = machineDryInput[index]
+                              * stageGainPerChannel[index] * compensationGain;
         }
 
         // -------------------------------------------------------------------
