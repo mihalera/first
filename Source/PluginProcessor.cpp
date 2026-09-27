@@ -2077,6 +2077,23 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // feedback network lifts.
     presenceCoefficient = onePoleCoefficientHz (2200.0f, engineSampleRate);
 
+    // The SAG envelope's two coefficients. Functions of the rate alone, so they are
+    // block-rate constants like every other coefficient here - see the per-sample
+    // loop, where rebuilding them was two std::exp per sample per channel.
+    // 60 ms attack (the supply takes time to droop) and 240 ms release (it takes
+    // longer to recover), which is the asymmetry that makes sag audible as "give"
+    // rather than as a slow compressor.
+    sagAttackCoefficient = onePoleCoefficient (60.0f, engineSampleRate);
+    sagReleaseCoefficient = onePoleCoefficient (240.0f, engineSampleRate);
+
+    // The safety limiter's four coefficients and its ceiling. All functions of the
+    // rate alone - see the per-sample loop, where rebuilding them was four std::exp
+    // per sample per channel.
+    limiterDetectorAttack = onePoleCoefficient (0.5f, engineSampleRate);
+    limiterDetectorRelease = onePoleCoefficient (80.0f, engineSampleRate);
+    limiterCatchCoefficient = onePoleCoefficient (0.4f, engineSampleRate);
+    limiterRecoveryCoefficient = onePoleCoefficient (120.0f, engineSampleRate);
+
     // Transport: the ramp target is 0 for STOP and 1 for PLAY or START. The
     // coefficient sets how fast it gets there - a spin-up takes about a second, which
     // is what a capstan sounds like coming up to speed.
@@ -2976,20 +2993,17 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             saturation.setBlend (blendSmoothed.getCurrentValue(),
                                  shapeSmoothed.getCurrentValue());
 
-            // Sag: the supply envelope. A slow attack (the supply takes time to
-            // droop) and a slower release (it takes longer to recover), both
-            // scaled by the SAG control so 0 leaves the envelope still.
+            // Sag: the supply envelope. The two coefficients are BLOCK-RATE
+            // constants (see where they are built, above the loop) - rebuilding
+            // them here cost two std::exp per sample per channel for values that
+            // cannot change within the block.
             const float sagAmountNow = sagSmoothed.getCurrentValue();
-            // onePoleCoefficient() takes MILLISECONDS and does the same conversion;
-            // naming the durations here is what keeps 60 ms and 240 ms from being
-            // read as seconds.
-            const float sagAttack = onePoleCoefficient (60.0f, engineSampleRate);
-            const float sagRelease = onePoleCoefficient (240.0f, engineSampleRate);
             // The demand the supply sees is the signal ARRIVING at the stage, not
             // what leaves it: a real supply droops in proportion to how hard it is
             // being asked to work, which is the input to the gain stage.
             const float demand = std::abs (preDrive);
-            const float sagCoefficient = demand > amp.sagEnvelope ? sagAttack : sagRelease;
+            const float sagCoefficient = demand > amp.sagEnvelope ? sagAttackCoefficient
+                                                                  : sagReleaseCoefficient;
             amp.sagEnvelope += (demand - amp.sagEnvelope) * sagCoefficient;
             amp.sagGain = 1.0f - sagAmountNow * 0.35f
                               * juce::jlimit (0.0f, 1.0f, amp.sagEnvelope * 3.0f);
@@ -3275,14 +3289,28 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                 auto& bbdLow = channel == 0 ? bbdLowL : bbdLowR;
                 auto& bbdNoise = channel == 0 ? bbdNoiseStateL : bbdNoiseStateR;
 
-                const float delaySamplesNow = juce::jmax (1.0f, delaySamplesSmoothed.getCurrentValue());
-                const float clockRate = engineSampleRate / delaySamplesNow;
                 // The BBD's bandwidth is a fraction of its clock, which is the
-                // defining limitation of the technology.
-                const float bbdBandwidthHz = juce::jlimit (800.0f, 6000.0f, clockRate * 0.22f);
-                const float bbdCoefficient = onePoleCoefficientHz (bbdBandwidthHz, engineSampleRate);
+                // defining limitation of the technology - and the clock rate is
+                // set by the delay time, so this coefficient DOES have to track a
+                // smoothed value and cannot be hoisted to the block.
+                //
+                // It is refreshed on a stride instead. The delay time ramps over
+                // 20 ms, so recomputing the coefficient every 32 samples still
+                // follows that ramp with 750 points at 48 kHz - indistinguishable
+                // - and it costs one std::exp per 32 samples rather than one per
+                // sample. The counter is advanced once per frame, not per channel,
+                // so both sides refresh on the same instants.
+                if (channel == 0 && --bbdCoefficientCountdown <= 0)
+                {
+                    bbdCoefficientCountdown = bbdCoefficientStride;
 
-                bbdLow += (delayed - bbdLow) * bbdCoefficient;
+                    const float delaySamplesNow = juce::jmax (1.0f, delaySamplesSmoothed.getCurrentValue());
+                    const float clockRate = engineSampleRate / delaySamplesNow;
+                    const float bbdBandwidthHz = juce::jlimit (800.0f, 6000.0f, clockRate * 0.22f);
+                    bbdLowCoefficient = onePoleCoefficientHz (bbdBandwidthHz, engineSampleRate);
+                }
+
+                bbdLow += (delayed - bbdLow) * bbdLowCoefficient;
 
                 // The clock's own noise: a small, high-frequency buzz riding on the
                 // repeats, which is the audible signature of a BBD.
@@ -3600,13 +3628,13 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
         // A very fast attack catches transients before they overshoot; the release is
         // short enough to recover between events without pumping on sustained material.
-        const auto limiterCeiling = 0.94f;
-        // 0.5 ms attack, 80 ms release - stated as durations rather than as
-        // reciprocals, which is what they are.
-        const auto detectorAttack = onePoleCoefficient (0.5f, engineSampleRate);
-        const auto detectorRelease = onePoleCoefficient (80.0f, engineSampleRate);
-        const auto detectorCoefficient = framePeak > preLimiterDetector ? detectorAttack
-                                                                        : detectorRelease;
+        //
+        // All four coefficients are BLOCK-RATE constants, built above the loop. They
+        // used to be rebuilt here, which cost four std::exp per sample per channel -
+        // and because the gain smoothing is a ternary, BOTH of its branches were
+        // evaluated every sample and one thrown away.
+        const auto detectorCoefficient = framePeak > preLimiterDetector ? limiterDetectorAttack
+                                                                        : limiterDetectorRelease;
         preLimiterDetector += (framePeak - preLimiterDetector) * detectorCoefficient;
 
         // Gain required to bring the peak back to the ceiling. It is smoothed separately
@@ -3616,9 +3644,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                     : 1.0f;
         // 0.4 ms catch, 120 ms recovery. The asymmetry is the point: a limiter
         // must catch instantly and let go slowly, or it pumps.
-        const auto gainSmoothing = requiredGain < limiterGain
-                                     ? onePoleCoefficient (0.4f, engineSampleRate)
-                                     : onePoleCoefficient (120.0f, engineSampleRate);
+        const auto gainSmoothing = requiredGain < limiterGain ? limiterCatchCoefficient
+                                                              : limiterRecoveryCoefficient;
         limiterGain += (requiredGain - limiterGain) * gainSmoothing;
 
         for (int channel = 0; channel < activeChannels; ++channel)

@@ -2989,6 +2989,26 @@ private:
     float presenceCoefficient = 0.5f;
 
     // -----------------------------------------------------------------------
+    //  Block-rate envelope coefficients.
+    //
+    //  These were rebuilt inside the per-sample loop, which cost six std::exp
+    //  per sample per channel for values that cannot change within a block -
+    //  every one of them is a function of the sample rate alone. They are built
+    //  next to the other block-rate coefficients in processTapeEngine and read
+    //  as plain floats in the loop.
+    //
+    //  The limiter's two gain-smoothing coefficients were worse than that: they
+    //  sat in a ternary, so BOTH branches were evaluated on every sample and one
+    //  was discarded.
+    // -----------------------------------------------------------------------
+    float sagAttackCoefficient = 0.0f;
+    float sagReleaseCoefficient = 0.0f;
+    float limiterDetectorAttack = 0.0f;
+    float limiterDetectorRelease = 0.0f;
+    float limiterCatchCoefficient = 0.0f;
+    float limiterRecoveryCoefficient = 0.0f;
+
+    // -----------------------------------------------------------------------
     //  Preamp and distortion - the two gain stages in front of the machine.
     //  One per channel, because both carry signal-dependent bias state.
     // -----------------------------------------------------------------------
@@ -3064,6 +3084,13 @@ private:
     std::uint32_t bbdNoiseStateR = 0xc2b2ae35u;
     float bbdLowL = 0.0f;
     float bbdLowR = 0.0f;
+
+    // The BBD's bandwidth coefficient, refreshed on a stride rather than per sample.
+    // It has to follow the smoothed delay time, so it cannot be a block-rate constant
+    // - but it does not need an std::exp per sample either. See the use site.
+    float bbdLowCoefficient = 0.5f;
+    int bbdCoefficientCountdown = 1;
+    static constexpr int bbdCoefficientStride = 32;
 
     // The LO-FI mode's quantisation and bandwidth state, per channel. The hold
     // counter is shared so both channels sample on the same instants; the held
