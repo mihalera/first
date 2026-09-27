@@ -1,0 +1,744 @@
+stages:
+  - Analysis
+  - Targeted Code Coverage
+  - All Code Coverage
+  - Sanitizers
+
+variables:
+  ASAN_OPTIONS: detect_leaks=1
+
+# Analysis
+
+cmake-format Check:
+  image: stabletec/build-core:fedora
+  stage: Analysis
+  parallel:
+    matrix:
+      - ARCH: [amd64]
+  tags:
+    - container
+    - linux
+    - ${ARCH}
+  allow_failure: true
+  script:
+    - dnf install -y python3-pip
+    - pip install cmake-format
+    - cmake-format --version
+    - cmake-format -i $(find . -name "*.cmake")
+    - cmake-format -i $(find . -name "CMakeLists.txt")
+    - git diff --exit-code
+
+clang-format Check:
+  image: stabletec/build-core:fedora
+  stage: Analysis
+  parallel:
+    matrix:
+      - ARCH: [amd64]
+  tags:
+    - container
+    - linux
+    - ${ARCH}
+  allow_failure: true
+  script:
+    - clang-format --version
+    - clang-format -i $(find . -name "*.c")
+    - clang-format -i $(find . -name "*.cpp")
+    - clang-format -i $(find . -name "*.h")
+    - clang-format -i $(find . -name "*.hpp")
+    - git diff --exit-code
+
+# Targeted Code Coverage
+
+Linux/Targeted CC GCC Static:
+  image: stabletec/build-core:fedora
+  stage: Targeted Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [amd64, arm64, ppc64le]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+  tags:
+    - container
+    - linux
+    - ${ARCH}
+  variables:
+    CC: gcc
+    CXX: g++
+  script:
+    - cmake -S example/code-coverage-target/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov
+
+Linux/Targeted CC GCC Shared:
+  image: stabletec/build-core:fedora
+  stage: Targeted Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [amd64, arm64, ppc64le]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+  tags:
+    - container
+    - linux
+    - ${ARCH}
+  variables:
+    CC: gcc
+    CXX: g++
+    CMAKE_OPTIONS: -D BUILD_SHARED_LIBS=ON
+  script:
+    - cmake -S example/code-coverage-target/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov
+
+Linux/Targeted CC Clang Static:
+  image: stabletec/build-core:fedora
+  stage: Targeted Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [amd64, arm64, ppc64le]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+  tags:
+    - container
+    - linux
+    - ${ARCH}
+  variables:
+    CC: clang
+    CXX: clang++
+  script:
+    - cmake -S example/code-coverage-target/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov
+    - cmake --build build --target ccov-report
+
+Linux/Targeted CC Clang Shared:
+  image: stabletec/build-core:fedora
+  stage: Targeted Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [amd64, arm64, ppc64le]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+  tags:
+    - container
+    - linux
+    - ${ARCH}
+  variables:
+    CC: clang
+    CXX: clang++
+    CMAKE_OPTIONS: -D BUILD_SHARED_LIBS=ON
+  script:
+    - cmake -S example/code-coverage-target/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov
+    - cmake --build build --target ccov-report
+
+macOS/Targeted CC AppleClang Static:
+  stage: Targeted Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+        TOOLING: [xclt]
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja", "Xcode"]
+        TOOLING: [xcode]
+  tags:
+    - macos
+    - ${ARCH}
+    - ${TOOLING}
+  script:
+    - cmake -S example/code-coverage-target/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov
+    - cmake --build build --target ccov-report
+
+macOS/Targeted CC AppleClang Shared:
+  stage: Targeted Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+        TOOLING: [xclt]
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja", "Xcode"]
+        TOOLING: [xcode]
+  tags:
+    - macos
+    - ${ARCH}
+    - ${TOOLING}
+  variables:
+    CMAKE_OPTIONS: -D BUILD_SHARED_LIBS=ON
+  script:
+    - cmake -S example/code-coverage-target/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov
+    - cmake --build build --target ccov-report
+
+macOS/Targeted CC Clang Static:
+  stage: Targeted Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+  tags:
+    - macos
+    - ${ARCH}
+    - xclt
+  variables:
+    CC: clang
+    CXX: clang++
+  script:
+    - cmake -S example/code-coverage-target/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov
+    - cmake --build build --target ccov-report
+
+macOS/Targeted CC Clang Shared:
+  stage: Targeted Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+  tags:
+    - macos
+    - ${ARCH}
+    - xclt
+  variables:
+    CC: clang
+    CXX: clang++
+    CMAKE_OPTIONS: -D BUILD_SHARED_LIBS=ON
+  script:
+    - cmake -S example/code-coverage-target/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov
+    - cmake --build build --target ccov-report
+
+Windows/Targeted CC Clang Static:
+  image: stabletec/build-core:windows-ltsc2025
+  stage: Targeted Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [amd64]
+        BUILD_SYSTEM: ["Ninja"]
+  tags:
+    - container
+    - windows
+    - ltsc2025
+    - ${ARCH}
+  variables:
+    CC: clang
+    CXX: clang++
+  script:
+    - cmake -S example/code-coverage-target/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov
+    - cmake --build build --target ccov-report
+
+Windows/Targeted CC Clang Shared:
+  image: stabletec/build-core:windows-ltsc2025
+  stage: Targeted Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [amd64]
+        BUILD_SYSTEM: ["Ninja"]
+  tags:
+    - container
+    - windows
+    - ltsc2025
+    - ${ARCH}
+  variables:
+    CC: clang
+    CXX: clang++
+    CMAKE_OPTIONS: -D BUILD_SHARED_LIBS=ON
+  script:
+    - cmake -S example/code-coverage-target/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov
+    - cmake --build build --target ccov-report
+
+# All Code Coverage
+
+Linux/All CC GCC Static:
+  image: stabletec/build-core:fedora
+  stage: All Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [amd64, arm64, ppc64le]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+  tags:
+    - container
+    - linux
+    - ${ARCH}
+  variables:
+    CC: gcc
+    CXX: g++
+  script:
+    - cmake -S example/code-coverage-all/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov
+    - cmake --build build --target ccov-all
+
+Linux/All CC GCC Shared:
+  image: stabletec/build-core:fedora
+  stage: All Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [amd64, arm64, ppc64le]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+  tags:
+    - container
+    - linux
+    - ${ARCH}
+  variables:
+    CC: gcc
+    CXX: g++
+    CMAKE_OPTIONS: -D BUILD_SHARED_LIBS=ON
+  script:
+    - cmake -S example/code-coverage-all/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov
+    - cmake --build build --target ccov-all
+
+Linux/All CC Clang Static:
+  image: stabletec/build-core:fedora
+  stage: All Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [amd64, arm64, ppc64le]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+  tags:
+    - container
+    - linux
+    - ${ARCH}
+  variables:
+    CC: clang
+    CXX: clang++
+  script:
+    - cmake -S example/code-coverage-all/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov-all
+    - cmake --build build --target ccov-report
+    - cmake --build build --target ccov-all-report
+
+Linux/All CC Clang Shared:
+  image: stabletec/build-core:fedora
+  stage: All Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [amd64, arm64, ppc64le]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+  tags:
+    - container
+    - linux
+    - ${ARCH}
+  variables:
+    CC: clang
+    CXX: clang++
+    CMAKE_OPTIONS: -D BUILD_SHARED_LIBS=ON
+  script:
+    - cmake -S example/code-coverage-all/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov
+    - cmake --build build --target ccov-all
+    - cmake --build build --target ccov-report
+    - cmake --build build --target ccov-all-report
+
+macOS/All CC AppleClang Static:
+  stage: All Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+        TOOLING: [xclt]
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja", "Xcode"]
+        TOOLING: [xcode]
+  tags:
+    - macos
+    - ${ARCH}
+    - ${TOOLING}
+  script:
+    - cmake -S example/code-coverage-all/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov-all
+    - cmake --build build --target ccov-report
+    - cmake --build build --target ccov-all-report
+
+macOS/All CC AppleClang Shared:
+  stage: All Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+        TOOLING: [xclt]
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja", "Xcode"]
+        TOOLING: [xcode]
+  tags:
+    - macos
+    - ${ARCH}
+    - ${TOOLING}
+  variables:
+    CMAKE_OPTIONS: -D BUILD_SHARED_LIBS=ON
+  script:
+    - cmake -S example/code-coverage-all/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov
+    - cmake --build build --target ccov-all
+    - cmake --build build --target ccov-report
+    - cmake --build build --target ccov-all-report
+
+macOS/All CC Clang Static:
+  stage: All Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+  tags:
+    - macos
+    - ${ARCH}
+    - xclt
+  variables:
+    CC: clang
+    CXX: clang++
+  script:
+    - cmake -S example/code-coverage-all/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov-all
+    - cmake --build build --target ccov-report
+    - cmake --build build --target ccov-all-report
+
+macOS/All CC Clang Shared:
+  stage: All Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+  tags:
+    - macos
+    - ${ARCH}
+    - xclt
+  variables:
+    CC: clang
+    CXX: clang++
+    CMAKE_OPTIONS: -D BUILD_SHARED_LIBS=ON
+  script:
+    - cmake -S example/code-coverage-all/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov
+    - cmake --build build --target ccov-all
+    - cmake --build build --target ccov-report
+    - cmake --build build --target ccov-all-report
+
+Windows/All CC Clang Static:
+  image: stabletec/build-core:windows-ltsc2025
+  stage: All Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [amd64]
+        BUILD_SYSTEM: ["Ninja"]
+  tags:
+    - container
+    - windows
+    - ltsc2025
+    - ${ARCH}
+  variables:
+    CC: clang
+    CXX: clang++
+  script:
+    - cmake -S example/code-coverage-all/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov
+    - cmake --build build --target ccov-all
+    - cmake --build build --target ccov-report
+    - cmake --build build --target ccov-all-report
+
+Windows/All CC Clang Shared:
+  image: stabletec/build-core:windows-ltsc2025
+  stage: All Code Coverage
+  parallel:
+    matrix:
+      - ARCH: [amd64]
+        BUILD_SYSTEM: ["Ninja"]
+  tags:
+    - container
+    - windows
+    - ltsc2025
+    - ${ARCH}
+  variables:
+    CC: clang
+    CXX: clang++
+    CMAKE_OPTIONS: -D BUILD_SHARED_LIBS=ON
+  script:
+    - cmake -S example/code-coverage-all/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Release -D CODE_COVERAGE=ON ${CMAKE_OPTIONS}
+    - cmake --build build
+    - cmake --build build --target ccov
+    - cmake --build build --target ccov-all
+    - cmake --build build --target ccov-report
+    - cmake --build build --target ccov-all-report
+
+# Sanitizers
+
+.linux_success_template: &linux_success_template
+  stage: Sanitizers
+  image: stabletec/build-core:fedora
+  parallel:
+    matrix:
+      - ARCH: [amd64, arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+  tags:
+    - container
+    - linux
+    - ${ARCH}
+  script:
+    - cmake -S example/all -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Debug ${CMAKE_OPTIONS}
+    - cmake --build build
+    - ctest --test-dir build --output-on-failure ${CTEST_OPTIONS}
+
+.linux_failure_template: &linux_failure_template
+  stage: Sanitizers
+  image: stabletec/build-core:fedora
+  parallel:
+    matrix:
+      - ARCH: [amd64, arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+  tags:
+    - container
+    - linux
+    - ${ARCH}
+  script:
+    - cmake -S example/all -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Debug ${CMAKE_OPTIONS}
+    - cmake --build build
+    - "! ctest --test-dir build --output-on-failure ${CTEST_OPTIONS}"
+
+Linux/Static Analysis:
+  variables:
+    CC: clang
+    CXX: clang++
+    CMAKE_OPTIONS: -D CLANG_TIDY=ON -D CPPCHECK=ON
+  <<: *linux_success_template
+
+Linux/Clang/Baseline:
+  variables:
+    CC: clang
+    CXX: clang++
+  <<: *linux_success_template
+
+Linux/GCC/ThreadSanitizer:
+  variables:
+    CMAKE_OPTIONS: -D EXAMPLE_USE_SANITIZER=thread
+  <<: *linux_failure_template
+
+Linux/Clang/ThreadSanitizer:
+  variables:
+    CC: clang
+    CXX: clang++
+    CMAKE_OPTIONS: -D EXAMPLE_USE_SANITIZER=thread
+  <<: *linux_failure_template
+
+Linux/GCC/AddressSanitizer:
+  variables:
+    CMAKE_OPTIONS: -D EXAMPLE_USE_SANITIZER=address
+  <<: *linux_failure_template
+
+Linux/Clang/AddressSanitizer:
+  variables:
+    CC: clang
+    CXX: clang++
+    CMAKE_OPTIONS: -D EXAMPLE_USE_SANITIZER=address
+  <<: *linux_failure_template
+
+Linux/GCC/LeakSanitizer:
+  variables:
+    CMAKE_OPTIONS: -D EXAMPLE_USE_SANITIZER=leak
+  <<: *linux_failure_template
+
+Linux/Clang/LeakSanitizer:
+  variables:
+    CC: clang
+    CXX: clang++
+    CMAKE_OPTIONS: -D EXAMPLE_USE_SANITIZER=leak
+  <<: *linux_failure_template
+
+Linux/Clang/MemorySanitizer:
+  variables:
+    CC: clang
+    CXX: clang++
+    CMAKE_OPTIONS: -D EXAMPLE_USE_SANITIZER=memory
+  <<: *linux_failure_template
+
+Linux/GCC/UndefinedSanitizer:
+  variables:
+    CMAKE_OPTIONS: -D EXAMPLE_USE_SANITIZER=undefined
+  <<: *linux_failure_template
+
+Linux/Clang/UndefinedSanitizer:
+  variables:
+    CC: clang
+    CXX: clang++
+    CMAKE_OPTIONS: -D EXAMPLE_USE_SANITIZER=undefined
+  <<: *linux_failure_template
+
+.macos_failure_template_xcode: &macos_failure_template_xcode
+  stage: Sanitizers
+  parallel:
+    matrix:
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+        TOOLING: [xclt]
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja", "Xcode"]
+        TOOLING: [xcode]
+  tags:
+    - macos
+    - ${ARCH}
+    - ${TOOLING}
+  script:
+    - cmake -S example/all -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Debug ${CMAKE_OPTIONS}
+    - cmake --build build
+    - "! ctest --test-dir build --output-on-failure ${CTEST_OPTIONS}"
+
+.macos_failure_template_xclt: &macos_failure_template_xclt
+  stage: Sanitizers
+  parallel:
+    matrix:
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+        TOOLING: [xclt]
+  tags:
+    - macos
+    - ${ARCH}
+    - ${TOOLING}
+  script:
+    - cmake -S example/all -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Debug ${CMAKE_OPTIONS}
+    - cmake --build build
+    - "! ctest --test-dir build --output-on-failure ${CTEST_OPTIONS}"
+
+macOS/AppleClang/Baseline:
+  stage: Sanitizers
+  parallel:
+    matrix:
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+        TOOLING: [xclt]
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja", "Xcode"]
+        TOOLING: [xcode]
+  tags:
+    - macos
+    - ${ARCH}
+    - ${TOOLING}
+  script:
+    - cmake -S example/all -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Debug ${CMAKE_OPTIONS}
+    - cmake --build build
+    - ctest --test-dir build --output-on-failure ${CTEST_OPTIONS}
+
+macOS/Clang/Baseline:
+  stage: Sanitizers
+  parallel:
+    matrix:
+      - ARCH: [arm64]
+        BUILD_SYSTEM: ["Unix Makefiles", "Ninja"]
+        TOOLING: [xclt]
+  tags:
+    - macos
+    - ${ARCH}
+    - ${TOOLING}
+  variables:
+    CC: clang
+    CXX: clang++
+  script:
+    - cmake -S example/all -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Debug ${CMAKE_OPTIONS}
+    - cmake --build build
+    - ctest --test-dir build --output-on-failure ${CTEST_OPTIONS}
+
+macOS/AppleClang/ThreadSanitizer:
+  variables:
+    CMAKE_OPTIONS: -D EXAMPLE_USE_SANITIZER=thread
+  <<: *macos_failure_template_xcode
+
+macOS/Clang/ThreadSanitizer:
+  variables:
+    CC: clang
+    CXX: clang++
+    CMAKE_OPTIONS: -D EXAMPLE_USE_SANITIZER=thread
+  <<: *macos_failure_template_xclt
+
+macOS/AppleClang/AddressSanitizer:
+  variables:
+    CMAKE_OPTIONS: -D EXAMPLE_USE_SANITIZER=address
+  <<: *macos_failure_template_xcode
+
+macOS/Clang/AddressSanitizer:
+  variables:
+    CC: clang
+    CXX: clang++
+    CMAKE_OPTIONS: -D EXAMPLE_USE_SANITIZER=address
+  <<: *macos_failure_template_xclt
+
+macOS/Clang/LeakSanitizer:
+  variables:
+    CC: clang
+    CXX: clang++
+    CMAKE_OPTIONS: -D EXAMPLE_USE_SANITIZER=leak
+  <<: *macos_failure_template_xclt
+
+macOS/AppleClang/UndefinedSanitizer:
+  variables:
+    CMAKE_OPTIONS: -D EXAMPLE_USE_SANITIZER=undefined
+  <<: *macos_failure_template_xcode
+
+macOS/Clang/UndefinedSanitizer:
+  variables:
+    CC: clang
+    CXX: clang++
+    CMAKE_OPTIONS: -D EXAMPLE_USE_SANITIZER=undefined
+  <<: *macos_failure_template_xclt
+
+Windows/MSVC/Address Sanitizer (VS2019):
+  image: stabletec/build-core:windows-ltsc2025-vs2019
+  stage: Sanitizers
+  parallel:
+    matrix:
+      - ARCH: [amd64]
+        BUILD_SYSTEM: ["Ninja", "Visual Studio 16 2019"]
+  tags:
+    - container
+    - windows
+    - ltsc2025
+    - ${ARCH}
+  script:
+    - cmake -S example/all/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Debug -D EXAMPLE_USE_SANITIZER=address $env:CMAKE_OPTIONS
+    - cmake --build build
+    - ctest --test-dir build --output-on-failure $env:CTEST_OPTIONS ; if ($? -ne 0) { exit 1 } else { exit 0 }
+
+Windows/MSVC/Address Sanitizer (VS2022):
+  image: stabletec/build-core:windows-ltsc2025-vs2022
+  stage: Sanitizers
+  parallel:
+    matrix:
+      - ARCH: [amd64]
+        BUILD_SYSTEM: ["Ninja", "Visual Studio 17 2022"]
+  tags:
+    - container
+    - windows
+    - ltsc2025
+    - ${ARCH}
+  script:
+    - cmake -S example/all/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Debug -D EXAMPLE_USE_SANITIZER=address $env:CMAKE_OPTIONS
+    - cmake --build build
+    - ctest --test-dir build --output-on-failure $env:CTEST_OPTIONS ; if ($? -ne 0) { exit 1 } else { exit 0 }
+
+Windows/MSVC/Address Sanitizer (VS2026):
+  image: stabletec/build-core:windows-ltsc2025-vs2026
+  stage: Sanitizers
+  parallel:
+    matrix:
+      - ARCH: [amd64]
+        BUILD_SYSTEM: ["Ninja", "Visual Studio 18 2026"]
+  tags:
+    - container
+    - windows
+    - ltsc2025
+    - ${ARCH}
+  script:
+    - cmake -S example/all/ -B build -G "${BUILD_SYSTEM}" -D CMAKE_BUILD_TYPE=Debug -D EXAMPLE_USE_SANITIZER=address $env:CMAKE_OPTIONS
+    - cmake --build build
+    - ctest --test-dir build --output-on-failure $env:CTEST_OPTIONS ; if ($? -ne 0) { exit 1 } else { exit 0 }
