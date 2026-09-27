@@ -500,14 +500,28 @@ void FirstAudioProcessor::applyStateWithUndo (const juce::ValueTree& targetState
 //  returns the full parameter map it represents - nothing is patched onto the user's
 //  current state beyond the listed values, so a preset changes the machine, not the
 //  session.
+//
+//  The two endpoints are listed SECOND, directly under DEFAULT TAPE, rather than
+//  parked at the end of the list. They are reference points, not sounds anybody
+//  reaches for while working, and the list is otherwise a set of things to listen
+//  to; keeping the references next to the neutral machine they bracket means the
+//  sounding presets read as one uninterrupted list with the calibration around it.
+//  They are also the two presets a tester wants first, and at the end of twenty they
+//  are the two easiest to forget exist.
+//
+//  The order here and the row order in the table below are ONE list written twice,
+//  and they are index-aligned by hand. Changing one without the other hands the
+//  panel a name for a different machine, which is the same class of bug as a
+//  mismatched choice count: nothing fails, the list just quietly lies.
 //==============================================================================
 juce::StringArray FirstAudioProcessor::getPresetNames()
 {
-    return { "Default Tape", "Gentle Warmth", "Bus Glue Tape", "Drum Slam",
+    return { "Default Tape", "Minimum", "Maximum",
+             "Gentle Warmth", "Bus Glue Tape", "Drum Slam",
              "Vintage Lo-Fi", "Wide Master", "Clean Glue", "Saturated Crunch",
              "Wobbly Cassette", "Bright Air Tape", "Mix Saturation", "Master Bounce",
              "Vocal Rail", "Drum Room Warm", "Bass Weight", "Master Safety",
-             "Lo-Fi Radio", "Ferric Master", "Minimum", "Maximum" };
+             "Lo-Fi Radio", "Ferric Master" };
 }
 
 std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int index)
@@ -555,6 +569,25 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
 
     static const std::array<FactoryPreset, numFactoryPresets> table {{
                 { .drive = 0.28f, .oversampling = 1 },  // Default Tape
+
+        // MINIMUM - every control at its floor. MIX at zero is the point: the tape
+        // path leaves the signal completely, so this is the plugin's null test -
+        // what you hear is the input, untouched, and any difference from a bypass
+        // is a bug rather than a sound.
+                { .drive = 0.0f, .bias = 0.0f, .tone = 0.0f, .character = 0.0f, .wow = 0.0f, .flutter = 0.0f,
+          .mix = 0.0f, .width = 0.0f, .speed = 0, .shape = 0.0f, .ampBias = 0.0f, .presence = 0.0f },  // Minimum
+
+        // MAXIMUM - every control at the top of its range: the whole sub-fundamental
+        // generator, the amp end of the blend with the cabinet open, a quarter
+        // second of echo at full feedback, the head pushed 500 samples, the noise
+        // floor at its loudest, and 8x oversampling. The trims are the exception,
+        // +12 in and -12 out: a reference that clips the host on the way in tells
+        // you nothing about the machine, and this one is meant to be heard.
+                { .subfund = 1.0f, .inputDb = +12.0f, .drive = 1.0f, .bias = 1.0f, .tone = 1.0f,
+          .character = 1.0f, .wow = 1.0f, .flutter = 1.0f, .outputDb = -12.0f, .width = 1.0f,
+          .tapeType = 7, .speed = 2, .instrument = 5, .oversampling = 3, .blend = 1.0f, .shape = 1.0f,
+          .ampBias = 1.0f, .sag = 1.0f, .presence = 1.0f, .cabinet = 1.0f, .delayTime = 250.0f,
+          .delayLevel = 1.0f, .stOffset = 500.0f, .noise = 1.0f },  // Maximum
                 { .subfund = 0.15f, .inputDb = -3.0f, .drive = 0.28f, .bias = 0.30f, .tone = 0.48f,
           .character = 0.30f, .wow = 0.10f, .flutter = 0.12f, .mix = 65.0f, .outputDb = -1.0f,
           .oversampling = 1 },  // Gentle Warmth
@@ -598,25 +631,6 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
           .tapeType = 3, .speed = 0, .instrument = 3, .oversampling = 1 },  // Lo-Fi Radio
                 { .subfund = 0.12f, .drive = 0.34f, .bias = 0.44f, .tone = 0.55f, .wow = 0.10f,
           .flutter = 0.13f, .width = 0.52f, .tapeType = 7, .oversampling = 1 },  // Ferric Master
-
-        // MINIMUM - every control at its floor. MIX at zero is the point: the tape
-        // path leaves the signal completely, so this is the plugin's null test -
-        // what you hear is the input, untouched, and any difference from a bypass
-        // is a bug rather than a sound.
-                { .drive = 0.0f, .bias = 0.0f, .tone = 0.0f, .character = 0.0f, .wow = 0.0f, .flutter = 0.0f,
-          .mix = 0.0f, .width = 0.0f, .speed = 0, .shape = 0.0f, .ampBias = 0.0f, .presence = 0.0f },  // Minimum
-
-        // MAXIMUM - every control at the top of its range: the whole sub-fundamental
-        // generator, the amp end of the blend with the cabinet open, a quarter
-        // second of echo at full feedback, the head pushed 500 samples, the noise
-        // floor at its loudest, and 8x oversampling. The trims are the exception,
-        // +12 in and -12 out: a reference that clips the host on the way in tells
-        // you nothing about the machine, and this one is meant to be heard.
-                { .subfund = 1.0f, .inputDb = +12.0f, .drive = 1.0f, .bias = 1.0f, .tone = 1.0f,
-          .character = 1.0f, .wow = 1.0f, .flutter = 1.0f, .outputDb = -12.0f, .width = 1.0f,
-          .tapeType = 7, .speed = 2, .instrument = 5, .oversampling = 3, .blend = 1.0f, .shape = 1.0f,
-          .ampBias = 1.0f, .sag = 1.0f, .presence = 1.0f, .cabinet = 1.0f, .delayTime = 250.0f,
-          .delayLevel = 1.0f, .stOffset = 500.0f, .noise = 1.0f },  // Maximum
     }};
 
     // The same guard the switch used to provide: an index outside the list is not a
