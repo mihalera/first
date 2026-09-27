@@ -179,9 +179,9 @@ private:
     // read at run time. The tab table is checked against controlCount by a
     // static_assert too, so a knob that no tab lists is a build error, not a knob
     // that silently disappears from the panel.
-    static constexpr std::size_t controlCount = 21;
+    static constexpr std::size_t controlCount = 31;
     static constexpr int tabColumns = 4;
-    static constexpr int numTabs = 3;
+    static constexpr int numTabs = 5;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     void timerCallback() override;
@@ -265,6 +265,16 @@ private:
     juce::ToggleButton autoGainButton { "AUTO GAIN" };
     juce::ComboBox oversamplingBox;
     juce::Label oversamplingLabel;
+
+    // DELAY TYPE - which machine the second head behaves as. A combo rather than a
+    // knob because the three are discrete machines, not points on a scale.
+    juce::ComboBox delayTypeBox;
+    juce::Label delayTypeLabel;
+
+    // The two whole-machine mode switches. Rockers like BYPASS and POLARITY, drawn
+    // by the panel's own LookAndFeel, because they are state rather than amount.
+    juce::ToggleButton modernModeButton { "MODERN" };
+    juce::ToggleButton lofiModeButton { "LO-FI" };
     juce::Label presetHeadingLabel;
     juce::Label compareBadgeLabel;
     juce::Label presetBadgeLabel;
@@ -283,6 +293,9 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> speedAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> instrumentAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> transportAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> delayTypeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> modernModeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> lofiModeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversamplingAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> deltaAttachment;

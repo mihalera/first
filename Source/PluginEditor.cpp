@@ -104,20 +104,43 @@ namespace
         const char* name;
         const char* hint;
         std::size_t count;
-        std::size_t controls[8];
+        std::size_t controls[16];
     };
 
-    constexpr std::array<TabSpec, 3> tabSpecs { {
+    // Five pages, in signal order, because the panel now carries thirty-one knobs and
+    // one surface cannot hold them legibly. The split follows the CHAIN rather than an
+    // arbitrary grouping, so walking the tabs left to right walks the signal:
+    //
+    //   MACHINE   what goes in, how the machine colours it, what comes out
+    //   DRIVE     the gain stages in front of the tape, then everything that bends
+    //   TAPE      the head, the medium's condition and the transport's
+    //   SPACE     the two time-based stages, delay and reverb
+    //   VINYL     the record-playing end of the chain
+    //
+    // Index map, for reading the table below:
+    //   0 input  1 drive  2 bias  3 tone  4 character  5 wow  6 flutter  7 mix
+    //   8 output  9 stereo_width  10 blend  11 shape  12 amp_bias  13 sag
+    //   14 presence  15 cabinet  16 delay_time  17 delay_feedback  18 st_offset
+    //   19 noise  20 subfund  21 preamp  22 distortion  23 flux  24 wear
+    //   25 mechanics  26 reverb  27 reverb_size  28 vinyl  29 vinyl_crackle
+    //   30 vinyl_rumble
+    constexpr std::array<TabSpec, 5> tabSpecs { {
         //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
         { "MACHINE", "What goes in, how the machine colours it, and what comes out.",
                      6, { 0, 3, 4, 7, 9, 8 } },
-        //  drive, bias, subfund, blend, shape, amp_bias, sag
-        { "SATURATION CORE", "Everything that bends the signal: level into the core, "
-                            "then its colour and curve.",
-                     7, { 1, 2, 20, 10, 11, 12, 13 } },
-        //  cabinet, presence, wow, flutter, st_offset, delay_time, delay_feedback, noise
-        { "HEAD / TRANSPORT", "Playback head, tape transport, echo and hiss.",
-                     8, { 15, 14, 5, 6, 18, 16, 17, 19 } }
+        //  preamp, distortion, drive, bias, blend, shape, amp_bias, sag, subfund
+        { "DRIVE", "The gain stages in front of the tape, then everything that bends "
+                   "the signal.",
+                     9, { 21, 22, 1, 2, 10, 11, 12, 13, 20 } },
+        //  flux, wear, mechanics, cabinet, presence, wow, flutter, noise
+        { "TAPE", "The head, the medium's condition and the transport's.",
+                     8, { 23, 24, 25, 15, 14, 5, 6, 19 } },
+        //  delay_time, delay_feedback, st_offset, reverb, reverb_size
+        { "SPACE", "The two time-based stages: the second head, then the room.",
+                     5, { 16, 17, 18, 26, 27 } },
+        //  vinyl, vinyl_crackle, vinyl_rumble
+        { "VINYL", "The record-playing end of the chain.",
+                     3, { 28, 29, 30 } }
     } };
 
     // Where the divider under the knob-grid heading sits, in pixels from the top of the
@@ -141,7 +164,12 @@ namespace
     // Compile-time proof that the tabs partition the grid: every control index appears
     // in exactly one tab, so no knob is orphaned (invisible and unreachable) or shown
     // twice, and none of them is silently dropped.
-    constexpr bool tabsCoverAllControls (const std::array<TabSpec, 3>& tabs, std::size_t total)
+    // The tab count is written once, here, and the static_assert that guards coverage
+// reads it from the same constant - so adding a page cannot leave this behind.
+constexpr std::size_t numTabPages = 5;
+
+constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tabs,
+                                     std::size_t total)
     {
         std::array<int, 32> seen {};
 
@@ -1273,7 +1301,11 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                          "shape", "amp_bias", "sag",
                                          "presence", "cabinet",
                                          "delay_time", "delay_feedback",
-                                         "st_offset", "noise", "subfund" };
+                                         "st_offset", "noise", "subfund",
+                                         "preamp", "distortion",
+                                         "flux", "wear", "mechanics",
+                                         "reverb", "reverb_size",
+                                         "vinyl", "vinyl_crackle", "vinyl_rumble" };
     const juce::StringArray controlNames { "INPUT", "DRIVE", "BIAS",
                                            "BRIGHT", "TONE", "WOW",
                                            "FLUTTER", "MIX", "OUTPUT",
@@ -1281,7 +1313,11 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                            "SHAPE", "AMP BIAS", "SAG",
                                            "PRESENCE", "CABINET",
                                            "DELAY", "DLY LVL",
-                                           "ST OFFSET", "NOISE", "SUBFUND" };
+                                           "ST OFFSET", "NOISE", "SUBFUND",
+                                           "PREAMP", "DISTORT",
+                                           "FLUX", "WEAR", "MECHANICS",
+                                           "REVERB", "RVB SIZE",
+                                           "VINYL", "CRACKLE", "RUMBLE" };
     // One double-click reset value per controlIds entry, in the SAME order, each one
     // the default createParameterLayout() registers for that parameter. These are
     // three views of ONE list, so a value that lands on a different control is a
@@ -1296,6 +1332,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     //   HEAD / TRANSPORT  cabinet 0.0  presence 0.50  wow 0.14  flutter 0.18
     //                      st_offset 0.0  delay_time 0.0  delay_feedback 0.0
     //                      noise 0.50
+    //   TAPE CONDITION    flux 0.50  wear 0.0  mechanics 0.0
+    //   INPUT STAGE       preamp 0.0  distortion 0.0
+    //   SPACE             reverb 0.0  reverb_size 0.40
+    //   VINYL             vinyl 0.0  vinyl_crackle 0.50  vinyl_rumble 0.35
     const std::array<double, controlCount> defaultValues { 0.0, 0.30, 0.42,
                                                            0.50, 0.5, 0.14,
                                                            0.18, 0.5, 0.0,
@@ -1303,7 +1343,11 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                                            0.5, 0.50, 0.0,
                                                            0.50, 0.0,
                                                            0.0, 0.0, 0.0,
-                                                           0.50, 0.0 };
+                                                           0.50, 0.0,
+                                                           0.0, 0.0,
+                                                           0.50, 0.0, 0.0,
+                                                           0.0, 0.40,
+                                                           0.0, 0.50, 0.35 };
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -1469,6 +1513,78 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "rather than a circuit. The voicing fades in with however much "
                        "AMP is in the blend, so a pure tape setting is untouched. "
                        "Default 0 percent - a DI, the raw amp output.") + hints;
+            if (id == "preamp")
+                return juce::String ("PREAMP - a valve input stage in FRONT of the "
+                       "machine, the way a real chain has a microphone preamp before "
+                       "the recorder. It is a STAGE, not a gain: driving it adds a "
+                       "gentle soft clip, a transformer's low-cut and a slight top-end "
+                       "lift, so it changes the colour as much as the level. It is "
+                       "level-matched internally, so INPUT remains the control that "
+                       "sets the operating level. Default 0 percent - no preamp.") + hints;
+            if (id == "distortion")
+                return juce::String ("DISTORT - a diode clipper in front of the tape. "
+                       "Where the saturation core BENDS, this BREAKS: a hard knee with "
+                       "a pre-gain, deliberately abrupt. It sits ahead of the machine "
+                       "on purpose - a distorted signal recorded to tape sounds like a "
+                       "record rather than a pedal precisely because the tape smooths "
+                       "what the pedal produced. Default 0 percent - off.") + hints;
+            if (id == "flux")
+                return juce::String ("FLUX - how deep into the oxide the record head "
+                       "magnetises. More flux is more low end, a stronger hysteresis "
+                       "memory and a quieter floor; less is thin and bright. It is a "
+                       "different axis from DRIVE: DRIVE is how hard the signal is "
+                       "pushed into the curve, FLUX is how much of the medium's depth "
+                       "is used. 50 percent is the calibrated, neutral flux.") + hints;
+            if (id == "wear")
+                return juce::String ("WEAR - the state of the heads and the tape. A "
+                       "used machine is not a broken one: the head gap has rounded "
+                       "slightly and the oxide has lost some of its edge, so the top "
+                       "end softens and the contact adds a little noise. It should "
+                       "read as an old machine, not as a fault. Default 0 percent - "
+                       "a fresh head and new tape.") + hints;
+            if (id == "mechanics")
+                return juce::String ("MECHANICS - the state of the transport's moving "
+                       "parts. WOW and FLUTTER set how much pitch modulation there is; "
+                       "this sets how WELL the mechanism holds it. At 0 the capstan, "
+                       "pinch roller and reel motors are in good order, so the "
+                       "modulation is smooth and periodic. Higher settings are dry "
+                       "bearings and a slack belt: irregular drift and the occasional "
+                       "slip. Default 0 percent.") + hints;
+            if (id == "reverb")
+                return juce::String ("REVERB - the room the machine is in. Tape "
+                       "machines lived in rooms, and the room is part of the sound of "
+                       "a recording made on one. This is a plate/room hybrid placed "
+                       "AFTER the machine, so the reverb is of the processed signal "
+                       "rather than feeding back into the saturation - which keeps it "
+                       "clean and predictable. Default 0 percent - dry.") + hints;
+            if (id == "reverb_size")
+                return juce::String ("RVB SIZE - how long the reverb's tail runs, and "
+                       "how dark it is: a bigger room absorbs more top end per pass, "
+                       "so a long tail is a darker one. That is what stops a large "
+                       "setting from sounding like a metal tank. Decay and level are "
+                       "separate decisions on a real reverb, which is why this is not "
+                       "folded into REVERB. Default 40 percent.") + hints;
+            if (id == "vinyl")
+                return juce::String ("VINYL - the record-playing end of the chain. A "
+                       "turntable adds three things nothing else here does: surface "
+                       "crackle, bearing rumble and the RIAA playback curve's low-end "
+                       "lift and top-end softness. This is the overall amount; at 0 "
+                       "the whole stage is bypassed. Default 0 percent.") + hints;
+            if (id == "vinyl_crackle")
+                return juce::String ("CRACKLE - surface noise, and specifically "
+                       "IMPULSES rather than hiss. A record surface is ticks, caused "
+                       "by dust and by the stylus crossing the groove's "
+                       "imperfections, so the generator produces sparse impulses with "
+                       "a fast decay instead of continuous noise. That is the "
+                       "difference between a record and a noisy tape. Default 50 "
+                       "percent.") + hints;
+            if (id == "vinyl_rumble")
+                return juce::String ("RUMBLE - the turntable's low-frequency thump, "
+                       "from the bearing and the motor. It is why vinyl has a "
+                       "bottom-end floor that a CD does not. It is a different noise "
+                       "from the crackle and is scaled separately, because a worn "
+                       "bearing and a dusty record are independent faults. Default "
+                       "35 percent.") + hints;
             return hints;
         };
         slider.setTooltip (parameterTooltip (controlIds[static_cast<int> (i)]));
@@ -1483,21 +1599,29 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         // DELAY (11) and ST OFFSET (13) are the other two exceptions: they are real
         // units (milliseconds and microseconds), not percentages, so a percentage
         // range would make the knob unable to reach either end of its own parameter.
-        if (i == 0 || i == 8)
+        // The range is chosen by the control's ID, not by its position in the array.
+        // It used to be `i == 11` and `i == 13`, which was correct only while the list
+        // happened to be ordered that way - and when the list grew, index 11 became
+        // SHAPE and index 13 became SAG, so the DELAY knob silently acquired a
+        // percentage range and could no longer reach 250 ms, and ST OFFSET lost its
+        // bipolar range entirely. An id cannot be renumbered by an unrelated edit.
+        const auto& id = controlIds[static_cast<int> (i)];
+
+        if (id == "input" || id == "output")
         {
             // Input and Output are both calibrated decibel trims over the same range.
             slider.setRange (minStageDb, maxStageDb, 0.1);
             slider.setNumDecimalPlacesToDisplay (1);
             slider.setTextValueSuffix (" dB");
         }
-        else if (i == 11)
+        else if (id == "delay_time")
         {
             // DELAY: the head spacing, in milliseconds.
             slider.setRange (0.0, 250.0, 0.1);
             slider.setNumDecimalPlacesToDisplay (1);
             slider.setTextValueSuffix (" ms");
         }
-        else if (i == 13)
+        else if (id == "st_offset")
         {
             // ST OFFSET: the inter-channel time offset, in microseconds.
             slider.setRange (-500.0, 500.0, 1.0);
@@ -1681,6 +1805,81 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     transportAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "transport", transportBox);
     addAndMakeVisible (transportBox);
+
+    // ---------------------------------------------------------------
+    //  DELAY TYPE - which machine the second head behaves as.
+    //
+    //  Three discrete machines rather than a scale: TAPE loses top end on every
+    //  pass because the repeat is re-recorded, BBD is darker still with clock
+    //  noise and a bandwidth that narrows as the delay lengthens, and MODERN is
+    //  clean and full-bandwidth. A combo, because there is no meaningful point
+    //  between them.
+    // ---------------------------------------------------------------
+    styleLabel (delayTypeLabel, "DLY TYPE", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    addAndMakeVisible (delayTypeLabel);
+    delayTypeBox.addItemList (juce::StringArray { "Tape", "BBD", "Modern" }, 1);
+    delayTypeBox.setTooltip ("What the second head's repeats sound like. TAPE loses "
+                             "top end on every pass, because the repeat is recorded "
+                             "onto the tape and played back through the same losses "
+                             "the main path has. BBD is a bucket-brigade chip: darker "
+                             "still, with clock noise on the repeats and a bandwidth "
+                             "that narrows as the delay lengthens - which is what the "
+                             "technology physically does. MODERN is a clean digital "
+                             "delay with full bandwidth.");
+    delayTypeBox.setLookAndFeel (&customLookAndFeel);
+    delayTypeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "delay_type", delayTypeBox);
+    addAndMakeVisible (delayTypeBox);
+
+    // ---------------------------------------------------------------
+    //  The two whole-machine modes.
+    //
+    //  MODERN re-voices the deck for a well-maintained 1990s machine: the head
+    //  losses move out of the audio band, the floor drops, the magnetic memory
+    //  thins. LO-FI is the deliberate degradation - a hard 3.2 kHz limit and a
+    //  sample-and-hold quantisation, applied after the protection chain so the
+    //  fault survives to the output.
+    //
+    //  They are mutually exclusive by design: a machine cannot be both, and the
+    //  engine resolves MODERN first when both are set. These handlers make the
+    //  exclusivity visible on the panel rather than leaving the user to discover
+    //  it by ear - turning one on releases the other, so the two lamps can never
+    //  both be lit.
+    // ---------------------------------------------------------------
+    modernModeButton.setClickingTogglesState (true);
+    modernModeButton.setTooltip ("MODERN - re-voices the whole machine for a "
+                                 "well-maintained 1990s deck: head losses out of the "
+                                 "audio band, a lower noise floor and thinner magnetic "
+                                 "memory. It changes the machine's calibration, not "
+                                 "its level. Mutually exclusive with LO-FI.");
+    modernModeButton.setLookAndFeel (&customLookAndFeel);
+    modernModeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (audioProcessor.parameters, "modern_mode", modernModeButton);
+    modernModeButton.onClick = [this]
+    {
+        // Releasing the other switch is what makes the exclusivity a visible fact
+        // rather than an engine detail: the panel can never show both engaged.
+        if (modernModeButton.getToggleState() && lofiModeButton.getToggleState())
+            lofiModeButton.setToggleState (false, juce::sendNotificationSync);
+    };
+    addAndMakeVisible (modernModeButton);
+
+    lofiModeButton.setClickingTogglesState (true);
+    lofiModeButton.setTooltip ("LO-FI - the deliberate degradation: a hard 3.2 kHz "
+                               "bandwidth limit and a sample-and-hold quantisation, "
+                               "on the finished sample so the limiter cannot smooth "
+                               "it away. It is an effect, not a calibration. "
+                               "Mutually exclusive with MODERN.");
+    lofiModeButton.setLookAndFeel (&customLookAndFeel);
+    lofiModeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (audioProcessor.parameters, "lofi_mode", lofiModeButton);
+    lofiModeButton.onClick = [this]
+    {
+        if (lofiModeButton.getToggleState() && modernModeButton.getToggleState())
+            modernModeButton.setToggleState (false, juce::sendNotificationSync);
+    };
+    addAndMakeVisible (lofiModeButton);
 
     // GL switch: the context is a best-effort accelerator (see the attach note
     // above), and this button hands the choice to the user - drivers, remote
@@ -1934,6 +2133,9 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     oversamplingBox.setLookAndFeel (nullptr);
     instrumentBox.setLookAndFeel (nullptr);
     transportBox.setLookAndFeel (nullptr);
+    delayTypeBox.setLookAndFeel (nullptr);
+    modernModeButton.setLookAndFeel (nullptr);
+    lofiModeButton.setLookAndFeel (nullptr);
     glButton.setLookAndFeel (nullptr);
     savePresetButton.setLookAndFeel (nullptr);
     deletePresetButton.setLookAndFeel (nullptr);
@@ -2165,6 +2367,9 @@ void FirstAudioProcessorEditor::applyTheme()
     styleCombo (oversamplingBox);
     styleCombo (instrumentBox);
     styleCombo (transportBox);
+    styleCombo (delayTypeBox);
+    // modernModeButton and lofiModeButton are ToggleButtons drawn by
+    // drawToggleButton, which reads the palette live and needs no calls here.
     styleCombo (userPresetBox);
     styleGlButton (openGLContext.isAttached());
     styleWorkflowButton (copyAButton, audioProcessor.getActiveCompareSlot() == 0);
@@ -2180,6 +2385,7 @@ void FirstAudioProcessorEditor::applyTheme()
     oversamplingLabel.setColour (juce::Label::textColourId, palette.secondary);
     instrumentLabel.setColour (juce::Label::textColourId, palette.secondary);
     transportLabel.setColour (juce::Label::textColourId, palette.secondary);
+    delayTypeLabel.setColour (juce::Label::textColourId, palette.secondary);
     compareBadgeLabel.setColour (juce::Label::textColourId,
                                  audioProcessor.isCompareDirty() ? palette.accent : palette.secondary);
 
@@ -2760,6 +2966,18 @@ void FirstAudioProcessorEditor::resized()
     transportLabel.setBounds (instrumentBox.getRight() + 14, layout.deck.getY() + 83, 62, 16);
     transportBox.setBounds (instrumentBox.getRight() + 14, layout.deck.getY() + 74, 78, 32);
     glButton.setBounds (harmonicsLeft - 10 - 64, layout.deck.getY() + 74, 64, 32);
+
+    // DELAY TYPE and the two mode switches share the transport row's right end.
+    // That row ends at the deck hint label (about x + 664 of 752 at the minimum),
+    // and the harmonics block starts at x + 608, so there is a genuine gap between
+    // them on the switches row - which is where these three go, stacked against
+    // the readout rather than competing with the transport chain on the left.
+    const auto modeRowY = layout.deck.getY() + 110;
+    const auto modeRight = layout.deck.getRight() - 14;
+    lofiModeButton.setBounds (modeRight - 74, modeRowY, 74, 32);
+    modernModeButton.setBounds (lofiModeButton.getX() - 6 - 82, modeRowY, 82, 32);
+    delayTypeLabel.setBounds (modernModeButton.getX() - 6 - 62, modeRowY + 9, 62, 15);
+    delayTypeBox.setBounds (modernModeButton.getX() - 6 - 74, modeRowY, 74, 32);
 
     presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 119, 46, 16);
     presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 110, 128, 32);
