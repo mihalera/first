@@ -26,9 +26,9 @@ namespace
     // Returned by reference from a function-local static, so the single list is
     // also the single definition - no header, no duplicated initialiser, and the
     // range-for in both callers reads it without copying.
-    const std::array<const char*, 58>& parametersTrackedForDirtyBadge()
+    const std::array<const char*, 69>& parametersTrackedForDirtyBadge()
     {
-        static const std::array<const char*, 58> ids
+        static const std::array<const char*, 69> ids
         {
             "input", "output", "bypass", "polarity", "auto_gain",
             "subfund",
@@ -36,11 +36,15 @@ namespace
             "oversampling", "tone", "wow", "flutter", "mix",
             "character", "delta", "delay_time", "delay_feedback",
             "st_offset", "noise", "noise_lvl", "transport", "spindown",
+            "ui_sounds",
             "blend", "shape", "sag", "presence", "cabinet", "amp_bias",
             "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
             "delay_type", "distortion", "modern_mode", "lofi_mode",
             "vinyl", "vinyl_crackle", "vinyl_rumble", "vinyl_speed",
             "vinyl_dust", "vinyl_scratch", "vinyl_warp", "vinyl_electrical",
+            "vinyl_clicks", "vinyl_generation", "vinyl_turntable", "vinyl_cartridge",
+            "in_low", "in_mid", "in_high",
+            "out_low", "out_mid", "out_high",
             "st_link",
             "valve_type", "amp_type", "transformer_type",
             "digital_type", "vinyl_type",
@@ -325,6 +329,7 @@ FirstAudioProcessor::FirstAudioProcessor()
     noiseLvlParam = parameters.getRawParameterValue ("noise_lvl");
     transportParam = parameters.getRawParameterValue ("transport");
     spindownParam = parameters.getRawParameterValue ("spindown");
+    uiSoundsParam = parameters.getRawParameterValue ("ui_sounds");
     blendParam = parameters.getRawParameterValue ("blend");
     shapeParam = parameters.getRawParameterValue ("shape");
     sagParam = parameters.getRawParameterValue ("sag");
@@ -349,6 +354,16 @@ FirstAudioProcessor::FirstAudioProcessor()
     vinylScratchParam = parameters.getRawParameterValue ("vinyl_scratch");
     vinylWarpParam = parameters.getRawParameterValue ("vinyl_warp");
     vinylElectricalParam = parameters.getRawParameterValue ("vinyl_electrical");
+    vinylClicksParam = parameters.getRawParameterValue ("vinyl_clicks");
+    vinylGenerationParam = parameters.getRawParameterValue ("vinyl_generation");
+    vinylTurntableParam = parameters.getRawParameterValue ("vinyl_turntable");
+    vinylCartridgeParam = parameters.getRawParameterValue ("vinyl_cartridge");
+    inputEqLowParam = parameters.getRawParameterValue ("in_low");
+    inputEqMidParam = parameters.getRawParameterValue ("in_mid");
+    inputEqHighParam = parameters.getRawParameterValue ("in_high");
+    outputEqLowParam = parameters.getRawParameterValue ("out_low");
+    outputEqMidParam = parameters.getRawParameterValue ("out_mid");
+    outputEqHighParam = parameters.getRawParameterValue ("out_high");
     valveTypeParam = parameters.getRawParameterValue ("valve_type");
     ampTypeParam = parameters.getRawParameterValue ("amp_type");
     transformerTypeParam = parameters.getRawParameterValue ("transformer_type");
@@ -973,6 +988,49 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "auto_gain", 1 },
                                                             "Auto Gain", true));
 
+    // =========================================================================
+    //  THE TWO EQUALISERS.
+    //
+    //  One at each end of the machine, and the positions are the point:
+    //
+    //    IN EQ   sits immediately after the input trim and BEFORE everything
+    //            else. What it shapes is what the tape HEARS, so lifting the low
+    //            end here is not the same thing as lifting it at the output: the
+    //            tape's own saturation, its glue compressors and its hysteresis
+    //            all respond to what arrives, so an input EQ changes the
+    //            CHARACTER of the processing rather than merely its balance.
+    //            This is the EQ you use to feed the machine what it wants.
+    //
+    //    OUT EQ  sits after the machine and before the output trim. It shapes
+    //            what leaves, so it corrects the RESULT rather than the input -
+    //            the EQ you use to place the finished sound.
+    //
+    //  Both are the same three bands (low shelf at 200 Hz, bell at 1 kHz in a
+    //  200 Hz - 4 kHz band, high shelf above 4 kHz) and both are bit-for-bit
+    //  transparent at 0 dB on all three, so a fresh instance is untouched and
+    //  the two controls cannot colour the signal by merely existing.
+    //
+    //  The band gains are in dB, -12 .. +12, because that is the unit an EQ is
+    //  read in. The taper is deliberately linear rather than skewed: an EQ's
+    //  travel should be a straight line between cut and boost.
+    // =========================================================================
+    const auto eqBandRange = juce::NormalisableRange<float> (-12.0f, 12.0f, 0.1f);
+    const auto eqBandAttributes = juce::AudioParameterFloatAttributes().withLabel ("dB");
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "in_low", 1 },
+                                                            "In EQ Low", eqBandRange, 0.0f, eqBandAttributes));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "in_mid", 1 },
+                                                            "In EQ Mid", eqBandRange, 0.0f, eqBandAttributes));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "in_high", 1 },
+                                                            "In EQ High", eqBandRange, 0.0f, eqBandAttributes));
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "out_low", 1 },
+                                                            "Out EQ Low", eqBandRange, 0.0f, eqBandAttributes));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "out_mid", 1 },
+                                                            "Out EQ Mid", eqBandRange, 0.0f, eqBandAttributes));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "out_high", 1 },
+                                                            "Out EQ High", eqBandRange, 0.0f, eqBandAttributes));
+
     // SUBFUND: the subharmonic generator. Every other stage here makes overtones - a
     // 100 Hz note gains 200, 300, 400 Hz. This one produces the subharmonic series:
     // an 8-stage downward harmonic cascade (1/2, 1/3, 1/4, 1/5, 1/6, 1/7, 1/8, 1/9)
@@ -1200,6 +1258,25 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     // -------------------------------------------------------------------------
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "spindown", 1 },
                                                             "Spindown", false));
+
+    // -------------------------------------------------------------------------
+    //  UI SOUNDS - the panel's own interface clicks.
+    //
+    //  A host-visible parameter rather than a private editor flag, so the choice
+    //  survives in the session and in a preset, and so it is automatable like
+    //  every other setting. The editor reads it and enables its sound engine.
+    //
+    //  Default OFF. A plugin that starts ticking the moment a window opens is a
+    //  plugin that gets uninstalled, and this is a studio tool - the sounds are
+    //  there for the people who want a hardware feel, not imposed on the people
+    //  who do not.
+    //
+    //  It lives on the SETTINGS tab beside GL and OVERSAMPLING, because it is
+    //  the same KIND of switch: an engine-level preference rather than a control
+    //  that shapes the sound.
+    // -------------------------------------------------------------------------
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "ui_sounds", 1 },
+                                                            "UI Sounds", false));
 
     // -------------------------------------------------------------------------
     //  Saturation blend.
@@ -1471,6 +1548,93 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vinyl_electrical", 1 }, "Electrical",
                                                             percentageRange (0.45f), 0.0f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+    // -------------------------------------------------------------------------
+    //  CLICKS - the sharp, discrete groove faults.
+    //
+    //  CRACKLE is the fine surface texture and DUST is the grit in the groove;
+    //  CLICKS is the third and loudest class of record damage: an actual ridge
+    //  or pit that the stylus hits as a single hard transient. Where a crackle
+    //  tick is a few milliseconds of noise, a click is a fast bipolar IMPACT -
+    //  a full-bandwidth spike with almost no ringing - which is why it reads as
+    //  "a click" rather than as more crackle.
+    //
+    //  Above half the travel a fraction of the clicks becomes PERIODIC, locked to
+    //  the platter, so a badly pressed record ticks in time rather than at
+    //  random. That is the difference between a dirty record and a broken one.
+    //
+    //  Default 0 - a clean pressing has no clicks.
+    // -------------------------------------------------------------------------
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vinyl_clicks", 1 }, "Clicks",
+                                                            percentageRange (0.45f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+    // -------------------------------------------------------------------------
+    //  GENERATION - how the record was cut and pressed.
+    //
+    //  Three stages of the same thing, in the order a record is actually made:
+    //
+    //    LAQUER   the reference cut. Almost none of the cutter head's own colour,
+    //             loud and clean - what the mastering engineer actually heard.
+    //    DIRECT   a direct-metal master: cut straight to a metal mother rather
+    //             than a lacquer, so it is cleaner still, with the most top end
+    //             and the quietest surface of the three.
+    //    PRINTED  a stamper pressing - the record you buy. Every generation
+    //             between the cut and this copy has taken something: the top end
+    //             is duller, the surface is noisier, and the bass is a little
+    //             fuller because that is what survives.
+    //
+    //  The choice sets the stage's own top-band loss and bottom-band lift, and
+    //  scales the noise it makes - so a PRINTED record is not merely darker, it
+    //  is noisier, which is what actually distinguishes the two.
+    // -------------------------------------------------------------------------
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "vinyl_generation", 1 },
+                                                            "Generation",
+                                                            juce::StringArray { "Laquer", "Direct", "Printed" },
+                                                            0));
+
+    // -------------------------------------------------------------------------
+    //  TURNTABLE - what drives the platter.
+    //
+    //  BELT   an audiophile belt-drive: the motor is isolated from the platter by
+    //         an elastic belt, so the drive is smooth and quiet but marginally
+    //         less steady, and the platter takes a moment to settle. The quieter,
+    //         gentler answer.
+    //    DIRECT a high-torque direct-drive DJ deck: the platter IS the motor, so
+    //         the speed is rock-steady and the pitch is locked. What chasing and
+    //         scratching needs.
+    //    IDLER  a vintage idler-wheel deck: the motor bears on the inside of the
+    //         platter through a rubber wheel, which couples the drive's own
+    //         rumble straight into the groove. Warmer and noticeably less stable
+    //         than either of the other two.
+    //
+    //  It scales the stage's speed wander and its stability, so the same record
+    //  wanders differently on each deck - which is the point of the control.
+    // -------------------------------------------------------------------------
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "vinyl_turntable", 1 },
+                                                            "Turntable",
+                                                            juce::StringArray { "Belt", "Direct", "Idler" },
+                                                            0));
+
+    // -------------------------------------------------------------------------
+    //  CARTRIDGE - what reads the groove, and the largest single difference of
+    //  the three selectors.
+    //
+    //    MM   moving magnet: warm, slightly soft on top, broad and gentle. The
+    //         forgiving answer.
+    //    MC   moving coil: more detail and a brighter, tighter top, with a lower
+    //         output so it needs more gain - and carries more hiss with it. The
+    //         revealing answer.
+    //    DJ   a Concorde-style DJ cart: heavier, hotter, tracks harder, with a
+    //         little more surface noise and a firm bottom. The loud answer.
+    //
+    //  It applies a gain PAIR (top and bottom) plus its own noise multipliers,
+    //  which is why it sounds like a different cartridge rather than a tone knob.
+    // -------------------------------------------------------------------------
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "vinyl_cartridge", 1 },
+                                                            "Cartridge",
+                                                            juce::StringArray { "MM", "MC", "DJ" },
+                                                            0));
 
     // -------------------------------------------------------------------------
     //  The five type switches, one per saturation principle plus vinyl.
@@ -1817,6 +1981,26 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     antiPhaseCorrection = 0.0f;
     antiPhaseProductMagnitude = 1.0e-3f;
     antiPhaseAmount.store (0.0f, std::memory_order_relaxed);
+
+    // The two equalisers start clean, so the first block after a rate change is
+    // not coloured by a stale filter state from the previous rate.
+    inputEq.reset();
+    outputEq.reset();
+
+    // And their six band gains start at the values the parameters restore, so a
+    // session saved with a boost does not spend its first 20 ms gliding into it.
+    inputEqLowSmoothed.setCurrentAndTargetValue (
+        juce::Decibels::decibelsToGain (inputEqLowParam != nullptr ? inputEqLowParam->load() : 0.0f));
+    inputEqMidSmoothed.setCurrentAndTargetValue (
+        juce::Decibels::decibelsToGain (inputEqMidParam != nullptr ? inputEqMidParam->load() : 0.0f));
+    inputEqHighSmoothed.setCurrentAndTargetValue (
+        juce::Decibels::decibelsToGain (inputEqHighParam != nullptr ? inputEqHighParam->load() : 0.0f));
+    outputEqLowSmoothed.setCurrentAndTargetValue (
+        juce::Decibels::decibelsToGain (outputEqLowParam != nullptr ? outputEqLowParam->load() : 0.0f));
+    outputEqMidSmoothed.setCurrentAndTargetValue (
+        juce::Decibels::decibelsToGain (outputEqMidParam != nullptr ? outputEqMidParam->load() : 0.0f));
+    outputEqHighSmoothed.setCurrentAndTargetValue (
+        juce::Decibels::decibelsToGain (outputEqHighParam != nullptr ? outputEqHighParam->load() : 0.0f));
 
     harmonicAnalyser.reset();
     evenHarmonicRatio.store (0.0f, std::memory_order_relaxed);
@@ -2518,6 +2702,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         for (auto* stage : { &vinylL, &vinylR })
         {
             stage->vinylWowIncrement = wanderRate[vinylSpeedNow] / engineSampleRate;
+            // The turntable scales the depth (see the voicing below, which runs
+            // after this and overwrites it with the scale applied) - the deck's
+            // stability is what decides how much of the disc's wander you hear.
             stage->speedModulation = wanderDepth[vinylSpeedNow];
 
             // Every one of the four faults' rates is derived from the SAME platter
@@ -2557,6 +2744,105 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             stage->scratchAmount = vinylScratchParam != nullptr ? vinylScratchParam->load() : 0.0f;
             stage->warpAmount = vinylWarpParam != nullptr ? vinylWarpParam->load() : 0.0f;
             stage->electricalAmount = vinylElectricalParam != nullptr ? vinylElectricalParam->load() : 0.0f;
+
+            // CLICKS rides the same platter-locked rate as the scratch and the
+            // warp, because the periodic half of it IS a once-per-revolution
+            // event: a pressing fault crossed by the stylus every turn.
+            stage->clickAmount = vinylClicksParam != nullptr ? vinylClicksParam->load() : 0.0f;
+            stage->clickIncrement = revolutionHz / engineSampleRate;
+
+            // The split the GENERATION and CARTRIDGE tilts both act around: a
+            // real playback-band boundary at 1.2 kHz, converted the same way
+            // every other coefficient here is. One coefficient, two users, so
+            // the two controls cannot disagree about where the boundary is.
+            stage->cartridgeCoefficient = onePoleCoefficientHz (1200.0f, engineSampleRate);
+        }
+
+        // ------------------------------------------------------------------
+        //  GENERATION, TURNTABLE and CARTRIDGE - the voicing of the three
+        //  selectors. They are read once per block here, and the stage applies
+        //  them per sample, exactly like the type voices above.
+        // ------------------------------------------------------------------
+        const auto generationIndex = vinylGenerationParam != nullptr
+            ? juce::jlimit (0, 2, static_cast<int> (vinylGenerationParam->load())) : 0;
+        const auto turntableIndex = vinylTurntableParam != nullptr
+            ? juce::jlimit (0, 2, static_cast<int> (vinylTurntableParam->load())) : 0;
+        const auto cartridgeIndex = vinylCartridgeParam != nullptr
+            ? juce::jlimit (0, 2, static_cast<int> (vinylCartridgeParam->load())) : 0;
+
+        // GENERATION: how much top end the cut and the pressing took, how much
+        // bottom was left, and how much noise the process added. The three are
+        // ordered from the reference cut to the copy of a copy.
+        struct GenerationVoice { float topLoss; float bottomLift; float noise; };
+        static constexpr GenerationVoice generationVoices[3]
+        {
+            // Laquer: the reference cut. Almost no loss, no extra noise.
+            { 0.94f, 1.02f, 1.00f },
+            // Direct: cut straight to metal. The most open top and the
+            // quietest surface of the three - cleaner than the lacquer itself,
+            // because one whole generation is missing.
+            { 1.03f, 1.00f, 0.90f },
+            // Printed: the pressing you actually buy. Every generation's loss,
+            // a noticeably darker top, a fuller bottom and a noisier surface.
+            { 0.80f, 1.08f, 1.35f },
+        };
+
+        // TURNTABLE: how much the drive wanders and how steadily it holds. A
+        // belt is smooth but elastic, a direct drive is locked solid, an idler
+        // couples the motor's own rumble into the platter.
+        struct TurntableVoice { float wowScale; float stability; };
+        static constexpr TurntableVoice turntableVoices[3]
+        {
+            { 1.10f, 1.15f },   // Belt: a little more wander, less steady
+            { 0.55f, 0.70f },   // Direct: locked, the steadiest of the three
+            { 1.35f, 1.55f },   // Idler: the least stable, coupling the drive
+        };
+
+        // CARTRIDGE: a top/bottom gain pair plus its own noise multipliers. The
+        // moving coil is the bright, detailed one and carries the most hiss
+        // because of its lower output; the DJ cart is the hot, heavier one with
+        // the most surface noise.
+        struct CartridgeVoice { float top; float bottom; float noise; float hiss; };
+        static constexpr CartridgeVoice cartridgeVoices[3]
+        {
+            { 0.94f, 1.04f, 1.00f, 1.00f },   // MM: soft top, broad bottom
+            { 1.12f, 0.96f, 1.05f, 1.30f },   // MC: bright, tight, more hiss
+            { 1.05f, 1.12f, 1.30f, 1.10f },   // DJ: hot and heavy, more surface
+        };
+
+        const auto& generation = generationVoices[generationIndex];
+        const auto& turntable = turntableVoices[turntableIndex];
+        const auto& cartridge = cartridgeVoices[cartridgeIndex];
+
+        for (auto* stage : { &vinylL, &vinylR })
+        {
+            stage->generationTopLoss = generation.topLoss;
+            stage->generationBottomLift = generation.bottomLift;
+            stage->generationNoiseScale = generation.noise;
+
+            // The turntable scales the stage's own wander depth, so the same
+            // VINYL SPEED setting wanders differently on each deck - which is
+            // exactly what the control is for.
+            stage->turntableWowScale = turntable.wowScale;
+            stage->turntableStability = turntable.stability;
+
+            stage->cartridgeTopGain = cartridge.top;
+            stage->cartridgeBottomGain = cartridge.bottom;
+            stage->cartridgeNoiseGain = cartridge.noise * generation.noise;
+            stage->cartridgeHissGain = cartridge.hiss * generation.noise;
+
+            // The turntable scales the wander the VINYL SPEED switch set, so the
+            // deck's stability is what decides how much of it you actually hear.
+            // Applied here rather than at the speed block because the voice is
+            // only known once the selector has been read.
+            stage->speedModulation *= turntable.stability;
+            // And the WANDER RATE separately: a belt-driven platter does not
+            // merely wander further, it wanders SLOWER, because the elastic belt
+            // filters the motor's own speed variations. An idler is the opposite
+            // - the wheel couples them through. Scaling the increment as well as
+            // the depth is what makes the three decks three decks rather than
+            // three amounts of the same wobble.
+            stage->vinylWowIncrement *= turntable.wowScale;
         }
     }
 
@@ -2579,6 +2865,38 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // samples rather than in Hz so it stays the same reduction as the rate moves).
     lofiLowCoefficient = onePoleCoefficientHz (3200.0f, engineSampleRate);
     lofiHoldSamples = 4;
+
+    // -------------------------------------------------------------------------
+    //  The two equalisers.
+    //
+    //  The split coefficients are rebuilt here per block rather than only in
+    //  prepareToPlay, because the engine's rate changes with the oversampling
+    //  switch WITHOUT prepareToPlay running again - so an EQ prepared only once
+    //  would have its 200 Hz and 4 kHz corners at the wrong frequencies the
+    //  moment 4x was selected. One std::exp each per block is nothing.
+    //
+    //  The band gains come from the parameters, converted from dB to linear,
+    //  and are fed to the smoothies so a drag glides. 0 dB converts to exactly
+    //  1.0, which is what keeps a neutral EQ bit-for-bit transparent.
+    // -------------------------------------------------------------------------
+    inputEq.prepare (engineSampleRate);
+    outputEq.prepare (engineSampleRate);
+
+    const float inputEqMidCoefficient = inputEq.midBandCoefficient (engineSampleRate);
+    const float outputEqMidCoefficient = outputEq.midBandCoefficient (engineSampleRate);
+
+    inputEqLowSmoothed.setTargetValue (
+        juce::Decibels::decibelsToGain (inputEqLowParam != nullptr ? inputEqLowParam->load() : 0.0f));
+    inputEqMidSmoothed.setTargetValue (
+        juce::Decibels::decibelsToGain (inputEqMidParam != nullptr ? inputEqMidParam->load() : 0.0f));
+    inputEqHighSmoothed.setTargetValue (
+        juce::Decibels::decibelsToGain (inputEqHighParam != nullptr ? inputEqHighParam->load() : 0.0f));
+    outputEqLowSmoothed.setTargetValue (
+        juce::Decibels::decibelsToGain (outputEqLowParam != nullptr ? outputEqLowParam->load() : 0.0f));
+    outputEqMidSmoothed.setTargetValue (
+        juce::Decibels::decibelsToGain (outputEqMidParam != nullptr ? outputEqMidParam->load() : 0.0f));
+    outputEqHighSmoothed.setTargetValue (
+        juce::Decibels::decibelsToGain (outputEqHighParam != nullptr ? outputEqHighParam->load() : 0.0f));
 
     // -----------------------------------------------------------------------
     //  MODERN mode: the machine re-voiced for a well-maintained 1990s deck.
@@ -3737,7 +4055,29 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             const float preampNow = preampSmoothed.getCurrentValue();
             if (preampNow > 1.0e-5f)
                 x = inputStage.processPreamp (x, preampNow, preampLowCutCoefficient);
+            // ------------------------------------------------------------------
+            //  IN EQ - the input equaliser, and the position is the point.
+            //
+            //  It sits here, after the trim and the two input stages and BEFORE
+            //  the tape, so what it shapes is what the machine HEARS. That makes
+            //  it a different control from the output EQ: lifting the low end
+            //  here pushes more low end into the saturation curve and the glue
+            //  compressors, so the result is not merely a bass boost - the machine
+            //  processes that bass, saturates on it and compresses it, and the
+            //  character of the whole chain changes with it. This is the EQ an
+            //  engineer uses to feed the recorder what it wants.
+            //
+            //  `machineDryInput` is captured BEFORE the EQ so that DELTA still
+            //  subtracts the machine's own dry reference and not the EQ'd version
+            //  of it - otherwise a neutral EQ would be invisible in delta while a
+            //  boosted one would read as "character", which it is not.
+            // ------------------------------------------------------------------
             machineDryInput[static_cast<std::size_t> (channel)] = x;
+
+            inputEq.lowGain = inputEqLowSmoothed.getCurrentValue();
+            inputEq.midGain = inputEqMidSmoothed.getCurrentValue();
+            inputEq.highGain = inputEqHighSmoothed.getCurrentValue();
+            x = inputEq.process (x, channel, inputEqMidCoefficient);
 
             const float wowLfo = std::sin (wowPhase);
             const float flutterLfo = std::sin (flutterPhase);
@@ -4487,6 +4827,31 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         for (int channel = 0; channel < activeChannels; ++channel)
             outputSignal[static_cast<std::size_t> (channel)] +=
                 undertoneOutput[static_cast<std::size_t> (channel)] * wetGain * finalOutputGain;
+
+        // -------------------------------------------------------------------
+        //  OUT EQ - the output equaliser, at the other end of the machine.
+        //
+        //  It sits after everything the machine does - the tape, both glue
+        //  stages, the SUBFUND undertones - and before the width, the output
+        //  trim, the anti-phase guard and the limiter. That means it corrects
+        //  the RESULT rather than the input: nothing downstream responds to what
+        //  it does, so it is the neutral, predictable EQ - the one you use to
+        //  place the finished sound. The input EQ is the one that changes what
+        //  the machine does; this is the one that changes what comes out.
+        //
+        //  It runs before the limiter deliberately: a boost here is caught by
+        //  the protection chain like any other level, rather than being applied
+        //  after the ceiling and forcing the clipper to work.
+        // -------------------------------------------------------------------
+        for (int channel = 0; channel < activeChannels; ++channel)
+        {
+            outputEq.lowGain = outputEqLowSmoothed.getCurrentValue();
+            outputEq.midGain = outputEqMidSmoothed.getCurrentValue();
+            outputEq.highGain = outputEqHighSmoothed.getCurrentValue();
+            outputSignal[static_cast<std::size_t> (channel)] =
+                outputEq.process (outputSignal[static_cast<std::size_t> (channel)],
+                                  channel, outputEqMidCoefficient);
+        }
 
         if (activeChannels == 2)
         {

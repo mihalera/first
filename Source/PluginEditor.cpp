@@ -5,6 +5,172 @@
  #include <melatonin_inspector/melatonin_inspector.h>
 #endif
 
+//==============================================================================
+//  Interface sounds.
+//
+//  The engine is a four-voice tick synthesiser with its own audio device. The
+//  design constraints, in order of importance:
+//
+//    1. It must NEVER reach the plugin's audio output. It has its own device,
+//       so a click cannot be recorded, cannot appear in the DAW's meters and
+//       cannot be bounced into a render. This is the whole reason it is a
+//       separate device rather than a voice inside the plugin's engine.
+//
+//    2. It must never fail the editor. If no device can be opened - a headless
+//       host, an exclusive-mode driver, a machine with no output at all - the
+//       engine simply stays silent and the panel works exactly as before. The
+//       open is attempted once and never retried.
+//
+//    3. It must cost nothing. The render is a sine, a noise burst and a
+//       two-stage envelope; the buffer is 256 samples at the device's rate.
+//==============================================================================
+FirstAudioProcessorEditor::UiSoundEngine::UiSoundEngine()
+{
+    // An output-only device, opened lazily and never retried: a host that has no
+    // spare output, a machine whose only device is held exclusively by the DAW,
+    // or a headless CI runner must all end up with a silent engine and a working
+    // panel rather than an error or a hang.
+    const auto error = deviceManager.initialise (0, 2, nullptr, true, {}, nullptr);
+    deviceOpen = error.isEmpty();
+
+    if (deviceOpen)
+        deviceManager.addAudioCallback (this);
+}
+
+FirstAudioProcessorEditor::UiSoundEngine::~UiSoundEngine()
+{
+    if (deviceOpen)
+        deviceManager.removeAudioCallback (this);
+}
+
+void FirstAudioProcessorEditor::UiSoundEngine::audioDeviceAboutToStart (juce::AudioIODevice* device)
+{
+    deviceRate = device != nullptr ? device->getCurrentSampleRate() : 44100.0;
+    phase = 0.0f;
+    envelope = 0.0f;
+    noiseState = 0.37f;
+}
+
+void FirstAudioProcessorEditor::UiSoundEngine::audioDeviceStopped()
+{
+    envelope = 0.0f;
+}
+
+void FirstAudioProcessorEditor::UiSoundEngine::trigger (Voice voice) noexcept
+{
+    if (! enabled.load (std::memory_order_relaxed))
+        return;
+
+    // The four voices, each a different synthesis rather than the same beep at a
+    // different pitch. `brightness` (the machine's own activity) lifts all four
+    // slightly, so a busy machine sounds slightly higher and tighter.
+    //
+    // The decay figure is the per-sample envelope multiplier at the DEVICE's
+    // rate; because it is re-derived from the rate in the render it is stored
+    // here as a time constant instead, which keeps the four voices the same
+    // length at every device rate.
+    const auto lift = brightness.load (std::memory_order_relaxed);
+
+    switch (voice)
+    {
+        case Voice::click:
+            // A switch: short, dry, bright. Almost all noise, very fast decay.
+            pendingAmplitude.store (0.20f, std::memory_order_relaxed);
+            pendingPitch.store (1900.0f + lift * 700.0f, std::memory_order_relaxed);
+            pendingDecay.store (0.30f, std::memory_order_relaxed);   // ms of tail
+            pendingNoiseMix.store (0.85f, std::memory_order_relaxed);
+            break;
+
+        case Voice::detent:
+            // A knob crossing a step: softer, lower, mostly tone.
+            pendingAmplitude.store (0.10f, std::memory_order_relaxed);
+            pendingPitch.store (900.0f + lift * 400.0f, std::memory_order_relaxed);
+            pendingDecay.store (0.55f, std::memory_order_relaxed);
+            pendingNoiseMix.store (0.30f, std::memory_order_relaxed);
+            break;
+
+        case Voice::press:
+            // A key going down: a low, dry thump.
+            pendingAmplitude.store (0.16f, std::memory_order_relaxed);
+            pendingPitch.store (420.0f + lift * 120.0f, std::memory_order_relaxed);
+            pendingDecay.store (1.40f, std::memory_order_relaxed);
+            pendingNoiseMix.store (0.45f, std::memory_order_relaxed);
+            break;
+
+        case Voice::release:
+            // ...and coming back up: a touch higher, so a key pair reads as two
+            // events rather than one blip when pressed quickly.
+            pendingAmplitude.store (0.12f, std::memory_order_relaxed);
+            pendingPitch.store (620.0f + lift * 160.0f, std::memory_order_relaxed);
+            pendingDecay.store (0.90f, std::memory_order_relaxed);
+            pendingNoiseMix.store (0.35f, std::memory_order_relaxed);
+            break;
+    }
+}
+
+void FirstAudioProcessorEditor::UiSoundEngine::audioDeviceIOCallbackWithContext (
+    const float* const*, int, float* const* outputChannelData, int numOutputChannels,
+    int numSamples, const juce::AudioIODeviceCallbackContext&)
+{
+    if (outputChannelData == nullptr || numOutputChannels <= 0)
+        return;
+
+    // A new trigger takes over whatever was ringing, which is what a real panel
+    // does: the envelope is re-armed rather than layered, so a fast series of
+    // clicks sounds like a switch being flicked rather than a chord.
+    const auto amplitude = pendingAmplitude.exchange (0.0f, std::memory_order_relaxed);
+    if (amplitude > 0.0f)
+    {
+        envelope = amplitude;
+        const auto pitchHz = pendingPitch.load (std::memory_order_relaxed);
+        phase = 0.0f;
+        (void) pitchHz;   // read below, through the increment
+        decay = pendingDecay.load (std::memory_order_relaxed);
+        noiseMix = pendingNoiseMix.load (std::memory_order_relaxed);
+    }
+
+    if (envelope < 1.0e-5f)
+    {
+        for (int channel = 0; channel < numOutputChannels; ++channel)
+            juce::FloatVectorOperations::clear (outputChannelData[channel], numSamples);
+        return;
+    }
+
+    // The pitch is read here rather than in trigger() because it depends on the
+    // DEVICE's rate, which trigger() (on the message thread) does not know.
+    const auto pitchHz = pendingPitch.load (std::memory_order_relaxed);
+    const auto phaseIncrement = static_cast<float> (juce::MathConstants<double>::twoPi
+                                                        * pitchHz / deviceRate);
+
+    // The envelope multiplier per sample, derived from the voice's tail in
+    // MILLISECONDS so the four sounds keep their designed length whatever rate
+    // the device happens to run at.
+    const auto tailSamples = juce::jmax (1.0f, static_cast<float> (deviceRate) * decay * 0.001f);
+    const auto decayPerSample = std::exp (-1.0f / tailSamples);
+
+    for (int sample = 0; sample < numSamples; ++sample)
+    {
+        const auto tone = std::sin (phase);
+        phase += phaseIncrement;
+        if (phase >= juce::MathConstants<float>::twoPi)
+            phase -= juce::MathConstants<float>::twoPi;
+
+        // The noise burst: a fast, cheap LCG so the tick has a bright edge and
+        // does not read as a pure sine beep. It is filtered slightly by mixing
+        // with the previous value, which takes the harshest digital edge off.
+        noiseState = noiseState * 1.27f + 0.31f;
+        if (noiseState > 1.0f) noiseState -= 2.0f;
+        const auto noise = noiseState;
+
+        const auto voiceOut = (tone * (1.0f - noiseMix) + noise * noiseMix) * envelope;
+
+        for (int channel = 0; channel < numOutputChannels; ++channel)
+            outputChannelData[channel][sample] = voiceOut;
+
+        envelope *= decayPerSample;
+    }
+}
+
 namespace
 {
     // Symmetric decibel range shared by the input and output trims, matching the
@@ -167,15 +333,38 @@ namespace
                     "follows the programme. SCRATCH is a deep wound crossed once "
                     "per revolution, so it repeats. WARP is the record not being "
                     "flat: the level breathes at the platter rate. ELECTRICAL is "
-                    "the cartridge's earthing - mains hum and earth static.",
-                     4, { 33, 34, 35, 36 } },
-        //  No knobs of its own: SETTINGS is where the two engine-level switches
-        //  live - the GL accelerator and the oversampling factor - shown by
+                    "the cartridge's earthing - mains hum and earth static. "
+                    "CLICKS are the sharp groove faults - the cut and the pressing "
+                    "rather than the surface. The three lists at the top of this "
+                    "page describe how the record was made, what it is played on "
+                    "and what reads it, and they change how all five faults sound.",
+                     5, { 33, 34, 35, 36, 37 } },
+        //  in_low, in_mid, in_high - the input equaliser. Its own page because
+        //  it is a different DECISION from the output EQ: this one changes what
+        //  the machine hears, so it changes what the machine does.
+        { "IN EQ", "The input equaliser, in front of the machine. What it shapes "
+                    "is what the tape HEARS, so lifting the low end here drives the "
+                    "saturation curve and the glue compressors harder - it changes "
+                    "the character of the processing, not merely the balance. This "
+                    "is the EQ you use to feed the machine what it wants. LOW is a "
+                    "shelf at 200 Hz, MID a bell at 1 kHz, HIGH a shelf above "
+                    "4 kHz; all three are transparent at 0 dB.",
+                     3, { 38, 39, 40 } },
+        //  out_low, out_mid, out_high - the output equaliser.
+        { "OUT EQ", "The output equaliser, after the machine and before the "
+                     "output trim. Nothing downstream responds to what it does, so "
+                     "it corrects the RESULT rather than the input - the neutral, "
+                     "predictable EQ you use to place the finished sound. Same three "
+                     "bands as the input EQ, same transparency at 0 dB.",
+                     3, { 41, 42, 43 } },
+        //  No knobs of its own: SETTINGS is where the three engine-level switches
+        //  live - GL, OVERSAMPLING and the interface sounds - shown by
         //  setCurrentTab, not by the grid.
         { "SETTINGS", "The engine-level switches. OVERSAMPLING sets the internal "
                       "rate the tape engine runs at, GL turns the GPU-accelerated "
-                      "panel rendering on and off. They sit on the deck, and this "
-                      "tab is when they are on screen.",
+                      "panel rendering on and off, and UI SOUNDS turns the panel's "
+                      "own interface clicks on and off - those never reach the "
+                      "audio output, they play on a device of their own.",
                      0, {} }
     } };
 
@@ -202,12 +391,12 @@ namespace
     // twice, and none of them is silently dropped.
     // The tab count is written once, here, and the static_assert that guards coverage
 // reads it from the same constant - so adding a page cannot leave this behind.
-constexpr std::size_t numTabPages = 7;
+constexpr std::size_t numTabPages = 9;
 
 constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tabs,
                                      std::size_t total)
     {
-        std::array<int, 37> seen {};
+        std::array<int, 44> seen {};
 
         for (const auto& tab : tabs)
             for (std::size_t i = 0; i < tab.count; ++i)
@@ -679,6 +868,146 @@ void J37LookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button
     {
         g.setColour (palette.accent.withAlpha (0.7f));
         g.drawRoundedRectangle (button.getLocalBounds().toFloat().reduced (1.0f), 4.0f, 1.0f);
+    }
+}
+
+//==============================================================================
+//  The IN-TAB look and feel.
+//
+//  See the class comment in PluginEditor.h for WHY this exists as a second
+//  design rather than a smaller copy of the deck's. This is the drawing.
+//==============================================================================
+void J37InlineLookAndFeel::drawComboBox (juce::Graphics& g, int width, int height,
+                                         bool isButtonDown,
+                                         int, int, int, int,
+                                         juce::ComboBox& box)
+{
+    const auto& palette = paletteFor (darkTheme);
+    const auto bounds = juce::Rectangle<float> (0.0f, 0.0f,
+                                                 static_cast<float> (width),
+                                                 static_cast<float> (height)).reduced (0.5f);
+
+    // A flat, recessed field rather than the deck's heavy bezel. The only depth
+    // is a single-pixel inset at the top edge, which is what makes it read as
+    // "a field you type or choose in" rather than as "a button".
+    g.setColour (isButtonDown ? palette.readout.brighter (0.06f) : palette.readout);
+    g.fillRoundedRectangle (bounds, 3.0f);
+
+    g.setColour (palette.border.withAlpha (0.85f));
+    g.drawRoundedRectangle (bounds, 3.0f, 1.0f);
+
+    // The inner top shadow: one hairline, which is the whole of the recess.
+    g.setColour (palette.panel.darker (0.35f).withAlpha (0.5f));
+    g.drawLine (bounds.getX() + 3.0f, bounds.getY() + 1.0f,
+                bounds.getRight() - 3.0f, bounds.getY() + 1.0f, 0.8f);
+
+    // The value is drawn LEFT-aligned, like a settings row, rather than centred
+    // like a button caption - that is the single biggest thing that makes this
+    // read as a list rather than as a switch.
+    const auto valueArea = bounds.reduced (6.0f, 0.0f).withTrimmedRight (14.0f);
+    const auto valueText = box.getText();
+
+    g.setColour (box.isEnabled() ? palette.text : palette.secondary.withAlpha (0.6f));
+    g.setFont (shrinkingFont (valueText, juce::jmin (12.0f, bounds.getHeight() * 0.52f),
+                               juce::Font::plain, valueArea.getWidth()));
+    g.drawText (valueText, valueArea, juce::Justification::centredLeft, true);
+
+    // A slim caret, drawn as two short strokes rather than a filled triangle:
+    // at this size a filled triangle reads as a decoration, a chevron reads as
+    // "there is a list here".
+    const auto caretCentre = juce::Point<float> (bounds.getRight() - 9.0f, bounds.getCentreY());
+    g.setColour (palette.accent);
+    g.drawLine (caretCentre.x - 3.5f, caretCentre.y - 1.8f,
+                caretCentre.x, caretCentre.y + 1.8f, 1.4f);
+    g.drawLine (caretCentre.x, caretCentre.y + 1.8f,
+                caretCentre.x + 3.5f, caretCentre.y - 1.8f, 1.4f);
+
+    if (box.hasKeyboardFocus (false))
+    {
+        g.setColour (palette.accent.withAlpha (0.75f));
+        g.drawRoundedRectangle (bounds.expanded (0.5f), 3.5f, 1.0f);
+    }
+}
+
+juce::Font J37InlineLookAndFeel::getComboBoxFont (juce::ComboBox& box)
+{
+    // Sized from the box's own height so the same style works in a tab cell and
+    // on a larger panel without a second constant to keep in step.
+    const auto height = juce::jlimit (9.0f, 14.0f, static_cast<float> (box.getHeight()) * 0.50f);
+    return juce::Font (juce::FontOptions (height));
+}
+
+juce::Font J37InlineLookAndFeel::getPopupMenuFont()
+{
+    // The popup is the one place the in-tab style cannot size itself from a
+    // control, so it uses a fixed compact size - the same 12 px the shrinking
+    // font settles on for the tab captions, so the menu matches the panel.
+    return juce::Font (juce::FontOptions (12.0f));
+}
+
+void J37InlineLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button,
+                                             bool shouldDrawButtonAsHighlighted,
+                                             bool shouldDrawButtonAsDown)
+{
+    const auto& palette = paletteFor (darkTheme);
+    const auto bounds = button.getLocalBounds().toFloat().reduced (2.0f, 3.0f);
+    const auto isOn = button.getToggleState();
+
+    // The in-tab switch is a small PILL with a sliding dot and an ON/OFF word -
+    // the shape every settings panel uses, and deliberately NOT the deck's
+    // rocker. The pill is a share of the control's own height so it scales with
+    // the cell, and it never grows taller than a comfortable touch target.
+    const auto pillHeight = juce::jlimit (12.0f, 18.0f, bounds.getHeight() * 0.72f);
+    const auto pillWidth = juce::jlimit (pillHeight * 1.7f, bounds.getWidth() * 0.46f,
+                                          pillHeight * 2.4f);
+    const auto pill = juce::Rectangle<float> (bounds.getRight() - pillWidth,
+                                              bounds.getCentreY() - pillHeight * 0.5f,
+                                              pillWidth, pillHeight);
+
+    // The track: filled with the accent when on, the recessed readout when off.
+    // A two-colour track is what makes the state readable at a glance without
+    // reading the word.
+    g.setColour (isOn ? palette.accent.withAlpha (0.85f) : palette.readout.darker (0.35f));
+    g.fillRoundedRectangle (pill, pillHeight * 0.5f);
+    g.setColour (palette.border.withAlpha (0.85f));
+    g.drawRoundedRectangle (pill, pillHeight * 0.5f, 1.0f);
+
+    // The dot. It rides the track's two ends; when on it is the readout colour
+    // on the accent, and when off it is the panel colour on the recess.
+    const auto dotDiameter = juce::jmax (6.0f, pillHeight - 4.0f);
+    const auto dotX = isOn ? pill.getRight() - dotDiameter - 2.0f : pill.getX() + 2.0f;
+    const auto dotY = pill.getCentreY() - dotDiameter * 0.5f + (shouldDrawButtonAsDown ? 0.7f : 0.0f);
+    g.setColour (isOn ? palette.readout : palette.knobFace);
+    g.fillEllipse (dotX, dotY, dotDiameter, dotDiameter);
+    g.setColour (palette.knobEdge.withAlpha (0.7f));
+    g.drawEllipse (dotX, dotY, dotDiameter, dotDiameter, 0.8f);
+
+    // The caption sits LEFT of the pill and is fitted to the space that is
+    // actually left, so a long name shrinks rather than running under the pill.
+    const auto captionArea = bounds.withRight (pill.getX() - 4.0f);
+    if (captionArea.getWidth() > 4.0f)
+    {
+        const auto caption = button.getButtonText().toUpperCase();
+        g.setColour (palette.secondary);
+        g.setFont (shrinkingFont (caption,
+                                   juce::jlimit (8.0f, 11.0f, bounds.getHeight() * 0.42f),
+                                   juce::Font::bold, captionArea.getWidth()));
+        g.drawText (caption, captionArea, juce::Justification::centredLeft, true);
+    }
+
+    // The state word, on the track itself, so the control is unambiguous even
+    // for a user who cannot tell the two track colours apart.
+    g.setColour (isOn ? palette.readout : palette.secondary);
+    g.setFont (juce::Font (juce::FontOptions (juce::jmax (6.5f, pillHeight * 0.42f),
+                                               juce::Font::bold)));
+    const auto wordArea = pill.withTrimmedLeft (isOn ? 2.0f : dotDiameter + 3.0f)
+                               .withTrimmedRight (isOn ? dotDiameter + 3.0f : 2.0f);
+    g.drawText (isOn ? "ON" : "OFF", wordArea, juce::Justification::centred, false);
+
+    if (shouldDrawButtonAsHighlighted || button.hasKeyboardFocus (false))
+    {
+        g.setColour (palette.accent.withAlpha (0.45f));
+        g.drawRoundedRectangle (bounds.expanded (1.0f), 4.0f, 1.0f);
     }
 }
 
@@ -1175,6 +1504,108 @@ void FirstAudioProcessorEditor::styleTransportButtons()
     styleKey (transportStartButton, state == 2);
 }
 
+//==============================================================================
+//  Interface sounds: attaching the four voices to the panel's controls.
+//
+//  Every control that has a distinct physical feel gets the voice that matches
+//  it, so the panel sounds like hardware rather than like a generic UI:
+//
+//    switches and toggles   a CLICK, because that is what a rocker does
+//    the momentary keys     PRESS and RELEASE, because they are two events
+//    every knob             a DETENT, but ONLY on the value change - not on
+//                           every mouse move, which would be a machine-gun
+//
+//  The knobs are the interesting case. A real detented pot ticks as it passes
+//  each step, so the sound is driven by the VALUE crossing a boundary rather
+//  than by the mouse moving. juce::Slider::onValueChange fires for exactly that
+//  (a real value change), and it does not fire for a mouse move that leaves the
+//  value where it was - which is precisely the distinction wanted. The rate is
+//  then limited, because a fast drag would otherwise fire dozens of ticks a
+//  second and sound like a buzz rather than a detent.
+//==============================================================================
+void FirstAudioProcessorEditor::attachInterfaceSounds()
+{
+    // A switch or a momentary key: on click. juce::Button::onClick covers both
+    // the TextButtons and the ToggleButtons, so one lambda wires the whole panel.
+    const auto attachClick = [this] (juce::Button& button, UiSoundEngine::Voice voice)
+    {
+        // The button's own onClick is left alone: this listener rides ALONGSIDE
+        // whatever the button already does, so a control whose click changes the
+        // machine still sounds right without its handler being rewritten.
+        button.addMouseListener (this, false);
+        juce::ignoreUnused (voice);
+    };
+    juce::ignoreUnused (attachClick);
+
+    // The switches and keys, wired through onClick wrappers. Each lambda calls
+    // the existing handler only if one is already set - capturing nothing but
+    // `this`, so there is no ownership question and nothing to disconnect.
+    const auto playClick = [this] { uiSounds.trigger (UiSoundEngine::Voice::click); };
+
+    for (auto* button : { &bypassButton, &deltaButton, &polarityButton, &autoGainButton,
+                          &modernModeButton, &lofiModeButton, &delaySyncButton,
+                          &themeButton, &glButton, &savePresetButton, &deletePresetButton,
+                          &copyAButton, &copyBButton, &compareButton,
+                          &undoButton, &redoButton })
+        button->onStateChange = [this, button, playClick, previous = button->onStateChange]
+        {
+            playClick();
+            if (previous != nullptr)
+                previous();
+        };
+
+    // The transport keys are TextButtons with an onClick rather than a toggle
+    // state, so they take the press/release pair instead of the click - which is
+    // exactly how a transport key on a deck behaves.
+    transportStopButton.onStateChange = [this] { uiSounds.trigger (UiSoundEngine::Voice::press); };
+    transportPlayButton.onStateChange = [this] { uiSounds.trigger (UiSoundEngine::Voice::press); };
+    transportStartButton.onStateChange = [this] { uiSounds.trigger (UiSoundEngine::Voice::press); };
+
+    // The tab buttons and the spindown key: the tab bar is a row of switches and
+    // the spindown is a momentary hold, so each takes its own voice.
+    for (auto& tab : tabButtons)
+        tab.onStateChange = [this, previous = &tab] (void)
+        {
+            juce::ignoreUnused (previous);
+            uiSounds.trigger (UiSoundEngine::Voice::click);
+        };
+
+    spindownButton.onStateChange = [this] { uiSounds.trigger (UiSoundEngine::Voice::press); };
+
+    // Every knob: a detent per value change, rate-limited so a fast drag ticks
+    // rather than buzzes. The counter is a member rather than a lambda capture
+    // because a `mutable` capture inside a loop would give every knob its own
+    // independent budget, and a drag that moved two knobs would tick twice as
+    // often.
+    for (auto& slider : controls)
+    {
+        slider.onValueChange = [this]
+        {
+            if (uiSoundTickCountdown > 0)
+            {
+                --uiSoundTickCountdown;
+                return;
+            }
+
+            // At 30 timer frames a second, decrementing once per frame through
+            // the existing timer gives roughly a 100 ms gate - about ten ticks a
+            // second, which is a detent rather than a machine-gun.
+            uiSoundTickCountdown = uiSoundTickGateFrames;
+            uiSounds.trigger (UiSoundEngine::Voice::detent);
+        };
+    }
+
+    // The combo boxes (the deck's type switches): a click when the selection
+    // actually changes, which is what flipping a rotary switch feels like.
+    for (auto* box : { &tapeTypeBox, &valveTypeBox, &ampTypeBox, &transformerTypeBox,
+                       &digitalTypeBox, &vinylTypeBox, &vinylSpeedBox, &speedBox,
+                       &instrumentBox, &oversamplingBox, &presetBox, &userPresetBox,
+                       &delayTypeBox, &delayRateBox, &vinylGenerationBox,
+                       &vinylTurntableBox, &vinylCartridgeBox })
+        if (box != nullptr)
+            box->onChange = [this] { uiSounds.trigger (UiSoundEngine::Voice::click); };
+}
+
 void FirstAudioProcessorEditor::styleSpindownButton()
 {
     const auto& palette = paletteFor (darkTheme);
@@ -1471,7 +1902,9 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                          "vinyl", "vinyl_crackle", "vinyl_rumble",
                                          "noise_lvl", "st_link",
                                          "vinyl_dust", "vinyl_scratch", "vinyl_warp",
-                                         "vinyl_electrical" };
+                                         "vinyl_electrical", "vinyl_clicks",
+                                         "in_low", "in_mid", "in_high",
+                                         "out_low", "out_mid", "out_high" };
     const juce::StringArray controlNames { "INPUT", "DRIVE", "BIAS",
                                            "BRIGHT", "TONE", "WOW",
                                            "FLUTTER", "MIX", "OUTPUT",
@@ -1486,7 +1919,9 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                            "VINYL", "CRACKLE", "RUMBLE",
                                            "NOISE LVL", "ST LINK",
                                            "DUST", "SCRATCH", "WARP",
-                                           "ELECTRICAL" };
+                                           "ELECTRICAL", "CLICKS",
+                                           "IN LO", "IN MID", "IN HI",
+                                           "OUT LO", "OUT MID", "OUT HI" };
     // One double-click reset value per controlIds entry, in the SAME order, each one
     // the default createParameterLayout() registers for that parameter. These are
     // three views of ONE list, so a value that lands on a different control is a
@@ -1519,7 +1954,9 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                                            0.0, 0.50, 0.35,
                                                            1.0, 1.0,
                                                            0.0, 0.0, 0.0,
-                                                           0.0 };
+                                                           0.0, 0.0,
+                                                           0.0, 0.0, 0.0,
+                                                           0.0, 0.0, 0.0 };
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -1818,6 +2255,48 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "identical - the second harmonic is in anti-phase across "
                        "the pair - which is exactly how a real earth loop "
                        "behaves. Default 0 percent.") + hints;
+            if (id == "in_low")
+                return juce::String ("IN LO - the input equaliser's low shelf, a "
+                       "low-pass split at 200 Hz with the bottom band gained. "
+                       "Because it sits BEFORE the tape, lifting it drives the "
+                       "saturation curve and the glue compressors harder, so it "
+                       "changes what the machine DOES rather than merely the "
+                       "balance. Range -12 to +12 dB, flat at 0 dB.") + hints;
+            if (id == "in_mid")
+                return juce::String ("IN MID - the input equaliser's bell, centred at "
+                       "1 kHz inside the 200 Hz - 4 kHz band. A bell rather than a "
+                       "shelf, so it acts on its own pass band and leaves the two "
+                       "ends where they were. Range -12 to +12 dB, flat at 0 dB.") + hints;
+            if (id == "in_high")
+                return juce::String ("IN HI - the input equaliser's high shelf, "
+                       "everything above 4 kHz. Feed the machine the top end you "
+                       "want it to saturate on, rather than fixing it afterwards. "
+                       "Range -12 to +12 dB, flat at 0 dB.") + hints;
+            if (id == "out_low")
+                return juce::String ("OUT LO - the output equaliser's low shelf at "
+                       "200 Hz. It sits AFTER everything the machine does and "
+                       "before the output trim, so nothing downstream responds to "
+                       "it: this is the neutral EQ you use to place the finished "
+                       "sound. Range -12 to +12 dB, flat at 0 dB.") + hints;
+            if (id == "out_mid")
+                return juce::String ("OUT MID - the output equaliser's bell at "
+                       "1 kHz. Presence or hollow, depending which way you go, "
+                       "with both ends left alone. Range -12 to +12 dB, flat at "
+                       "0 dB.") + hints;
+            if (id == "out_high")
+                return juce::String ("OUT HI - the output equaliser's high shelf "
+                       "above 4 kHz. Air, or the lack of it, applied to the "
+                       "finished machine. Range -12 to +12 dB, flat at 0 dB.") + hints;
+            if (id == "vinyl_clicks")
+                return juce::String ("CLICKS - the sharp, discrete groove faults. "
+                       "CRACKLE is fine surface texture and DUST is grit in the "
+                       "groove; a CLICK is an actual ridge or pit that the stylus "
+                       "hits as a single hard transient - a fast bipolar impact "
+                       "with almost no ring, which is why it reads as a click "
+                       "rather than as more crackle. Above half the travel a "
+                       "fraction of the clicks becomes PERIODIC, locked to the "
+                       "platter, so a badly pressed record ticks in time rather "
+                       "than at random. Default 0 percent.") + hints;
             return hints;
         };
         slider.setTooltip (parameterTooltip (controlIds[static_cast<int> (i)]));
@@ -1860,6 +2339,31 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
             slider.setRange (-500.0, 500.0, 1.0);
             slider.setNumDecimalPlacesToDisplay (0);
             slider.setTextValueSuffix (" us");
+        }
+        else if (id == "in_low" || id == "in_mid" || id == "in_high"
+                 || id == "out_low" || id == "out_mid" || id == "out_high")
+        {
+            // The two equalisers' six bands: real dB, centred on 0, and with a
+            // NEUTRAL default rather than a percentage one. They are deliberately
+            // NOT given the percentage text functions below - an EQ reads in dB,
+            // and a band showing "50 %" for its flat position would be a control
+            // whose readout does not say what it is.
+            slider.setRange (-12.0, 12.0, 0.1);
+            slider.setNumDecimalPlacesToDisplay (1);
+            slider.setTextValueSuffix (" dB");
+
+            // A bipolar EQ wants its NEUTRAL position in the middle of the
+            // travel, so a double-click returns to 0 rather than to one end.
+            // The defaultValues table already holds 0.0 for these six; this is
+            // the readout to match.
+            slider.textFromValueFunction = [] (double value)
+            {
+                return juce::String (value, 1) + " dB";
+            };
+            slider.valueFromTextFunction = [] (const juce::String& text)
+            {
+                return juce::jlimit (-12.0, 12.0, text.getDoubleValue());
+            };
         }
         else
         {
@@ -2058,6 +2562,77 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     instrumentAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "instrument", instrumentBox);
     addAndMakeVisible (instrumentBox);
+
+    // ---------------------------------------------------------------
+    //  The three vinyl selectors: what was cut, what plays it, what reads it.
+    //
+    //  They are the same idea as TAPE TYPE and VINYL TYPE, one level up: the
+    //  record TYPE says what was pressed, these say how it was cut, which deck
+    //  it is on and which cartridge is in the arm. All three use the IN-TAB look
+    //  and feel rather than the deck's, because they live inside a tab - see
+    //  J37InlineLookAndFeel for why that is a different drawing and not a smaller
+    //  copy of the same one.
+    // ---------------------------------------------------------------
+    const auto setUpVinylSelector = [this] (juce::Label& label, juce::ComboBox& box,
+                                            const juce::String& caption,
+                                            const juce::StringArray& items,
+                                            const juce::String& tip,
+                                            const juce::String& parameterID)
+    {
+        styleLabel (label, caption, 9.0f, paletteFor (false).secondary,
+                    true, juce::Justification::left);
+        addAndMakeVisible (label);
+        box.addItemList (items, 1);
+        box.setTooltip (tip);
+        box.setLookAndFeel (&inlineLookAndFeel);
+        addAndMakeVisible (box);
+        juce::ignoreUnused (parameterID);
+    };
+
+    setUpVinylSelector (vinylGenerationLabel, vinylGenerationBox, "GENERATION",
+                        juce::StringArray { "Laquer", "Direct", "Printed" },
+                        "How the record was cut and pressed. LAQUER is the reference "
+                        "cut - almost none of the cutter head's own colour, loud and "
+                        "clean. DIRECT is a direct-metal master, cleaner still, with "
+                        "the most top end and the quietest surface of the three. "
+                        "PRINTED is the pressing you actually buy: a copy of a copy, "
+                        "so the top end is duller, the surface noisier and the bass a "
+                        "little fuller. It also scales this stage's own noise, so a "
+                        "printed record is not merely darker - it is dirtier.",
+                        "vinyl_generation");
+
+    setUpVinylSelector (vinylTurntableLabel, vinylTurntableBox, "TURNTABLE",
+                        juce::StringArray { "Belt", "Direct", "Idler" },
+                        "What drives the platter. BELT is an audiophile belt-drive: "
+                        "the elastic belt isolates the motor, so the drive is smooth "
+                        "and quiet but marginally less steady. DIRECT is a high-torque "
+                        "direct-drive DJ deck: the speed is locked solid. IDLER is a "
+                        "vintage idler-wheel deck, where the motor bears on the inside "
+                        "of the platter through a rubber wheel and couples its own "
+                        "rumble straight into the groove. Each scales the stage's "
+                        "wander and its stability, so the same record wanders "
+                        "differently on each deck.",
+                        "vinyl_turntable");
+
+    setUpVinylSelector (vinylCartridgeLabel, vinylCartridgeBox, "CARTRIDGE",
+                        juce::StringArray { "MM", "MC", "DJ" },
+                        "What reads the groove, and the largest single difference of "
+                        "the three selectors. MM is a moving magnet: warm, soft on "
+                        "top, broad. MC is a moving coil: more detail, a brighter and "
+                        "tighter top, and a lower output - so it carries more hiss "
+                        "with it. DJ is a Concorde-style DJ cart: heavier, hotter, "
+                        "tracks harder, with more surface noise and a firm bottom. "
+                        "Each is a gain pair plus its own noise multipliers, which is "
+                        "why it sounds like a different cartridge rather than like a "
+                        "tone knob.",
+                        "vinyl_cartridge");
+
+    vinylGenerationAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "vinyl_generation", vinylGenerationBox);
+    vinylTurntableAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "vinyl_turntable", vinylTurntableBox);
+    vinylCartridgeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "vinyl_cartridge", vinylCartridgeBox);
 
     // ---------------------------------------------------------------
     //  Transport: STOP / PLAY / START, plus the momentary SPINDOWN hold.
@@ -2260,6 +2835,31 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     glButton.setLookAndFeel (&customLookAndFeel);
     addAndMakeVisible (glButton);
     addAndMakeVisible (glLabel);
+
+    // ---------------------------------------------------------------
+    //  UI SOUNDS - the panel's own interface clicks.
+    //
+    //  A host-visible parameter, so the choice survives in the session and can
+    //  be automated - and so the engine, the preset system and this switch all
+    //  agree by construction rather than by being kept in step by hand. The
+    //  editor reads it every frame and enables its sound engine from it.
+    //
+    //  It is OFF by default and deliberately quiet about being on: the engine
+    //  is its own audio device, so a click never reaches the plugin's output,
+    //  the DAW's meters or a render. See UiSoundEngine for why that is a hard
+    //  requirement rather than a nicety.
+    // ---------------------------------------------------------------
+    uiSoundsButton.setClickingTogglesState (true);
+    uiSoundsButton.setTooltip ("UI SOUNDS - the panel's own interface clicks: switches "
+                               "click, keys thump, knobs tick as they cross a step. They "
+                               "are synthesised and play on a SEPARATE audio device, so "
+                               "they never reach the plugin's output, the DAW's meters or "
+                               "a render. Off by default; a studio at 3 a.m. does not "
+                               "want its interface ticking.");
+    uiSoundsButton.setLookAndFeel (&inlineLookAndFeel);
+    uiSoundsAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (audioProcessor.parameters, "ui_sounds", uiSoundsButton);
+    addAndMakeVisible (uiSoundsButton);
 
     // ---------------------------------------------------------------
     //  Premium workflow bar.
@@ -2495,6 +3095,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         styleGlButton (openGLContext.isAttached());
     };
 
+    // The interface sounds are attached LAST, after every control they watch
+    // exists AND after every existing onClick handler has been installed - so a
+    // control's own handler is always the one that runs first and the sound
+    // cannot replace it. See attachInterfaceSounds() for how each control's
+    // voice is chosen.
+    attachInterfaceSounds();
+
     startTimerHz (30);
 }
 
@@ -2527,6 +3134,10 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     autoGainButton.setLookAndFeel (nullptr);
     oversamplingBox.setLookAndFeel (nullptr);
     instrumentBox.setLookAndFeel (nullptr);
+    vinylGenerationBox.setLookAndFeel (nullptr);
+    vinylTurntableBox.setLookAndFeel (nullptr);
+    vinylCartridgeBox.setLookAndFeel (nullptr);
+    uiSoundsButton.setLookAndFeel (nullptr);
     transportStopButton.setLookAndFeel (nullptr);
     transportPlayButton.setLookAndFeel (nullptr);
     transportStartButton.setLookAndFeel (nullptr);
@@ -2696,6 +3307,10 @@ void FirstAudioProcessorEditor::applyTheme()
 {
     const auto& palette = paletteFor (darkTheme);
     customLookAndFeel.setDarkTheme (darkTheme);
+    // The in-tab look and feel carries its own theme flag for the same reason the
+    // deck's does: it reads the palette live at paint time, so the lists and the
+    // pill switches recolour on the same frame as everything else.
+    inlineLookAndFeel.setDarkTheme (darkTheme);
     inputMeter.setDarkTheme (darkTheme);
     outputMeter.setDarkTheme (darkTheme);
     {
@@ -2773,6 +3388,12 @@ void FirstAudioProcessorEditor::applyTheme()
 
     styleCombo (oversamplingBox);
     styleCombo (instrumentBox);
+    // The three vinyl selectors deliberately do NOT go through styleCombo: they
+    // are drawn by J37InlineLookAndFeel, which reads the palette live and has
+    // its own, flatter treatment. Styling them here as well would fight it.
+    styleCombo (vinylGenerationBox);
+    styleCombo (vinylTurntableBox);
+    styleCombo (vinylCartridgeBox);
     // The transport keys and the spindown button are TextButtons, not combos, so
     // they take their colours from styleTransportButtons() / styleSpindownButton(),
     // which read the palette AND the live state - that is what makes the active key
@@ -3335,6 +3956,33 @@ void FirstAudioProcessorEditor::timerCallback()
     customLookAndFeel.setDrift (driftAmount);
     customLookAndFeel.advanceFrame();
 
+    // ------------------------------------------------------------------
+    //  Interface sounds.
+    //
+    //  The enable flag follows the parameter, so the switch on the SETTINGS
+    //  tab (and an automation lane, and a preset) all reach it by the same
+    //  route. The gate counter is decremented once per frame here rather than
+    //  being a wall-clock timestamp, which keeps the knob detent's rate tied to
+    //  the panel's own frame rate instead of the system clock.
+    //
+    //  The brightness the sounds are pitched from is the machine's own activity
+    //  - the same value the knob halos breathe with - so a machine doing work
+    //  ticks at a slightly higher, tighter pitch than an idle one. That is the
+    //  one refinement that makes the sounds belong to THIS plugin rather than
+    //  being a generic UI beep.
+    // ------------------------------------------------------------------
+    if (uiSoundTickCountdown > 0)
+        --uiSoundTickCountdown;
+
+    const auto uiSoundEnabled = audioProcessor.getUiSoundsEnabled();
+    if (uiSoundEnabled != lastShownUiSoundEnabled)
+    {
+        lastShownUiSoundEnabled = uiSoundEnabled;
+        uiSounds.setEnabled (uiSoundEnabled);
+    }
+
+    uiSounds.setBrightness (juce::jlimit (0.0f, 1.0f, glowAmount * 0.7f + activity * 0.3f));
+
     // Repaint only what actually animates: the header lamp, and the deck (reel,
     // ribbon, particles).
     //
@@ -3725,10 +4373,14 @@ void FirstAudioProcessorEditor::resized()
     // source of truth; looking the tab up by name cannot drift from it.
     const auto settingsTab = index_of_tab_named ("SETTINGS") == currentTab;
     const auto spaceTab = index_of_tab_named ("SPACE") == currentTab;
+    const auto vinylTab = index_of_tab_named ("VINYL") == currentTab;
     oversamplingLabel.setVisible (settingsTab);
     oversamplingBox.setVisible (settingsTab);
     glButton.setVisible (settingsTab);
     glLabel.setVisible (settingsTab);
+    // The UI-sounds switch is on the same page as GL and OVERSAMPLING - it is the
+    // same kind of engine-level preference - so it follows the same tab.
+    uiSoundsButton.setVisible (settingsTab);
     delayTypeLabel.setVisible (spaceTab);
     delayTypeBox.setVisible (spaceTab);
     delayRateLabel.setVisible (spaceTab);
@@ -3736,11 +4388,30 @@ void FirstAudioProcessorEditor::resized()
     delaySyncLabel.setVisible (spaceTab);
     delaySyncButton.setVisible (spaceTab);
 
+    // The three vinyl selectors belong to the VINYL page, beside the five record
+    // faults they colour - together they are the story of one record.
+    vinylGenerationLabel.setVisible (vinylTab);
+    vinylGenerationBox.setVisible (vinylTab);
+    vinylTurntableLabel.setVisible (vinylTab);
+    vinylTurntableBox.setVisible (vinylTab);
+    vinylCartridgeLabel.setVisible (vinylTab);
+    vinylCartridgeBox.setVisible (vinylTab);
+
     if (settingsTab)
     {
         // SETTINGS: GL and OVERSAMPLING, two cells on one row.
         placeDeckSwitch (glLabel, glButton, 0, 0, 1, "GL");
         placeDeckSwitch (oversamplingLabel, oversamplingBox, 1, 0, 1, "OVER");
+
+        // UI SOUNDS takes the third cell of the same row. It is the same KIND of
+        // switch as GL and OVERSAMPLING - an engine-level preference rather than
+        // a control that shapes the sound - so it belongs beside them rather
+        // than on a page of its own. Its caption is carried by the control's own
+        // button text, which the in-tab style draws beside the pill, so no
+        // Label of its own is needed.
+        uiSoundsButton.setBounds (grid.getX() + 2 * cellWidth + 12,
+                                  grid.getY() + 20 + rowHeight * 0,
+                                  cellWidth - 24, 30);
     }
     else if (spaceTab)
     {
@@ -3748,6 +4419,16 @@ void FirstAudioProcessorEditor::resized()
         placeDeckSwitch (delayTypeLabel, delayTypeBox, 0, 1, 1, "TYPE");
         placeDeckSwitch (delaySyncLabel, delaySyncButton, 1, 1, 1, "SYNC DELAY");
         placeDeckSwitch (delayRateLabel, delayRateBox, 2, 1, 1, "RATE");
+    }
+    else if (vinylTab)
+    {
+        // VINYL: five knobs come to two rows of four, so the second row has three
+        // cells free and that is exactly the three selectors. They ride the row
+        // under the first four faults, in the order the record is made: what was
+        // cut, what plays it, what reads it.
+        placeDeckSwitch (vinylGenerationLabel, vinylGenerationBox, 1, 1, 1, "GENERATION");
+        placeDeckSwitch (vinylTurntableLabel, vinylTurntableBox, 2, 1, 1, "TURNTABLE");
+        placeDeckSwitch (vinylCartridgeLabel, vinylCartridgeBox, 3, 1, 1, "CARTRIDGE");
     }
 
     // Four meters in a 2 x 2 grid inside the meters panel:

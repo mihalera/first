@@ -74,6 +74,66 @@ private:
     float animationPhase = 0.0f;
 };
 
+//==============================================================================
+/**
+    The IN-TAB look and feel: a second, deliberately different design for the
+    lists and the on/off switches that live INSIDE a tab rather than on the deck.
+
+    Why a second LookAndFeel rather than the same one at a smaller size. The
+    deck's controls are drawn as the front panel of a machine - a rocker switch
+    with a sliding thumb and a lamp, a combo with a heavy recessed bezel. That is
+    right for the deck, which IS the machine. Inside a tab the same drawing is
+    wrong for three reasons:
+
+      1. SCALE. A tab cell is a knob-sized square. A rocker drawn at that size
+         has a 10 px track and a caption that no longer fits, which is exactly
+         the crowding the tabs exist to avoid.
+
+      2. ROLE. A switch on the deck is a machine state (BYPASS, POLARITY); a
+         switch in a tab is a MODE of the thing beside it (a type selector, a
+         list). They should not look like the same kind of control.
+
+      3. LEGIBILITY. A tab's list is read while looking at knobs, so it has to
+         read as a compact, flat field with a clear value - like a settings row
+         in software - not as a hardware rocker.
+
+    So the in-tab style is deliberately FLATTER and more typographic:
+
+      - lists are a single recessed row with the value left-aligned and a
+        slim caret on the right, and the popup menu keeps the panel's colours;
+      - on/off switches are a small pill with a sliding dot and an ON/OFF
+        word, drawn at whatever size the cell gives them;
+      - both use the SAME palette as the rest of the panel, so the tab still
+        belongs to the plugin - it is a different drawing, not a different skin.
+
+    It carries its own theme flag for the same reason the deck's does: the
+    colours are read live at paint time, so a theme switch recolours everything
+    on the same frame with no per-control bookkeeping.
+*/
+class J37InlineLookAndFeel final : public juce::LookAndFeel_V4
+{
+public:
+    void setDarkTheme (bool shouldUseDarkTheme) noexcept { darkTheme = shouldUseDarkTheme; }
+
+    /** The list drawing: a flat recessed field. */
+    void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
+                       int buttonX, int buttonY, int buttonW, int buttonH,
+                       juce::ComboBox&) override;
+
+    /** The popup's own geometry, so the in-tab lists open a compact menu rather
+        than the deck's tall rows. */
+    juce::Font getComboBoxFont (juce::ComboBox&) override;
+    juce::Font getPopupMenuFont() override;
+
+    /** The small pill switch used for the tab's on/off controls. */
+    void drawToggleButton (juce::Graphics&, juce::ToggleButton&,
+                           bool shouldDrawButtonAsHighlighted,
+                           bool shouldDrawButtonAsDown) override;
+
+private:
+    bool darkTheme = false;
+};
+
 class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor,
                                         private juce::Timer
 {
@@ -179,7 +239,7 @@ private:
     // read at run time. The tab table is checked against controlCount by a
     // static_assert too, so a knob that no tab lists is a build error, not a knob
     // that silently disappears from the panel.
-    static constexpr std::size_t controlCount = 37;
+    static constexpr std::size_t controlCount = 44;
     static constexpr int tabColumns = 4;
     // Seven tabs: MACHINE, DRIVE, CHARACTER, NOISE, VINYL, SPACE, SETTINGS. The
     // seventh arrived with the four record faults (DUST / SCRATCH / WARP /
@@ -187,7 +247,7 @@ private:
     // page, which is exactly the crowding the tabs exist to avoid. VINYL gets its
     // own page because the four are one subject - the state of the record itself -
     // rather than four unrelated controls.
-    static constexpr int numTabs = 7;
+    static constexpr int numTabs = 9;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     void timerCallback() override;
@@ -222,6 +282,10 @@ private:
 
     FirstAudioProcessor& audioProcessor;
     J37LookAndFeel customLookAndFeel;
+    // The second, deliberately different design for the lists and switches that
+    // live INSIDE a tab. See the class comment for why it is a separate LookAndFeel
+    // rather than the deck's at a smaller size.
+    J37InlineLookAndFeel inlineLookAndFeel;
 
     // Tooltips (set with setTooltip on the workflow controls) only render while a
     // TooltipWindow instance exists; without one the calls are silent no-ops.
@@ -244,6 +308,22 @@ private:
     juce::ComboBox vinylSpeedBox;
     juce::ComboBox speedBox;
     juce::ComboBox instrumentBox;
+    // The three selectors that describe how the record was made, what plays it
+    // and what reads it. They sit on the VINYL tab beside the record's own
+    // faults, because together they are the story of one record: what was cut,
+    // what it is played on, what is reading it, and what is wrong with it.
+    juce::ComboBox vinylGenerationBox;
+    juce::ComboBox vinylTurntableBox;
+    juce::ComboBox vinylCartridgeBox;
+    juce::Label vinylGenerationLabel;
+    juce::Label vinylTurntableLabel;
+    juce::Label vinylCartridgeLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> vinylGenerationAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> vinylTurntableAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> vinylCartridgeAttachment;
+    // The UI-sounds switch, on the SETTINGS tab beside GL.
+    juce::ToggleButton uiSoundsButton { "UI SOUNDS" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> uiSoundsAttachment;
     // Transport: STOP / PLAY / START as three buttons rather than a combo, because
     // the whole point of the gesture is that START and STOP are momentary presses
     // and PLAY is a resting state. A combo made the user open a menu to stop a
@@ -461,6 +541,105 @@ private:
     int glAttachAttemptsLeft = 0;
 
     std::unique_ptr<juce::AlertWindow> savePresetWindow;
+
+    // -----------------------------------------------------------------------
+    //  Interface sounds.
+    //
+    //  A plugin's editor is a piece of hardware as far as the user is concerned,
+    //  and hardware answers when you touch it: a switch clicks, a knob's detent
+    //  ticks, a key thumps. These are synthesised here rather than loaded as
+    //  samples, for three reasons - no asset to ship or lose, no file I/O at
+    //  editor construction, and a palette that can be shaped by code (the pitch
+    //  of every sound rises with the machine's own activity, so the panel sounds
+    //  like it is doing work rather than playing a fixed beep).
+    //
+    //  The player is deliberately SELF-CONTAINED: its own audio device, its own
+    //  short buffer, its own timer. It never touches the plugin's audio thread,
+    //  never goes through the host's output and therefore never appears in the
+    //  rendered file or in the DAW's metering. That is a hard requirement, not a
+    //  nicety - an interface click that leaked into the render would be a bug.
+    //
+    //  It is OFF by default. A plugin that starts making noise the moment a
+    //  window opens is a plugin that gets uninstalled, and a user working at
+    //  3 a.m. does not want their interface ticking. The switch is on the
+    //  SETTINGS tab next to GL.
+    // -----------------------------------------------------------------------
+    class UiSoundEngine final : private juce::AudioIODeviceCallback
+    {
+    public:
+        UiSoundEngine();
+        ~UiSoundEngine() override;
+
+        /** One of the four interface sounds. Each is a different synthesis
+            rather than the same beep at a different pitch. */
+        enum class Voice
+        {
+            click,    ///< a switch: a short, dry, bright tick
+            detent,   ///< a knob crossing a step: a softer, lower tick
+            press,    ///< a momentary key going down: a low thump
+            release   ///< ...and coming back up: a slightly higher thump
+        };
+
+        void setEnabled (bool shouldBeEnabled) noexcept { enabled = shouldBeEnabled; }
+        bool isEnabled() const noexcept { return enabled; }
+
+        /** Sets the brightness/pitch scale, 0..1. The panel feeds it the machine's
+            own activity, so a busy machine ticks at a slightly higher pitch. */
+        void setBrightness (float newBrightness) noexcept
+        {
+            brightness = juce::jlimit (0.0f, 1.0f, newBrightness);
+        }
+
+        /** Plays a voice. Safe to call from the message thread at any rate. */
+        void trigger (Voice voice) noexcept;
+
+    private:
+        void audioDeviceIOCallbackWithContext (const float* const* inputChannelData,
+                                               int numInputChannels,
+                                               float* const* outputChannelData,
+                                               int numOutputChannels,
+                                               int numSamples,
+                                               const juce::AudioIODeviceCallbackContext& context) override;
+        void audioDeviceAboutToStart (juce::AudioIODevice* device) override;
+        void audioDeviceStopped() override;
+
+        // The current voice's state. The render is a simple two-stage envelope
+        // over a sine and a noise burst, which is enough for a tick and cheap
+        // enough to be plainly not worth a fancier synthesiser.
+        std::atomic<float> pendingAmplitude { 0.0f };
+        std::atomic<float> pendingPitch { 440.0f };
+        std::atomic<float> pendingDecay { 0.9995f };
+        std::atomic<float> pendingNoiseMix { 0.5f };
+
+        float phase = 0.0f;
+        float envelope = 0.0f;
+        float noiseState = 0.0f;
+        float decay = 0.9995f;
+        float noiseMix = 0.5f;
+        double deviceRate = 44100.0;
+
+        std::atomic<bool> enabled { false };
+        std::atomic<float> brightness { 0.5f };
+
+        juce::AudioDeviceManager deviceManager;
+        bool deviceOpen = false;
+
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (UiSoundEngine)
+    };
+
+    UiSoundEngine uiSounds;
+    bool lastShownUiSoundEnabled = false;
+
+    // The knob-detent gate. onValueChange fires on every real value change, and a
+    // fast drag produces dozens a second - which would be a buzz rather than a
+    // detent. The timer decrements this once per frame, so the gate is a number
+    // of FRAMES rather than a wall-clock time and it costs nothing to check.
+    int uiSoundTickCountdown = 0;
+    static constexpr int uiSoundTickGateFrames = 3;
+
+    /** Attaches the click/detent sounds to every control that should have them.
+        Called once from the constructor, after the controls exist. */
+    void attachInterfaceSounds();
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessorEditor)
 };

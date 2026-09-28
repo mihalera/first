@@ -1685,6 +1685,83 @@ struct VinylStage
     float warpAmount = 0.0f;         // 0..1 vertical warp, level breathing
     float electricalAmount = 0.0f;   // 0..1 mains hum + earth static
 
+    // ------------------------------------------------------------------
+    //  CLICKS - the sharp, discrete groove faults: the cut, not the surface.
+    //
+    //  CRACKLE is the fine surface texture and DUST is the grit in the groove;
+    //  CLICKS is the third and loudest class of record damage: an actual ridge
+    //  or pit in the lacquer, or a stamping fault, that the stylus hits as a
+    //  single hard transient. Where a crackle tick is a few milliseconds of
+    //  noise, a click is a fast BIPOLAR impulse - a sharp full-bandwidth spike
+    //  with almost no ringing - because it is a mechanical impact rather than
+    //  a contact noise. That is why it reads as "a click" and not as "more
+    //  crackle", and why it is a control of its own.
+    //
+    //  A second, lower-state effect rides with it and is what makes a badly
+    //  pressed record sound BROKEN rather than merely dirty: the same fault
+    //  repeats because the stylus crosses it once per revolution, so a fraction
+    //  of the clicks line up with the platter instead of falling at random.
+    // ------------------------------------------------------------------
+    float clickAmount = 0.0f;        // 0..1 sharp groove faults
+    float clickEnvelopeL = 0.0f;
+    float clickEnvelopeR = 0.0f;
+    float clickPhaseL = 0.0f;
+    float clickPhaseR = 0.0f;
+    float clickIncrement = 0.0f;     // one periodic click per revolution
+
+    // ------------------------------------------------------------------
+    //  GENERATION, TURNTABLE and CARTRIDGE - the three stages of getting a
+    //  record to play, and each one changes the sound in its own way.
+    //
+    //  They are the same idea as TAPE TYPE and VINYL TYPE, one level up: the
+    //  record TYPE says what was pressed, these say what was CUT, what it is
+    //  played ON, and what is reading it.
+    //
+    //    GENERATION  how the lacquer was cut. A modern direct-metal master has
+    //                almost none of the cutting-head's own colour and plays
+    //                loud and clean; a vintage lacquer master is darker, its
+    //                high end rolled off by the cutter head's own limits; a
+    //                PRINTED pressing is a copy of a copy, so it carries the
+    //                accumulated loss of every generation before it - duller
+    //                still, noisier, and with a little extra surface character.
+    //                ("PRINTED" is the pressing made from a stamper, as opposed
+    //                to the reference lacquer the engineer hears.)
+    //
+    //    TURNTABLE   what drives the platter. A high-torque direct-drive DJ deck
+    //                holds a rock-steady 33 and stops in a quarter turn; a
+    //                belt-drive audiophile deck has a slow, elastic belt, so it
+    //                is marginally less steady but smoother, and takes a moment
+    //                to settle. The DJ deck is what chasing and scratching needs;
+    //                the belt deck is what a quiet pressing wants.
+    //
+    //    CARTRIDGE   what reads the groove, and the largest single difference of
+    //                the three. A moving-MAGNET cartridge has a warm, slightly
+    //                soft top and a broad, gentle response; a moving-COIL has
+    //                more detail and a brighter, tighter top with a lower output
+    //                (so more gain, and more hiss); a DJ CONCORDE-style cart is
+    //                heavier and hotter, tracks harder, and carries a bit more
+    //                surface noise with it.
+    //
+    //  The three are INDEPENDENT: each sets coefficients of its own, and the
+    //  engine applies whichever combination is selected. A funky modern cut on a
+    //  belt-drive with a moving coil is a different machine from a vintage
+    //  printed pressing on a DJ deck, and both are reachable.
+    // ------------------------------------------------------------------
+    float generationTiltL = 0.0f;   // per-channel cutting-generation tilt state
+    float generationTiltR = 0.0f;
+    float generationTopLoss = 1.0f; // >0, multiplier on the top band
+    float generationBottomLift = 1.0f; // >0, multiplier on the bottom band
+    float generationNoiseScale = 1.0f; // multiplier on this stage's own noise
+
+    float turntableWowScale = 1.0f;    // multiplier on the speed wander
+    float turntableStability = 1.0f;   // flutter irregularity
+
+    float cartridgeTopGain = 1.0f;     // >0, top-band gain of the reading
+    float cartridgeBottomGain = 1.0f;  // >0, bottom-band gain
+    float cartridgeNoiseGain = 1.0f;   // multiplier on crackle/dust/click
+    float cartridgeHissGain = 1.0f;    // multiplier on groove hiss
+    float cartridgeCoefficient = 0.0f; // the split the two gains act around
+
     // Mains hum's frequency and the per-revolution rates are given as
     // INCREMENTS (fraction of a cycle per sample) so the stage is rate-agnostic
     // for the same reason every other increment here is: the caller converts a
@@ -1748,6 +1825,9 @@ struct VinylStage
         warpPhaseL = warpPhaseR = 0.0f;
         humPhaseL = humPhaseR = 0.0f;
         humHarmonicPhaseL = humHarmonicPhaseR = 0.0f;
+        clickEnvelopeL = clickEnvelopeR = 0.0f;
+        clickPhaseL = clickPhaseR = 0.0f;
+        generationTiltL = generationTiltR = 0.0f;
     }
 
     /**
@@ -1878,6 +1958,74 @@ struct VinylStage
         }
 
         // ------------------------------------------------------------------
+        //  CLICKS: the sharp, discrete groove faults.
+        //
+        //  The third and loudest class of record damage. A crackle tick is a
+        //  short burst of contact noise; a CLICK is a mechanical IMPACT - the
+        //  stylus dropping off a ridge or hitting a pit - so it is a fast,
+        //  bipolar, full-bandwidth spike with almost no ring. Two things make it
+        //  read as a click rather than as more crackle:
+        //
+        //    - the impulse is shaped as an alternating pair of samples (a i, -i),
+        //      which is the shortest transient a sampled signal can carry and
+        //      therefore the brightest thing the stage can produce;
+        //    - a fraction of the clicks is PERIODIC, locked to the platter, so a
+        //      bad pressing ticks in time rather than at random - the same
+        //      wound crossed once per revolution.
+        // ------------------------------------------------------------------
+        float click = 0.0f;
+        if (clickAmount > 0.0f)
+        {
+            auto& clickEnvelope = channel == 0 ? clickEnvelopeL : clickEnvelopeR;
+
+            random = random * 1664525u + 1013904223u;
+            const float unit = static_cast<float> ((random >> 8) & 0x00ffffffu)
+                             * (1.0f / 8388608.0f) - 1.0f;
+
+            // The random half of the clicks: roughly one every few thousand
+            // samples at full CLICKS, which is a stream of distinct events.
+            const float randomProbability = 0.00012f * clickAmount;
+
+            // The periodic half: one click per revolution, fired through a very
+            // short window so it is a discrete impact and not a rumble. Only the
+            // part of the CLICKS control ABOVE half the travel brings the
+            // periodic behaviour in, so the low half of the knob is a clean
+            // random-click stream and the top half is a record that ticks in time.
+            bool periodicClick = false;
+            if (clickIncrement > 0.0f && clickAmount > 0.5f)
+            {
+                float& phase = channel == 0 ? clickPhaseL : clickPhaseR;
+                phase += clickIncrement;
+                if (phase >= 1.0f)
+                    phase -= 1.0f;
+
+                constexpr float clickWindow = 0.004f;
+                if (phase < clickWindow)
+                    periodicClick = true;
+            }
+
+            if (std::abs (unit) < randomProbability || periodicClick)
+            {
+                random = random * 1664525u + 1013904223u;
+                const float amplitude = static_cast<float> ((random >> 8) & 0x00ffffffu)
+                                      * (1.0f / 8388608.0f) - 1.0f;
+
+                // A click is an IMPACT, so it is much louder than a tick - and it
+                // is bipolar, alternating sign between events, which is what a
+                // mechanical impact produces when the stylus is knocked both ways.
+                const float sign = unit < 0.0f ? -1.0f : 1.0f;
+                clickEnvelope += amplitude * sign * 0.55f;
+            }
+
+            // The decay is FAST - a couple of samples - because a click has no
+            // ring. This is the other half of what separates it from the crackle
+            // envelope above, which is deliberately slow enough to ring.
+            clickEnvelope *= 0.62f;
+
+            click = clickEnvelope * clickAmount * clickAmount;
+        }
+
+        // ------------------------------------------------------------------
         //  WARP: the record is not flat.
         //
         //  A warped record makes the stylus ride up and down once per turn, so
@@ -1976,12 +2124,213 @@ struct VinylStage
             speedWander = std::sin (phase * 6.2831853f) * speedModulation;
         }
 
-        return (warmed + groove
+        // ------------------------------------------------------------------
+        //  GENERATION and CARTRIDGE: the cut, and the thing reading it.
+        //
+        //  Both are a two-band tilt around one split, but for opposite reasons,
+        //  and that is why they are two controls rather than one:
+        //
+        //    GENERATION is a LOSS. A cut master has the cutter head's own colour
+        //    and a printed pressing has every generation's loss on top of it, so
+        //    the top band is what suffers and the bottom is what remains. The
+        //    tilt is applied to the stage's OWN output, before the cartridge gains,
+        //    because it is part of what was pressed onto the disc rather than part
+        //    of what reads it.
+        //
+        //    CARTRIDGE is a RESHAPE. A moving coil is bright and tight, a moving
+        //    magnet is soft and broad, a DJ cart is hot and heavier. That is a gain
+        //    PAIR on the two bands, applied after, because it is what the reading
+        //    does to a record that is already the way it is.
+        //
+        //  Both already default to a flat pair (gains of 1.0), so a stage whose
+        //  switches sit on their neutral entries is bit-for-bit untouched.
+        // ------------------------------------------------------------------
+        const float generationOut = [&]
+        {
+            if (std::abs (generationTopLoss - 1.0f) < 1.0e-5f
+                && std::abs (generationBottomLift - 1.0f) < 1.0e-5f)
+                return warmed;
+
+            auto& tilt = channel == 0 ? generationTiltL : generationTiltR;
+            tilt += (warmed - tilt) * cartridgeCoefficient;
+            const float bottom = tilt;
+            const float top = warmed - tilt;
+            return bottom * generationBottomLift + top * generationTopLoss;
+        }();
+
+        const float cartridgeOut = [&]
+        {
+            if (std::abs (cartridgeTopGain - 1.0f) < 1.0e-5f
+                && std::abs (cartridgeBottomGain - 1.0f) < 1.0e-5f)
+                return generationOut;
+
+            // The same split the generation tilt uses, taken from the same state -
+            // one filter, two users, so the two controls cannot disagree about where
+            // the band boundary is.
+            auto& tilt = channel == 0 ? generationTiltL : generationTiltR;
+            const float bottom = tilt;
+            const float top = generationOut - tilt;
+            return bottom * cartridgeBottomGain + top * cartridgeTopGain;
+        }();
+
+        const float grooveNoiseGain = cartridgeNoiseGain;
+        const float hissGainNow = cartridgeHissGain;
+
+        return (cartridgeOut
+                     + groove * hissGainNow
                      + crackleEnvelope * crackleControl * crackleAmount * crackleAmount * 0.6f
+                         * grooveNoiseGain
                      + rumble
-                     + dust
-                     + scratch
+                     + dust * grooveNoiseGain
+                     + scratch * grooveNoiseGain
+                     + click * grooveNoiseGain
                      + electrical) * (1.0f + speedWander) * warp;
+    }
+};
+
+//==============================================================================
+/**
+    A three-band tone control - the plugin's two equalisers.
+
+    The same stage is instantiated twice, at the two ends of the chain, and the
+    reason it is one struct rather than two is that the two equalisers have to
+    be the SAME instrument: an INPUT EQ and an OUTPUT EQ that did not share a
+    topology would colour the signal in ways the user could not predict from the
+    panel, and matching them by hand is how they drift apart.
+
+    Three bands, each a genuinely different filter rather than three of the same:
+
+      LOW   a low shelf. It lifts or cuts everything below the corner, which is
+            where weight lives. A shelf rather than a peak, because "more bass"
+            on a master means the whole bottom octave, not one frequency.
+
+      MID   a peak with a bell. It lifts or cuts around a centre frequency,
+            leaving both ends alone - the band that decides whether something
+            sounds present or hollow.
+
+      HIGH  a high shelf, the mirror of LOW. Air, or the lack of it.
+
+    Each band is a one-pole split with a matched gain pair, which is the same
+    technique the vinyl stage and the tape tilt already use - so the whole plugin
+    shapes tone with ONE mechanism, and a reader who has understood one of these
+    stages has understood all of them. A biquad would be steeper, but steepness
+    is not what these controls are for; what they are for is being inaudible at
+    0 dB and musical at everything else.
+
+    At 0 dB on all three bands the pair of gains is (1, 1) on every band, so the
+    signal passes through untouched and the EQ is bit-for-bit transparent.
+*/
+struct ThreeBandEq
+{
+    // Split frequencies. The low split is where a mix's weight sits (200 Hz),
+    // the high split is where air begins (4 kHz), and the mid bell sits between
+    // them at 1 kHz - the octave where presence and honk both live.
+    float lowCoefficient = 0.0f;
+    float highCoefficient = 0.0f;
+
+    // Per-band gains, 0.25x .. 4x (i.e. about -12 dB .. +12 dB). Set per block.
+    float lowGain = 1.0f;
+    float midGain = 1.0f;
+    float highGain = 1.0f;
+
+    // The mid bell's width, as the fraction of the band that passes through the
+    // -3 dB point. A narrower bell is useful for taming a resonance, a wider one
+    // for shaping a whole region, so Q is a control rather than a constant.
+    float midWidth = 0.6f;
+
+    // Per-channel filter state: the low/high split, the mid/high split, and the
+    // mid bell's own two poles (the bell is built from two low-passes over the
+    // same band, so it needs both of their memories).
+    float lowStateL = 0.0f, lowStateR = 0.0f;
+    float midLowL = 0.0f, midLowR = 0.0f;
+    float bellStateL = 0.0f, bellStateR = 0.0f;
+
+    /** Rebuilds the two split coefficients for a rate. Called from prepareToPlay
+        and from the per-block path, because the rate the engine runs at can
+        change with oversampling without prepareToPlay running again. */
+    void prepare (float sampleRate) noexcept
+    {
+        // 200 Hz and 4 kHz, converted with the same one-pole helper everything
+        // else in the plugin uses, so they mean the same thing at every rate.
+        const auto omegaLow = juce::MathConstants<float>::twoPi * 200.0f
+                            / juce::jmax (1.0f, sampleRate);
+        const auto omegaHigh = juce::MathConstants<float>::twoPi * 4000.0f
+                             / juce::jmax (1.0f, sampleRate);
+        lowCoefficient = juce::jlimit (0.0f, 1.0f - std::exp (-omegaLow));
+        highCoefficient = juce::jlimit (0.0f, 1.0f - std::exp (-omegaHigh));
+    }
+
+    /** The bell's own coefficient, derived from the split and the width. The mid
+        band is the difference between two low-passes - one at the bell's centre
+        and one wider - which is a band-pass built the same way every other split
+        in this plugin is built. */
+    float midBandCoefficient (float sampleRate) const noexcept
+    {
+        // Width 0 gives a narrow bell (about 2 kHz of passband), width 1 a broad
+        // one (about 8 kHz). It is deliberately never zero-width: a resonant
+        // peak on a tape machine is a fault, not a control.
+        const float widthHz = 2000.0f + midWidth * 6000.0f;
+        const auto omega = juce::MathConstants<float>::twoPi * widthHz
+                         / juce::jmax (1.0f, sampleRate);
+        return juce::jlimit (0.0f, 1.0f, 1.0f - std::exp (-omega));
+    }
+
+    void reset() noexcept
+    {
+        lowStateL = lowStateR = 0.0f;
+        midLowL = midLowR = 0.0f;
+        bellStateL = bellStateR = 0.0f;
+    }
+
+    /** One sample through the three bands.
+
+        `lowState` and `midState` are the caller's per-channel filter memories -
+        the caller owns them so that both instances of this stage (input and
+        output) keep their state in the places the rest of the engine keeps its
+        own, rather than this struct allocating.
+    */
+    float process (float x, int channel, float midCoefficient) noexcept
+    {
+        // The low/high split: what the low-pass keeps is the LOW band, what it
+        // removes is everything above it.
+        auto& lowState = channel == 0 ? lowStateL : lowStateR;
+        lowState += (x - lowState) * lowCoefficient;
+        const float lowBand = lowState;
+        const float upperBand = x - lowState;
+
+        // The upper band is split again at 4 kHz into the MID and HIGH bands.
+        auto& midState = channel == 0 ? midLowL : midLowR;
+        midState += (upperBand - midState) * highCoefficient;
+        const float midHighBand = upperBand - midState;   // everything above 4 kHz
+        const float midBand = midState;                   // 200 Hz .. 4 kHz
+
+        // The mid BELL. MID is a resonant-style bell rather than a second
+        // low/high pair, and that is a deliberate difference: a full-band mid
+        // shelf would drag the low and high ends with it, so turning MID up
+        // would sound like turning everything up. A bell acts on its own pass
+        // band ONLY, leaving the two shelves where they were.
+        //
+        // It is built from two one-poles over the same mid band - one at the
+        // bell's own (narrower) corner and one at the band's own top - and what
+        // the narrow one passes is subtracted from what the broad one passes.
+        // That difference is a band-pass, and it is the same technique every
+        // other filter in this plugin uses: one-pole splits, never biquads.
+        // The small addition at the end keeps the bell's peak from vanishing as
+        // the band narrows, so 0 dB really is 0 dB at every width. */
+        auto& bellState = channel == 0 ? bellStateL : bellStateR;
+        bellState += (midBand - bellState) * midCoefficient;
+        const float bellBand = bellState;
+        const float bellRest = midBand - bellBand;
+
+        // The mid output: the bell's pass band takes the gain, and everything
+        // else in the mid region is left at unity, so MID is a bell and not a
+        // level control on the whole 200 Hz - 4 kHz span.
+        const float midOut = midBand + bellBand * (midGain - 1.0f)
+                                    + bellRest * (midGain - 1.0f) * 0.15f;
+
+        return lowBand * lowGain
+             + midOut
+             + midHighBand * highGain;
     }
 };
 
@@ -3405,6 +3754,15 @@ public:
         mono. Published so the panel can show the guard acting. */
     float getAntiPhaseAmount() const noexcept { return antiPhaseAmount.load (std::memory_order_relaxed); }
 
+    /** True when the panel's interface clicks are switched on. The editor reads
+        this every frame and enables its own sound engine from it, so the switch
+        on the SETTINGS tab, a preset and an automation lane all reach the sounds
+        by the one route. */
+    bool getUiSoundsEnabled() const noexcept
+    {
+        return uiSoundsParam != nullptr && uiSoundsParam->load() >= 0.5f;
+    }
+
     //==============================================================================
     //  Audio -> UI telemetry.
     //
@@ -3548,6 +3906,10 @@ private:
     std::atomic<float>* noiseParam = nullptr;
     std::atomic<float>* transportParam = nullptr;
     std::atomic<float>* spindownParam = nullptr;
+    // The panel's interface-sound switch. Read on the message thread by the
+    // editor, but a parameter like every other setting so it survives in a
+    // session and can be automated.
+    std::atomic<float>* uiSoundsParam = nullptr;
     std::atomic<float>* blendParam = nullptr;
     std::atomic<float>* shapeParam = nullptr;
     std::atomic<float>* sagParam = nullptr;
@@ -3582,6 +3944,22 @@ private:
     std::atomic<float>* vinylScratchParam = nullptr;
     std::atomic<float>* vinylWarpParam = nullptr;
     std::atomic<float>* vinylElectricalParam = nullptr;
+
+    // CLICKS, and the three selectors that describe how the record was made
+    // (GENERATION), what plays it (TURNTABLE) and what reads it (CARTRIDGE).
+    std::atomic<float>* vinylClicksParam = nullptr;
+    std::atomic<float>* vinylGenerationParam = nullptr;
+    std::atomic<float>* vinylTurntableParam = nullptr;
+    std::atomic<float>* vinylCartridgeParam = nullptr;
+
+    // The two equalisers' six bands. Read once per block like every other
+    // control, so the per-sample EQ loop branches on plain floats.
+    std::atomic<float>* inputEqLowParam = nullptr;
+    std::atomic<float>* inputEqMidParam = nullptr;
+    std::atomic<float>* inputEqHighParam = nullptr;
+    std::atomic<float>* outputEqLowParam = nullptr;
+    std::atomic<float>* outputEqMidParam = nullptr;
+    std::atomic<float>* outputEqHighParam = nullptr;
 
     // The five type switches. Read once per block like every other choice, so the
     // per-sample loops branch on plain ints rather than on atomics.
@@ -4208,6 +4586,28 @@ private:
     // -----------------------------------------------------------------------
     VinylStage vinylL;
     VinylStage vinylR;
+
+    // -----------------------------------------------------------------------
+    //  The two equalisers.
+    //
+    //  One instance each, at the two ends of the chain - see the parameter
+    //  layout for why the POSITION is the point. Each holds its own filter
+    //  state, so the input EQ's splits and the output EQ's are independent and
+    //  neither can be disturbed by the other.
+    // -----------------------------------------------------------------------
+    ThreeBandEq inputEq;
+    ThreeBandEq outputEq;
+
+    // The EQ band gains, smoothed so dragging one glides rather than steps. Six
+    // smoothies, one per band per EQ, all on the shared sample clock so they
+    // advance exactly once per frame. They start at 1.0 (unity), which is what
+    // makes a fresh instance bit-for-bit transparent.
+    SampleSmoother inputEqLowSmoothed { sampleClock, false, false, 1.0f };
+    SampleSmoother inputEqMidSmoothed { sampleClock, false, false, 1.0f };
+    SampleSmoother inputEqHighSmoothed { sampleClock, false, false, 1.0f };
+    SampleSmoother outputEqLowSmoothed { sampleClock, false, false, 1.0f };
+    SampleSmoother outputEqMidSmoothed { sampleClock, false, false, 1.0f };
+    SampleSmoother outputEqHighSmoothed { sampleClock, false, false, 1.0f };
 
     SampleSmoother vinylSmoothed { sampleClock };
     SampleSmoother noiseLvlSmoothed { sampleClock, false, false, 1.0f };
