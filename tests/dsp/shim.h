@@ -7,6 +7,7 @@
 
 #include <cmath>
 #include <cstdint>
+#include <string>
 
 namespace juce
 {
@@ -41,5 +42,29 @@ struct Decibels
         return 20.0f * std::log10 (gain);
     }
 };
+
+// A minimal stand-in for the two juce::String members NeuralStage needs when it
+// is compiled with J37_HAS_RTNEURAL 0: the empty query the loaded-model guard
+// uses, plus toStdString/from-string construction so the JSON path still type
+// checks. The struct's loadFromJson, under the harness, does nothing but reply
+// false - so the type only has to exist and answer these, which is all the
+// extracted text calls. It is deliberately NOT a real string: the harness must
+// never be able to grow a dependency on JUCE's string semantics.
+class String
+{
+public:
+    String() = default;
+    String (const char*) {}
+
+    bool isEmpty() const noexcept { return true; }
+    bool isNotEmpty() const noexcept { return false; }
+
+    std::string toStdString() const { return {}; }
+};
+
+/** The harness compiles the extracted text with warnings as errors in places, so
+    the innocuous ignoreUnused the shipping code uses must resolve here too. */
+template <typename... Ts>
+inline void ignoreUnused (Ts&&...) noexcept {}
 } // namespace juce
 

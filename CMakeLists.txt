@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+﻿﻿# ==============================================================================
 #
 #   Nonlin Analog Saturator - tape machine emulation (J37, Ampex 456, Studer A800,
 #   Chrome, Type 111, GP9, Quantegy 499, RTM SM911)
@@ -260,7 +260,10 @@ set(FACTORY_PRESET_FILES
     ${FACTORY_PRESET_DIR}/iron_bloom.json
     ${FACTORY_PRESET_DIR}/twelve_bit_bounce.json
     ${FACTORY_PRESET_DIR}/dubplate_dub.json
-    ${FACTORY_PRESET_DIR}/shellac_radio.json)
+    ${FACTORY_PRESET_DIR}/shellac_radio.json
+    ${FACTORY_PRESET_DIR}/transient_punch.json
+    ${FACTORY_PRESET_DIR}/soft_touch.json
+    ${FACTORY_PRESET_DIR}/tight_bus.json)
 
 # A guard, not a convention: a path that does not exist is a typo, and CMake
 # would otherwise pass it to the binary-data builder and fail with a message
@@ -466,7 +469,8 @@ message(STATUS "  Libraries   : chowdsp_utils, melatonin_inspector, melatonin_bl
 message(STATUS "                signalsmith-stretch, fftconvolver, imgui, iPlug2 (source only)")
 message(STATUS "                chowcentaur, vcv_prototype, rack, soundpipe, aubio (source only)")
 message(STATUS "                farbot, readerwriterqueue, kissfft, pocketfft, yasio, dywapitchtrack, pffft")
-message(STATUS "                RTNeural, dr_libs, yin_pitch, pitch_detector (MPM), dattorro_verb, sndfile")
+message(STATUS "                RTNeural (neural inference, used by the DYNAMICS tab), dr_libs,")
+message(STATUS "                yin_pitch, pitch_detector (MPM), dattorro_verb, sndfile")
 message(STATUS "                nlohmann_json (header only)")
 message(STATUS "                q_dsp, sokol_gfx, glm (header only)")
 message(STATUS "                transdes, whetstone, multiband-transient-shaper (source only)")

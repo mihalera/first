@@ -13,7 +13,9 @@ It provides a tape-saturation mastering workflow with:
 
 - drive and harmonic character controls
 - a **TONE macro** that crossfades the whole machine state (tape stock, head gap, pre-bias, flutter) between the classic slow machine and the fast/hot machine
-- **oversampling** (Off / 2x / 4x) around the nonlinear engine, with the filter delay reported to the host
+- **oversampling** (Off / 2x / 4x / 8x) around the nonlinear engine, with the filter delay reported to the host
+- a **transient shaper** (ATTACK / SUSTAIN), which changes the signal's *envelope* rather than its waveform - punch or softness without adding a harmonic
+- an optional **neural stage** (RTNeural): a learned model loaded from a file, run per channel as a nonlinearity, blendable with a wet/dry control
 - **factory presets** covering the machine's real range, plus **user presets** saved to disk, A/B compare and full-state undo/redo
 - **polarity invert** and **auto gain** output switches, the two mastering staples
 - tape-type selection
@@ -27,11 +29,11 @@ It provides a tape-saturation mastering workflow with:
 - four VU-style meters: input and output level, plus one reduction meter per compressor
 - a vintage analog-inspired UI with animated knobs, reel and level meters
 
-## Saturation: four principles, not one curve
+## Saturation: six principles, not one curve
 
 A tape machine is **one** of the ways analogue electronics bend a signal, and for a
 long time this plugin was built around that one curve. The shaper is now a blend of
-the four mechanisms a real chain uses, and they are genuinely different shapes:
+the six mechanisms a real chain uses, and they are genuinely different shapes:
 
 | Principle | Mechanism | Character |
 | --- | --- | --- |
@@ -39,21 +41,33 @@ the four mechanisms a real chain uses, and they are genuinely different shapes:
 | **VALVE** | Thermionic: a soft, strongly asymmetric knee with a wide transition | Even-dominant, and it compresses rather than clips - it thickens before it distorts |
 | **CASSETTE** | Narrow gauge, low bias: a **hard, early knee** with very limited headroom and a low-frequency bump | "Everything is louder and smaller" |
 | **AMP** | A guitar amplifier's input stage: a high-gain, nearly symmetric **cascade** | Clips hard, strong odd harmonics - the one that bites |
+| **TRANSFORMER** | An iron core's flux lagging whatever drives it, with saturation on the peaks | A gentle, level-dependent compression with a soft top-end loss - the "iron" in a signal path |
+| **DIGITAL** | A converter's quantisation: a held code between sample instants and a hard level ceiling | The one solid-state mechanism: bit depth (16 / 12 / 8-bit), bit crush or sample-and-hold |
 
 Blending them is not a gimmick: a real chain **is** this. A guitar goes into an amp,
-the amp into a desk and a tape machine, a valve preamp sits somewhere in the path, and
-the whole thing may end up on a cassette.
+the amp into a desk and a tape machine, a valve preamp sits somewhere in the path, a
+transformer couples the output, and the whole thing may end up on a cassette - or be
+the last thing a converter sees before it is digitised.
 
-**BLEND** sweeps the weighting across the four in a fixed order (tape → valve →
-cassette → amp) so the control has one direction the ear can learn. **SHAPE** decides
-how concentrated it is: low picks one principle at a time, high spreads the weighting
-so all four contribute and the result reads as one compound machine.
+**BLEND** sweeps the weighting across the six in a fixed order (tape → valve →
+cassette → amp → transformer → digital) - the order is the signal path rather than a
+ranking, five machines you overload by pushing level into them and then the converter
+that replaces all of them - so the control has one direction the ear can learn.
+**SHAPE** decides how concentrated it is: low picks one principle at a time, high
+spreads the weighting so all six contribute and the result reads as one compound
+machine.
 
 Every curve is normalised to **unity slope at the origin**, exactly like the original
 tape shaper, so the blend cannot change the level - only the shape. That property is
 what keeps DRIVE meaning what it says.
 
 Default BLEND is 0 % - pure tape, which is exactly what every earlier build did.
+
+Each principle also has its own **model list** (VALVE TYPE, AMP TYPE, TRANSFORMER
+TYPE, DIGITAL TYPE, VINYL TYPE), and each list has an **OFF** entry that removes that
+principle outright. When one is off its share of the blend is **redistributed** among
+the principles still present rather than simply dropped, so switching one off changes
+the character without changing the amount of saturation.
 
 ## Guitar-amplifier features
 
@@ -91,6 +105,67 @@ Two gain stages **in front of** the machine, and they do different jobs:
 Both sit ahead of the tape so the machine hears their output - which is the whole
 point: a distorted guitar recorded to tape sounds like a record rather than a pedal
 precisely because the tape smooths what the pedal produced.
+
+## Dynamics: the transient shaper
+
+The DYN tab carries two stages that act on the **finished** signal rather than on the
+waveform, and they are the plugin's answer to two questions a saturator cannot answer
+by itself.
+
+A saturation curve is memoryless and monotone: it looks at the instant's level and
+bends it, so every harmonic it adds is a deliberate change to the sound. A **transient
+shaper** is a different mechanism entirely - it looks at the signal's **envelope**, the
+fast and slow views of its own level, and changes how that envelope moves over time. It
+can make a drum hit sharper without adding a single harmonic, and soften a pick without
+removing one. Nothing else in the chain can do that, because everything else operates
+on the waveform.
+
+The mechanism is two envelope followers on the same signal:
+
+- a **fast** one (about a 2 ms window) that tracks edges, and
+- a **slow** one (about 120 ms) that is the average programme level.
+
+On a rising edge the fast follower runs ahead of the slow one - a positive difference -
+and on a decaying tail it falls behind, a negative one. Two controls scale those two
+halves independently:
+
+| Control | Positive | Negative |
+| --- | --- | --- |
+| **ATTACK** | Sharpens the leading edge: punch, snap, click | Softens it: rounder, less percussive |
+| **SUSTAIN** | Lifts what follows the edge: body, ring, room | Shortens it: tighter, more staccato |
+
+Both are **bipolar and centred on zero**, which is why their readouts are signed
+percentages rather than 0-100. At 0 % each is neutral and the stage is transparent.
+
+**TR MIX** is how much of the shaped signal reaches the output, so the stage can be
+blended rather than switched, and at 0 % it is absent entirely.
+
+The applied gain is derived from the envelope difference and then smoothed, so the
+effect is a slow, gain-like ride on the envelope rather than a waveshaper. That is what
+makes it safe to run **after** the tape stage: a shaper there would re-distort the
+signal the machine just coloured, whereas an envelope shaper only moves its level, so
+the tape's character survives intact.
+
+## Neural stage (RTNeural)
+
+The other stage on the DYN tab is optional and inert by default. Where every other
+curve in this plugin is hand-written from physics, a **neural model** is *learned* from
+measurements of a real device, and RTNeural runs it fast enough to sit inside the
+per-sample loop.
+
+- The model is a **file**, not a parameter: it is loaded with **LOAD MODEL** on the DYN
+  tab, and the network it describes (a Dense net, an LSTM, a GRU) is whatever the file
+  says. It is **not** saved with the session or with a preset, because it is data
+  rather than a setting.
+- It runs **per channel**, after the tape stage and before the transient shaper, so it
+acts as one more nonlinearity alongside the hand-written ones - and the shaper can still
+sharpen whatever it produces.
+- **NEURAL** is the wet/dry position. At 0 %, or with no model loaded, the stage is a
+bit-for-bit pass-through, so a build with no model is exactly the plugin it was before
+the stage existed.
+- With RTNeural not fetched (or compiling the DSP harness), every member of the stage
+reduces to that same pass-through: the guard is honest, and the plugin never depends on
+a model being present to sound right.
 
 ## Tape condition: flux, wear, mechanics
 
@@ -275,11 +350,20 @@ record head (pre-emphasis, bias, magnetic hysteresis with memory) ->
 tape low-pass and head-gap loss -> tape noise floor and wow/flutter modulation ->
 playback EQ tilt -> playback DC blocker -> second playback head (DELAY) ->
 stereo tape offset (ST OFFSET) -> output glue compressor (always on) ->
-output trim (dB) -> stereo width.
+output EQ -> neural stage (optional, after the tape) -> transient shaper (DYN) ->
+output trim (dB) -> stereo width -> anti-phase guard -> safety limiter -> soft clipper ->
+reverb (SPACE) -> vinyl (VINYL).
 
 The transport state (STOP / PLAY / START) scales the whole wet side of that path and
 the transport modulation together, so STOP is the machine coming to rest rather than a
 mute on the output.
+
+The two DYN stages sit at the **end of the wet path** deliberately. The neural stage is
+one more nonlinearity and belongs with the machine; the transient shaper moves the
+envelope rather than the waveform, so it must come after everything that bends the
+signal - a shaper before the tape would be re-distorted by it. Both are transparent at
+their default settings (NEURAL 0, TR MIX 0), so an untouched instance is exactly the
+machine it always was.
 
 ## Tape delay
 
@@ -363,7 +447,13 @@ rest stays silent.
 | Oversampling | Off / 2x / 4x / 8x | Runs the tape engine at a higher internal rate to reduce aliasing; the added latency is reported to the host |
 | Polarity | on/off | Inverts the output polarity (180-degree flip), after the protection chain and the meters' magnitude path |
 | Auto Gain | on/off | Lets the slow programme compensator restore the level the INPUT trim dialled in; off leaves the output exactly at the level the chain produced |
-| Presets | 18 factory | Loaded from the preset box; each application is one undoable step |
+| Transient Attack (ATK) | -100 to +100 % | The leading edge of each event: positive sharpens it (punch, snap), negative softens it (rounder). It moves the **envelope**, not the waveform, so it adds no harmonics. Neutral at 0 % |
+| Transient Sustain (SUS) | -100 to +100 % | What follows the attack - body, ring, room: positive lengthens it (fuller), negative shortens it (tighter, more staccato). Neutral at 0 % |
+| Transient Mix (TR MIX) | 0 to 100 % | How much of the transient-shaped signal reaches the output. At 0 % the shaper is absent. Default 0 % |
+| Neural Mix (NEURAL) | 0 to 100 % | Wet/dry position of the optional learned model. At 0 %, or with no model loaded, the stage is transparent. Default 0 % |
+| Load Model | file | Reads an RTNeural model (its JSON description) and installs it as an optional per-channel nonlinearity, after the tape. Not saved with the session |
+| Clear | - | Releases the loaded model, returning the NEURAL stage to its pass-through |
+| Presets | 29 factory | Loaded from the preset box; each application is one undoable step |
 | User presets | unlimited | SAVE stores the whole machine state as a `.nonlinpreset` file in the user's application-data directory; DEL removes the selected file; recall is one undoable step |
 | A/B compare | two slots | COPY A / COPY B store states, A/B swaps them live; an EDITED badge shows when the sides differ |
 | Undo / Redo | full state | Ctrl+Z / Ctrl+Y (or the panel buttons) step through preset and A/B history |
@@ -548,9 +638,17 @@ state, so switching mid-playback is glitch-free.
 
 ## Presets, A/B compare and undo
 
-Eighteen factory presets cover the machine's range from gentle bus warmth to slammed drum
-tape, including vocal, bass and mastering-safety starting points. A preset replaces the whole machine state in a single undoable transaction - Ctrl+Z
-brings back exactly what was on screen before.
+Twenty-nine factory presets cover the machine's range from gentle bus warmth to slammed drum
+tape, including vocal, bass and mastering-safety starting points. Three of them - **Transient
+Punch**, **Soft Touch** and **Tight Bus** - are built around the transient shaper on the DYN
+tab, so the two directions of both ATK and SUS are demonstrated by a preset rather than only
+by a tooltip. A preset replaces the whole machine state in a single undoable transaction -
+Ctrl+Z brings back exactly what was on screen before.
+
+A preset **does not** carry a neural model. A model is a file the user loads, not a setting,
+so NEURAL is stated by every preset as 0 % and a preset load never touches whatever model is
+installed - the model survives a preset change untouched, and no preset can leave the stage
+blending toward a model that is not there.
 
 **User presets** go further: SAVE freezes the whole machine exactly as it stands into a
 `.nonlinpreset` file (an XML state tree, the same format the session stores) under
@@ -972,14 +1070,16 @@ Projucer project enabled:
 ### Third-party libraries
 
 Everything below JUCE is fetched by **CPM** at configure time and pinned by tag or
-commit, so a fresh clone resolves the same versions forever. They are linked into the
-plugin target so the pieces are *available*; the engine still uses its own code, and
-adopting any piece is a per-piece decision that has to be made against a profile and
-a listening test.
+commit, so a fresh clone resolves the same versions forever. Most are linked into the
+plugin target so the pieces are *available* and the engine uses its own code, with
+adopting a piece a per-piece decision made against a profile and a listening test. The
+exceptions are named in the table: those the engine actually runs today.
 
 | Library | Pinned at | Why it is in the build |
 | --- | --- | --- |
-| `chowdsp_utils` | `v2.4.0` | Chowdhury DSP's toolbox. Provides `SmoothedBufferValue`, `LoudnessMeter`, `PitchDetector`, `Compressor`/`LevelDetector`, `Noise`, `Upsampler`, `SineWave` - a generation ahead of the hand-rolled equivalents in `PluginProcessor.h` |
+| `RTNeural` | commit `95c3c0f9` | **Used.** The real-time neural inference engine behind the DYN tab's optional model stage. `NeuralStage` runs a 1-in/1-out model per channel. Configured with `RTNEURAL_STL ON` and no `-mavx2`, so the binary still runs on machines without AVX |
+| `nlohmann/json` | `v3.12.0` | **Used.** The JSON DOM `RTNeural::json_parser::parseJson` parses a model file into. Header-only |
+| `chowdsp_utils` | `v2.4.0` | Chowdhury DSP's toolbox. Provides the polynomial `exp`/`log`/dB approximations on the metering and auto-gain hot paths; `chowdsp_dsp_utils` is linked so the rest is available |
 | `melatonin_inspector` | commit `9c483f86` | JUCE component inspector, compiled under `JUCE_DEBUG` only. Passive in the shipped build |
 | `melatonin_blur` | `v1.4` | Fast shadow/gradient blurring for JUCE Components - the editor draws a lot of soft analog shading by hand today |
 | `xsimd` | `13.0.0` | Portable SIMD wrappers (SSE/AVX/NEON). `chowdsp::chowdsp_simd` already wraps xsimd, so this is the same code path rather than a second SIMD layer |

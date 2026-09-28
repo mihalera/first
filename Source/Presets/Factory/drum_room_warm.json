@@ -80,6 +80,10 @@
   "delay_rate": 2,
   "delay_sync": 0,
   "delay_pingpong": 0.2,
+  "transient_attack": 0.4,
+  "transient_sustain": 0.25,
+  "transient_mix": 0.7,
+  "neural_mix": 0.0,
   "polarity": 0,
   "auto_gain": 0
 }

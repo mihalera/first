@@ -1,4 +1,4 @@
-#include "PluginProcessor.h"
+﻿﻿#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
@@ -403,7 +403,7 @@ namespace
     // on SETTINGS, and the delay TYPE / RATE / SYNC trio shows on SPACE. They are
     // not knobs - the grid below cannot place them - so their visibility is
     // managed in setCurrentTab beside the knobs'.
-    constexpr std::array<TabSpec, 9> tabSpecs { {
+    constexpr std::array<TabSpec, 10> tabSpecs { {
         //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
         { "MACHINE", "What goes in, how the machine colours it, and what comes out.",
                      7, { 0, 3, 4, 7, 9, 8, 32 } },
@@ -445,6 +445,23 @@ namespace
                    "deck's TYPE / SYNC DELAY / RATE switches belong to the second "
                    "head, so they show on this tab.",
                      6, { 16, 17, 18, 53, 26, 27 } },
+        //  transient_attack (54), transient_sustain (55), transient_mix (56),
+        //  neural_mix (57). The DYNAMICS page: the two stages that act on the
+        //  finished signal's envelope and on a learned model rather than on the
+        //  waveform. They are together because both sit AFTER the machine and both
+        //  are "how the sound moves" rather than "how the sound is bent" - the
+        //  transient shaper changes the envelope without adding a harmonic, and
+        //  the neural stage adds a learned saturation on top of the hand-written
+        //  one. NEURAL is a MIX because the model itself is loaded from a file,
+        //  not chosen with a knob.
+        { "DYN", "The two stages that shape the FINISHED signal. ATK sharpens "
+                    "(positive) or softens (negative) the attack of each event; "
+                    "SUS lengthens (positive) or shortens (negative) what follows "
+                    "the attack, its body and ring; TR MIX is how much of the "
+                    "shaped signal reaches the output. NEURAL is the wet/dry "
+                    "position of an optional learned model loaded from a file - "
+                    "at 0, or with no model loaded, it is transparent.",
+                     4, { 54, 55, 56, 57 } },
         //  The record's five FAULTS moved onto NOISE (each is a mechanism of noise:
         //  surface texture, a repeating wound, the platter's warp, the cartridge's
         //  earthing, the pressing's clicks), so this page carries the stage's mix
@@ -517,7 +534,7 @@ namespace
     // twice, and none of them is silently dropped.
     // The tab count is written once, here, and the static_assert that guards coverage
 // reads it from the same constant - so adding a page cannot leave this behind.
-constexpr std::size_t numTabPages = 9;
+constexpr std::size_t numTabPages = 10;
 
 // The control count is a TEMPLATE parameter, not an argument, and that is the
 // whole fix. It used to be a literal 54 inside the function - the current
@@ -1915,6 +1932,68 @@ void FirstAudioProcessorEditor::applyLanguage (int languageIndex)
     updateTooltips();
 }
 
+void FirstAudioProcessorEditor::loadNeuralModelFromFile()
+{
+    // A model is chosen from a file, so a plain asynchronous file chooser is the
+    // whole dialogue. `chooser` is captured by the lambda so the chooser stays
+    // alive for the duration of the callback, which is what makes the launch
+    // safe to fire and forget.
+    auto chooser = std::make_shared<juce::FileChooser> (
+        "Load a neural model",
+        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+        "*.json;*.rtn;*");
+
+    const auto flags = juce::FileBrowserComponent::openMode
+                     | juce::FileBrowserComponent::canSelectFiles;
+
+    chooser->launchAsync (flags, [this, chooser] (const juce::FileChooser& fc)
+    {
+        const auto file = fc.getResult();
+        if (! file.existsAsFile())
+            return;
+
+        const auto json = file.loadFileAsString();
+        if (audioProcessor.loadNeuralModel (json))
+        {
+            loadedNeuralName = file.getFileNameWithoutExtension();
+        }
+        else
+        {
+            // A bad file leaves whatever was loaded before in place, and the
+            // readout says so rather than silently showing the old name.
+            loadedNeuralName = {};
+            neuralStatusLabel.setText ("INVALID MODEL", juce::dontSendNotification);
+            lastShownNeuralStatus = "INVALID MODEL";
+            return;
+        }
+
+        lastShownNeuralStatus = {};   // force the next refresh to repaint the label
+        refreshNeuralStatus();
+    });
+}
+
+void FirstAudioProcessorEditor::refreshNeuralStatus()
+{
+    // The processor is the source of truth, not the label: a model can be
+    // cleared from either button, so the readout follows whatever the stage
+    // actually holds. It reports in two states only - "NO MODEL" when the stage
+    // is inert, and the loaded file's name when it is not - because those are
+    // the two things the NEURAL knob cannot say by itself.
+    const auto status = audioProcessor.hasNeuralModel() && loadedNeuralName.isNotEmpty()
+                            ? loadedNeuralName
+                            : juce::String ("NO MODEL");
+
+    if (status == lastShownNeuralStatus)
+        return;
+
+    lastShownNeuralStatus = status;
+    neuralStatusLabel.setText (status, juce::dontSendNotification);
+    neuralStatusLabel.setColour (juce::Label::textColourId,
+                                 audioProcessor.hasNeuralModel()
+                                     ? paletteFor (false).accent
+                                     : paletteFor (false).secondary);
+}
+
 FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
@@ -2199,87 +2278,156 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // parameter called "tone" is registered as Brightness and the one called
     // "character" as Tone (see createParameterLayout), so each cell carries the name
     // the HOST shows for that parameter.
-    const juce::StringArray controlIds { "input", "drive", "bias",
-                                         "tone", "character", "wow",
-                                         "flutter", "mix", "output",
-                                         "stereo_width", "blend",
-                                         "shape", "amp_bias", "sag",
-                                         "presence", "cabinet",
-                                         "delay_time", "delay_feedback",
-                                         "st_offset", "noise", "subfund",
-                                         "preamp", "distortion",
-                                         "flux", "wear", "mechanics",
-                                         "reverb", "reverb_size",
-                                         "vinyl", "vinyl_crackle", "vinyl_rumble",
-                                         "noise_lvl", "st_link",
-                                         "vinyl_dust", "vinyl_scratch", "vinyl_warp",
-                                         "vinyl_electrical", "vinyl_clicks",
-                                         "in_low", "in_mid", "in_high",
-                                         "out_low", "out_mid", "out_high",
-                                         "di", "di_load", "di_transformer",
-                                         "in_hp_freq", "in_lp_freq", "in_eq_q",
-                                         "out_hp_freq", "out_lp_freq", "out_eq_q",
-                                         "delay_pingpong" };
-    const juce::StringArray controlNames { "INPUT", "DRIVE", "BIAS",
-                                           "BRIGHT", "TONE", "WOW",
-                                           "FLUTTER", "MIX", "OUTPUT",
-                                           "WIDTH", "BLEND",
-                                           "SHAPE", "AMP BIAS", "SAG",
-                                           "PRESENCE", "CABINET",
-                                           "DELAY", "DLY LVL",
-                                           "ST OFFSET", "NOISE", "SUBFUND",
-                                           "PREAMP", "DISTORT",
-                                           "FLUX", "WEAR", "MECHANICS",
-                                           "REVERB", "RVB SIZE",
-                                           "VINYL", "CRACKLE", "RUMBLE",
-                                           "NOISE LVL", "ST LINK",
-                                           "DUST", "SCRATCH", "WARP",
-                                           "ELECTRICAL", "CLICKS",
-                                           "IN LO", "IN MID", "IN HI",
-                                           "OUT LO", "OUT MID", "OUT HI",
-                                           "DI", "DI LOAD", "DI XFMR",
-                                           "IN HP", "IN LP", "IN Q",
-                                           "OUT HP", "OUT LP", "OUT Q",
-                                           "PING-PONG" };
-    // One double-click reset value per controlIds entry, in the SAME order, each one
-    // the default createParameterLayout() registers for that parameter. These are
-    // three views of ONE list, so a value that lands on a different control is a
-    // wrong-sounding reset rather than a harmless slip: ST OFFSET reset to 50 % of
-    // its +-500-sample range while NOISE reset to silence. The array is sized by
-    // controlCount, so a longer or shorter list is a compile error (C2078).
-    // The map below is the knob grid as tabSpecs groups it, id then default:
-    //   MACHINE           input 0.0   tone 0.50  character 0.50
-    //                      mix 0.50  stereo_width 0.50  output 0.0
-    //   SATURATION CORE   drive 0.30  bias 0.42  subfund 0.0  blend 0.0
-    //                      shape 0.50  amp_bias 0.50  sag 0.0
-    //   HEAD / TRANSPORT  cabinet 0.0  presence 0.50  wow 0.14  flutter 0.18
-    //                      st_offset 0.0  delay_time 0.0  delay_feedback 0.0
-    //                      noise 0.50
-    //   TAPE CONDITION    flux 0.50  wear 0.0  mechanics 0.0
-    //   INPUT STAGE       preamp 0.0  distortion 0.0
-    //   SPACE             reverb 0.0  reverb_size 0.40
-    //   VINYL             vinyl 0.0  vinyl_crackle 0.50  vinyl_rumble 0.35
-    const std::array<double, controlCount> defaultValues { 0.0, 0.30, 0.42,
-                                                           0.50, 0.5, 0.14,
-                                                           0.18, 0.5, 0.0,
-                                                           0.5, 0.0,
-                                                           0.5, 0.50, 0.0,
-                                                           0.50, 0.0,
-                                                           0.0, 0.0, 0.0,
-                                                           0.50, 0.0,
-                                                           0.0, 0.0,
-                                                           0.50, 0.0, 0.0,
-                                                           0.0, 0.40,
-                                                           0.0, 0.50, 0.35,
-                                                           1.0, 1.0,
-                                                           0.0, 0.0, 0.0,
-                                                           0.0, 0.0,
-                                                           0.0, 0.0, 0.0,
-                                                           0.0, 0.0, 0.0,
-                                                           0.0, 0.0, 0.0,
-                                                           20.0, 20000.0, 0.7,
-                                                           20.0, 20000.0, 0.7,
-                                                           0.0 };
+    // -----------------------------------------------------------------------
+    //  THE CONTROL TABLE - one row per knob.
+    //
+    //  This used to be three parallel arrays (controlIds, controlNames,
+    //  defaultValues) that had to be kept in step by hand, plus a tabSpecs table
+    //  below that referred to them by INDEX. Adding a single knob meant editing
+    //  four places and renumbering every index after the insertion point in
+    //  tabSpecs - and because an index cannot be checked by the compiler against
+    //  a name, the failure mode was a knob that silently showed another knob's
+    //  value, or a range applied to the wrong control.
+    //
+    //  Now there is one row per control: its parameter id, its panel caption, its
+    //  double-click reset value and the tab it belongs to. The arrays the rest of
+    //  the constructor uses are BUILT from this table, so they cannot disagree
+    //  with it, and the tab table below refers to controls by ID rather than by
+    //  index. Adding a knob is one row here (plus its parameter and its tooltip);
+    //  nothing needs renumbering.
+    //
+    //  `defaultValue` is the double-click reset, and it is the SAME number
+    //  createParameterLayout() registers as the parameter's default - the two are
+    //  two views of one fact and the row is where they meet.
+    // -----------------------------------------------------------------------
+    struct ControlSpec
+    {
+        const char* id;            // the parameter id
+        const char* caption;       // the panel's short label
+        double defaultValue;       // double-click reset (matches the parameter)
+        const char* tab;           // the tab this knob belongs to, by NAME
+    };
+
+    // BRIGHT and TONE are deliberately not swapped to line up with their ids: the
+    // parameter called "tone" is registered as Brightness and the one called
+    // "character" as Tone (see createParameterLayout), so each row carries the
+    // name the HOST shows for that parameter.
+    //
+    // Order here is the vocabulary, not the layout: tabSpecs decides which tab a
+    // control sits on and in which order it is drawn. What this order still has to
+    // agree with is the parameter defaults, which each row states directly.
+    const std::array<ControlSpec, controlCount> controlSpecs { {
+        { "input",           "INPUT",      0.0,   "MACHINE"  },
+        { "drive",           "DRIVE",      0.30,  "DRIVE"    },
+        { "bias",            "BIAS",       0.42,  "DRIVE"    },
+        { "tone",            "BRIGHT",     0.50,  "MACHINE"  },
+        { "character",       "TONE",       0.5,   "MACHINE"  },
+        { "wow",             "WOW",        0.14,  "NOISE"    },
+        { "flutter",         "FLUTTER",    0.18,  "NOISE"    },
+        { "mix",             "MIX",        0.5,   "MACHINE"  },
+        { "output",          "OUTPUT",     0.0,   "MACHINE"  },
+        { "stereo_width",    "WIDTH",      0.5,   "MACHINE"  },
+        { "blend",           "BLEND",      0.0,   "DRIVE"    },
+        { "shape",           "SHAPE",      0.5,   "DRIVE"    },
+        { "amp_bias",        "AMP BIAS",   0.50,  "DRIVE"    },
+        { "sag",             "SAG",        0.0,   "DRIVE"    },
+        { "presence",        "PRESENCE",   0.50,  "CHARACTER"},
+        { "cabinet",         "CABINET",    0.0,   "CHARACTER"},
+        { "delay_time",      "DELAY",      0.0,   "SPACE"    },
+        { "delay_feedback",  "DLY LVL",    0.0,   "SPACE"    },
+        { "st_offset",       "ST OFFSET",  0.0,   "SPACE"    },
+        { "noise",           "NOISE",      0.50,  "NOISE"    },
+        { "subfund",         "SUBFUND",    0.0,   "DRIVE"    },
+        { "preamp",          "PREAMP",     0.0,   "DRIVE"    },
+        { "distortion",      "DISTORT",    0.0,   "DRIVE"    },
+        { "flux",            "FLUX",       0.50,  "CHARACTER"},
+        { "wear",            "WEAR",       0.0,   "NOISE"    },
+        { "mechanics",       "MECHANICS",  0.0,   "NOISE"    },
+        { "reverb",          "REVERB",     0.0,   "SPACE"    },
+        { "reverb_size",     "RVB SIZE",   0.40,  "SPACE"    },
+        { "vinyl",           "VINYL",      0.0,   "VINYL"    },
+        { "vinyl_crackle",   "CRACKLE",    0.50,  "VINYL"    },
+        { "vinyl_rumble",    "RUMBLE",     0.35,  "VINYL"    },
+        { "noise_lvl",       "NOISE LVL",  1.0,   "NOISE"    },
+        { "st_link",         "ST LINK",    1.0,   "MACHINE"  },
+        { "vinyl_dust",      "DUST",       0.0,   "NOISE"    },
+        { "vinyl_scratch",   "SCRATCH",    0.0,   "NOISE"    },
+        { "vinyl_warp",      "WARP",       0.0,   "NOISE"    },
+        { "vinyl_electrical","ELECTRICAL", 0.0,   "NOISE"    },
+        { "vinyl_clicks",    "CLICKS",     0.0,   "NOISE"    },
+        { "in_low",          "IN LO",      0.0,   "IN EQ"    },
+        { "in_mid",          "IN MID",     0.0,   "IN EQ"    },
+        { "in_high",         "IN HI",      0.0,   "IN EQ"    },
+        { "out_low",         "OUT LO",     0.0,   "OUT EQ"   },
+        { "out_mid",         "OUT MID",    0.0,   "OUT EQ"   },
+        { "out_high",        "OUT HI",     0.0,   "OUT EQ"   },
+        { "di",              "DI",         0.0,   "DRIVE"    },
+        { "di_load",         "DI LOAD",    0.0,   "DRIVE"    },
+        { "di_transformer",  "DI XFMR",    0.0,   "DRIVE"    },
+        { "in_hp_freq",      "IN HP",      20.0,  "IN EQ"    },
+        { "in_lp_freq",      "IN LP",      20000.0, "IN EQ"  },
+        { "in_eq_q",         "IN Q",       0.7,   "IN EQ"    },
+        { "out_hp_freq",     "OUT HP",     20.0,  "OUT EQ"   },
+        { "out_lp_freq",     "OUT LP",     20000.0, "OUT EQ"  },
+        { "out_eq_q",        "OUT Q",      0.7,   "OUT EQ"   },
+        { "delay_pingpong",  "PING-PONG",  0.0,   "SPACE"    },
+        { "transient_attack","ATK",        0.0,   "DYN"      },
+        { "transient_sustain","SUS",       0.0,   "DYN"      },
+        { "transient_mix",   "TR MIX",     0.0,   "DYN"      },
+        { "neural_mix",      "NEURAL",     0.0,   "DYN"      }
+    } };
+
+    // The three arrays the constructor below works from, DERIVED from the table
+    // above so they cannot disagree with it. Each is sized by controlCount, so a
+    // table that is too short or too long is a compile error rather than a silent
+    // out-of-bounds read.
+    juce::StringArray controlIds;
+    juce::StringArray controlNames;
+    std::array<double, controlCount> defaultValues {};
+
+    for (std::size_t i = 0; i < controlCount; ++i)
+    {
+        controlIds.add (controlSpecs[i].id);
+        controlNames.add (controlSpecs[i].caption);
+        defaultValues[i] = controlSpecs[i].defaultValue;
+    }
+
+    // Cross-check the table's `tab` column against the tabSpecs table below.
+    //
+    // The two tables describe the same partition from opposite ends - one says
+    // "which tab does this knob belong to", the other "which knobs does this tab
+    // hold" - and without this check they could disagree silently: a knob could
+    // name DYNAMICS in this table and be listed under NOISE in tabSpecs, and the
+    // panel would simply draw it on the tab tabSpecs chose while the comment here
+    // said otherwise. The rebuild still works (tabSpecs is what the grid reads),
+    // which is exactly why nothing else would catch it.
+    //
+    // This runs once, at construction, in a debug build only - the same discipline
+    // the parameter/preset audit follows. It is the one place both tables are in
+    // scope: controlSpecs is local to this constructor and tabSpecs is a namespace
+    // constant, so a static_assert cannot span them.
+    for (std::size_t i = 0; i < controlCount; ++i)
+    {
+        const auto* declaredTab = controlSpecs[i].tab;
+        const auto listedTab = [&] () -> const char*
+        {
+            for (const auto& spec : tabSpecs)
+                for (std::size_t c = 0; c < spec.count; ++c)
+                    if (spec.controls[c] == i)
+                        return spec.name;
+
+            return nullptr;
+        }();
+
+        jassert (listedTab != nullptr);
+        jassert (listedTab != nullptr && std::strcmp (declaredTab, listedTab) == 0);
+
+        // jassert compiles away in a release build, which would leave both
+        // locals unused - and the project builds with -Wall -Werror-grade warning
+        // flags. Naming them as deliberately-ignored keeps the check a
+        // debug-only diagnostic without turning release into a warning.
+        juce::ignoreUnused (declaredTab, listedTab);
+    }
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -2620,6 +2768,36 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "fraction of the clicks becomes PERIODIC, locked to the "
                        "platter, so a badly pressed record ticks in time rather "
                        "than at random. Default 0 percent.") + hints;
+            if (id == "transient_attack")
+                return xlat ("ATK - the leading edge of each event. The transient "
+                       "shaper looks at the signal's ENVELOPE rather than its "
+                       "waveform, so it can make a hit sharper without adding a "
+                       "harmonic: positive sharpens the attack (punch, snap, "
+                       "click), negative softens it (rounder, less percussive). "
+                       "Range -100 to +100 percent, neutral at 0.") + hints;
+            if (id == "transient_sustain")
+                return xlat ("SUS - what follows the attack: the body, the ring, "
+                       "the room. Positive lengthens it (fuller, more sustain), "
+                       "negative shortens it (tighter, more staccato). Like ATK "
+                       "it moves the envelope's level rather than the waveform, "
+                       "so the harmonics the machine produced are untouched. "
+                       "Range -100 to +100 percent, neutral at 0.") + hints;
+            if (id == "transient_mix")
+                return xlat ("TR MIX - how much of the transient-shaped signal "
+                       "reaches the output. At 0 the stage is absent and the "
+                       "signal passes untouched; at 100 it is the fully shaped "
+                       "one. In between the two are crossfaded, so the amount of "
+                       "shaping can be dialled in rather than switched. "
+                       "Default 0 percent.") + hints;
+            if (id == "neural_mix")
+                return xlat ("NEURAL - the wet/dry position of the optional "
+                       "learned model. The model is not a knob: it is a file "
+                       "loaded with LOAD MODEL on the DYN tab, and the network "
+                       "itself (a Dense net, an LSTM, a GRU) is whatever the file "
+                       "describes. This control blends the model's output with "
+                       "the untouched signal, so it is always a crossfade. At 0, "
+                       "or with no model loaded, the stage is transparent. "
+                       "Default 0 percent.") + hints;
             return hints;
         };
         setTip (slider, parameterTooltip (controlIds[static_cast<int> (i)]));
@@ -2686,6 +2864,24 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
             slider.valueFromTextFunction = [] (const juce::String& text)
             {
                 return juce::jlimit (-12.0, 12.0, text.getDoubleValue());
+            };
+        }
+        else if (id == "transient_attack" || id == "transient_sustain")
+        {
+            // The transient shaper's two amounts are BIPOLAR and centred on 0:
+            // negative softens/shortens, positive sharpens/lengthens, and 0 is
+            // the neutral that leaves the stage transparent. The range is the
+            // parameter's own (-1..1), shown as a signed percentage so the two
+            // halves of the control read the same way they behave.
+            slider.setRange (-1.0, 1.0, 0.001);
+            slider.setNumDecimalPlacesToDisplay (0);
+            slider.textFromValueFunction = [] (double value)
+            {
+                return juce::String (juce::roundToInt (value * 100.0)) + " %";
+            };
+            slider.valueFromTextFunction = [] (const juce::String& text)
+            {
+                return juce::jlimit (-1.0, 1.0, text.getDoubleValue() / 100.0);
             };
         }
         else if (id == "in_hp_freq" || id == "in_lp_freq"
@@ -3239,6 +3435,38 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     uiSoundsAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
         (audioProcessor.parameters, "ui_sounds", uiSoundsButton);
     addAndMakeVisible (uiSoundsButton);
+
+    // ---------------------------------------------------------------
+    //  The neural model picker, on the DYNAMICS tab beside the NEURAL knob.
+    //  It has no parameter and no attachment: a model is data read from a file,
+    //  not a value a session or a preset carries, so the two buttons drive the
+    //  processor directly and the status label reports what the stage holds.
+    // ---------------------------------------------------------------
+    loadNeuralButton.setLookAndFeel (&inlineLookAndFeel);
+    clearNeuralButton.setLookAndFeel (&inlineLookAndFeel);
+    setTip (loadNeuralButton, "LOAD MODEL - reads an RTNeural model file (its JSON "
+                                 "description) and installs it as the plugin's optional "
+                                 "learned nonlinearity. The network is whatever the file "
+                                 "describes - a Dense net, an LSTM, a GRU - and it runs "
+                                 "per channel, after the tape stage. NEURAL sets how much "
+                                 "of its output reaches the signal; at 0 it is silent. "
+                                 "Loading a model does not change any parameter and is "
+                                 "not saved with the session.");
+    setTip (clearNeuralButton, "CLEAR - releases the loaded model, returning the NEURAL "
+                                  "stage to its transparent pass-through.");
+    loadNeuralButton.onClick = [this] { loadNeuralModelFromFile(); };
+    clearNeuralButton.onClick = [this]
+    {
+        audioProcessor.clearNeuralModel();
+        loadedNeuralName = {};
+        refreshNeuralStatus();
+    };
+    addAndMakeVisible (loadNeuralButton);
+    addAndMakeVisible (clearNeuralButton);
+
+    styleLabel (neuralStatusLabel, "NO MODEL", 8.5f, paletteFor (false).secondary,
+                false, juce::Justification::centred);
+    addAndMakeVisible (neuralStatusLabel);
 
     // ---------------------------------------------------------------
     //  The remaining choice lists: the DI pad, the track layout and the two
@@ -4313,6 +4541,12 @@ void FirstAudioProcessorEditor::timerCallback()
     // so this code is identical either way.
     const auto telemetry = audioProcessor.getTelemetry();
 
+    // The neural model readout is cheap to refresh and cheap to check: the
+    // status only changes when a model is loaded or cleared, so the label is
+    // only rewritten when its text would actually differ. That keeps a 30 Hz
+    // timer from re-laying out a label sixty times a second for no reason.
+    refreshNeuralStatus();
+
     inputMeter.setLoudness (telemetry.inputPeakDb,
                             telemetry.inputRmsDb,
                             telemetry.inputLufs,
@@ -5189,7 +5423,11 @@ void FirstAudioProcessorEditor::resized()
     const auto tabBarLeft = layout.controls.getX() + 14;
     const auto tabBarTop = layout.controls.getY() + 34;
     const auto tabBarHeight = 24;
-    const auto tabGap = 6;
+    // The gap shrinks as tabs are added so the buttons stay as wide as they can:
+    // ten pages at a fixed 6 px each spent 54 of the bar's ~700 px on nothing, and
+    // the caption is auto-sized to the button, so the width is what decides whether
+    // a name is legible. Six is kept while it fits and reduced past that.
+    const auto tabGap = numTabs <= 7 ? 6 : (numTabs <= 9 ? 4 : 3);
     const auto tabButtonWidth = (layout.controls.getWidth() - 28
                                  - tabGap * (numTabs - 1)) / numTabs;
 
@@ -5298,6 +5536,7 @@ void FirstAudioProcessorEditor::resized()
     const auto inEqTab = index_of_tab_named ("IN EQ") == currentTab;
     const auto outEqTab = index_of_tab_named ("OUT EQ") == currentTab;
     const auto machineTab = index_of_tab_named ("MACHINE") == currentTab;
+    const auto dynamicsTab = index_of_tab_named ("DYN") == currentTab;
 
     // The four new lists follow the same rule as the deck switches: each is a
     // full member of exactly one tab, so it is visible only while that tab is.
@@ -5328,6 +5567,12 @@ void FirstAudioProcessorEditor::resized()
     delayRateBox.setVisible (spaceTab);
     delaySyncLabel.setVisible (spaceTab);
     delaySyncButton.setVisible (spaceTab);
+
+    // The neural model picker belongs to the DYNAMICS page, beside the NEURAL
+    // knob it feeds, so it follows the same tab as that knob.
+    loadNeuralButton.setVisible (dynamicsTab);
+    clearNeuralButton.setVisible (dynamicsTab);
+    neuralStatusLabel.setVisible (dynamicsTab);
 
     // The three vinyl selectors moved to the CHARACTER page: they re-voice the
     // whole vinyl stage, so they live with the machine's other voicing rather
@@ -5370,6 +5615,22 @@ void FirstAudioProcessorEditor::resized()
         placeDeckSwitch (vinylGenerationLabel, vinylGenerationBox, 0, 1, 1, "GENERATION");
         placeDeckSwitch (vinylTurntableLabel, vinylTurntableBox, 1, 1, 1, "TURNTABLE");
         placeDeckSwitch (vinylCartridgeLabel, vinylCartridgeBox, 2, 1, 1, "CARTRIDGE");
+    }
+    else if (dynamicsTab)
+    {
+        // DYNAMICS: four knobs fill the first row, so the second row is where the
+        // neural model picker lives - LOAD and CLEAR side by side in the first
+        // two cells, with the status readout under them. The picker is not a knob
+        // (it opens a file), so it is laid out here rather than by the grid.
+        const auto buttonY = memberRowY + rowHeight + 20;
+        const auto buttonH = juce::jmin (30, rowHeight - 22);
+
+        loadNeuralButton.setBounds (grid.getX() + 12, buttonY,
+                                    cellWidth - 24, buttonH);
+        clearNeuralButton.setBounds (grid.getX() + cellWidth + 12, buttonY,
+                                     cellWidth - 24, buttonH);
+        neuralStatusLabel.setBounds (grid.getX() + 2 * cellWidth + 6, buttonY - 2,
+                                     2 * cellWidth - 12, buttonH + 4);
     }
     else if (inEqTab || outEqTab)
     {

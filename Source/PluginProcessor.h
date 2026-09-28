@@ -33,6 +33,30 @@
  #define J37_HAS_CHOWDSP_DSP 0
 #endif
 
+// RTNeural (fetched by CPM in CMakeLists.txt). The real-time neural inference
+// engine behind Chowdhury's amp and pedal models. It is wired in here exactly
+// like the other optional dependencies: behind a __has_include probe AND a
+// harness guard, with a portable no-op substitution when it is absent, so the
+// DSP regression harness - which never sees RTNeural - still compiles and still
+// renders the same audio the engine produced before the model stage existed.
+//
+// What the engine uses it for is named at the use site: NeuralStage, below,
+// runs a small feed-forward model as a per-channel nonlinearity. When no model
+// is loaded the stage is a bit-for-bit pass-through, so the plugin's sound does
+// not depend on a model being present.
+#if ! defined (J37_DSP_HARNESS) && __has_include (<RTNeural/RTNeural.h>)
+ #include <RTNeural/RTNeural.h>
+ // RTNeural's own model loader header, which is what carries json_parser. It is
+ // not pulled in by RTNeural.h, so a translation unit that wants to LOAD a model
+ // has to ask for it explicitly. nlohmann/json is on the same include path (and
+ // RTNeural bundles a copy), so the JSON type it parses into is already available.
+ #include <RTNeural/model_loader.h>
+ #include <nlohmann/json.hpp>
+ #define J37_HAS_RTNEURAL 1
+#else
+ #define J37_HAS_RTNEURAL 0
+#endif
+
 // xsimd (fetched by CPM in CMakeLists.txt). Portable SIMD wrappers, and the
 // vehicle for the one approximation the review flagged as worth having: a
 // vectorised tanh. The scalar shaper calls std::tanh four times per sample per
@@ -1283,6 +1307,287 @@ struct AmpVoicing
         const float highBand = cabinetOut - presenceHighState;
 
         return cabinetOut + highBand * presenceAmount;
+    }
+};
+
+//==============================================================================
+/**
+    TransientShaper - attack and sustain shaping, the studio's transient designer.
+
+    This is a DIFFERENT mechanism from every other stage in the plugin, and the
+    distinction is the whole reason it earns a place beside the saturators. A
+    saturation curve is memoryless-and-monotone: it looks at the instant's level
+    and bends it. A transient shaper looks at the signal's ENVELOPE - the fast
+    and slow views of its level - and changes how the signal's own amplitude
+    moves over time. It can make a drum hit sharper without adding a harmonic,
+    and soften a pick without removing one; nothing else in the chain can do
+    that, because everything else operates on the waveform rather than on its
+    envelope.
+
+    The mechanism is two envelope followers on the same signal, one fast and one
+    slow, and the difference between them is the transient: on a rising edge the
+    fast follower runs ahead of the slow one (a positive difference), and on a
+    decaying tail it falls behind (a negative one). Two independent controls
+    scale those two halves of the difference:
+
+      ATTACK  > 0 boosts the leading edge of each event (punch, snap, click);
+              < 0 softens it (rounder, less percussive).
+      SUSTAIN > 0 lifts what follows the edge (body, ring, room);
+              < 0 shortens it (tighter, more staccato).
+
+    The applied gain is DETECTOR-DRIVEN, not signal-multiplied: it is derived
+    from the envelope difference and then smoothed, so the effect is a slow, gain
+    like ride on the envelope rather than a waveshaper, and it adds no harmonics
+    of its own. That is what makes it usable AFTER the tape stage - a shaper here
+    would re-distort the signal the machine just coloured, whereas an envelope
+    shaper only moves its level, so the tape's character survives intact.
+
+    Single-instance-per-channel: it carries signal-dependent envelope state, and
+    a shared instance would make the right channel's punch depend on the left's.
+    Discrete single-sample state only - no allocation, no lookahead - so it stays
+    realtime-safe on the audio thread.
+*/
+struct TransientShaper
+{
+    // -----------------------------------------------------------------------
+    //  Envelope state. `fastEnvelope` tracks the waveform's own instantaneous
+    //  magnitude; `slowEnvelope` averages it over the detector's slow window.
+    //  The slow one is the reference the fast one is compared against, so the
+    //  DIFFERENCE between them is what the two controls act on.
+    // -----------------------------------------------------------------------
+    float fastEnvelope = 0.0f;
+    float slowEnvelope = 0.0f;
+
+    // The smoothed gain the stage applied last sample. It is smoothed so a step
+    // in the detector cannot become a step in the waveform - the same discipline
+    // every other gain in the chain follows, and the reason this stage does not
+    // click when TWO controls are swept at once.
+    float appliedGain = 1.0f;
+
+    /** The per-channel state a rate change or a bypass has to let go of. */
+    void reset() noexcept
+    {
+        fastEnvelope = 0.0f;
+        slowEnvelope = 0.0f;
+        appliedGain = 1.0f;
+    }
+
+    /**
+        One sample through the shaper.
+
+        `attackAmount` and `sustainAmount` are -1..1: negative softens or shortens,
+        positive sharpens or lifts. `fastCoefficient` and `slowCoefficient` are
+        the two detector poles, built per block from the engine rate; `gainCoefficient`
+        smooths the applied gain. All three are block-rate constants so the loop
+        does no exp() work of its own.
+
+        At both amounts zero this returns the input unchanged, bit for bit - the
+        envelopes still run, so turning the control back up does not restart them
+        from rest, but the gain stays exactly 1 and the stage is transparent.
+    */
+    float process (float x, float attackAmount, float sustainAmount,
+                   float fastCoefficient, float slowCoefficient,
+                   float gainCoefficient) noexcept
+    {
+        const float magnitude = std::abs (x);
+
+        // The two followers. The fast one uses an attack/release asymmetry -
+        // it climbs quickly and falls slowly - because that is what a transient
+        // detector is: it must not miss an edge, and it must not chatter on the
+        // way down. The slow one is symmetric and is simply the average level.
+        const float fastPole = magnitude > fastEnvelope ? fastCoefficient
+                                                        : fastCoefficient * 0.25f;
+        fastEnvelope += (magnitude - fastEnvelope) * fastPole;
+        slowEnvelope += (magnitude - slowEnvelope) * slowCoefficient;
+
+        // The transient: positive while an edge is rising, negative on the tail.
+        // Normalised by the slow envelope (floored so a silent passage does not
+        // divide by nothing) so the reading is a RATIO of the event to the
+        // programme, not an absolute level - a quiet hi-hat and a loud snare
+        // produce the same number, which is what makes the control usable.
+        const float reference = juce::jmax (slowEnvelope, 1.0e-6f);
+        const float transient = (fastEnvelope - slowEnvelope) / reference;
+
+        // The two halves are shaped independently. `jmax`/`jmin` split the
+        // signed transient into its positive (attack) and negative (sustain)
+        // parts, so ATTACK never touches a decay and SUSTAIN never touches an
+        // edge - which is what makes the two controls mean what their names say.
+        const float attackPart = juce::jmax (0.0f, transient);
+        const float sustainPart = juce::jmin (0.0f, transient);
+
+        // A bounded gain: +/-1 on either control is at most about 3x/+10 dB of
+        // lift and about a quarter of the original on a full cut, so the stage
+        // can be dramatic without ever being able to invert or blow up the
+        // signal. The clamp is the safety net the whole chain relies on.
+        const float shaping = 1.0f
+                            + attackPart * attackAmount * 2.0f
+                            + sustainPart * sustainAmount * 2.0f;
+        const float target = juce::jlimit (0.25f, 4.0f, shaping);
+
+        appliedGain += (target - appliedGain) * gainCoefficient;
+        return x * appliedGain;
+    }
+};
+
+//==============================================================================
+/**
+    NeuralStage - an optional RTNeural model run as a per-channel nonlinearity.
+
+    The other stages in this plugin are hand-written curves, each chosen because
+    it models a specific piece of hardware. A neural model is the opposite
+    approach: instead of a curve being derived from physics, one is LEARNED from
+    measurements of a real device, and RTNeural runs it fast enough to sit inside
+    a per-sample loop.
+
+    Why the integration is shaped the way it is:
+
+      - It is OPTIONAL and INERT BY DEFAULT. No model is compiled in and none is
+        loaded from disk by the engine, so a build without a model is exactly the
+        plugin it was before this stage existed. The stage is a bit-for-bit
+        pass-through until a model is installed, which is what keeps every
+        existing preset, session and regression baseline valid.
+
+      - It is DTYPE-FLOAT, matching the engine's own float path. The model file
+        decides its own topology (a Dense net, an LSTM, a GRU); RTNeural's JSON
+        loader builds the right one. This wrapper only owns the frame plumbing -
+        one input, one output, both carried per channel.
+
+      - It is guarded. J37_HAS_RTNEURAL is 0 under the DSP harness and where the
+        library was not fetched, and every member below then reduces to the
+        pass-through. The class compiles either way, so no call site needs an
+        #if around it.
+
+    A 1-in/1-out model is deliberate: the stage sits IN the mono per-channel
+    chain, so a stereo pair is two instances of the same model rather than one
+    two-input model trying to model the inter-channel relationship. That keeps
+    the stage's meaning the same as every other stage's - a mono nonlinearity
+    applied per channel - and keeps the stereo image entirely in the engine's
+    own hands.
+*/
+struct NeuralStage
+{
+    // -----------------------------------------------------------------------
+    //  The model. Owned behind a unique_ptr so the type does not have to be
+    //  complete in the header (RTNeural's model types are templates over the
+    //  layer list), and so a stage with no model costs one pointer and one
+    //  branch per sample.
+    //
+    //  Under the harness, or in a build without RTNeural, the member does not
+    //  exist and every method below is the pass-through.
+    // -----------------------------------------------------------------------
+#if J37_HAS_RTNEURAL
+    using ModelType = RTNeural::Model<float>;
+
+    std::unique_ptr<ModelType> model;
+
+    /** The model's input frame. RTNeural's forward() takes a pointer to a
+        float[inSize] and RETURNS the single output sample by value, so one
+        element is all this stage needs - it is 1-in/1-out. */
+    float inputFrame[1] { 0.0f };
+#endif
+
+    /** True when a model is installed and ready to run. */
+    bool isActive() const noexcept
+    {
+#if J37_HAS_RTNEURAL
+        return model != nullptr;
+#else
+        return false;
+#endif
+    }
+
+    /**
+        Loads a model from RTNeural's JSON format. Returns false - leaving any
+        previously loaded model untouched but the stage inactive - when the text is
+        empty, malformed, or the library is not in the build.
+
+        RTNeural's parser takes a parsed nlohmann::json (or an input stream), NOT a
+        string, so the text is parsed here first. nlohmann::json is already fetched
+        by CMakeLists (and RTNeural bundles its own copy), so this adds no dependency.
+
+        This is called from the MESSAGE thread (a preset load, or the editor's model
+        picker), never from processBlock, so the parse allocation is safe. The audio
+        thread only ever reads the resulting model through process().
+    */
+    bool loadFromJson (const juce::String& json)
+    {
+    #if J37_HAS_RTNEURAL
+        if (json.isEmpty())
+            return false;
+
+        try
+        {
+            // nlohmann::json::parse throws on malformed input, which the catch below
+            // turns into a clean "no model" rather than a crash or a diagnostic the
+            // user cannot act on.
+            const auto parsed = nlohmann::json::parse (json.toStdString());
+            auto parsedModel = RTNeural::json_parser::parseJson<float> (parsed, false);
+            if (parsedModel == nullptr)
+                return false;
+
+            // The old model is replaced only once the new one has parsed, so a bad
+            // file leaves the stage exactly as it was rather than clearing it.
+            model = std::move (parsedModel);
+            return true;
+        }
+        catch (...)
+        {
+            // A bad model file must not take the plugin down. The stage simply stays
+            // as it was, which is the same audible result as no model.
+            return false;
+        }
+    #else
+        juce::ignoreUnused (json);
+        return false;
+    #endif
+    }
+
+    /** Releases the model, returning the stage to the pass-through. */
+    void clear() noexcept
+    {
+#if J37_HAS_RTNEURAL
+        model.reset();
+#endif
+    }
+
+    /** The model's own recurrent state, let go of on a rate change or a model
+        swap so neither can resume from a stale hidden state. */
+    void reset() noexcept
+    {
+#if J37_HAS_RTNEURAL
+        if (model != nullptr)
+            model->reset();
+#endif
+    }
+
+    /**
+        One sample through the model, or straight through when there is none.
+
+        `amount` is the dry/wet position: 0 is the untouched input, 1 is the
+        model's own output, and the crossfade is linear so the stage can be
+        blended in and out without a step. A model that is present but at
+        amount 0 therefore costs the inference but changes nothing audibly -
+        which is the correct reading of a wet/dry control rather than a bug.
+    */
+    float process (float x, float amount) noexcept
+    {
+#if J37_HAS_RTNEURAL
+        if (model == nullptr || amount <= 1.0e-5f)
+            return x;
+
+        inputFrame[0] = x;
+
+        // RTNeural's Model<T>::forward(const T*) returns the single output value
+        // for a 1-out model, so there is no output pointer to check - the value
+        // IS the result. A model whose output size is not 1 would return its
+        // first output here, which is the only sensible reading of a 1-in/1-out
+        // stage and is why the stage documents itself as such.
+        const float wet = model->forward (inputFrame);
+        return x + (wet - x) * juce::jlimit (0.0f, 1.0f, amount);
+#else
+        juce::ignoreUnused (amount);
+        return x;
+#endif
     }
 };
 
@@ -4129,6 +4434,29 @@ public:
     }
 
     //==============================================================================
+    //  Neural stage, from the editor.
+    //
+    //  A model is DATA, not a parameter: it is a file the user picks, and the
+    //  engine has no business knowing where it came from. These are the two
+    //  entry points the editor uses - install a model from its JSON text, and ask
+    //  whether one is currently loaded - and both are safe to call from the
+    //  message thread. The audio thread only ever reads the resulting model, so
+    //  a load is a pointer swap behind the stage's own guard rather than a lock
+    //  on the audio thread.
+    //==============================================================================
+
+    /** Installs a model from RTNeural's JSON text into both channels. Returns
+        false and changes nothing when the text is empty, malformed, or the
+        library is not in the build. */
+    bool loadNeuralModel (const juce::String& modelJson);
+
+    /** Releases any installed model, returning the stage to the pass-through. */
+    void clearNeuralModel();
+
+    /** True when a model is installed and the stage can run it. */
+    bool hasNeuralModel() const noexcept { return neuralL.isActive(); }
+
+    //==============================================================================
     //  Audio -> UI telemetry.
     //
     //  One complete frame of metering, filled by the audio thread once per block
@@ -4362,6 +4690,14 @@ private:
     std::atomic<float>* stLinkParam = nullptr;
     std::atomic<float>* delaySyncParam = nullptr;
     std::atomic<float>* delayRateParam = nullptr;
+
+    // The transient shaper's three controls and the neural stage's wet/dry. Read
+    // once per block like every other control so the per-sample loop branches on
+    // plain floats rather than on atomics.
+    std::atomic<float>* transientAttackParam = nullptr;
+    std::atomic<float>* transientSustainParam = nullptr;
+    std::atomic<float>* transientMixParam = nullptr;
+    std::atomic<float>* neuralMixParam = nullptr;
 
     float sampleRate = 44100.0f;
     // Every smoother below is advanced exactly once at the top of each sample frame.
@@ -5117,6 +5453,48 @@ private:
     // from `noiseState` so that turning VINYL on cannot change the tape hiss
     // stream - the two are different sources and must stay uncorrelated.
     std::uint32_t vinylNoiseState = 0x9e3779b9u;
+
+    // -----------------------------------------------------------------------
+    //  Transient shaper - one per channel, because it carries envelope state.
+    //
+    //  It runs on the finished signal, after the tape nonlinearity, so what it
+    //  shapes is the machine's output rather than something fed back into the
+    //  curve. The three controls ramp like every other gain so dragging one
+    //  cannot step the waveform, and the two detector poles are block-rate
+    //  constants built from the engine rate.
+    // -----------------------------------------------------------------------
+    TransientShaper transientL;
+    TransientShaper transientR;
+
+    SampleSmoother transientAttackSmoothed { sampleClock };
+    SampleSmoother transientSustainSmoothed { sampleClock };
+    SampleSmoother transientMixSmoothed { sampleClock, false, false, 0.0f };
+
+    // The two envelope-detector poles and the applied-gain smoother, rebuilt
+    // per block from the engine rate. The fast pole is the transient window
+    // (~2 ms) and the slow one is the reference (~120 ms): the gap between them
+    // is what makes an edge read as an edge rather than as programme.
+    float transientFastCoefficient = 0.0f;
+    float transientSlowCoefficient = 0.0f;
+    float transientGainCoefficient = 0.0f;
+
+    // -----------------------------------------------------------------------
+    //  Neural stage - one instance per channel, one model pointer shared because
+    //  the MODEL is read-only at run time and the model object itself holds no
+    //  per-channel state.
+    //
+    //  The per-channel state lives in NeuralStage itself (the input frame and the
+    //  recurrent hidden state), so the two channels need two instances; but the
+    //  loaded model is the same object, and sharing it is both correct and the
+    //  point - it is data, not a voice.
+    //
+    //  `neuralModel` is owned here (public, so the editor can install one from a
+    //  file) and the two stages below borrow it. `neuralMixSmoothed` is the
+    //  wet/dry ramp.
+    // -----------------------------------------------------------------------
+    NeuralStage neuralL;
+    NeuralStage neuralR;
+    SampleSmoother neuralMixSmoothed { sampleClock, false, false, 0.0f };
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessor)

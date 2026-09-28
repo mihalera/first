@@ -58,6 +58,17 @@ HEADER_PIECES = [
     # the noise tab's controls act on it, so a check that the NOISE trims and the
     # VINYL SPEED do what they claim has to run the shipping stage, not a copy.
     ("VinylStage", "struct VinylStage"),
+    # The transient shaper is extracted so its two claims can be measured rather
+    # than asserted in a comment: that at both amounts zero it is a bit-for-bit
+    # pass-through, and that a positive attack amount makes an edge sharper while
+    # a negative one rounds it. Under the harness it compiles exactly as shipped -
+    # it reaches for nothing the harness does not already provide.
+    ("TransientShaper", "struct TransientShaper"),
+    # The neural stage is extracted too, which is what proves the guard is honest:
+    # with J37_HAS_RTNEURAL 0 (the harness case) every member reduces to the
+    # pass-through, so the struct still compiles and still renders the input
+    # unchanged. A source that only compiled WITH the library would fail here.
+    ("NeuralStage", "struct NeuralStage"),
 ]
 
 IMPL_PIECES = [

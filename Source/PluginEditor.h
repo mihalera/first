@@ -263,7 +263,7 @@ private:
     // read at run time. The tab table is checked against controlCount by a
     // static_assert too, so a knob that no tab lists is a build error, not a knob
     // that silently disappears from the panel.
-    static constexpr std::size_t controlCount = 54;
+    static constexpr std::size_t controlCount = 58;
     static constexpr int tabColumns = 4;
     // Seven tabs: MACHINE, DRIVE, CHARACTER, NOISE, VINYL, SPACE, SETTINGS. The
     // seventh arrived with the four record faults (DUST / SCRATCH / WARP /
@@ -271,7 +271,7 @@ private:
     // page, which is exactly the crowding the tabs exist to avoid. VINYL gets its
     // own page because the four are one subject - the state of the record itself -
     // rather than four unrelated controls.
-    static constexpr int numTabs = 9;
+    static constexpr int numTabs = 10;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     void timerCallback() override;
@@ -388,6 +388,26 @@ private:
     // The UI-sounds switch, on the SETTINGS tab beside GL.
     juce::ToggleButton uiSoundsButton { "UI SOUNDS" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> uiSoundsAttachment;
+
+    // -----------------------------------------------------------------------
+    //  Neural model picker, on the DYNAMICS tab beside the NEURAL knob.
+    //
+    //  A model is a FILE, not a parameter: it never goes into a session, a
+    //  preset or an automation lane, so there is no parameter and no attachment
+    //  here. LOAD opens a file chooser, reads the JSON and hands the text to the
+    //  processor; CLEAR releases it. The status label reports which of the two
+    //  states the stage is in - "no model" or the loaded file's name - because
+    //  the NEURAL knob alone cannot tell a user whether the stage is working.
+    // -----------------------------------------------------------------------
+    juce::TextButton loadNeuralButton { "LOAD MODEL" };
+    juce::TextButton clearNeuralButton { "CLEAR" };
+    juce::Label neuralStatusLabel;
+    void loadNeuralModelFromFile();
+    void refreshNeuralStatus();
+    juce::String lastShownNeuralStatus;
+    // The loaded model's filename, kept so the readout can name it after a
+    // reload or a refresh. Empty when the stage holds no model.
+    juce::String loadedNeuralName;
 
     // The remaining choice parameters: the DI pad, the machine's track layout,
     // and the two EQ orders. Each is a list rather than a knob because its

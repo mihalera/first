@@ -824,6 +824,223 @@ void testMixDirection()
 }
 
 // -----------------------------------------------------------------------------
+//  5. The transient shaper is transparent at its neutral settings
+// -----------------------------------------------------------------------------
+
+/**
+    Renders the shipping TransientShaper over a signal and returns its output.
+
+    The three coefficients are built the same way resetSampleRateDependentState
+    builds them: onePoleCoefficient(Hz, rate) for the two detector poles and the
+    applied-gain smoother. Using the extracted onePoleCoefficient rather than a
+    retyped formula means a change to the coefficient convention reaches the test.
+*/
+std::vector<float> renderTransientShaper (const std::vector<float>& input,
+                                          float attack, float sustain, float mix)
+{
+    TransientShaper shaper;
+    const auto fastCoefficient = onePoleCoefficient (2.0f, static_cast<float> (kSampleRate));
+    const auto slowCoefficient = onePoleCoefficient (120.0f, static_cast<float> (kSampleRate));
+    const auto gainCoefficient = onePoleCoefficient (30.0f, static_cast<float> (kSampleRate));
+
+    std::vector<float> out;
+    out.reserve (input.size());
+
+    for (auto sample : input)
+    {
+        const float shaped = shaper.process (sample, attack, sustain,
+                                             fastCoefficient, slowCoefficient, gainCoefficient);
+        out.push_back (sample + (shaped - sample) * mix);
+    }
+
+    return out;
+}
+
+/** A train of exponentially-decaying bursts - a drum-like transient pattern. */
+std::vector<float> makeTransientTrain()
+{
+    constexpr double burstHz = 4.0;          // four hits a second
+    constexpr double decaySeconds = 0.05;
+    const auto samples = static_cast<std::size_t> (2.0 * kSampleRate);
+    std::vector<float> out;
+    out.reserve (samples);
+
+    for (std::size_t i = 0; i < samples; ++i)
+    {
+        const double time = static_cast<double> (i) / kSampleRate;
+        const double phase = std::fmod (time, 1.0 / burstHz);
+        const double envelope = std::exp (-phase / decaySeconds);
+        out.push_back (static_cast<float> (0.8 * envelope
+                                           * std::sin (kTwoPi * 220.0 * time)));
+    }
+
+    return out;
+}
+
+void testTransientShaperTransparentAtZero()
+{
+    std::printf ("\n5. The transient shaper is transparent at both amounts zero\n");
+
+    const auto input = makeTransientTrain();
+    const auto output = renderTransientShaper (input, 0.0f, 0.0f, 1.0f);
+
+    double worst = 0.0;
+    for (std::size_t i = 0; i < input.size(); ++i)
+        worst = juce::jmax (worst, std::fabs (static_cast<double> (output[i] - input[i])));
+
+    char label[160];
+    std::snprintf (label, sizeof label,
+                   "with ATTACK 0 and SUSTAIN 0 the output is the input (worst error %.3e)", worst);
+    check (worst == 0.0, label);
+}
+
+// -----------------------------------------------------------------------------
+//  6. ATTACK and SUSTAIN move the envelope the way their names say
+// -----------------------------------------------------------------------------
+
+/**
+    The peak-to-sustain ratio of a rendered burst train.
+
+    The transient is what the shaper acts on, so the measurement is the thing it
+    acts on: the peak level of the whole run against the average level of the
+    tails. A shaper with attack turned up raises the first and leaves the second,
+    so this ratio rises; a shaper that only changed gain would move both together
+    and the ratio would not.
+*/
+double peakToSustainRatio (const std::vector<float>& signal)
+{
+    double peak = 0.0;
+    double tailSum = 0.0;
+    std::size_t tailCount = 0;
+
+    for (std::size_t i = 0; i < signal.size(); ++i)
+    {
+        const auto magnitude = std::fabs (static_cast<double> (signal[i]));
+        peak = juce::jmax (peak, magnitude);
+
+        // The tails: the last third of each 250 ms burst, which is where the
+        // attack has long since passed and only the sustain is left.
+        const double time = static_cast<double> (i) / kSampleRate;
+        const double phase = std::fmod (time, 0.25);
+        if (phase > 0.1667)
+        {
+            tailSum += magnitude;
+            ++tailCount;
+        }
+    }
+
+    const double tailAverage = tailCount > 0 ? tailSum / static_cast<double> (tailCount) : 0.0;
+    return tailAverage > 1.0e-9 ? peak / tailAverage : 0.0;
+}
+
+void testTransientShaperAttackDirection()
+{
+    std::printf ("\n6. ATTACK sharpens when positive and softens when negative\n");
+
+    const auto input = makeTransientTrain();
+    const auto boosted = renderTransientShaper (input, 1.0f, 0.0f, 1.0f);
+    const auto softened = renderTransientShaper (input, -1.0f, 0.0f, 1.0f);
+
+    const double boostedRatio = peakToSustainRatio (boosted);
+    const double softenedRatio = peakToSustainRatio (softened);
+
+    std::printf ("     ATTACK +1 peak-to-tail ratio %.3f, ATTACK -1 %.3f\n",
+                 boostedRatio, softenedRatio);
+
+    char label[160];
+    std::snprintf (label, sizeof label,
+                   "ATTACK +1 raises the peak-to-tail ratio to %.3f (want > 1.0)", boostedRatio);
+    check (boostedRatio > 1.0, label);
+
+    std::snprintf (label, sizeof label,
+                   "ATTACK -1 lowers it to %.3f (want < 1.0)", softenedRatio);
+    check (softenedRatio < 1.0, label);
+}
+
+void testTransientShaperSustainDirection()
+{
+    std::printf ("\n7. SUSTAIN lengthens when positive and shortens when negative\n");
+
+    const auto input = makeTransientTrain();
+
+    // Sustained level (the tails), against the same run with the stage closed.
+    // Attack is held at 0 so the two runs differ only in what SUSTAIN did.
+    const auto neutral = renderTransientShaper (input, 0.0f, 0.0f, 1.0f);
+    const auto lifted = renderTransientShaper (input, 0.0f, 1.0f, 1.0f);
+    const auto shortened = renderTransientShaper (input, 0.0f, -1.0f, 1.0f);
+
+    const auto tailRms = [] (const std::vector<float>& signal)
+    {
+        double sum = 0.0;
+        std::size_t count = 0;
+        for (std::size_t i = 0; i < signal.size(); ++i)
+        {
+            const double time = static_cast<double> (i) / kSampleRate;
+            const double phase = std::fmod (time, 0.25);
+            if (phase > 0.1667)
+            {
+                sum += static_cast<double> (signal[i]) * signal[i];
+                ++count;
+            }
+        }
+        return count > 0 ? std::sqrt (sum / static_cast<double> (count)) : 0.0;
+    };
+
+    const double neutralTail = tailRms (neutral);
+    const double liftedTail = tailRms (lifted);
+    const double shortenedTail = tailRms (shortened);
+
+    std::printf ("     tail level: neutral %.4f, SUSTAIN +1 %.4f, SUSTAIN -1 %.4f\n",
+                 neutralTail, liftedTail, shortenedTail);
+
+    char label[160];
+    std::snprintf (label, sizeof label,
+                   "SUSTAIN +1 lifts the tails (%.4f vs %.4f)", liftedTail, neutralTail);
+    check (liftedTail > neutralTail, label);
+
+    std::snprintf (label, sizeof label,
+                   "SUSTAIN -1 shortens them (%.4f vs %.4f)", shortenedTail, neutralTail);
+    check (shortenedTail < neutralTail, label);
+}
+
+// -----------------------------------------------------------------------------
+//  8. The neural stage is inert without a model
+// -----------------------------------------------------------------------------
+
+void testNeuralStageIsTransparentWithoutAModel()
+{
+    std::printf ("\n8. The neural stage is a pass-through when no model is loaded\n");
+
+    // The harness compiles NeuralStage with J37_HAS_RTNEURAL 0, which is the
+    // shipping behaviour on any build where RTNeural was not fetched - and the
+    // same branch a shipping build takes when no model has been installed. Either
+    // way the claim is the same: the stage changes nothing.
+    NeuralStage stage;
+    check (! stage.isActive(), "a fresh stage reports no model loaded");
+
+    double worst = 0.0;
+    for (double x = -1.0; x <= 1.0; x += 0.125)
+    {
+        const auto in = static_cast<float> (x);
+
+        // Even at a fully wet setting, with no model there is nothing to blend
+        // toward, so the output must be the input exactly.
+        worst = juce::jmax (worst, std::fabs (static_cast<double> (stage.process (in, 1.0f) - in)));
+    }
+
+    char label[160];
+    std::snprintf (label, sizeof label,
+                   "process() returns its input at full wet with no model (worst error %.3e)", worst);
+    check (worst == 0.0, label);
+
+    // A model cannot be loaded from arbitrary text, and the failure must be a
+    // clean false rather than a crash - which is what makes the editor's
+    // file chooser safe to point at any file.
+    check (! stage.loadFromJson ("not a model"),
+           "loadFromJson refuses malformed text and returns false");
+}
+
+// -----------------------------------------------------------------------------
 //  Reference: what the old arrangement did, printed but not asserted
 // -----------------------------------------------------------------------------
 
@@ -856,6 +1073,10 @@ int main()
     testNoHarmonicsFromUndertones();
     testSilenceIsSilent();
     testMixDirection();
+    testTransientShaperTransparentAtZero();
+    testTransientShaperAttackDirection();
+    testTransientShaperSustainDirection();
+    testNeuralStageIsTransparentWithoutAModel();
     showOldArrangement();
     printChainSpectrum();
 

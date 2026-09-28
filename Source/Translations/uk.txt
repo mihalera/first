@@ -8,19 +8,25 @@
 //
 //  2. SENTENCE entries, which are everything else. The key is the English
 //     sentence itself, byte for byte as it appears in PluginEditor.cpp, and the
-//     value is its translation. tr() looks up whatever it is handed, so a
+//     value is its translation. xlat() looks up whatever it is handed, so a
 //     tooltip is written once, in English, where it is used - and translating it
-//     is one line here. See the note above tr() in PluginEditor.cpp.
+//     is one line here. See the note above xlat() in PluginEditor.cpp.
 //
 //  A sentence with no entry shows its English. That is deliberate: a
 //  half-translated plugin is better than one that shows the user a raw key, and
 //  an untranslated tooltip is the honest state of a work in progress rather
 //  than a bug. Add a line per sentence as it gets translated.
 //
-//  The keys below are the shared interaction hint and eight of the parameter
-//  tooltips. They are the ones the panel shows first and the ones a new user
-//  hovers first; the rest of the eighty-seven follow the same pattern, each key
-//  copied exactly from its tr() call in the source.
+//  The keys below are the shared interaction hint and the parameter tooltips
+//  the panel shows first: the MACHINE page, the new DYNAMICS page, and the
+//  NEURAL model picker. Each key is copied exactly from its xlat() call in the
+//  source, so it is looked up byte for byte; the remaining tooltips follow the
+//  same pattern and can be added a line at a time.
+//
+//  The transient shaper's two tooltips carry a dash in ATK / SUS because both
+//  controls are BIPOLAR and centred: negative softens or shortens, positive
+//  sharpens or lengthens. A translation that lost that would leave the user
+//  turning a knob with no idea which way does what.
 // =============================================================================
 
 "LANGUAGE_ENGLISH" = "English";
@@ -34,4 +40,15 @@
 "FLUTTER - fast shimmer of the transport, like the tape brushing the heads. 0 percent is perfectly steady. Default 18 percent." = "FLUTTER — швидке мерехтіння транспорту, як стрічка, що зачіпає головки. 0 відсотків — ідеально стабільно. Типове 18 відсотків.";
 "MIX - dry/wet crossfade. 0 percent is the untouched signal, 100 percent is fully through the tape. Default 50 percent." = "MIX — кросфейд сухого та вологого. 0 відсотків — недоторканий сигнал, 100 відсотків — повністю через стрічку. Типове 50 відсотків.";
 "WIDTH - stereo image after the tape. 0 percent is mono, 50 percent is the natural stereo width, 100 percent is extra wide. Default 50 percent." = "WIDTH — стереообраз після стрічки. 0 відсотків — моно, 50 відсотків — природна ширина, 100 відсотків — надто широкий. Типове 50 відсотків.";
+
+// -- DYNAMICS page: the transient shaper --------------------------------------
+"ATK - the leading edge of each event. The transient shaper looks at the signal's ENVELOPE rather than its waveform, so it can make a hit sharper without adding a harmonic: positive sharpens the attack (punch, snap, click), negative softens it (rounder, less percussive). Range -100 to +100 percent, neutral at 0." = "ATK — передній фронт кожної події. Шейпер транзієнтів дивиться на ОБВІДНУ сигналу, а не на його форму, тож може зробити удар різкішим, не додаючи гармонік: позитивне значення загострює атаку (панч, клац, удар), негативне — пом’якшує її (округліше, менш перкусійно). Діапазон від -100 до +100 відсотків, нейтрально на 0.";
+"SUS - what follows the attack: the body, the ring, the room. Positive lengthens it (fuller, more sustain), negative shortens it (tighter, more staccato). Like ATK it moves the envelope's level rather than the waveform, so the harmonics the machine produced are untouched. Range -100 to +100 percent, neutral at 0." = "SUS — те, що йде після атаки: тіло, дзвін, приміщення. Позитивне значення подовжує його (повніше, більше сустейну), негативне — вкорочує (щільніше, більш стакато). Як і ATK, воно рухає рівень обвідної, а не форму хвилі, тож гармоніки, які створила машина, залишаються недоторканими. Діапазон від -100 до +100 відсотків, нейтрально на 0.";
+"TR MIX - how much of the transient-shaped signal reaches the output. At 0 the stage is absent and the signal passes untouched; at 100 it is the fully shaped one. In between the two are crossfaded, so the amount of shaping can be dialled in rather than switched. Default 0 percent." = "TR MIX — скільки обробленого шейпером сигналу потрапляє на вихід. На 0 стадія відсутня і сигнал проходить недоторканим; на 100 — це повністю оброблений сигнал. Між ними обидва кросфейдяться, тож кількість обробки можна виставити, а не вмикати. Типове 0 відсотків.";
+
+// -- DYNAMICS page: the neural stage and its model picker ---------------------
+"NEURAL - the wet/dry position of the optional learned model. The model is not a knob: it is a file loaded with LOAD MODEL on the DYN tab, and the network itself (a Dense net, an LSTM, a GRU) is whatever the file describes. This control blends the model's output with the untouched signal, so it is always a crossfade. At 0, or with no model loaded, the stage is transparent. Default 0 percent." = "NEURAL — позиція сухий/вологий для опціональної вивченої моделі. Модель — це не крутилка: це файл, завантажений кнопкою LOAD MODEL на вкладці DYN, а сама мережа (Dense net, LSTM, GRU) — те, що описано у файлі. Ця крутилка змішує вихід моделі з недоторканим сигналом, тож це завжди кросфейд. На 0, або коли модель не завантажена, стадія прозора. Типове 0 відсотків.";
+"LOAD MODEL - reads an RTNeural model file (its JSON description) and installs it as the plugin's optional learned nonlinearity. The network is whatever the file describes - a Dense net, an LSTM, a GRU - and it runs per channel, after the tape stage. NEURAL sets how much of its output reaches the signal; at 0 it is silent. Loading a model does not change any parameter and is not saved with the session." = "LOAD MODEL — читає файл моделі RTNeural (її JSON-опис) і встановлює його як опціональну вивчену нелінійність плагіна. Мережа — те, що описано у файлі — Dense net, LSTM або GRU — і вона працює поканально, після стадії стрічки. NEURAL задає, скільки її виходу потрапляє в сигнал; на 0 вона мовчить. Завантаження моделі не змінює жодного параметра і не зберігається разом із сесією.";
+"CLEAR - releases the loaded model, returning the NEURAL stage to its transparent pass-through." = "CLEAR — звільняє завантажену модель, повертаючи стадію NEURAL до прозорого проходження сигналу.";
+
 " Hold Shift for fine control, mouse wheel for small steps, double-click to reset." = " Утримуйте Shift для точного керування, коліще миші — для невеликих кроків, подвійний клік — для скидання.";

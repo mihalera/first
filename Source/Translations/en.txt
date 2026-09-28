@@ -8,9 +8,9 @@
 //
 //  2. SENTENCE entries, which are the bulk of a real translation file. The key
 //     is the English sentence itself, exactly as it appears in the source, and
-//     the value is its translation. tr() in PluginEditor.cpp looks up whatever
+//     the value is its translation. xlat() in PluginEditor.cpp looks up whatever
 //     it is given, so a tooltip is written once, in English, where it is used -
-//     and a translation is one line here. See the note above tr() for why the
+//     and a translation is one line here. See the note above xlat() for why the
 //     English is the key rather than a short name like "DRIVE_TIP".
 //
 //  A sentence with no entry here shows its English, which is correct: a

@@ -427,6 +427,10 @@ FirstAudioProcessor::FirstAudioProcessor()
     stLinkParam = parameters.getRawParameterValue ("st_link");
     delaySyncParam = parameters.getRawParameterValue ("delay_sync");
     delayRateParam = parameters.getRawParameterValue ("delay_rate");
+    transientAttackParam = parameters.getRawParameterValue ("transient_attack");
+    transientSustainParam = parameters.getRawParameterValue ("transient_sustain");
+    transientMixParam = parameters.getRawParameterValue ("transient_mix");
+    neuralMixParam = parameters.getRawParameterValue ("neural_mix");
 
     // Four fixed oversampling engines (off / 2x / 4x / 8x). Each owns its own filter
     // state, so switching between them is glitch-free even mid-render, and the
@@ -558,11 +562,20 @@ FirstAudioProcessor::FirstAudioProcessor()
         //   spindown     the same argument: it is how the machine STOPS, so
         //               loading a preset with it on would stop the machine for
         //               a user who never asked for that.
+        //   transient_*  and neural_mix. All four default to their NEUTRAL value -
+        //               both transient amounts are 0, both mixes are 0 - so a
+        //               preset that does not state them loads to the stage being
+        //               absent, which is exactly what every preset written before
+        //               these controls existed intends. Stating them would also
+        //               mean every factory preset had to be rewritten, which is
+        //               the churn the single-source registries below exist to
+        //               avoid.
         //
         // Anything else missing from every preset is a bug, and the jassert
         // says which id by name rather than just failing.
         const std::set<juce::String> intentionallyNotPresettable {
-            "bypass", "delta", "ui_sounds", "language", "transport", "spindown"
+            "bypass", "delta", "ui_sounds", "language", "transport", "spindown",
+            "transient_attack", "transient_sustain", "transient_mix", "neural_mix"
         };
 
         for (const auto& id : registered)
@@ -1987,6 +2000,54 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                                                  "1/4 T", "1/8 T", "1/4 D" },
                                                             2));
 
+    // =========================================================================
+    //  TRANSIENT SHAPER - attack and sustain, the studio's transient designer.
+    //
+    //  Every other stage in this plugin changes the WAVEFORM: the saturation core
+    //  bends it, the head losses filter it, the delay repeats it. This one changes
+    //  the signal's ENVELOPE - how its own amplitude moves over time - which is a
+    //  different axis entirely, and the only way to get punch or tightness without
+    //  touching the harmonics the machine just produced. It runs AFTER the tape
+    //  stage for that reason, on the finished signal, so it shapes what the machine
+    //  made rather than feeding a shaper into the nonlinearity.
+    //
+    //  ATTACK and SUSTAIN are deliberately centred on 0 (no effect) rather than on
+    //  a 0..100 sweep, because both are two-sided: negative shortens, positive
+    //  lengthens. 0 % is the neutral that leaves the stage transparent, so an
+    //  existing session - which has neither control - loads unchanged.
+    //
+    //  TRANSIENT MIX is how much of the shaped signal is in the output, exactly
+    //  like VINYL MIX or MIX itself: it crossfades to the unshaped signal, so the
+    //  stage can be A/B'd and blended rather than switched.
+    // =========================================================================
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "transient_attack", 1 },
+                                                            "Transient Attack",
+                                                            juce::NormalisableRange<float> (-1.0f, 1.0f, 0.001f),
+                                                            0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "transient_sustain", 1 },
+                                                            "Transient Sustain",
+                                                            juce::NormalisableRange<float> (-1.0f, 1.0f, 0.001f),
+                                                            0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "transient_mix", 1 },
+                                                            "Transient Mix",
+                                                            percentageRange (0.50f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+    // =========================================================================
+    //  NEURAL stage - a learned model run as a per-channel nonlinearity.
+    //
+    //  NEURAL MIX is the wet/dry position, and it defaults to 0: with no model
+    //  loaded the stage is inert anyway, but defaulting the MIX to 0 as well means
+    //  even a session that unexpectedly carries a model still loads to exactly the
+    //  sound an earlier build made. The model itself is not a parameter - it is
+    //  data, loaded from the editor - so the parameter set never has to change
+    //  when a model is swapped.
+    // =========================================================================
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "neural_mix", 1 },
+                                                            "Neural Mix",
+                                                            percentageRange (0.50f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+
     return layout;
 }
 
@@ -2374,6 +2435,37 @@ void FirstAudioProcessor::resetSampleRateDependentState()
     // formula change.
     activeTapeType = -1;
     tapeTypeChangeCountdown = 0;
+
+    // The transient shaper's state is envelope-based, so a rate change invalidates it:
+    // resuming from a stale envelope would read as a false transient on the first
+    // block. The stage is reset and its three controls ramped like every other gain.
+    transientL.reset();
+    transientR.reset();
+    transientAttackSmoothed.reset (sampleRate, controlRampSeconds);
+    transientAttackSmoothed.setCurrentAndTargetValue (
+        transientAttackParam != nullptr ? transientAttackParam->load() : 0.0f);
+    transientSustainSmoothed.reset (sampleRate, controlRampSeconds);
+    transientSustainSmoothed.setCurrentAndTargetValue (
+        transientSustainParam != nullptr ? transientSustainParam->load() : 0.0f);
+    transientMixSmoothed.reset (sampleRate, controlRampSeconds);
+    transientMixSmoothed.setCurrentAndTargetValue (
+        transientMixParam != nullptr ? transientMixParam->load() : 0.0f);
+
+    // ~2 ms transient window, ~120 ms programme reference: the gap between the two
+    // is what the detector reads as an edge. The gain smoother is slower than the
+    // control ramp so the ride stays a ride rather than following the waveform.
+    transientFastCoefficient = onePoleCoefficient (2.0f, sampleRate);
+    transientSlowCoefficient = onePoleCoefficient (120.0f, sampleRate);
+    transientGainCoefficient = onePoleCoefficient (30.0f, sampleRate);
+
+    // The neural stage's recurrent state is let go of on a rate change for the same
+    // reason the shaper's is: resuming a hidden state from a different rate would
+    // produce a step. The model itself is untouched.
+    neuralL.reset();
+    neuralR.reset();
+    neuralMixSmoothed.reset (sampleRate, controlRampSeconds);
+    neuralMixSmoothed.setCurrentAndTargetValue (
+        neuralMixParam != nullptr ? neuralMixParam->load() : 0.0f);
 
     // The oversampling filters hold per-rate state (their half-band coefficients are
     // tuned to the incoming rate), so they must be flushed on a rate change or the
@@ -2907,6 +2999,36 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     presenceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, presenceAmount));
     cabinetSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, cabinetAmount));
     ampBiasSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, ampBiasAmount));
+
+    // -----------------------------------------------------------------------
+    //  Transient shaper and neural stage.
+    //
+    //  Four controls, read once per block and fed to smoothers like the rest.
+    //  The transient stage's two DETECTOR poles are the only rate-dependent
+    //  numbers here, and they are block-rate constants for the same reason every
+    //  other coefficient is: they cannot change within a block. The stage's own
+    //  gain smoother is one of them, so it costs no exp() in the loop.
+    // -----------------------------------------------------------------------
+    const auto transientAttackAmount = transientAttackParam != nullptr
+                                           ? transientAttackParam->load() : 0.0f;
+    const auto transientSustainAmount = transientSustainParam != nullptr
+                                            ? transientSustainParam->load() : 0.0f;
+    const auto transientMixAmount = transientMixParam != nullptr
+                                        ? transientMixParam->load() : 0.0f;
+    const auto neuralMixAmount = neuralMixParam != nullptr ? neuralMixParam->load() : 0.0f;
+
+    transientAttackSmoothed.setTargetValue (juce::jlimit (-1.0f, 1.0f, transientAttackAmount));
+    transientSustainSmoothed.setTargetValue (juce::jlimit (-1.0f, 1.0f, transientSustainAmount));
+    transientMixSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, transientMixAmount));
+    neuralMixSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, neuralMixAmount));
+
+    // ~2 ms transient window against a ~120 ms programme reference: the ratio of
+    // the two is what the detector reads as an edge, so the gap between them is
+    // the effect's whole time constant. 30 ms on the applied gain keeps the ride
+    // a ride rather than a per-sample multiply of the envelope's own wobble.
+    transientFastCoefficient = onePoleCoefficient (2.0f, engineSampleRate);
+    transientSlowCoefficient = onePoleCoefficient (120.0f, engineSampleRate);
+    transientGainCoefficient = onePoleCoefficient (30.0f, engineSampleRate);
 
     // -----------------------------------------------------------------------
     //  Preamp, distortion, tape condition, reverb, vinyl and the two modes.
@@ -5401,6 +5523,73 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                   channel, outputEqMidCoefficient);
         }
 
+        // -------------------------------------------------------------------
+        //  NEURAL stage.
+        //
+        //  A learned model run as a per-channel nonlinearity, in the wet path
+        //  and after the machine's own curve. It is deliberately placed AFTER
+        //  the tape and BEFORE the transient shaper: a model that has been
+        //  trained on a piece of hardware is itself a saturation curve, so it
+        //  belongs beside the hand-written one rather than after the envelope
+        //  stage - and running it before the shaper means the shaper can still
+        //  sharpen whatever the model produced, which is the order an engineer
+        //  would use the two.
+        //
+        //  At NEURAL MIX 0, or with no model loaded, this is a bit-for-bit
+        //  pass-through, so a build without a model is exactly the plugin it was
+        //  before this stage existed. The model is read-only at run time; the
+        //  per-channel state lives in each stage.
+        // -------------------------------------------------------------------
+        const float neuralMixNow = neuralMixSmoothed.getCurrentValue();
+        if (neuralMixNow > 1.0e-5f)
+        {
+            for (int channel = 0; channel < activeChannels; ++channel)
+            {
+                auto& neural = channel == 0 ? neuralL : neuralR;
+                outputSignal[static_cast<std::size_t> (channel)] =
+                    neural.process (outputSignal[static_cast<std::size_t> (channel)], neuralMixNow);
+            }
+        }
+
+        // -------------------------------------------------------------------
+        //  TRANSIENT SHAPER.
+        //
+        //  Attack and sustain, applied to the finished wet signal. It is the
+        //  only stage in the chain that changes the ENVELOPE rather than the
+        //  waveform, which is why it sits here: it moves the level of events
+        //  without adding a harmonic, so the character the machine and the model
+        //  just produced survives intact.
+        //
+        //  At both amounts zero the stage is transparent - the envelopes still
+        //  run so the controls do not restart from rest, but the applied gain
+        //  stays exactly 1. TRANSIENT MIX crossfades the shaped signal against
+        //  the unshaped one, so the stage can be blended rather than switched.
+        // -------------------------------------------------------------------
+        const float transientMixNow = transientMixSmoothed.getCurrentValue();
+        const float transientAttackNow = transientAttackSmoothed.getCurrentValue();
+        const float transientSustainNow = transientSustainSmoothed.getCurrentValue();
+
+        if (transientMixNow > 1.0e-5f
+            && (std::abs (transientAttackNow) > 1.0e-5f || std::abs (transientSustainNow) > 1.0e-5f))
+        {
+            for (int channel = 0; channel < activeChannels; ++channel)
+            {
+                auto& shaper = channel == 0 ? transientL : transientR;
+                const auto index = static_cast<std::size_t> (channel);
+
+                const float shaped = shaper.process (outputSignal[index],
+                                                     transientAttackNow, transientSustainNow,
+                                                     transientFastCoefficient,
+                                                     transientSlowCoefficient,
+                                                     transientGainCoefficient);
+
+                // The wet/dry crossfade is the MIX control: the shaper is the
+                // wet leg, the untouched signal the dry one, so MIX 0 is exactly
+                // the plugin without the stage.
+                outputSignal[index] += (shaped - outputSignal[index]) * transientMixNow;
+            }
+        }
+
         if (activeChannels == 2)
         {
             // ------------------------------------------------------------------
@@ -6003,6 +6192,31 @@ FirstAudioProcessor::TelemetryFrame FirstAudioProcessor::getTelemetry() const
     fallback.antiPhaseAmount = telemetryAntiPhase.load (std::memory_order_relaxed);
     fallback.transportRamp = telemetryPlatter.load (std::memory_order_relaxed);
     return fallback;
+}
+
+//==============================================================================
+bool FirstAudioProcessor::loadNeuralModel (const juce::String& modelJson)
+{
+    // A model is installed on BOTH channel stages at once. They share the same
+    // model object, but each holds its own recurrent state, and a load must not
+    // leave one channel on the old model and the other on the new - which is a
+    // stereo mismatch in the nonlinearity itself, the one place it cannot be
+    // tolerated. The parse happens on the message thread; the audio thread only
+    // ever sees the finished pointer.
+    const bool loaded = neuralL.loadFromJson (modelJson);
+
+    if (loaded)
+        neuralR.loadFromJson (modelJson);
+    else
+        neuralR.clear();
+
+    return loaded;
+}
+
+void FirstAudioProcessor::clearNeuralModel()
+{
+    neuralL.clear();
+    neuralR.clear();
 }
 
 //==============================================================================
