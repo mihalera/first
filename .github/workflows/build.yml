@@ -395,6 +395,38 @@ jobs:
             exit 1
           }
 
+      # Ad-hoc signing. There is no Developer ID certificate in CI (see README
+      # "Signing and notarisation"), so the bundles leave the build unsigned -
+      # except that an arm64 slice MUST be signed for macOS to execute it at
+      # all, even ad-hoc. "--sign -" writes exactly that: a signature with no
+      # identity, which carries no notarisation and no trust, but satisfies the
+      # arm64 requirement and keeps a downloaded build one "xattr -cr" away from
+      # loading (README, the macOS user section). --deep is deprecated for
+      # signing *distributable* products but is the right tool here: it reaches
+      # the nested executables (the AUv3 appex) that a parent-only signing
+      # would leave unsigned. Paths: JUCE lays the AU bundle under the AU/
+      # format folder - "Components" is the name of the INSTALLED folder under
+      # ~/Library/Audio/Plug-Ins, not of the build tree - and the bundle name
+      # ends .vst3, not .vstizer. Each bundle is located by pattern rather than
+      # by name so a PRODUCT_NAME change cannot silently break the step.
+      - name: Ad-hoc codesign the plugin bundles
+        run: |
+          set -euo pipefail
+          BASE="build/first_artefacts/${{ env.BUILD_TYPE }}"
+
+          sign() {
+            local found
+            found=$(find "$BASE/$1" -maxdepth 1 -name "*.$2" -print -quit 2>/dev/null || true)
+            if [ -n "$found" ]; then
+              echo "codesign (ad-hoc): $found"
+              codesign --force --deep --sign - "$found"
+            fi
+          }
+
+          sign VST3 vst3
+          sign AU component
+          sign AUv3 appex
+
       # JUCE's CMake build lays the bundles out as
       #   <build>/first_artefacts/<Config>/<FORMAT>/<PRODUCT_NAME>.<extension>
       # so the paths are Release/VST3/*.vst3, Release/AU/*.component and
@@ -608,4 +640,126 @@ jobs:
           name: NonlinAnalogSaturator-VST3-Linux
           path: ${{ steps.vst3.outputs.bundle }}
           if-no-files-found: error
+
+  # ============================================================================
+  #  Android - Standalone (the only format JUCE's CMake layer produces there)
+  #
+  #  JUCE's CMake plugin-kind list reduces to Standalone when CMAKE_SYSTEM_NAME
+  #  is Android, and there is no Gradle exporter in the CMake layer - so this
+  #  job proves the whole codebase (plugin DSP, editor, and the six recently
+  #  added third-party libraries) compiles for the NDK. The APK packaging is a
+  #  separate step for a machine with the full SDK; see README, the Android
+  #  section.
+  # ============================================================================
+  build-android:
+    name: build-android (Standalone, arm64-v8a)
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Verify JUCE submodule is present
+        run: |
+          if [ ! -f "JUCE/CMakeLists.txt" ]; then
+            echo "JUCE submodule missing - CMakeLists.txt adds it via add_subdirectory(JUCE)."
+            echo "Run: git submodule update --init --recursive"
+            exit 1
+          fi
+          ls JUCE/modules | head -n 5
+
+      - name: Install Linux build dependencies
+        run: |
+          # The compiler the NDK toolchain file needs on the host is only the
+          # cross driver, but the JUCE configure still probes for the Linux GUI
+          # pkg-config packages. Installing them keeps configure from diverging
+          # between this job and build-linux. The NDK itself comes from the
+          # preinstalled ANDROID_NDK_LATEST_HOME on the runner.
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends \
+            libasound2-dev libjack-jackd2-dev \
+            libfreetype6-dev libfontconfig1-dev libcurl4-openssl-dev \
+            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
+            libxinerama-dev libxrandr-dev libxrender-dev \
+            libgl1-mesa-dev libglu1-mesa-dev \
+            libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Install the Android NDK
+        run: |
+          # The ubuntu runners ship several NDKs under $ANDROID_HOME/ndk/ and
+          # ANDROID_NDK_LATEST_HOME points at the newest. The NDK bundles its
+          # own Clang, so nothing else is needed to cross-compile.
+          echo "NDK: $ANDROID_NDK_LATEST_HOME"
+          ls "$ANDROID_NDK_LATEST_HOME" | head -n 5
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: '3.x'
+
+      - name: Install Intel IPP (PyPI wheels)
+        run: |
+          # Same mechanism as the Linux job (see its step for the full story):
+          # Intel's static IPP from PyPI, the prefix located by finding ipp.h
+          # and exported as IPPROOT. In this cross-build the probe is harmless:
+          # the wheel libraries are x86 archives, an ARM link line names no IPP
+          # target, and J37_HAVE_IPP therefore stays undefined.
+          python -m pip install --upgrade pip
+          python -m pip install ipp-static
+          prefix=$(python - <<'PYIPP'
+          import glob, os, site
+          found = ""
+          for base in site.getsitepackages():
+              for up in range(1, 5):
+                  p = os.path.normpath(os.path.join(base, *[".."] * up))
+                  if glob.glob(os.path.join(p, "include", "ipp.h")):
+                      found = p
+                      break
+              if found:
+                  break
+          print(found)
+          PYIPP
+          )
+          test -n "$prefix" || { echo "could not locate the ipp-include prefix"; exit 1; }
+          echo "Intel IPP prefix: $prefix"
+          echo "IPPROOT=$prefix" >> "$GITHUB_ENV"
+
+      - name: Configure CMake (Android Cross-Build)
+        run: |
+          cmake -S . -B build-android \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DCMAKE_SYSTEM_NAME=Android \
+            -DCMAKE_ANDROID_API=24 \
+            -DCMAKE_ANDROID_NDK="$ANDROID_NDK_LATEST_HOME" \
+            -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a
+
+      - name: Build
+        run: |
+          set -o pipefail
+          cmake --build build-android --config ${{ env.BUILD_TYPE }} --parallel 2>&1 |
+            grep -E 'error|warning|Error|FAILED|BUILD' || true
+
+          cmake --build build-android --config ${{ env.BUILD_TYPE }} --parallel > /dev/null 2>&1 || {
+            echo "Build failed - re-running with full output:"
+            cmake --build build-android --config ${{ env.BUILD_TYPE }} --parallel
+            exit 1
+          }
+
+      - name: Verify the Android Standalone library was produced
+        run: |
+          set -euo pipefail
+          so=$(find build-android -name "*.so" -print -quit)
+          if [ -z "$so" ]; then
+            echo "MISSING: no .so produced - the Standalone target did not build"
+            find build-android -maxdepth 4 -type f | head -40
+            exit 1
+          fi
+          echo "OK: $so"
+          file "$so"
+          # It must be an arm64 ELF - the cross-compilation actually happened.
+          file "$so" | grep -q "aarch64" || {
+            echo "The produced library is not aarch64"; exit 1;
+          }
 

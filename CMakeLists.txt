@@ -12,6 +12,8 @@
 #     Windows : Visual Studio / x64                -> VST3
 #     macOS   : Xcode / universal (arm64 + x86_64) -> VST3, AU, AUv3
 #     Linux   : GCC / Clang x64                    -> VST3
+#     Android : NDK (arm64-v8a)                    -> Standalone (the only format
+#                                                    JUCE's CMake layer produces there)
 #
 #   AU and AUv3 are Apple-only formats. JUCE compiles them to nothing on
 #   Windows and Linux, so the FORMATS list below is safe to share between platforms.
@@ -236,6 +238,12 @@ target_link_libraries(first
         yasio
         dywapitchtrack
         PFFFT
+        RTNeural
+        dr_libs
+        SndFile::sndfile
+        yin_pitch
+        pitch_detector
+        dattorro_verb
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
@@ -277,6 +285,15 @@ j37_apply_macos_settings(first)
 j37_apply_windows_settings(first)
 
 # ------------------------------------------------------------------------------
+#  Android. See cmake/J37Platform.cmake (j37_apply_android_settings) for the
+#  detail; the short version is that CMake cannot host an Android app - Gradle
+#  owns the APK, the manifest, the resources and the signing - so CMake builds
+#  the plugin's Standalone wrapper as a shared library into a Gradle project
+#  skeleton, and Gradle does everything a phone needs around it.
+# ------------------------------------------------------------------------------
+j37_apply_android_settings(first)
+
+# ------------------------------------------------------------------------------
 #  Summary
 # ------------------------------------------------------------------------------
 message(STATUS "")
@@ -296,6 +313,7 @@ message(STATUS "  Libraries   : chowdsp_utils, melatonin_inspector, melatonin_bl
 message(STATUS "                signalsmith-stretch, fftconvolver, imgui, iPlug2 (source only)")
 message(STATUS "                chowcentaur, vcv_prototype, rack, soundpipe, aubio (source only)")
 message(STATUS "                farbot, readerwriterqueue, kissfft, pocketfft, yasio, dywapitchtrack, pffft")
+message(STATUS "                RTNeural, dr_libs, sndfile, yin_pitch, pitch_detector (MPM), dattorro_verb")
 if(J37_HAVE_VDSP)
     message(STATUS "  Vector libs : Apple vDSP (Accelerate)")
 elseif(APPLE)

@@ -165,4 +165,71 @@ function(j37_apply_windows_settings target)
         # build with this many translation units.
         target_compile_options(${target} PRIVATE /Zf)
     endif()
+endfunction()# ------------------------------------------------------------------------------
+#  Android
+# ------------------------------------------------------------------------------
+#  What "building for Android" can mean here, given what JUCE's CMake support
+#  actually is. JUCE's CMake layer compiles plugin formats from the platform
+#  kind list, and that list reduces to Standalone alone on Android - VST3 and
+#  AU are explicitly excluded when CMAKE_SYSTEM_NAME is Android
+#  (JUCEModuleSupport.cmake, _juce_get_platform_plugin_kinds). There is also no
+#  Gradle exporter: the Projucer wrote an Android Studio project, but CMake
+#  ships nothing equivalent, and the mobile hosts an APK could contain do not
+#  exist for desktop plugin formats anyway.
+#
+#  So Android support is the Standalone wrapper built as a shared library for
+#  the NDK (that is what juce_add_plugin produces for every format target when
+#  CMAKE_SYSTEM_NAME is Android - _juce_link_plugin_wrapper), and a Gradle
+#  project skeleton that loads it as an external native build. The activity
+#  classes, manifest, resources, icons and signing all live on the Gradle side
+#  because an APK cannot be produced from CMake: this is the same division
+#  every NDK consumer has, not a limitation of this project.
+#
+#  Required toolchain: the Android NDK (r23+), either via Android Studio's SDK
+#  Manager or commandlinetools, and CMake 3.22+ inside that SDK. Configure
+#  through Gradle (recommended - it drives the NDK for you) or by hand:
+#
+#      cmake -S . -B build-android \
+#          -DCMAKE_SYSTEM_NAME=Android \
+#          -DCMAKE_ANDROID_API=24 \
+#          -DCMAKE_ANDROID_NDK=<ndk path> \
+#          -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a
+#
+#  minSdkVersion 24 is the floor the JUCE modules need; the JUCE runtimes want
+#  it, and 24 covers ~97% of active devices. ARMEABI-V7A can be added as a
+#  second ABI but doubles build time for the shrinking 32-bit device base.
+function(j37_apply_android_settings target)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
+        return()
+    endif()
+
+    # Every format target JUCE created for this plugin (SharedCode plus one per
+    # format kind) is a SHARED library on Android and is what the APK's
+    # PackageManager loads. They all carry the same rpath-less conventions
+    # Gradle expects, so nothing per-target is needed beyond what JUCE set;
+    # this block exists to state the project's choices and to fail early on
+    # settings that only make sense on the desktop.
+
+    # The audio backends: JUCE bundles Oboe and its OpenSL ES fallback inside
+    # juce_audio_devices, so there is nothing to link from the NDK. The GL ES
+    # version for the best-effort OpenGL panel renderer is selected by the
+    # module layer (GL ES 3.0 where available); no extra link flags are needed.
+
+    # The desktop-only juce_webbrowser backend is already off project-wide
+    # (JUCE_WEB_BROWSER=0 in the top-level file), which is also what Android
+    # wants - JUCE's Android webview path needs the activity helpers a
+    # generated Gradle project would provide.
+
+    # Android requires every shared library to declare its STL. JUCE's module
+    # layer uses the C++ standard library throughout, so c++_static is the
+    # correct choice for a single .so that owns its whole process (the Standalone
+    # app); a plugin collection sharing one process would switch to c++_shared.
+    set(CMAKE_ANDROID_STL_TYPE "c++_static" PARENT_SCOPE)
+
+    message(STATUS "Android: Standalone wrapper as a shared library for the NDK")
+    message(STATUS "  min API     : ${CMAKE_ANDROID_API}")
+    message(STATUS "  ABI         : ${CMAKE_ANDROID_ARCH_ABI}")
+    message(STATUS "  STL         : c++_static (set CMAKE_ANDROID_STL_TYPE to change)")
+    message(STATUS "  Next step   : point a Gradle project's externalNativeBuild at "
+                   "this CMakeLists (see README, the Android section)")
 endfunction()
