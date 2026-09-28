@@ -3357,7 +3357,7 @@ void FirstAudioProcessorEditor::resized()
     //   line 4 (y + 146)- PRESET | factory box | USER box | SAVE | DEL | A/B | undo | redo
     //                     | badge.
     // The badge keeps clear air above and below it, and the deck divider never
-    // crosses it: the deck is now 200 px, so the divider rides at the bottom of line 4.
+    // crosses it: the deck is now 262 px, so the divider rides below the badge band.
     deckHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 6, 150, 16);
 
     // The build id rides the deck's heading strip, right-aligned and stopping short of
@@ -3374,7 +3374,8 @@ void FirstAudioProcessorEditor::resized()
     speedBox.setBounds (tapeTypeBox.getRight() + 62, layout.deck.getY() + 32, 104, 32);
     bypassButton.setBounds (speedBox.getRight() + 18, layout.deck.getY() + 32, 92, 32);
     deltaButton.setBounds (bypassButton.getRight() + 6, layout.deck.getY() + 32, 74, 32);
-    deckHintLabel.setBounds (deltaButton.getRight() + 14, layout.deck.getY() + 34, 160, 28);
+    // (deckHintLabel is positioned on the transport line, further down: it now
+    // carries the live machine state rather than a static caption.)
 
     // The five type switches share a second deck row, under the model row. Their
     // labels ride the same convention - text above, control below - so the row
