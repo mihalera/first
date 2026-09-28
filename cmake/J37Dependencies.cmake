@@ -496,12 +496,52 @@ CPMAddPackage(
 j37_declare_header_only_library(dr_libs "${dr_libs_SOURCE_DIR}")
 
 # ==============================================================================
-#  libsndfile is deliberately NOT fetched. Its 1.2.2 CMakeLists opens with
-#  cmake_minimum_required(VERSION 3.1..3.18), and CMake 4.x - the release the
-#  current CI runners ship - removed compatibility with minimums below 3.5, so
-#  configuring it aborts the whole build (surfaced on the macOS and Windows
-#  runners). Re-add it pinned to a release whose minimum CMake is 3.5 or newer.
+#  libsndfile - the C library for reading and writing sampled audio.
+#
+#  It was left out of the first pass because its newest RELEASE, 1.2.2, opens
+#  with cmake_minimum_required(VERSION 3.1..3.18) and CMake 4.x - the release
+#  the current CI runners ship - dropped compatibility with minimums below 3.5,
+#  so configuring it aborted the whole build on the macOS and Windows runners.
+#  1.2.2 is still the newest release (checked: the tag list has not moved past
+#  it), so waiting for a release would have meant waiting indefinitely.
+#
+#  The fix is the range form rather than a version bump: master opens with
+#  cmake_minimum_required(VERSION 3.5...4.0). The ...4.0 upper bound is what
+#  matters - it declares the policy range up to CMake 4, so a 4.x caller
+#  configures it instead of refusing it. So the pin is a master commit, and the
+#  note about re-pinning on the next release stays true but is no longer
+#  blocking: when 1.2.3 ships, prefer the tag.
+#
+#  Options, all of them off upstream defaults, because this is vendored into a
+#  plugin and the defaults pull in the world:
+#    ENABLE_EXTERNAL_LIBS  FLAC / Vorbis / Opus, and the only path that would
+#                          need a pkg-config find_package
+#    ENABLE_MPEG           the same, via the system libmpeg
+#    BUILD_PROGRAMS        sndfile-info, sndfile-convert and friends - command
+#                          line tools, which have no place in an audio plugin
+#                          and are what pulls in the man page machinery
+#    BUILD_TESTING         upstream's own test programs
+#    BUILD_EXAMPLES        ditto
+#    BUILD_CMAKE_LIB_PACKAGE
+#                          the export/install rules for a CMake package
+#
+#  The result is a self-contained static `sndfile` target: C only, no external
+#  codec, no host tooling (verified by configuring and building just this
+#  target - libsndfile.a links with nothing).
 # ==============================================================================
+CPMAddPackage(
+    NAME sndfile
+    GITHUB_REPOSITORY libsndfile/libsndfile
+    GIT_TAG b9103bd48b6c8fb517ae737fe3baee0c718b804c
+    EXCLUDE_FROM_ALL YES
+    SYSTEM YES
+    OPTIONS
+        "ENABLE_EXTERNAL_LIBS OFF"
+        "ENABLE_MPEG OFF"
+        "BUILD_PROGRAMS OFF"
+        "BUILD_TESTING OFF"
+        "BUILD_EXAMPLES OFF"
+        "BUILD_CMAKE_LIB_PACKAGE OFF")
 
 # ==============================================================================
 #  YIN pitch tracking - ashokfernandez/Yin-Pitch-Tracking, the embedded-minded

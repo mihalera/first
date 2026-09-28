@@ -365,6 +365,22 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tracksAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> inputEqOrderAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> outputEqOrderAttachment;
+
+    // The four corner switches: one per equaliser, one per filter. The corner
+    // knobs already bypass themselves at the ends of their travel, but that is
+    // a FALLBACK, not a control - a user who wants the equaliser's high-pass
+    // gone has to find the knob's end stop to get it, and then cannot tell the
+    // filter apart from a filter sitting at its bypass. These are the explicit
+    // answer, and they are pill switches rather than knobs because they are
+    // state, like GL and the mode button.
+    juce::ToggleButton inputEqHpButton { "HP" };
+    juce::ToggleButton inputEqLpButton { "LP" };
+    juce::ToggleButton outputEqHpButton { "HP" };
+    juce::ToggleButton outputEqLpButton { "LP" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> inputEqHpAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> inputEqLpAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> outputEqHpAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> outputEqLpAttachment;
     // Transport: STOP / PLAY / START as three buttons rather than a combo, because
     // the whole point of the gesture is that START and STOP are momentary presses
     // and PLAY is a resting state. A combo made the user open a menu to stop a
@@ -451,10 +467,12 @@ private:
     juce::ComboBox delayRateBox;
     juce::Label delayRateLabel;
 
-    // The two whole-machine mode switches. Rockers like BYPASS and POLARITY, drawn
-    // by the panel's own LookAndFeel, because they are state rather than amount.
-    juce::ToggleButton modernModeButton { "MODERN" };
-    juce::ToggleButton lofiModeButton { "LO-FI" };
+    // The two whole-machine mode switches became ONE cycling button: OFF ->
+    // LO-FI -> MODERN -> OFF. The modes are mutually exclusive by design and the
+    // engine reads two bools, so the button is the only state holder on the panel
+    // and writes both parameters itself (no attachment: a ButtonAttachment on
+    // each side would fight the cycle).
+    juce::TextButton modeCycleButton { "MODE: OFF" };
     juce::Label presetHeadingLabel;
     juce::Label compareBadgeLabel;
     juce::Label presetBadgeLabel;
@@ -481,8 +499,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> delayTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> delayRateAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> delaySyncAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> modernModeAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> lofiModeAttachment;
+
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversamplingAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> deltaAttachment;
@@ -582,6 +599,25 @@ private:
     int currentTransportState() const;
     void styleTransportButtons();
     void styleSpindownButton();
+    void refreshModeButtonCaption();
+
+    // Reads a BOOL parameter's current value. Written as a helper because the
+    // obvious spelling does not compile: getParameterAsValue returns a
+    // juce::var, not an optional, so it has no hasValue() and its getValue()
+    // returns another var rather than a bool. Every reader wants the same
+    // three things - the parameter exists, it is a bool, and it is on - and
+    // answering that in one place is what keeps the mode button and the
+    // attachment from disagreeing about the machine's state.
+    bool isModeOn (const juce::String& parameterID) const
+    {
+        // getParameterAsValue hands back a juce::Value BY VALUE, and Value has
+        // no conversion to var: its accessor is getValue(), which returns a var
+        // by value. The local keeps that Value alive for the read.
+        const auto value = audioProcessor.parameters.getParameterAsValue (parameterID);
+        const auto underlying = value.getValue();
+
+        return underlying.isBool() && static_cast<bool> (underlying);
+    }
 
     std::unique_ptr<b2World> physicsWorld;
     std::array<PhysicsOrb, decorativeOrbCount> physicsOrbs {};
