@@ -123,13 +123,14 @@ namespace
     //   14 presence  15 cabinet  16 delay_time  17 delay_feedback  18 st_offset
     //   19 noise  20 subfund  21 preamp  22 distortion  23 flux  24 wear
     //   25 mechanics  26 reverb  27 reverb_size  28 vinyl  29 vinyl_crackle
-    //   30 vinyl_rumble  31 noise_lvl
+    //   30 vinyl_rumble  31 noise_lvl  32 st_link
+    //   33 dust  34 scratch  35 warp  36 electrical
     //
     // The deck's non-knob switches follow the tabs too: GL and OVERSAMPLING show
     // on SETTINGS, and the delay TYPE / RATE / SYNC trio shows on SPACE. They are
     // not knobs - the grid below cannot place them - so their visibility is
     // managed in setCurrentTab beside the knobs'.
-    constexpr std::array<TabSpec, 6> tabSpecs { {
+    constexpr std::array<TabSpec, 7> tabSpecs { {
         //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
         { "MACHINE", "What goes in, how the machine colours it, and what comes out.",
                      7, { 0, 3, 4, 7, 9, 8, 32 } },
@@ -156,6 +157,18 @@ namespace
                    "deck's TYPE / SYNC DELAY / RATE switches belong to the second "
                    "head, so they show on this tab.",
                      5, { 16, 17, 18, 26, 27 } },
+        //  dust, scratch, warp, electrical - the four physical faults of a record
+        //  and a turntable. They live on their own page because each is a
+        //  genuinely different mechanism rather than another amount of noise, and
+        //  reading them as a group is the point: a clean pressing has all four at
+        //  zero, and a wrecked one has all four up.
+        { "VINYL", "The record's own faults, each a different mechanism. DUST is "
+                    "fine particulate in the groove - a granular texture that "
+                    "follows the programme. SCRATCH is a deep wound crossed once "
+                    "per revolution, so it repeats. WARP is the record not being "
+                    "flat: the level breathes at the platter rate. ELECTRICAL is "
+                    "the cartridge's earthing - mains hum and earth static.",
+                     4, { 33, 34, 35, 36 } },
         //  No knobs of its own: SETTINGS is where the two engine-level switches
         //  live - the GL accelerator and the oversampling factor - shown by
         //  setCurrentTab, not by the grid.
@@ -189,12 +202,12 @@ namespace
     // twice, and none of them is silently dropped.
     // The tab count is written once, here, and the static_assert that guards coverage
 // reads it from the same constant - so adding a page cannot leave this behind.
-constexpr std::size_t numTabPages = 6;
+constexpr std::size_t numTabPages = 7;
 
 constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tabs,
                                      std::size_t total)
     {
-        std::array<int, 33> seen {};
+        std::array<int, 37> seen {};
 
         for (const auto& tab : tabs)
             for (std::size_t i = 0; i < tab.count; ++i)
@@ -1399,6 +1412,12 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 true, juce::Justification::centredRight);
     styleLabel (subfundReadout, "idle", 8.0f, paletteFor (false).secondary,
                 false, juce::Justification::centredRight);
+    styleLabel (antiPhaseLabel, "ANTI-PHASE", 10.0f, paletteFor (false).accent,
+                true, juce::Justification::centredRight);
+    styleLabel (antiPhaseReadout, "clean", 8.0f, paletteFor (false).secondary,
+                false, juce::Justification::centredRight);
+    addAndMakeVisible (antiPhaseLabel);
+    addAndMakeVisible (antiPhaseReadout);
 
     addAndMakeVisible (brandLabel);
     addAndMakeVisible (titleLabel);
@@ -1450,7 +1469,9 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                          "flux", "wear", "mechanics",
                                          "reverb", "reverb_size",
                                          "vinyl", "vinyl_crackle", "vinyl_rumble",
-                                         "noise_lvl", "st_link" };
+                                         "noise_lvl", "st_link",
+                                         "vinyl_dust", "vinyl_scratch", "vinyl_warp",
+                                         "vinyl_electrical" };
     const juce::StringArray controlNames { "INPUT", "DRIVE", "BIAS",
                                            "BRIGHT", "TONE", "WOW",
                                            "FLUTTER", "MIX", "OUTPUT",
@@ -1463,7 +1484,9 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                            "FLUX", "WEAR", "MECHANICS",
                                            "REVERB", "RVB SIZE",
                                            "VINYL", "CRACKLE", "RUMBLE",
-                                           "NOISE LVL", "ST LINK" };
+                                           "NOISE LVL", "ST LINK",
+                                           "DUST", "SCRATCH", "WARP",
+                                           "ELECTRICAL" };
     // One double-click reset value per controlIds entry, in the SAME order, each one
     // the default createParameterLayout() registers for that parameter. These are
     // three views of ONE list, so a value that lands on a different control is a
@@ -1494,7 +1517,9 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                                            0.50, 0.0, 0.0,
                                                            0.0, 0.40,
                                                            0.0, 0.50, 0.35,
-                                                           1.0, 1.0 };
+                                                           1.0, 1.0,
+                                                           0.0, 0.0, 0.0,
+                                                           0.0 };
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -1756,6 +1781,43 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "and depth, so the same record wanders differently at 33 and "
                        "45, and a 78's wind-up motor wobbles hardest. 33 RPM is the "
                        "default.") + hints;
+            if (id == "vinyl_dust")
+                return juce::String ("DUST - fine particulate in the groove. Unlike "
+                       "CRACKLE's random ticks, dust is a CONTINUOUS granular "
+                       "texture, band-limited high so it sits on top of the "
+                       "music as grit. It follows the programme: a loud passage "
+                       "sounds dirtier than a quiet one, because dust only makes "
+                       "a sound when there is modulation in the groove to "
+                       "disturb it. A little dust is a worn record; a lot is a "
+                       "record that has been left out of its sleeve. "
+                       "Default 0 percent.") + hints;
+            if (id == "vinyl_scratch")
+                return juce::String ("SCRATCH - a deep groove wound, not dust. Where "
+                       "a dust tick is random, a scratch is PERIODIC: the stylus "
+                       "crosses the same damage every turn, so it arrives at the "
+                       "platter rate and is heard as a repeating thud rather "
+                       "than as a hiss. The rate follows VINYL SPEED, so the same "
+                       "scratch repeats faster on a 45 than on a 33. "
+                       "Default 0 percent.") + hints;
+            if (id == "vinyl_warp")
+                return juce::String ("WARP - the record is not flat. A warped disc "
+                       "makes the stylus ride up and down once per revolution, "
+                       "so the tracking force - and therefore the output level - "
+                       "breathes at the platter rate. It is a slow, cyclic "
+                       "throb, which is what makes a warped record sound like it "
+                       "is struggling rather than merely noisy. It modulates "
+                       "what the stage passes rather than what it adds, so at 0 "
+                       "percent it is exactly unity. Default 0 percent.") + hints;
+            if (id == "vinyl_electrical")
+                return juce::String ("ELECTRICAL - the cartridge, the cable and the "
+                       "earth loop. Two faults at once: MAINS HUM at the supply "
+                       "frequency plus its second harmonic, which is what an "
+                       "unearthed cartridge picks up from the motor and the "
+                       "transformer; and EARTH STATIC, the broadband crackle of "
+                       "a bad ground. The hum's two sides are deliberately not "
+                       "identical - the second harmonic is in anti-phase across "
+                       "the pair - which is exactly how a real earth loop "
+                       "behaves. Default 0 percent.") + hints;
             return hints;
         };
         slider.setTooltip (parameterTooltip (controlIds[static_cast<int> (i)]));
@@ -2754,6 +2816,8 @@ void FirstAudioProcessorEditor::applyTheme()
     harmonicsReadout.setColour (juce::Label::textColourId, palette.secondary);
     subfundLabel.setColour (juce::Label::textColourId, palette.accent);
     subfundReadout.setColour (juce::Label::textColourId, palette.secondary);
+    antiPhaseLabel.setColour (juce::Label::textColourId, palette.accent);
+    antiPhaseReadout.setColour (juce::Label::textColourId, palette.secondary);
     compressorMeterIn.setDarkTheme (darkTheme);
     compressorMeterOut.setDarkTheme (darkTheme);
 
@@ -3062,32 +3126,41 @@ void FirstAudioProcessorEditor::timerCallback()
     // (peak dB, RMS, LUFS, VU and their equal-weighted combination), and each glue
     // compressor stage gets its own reduction meter fed from its own telemetry, so the
     // panel shows both what the signal level is doing and where the work is being done.
-    inputMeter.setLoudness (audioProcessor.getInputPeakDb(),
-                            audioProcessor.getInputRmsDb(),
-                            audioProcessor.getInputLufs(),
-                            audioProcessor.getInputVuDb(),
-                            audioProcessor.getInputCombinedDb(),
-                            audioProcessor.isInputClipping());
-    outputMeter.setLoudness (audioProcessor.getOutputPeakDb(),
-                             audioProcessor.getOutputRmsDb(),
-                             audioProcessor.getOutputLufs(),
-                             audioProcessor.getOutputVuDb(),
-                             audioProcessor.getOutputCombinedDb(),
-                             audioProcessor.isOutputClipping());
+    //
+    // The whole frame comes from ONE call. With readerwriterqueue compiled in, that
+    // call drains the lock-free queue and hands back the newest COMPLETE frame the
+    // audio thread published, so every number on the panel belongs to the same block
+    // of audio - a new output peak can no longer be drawn beside the previous block's
+    // RMS. Without the library the call assembles the same struct from the atomics,
+    // so this code is identical either way.
+    const auto telemetry = audioProcessor.getTelemetry();
 
-    compressorMeterIn.setReduction (audioProcessor.getInputGainReductionDb(),
-                                    audioProcessor.getInputCompressorActivity());
-    compressorMeterOut.setReduction (audioProcessor.getOutputGainReductionDb(),
-                                     audioProcessor.getOutputCompressorActivity());
+    inputMeter.setLoudness (telemetry.inputPeakDb,
+                            telemetry.inputRmsDb,
+                            telemetry.inputLufs,
+                            telemetry.inputVuDb,
+                            telemetry.inputCombinedDb,
+                            telemetry.inputClipping);
+    outputMeter.setLoudness (telemetry.outputPeakDb,
+                             telemetry.outputRmsDb,
+                             telemetry.outputLufs,
+                             telemetry.outputVuDb,
+                             telemetry.outputCombinedDb,
+                             telemetry.outputClipping);
 
-    const auto reduction = audioProcessor.getGainReductionDb();
-    const auto activity = audioProcessor.getCompressorActivity();
+    compressorMeterIn.setReduction (telemetry.inputGainReductionDb,
+                                    telemetry.inputCompressorActivity);
+    compressorMeterOut.setReduction (telemetry.outputGainReductionDb,
+                                     telemetry.outputCompressorActivity);
+
+    const auto reduction = telemetry.inputGainReductionDb + telemetry.outputGainReductionDb;
+    const auto activity = telemetry.compressorActivity;
 
     // Report the harmonic balance the tape stage is producing. Even and odd are shown
     // side by side because the ratio between them is the character: even-dominant reads as
     // warm and full, odd-dominant as hard and edgy, and real tape has both.
-    const auto evenRatio = audioProcessor.getEvenHarmonicRatio();
-    const auto oddRatio = audioProcessor.getOddHarmonicRatio();
+    const auto evenRatio = telemetry.evenHarmonicRatio;
+    const auto oddRatio = telemetry.oddHarmonicRatio;
     harmonicsReadout.setText ("E " + juce::String (evenRatio * 100.0f, 1) + " %"
                                   + "   O " + juce::String (oddRatio * 100.0f, 1) + " %",
                               juce::dontSendNotification);
@@ -3126,8 +3199,8 @@ void FirstAudioProcessorEditor::timerCallback()
     //  states, and the tracked frequency says WHICH note it locked to - which is
     //  how a user finds out that a mix is being read an octave low.
     // ------------------------------------------------------------------
-    const auto trackedHz = audioProcessor.getSubfundTrackedHz();
-    const auto confidence = audioProcessor.getSubfundConfidence();
+    const auto trackedHz = telemetry.subfundTrackedHz;
+    const auto confidence = telemetry.subfundConfidence;
 
     if (confidence < 0.05f || trackedHz <= 0.0f)
     {
@@ -3150,6 +3223,30 @@ void FirstAudioProcessorEditor::timerCallback()
                                                      : harmonicPalette.needle);
     }
 
+    // ------------------------------------------------------------------
+    //  Anti-phase guard readout.
+    //
+    //  The guard's correction, as a percentage. "clean" is the healthy state and
+    //  is what the panel says almost always; a rising number means the two sides
+    //  were found to be in opposition and are being pulled back into agreement.
+    //  It is shown rather than hidden because this is the one fault that is
+    //  INVISIBLE in stereo: without the readout a user would never know the guard
+    //  was doing anything, and with it they can see that a fault was caught.
+    // ------------------------------------------------------------------
+    const auto antiPhaseNow = telemetry.antiPhaseAmount;
+    const auto antiPhaseText = antiPhaseNow < 0.01f
+                                   ? juce::String ("clean")
+                                   : juce::String (juce::roundToInt (antiPhaseNow * 100.0f))
+                                         + " % corrected";
+    if (antiPhaseText != lastShownAntiPhase)
+    {
+        lastShownAntiPhase = antiPhaseText;
+        antiPhaseReadout.setText (antiPhaseText, juce::dontSendNotification);
+        antiPhaseReadout.setColour (juce::Label::textColourId,
+                                    antiPhaseNow < 0.01f ? harmonicPalette.status
+                                                         : harmonicPalette.needle);
+    }
+
     // Animated presentation state. Everything here is derived from audio
     // telemetry, so the panel visibly reacts to what the plugin is doing.
     glowPhase += 0.13f;
@@ -3160,11 +3257,11 @@ void FirstAudioProcessorEditor::timerCallback()
                                           activity * 0.7f + std::abs (reduction) / 6.0f);
     glowAmount += (targetGlow - glowAmount) * 0.18f;
 
-    const auto drift = audioProcessor.getTransportDrift();
+    const auto drift = telemetry.transportDrift;
     driftAmount += (drift - driftAmount) * 0.25f;
 
     // The header status text follows the real bypass state of the processor.
-    const auto bypassed = audioProcessor.isBypassed();
+    const auto bypassed = telemetry.bypassActive;
     if (bypassed != currentBypassDisplay)
     {
         currentBypassDisplay = bypassed;
@@ -3187,7 +3284,7 @@ void FirstAudioProcessorEditor::timerCallback()
 
     // Follow the machine's own platter with a display-only lag, so the reels ease
     // into a spindown rather than snapping when a block boundary lands.
-    const auto machineSpeed = audioProcessor.getTransportRamp();
+    const auto machineSpeed = telemetry.transportRamp;
     smoothedMachineSpeed += (machineSpeed - smoothedMachineSpeed) * 0.20f;
 
     const auto targetReelSpeed = speedScale * (0.9f + driftAmount * 0.5f) * smoothedMachineSpeed;
@@ -3430,6 +3527,12 @@ void FirstAudioProcessorEditor::resized()
     // readouts line up as a column rather than as two unrelated labels.
     subfundLabel.setBounds (harmonicsLeft, layout.deck.getY() + 108, harmonicsWidth, 14);
     subfundReadout.setBounds (harmonicsLeft, layout.deck.getY() + 122, harmonicsWidth, 13);
+
+    // The anti-phase guard readout takes the same column, on its own pair of lines
+    // below the subfund pair, so the deck's right-hand column reads as one stack of
+    // status readouts rather than as unrelated scraps.
+    antiPhaseLabel.setBounds (harmonicsLeft, layout.deck.getY() + 140, harmonicsWidth, 14);
+    antiPhaseReadout.setBounds (harmonicsLeft, layout.deck.getY() + 154, harmonicsWidth, 13);
 
     // TRANSPORT is a deck: STOP / PLAY / START and the momentary SPINDOWN. They sit
     // on their own line under POLARITY / AUTO GAIN, in the empty band the deck keeps

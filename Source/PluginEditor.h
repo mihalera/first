@@ -179,12 +179,15 @@ private:
     // read at run time. The tab table is checked against controlCount by a
     // static_assert too, so a knob that no tab lists is a build error, not a knob
     // that silently disappears from the panel.
-    static constexpr std::size_t controlCount = 33;
+    static constexpr std::size_t controlCount = 37;
     static constexpr int tabColumns = 4;
-    // Six tabs: MACHINE, DRIVE, CHARACTER, NOISE, SPACE, SETTINGS. It was seven for
-    // one release: the seventh slot had no entry in the tabSpecs table, so it drew
-    // as a button with no name and could never show anything.
-    static constexpr int numTabs = 6;
+    // Seven tabs: MACHINE, DRIVE, CHARACTER, NOISE, VINYL, SPACE, SETTINGS. The
+    // seventh arrived with the four record faults (DUST / SCRATCH / WARP /
+    // ELECTRICAL): cramming them onto NOISE would have put thirteen knobs on one
+    // page, which is exactly the crowding the tabs exist to avoid. VINYL gets its
+    // own page because the four are one subject - the state of the record itself -
+    // rather than four unrelated controls.
+    static constexpr int numTabs = 7;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     void timerCallback() override;
@@ -400,6 +403,14 @@ private:
     // detector has not found a note? A depth of 60 % means nothing without it.
     juce::Label subfundLabel;
     juce::Label subfundReadout;
+
+    // Anti-phase guard readout. The one fault the panel could not otherwise show:
+    // a stereo pair whose sides oppose looks completely normal in stereo and then
+    // cancels in mono, so the guard's own correction is published as a number the
+    // user can watch. "clean" means the guard is idle, which is the healthy state.
+    juce::Label antiPhaseLabel;
+    juce::Label antiPhaseReadout;
+    juce::String lastShownAntiPhase;
 
     // Four metering surfaces, arranged two by two:
     //   top row    - the INPUT and OUTPUT level VU meters

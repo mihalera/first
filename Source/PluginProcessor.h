@@ -50,6 +50,77 @@
  #define J37_HAS_XSIMD 0
 #endif
 
+// ------------------------------------------------------------------------------
+//  Real-time-safe third-party utilities.
+//
+//  Each of these is included behind a __has_include guard AND a harness guard,
+//  exactly like chowdsp above, because tests/dsp/extract.py cuts the DSP structs
+//  out of this header and compiles them against a shim that has neither JUCE's
+//  full include path nor any of these libraries. The engine must therefore stay
+//  compilable with all four macros 0, and every use site must have a portable
+//  substitution rather than assuming the library is present.
+//
+//    fatoml::ReaderWriterQueue  cameron314/readerwriterqueue - the lock-free
+//                               single-producer/single-consumer queue. Used for
+//                               the audio->UI telemetry stream, so the audio
+//                               thread can publish a frame of metering and the
+//                               editor can read it WITHOUT every field being its
+//                               own atomic and without a lock on the audio thread.
+//
+//    farbot::RealtimeObject     hogliux/farbot - a realtime-safe object holder.
+//                               Used for the machine-state hand-off, so the
+//                               message thread can install a whole new engine
+//                               configuration without the audio thread ever
+//                               blocking on it.
+//
+//    signalsmith-stretch        Signalsmith Audio - a real-time phase-vocoder
+//                               time stretcher. Used by the transport so a speed
+//                               change is a genuine TIME change (the tape slows
+//                               down and the music slows with it) rather than a
+//                               resample that also drops the pitch of everything.
+// ------------------------------------------------------------------------------
+#if ! defined (J37_DSP_HARNESS)
+
+ // readerwriterqueue: the header sits at the repository ROOT and the CMake target
+ // is INTERFACE with that root as its include directory, so it is spelled
+ // <readerwriterqueue.h>, not <readerwriterqueue/readerwriterqueue.h>. Both
+ // spellings are probed, because some packaging layouts nest it under the project
+ // name and the guard must not depend on which of them the fetch produced.
+ #if __has_include (<readerwriterqueue.h>)
+  #include <readerwriterqueue.h>
+  #define J37_HAS_RWQ 1
+ #elif __has_include (<readerwriterqueue/readerwriterqueue.h>)
+  #include <readerwriterqueue/readerwriterqueue.h>
+  #define J37_HAS_RWQ 1
+ #else
+  #define J37_HAS_RWQ 0
+ #endif
+
+ // farbot: its headers live under include/farbot, and the CMake target adds
+ // include/ to the path, so the spelling is <farbot/...>. Two of its headers are
+ // useful here - the realtime-safe FIFO and the RealtimeObject that guards it.
+ #if __has_include (<farbot/fifo.hpp>)
+  #include <farbot/fifo.hpp>
+  #define J37_HAS_FARBOT 1
+ #else
+  #define J37_HAS_FARBOT 0
+ #endif
+
+ // signalsmith-stretch: one self-contained header under include/, which is what
+ // the CMake target exposes.
+ #if __has_include (<signalsmith-stretch/signalsmith-stretch.h>)
+  #include <signalsmith-stretch/signalsmith-stretch.h>
+  #define J37_HAS_SIGNALSMITH 1
+ #else
+  #define J37_HAS_SIGNALSMITH 0
+ #endif
+
+#else
+ #define J37_HAS_RWQ 0
+ #define J37_HAS_FARBOT 0
+ #define J37_HAS_SIGNALSMITH 0
+#endif
+
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -1585,6 +1656,45 @@ struct VinylStage
     float surfaceNoise = 0.0f;       // groove hiss between the ticks
     float speedModulation = 0.0f;    // vinyl SPEED: wow/flutter depth on the stage
 
+    // ------------------------------------------------------------------
+    //  The four physical faults of a record and a turntable.
+    //
+    //  CRACKLE is the needle finding a scratch; these four are the rest of
+    //  what goes wrong when a record is played. Each is a genuinely different
+    //  mechanism rather than another amount of noise:
+    //
+    //    DUST       - fine particulate in the groove. A continuous, granular
+    //                 high-frequency texture that follows the groove's own
+    //                 modulation (a louder passage sounds dirtier) and lifts
+    //                 off whenever the stylus has signal to grind through.
+    //    SCRATCH    - a deep groove wound, not a dust tick. It comes back once
+    //                 per revolution, so it is PERIODIC: a short burst of
+    //                 noise at a fixed rate derived from the platter speed.
+    //    WARP       - the record is not flat. The vertical warp makes the
+    //                 stylus ride up and down once per turn, so the LEVEL (and
+    //                 slightly the pitch) breathes at the platter rate. It is
+    //                 the slow, cyclic throb a warped record has.
+    //    ELECTRICAL - the cartridge, the cable and the earth loop. Mains hum
+    //                 at the supply frequency plus its harmonics, and the
+    //                 broadband static that comes with a bad earth.
+    //
+    //  All four are set per block from the controls and read only in process().
+    // ------------------------------------------------------------------
+    float dustAmount = 0.0f;         // 0..1 fine particulate in the groove
+    float scratchAmount = 0.0f;      // 0..1 deep periodic groove damage
+    float warpAmount = 0.0f;         // 0..1 vertical warp, level breathing
+    float electricalAmount = 0.0f;   // 0..1 mains hum + earth static
+
+    // Mains hum's frequency and the per-revolution rates are given as
+    // INCREMENTS (fraction of a cycle per sample) so the stage is rate-agnostic
+    // for the same reason every other increment here is: the caller converts a
+    // frequency in Hz using the engine rate, and the phase maths below is then
+    // one multiply and one wrap.
+    float humIncrement = 0.0f;       // mains hum, usually 50 or 60 Hz
+    float humIncrement2 = 0.0f;      // its second harmonic (100 / 120 Hz)
+    float scratchIncrement = 0.0f;   // one scratch burst per platter revolution
+    float warpIncrement = 0.0f;      // one warp cycle per platter revolution
+
     // Rumble: a low-frequency one-pole, per channel.
     float rumbleL = 0.0f;
     float rumbleR = 0.0f;
@@ -1596,6 +1706,29 @@ struct VinylStage
     // Crackle: a short decaying envelope per impulse, per channel.
     float crackleEnvelopeL = 0.0f;
     float crackleEnvelopeR = 0.0f;
+
+    // DUST: the granular high-frequency texture's own one-pole, per channel -
+    // its bandwidth is set by the caller so it stays the same at every rate.
+    float dustLowL = 0.0f;
+    float dustLowR = 0.0f;
+    float dustCoefficient = 0.0f;
+
+    // SCRATCH and WARP phases, per channel. The scratch phase drives the burst
+    // gate; the warp phase drives the level breath. They run independently of
+    // the speed-wander phase above, because a warp and a speed error are two
+    // different faults that happen to share a rotation rate.
+    float scratchPhaseL = 0.0f;
+    float scratchPhaseR = 0.0f;
+    float warpPhaseL = 0.0f;
+    float warpPhaseR = 0.0f;
+
+    // ELECTRICAL: the hum's own two phases (fundamental and second harmonic),
+    // per channel, so a cartridge wired with the two sides out of balance hums
+    // differently on each - which is exactly how a real earth loop behaves.
+    float humPhaseL = 0.0f;
+    float humPhaseR = 0.0f;
+    float humHarmonicPhaseL = 0.0f;
+    float humHarmonicPhaseR = 0.0f;
 
     // The disc's own wow phase, per channel. The increment is set per block from
     // the speed the VINYL SPEED control selects, exactly as the transport's phases
@@ -1610,6 +1743,11 @@ struct VinylStage
         warmthLowL = warmthLowR = 0.0f;
         crackleEnvelopeL = crackleEnvelopeR = 0.0f;
         vinylWowPhaseL = vinylWowPhaseR = 0.0f;
+        dustLowL = dustLowR = 0.0f;
+        scratchPhaseL = scratchPhaseR = 0.0f;
+        warpPhaseL = warpPhaseR = 0.0f;
+        humPhaseL = humPhaseR = 0.0f;
+        humHarmonicPhaseL = humHarmonicPhaseR = 0.0f;
     }
 
     /**
@@ -1672,6 +1810,147 @@ struct VinylStage
             groove = hiss * surfaceNoise * 0.0080f;
         }
 
+        // ------------------------------------------------------------------
+        //  DUST: fine particulate in the groove.
+        //
+        //  Unlike the ticks above, dust is a CONTINUOUS granular texture - the
+        //  sound of the stylus grinding through fine grit. Two things make it
+        //  read as dust rather than as another hiss:
+        //
+        //    - it is band-limited HIGH (a one-pole above the programme's own
+        //      top end), so it sits on top of the music as grit;
+        //    - it is scaled by the programme's own level, so a loud passage
+        //      sounds dirtier than a quiet one. Real dust only makes a sound
+        //      when there is modulation in the groove to disturb it.
+        // ------------------------------------------------------------------
+        float dust = 0.0f;
+        if (dustAmount > 0.0f)
+        {
+            auto& dustLow = channel == 0 ? dustLowL : dustLowR;
+            random = random * 1664525u + 1013904223u;
+            const float grit = static_cast<float> ((random >> 8) & 0x00ffffffu)
+                             * (1.0f / 8388608.0f) - 1.0f;
+
+            // The high-pass is the complement of the one-pole: what the filter
+            // removes is what is left.
+            dustLow += (grit - dustLow) * dustCoefficient;
+            const float highGrit = grit - dustLow;
+
+            // The programme gating: `x` is the signal entering the stage, so a
+            // quiet groove stays quiet even under a lot of dust.
+            const float grooveEnergy = juce::jlimit (0.0f, 1.0f, std::abs (x) * 3.0f);
+            dust = highGrit * dustAmount * dustAmount * 0.020f
+                 * (0.25f + 0.75f * grooveEnergy);
+        }
+
+        // ------------------------------------------------------------------
+        //  SCRATCH: a deep groove wound, once per revolution.
+        //
+        //  Where a dust tick is random, a SCRATCH is PERIODIC: the stylus crosses
+        //  the same wound every turn, so the damage arrives at the rotation rate
+        //  and is heard as a repeating thud rather than as a hiss. The phase
+        //  wraps once per platter revolution, and the burst fires over a short
+        //  window at the wrap, so the fault is a distinct event in time.
+        // ------------------------------------------------------------------
+        float scratch = 0.0f;
+        if (scratchAmount > 0.0f && scratchIncrement > 0.0f)
+        {
+            float& phase = channel == 0 ? scratchPhaseL : scratchPhaseR;
+            phase += scratchIncrement;
+            if (phase >= 1.0f)
+                phase -= 1.0f;
+
+            // The burst window: the first few percent of the revolution. A short
+            // raised-cosine so the event fades in and out instead of clicking -
+            // a step at either end of the window would be a glitch of its own.
+            constexpr float burstWindow = 0.04f;
+            if (phase < burstWindow)
+            {
+                const float burstProgress = phase / burstWindow;
+                const float window = 0.5f - 0.5f * std::cos (burstProgress * 6.2831853f);
+
+                random = random * 1664525u + 1013904223u;
+                const float wound = static_cast<float> ((random >> 8) & 0x00ffffffu)
+                                  * (1.0f / 8388608.0f) - 1.0f;
+
+                scratch = wound * scratchAmount * scratchAmount * 0.10f * window;
+            }
+        }
+
+        // ------------------------------------------------------------------
+        //  WARP: the record is not flat.
+        //
+        //  A warped record makes the stylus ride up and down once per turn, so
+        //  the tracking force - and therefore the output level - breathes at the
+        //  platter rate. It is a slow, cyclic throb, and it is what makes a
+        //  warped record sound like it is struggling rather than merely noisy.
+        //
+        //  It modulates what the stage PASSES rather than what it adds, so at
+        //  WARP 0 it is exactly unity and the stage is untouched.
+        // ------------------------------------------------------------------
+        float warp = 1.0f;
+        if (warpAmount > 0.0f && warpIncrement > 0.0f)
+        {
+            float& phase = channel == 0 ? warpPhaseL : warpPhaseR;
+            phase += warpIncrement;
+            if (phase >= 1.0f)
+                phase -= 1.0f;
+
+            // Depth is deliberately small: a warp is a wobble in level, not a
+            // tremolo. At 100 % it is about +-1.5 dB, which is enough to hear
+            // the record struggling without becoming an effect.
+            warp = 1.0f + std::sin (phase * 6.2831853f) * warpAmount * 0.175f;
+        }
+
+        // ------------------------------------------------------------------
+        //  ELECTRICAL: the cartridge, the cable and the earth loop.
+        //
+        //  Two separate faults, and both are what "electrical" means on a
+        //  turntable:
+        //
+        //    - MAINS HUM at the supply frequency plus its second harmonic,
+        //      which is what an unearthed cartridge picks up from the motor and
+        //      the transformer;
+        //    - EARTH STATIC, the broadband crackle of a bad ground, continuous
+        //      and independent of the groove.
+        //
+        //  The hum's two components have independent phases per channel, so a
+        //  cartridge whose two sides pick the field up differently hums
+        //  asymmetrically - which is exactly how a real earth loop behaves.
+        // ------------------------------------------------------------------
+        float electrical = 0.0f;
+        if (electricalAmount > 0.0f)
+        {
+            // Two phases per channel: the fundamental and the second harmonic.
+            // Both are advanced by their own increment, set by the caller from the
+            // ONE supply frequency, so the 2:1 relationship between them is
+            // established in the voicing block and never re-derived here.
+            float& humPhase = channel == 0 ? humPhaseL : humPhaseR;
+            float& harmonicPhase = channel == 0 ? humHarmonicPhaseL : humHarmonicPhaseR;
+            humPhase += humIncrement;
+            harmonicPhase += humIncrement2;
+            if (humPhase >= 1.0f) humPhase -= 1.0f;
+            if (harmonicPhase >= 1.0f) harmonicPhase -= 1.0f;
+
+            const float fundamental = std::sin (humPhase * 6.2831853f);
+            const float second = std::sin (harmonicPhase * 6.2831853f);
+
+            // The right channel's earthing is slightly different from the left's:
+            // the second harmonic is in anti-phase across the pair while the
+            // fundamental is not - the classic asymmetric hum of a cartridge whose
+            // two sides pick the field up differently.
+            const float harmonicSign = channel == 0 ? 1.0f : -1.0f;
+            const float hum = (fundamental + 0.35f * harmonicSign * second)
+                            * electricalAmount * electricalAmount * 0.006f;
+
+            random = random * 1664525u + 1013904223u;
+            const float staticNoise = static_cast<float> ((random >> 8) & 0x00ffffffu)
+                                    * (1.0f / 8388608.0f) - 1.0f;
+            const float earthStatic = staticNoise * electricalAmount * electricalAmount * 0.004f;
+
+            electrical = hum + earthStatic;
+        }
+
         // -- WARMTH: the RIAA playback character --------------------------------
         // A one-pole split: the low band is lifted and the high band is left, which
         // is the low-end lift and relative top-end softness of a playback stage
@@ -1699,7 +1978,10 @@ struct VinylStage
 
         return (warmed + groove
                      + crackleEnvelope * crackleControl * crackleAmount * crackleAmount * 0.6f
-                     + rumble) * (1.0f + speedWander);
+                     + rumble
+                     + dust
+                     + scratch
+                     + electrical) * (1.0f + speedWander) * warp;
     }
 };
 
@@ -3116,6 +3398,75 @@ public:
         pitch falling away during a hold even while the transport itself is Play. */
     float getSpindownRamp() const noexcept { return spindownRampPublished.load (std::memory_order_relaxed); }
 
+    /** How hard the output anti-phase guard is currently working, 0..1. Zero means
+        the stereo pair is healthy; a rising value means the two sides were found
+        to be in opposition and are being pulled back into agreement, which is the
+        one fault that would otherwise be inaudible in stereo and then cancel in
+        mono. Published so the panel can show the guard acting. */
+    float getAntiPhaseAmount() const noexcept { return antiPhaseAmount.load (std::memory_order_relaxed); }
+
+    //==============================================================================
+    //  Audio -> UI telemetry.
+    //
+    //  One complete frame of metering, filled by the audio thread once per block
+    //  and read by the editor on its timer. With the readerwriterqueue library on
+    //  the include path the frame travels through a lock-free SPSC queue, so every
+    //  field the editor sees belongs to the SAME block of audio; without it the
+    //  frame is assembled from the individual atomics, which is what earlier builds
+    //  did. Either way the editor has exactly one call to make.
+    //
+    //  The struct is public because the accessor returns it and the editor has to
+    //  name the type; the queue and the mirror atomics are private, below.
+    //==============================================================================
+    struct TelemetryFrame
+    {
+        float inputPeakDb = -70.0f;
+        float inputRmsDb = -70.0f;
+        float inputLufs = -70.0f;
+        float inputVuDb = -70.0f;
+        float inputCombinedDb = -70.0f;
+        bool  inputClipping = false;
+
+        float outputPeakDb = -70.0f;
+        float outputRmsDb = -70.0f;
+        float outputLufs = -70.0f;
+        float outputVuDb = -70.0f;
+        float outputCombinedDb = -70.0f;
+        bool  outputClipping = false;
+
+        float inputGainReductionDb = 0.0f;
+        float outputGainReductionDb = 0.0f;
+        float inputCompressorActivity = 0.0f;
+        float outputCompressorActivity = 0.0f;
+        float compressorActivity = 0.0f;
+
+        float transportDrift = 0.5f;
+        float harmonicCharacter = 0.0f;
+        float evenHarmonicRatio = 0.0f;
+        float oddHarmonicRatio = 0.0f;
+        float subfundTrackedHz = 0.0f;
+        float subfundConfidence = 0.0f;
+        float antiPhaseAmount = 0.0f;
+        float transportRamp = 1.0f;
+        float spindownRamp = 1.0f;
+        bool  bypassActive = false;
+    };
+
+    /** The newest telemetry frame. Realtime-safe to call from the message thread:
+        it drains the queue when the library is present and never blocks. */
+    TelemetryFrame getTelemetry() const;
+
+    /** True when the telemetry is carried by the lock-free queue rather than by
+        the plain atomics - so the editor can say which path it is reading. */
+    static constexpr bool hasLockFreeTelemetry() noexcept
+    {
+#if J37_HAS_RWQ
+        return true;
+#else
+        return false;
+#endif
+    }
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
@@ -3223,6 +3574,14 @@ private:
     std::atomic<float>* vinylCrackleParam = nullptr;
     std::atomic<float>* vinylRumbleParam = nullptr;
     std::atomic<float>* vinylSpeedParam = nullptr;
+
+    // The four physical faults of a record and a turntable. Read once per block
+    // like every other control, so the per-sample vinyl loop branches on plain
+    // floats rather than on atomics.
+    std::atomic<float>* vinylDustParam = nullptr;
+    std::atomic<float>* vinylScratchParam = nullptr;
+    std::atomic<float>* vinylWarpParam = nullptr;
+    std::atomic<float>* vinylElectricalParam = nullptr;
 
     // The five type switches. Read once per block like every other choice, so the
     // per-sample loops branch on plain ints rather than on atomics.
@@ -3655,6 +4014,65 @@ private:
     // The previous block's hold state, so the release edge can be seen once. Engine
     // only: it is not read by the editor and needs no atomic.
     bool lastSpindownHeld = false;
+
+    // -----------------------------------------------------------------------
+    //  Output anti-phase prevention.
+    //
+    //  `antiPhaseProduct` is a slow correlation envelope of the two output
+    //  channels' sum and difference: positive when the sides agree, negative when
+    //  they oppose. `antiPhaseCorrection` is the 0..1 amount the guard rotates the
+    //  right channel by, and it only ever rises while the correlation is negative.
+    //  `antiPhaseCoefficient` is its block-rate pole (see resetSampleRateDependentState).
+    //
+    //  `antiPhaseAmount` is published for the panel so the user can SEE the guard
+    //  working rather than only hearing its absence.
+    // -----------------------------------------------------------------------
+    float antiPhaseProduct = 0.0f;
+    float antiPhaseCorrection = 0.0f;
+    float antiPhaseCoefficient = 0.0f;
+    float antiPhaseProductMagnitude = 1.0e-3f;
+    std::atomic<float> antiPhaseAmount { 0.0f };
+
+    // -----------------------------------------------------------------------
+    //  Audio -> UI telemetry stream.
+    //
+    //  Every meter and readout on the panel is a value the audio thread produces
+    //  and the editor consumes. They used to be a dozen separate std::atomics,
+    //  each published with its own relaxed store and each read with its own
+    //  relaxed load - which works, but it means one frame of metering can be read
+    //  while it is half updated (a new peak next to last block's RMS), and every
+    //  new readout needs another atomic added to the class.
+    //
+    //  A lock-free SPSC QUEUE fixes both: the audio thread pushes ONE complete
+    //  frame of telemetry per block, the editor pops the newest one, so the values
+    //  on screen always belong to the same block of audio, and a new readout is a
+    //  field on the struct rather than a new member. cameron314/readerwriterqueue
+    //  is the library for exactly this; when it is not on the include path the
+    //  engine falls back to the plain atomics that were already there, so a build
+    //  without the library behaves exactly as before.
+    //
+    //  The struct and the accessor are PUBLIC (declared above, with the other
+    //  getters) so the editor can name the type; the QUEUE and the mirror atomics
+    //  are private here, because only this class publishes to them.
+    // -----------------------------------------------------------------------
+#if J37_HAS_RWQ
+    /** The audio-to-UI queue. 32 frames is about a second of metering at 30 Hz
+        of UI polling - far more than the editor ever needs, and small enough that
+        the whole ring is cache-friendly. The producer never blocks: if the UI has
+        not drained it the push simply fails and the frame is dropped, which is
+        the correct behaviour for telemetry (an old meter reading is worthless). */
+    moodycamel::ReaderWriterQueue<TelemetryFrame, 32> telemetryQueue;
+#endif
+
+    /** The most recent frame, published by the audio thread. The editor reads it
+        through getTelemetry(), which drains the queue when the library is present
+        and otherwise reads these fields directly. */
+    std::atomic<float> telemetryInputPeakDb { -70.0f };
+    std::atomic<float> telemetryOutputPeakDb { -70.0f };
+    std::atomic<float> telemetryInputRmsDb { -70.0f };
+    std::atomic<float> telemetryOutputRmsDb { -70.0f };
+    std::atomic<float> telemetryAntiPhase { 0.0f };
+    std::atomic<float> telemetryPlatter { 1.0f };
 
     // Published for the editor's reels and lamp. Written once per block by the
     // audio thread, read with a relaxed load by the UI, exactly like the other

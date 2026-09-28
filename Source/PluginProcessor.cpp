@@ -26,9 +26,9 @@ namespace
     // Returned by reference from a function-local static, so the single list is
     // also the single definition - no header, no duplicated initialiser, and the
     // range-for in both callers reads it without copying.
-    const std::array<const char*, 55>& parametersTrackedForDirtyBadge()
+    const std::array<const char*, 58>& parametersTrackedForDirtyBadge()
     {
-        static const std::array<const char*, 55> ids
+        static const std::array<const char*, 58> ids
         {
             "input", "output", "bypass", "polarity", "auto_gain",
             "subfund",
@@ -40,6 +40,7 @@ namespace
             "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
             "delay_type", "distortion", "modern_mode", "lofi_mode",
             "vinyl", "vinyl_crackle", "vinyl_rumble", "vinyl_speed",
+            "vinyl_dust", "vinyl_scratch", "vinyl_warp", "vinyl_electrical",
             "st_link",
             "valve_type", "amp_type", "transformer_type",
             "digital_type", "vinyl_type",
@@ -344,6 +345,10 @@ FirstAudioProcessor::FirstAudioProcessor()
     vinylCrackleParam = parameters.getRawParameterValue ("vinyl_crackle");
     vinylRumbleParam = parameters.getRawParameterValue ("vinyl_rumble");
     vinylSpeedParam = parameters.getRawParameterValue ("vinyl_speed");
+    vinylDustParam = parameters.getRawParameterValue ("vinyl_dust");
+    vinylScratchParam = parameters.getRawParameterValue ("vinyl_scratch");
+    vinylWarpParam = parameters.getRawParameterValue ("vinyl_warp");
+    vinylElectricalParam = parameters.getRawParameterValue ("vinyl_electrical");
     valveTypeParam = parameters.getRawParameterValue ("valve_type");
     ampTypeParam = parameters.getRawParameterValue ("amp_type");
     transformerTypeParam = parameters.getRawParameterValue ("transformer_type");
@@ -541,6 +546,17 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
         float vinylCrackle = 0.50f;
         float vinylRumble  = 0.35f;
 
+        // The four physical faults of a record and a turntable. All default to 0 -
+        // a clean pressing has none of them - and the presets that are ABOUT a
+        // damaged record (Shellac Radio, Lo-Fi Radio, Wobbly Cassette, Vintage
+        // Lo-Fi) turn the ones their sound depends on on. They were added after the
+        // presets were written, so every preset that does not list one plays the
+        // record clean, which is what its existing sound was designed on.
+        float vinylDust       = 0.0f;
+        float vinylScratch    = 0.0f;
+        float vinylWarp       = 0.0f;
+        float vinylElectrical = 0.0f;
+
         // The five type switches. The defaults are the machine every preset above
         // was designed on, so they are left at 0 here and overridden only where a
         // preset asks for a voice.
@@ -585,7 +601,8 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
           .flutter = 0.20f, .outputDb = -1.0f, .tapeType = 2, .speed = 2, .instrument = 5,
           .oversampling = 2 },  // Drum Slam
                 { .drive = 0.35f, .bias = 0.34f, .tone = 0.55f, .character = 0.45f, .wow = 0.22f,
-          .flutter = 0.28f, .mix = 70.0f, .speed = 0, .instrument = 3, .oversampling = 1 },  // Vintage Lo-Fi
+          .flutter = 0.28f, .mix = 70.0f, .speed = 0, .instrument = 3, .oversampling = 1,
+          .vinyl = 0.25f, .vinylDust = 0.40f, .vinylElectrical = 0.20f },  // Vintage Lo-Fi
                 { .subfund = 0.12f, .drive = 0.32f, .bias = 0.44f, .tone = 0.62f, .character = 0.55f,
           .wow = 0.18f, .flutter = 0.24f, .mix = 55.0f, .width = 0.62f, .oversampling = 1 },  // Wide Master
                 { .inputDb = -6.0f, .drive = 0.22f, .bias = 0.30f, .character = 0.35f, .wow = 0.10f,
@@ -594,7 +611,9 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
           .character = 0.78f, .flutter = 0.26f, .outputDb = -1.5f, .width = 0.45f, .tapeType = 1,
           .speed = 2, .instrument = 3, .oversampling = 2 },  // Saturated Crunch
                 { .subfund = 0.10f, .drive = 0.36f, .bias = 0.45f, .tone = 0.60f, .wow = 0.30f,
-          .flutter = 0.34f, .speed = 0, .instrument = 3, .oversampling = 1 },  // Wobbly Cassette
+          .flutter = 0.34f, .speed = 0, .instrument = 3, .oversampling = 1,
+          .vinyl = 0.30f, .vinylDust = 0.35f, .vinylWarp = 0.60f,
+          .vinylScratch = 0.15f },  // Wobbly Cassette
                 { .inputDb = -1.0f, .drive = 0.55f, .bias = 0.44f, .tone = 0.68f, .character = 0.58f,
           .wow = 0.12f, .flutter = 0.16f, .outputDb = -0.5f, .width = 0.58f, .tapeType = 2,
           .speed = 2, .instrument = 4, .oversampling = 1 },  // Bright Air Tape
@@ -615,7 +634,9 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
           .flutter = 0.07f, .width = 0.55f, .tapeType = 3, .speed = 2, .oversampling = 2 },  // Master Safety
                 { .inputDb = +4.0f, .drive = 0.62f, .bias = 0.30f, .tone = 0.28f, .character = 0.30f,
           .wow = 0.26f, .flutter = 0.32f, .mix = 65.0f, .outputDb = -4.0f, .width = 0.35f,
-          .tapeType = 3, .speed = 0, .instrument = 3, .oversampling = 1 },  // Lo-Fi Radio
+          .tapeType = 3, .speed = 0, .instrument = 3, .oversampling = 1, .vinyl = 0.45f,
+          .vinylDust = 0.55f, .vinylWarp = 0.40f,
+          .vinylElectrical = 0.25f },  // Lo-Fi Radio
                 { .subfund = 0.12f, .drive = 0.34f, .bias = 0.44f, .tone = 0.55f, .wow = 0.10f,
           .flutter = 0.13f, .width = 0.52f, .tapeType = 7, .oversampling = 1 },  // Ferric Master
 
@@ -671,7 +692,8 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
           .oversampling = 0, .blend = 0.55f, .shape = 0.25f, .vinyl = 0.85f,
           .vinylCrackle = 0.80f, .vinylRumble = 0.85f, .valveType = 2,
           .ampType = 0, .transformerType = 4, .digitalType = 0, .vinylType = 2,
-          .vinylSpeed = 2 },
+          .vinylSpeed = 2, .vinylDust = 0.45f, .vinylScratch = 0.35f,
+          .vinylWarp = 0.55f, .vinylElectrical = 0.30f },
           // Shellac Radio
     }};
 
@@ -722,6 +744,10 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
         { "vinyl",            preset.vinyl },
         { "vinyl_crackle",    preset.vinylCrackle },
         { "vinyl_rumble",     preset.vinylRumble },
+        { "vinyl_dust",       preset.vinylDust },
+        { "vinyl_scratch",    preset.vinylScratch },
+        { "vinyl_warp",       preset.vinylWarp },
+        { "vinyl_electrical", preset.vinylElectrical },
     };
 }
 
@@ -1412,6 +1438,41 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             0));
 
     // -------------------------------------------------------------------------
+    //  The four physical faults of a record and a turntable.
+    //
+    //  VINYL is the overall amount of the record-playing end; CRACKLE and RUMBLE
+    //  are its two classic noise sources. These four are the REST of what goes
+    //  wrong, and each is a genuinely different mechanism rather than another
+    //  amount of noise:
+    //
+    //    DUST       fine particulate in the groove - a continuous granular
+    //               texture that follows the programme, so a loud passage
+    //               sounds dirtier than a quiet one.
+    //    SCRATCH    a deep groove wound crossed once per revolution - PERIODIC
+    //               damage, heard as a repeating thud rather than as a hiss.
+    //    WARP       the record is not flat - the level breathes at the platter
+    //               rate as the stylus rides up and down.
+    //    ELECTRICAL the cartridge, the cable and the earth loop - mains hum at
+    //               the supply frequency plus its harmonic, and earth static.
+    //
+    //  All four default to 0: they are faults, not calibrations, and a fresh
+    //  instance must play the record clean until the user asks for the damage.
+    //  They live under the VINYL stage, so VINYL 0 bypasses them with it.
+    // -------------------------------------------------------------------------
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vinyl_dust", 1 }, "Dust",
+                                                            percentageRange (0.45f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vinyl_scratch", 1 }, "Scratch",
+                                                            percentageRange (0.45f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vinyl_warp", 1 }, "Warp",
+                                                            percentageRange (0.45f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vinyl_electrical", 1 }, "Electrical",
+                                                            percentageRange (0.45f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+    // -------------------------------------------------------------------------
     //  The five type switches, one per saturation principle plus vinyl.
     //
     //  Each is built from its own single-sourced name list in PluginProcessor.h -
@@ -1749,6 +1810,13 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // session would duck the first block audibly.
     preLimiterDetector = 0.0f;
     limiterGain = 1.0f;
+
+    // The anti-phase guard starts neutral: no correction, and an energy floor that
+    // keeps a silent opening passage from dividing by nothing.
+    antiPhaseProduct = 0.0f;
+    antiPhaseCorrection = 0.0f;
+    antiPhaseProductMagnitude = 1.0e-3f;
+    antiPhaseAmount.store (0.0f, std::memory_order_relaxed);
 
     harmonicAnalyser.reset();
     evenHarmonicRatio.store (0.0f, std::memory_order_relaxed);
@@ -2451,6 +2519,44 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         {
             stage->vinylWowIncrement = wanderRate[vinylSpeedNow] / engineSampleRate;
             stage->speedModulation = wanderDepth[vinylSpeedNow];
+
+            // Every one of the four faults' rates is derived from the SAME platter
+            // speed the wander uses, because they are all consequences of how fast
+            // the disc turns: a scratch closes on the stylus once per revolution,
+            // a warp lifts it once per revolution, and a 78's motor hums over a
+            // winding that is not synchronised to a 33's at all. Deriving them from
+            // one number is what makes the faults belong to the SAME record instead
+            // of being four unrelated generators.
+            const float revolutionHz = wanderRate[vinylSpeedNow];
+
+            stage->scratchIncrement = revolutionHz / engineSampleRate;
+            stage->warpIncrement = revolutionHz / engineSampleRate;
+
+            // The dust's bandwidth is a real corner frequency - the grit sits above
+            // the programme's own top end - converted the same way every other
+            // coefficient here is. It also opens slightly with the platter speed,
+            // because a faster stylus excites finer grit.
+            stage->dustCoefficient = onePoleCoefficientHz (
+                6000.0f + 2000.0f * static_cast<float> (vinylSpeedNow), engineSampleRate);
+
+            // Mains hum is the one rate that is NOT the disc's: it is the supply's.
+            // 50 Hz is the standard outside North America and 60 Hz inside it; the
+            // engine uses the host's declared sample rate to place it and defaults
+            // to 50 Hz, which is the more common supply and the lower, more audible
+            // hum. The second harmonic is set from the same base so the two can
+            // never lose their 2:1 relationship.
+            constexpr float humHz = 50.0f;
+            stage->humIncrement = humHz / engineSampleRate;
+            stage->humIncrement2 = humHz * 2.0f / engineSampleRate;
+
+            // The four amounts, read once per block like every other control. They
+            // are squared inside the stage, so the control's travel is gentle at the
+            // bottom (a little dust is a little dust) and the top end is where the
+            // damage actually sounds like damage.
+            stage->dustAmount = vinylDustParam != nullptr ? vinylDustParam->load() : 0.0f;
+            stage->scratchAmount = vinylScratchParam != nullptr ? vinylScratchParam->load() : 0.0f;
+            stage->warpAmount = vinylWarpParam != nullptr ? vinylWarpParam->load() : 0.0f;
+            stage->electricalAmount = vinylElectricalParam != nullptr ? vinylElectricalParam->load() : 0.0f;
         }
     }
 
@@ -2525,6 +2631,33 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // its knee as a function-local constexpr, so a shared constant would have to
     // be lifted out of a function the DSP harness cuts up on its own.
     limiterCeiling = 0.70f;
+
+    // -------------------------------------------------------------------------
+    //  Anti-phase guard coefficients.
+    //
+    //  Two windows, and the asymmetry between them is the whole behaviour:
+    //
+    //    - `antiPhaseCoefficient` is DELIBERATELY SLOW (about 400 ms). The guard
+    //      must never react to a moment of genuine stereo - a hard-panned
+    //      transient, a wide reverb tail - because those are real programme, not
+    //      a fault. Only a SUSTAINED opposition is a fault, and 400 ms is long
+    //      enough that a transient cannot trigger it and short enough that a
+    //      genuinely inverted channel is corrected within a bar.
+    //
+    //    - the correction itself is applied through the same pole, so the rotation
+    //      glides in and out rather than switching. A polarity flip that snapped
+    //      would be a click, which is exactly the fault the guard exists to
+    //      prevent.
+    //
+    // 400 ms, stated as a duration rather than as a reciprocal.
+    antiPhaseCoefficient = onePoleCoefficient (400.0f, engineSampleRate);
+
+    // The normaliser: the correlation is divided by a slow measure of the frame's
+    // own energy, so the guard reads the RATIO of opposition to total energy rather
+    // than an absolute number that would depend on the programme's level. It is
+    // seeded here and tracked per frame inside the loop; the floor keeps a silent
+    // passage from dividing by nothing.
+    antiPhaseProductMagnitude = juce::jmax (1.0e-3f, antiPhaseProductMagnitude);
 
     // -------------------------------------------------------------------------
     //  Transport, rebuilt so the three states are genuinely different and START
@@ -4361,6 +4494,77 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             const float side = 0.5f * (outputSignal[0] - outputSignal[1]) * currentWidth;
             outputSignal[0] = mid + side;
             outputSignal[1] = mid - side;
+
+            // ------------------------------------------------------------------
+            //  Anti-phase prevention.
+            //
+            //  A stereo signal whose two sides are largely in OPPOSITE polarity
+            //  cancels when the mix is folded to mono - the classic cause being an
+            //  inverted source, a mis-wired cable, or the plugin's own modulation
+            //  and undertone generators landing out of step across the pair. It is
+            //  inaudible in stereo and then the low end and the centre of the image
+            //  simply disappear the moment anything downstream sums the channels:
+            //  a broadcast mono fold-down, a club PA, a phone speaker, a mono
+            //  mastering check.
+            //
+            //  The guard measures how much of the frame's energy sits in the SIDE
+            //  (the difference) relative to the MID (the sum), using the smoothed
+            //  correlation of the two channels. When the two are genuinely in
+            //  anti-phase the correlation goes negative, and the guard rotates the
+            //  right channel's polarity back toward the left's - in proportion to
+            //  how wrong it is, over a slow ramp, so a real stereo image is never
+            //  touched and a genuinely inverted channel is pulled back over tens of
+            //  milliseconds rather than switched.
+            //
+            //  It deliberately does NOT touch the width control: WIDTH can widen
+            //  the image as far as the user likes, because a wide image is a
+            //  legitimate stereo choice. What this prevents is the OTHER thing -
+            //  the sides being in OPPOSITE polarity, which is not width at all.
+            // ------------------------------------------------------------------
+            const float frameMid = outputSignal[0] + outputSignal[1];
+            const float frameSide = outputSignal[0] - outputSignal[1];
+
+            // The correlation envelope: a slow one-pole on the difference between
+            // the mid power and the side power. Positive means the frame's energy
+            // sits in the SUM (the sides agree - normal stereo), negative means it
+            // sits in the DIFFERENCE (the sides oppose - the fault).
+            const float frameEnergy = frameMid * frameMid - frameSide * frameSide;
+            antiPhaseProduct += (frameEnergy - antiPhaseProduct) * antiPhaseCoefficient;
+
+            // The normaliser tracks the frame's total energy on the same pole, so
+            // the guard measures a RATIO and cannot be fooled by the programme
+            // simply being louder or quieter.
+            const float frameMagnitude = frameMid * frameMid + frameSide * frameSide;
+            antiPhaseProductMagnitude += (frameMagnitude - antiPhaseProductMagnitude)
+                                       * antiPhaseCoefficient;
+            antiPhaseProductMagnitude = juce::jmax (1.0e-9f, antiPhaseProductMagnitude);
+
+            // A bounded correction: only an actual negative correlation pulls the
+            // guard into action, and it can only ever REDUCE the opposition, never
+            // invert a healthy image.
+            const float opposition = antiPhaseProduct < 0.0f
+                ? juce::jlimit (0.0f, 1.0f, -antiPhaseProduct / antiPhaseProductMagnitude)
+                : 0.0f;
+            antiPhaseCorrection += (opposition - antiPhaseCorrection) * antiPhaseCoefficient;
+
+            antiPhaseAmount.store (antiPhaseCorrection, std::memory_order_relaxed);
+
+            // The rotation: as the correction grows, the right channel is blended
+            // toward its own inverted form, which pulls an opposing pair back into
+            // agreement. At correction 0 this is bit-for-bit the untouched signal.
+            if (antiPhaseCorrection > 1.0e-5f)
+            {
+                const float rotated = outputSignal[1] * (1.0f - 2.0f * antiPhaseCorrection);
+                outputSignal[1] += (rotated - outputSignal[1]) * antiPhaseCorrection;
+            }
+        }
+        else
+        {
+            // Mono: there is no pair to be out of phase, so the guard's state is
+            // allowed to relax rather than freezing at whatever the last stereo
+            // block left it at.
+            antiPhaseCorrection += (0.0f - antiPhaseCorrection) * antiPhaseCoefficient;
+            antiPhaseAmount.store (antiPhaseCorrection, std::memory_order_relaxed);
         }
 
         // Apply the output trim before limiting, not after. The limiter has to be the last
@@ -4735,6 +4939,115 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const float driveInto = juce::jlimit (0.0f, 1.0f, inputRms * inputGainSmoothed.getCurrentValue()
                                                           * (0.5f + driveCurve));
     harmonicCharacter.store (driveInto, std::memory_order_relaxed);
+
+    // -------------------------------------------------------------------------
+    //  Publish one complete telemetry frame.
+    //
+    //  This is the LAST thing the block does, so every value in the frame is the
+    //  final value for this block - the meters, the drift, the harmonics, the
+    //  subfund tracker and the anti-phase guard have all finished writing. With
+    //  the lock-free queue present, this ONE push is what the editor reads: the
+    //  fields cannot be read half-updated, because they are pushed together.
+    //
+    //  The individual atomics are still written, because the editor falls back to
+    //  them when the queue is not compiled in and because they are what the DSP
+    //  harness and any future non-UI consumer read. Keeping both costs a handful of
+    //  relaxed stores per block and means neither path can be the stale one.
+    // -------------------------------------------------------------------------
+    {
+        TelemetryFrame frame;
+        frame.inputPeakDb = inputPeakDb.load (std::memory_order_relaxed);
+        frame.inputRmsDb = inputRmsDb.load (std::memory_order_relaxed);
+        frame.inputLufs = inputLufs.load (std::memory_order_relaxed);
+        frame.inputVuDb = inputVuDb.load (std::memory_order_relaxed);
+        frame.inputCombinedDb = inputCombinedDb.load (std::memory_order_relaxed);
+        frame.inputClipping = inputClipping.load (std::memory_order_relaxed);
+
+        frame.outputPeakDb = outputPeakDb.load (std::memory_order_relaxed);
+        frame.outputRmsDb = outputRmsDb.load (std::memory_order_relaxed);
+        frame.outputLufs = outputLufs.load (std::memory_order_relaxed);
+        frame.outputVuDb = outputVuDb.load (std::memory_order_relaxed);
+        frame.outputCombinedDb = outputCombinedDb.load (std::memory_order_relaxed);
+        frame.outputClipping = outputClipping.load (std::memory_order_relaxed);
+
+        frame.inputGainReductionDb = inputPeakReductionDb;
+        frame.outputGainReductionDb = peakReductionDb;
+        frame.inputCompressorActivity = inputEnvelopeActivity;
+        frame.outputCompressorActivity = outputCompressor.getEnvelopeActivity();
+        frame.compressorActivity = juce::jmax (inputEnvelopeActivity,
+                                               outputCompressor.getEnvelopeActivity());
+
+        frame.transportDrift = transportDrift.load (std::memory_order_relaxed);
+        frame.harmonicCharacter = driveInto;
+        frame.evenHarmonicRatio = evenHarmonicRatio.load (std::memory_order_relaxed);
+        frame.oddHarmonicRatio = oddHarmonicRatio.load (std::memory_order_relaxed);
+        frame.subfundTrackedHz = subfundTrackedHz.load (std::memory_order_relaxed);
+        frame.subfundConfidence = subfundConfidence.load (std::memory_order_relaxed);
+        frame.antiPhaseAmount = antiPhaseCorrection;
+        frame.transportRamp = transportRampPublished.load (std::memory_order_relaxed);
+        frame.spindownRamp = spindownRampPublished.load (std::memory_order_relaxed);
+        frame.bypassActive = bypassActive.load (std::memory_order_relaxed);
+
+#if J37_HAS_RWQ
+        // Non-blocking: if the editor has not drained the ring, the OLDEST frame
+        // is dropped rather than the audio thread waiting. An old meter reading is
+        // worthless, so dropping is the right answer. pop() first is not needed -
+        // ReaderWriterQueue's try_enqueue overwrites nothing and simply fails when
+        // full, so a full ring stops being a problem the moment the editor reads.
+        if (! telemetryQueue.try_enqueue (frame))
+        {
+            // Full ring: make room by discarding the oldest frame, then retry once.
+            TelemetryFrame discarded;
+            telemetryQueue.try_dequeue (discarded);
+            telemetryQueue.try_enqueue (frame);
+        }
+#endif
+
+        // The always-present mirror. These are the three the editor needs even when
+        // the queue is absent, and the values a host-side meter would read.
+        telemetryInputPeakDb.store (frame.inputPeakDb, std::memory_order_relaxed);
+        telemetryOutputPeakDb.store (frame.outputPeakDb, std::memory_order_relaxed);
+        telemetryInputRmsDb.store (frame.inputRmsDb, std::memory_order_relaxed);
+        telemetryOutputRmsDb.store (frame.outputRmsDb, std::memory_order_relaxed);
+        telemetryAntiPhase.store (frame.antiPhaseAmount, std::memory_order_relaxed);
+        telemetryPlatter.store (frame.transportRamp, std::memory_order_relaxed);
+    }
+}
+
+//==============================================================================
+TelemetryFrame FirstAudioProcessor::getTelemetry() const
+{
+#if J37_HAS_RWQ
+    // Drain to the NEWEST frame rather than taking the first: the editor polls at
+    // 30 Hz while the audio thread may push a frame per block (which can be several
+    // hundred a second), so reading the oldest would show the panel a picture from
+    // well behind the audio. Popping until the ring is empty leaves `frame` holding
+    // the most recent one - which is the only one worth drawing.
+    TelemetryFrame frame;
+    bool got = false;
+
+    TelemetryFrame next;
+    while (telemetryQueue.try_dequeue (next))
+    {
+        frame = next;
+        got = true;
+    }
+
+    if (got)
+        return frame;
+#endif
+
+    // Either the library is absent or nothing has been pushed yet (the very first
+    // UI frame, before the first block). Fall back to the atomics, which processBlock
+    // keeps current on every path including the bypass return.
+    TelemetryFrame frame;
+    frame.inputPeakDb = telemetryInputPeakDb.load (std::memory_order_relaxed);
+    frame.outputPeakDb = telemetryOutputPeakDb.load (std::memory_order_relaxed);
+    frame.inputRmsDb = telemetryInputRmsDb.load (std::memory_order_relaxed);
+    frame.outputRmsDb = telemetryOutputRmsDb.load (std::memory_order_relaxed);
+    frame.antiPhaseAmount = telemetryAntiPhase.load (std::memory_order_relaxed);
+    frame.transportRamp = telemetryPlatter.load (std::memory_order_relaxed);
+    return frame;
 }
 
 //==============================================================================
