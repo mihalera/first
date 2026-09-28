@@ -393,6 +393,9 @@ target_link_libraries(first
         dattorro_verb
         sndfile
         nlohmann_json
+        q_dsp
+        sokol_gfx
+        glm
         PluginResources
     PUBLIC
         juce::juce_recommended_config_flags
@@ -465,6 +468,9 @@ message(STATUS "                chowcentaur, vcv_prototype, rack, soundpipe, aub
 message(STATUS "                farbot, readerwriterqueue, kissfft, pocketfft, yasio, dywapitchtrack, pffft")
 message(STATUS "                RTNeural, dr_libs, yin_pitch, pitch_detector (MPM), dattorro_verb, sndfile")
 message(STATUS "                nlohmann_json (header only)")
+message(STATUS "                q_dsp, sokol_gfx, glm (header only)")
+message(STATUS "                transdes, whetstone, multiband-transient-shaper (source only)")
+message(STATUS "                juce_opengl_3d: no such JUCE module, see cmake/J37Dependencies.cmake")
 if(J37_HAVE_VDSP)
     message(STATUS "  Vector libs : Apple vDSP (Accelerate)")
 elseif(APPLE)
