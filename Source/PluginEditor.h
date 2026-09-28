@@ -365,6 +365,22 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tracksAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> inputEqOrderAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> outputEqOrderAttachment;
+
+    // The four corner switches: one per equaliser, one per filter. The corner
+    // knobs already bypass themselves at the ends of their travel, but that is
+    // a FALLBACK, not a control - a user who wants the equaliser's high-pass
+    // gone has to find the knob's end stop to get it, and then cannot tell the
+    // filter apart from a filter sitting at its bypass. These are the explicit
+    // answer, and they are pill switches rather than knobs because they are
+    // state, like GL and the mode button.
+    juce::ToggleButton inputEqHpButton { "HP" };
+    juce::ToggleButton inputEqLpButton { "LP" };
+    juce::ToggleButton outputEqHpButton { "HP" };
+    juce::ToggleButton outputEqLpButton { "LP" };
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> inputEqHpAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> inputEqLpAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> outputEqHpAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> outputEqLpAttachment;
     // Transport: STOP / PLAY / START as three buttons rather than a combo, because
     // the whole point of the gesture is that START and STOP are momentary presses
     // and PLAY is a resting state. A combo made the user open a menu to stop a
@@ -584,6 +600,24 @@ private:
     void styleTransportButtons();
     void styleSpindownButton();
     void refreshModeButtonCaption();
+
+    // Reads a BOOL parameter's current value. Written as a helper because the
+    // obvious spelling does not compile: getParameterAsValue returns a
+    // juce::var, not an optional, so it has no hasValue() and its getValue()
+    // returns another var rather than a bool. Every reader wants the same
+    // three things - the parameter exists, it is a bool, and it is on - and
+    // answering that in one place is what keeps the mode button and the
+    // attachment from disagreeing about the machine's state.
+    bool isModeOn (const juce::String& parameterID) const
+    {
+        // getParameterAsValue hands back a juce::Value BY VALUE, and Value has
+        // no conversion to var: its accessor is getValue(), which returns a var
+        // by value. The local keeps that Value alive for the read.
+        const auto value = audioProcessor.parameters.getParameterAsValue (parameterID);
+        const auto underlying = value.getValue();
+
+        return underlying.isBool() && static_cast<bool> (underlying);
+    }
 
     std::unique_ptr<b2World> physicsWorld;
     std::array<PhysicsOrb, decorativeOrbCount> physicsOrbs {};

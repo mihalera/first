@@ -2196,8 +2196,8 @@ struct VinylStage
             auto& clickEnvelope = channel == 0 ? clickEnvelopeL : clickEnvelopeR;
 
             random = random * 1664525u + 1013904223u;
-            const float unit = static_cast<float> ((random >> 8) & 0x00ffffffu)
-                             * (1.0f / 8388608.0f) - 1.0f;
+            const float clickDraw = static_cast<float> ((random >> 8) & 0x00ffffffu)
+                                  * (1.0f / 8388608.0f) - 1.0f;
 
             // The random half of the clicks: roughly one every few thousand
             // samples at full CLICKS, which is a stream of distinct events.
@@ -2221,7 +2221,7 @@ struct VinylStage
                     periodicClick = true;
             }
 
-            if (std::abs (unit) < randomProbability || periodicClick)
+            if (std::abs (clickDraw) < randomProbability || periodicClick)
             {
                 random = random * 1664525u + 1013904223u;
                 const float amplitude = static_cast<float> ((random >> 8) & 0x00ffffffu)
@@ -2230,7 +2230,7 @@ struct VinylStage
                 // A click is an IMPACT, so it is much louder than a tick - and it
                 // is bipolar, alternating sign between events, which is what a
                 // mechanical impact produces when the stylus is knocked both ways.
-                const float sign = unit < 0.0f ? -1.0f : 1.0f;
+                const float sign = clickDraw < 0.0f ? -1.0f : 1.0f;
                 clickEnvelope += amplitude * sign * 0.55f;
             }
 

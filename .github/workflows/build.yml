@@ -41,6 +41,18 @@ jobs:
       - name: Run the subharmonic harness
         run: bash tests/dsp/run.sh
 
+      # The factory presets cannot fail at runtime - a name list that is a row
+      # short, or a parameter with no column in the table, both just quietly
+      # load the wrong sound - so they are checked against the source instead.
+      # It found the real defect this job was added for: fifteen sound-bearing
+      # parameters (the input preamp, the DI chain, the extra distortion stage,
+      # the second head's four controls and the output stage's two switches)
+      # were declared as parameters and had no column at all, so every preset
+      # loaded "mostly" and the same preset gave different results depending on
+      # what was loaded before it.
+      - name: Check the factory preset table
+        run: python3 tests/presets/check_presets.py
+
   # ============================================================================
   #  DSP micro-benchmarks - measurement, never a gate
   #

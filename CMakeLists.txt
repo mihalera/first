@@ -265,6 +265,7 @@ target_link_libraries(first
         pitch_detector
         audio_fft
         dattorro_verb
+        sndfile
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
@@ -334,7 +335,7 @@ message(STATUS "  Libraries   : chowdsp_utils, melatonin_inspector, melatonin_bl
 message(STATUS "                signalsmith-stretch, fftconvolver, imgui, iPlug2 (source only)")
 message(STATUS "                chowcentaur, vcv_prototype, rack, soundpipe, aubio (source only)")
 message(STATUS "                farbot, readerwriterqueue, kissfft, pocketfft, yasio, dywapitchtrack, pffft")
-message(STATUS "                RTNeural, dr_libs, yin_pitch, pitch_detector (MPM), dattorro_verb (libsndfile skipped - see cmake/J37Dependencies.cmake)")
+message(STATUS "                RTNeural, dr_libs, yin_pitch, pitch_detector (MPM), dattorro_verb, sndfile")
 if(J37_HAVE_VDSP)
     message(STATUS "  Vector libs : Apple vDSP (Accelerate)")
 elseif(APPLE)

@@ -1,5 +1,9 @@
-﻿#include "PluginProcessor.h"
+#include "PluginProcessor.h"
 #include "PluginEditor.h"
+
+#include <iostream>
+#include <utility>
+#include <vector>
 
 #if JUCE_DEBUG
  #include <melatonin_inspector/melatonin_inspector.h>
@@ -286,30 +290,23 @@ namespace
         juce::Colour::fromRGB (110, 220, 160)    // status - the same green family, dimmer
     };
 
-    // The bool overload is the single funnel every paint routine and every
-    // styling call goes through. It used to map "dark" to charcoal outright,
-    // which is exactly why METAL read as a demo of the dark theme: the panel's
-    // ~60 dark call sites never saw the metal palette at all. The funnel now
-    // reads the live three-way choice, so a theme switch changes every surface
-    // that draws through here - and paint() (whose only information IS the bool)
-    // lands on the right palette for the first time.
-    const UiPalette& paletteFor (bool darkTheme) const noexcept
-    {
-        juce::ignoreUnused (darkTheme);
-        return paletteForTheme (liveThemeChoice);
-    }
-
     // The live choice, kept in step with the editor's by applyTheme(). It lives
-    // in the anonymous namespace beside the palettes so both overloads share it.
+    // in the anonymous namespace beside the palettes so both lookups share it.
     J37LookAndFeel::ThemeChoice liveThemeChoice = J37LookAndFeel::ThemeChoice::ivory;
 
-    // The three-theme lookup. `paletteFor(bool)` above is kept because it is what
-    // every paint routine already calls, and the two dark themes share every
-    // code path - this is the one place the two of them are told apart.
-    // The parameter is J37LookAndFeel::ThemeChoice itself: a second, local
-    // enum with the same enumerators compiled on its own and then could not
-    // accept the look-and-feel's member (two distinct types), which is what
-    // broke drawToggleButton. One enum, declared once in the header.
+    // The three-theme lookup. `paletteFor(bool)` below is kept because it is
+    // what every paint routine already calls, and the two dark themes share
+    // every code path - this is the one place the two of them are told apart.
+    // The parameter is J37LookAndFeel::ThemeChoice itself: a second, local enum
+    // with the same enumerators compiled on its own and then could not accept
+    // the look-and-feel's member (two distinct types), which is what broke
+    // drawToggleButton. One enum, declared once in the header.
+    //
+    // This one is DEFINED FIRST, and the order is load-bearing: both of these
+    // are free functions in the anonymous namespace, so each may only use what
+    // is declared above it. Written the other way round, paletteFor could not
+    // see the lookup or the live choice, and the failure reads as if the
+    // functions did not exist at all.
     const UiPalette& paletteForTheme (J37LookAndFeel::ThemeChoice theme)
     {
         switch (theme)
@@ -319,6 +316,23 @@ namespace
             case J37LookAndFeel::ThemeChoice::ivory:
             default:                                    return ivoryPalette;
         }
+    }
+
+    // The bool overload is the single funnel every paint routine and every
+    // styling call goes through. It used to map "dark" to charcoal outright,
+    // which is exactly why METAL read as a demo of the dark theme: the panel's
+    // ~60 dark call sites never saw the metal palette at all. The funnel now
+    // reads the live three-way choice, so a theme switch changes every surface
+    // that draws through here - and paint() (whose only information IS the bool)
+    // lands on the right palette for the first time.
+    //
+    // No `const` on this one: it is a free function, not a member, and a cv-
+    // qualifier on a non-member function is a hard error ("cannot have
+    // cv-qualifier") rather than something to be ignored.
+    const UiPalette& paletteFor (bool darkTheme) noexcept
+    {
+        juce::ignoreUnused (darkTheme);
+        return paletteForTheme (liveThemeChoice);
     }
 
     // The three tabs the knob grid is split across. Each entry names a tab and lists the
@@ -367,7 +381,19 @@ namespace
     //   19 noise  20 subfund  21 preamp  22 distortion  23 flux  24 wear
     //   25 mechanics  26 reverb  27 reverb_size  28 vinyl  29 vinyl_crackle
     //   30 vinyl_rumble  31 noise_lvl  32 st_link
-    //   33 dust  34 scratch  35 warp  36 electrical
+    //   33 dust  34 scratch  35 warp  36 electrical  37 clicks
+    //   38 in_low  39 in_mid  40 in_high   41 out_low  42 out_mid  43 out_high
+    //   44 di  45 di_load  46 di_transformer
+    //   47 in_hp_freq  48 in_lp_freq  49 in_eq_q
+    //   50 out_hp_freq  51 out_lp_freq  52 out_eq_q  53 delay_pingpong
+    //
+    // The map above is the controlIds list's own order (the one place the indices
+    // are defined), kept in step with it by hand and checked by the static_assert
+    // further down that every index is inside the array. It was written when the
+    // panel carried thirty-seven knobs and stopped there, while the list below
+    // the table has since grown to fifty-four - so four of the tab rows above
+    // referred to indices that had silently been re-used for the EQ and DI
+    // controls. The indices are now all listed.
     //
     // The deck's non-knob switches follow the tabs too: GL and OVERSAMPLING show
     // on SETTINGS, and the delay TYPE / RATE / SYNC trio shows on SPACE. They are
@@ -392,11 +418,15 @@ namespace
                        "the rest of the machine's voicing rather than beside its "
                        "faults.",
                      3, { 23, 15, 14 } },
-        //  noise, noise_lvl, wow, flutter, wear, mechanics, vinyl, vinyl_crackle,
-        //  vinyl_rumble - everything that is a departure from a clean signal,
-        //  which is what noise means in the widest sense. Wow and flutter are
-        //  the transport's noise, wear and mechanics are the medium's and the
-        //  mechanism's, and they share the transport gate with the hiss.
+        //  noise, noise_lvl, wow, flutter, wear, mechanics - the MACHINE's own
+        //  departures from a clean signal, which is what noise means in the
+        //  widest sense. Wow and flutter are the transport's noise, wear and
+        //  mechanics the medium's and the mechanism's, and they share the
+        //  transport gate with the hiss. The record's five FAULTS are here too
+        //  - DUST the surface's fine texture, SCRATCH a wound crossed once per
+        //  revolution, WARP the level breathing at the platter rate, ELECTRICAL
+        //  the cartridge's earthing, CLICKS the pressing's sharp faults - so
+        //  every knob on this page is a way of making the signal LESS clean.
         { "NOISE", "Everything that departs from a clean signal. NOISE MIX sets how "
                    "much of it is in the output and NOISE LVL how loud the sources "
                    "run; WOW and FLUTTER are the transport's noise, WEAR and "
@@ -405,18 +435,24 @@ namespace
                    "SCRATCH a wound crossed once per revolution, WARP the level "
                    "breathing at the platter rate, ELECTRICAL the cartridge's "
                    "earthing, CLICKS the pressing's sharp faults.",
-                     14, { 19, 31, 5, 6, 24, 25, 28, 29, 30, 33, 34, 35, 36, 37 } },
+                     11, { 19, 31, 5, 6, 24, 25, 33, 34, 35, 36, 37 } },
         //  delay_time, delay_feedback, st_offset, reverb, reverb_size
         { "SPACE", "The two time-based stages: the second head, then the room. The "
                    "deck's TYPE / SYNC DELAY / RATE switches belong to the second "
                    "head, so they show on this tab.",
                      6, { 16, 17, 18, 53, 26, 27 } },
-        //  The record's faults moved onto NOISE (each is a mechanism of noise:
+        //  The record's five FAULTS moved onto NOISE (each is a mechanism of noise:
         //  surface texture, a repeating wound, the platter's warp, the cartridge's
         //  earthing, the pressing's clicks), so this page carries the stage's mix
         //  and its two continuous surfaces. The three selectors at the top of the
         //  old page - GENERATION / TURNTABLE / CARTRIDGE - moved to CHARACTER,
         //  where the rest of the machine's voicing lives.
+        //
+        //  These three are here and NOT also on NOISE: they are the record's
+        //  CHARACTER (how much of the stage is in the output, and the two
+        //  continuous surfaces), while the faults are noise. Listing them on
+        //  both pages would put the same knob on two tabs, and the grid can only
+        //  place one of them.
         { "VINYL", "The record-playing stage: VINYL MIX is how much of it is in the "
                     "output, CRACKLE the surface's granular texture and RUMBLE the "
                     "platter's own low thump. The record's five FAULTS - DUST, "
@@ -479,10 +515,20 @@ namespace
 // reads it from the same constant - so adding a page cannot leave this behind.
 constexpr std::size_t numTabPages = 9;
 
-constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tabs,
-                                     std::size_t total)
+// The control count is a TEMPLATE parameter, not an argument, and that is the
+// whole fix. It used to be a literal 54 inside the function - the current
+// control count, written down a second time. The day a control was added the
+// array was still 54 long, so a tab row naming index 54 or 55 would have
+// returned false for the wrong reason, and growing the array would have meant
+// remembering to grow the literal too. Passing the count as a template argument
+// means the caller (which already has it, as controlCount) and the checker can
+// never disagree, and a static_assert can still evaluate it: a function
+// ARGUMENT is not a constant expression, which is why this could not simply be
+// passed in as a parameter.
+template <std::size_t total>
+constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tabs)
     {
-        std::array<int, 54> seen {};
+        std::array<int, total> seen {};
 
         for (const auto& tab : tabs)
             for (std::size_t i = 0; i < tab.count; ++i)
@@ -1707,10 +1753,8 @@ void FirstAudioProcessorEditor::refreshModeButtonCaption()
     // The caption names the live mode, read from the parameters rather than from
     // a button-local bool: a session load, an undo or a preset can all change the
     // modes behind the panel's back, and the caption must follow all of them.
-    const auto modern = audioProcessor.parameters.getParameterAsValue ("modern_mode").getValue();
-    const auto lofi   = audioProcessor.parameters.getParameterAsValue ("lofi_mode").getValue();
-    const auto modernOn = modern.hasValue() && bool (modern.getValue());
-    const auto lofiOn   = lofi.hasValue() && bool (lofi.getValue());
+    const auto modernOn = isModeOn ("modern_mode");
+    const auto lofiOn   = isModeOn ("lofi_mode");
     modeCycleButton.setButtonText (modernOn ? "MODE: MODERN"
                                   : lofiOn  ? "MODE: LO-FI"
                                             : "MODE: OFF");
@@ -1757,7 +1801,7 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
     // a knob on the panel that is unreachable or duplicated.
     static_assert (tabSpecs.size() == static_cast<std::size_t> (numTabs),
                    "numTabs and tabSpecs must describe the same number of tabs");
-    static_assert (tabsCoverAllControls (tabSpecs, controlCount),
+    static_assert (tabsCoverAllControls<controlCount> (tabSpecs),
                    "every knob must be listed by exactly one tab");
 
     currentTab = juce::jlimit (0, numTabs - 1, newTab);
@@ -2988,10 +3032,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     modeCycleButton.setLookAndFeel (&customLookAndFeel);
     modeCycleButton.onClick = [this]
     {
-        const auto modern = audioProcessor.parameters.getParameterAsValue ("modern_mode").getValue();
-        const auto lofi   = audioProcessor.parameters.getParameterAsValue ("lofi_mode").getValue();
-        const auto modernOn = modern.hasValue() && bool (modern.getValue());
-        const auto lofiOn   = lofi.hasValue() && bool (lofi.getValue());
+        const auto modernOn = isModeOn ("modern_mode");
+        const auto lofiOn   = isModeOn ("lofi_mode");
 
         auto nextModern = false;
         auto nextLofi = false;
@@ -3105,6 +3147,42 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         (audioProcessor.parameters, "in_eq_order", inputEqOrderBox);
     outputEqOrderAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "out_eq_order", outputEqOrderBox);
+
+    //  The four corner switches. The corner knobs already bypass themselves at
+    //  the ends of their travel, but that is a fallback rather than a control:
+    //  a user who wants the equaliser's high-pass gone has to find the knob's
+    //  end stop, and then cannot tell the filter from one sitting at its
+    //  bypass. These are the explicit answer, and they are pill switches
+    //  because they are state, like GL and the mode button.
+    const auto setUpEqCornerSwitch = [this] (juce::ToggleButton& button,
+                                             const juce::String& which,
+                                             const juce::String& corner)
+    {
+        button.setClickingTogglesState (true);
+        button.setTooltip (which.toUpperCase() + " " + corner.toUpperCase() + " ON/OFF. "
+                           "The corner frequency beside it sets where the filter "
+                           "turns; this says whether the filter is in the signal at "
+                           "all. With the switch off the corner keeps its setting, "
+                           "so turning the filter back on does not make the user "
+                           "find the frequency again - which is the difference "
+                           "between a switch and parking the knob at its end stop.");
+        button.setLookAndFeel (&inlineLookAndFeel);
+        addAndMakeVisible (button);
+    };
+
+    setUpEqCornerSwitch (inputEqHpButton, "Input EQ", "HP");
+    setUpEqCornerSwitch (inputEqLpButton, "Input EQ", "LP");
+    setUpEqCornerSwitch (outputEqHpButton, "Output EQ", "HP");
+    setUpEqCornerSwitch (outputEqLpButton, "Output EQ", "LP");
+
+    inputEqHpAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (audioProcessor.parameters, "in_hp_on", inputEqHpButton);
+    inputEqLpAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (audioProcessor.parameters, "in_lp_on", inputEqLpButton);
+    outputEqHpAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (audioProcessor.parameters, "out_hp_on", outputEqHpButton);
+    outputEqLpAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (audioProcessor.parameters, "out_lp_on", outputEqLpButton);
 
     // ---------------------------------------------------------------
     //  Premium workflow bar.
@@ -3383,6 +3461,10 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     vinylTurntableBox.setLookAndFeel (nullptr);
     vinylCartridgeBox.setLookAndFeel (nullptr);
     uiSoundsButton.setLookAndFeel (nullptr);
+    inputEqHpButton.setLookAndFeel (nullptr);
+    inputEqLpButton.setLookAndFeel (nullptr);
+    outputEqHpButton.setLookAndFeel (nullptr);
+    outputEqLpButton.setLookAndFeel (nullptr);
     transportStopButton.setLookAndFeel (nullptr);
     transportPlayButton.setLookAndFeel (nullptr);
     transportStartButton.setLookAndFeel (nullptr);
@@ -4360,18 +4442,56 @@ void FirstAudioProcessorEditor::resized()
     subtitleLabel.setBounds (layout.header.getX() + 126, layout.header.getY() + 46, 220, 18);
     // The engine switches live in the header's right half, two per row - the
     // request was to move BYPASS / DELTA / POLARITY / AUTO GAIN up here, where
-    // the theme button already sat. THEME and the status readout keep the second
-    // row's right end; the switches take the row above them. The rows are laid
-    // out from the right so they stay clear of the title block on the left at
-    // the 780 px minimum: title block ends near x+346, and the switch block
-    // needs 190 px per row, which leaves 240 px of clearance.
+    // the theme button already sat. THEME and the status readout keep the
+    // second row's right end; the switches take the row above them.
+    //
+    // Both rows are placed by a CURSOR that walks right-to-left and consumes
+    // each item's own width, rather than by writing a coordinate per button.
+    // It used to be five hard-coded x positions, and they did not add up: the
+    // second row's AUTO GAIN ended at right-192 while THEME started at
+    // right-202, so the two overlapped by ten pixels at every window size - the
+    // kind of collision a table of literals cannot show you, because each
+    // individual line is correct and only the SUM is wrong. With the cursor the
+    // gap is the only number, and a row cannot overlap itself.
+    //
+    // Widths, for the clearance argument at the 780 px minimum: row one is
+    // 359 px (status 181, delta 74, bypass 92 and two 6 px gaps) and row two
+    // is 300 px (theme 96, auto gain 100, polarity 92). The title block ends
+    // at x + 346, so the wider row starts at 780 - 14 - 359 = x + 407 and
+    // clears it by 61 px.
     const auto headerRight = layout.header.getRight();
-    bypassButton.setBounds   (headerRight - 390, layout.header.getY() + 10, 92, 28);
-    deltaButton.setBounds    (bypassButton.getRight() + 6, layout.header.getY() + 10, 74, 28);
-    polarityButton.setBounds (headerRight - 390, layout.header.getY() + 44, 92, 28);
-    autoGainButton.setBounds (polarityButton.getRight() + 6, layout.header.getY() + 44, 100, 28);
-    themeButton.setBounds    (headerRight - 202, layout.header.getY() + 44, 96, 28);
-    statusLabel.setBounds    (headerRight - 202, layout.header.getY() + 10, 181, 28);
+    constexpr int headerSwitchGap = 6;
+    constexpr int headerSwitchHeight = 28;
+    const auto headerRowOneY = layout.header.getY() + 10;
+    const auto headerRowTwoY = layout.header.getY() + 44;
+
+    // Places one header item and returns the x the next one to its left starts
+    // at. Taking the cursor by reference is what makes this a walk rather than
+    // five independent calculations.
+    const auto placeFromRight = [&] (int& edge, juce::Component& component,
+                                     int width, int y)
+    {
+        component.setBounds (edge - width, y, width, headerSwitchHeight);
+        edge -= width + headerSwitchGap;
+    };
+
+    {
+        int headerEdge = headerRight;
+
+        // Row one, right to left: the status readout, then DELTA, then BYPASS.
+        placeFromRight (headerEdge, statusLabel, 181, headerRowOneY);
+        placeFromRight (headerEdge, deltaButton, 74, headerRowOneY);
+        placeFromRight (headerEdge, bypassButton, 92, headerRowOneY);
+    }
+
+    {
+        int headerEdge = headerRight;
+
+        // Row two, right to left: THEME, then AUTO GAIN, then POLARITY.
+        placeFromRight (headerEdge, themeButton, 96, headerRowTwoY);
+        placeFromRight (headerEdge, autoGainButton, 100, headerRowTwoY);
+        placeFromRight (headerEdge, polarityButton, 92, headerRowTwoY);
+    }
 
     // The deck has four dedicated lines, each chain width tuned to fit the minimum
     // deck width without any overlap (the two line-plans that used to be printed
@@ -4403,8 +4523,10 @@ void FirstAudioProcessorEditor::resized()
     tapeTypeBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 32, 148, 32);
     speedLabel.setBounds (tapeTypeBox.getRight() + 16, layout.deck.getY() + 41, 45, 16);
     speedBox.setBounds (tapeTypeBox.getRight() + 62, layout.deck.getY() + 32, 104, 32);
-    bypassButton.setBounds (speedBox.getRight() + 18, layout.deck.getY() + 32, 92, 32);
-    deltaButton.setBounds (bypassButton.getRight() + 6, layout.deck.getY() + 32, 74, 32);
+    // (BYPASS and DELTA are NOT placed here any more: they live in the header
+    // block above, and this pair of lines was the deck's leftover that put them
+    // back - the two were laid out twice, so whichever ran last won and the
+    // deck's copy silently undid the move.)
     // (deckHintLabel is positioned on the transport line, further down: it now
     // carries the live machine state rather than a static caption.)
 
@@ -4416,8 +4538,14 @@ void FirstAudioProcessorEditor::resized()
     // ---- line 2 (y + 76): OVER | oversampling | INSTRUMENT | instrument -----
     oversamplingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 85, 40, 16);
     oversamplingBox.setBounds (layout.deck.getX() + 60, layout.deck.getY() + 76, 72, 32);
+    // The INSTRUMENT caption follows the OVER pair's own convention - caption
+    // to the LEFT of its box, on the box's band - which it did not: both were
+    // placed at the same x, the caption nine pixels lower, so the word was
+    // printed straight through the combo box it names. That is a true overlap,
+    // not a near miss, and it was invisible for the same reason every other one
+    // here was: the two lines are each individually reasonable.
     instrumentLabel.setBounds (oversamplingBox.getRight() + 16, layout.deck.getY() + 85, 68, 16);
-    instrumentBox.setBounds (oversamplingBox.getRight() + 16, layout.deck.getY() + 76, 112, 32);
+    instrumentBox.setBounds (instrumentLabel.getRight() + 8, layout.deck.getY() + 76, 112, 32);
 
     // The right-hand readout stack shares line 2's band on the deck's right: three
     // caption/value pairs on even 30 px centres. The stack's left edge is computed
@@ -4504,20 +4632,78 @@ void FirstAudioProcessorEditor::resized()
     // SYNC / RATE trio is NOT here any more: it is a tab member of SPACE (see
     // placeDeckSwitch in the grid section), which is where its listeners look
     // for it and where it can no longer collide with anything.
-    const auto modeRowY = layout.deck.getY() + 260;
-    modeCycleButton.setBounds (layout.deck.getRight() - 14 - 150, modeRowY, 150, 32);
+    // The mode cycle button shares the TRANSPORT row, right-aligned, rather than
+    // taking a row of its own. It was given a row and that row was the preset
+    // row's: modeCycleButton ran from x + 588 to x + 738 at y + 260..292, and
+    // the preset chain runs from x + 66 to x + 749 on exactly that band, so
+    // COMPARE, UNDO, REDO and the badge were all printed underneath it. Putting
+    // it beside the transport keys is both correct - OFF / LO-FI / MODERN is a
+    // machine switch, and the transport keys are where the machine's state
+    // lives - and free: the transport row's right end holds nothing above
+    // x + 502 at the 752 px minimum, and the mode button starts at x + 588.
+    //
+    // The DELAY TYPE / SYNC / RATE trio is NOT in the deck at all: each of the
+    // three is a tab member of SPACE (see placeDeckSwitch in the grid section),
+    // which is where its listeners look for it and where it can no longer
+    // collide with anything.
+    modeCycleButton.setBounds (layout.deck.getRight() - 14 - 150, transportRowY, 150, 32);
+
+    // The preset workflow chain is eleven items and it did not fit: written as
+    // a left-to-right chain of `previous.getRight() + gap`, the last item - the
+    // compare badge - ended sixteen pixels past the deck's right edge at the
+    // 780 px minimum, so it was drawn over the panel border and the frame.
+    //
+    // It is now walked from BOTH ends: the head of the chain from the deck's
+    // left inset, the tail from its right inset, each with the same cursor
+    // discipline as the header's switch rows. Every item's width is written
+    // once, next to its own name, and the two chains meet in the middle - so
+    // adding a button to either end costs one line and cannot push the other
+    // end off the panel, which is the failure a single chain always has.
+    const auto presetRowY = layout.deck.getY() + 260;
+    const auto presetRowHeight = 32;
+    constexpr int presetRowGap = 5;
+
+    const auto placeForward = [presetRowY, presetRowHeight, presetRowGap]
+                                  (int& edge, juce::Component& component, int width)
+    {
+        component.setBounds (edge, presetRowY, width, presetRowHeight);
+        edge += width + presetRowGap;
+    };
+
+    const auto placeBackward = [presetRowY, presetRowHeight, presetRowGap]
+                                   (int& edge, juce::Component& component, int width)
+    {
+        component.setBounds (edge - width, presetRowY, width, presetRowHeight);
+        edge -= width + presetRowGap;
+    };
 
     presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 269, 46, 16);
-    presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 260, 128, 32);
-    userPresetBox.setBounds (presetBox.getRight() + 6, layout.deck.getY() + 260, 100, 32);
-    savePresetButton.setBounds (userPresetBox.getRight() + 5, layout.deck.getY() + 260, 40, 32);
-    deletePresetButton.setBounds (savePresetButton.getRight() + 4, layout.deck.getY() + 260, 38, 32);
-    copyAButton.setBounds (deletePresetButton.getRight() + 10, layout.deck.getY() + 260, 64, 32);
-    copyBButton.setBounds (copyAButton.getRight() + 5, layout.deck.getY() + 260, 64, 32);
-    compareButton.setBounds (copyBButton.getRight() + 5, layout.deck.getY() + 260, 54, 32);
-    undoButton.setBounds (compareButton.getRight() + 5, layout.deck.getY() + 260, 44, 32);
-    redoButton.setBounds (undoButton.getRight() + 5, layout.deck.getY() + 260, 44, 32);
-    compareBadgeLabel.setBounds (redoButton.getRight() + 8, layout.deck.getY() + 260, 54, 32);
+
+    {
+        // Head, from the left: the factory list, the user list, save, delete.
+        // 120 and 94 rather than 128 and 100: at the 780 px minimum the two
+        // chains meet with two pixels between DELETE and COPY A, which is a
+        // clearance, not a margin. Fourteen pixels taken off the two widest
+        // items - both of them lists that shorten their own font before they
+        // clip - buys sixteen, and the chain then has room for a button added
+        // at either end without the two ends touching.
+        int headEdge = layout.deck.getX() + 66;
+        placeForward (headEdge, presetBox,         120);
+        placeForward (headEdge, userPresetBox,      94);
+        placeForward (headEdge, savePresetButton,  40);
+        placeForward (headEdge, deletePresetButton, 38);
+    }
+
+    {
+        // Tail, from the right: the badge, REDO, UNDO, COMPARE, A, B.
+        int tailEdge = layout.deck.getRight() - 14;
+        placeBackward (tailEdge, compareBadgeLabel, 54);
+        placeBackward (tailEdge, redoButton,        44);
+        placeBackward (tailEdge, undoButton,        44);
+        placeBackward (tailEdge, compareButton,     54);
+        placeBackward (tailEdge, copyBButton,       64);
+        placeBackward (tailEdge, copyAButton,       64);
+    }
 
     // The badge band is inset further than the other deck text (22 px instead of 18)
     // and its caption is fitted to the width it actually has, so neither "FACTORY
@@ -4530,6 +4716,7 @@ void FirstAudioProcessorEditor::resized()
     presetBadgeLabel.setFont (shrinkingFont (presetBadgeLabel.getText(), 8.0f,
                                              juce::Font::plain,
                                              static_cast<float> (presetBadgeLabel.getWidth()) - 4.0f));
+
 
     controlsHeadingLabel.setBounds (layout.controls.getX() + 18, layout.controls.getY() + 10, 210, 19);
     const auto controlsHintRight = layout.controls.getRight() - 12;
@@ -4661,7 +4848,6 @@ void FirstAudioProcessorEditor::resized()
     // source of truth; looking the tab up by name cannot drift from it.
     const auto settingsTab = index_of_tab_named ("SETTINGS") == currentTab;
     const auto spaceTab = index_of_tab_named ("SPACE") == currentTab;
-    const auto vinylTab = index_of_tab_named ("VINYL") == currentTab;
     const auto characterTab = index_of_tab_named ("CHARACTER") == currentTab;
     const auto driveTab = index_of_tab_named ("DRIVE") == currentTab;
     const auto inEqTab = index_of_tab_named ("IN EQ") == currentTab;
@@ -4678,6 +4864,12 @@ void FirstAudioProcessorEditor::resized()
     inputEqOrderBox.setVisible (inEqTab);
     outputEqOrderLabel.setVisible (outEqTab);
     outputEqOrderBox.setVisible (outEqTab);
+    // The corner switches follow their own equaliser's page, like the ORDER
+    // combo beside them.
+    inputEqHpButton.setVisible (inEqTab);
+    inputEqLpButton.setVisible (inEqTab);
+    outputEqHpButton.setVisible (outEqTab);
+    outputEqLpButton.setVisible (outEqTab);
     oversamplingLabel.setVisible (settingsTab);
     oversamplingBox.setVisible (settingsTab);
     glButton.setVisible (settingsTab);
@@ -4734,6 +4926,43 @@ void FirstAudioProcessorEditor::resized()
         placeDeckSwitch (vinylTurntableLabel, vinylTurntableBox, 1, 1, 1, "TURNTABLE");
         placeDeckSwitch (vinylCartridgeLabel, vinylCartridgeBox, 2, 1, 1, "CARTRIDGE");
     }
+    else if (inEqTab || outEqTab)
+    {
+        // IN EQ / OUT EQ: six knobs fill the first row, so the row below is
+        // where the equaliser's three corner controls go - the slope ORDER
+        // first, then the two on/off switches for the corners whose frequency
+        // knobs are in the row above.
+        //
+        // The switches are placed by the SAME cell arithmetic as everything
+        // else (label band, control band, cell width), through placeEqCorner
+        // below, rather than by hand-placed coordinates: the two switches
+        // share the row with the ORDER combo, and a coordinate written for one
+        // of them would be a guess about the other's.
+        const auto isIn = inEqTab;
+        placeDeckSwitch (isIn ? inputEqOrderLabel : outputEqOrderLabel,
+                         isIn ? inputEqOrderBox : outputEqOrderBox, 0, 1, 1, "ORDER");
+
+        const auto placeEqCorner = [&] (juce::Component& button, int column)
+        {
+            auto cell = juce::Rectangle<int> (grid.getX() + column * cellWidth,
+                                              memberRowY + rowHeight,
+                                              cellWidth, rowHeight);
+            button.setBounds (cell.getX() + 12, cell.getY() + 20,
+                              cell.getWidth() - 24,
+                              juce::jmin (30, cell.getHeight() - 22));
+        };
+
+        if (isIn)
+        {
+            placeEqCorner (inputEqHpButton, 1);
+            placeEqCorner (inputEqLpButton, 2);
+        }
+        else
+        {
+            placeEqCorner (outputEqHpButton, 1);
+            placeEqCorner (outputEqLpButton, 2);
+        }
+    }
 
     // Four meters in a 2 x 2 grid inside the meters panel:
     //   row 1 - INPUT and OUTPUT level VU meters
@@ -4762,4 +4991,146 @@ void FirstAudioProcessorEditor::resized()
     outputMeter.setBounds (rightColumn, topRow, columnWidth, meterRowHeight);
     compressorMeterIn.setBounds (leftColumn, bottomRow, columnWidth, meterRowHeight);
     compressorMeterOut.setBounds (rightColumn, bottomRow, columnWidth, meterRowHeight);
+
+#if DEBUG
+    // ------------------------------------------------------------------
+    //  The overlap check.
+    //
+    //  The panel's most persistent complaint has been furniture printed on top
+    //  of furniture - captions over knobs, switches over switches - and it
+    //  kept coming back because nothing in the build can see it: every
+    //  individual line of a hand-placed layout is a correct rectangle, and the
+    //  error lives in the RELATIONSHIP between two of them. Ten pixels is a
+    //  real collision and a perfectly reasonable-looking number. It is found
+    //  here, in the two places it happened: the header's AUTO GAIN ran into
+    //  THEME by ten pixels, and the mode button's own row was the preset row's,
+    //  so COMPARE, UNDO, REDO and the badge were printed underneath it.
+    //
+    //  So the relationship is what gets checked. The furniture is listed BY
+    //  NAME rather than swept up from getNumChildComponents(), because the
+    //  things that are laid out by arithmetic rather than by hand - the knob
+    //  grid, the tab bar, the meters, the vinyl reel - are computed from a
+    //  member count and cannot overlap by construction, and sweeping them in
+    //  would bury the real signal in a hundred legitimate grid contacts. The
+    //  list is the panel's hand-placed surface, and it is the one place a new
+    //  switch has to be added to be covered.
+    //
+    //  It runs LAST in resized(), at the real bounds just set: an item placed
+    //  further down the function - the tab grid, the deck switches, the meters
+    //  - would otherwise be measured at the bounds it had before this resize,
+    //  which is a stale rectangle and reports a collision that is not there.
+    //  Opening the editor at the 780 x 816 minimum - where the clearance is
+    //  thinnest and where the collisions actually happened - is therefore
+    //  enough to fail on the next one, rather than on the next person to open
+    //  it on a big screen.
+    //
+    //  DEBUG only: a quadratic sweep on a path that runs whenever the window
+    //  moves is nothing to pay for in a development build and nothing at all
+    //  in a release one.
+    // ------------------------------------------------------------------
+    {
+        const struct { const char* name; const juce::Component* component; } furniture[] = {
+            // The header: the two switch rows, the theme key and the readout.
+            { "brand",         &brandLabel },
+            { "title",         &titleLabel },
+            { "subtitle",      &subtitleLabel },
+            { "status",        &statusLabel },
+            { "bypass",        &bypassButton },
+            { "delta",         &deltaButton },
+            { "polarity",      &polarityButton },
+            { "autoGain",      &autoGainButton },
+            { "theme",         &themeButton },
+
+            // The deck, line by line, in the order resized() places them.
+            { "deckHeading",   &deckHeadingLabel },
+            { "build",         &buildLabel },
+            { "tapeTypeLabel", &tapeTypeLabel },
+            { "tapeTypeBox",   &tapeTypeBox },
+            { "speedLabel",    &speedLabel },
+            { "speedBox",      &speedBox },
+            { "bpmLabel",      &bpmLabel },
+            { "bpmReadout",    &bpmReadout },
+            { "oversampLabel", &oversamplingLabel },
+            { "oversampBox",   &oversamplingBox },
+            { "instrLabel",    &instrumentLabel },
+            { "instrBox",      &instrumentBox },
+            { "gl",            &glButton },
+            { "harmonics",     &harmonicsLabel },
+            { "harmonicsVal",  &harmonicsReadout },
+            { "subfund",       &subfundLabel },
+            { "subfundVal",    &subfundReadout },
+            { "antiPhase",     &antiPhaseLabel },
+            { "antiPhaseVal",  &antiPhaseReadout },
+            { "vinylTypeLabel",     &vinylTypeLabel },
+            { "vinylTypeBox",       &vinylTypeBox },
+            { "vinylSpeedLabel",    &vinylSpeedLabel },
+            { "vinylSpeedBox",      &vinylSpeedBox },
+            { "valveTypeLabel",     &valveTypeLabel },
+            { "valveTypeBox",       &valveTypeBox },
+            { "ampTypeLabel",       &ampTypeLabel },
+            { "ampTypeBox",         &ampTypeBox },
+            { "transformerLabel",   &transformerTypeLabel },
+            { "transformerBox",     &transformerTypeBox },
+            { "digitalTypeLabel",   &digitalTypeLabel },
+            { "digitalTypeBox",     &digitalTypeBox },
+            { "transportLabel",     &transportLabel },
+            { "spindownLabel",      &spindownLabel },
+            { "stop",               &transportStopButton },
+            { "play",               &transportPlayButton },
+            { "start",              &transportStartButton },
+            { "spindown",           &spindownButton },
+            { "deckHint",           &deckHintLabel },
+            { "mode",               &modeCycleButton },
+            { "presetHeading",      &presetHeadingLabel },
+            { "presetBox",          &presetBox },
+            { "userPresetBox",      &userPresetBox },
+            { "savePreset",         &savePresetButton },
+            { "deletePreset",       &deletePresetButton },
+            { "copyA",              &copyAButton },
+            { "copyB",              &copyBButton },
+            { "compare",            &compareButton },
+            { "undo",               &undoButton },
+            { "redo",               &redoButton },
+            { "compareBadge",       &compareBadgeLabel },
+            { "presetBadge",        &presetBadgeLabel },
+        };
+
+        // Only what is on screen counts: a hidden tab member is deliberately
+        // placed on top of its neighbours and shown later, one tab at a time.
+        std::vector<std::pair<const char*, juce::Rectangle<int>>> placed;
+
+        for (const auto& item : furniture)
+        {
+            const auto bounds = item.component->getBounds();
+
+            // A zero-sized or invisible item cannot collide with anything a
+            // person can see, and the panel uses one-pixel rules as dividers.
+            if (! item.component->isVisible() || bounds.getWidth() <= 1 || bounds.getHeight() <= 1)
+                continue;
+
+            placed.emplace_back (item.name, bounds);
+        }
+
+        for (std::size_t a = 0; a < placed.size(); ++a)
+        {
+            for (std::size_t b = a + 1; b < placed.size(); ++b)
+            {
+                const auto& first  = placed[a].second;
+                const auto& second = placed[b].second;
+
+                // Touching edges are a row, not a collision, and the panel
+                // places several pairs exactly edge to edge on purpose. Only a
+                // TRUE overlap - positive area in both axes - is a fault.
+                if (first.getRight() <= second.getX() || second.getRight() <= first.getX()
+                    || first.getBottom() <= second.getY() || second.getBottom() <= first.getY())
+                    continue;
+
+                jassertfalse;
+                std::cout << "overlap: " << placed[a].first << " " << first.toString()
+                          << "  with  " << placed[b].first << " " << second.toString()
+                          << std::endl;
+            }
+        }
+    }
+#endif
 }
