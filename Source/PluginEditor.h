@@ -601,6 +601,17 @@ private:
     void styleSpindownButton();
     void refreshModeButtonCaption();
 
+    // Where the deck's drifting particles are allowed to be, in HORIZONTAL and
+    // VERTICAL bands. resized() writes them from the gap the switches row
+    // actually left rather than from a pair of hard-coded coordinates, because
+    // a coordinate is only correct at the width it was chosen for: the row
+    // spreads with the panel, so the free space moves, and a fixed corridor
+    // either clips the particles short or puts them on top of a control. An
+    // empty horizontal range means there is nowhere free to put them and
+    // paint() draws none.
+    juce::Range<int> deckParticleCorridorX;
+    juce::Range<int> deckParticleCorridorY;
+
     // Reads a BOOL parameter's current value. Written as a helper because the
     // obvious spelling does not compile: getParameterAsValue returns a
     // juce::var, not an optional, so it has no hasValue() and its getValue()

@@ -1841,38 +1841,41 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // to fit on a laptop screen:
     //
     //   1. The FLOOR is the layout's own minimum, derived from the fixed furniture in
-    //      getEditorLayout() and the three lines of controls in the deck. The deck needs
+    //      getEditorLayout() and the six bands of controls in the deck. The deck needs
     //      752 px of width, which is 780 px of window once the 14 px outer padding is
-    //      added, and the five knob rows need about 65 px each, which is 680 px of window
-    //      (header 70 + deck 164 + their two gaps, then the grid under a heading). The
-    //      old floor of 860 x 820 was above both, so on a 1366 x 768 laptop - a work area
-    //      of roughly 1366 x 688 - the window could not be shrunk to fit at all, and the
-    //      user could not get at the bottom of the preset row.
+    //      added; vertically it is the header, the deck and the space the knob grid
+    //      needs for its three rows.
     //
     //   2. The OPENING size is the preferred size CLAMPED TO THE SCREEN IT OPENS ON.
-    //      A fixed 1060 x 900 fits a 27" monitor and nothing smaller, and the host is
+    //      A fixed size fits a 27" monitor and nothing smaller, and the host is
     //      under no obligation to shrink the window for us. So the display the editor
     //      lands on decides: the preferred size when there is room, and the work area
     //      minus a frame allowance when there is not, centred so the whole panel is
     //      reachable instead of hanging off the bottom edge.
     //
-    // A screen SMALLER than the floor still gets a window that fits (the clamp wins over
-    // the floor, because a window you cannot see is worse than a tight one); the floor
-    // only governs how far the user may drag the edges afterwards.
+    //   3. The FLOOR IS ALSO CLAMPED TO THE SCREEN, which is the part that was
+    //      missing and the reason the window stopped fitting. Clamping the OPENING
+    //      size was never enough: setResizeLimits is what the host reads when IT
+    //      sizes the window, and what the user cannot drag below afterwards. So a
+    //      768 px laptop - a work area of roughly 1366 x 728 - was handed a floor
+    //      of 816, and a window that could not be made small enough to live on the
+    //      screen no matter which of the two rules was applied. A window you cannot
+    //      see is worse than a tight one, so the floor yields: below the layout's
+    //      own minimum the panel gets cramped, which it is written to survive, and
+    //      above it nothing changes at all.
     constexpr int minEditorWidth = 780;
-    constexpr int minEditorHeight = 816;
+    constexpr int minEditorHeight = 772;
     constexpr int preferredEditorWidth = 1060;
-    constexpr int preferredEditorHeight = 960;
+    constexpr int preferredEditorHeight = 916;
 
     // The horizontal margin keeps the frame off the edge of the display. The vertical
-    // one is larger because a decorated window's title bar and border sit OUTSIDE the
-    // size requested here - on Windows and GNOME that is another 30-45 px of screen the
-    // work area has to have room for, and forgetting it is how a window that "fits" ends
-    // up with its caption bar under the taskbar.
+    // one covers a decorated window's title bar and border, which sit OUTSIDE the size
+    // requested here - on Windows and GNOME that is another 30-45 px of screen the
+    // work area has to have room for, and over-reserving it is how a window that
+    // "fits" ends up smaller than it needs to be. It was 48 a side, which spent 96 px
+    // of a 728 px work area on margins the frame does not actually use.
     constexpr int screenMarginX = 16;
-    constexpr int screenMarginY = 48;
-
-    setResizeLimits (minEditorWidth, minEditorHeight, 1500, 1180);
+    constexpr int screenMarginY = 32;
 
     const auto& displays = juce::Desktop::getInstance().getDisplays();
     juce::Rectangle<int> workArea;
@@ -1893,19 +1896,26 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 
     if (workArea.isEmpty())
     {
+        setResizeLimits (minEditorWidth, minEditorHeight, 1500, 1180);
         setSize (preferredEditorWidth, preferredEditorHeight);
     }
     else
     {
         // toNearestInt() above already rounded, so subtracting the margin afterwards
         // cannot leave the window half a pixel - or a whole one - over the edge.
-        const auto openingWidth = juce::jlimit (minEditorWidth,
-                                                workArea.getWidth() - 2 * screenMarginX,
-                                                preferredEditorWidth);
-        const auto openingHeight = juce::jlimit (minEditorHeight,
-                                                 workArea.getHeight() - 2 * screenMarginY,
-                                                 preferredEditorHeight);
+        const auto fittingWidth = workArea.getWidth() - 2 * screenMarginX;
+        const auto fittingHeight = workArea.getHeight() - 2 * screenMarginY;
 
+        // The floor this screen can actually honour, and the size it opens at. Both
+        // read from the same two numbers, so the window cannot open at a size its
+        // own limits would refuse - the version of this that clamped only the
+        // opening size and left the floor alone was the bug, not a near miss of it.
+        const auto floorWidth = juce::jmin (minEditorWidth, fittingWidth);
+        const auto floorHeight = juce::jmin (minEditorHeight, fittingHeight);
+        const auto openingWidth = juce::jlimit (floorWidth, fittingWidth, preferredEditorWidth);
+        const auto openingHeight = juce::jlimit (floorHeight, fittingHeight, preferredEditorHeight);
+
+        setResizeLimits (floorWidth, floorHeight, 1500, 1180);
         setSize (openingWidth, openingHeight);
 
         // Centred only when the screen forced a smaller window. At the preferred size the
@@ -3600,26 +3610,29 @@ bool FirstAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
 FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayout() const
 {
     // Outer padding of 14 px instead of 18: the screws and the panel border only need
-    // that much clearance, and every pixel saved here goes to the working areas. The
-    // header is 70 px and the deck 80 - both are still comfortably above their fixed
-    // furniture (30 px badge, 35 px combo boxes) plus the deck's second workflow line,
-    // but no longer bankroll dead space.
+    // that much clearance, and every pixel saved here goes to the working areas.
     auto remaining = getLocalBounds().reduced (14);
     EditorLayout layout;
 
     // Header and deck are fixed-height, so they keep their proportions at small panel
-    // sizes and on high-DPI displays. The deck is five control lines tall - transport,
-    // then switches / oversampling, then the five type switches, then the transport
-    // keys with the machine-state readout, then presets and the A/B cluster - plus a
-    // badge band at the bottom, so no two groups ever share a row and nothing can
-    // overlap even at the minimum panel size.
-    // The header grew from 70 to 84 so it can hold the four engine switches the
-    // deck used to carry (BYPASS / DELTA / POLARITY / AUTO GAIN) on its first
-    // right-hand row, with THEME and the status readout on the second. The deck
-    // keeps its height; the fourteen pixels come out of the working areas.
+    // sizes and on high-DPI displays. The header is 84 px - tall enough for the four
+    // engine switches the deck used to carry (BYPASS / DELTA / POLARITY / AUTO GAIN) on
+    // its first right-hand row, with THEME and the status readout on the second.
+    //
+    // The deck is 278 px and was 322. The forty-four came out of the machine readouts,
+    // which were a three-high vertical stack pinned to the deck's right edge and are
+    // now three caption-over-value pairs side by side inside the 32 px band they share
+    // with OVER, INSTRUMENT and GL. Nothing was moved off the deck to buy it - the
+    // stack is the only thing that was taller than the band it was in - and the deck
+    // keeps one band per group, so no two of them share a row.
+    //
+    // It is the same forty-four that comes off the editor's minimum height, which is
+    // the difference between a window that fits a 768 px laptop and one that does
+    // not. The floor is not cosmetic: it is what the host sizes the window to and
+    // what the user cannot drag below.
     layout.header = remaining.removeFromTop (84);
     remaining.removeFromTop (8);
-    layout.deck = remaining.removeFromTop (322);
+    layout.deck = remaining.removeFromTop (278);
     remaining.removeFromTop (8);
 
     // The meters panel has to hold a 2 x 2 grid of dials, so it claims a share of the
@@ -3970,9 +3983,11 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     }
 
     // Tape ribbon from the small reel down the deck's right edge, sagging with the
-    // wow/flutter drift. It stays inside the clear corridor between the oversampling
-    // box (ends x + 382 of the deck) and the harmonics readout (starts x + 608), so
-    // it can never cross a control or a caption.
+    // wow/flutter drift. It hangs from the reel at deck.right - 42, so the only row
+    // that has to stay clear of it is the model row, and that row stops at the
+    // standard right inset (deck.right - 14) - twenty-eight pixels to the right of
+    // the ribbon's leftmost point. That is a fact about the ribbon, not a number
+    // that has to be kept in step with the row's width by hand.
     const auto sag = (driftAmount - 0.5f) * 5.0f;
     juce::Path tapeRibbon;
     tapeRibbon.startNewSubPath (reelCentre.x, reelCentre.y + 12.0f);
@@ -3990,19 +4005,22 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
         orbsToDraw = renderOrbs;
     }
 
+    // The corridor the switches row left free, which resized() measured rather
+    // than assumed - see deckParticleCorridorX. An empty range means the row had
+    // no gap wide enough to be worth drawing into (a very narrow window), and
+    // the right answer then is no particles at all: they are decoration, and
+    // decoration on top of a control is the failure this whole pass is about.
+    if (deckParticleCorridorX.getLength() < 20)
+        return;
+
     for (const auto& orb : orbsToDraw)
     {
-        // The orbs drift only inside the deck's free corridor on the SWITCHES line,
-        // between the oversampling box (ends x + 382) and the harmonics readout
-        // (starts x + 608). The old vertical band was the heading + switches rows
-        // (y + 14..62), which crossed the BYPASS switch and the deck hint on the
-        // transport row above.
         const auto x = juce::jmap (orb.position.x, 0.0f, 1.5f,
-                                   static_cast<float> (layout.deck.getX()) + 400.0f,
-                                   static_cast<float> (layout.deck.getX()) + 590.0f);
+                                   static_cast<float> (deckParticleCorridorX.getStart()) + 6.0f,
+                                   static_cast<float> (deckParticleCorridorX.getEnd()) - 6.0f);
         const auto y = juce::jmap (orb.position.y, 0.0f, 1.2f,
-                                   static_cast<float> (layout.deck.getY()) + 74.0f,
-                                   static_cast<float> (layout.deck.getY()) + 104.0f);
+                                   static_cast<float> (deckParticleCorridorY.getStart()),
+                                   static_cast<float> (deckParticleCorridorY.getEnd()));
         const auto radius = juce::jmap (orb.radius, 0.045f, 0.057f, 2.0f, 3.5f);
 
         // Halos breathe so the orbs read as particles rather than static dots.
@@ -4493,22 +4511,31 @@ void FirstAudioProcessorEditor::resized()
         placeFromRight (headerEdge, polarityButton, 92, headerRowTwoY);
     }
 
-    // The deck has four dedicated lines, each chain width tuned to fit the minimum
-    // deck width without any overlap (the two line-plans that used to be printed
-    // here described each other's rows and the rows themselves overlapped - the
-    // whole plan below is the one truth now):
-    //   line 1 (y + 32)  - MODEL | tape box | SPEED | speed box | the BPM readout
-    //   line 2 (y + 76)  - OVER | oversampling box | INSTRUMENT | instrument box,
-    //                      with the readout stack (harmonics / subfund / anti-phase)
-    //                      right-aligned beside them
-    //   line 3 (y + 124) - the six type switches, one row: VINYL | VINYL SPEED |
-    //                      VALVE | AMP | XFMR | DIGITAL, labels above their boxes
-    //   line 4 (y + 172) - TRANSPORT keys with the machine-state readout
-    //   line 5 (y + 214) - the mode switch and the preset workflow row, badge
-    //                      band under them at y + 246 (the deck is 276 px)
-    // BYPASS / DELTA / POLARITY / AUTO GAIN no longer live here: they moved into
-    // the header (see the header block above), which is what frees the deck from
-    // the row collisions that made it read as furniture on top of furniture.
+    // ------------------------------------------------------------------
+    //  The deck.
+    //
+    //  Six bands, none of them shared with another:
+    //   y +   6  the DECK heading and the build id
+    //   y +  30  MODEL     tape type | speed | BPM
+    //   y +  74  SWITCHES  oversampling | instrument | GL | HARMONICS | SUB
+    //              FUND | ANTI PHASE
+    //   y + 116  the six type switches, their captions above their boxes
+    //   y + 183  TRANSPORT keys, the machine state, the mode switch
+    //   y + 217  the preset workflow chain
+    //   y + 253  the preset badge band          (the deck is 278 px)
+    //
+    //  BYPASS / DELTA / POLARITY / AUTO GAIN are not here: they moved to the
+    //  header (see above), and the delay trio is a tab member of SPACE.
+    //
+    //  The three machine readouts were a vertical stack pinned to the deck's
+    //  right edge - 130 px wide and 88 px tall. That is why the type row could
+    //  not start until y + 168, why the deck had to be 322 px to hold it, and
+    //  why the row it shared with OVER, INSTRUMENT and GL had two hundred
+    //  pixels of nothing between them at the minimum width. They are three
+    //  caption-over-value pairs side by side now, and each fits inside the
+    //  32 px band the switches share, which is what brings the deck back to
+    //  278 and takes forty-four pixels off the editor's minimum height.
+    // ------------------------------------------------------------------
     deckHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 6, 150, 16);
 
     // The build id rides the deck's heading strip, right-aligned and stopping short of
@@ -4519,147 +4546,274 @@ void FirstAudioProcessorEditor::resized()
     buildLabel.setBounds (layout.deck.getX() + 190, layout.deck.getY() + 6,
                           layout.deck.getWidth() - 280, 16);
 
-    tapeTypeLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 41, 45, 16);
-    tapeTypeBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 32, 148, 32);
-    speedLabel.setBounds (tapeTypeBox.getRight() + 16, layout.deck.getY() + 41, 45, 16);
-    speedBox.setBounds (tapeTypeBox.getRight() + 62, layout.deck.getY() + 32, 104, 32);
-    // (BYPASS and DELTA are NOT placed here any more: they live in the header
-    // block above, and this pair of lines was the deck's leftover that put them
-    // back - the two were laid out twice, so whichever ran last won and the
-    // deck's copy silently undid the move.)
-    // (deckHintLabel is positioned on the transport line, further down: it now
-    // carries the live machine state rather than a static caption.)
-
-    // The five type switches share a second deck row, under the model row. Their
-    // labels ride the same convention - text above, control below - so the row
-    // reads as the model row's continuation rather than a new idea. Five boxes at
-    // 118 px plus four 14 px gaps fill the 646 px the model row's controls span,
-    // which keeps the two rows reading as one deck.
-    // ---- line 2 (y + 76): OVER | oversampling | INSTRUMENT | instrument -----
-    oversamplingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 85, 40, 16);
-    oversamplingBox.setBounds (layout.deck.getX() + 60, layout.deck.getY() + 76, 72, 32);
-    // The INSTRUMENT caption follows the OVER pair's own convention - caption
-    // to the LEFT of its box, on the box's band - which it did not: both were
-    // placed at the same x, the caption nine pixels lower, so the word was
-    // printed straight through the combo box it names. That is a true overlap,
-    // not a near miss, and it was invisible for the same reason every other one
-    // here was: the two lines are each individually reasonable.
-    instrumentLabel.setBounds (oversamplingBox.getRight() + 16, layout.deck.getY() + 85, 68, 16);
-    instrumentBox.setBounds (instrumentLabel.getRight() + 8, layout.deck.getY() + 76, 112, 32);
-
-    // The right-hand readout stack shares line 2's band on the deck's right: three
-    // caption/value pairs on even 30 px centres. The stack's left edge is computed
-    // from the deck's right edge FIRST (declared before its readers - the reverse
-    // order produced C2065 once), and INSTRUMENT's row has 300+ px of clearance
-    // before it at the 752 px minimum.
-    const auto harmonicsWidth = 130;
-    const auto harmonicsLeft = layout.deck.getRight() - harmonicsWidth - 14;
-
-    harmonicsLabel.setBounds (harmonicsLeft, layout.deck.getY() + 74, harmonicsWidth, 14);
-    harmonicsReadout.setBounds (harmonicsLeft, layout.deck.getY() + 88, harmonicsWidth, 13);
-    subfundLabel.setBounds (harmonicsLeft, layout.deck.getY() + 104, harmonicsWidth, 14);
-    subfundReadout.setBounds (harmonicsLeft, layout.deck.getY() + 118, harmonicsWidth, 13);
-    antiPhaseLabel.setBounds (harmonicsLeft, layout.deck.getY() + 134, harmonicsWidth, 14);
-    antiPhaseReadout.setBounds (harmonicsLeft, layout.deck.getY() + 148, harmonicsWidth, 13);
-
-    // ---- line 3 (y + 168): the six type switches, one row -------------------
-    // Six boxes of 100 px on 14 px gaps = 670 px inside the 752 px deck minimum.
-    // The row starts BELOW the readout stack (whose last value ends at y + 161)
-    // and keeps the band to itself: the earlier layout had this row start at
-    // y + 80 while the switches row ran to y + 106, so the two printed through
-    // each other - the deck's "everything on top of everything".
-    const auto typeRowY = 168;
-    const auto typeRowX = layout.deck.getX() + 18;
-    const auto typeBoxWidth = 100;
-    const auto typeGap = 14;
-    vinylTypeLabel.setBounds (typeRowX, layout.deck.getY() + typeRowY, 62, 15);
-    vinylTypeBox.setBounds (typeRowX, layout.deck.getY() + typeRowY + 15, typeBoxWidth, 30);
-    vinylSpeedLabel.setBounds (vinylTypeBox.getRight() + typeGap, layout.deck.getY() + typeRowY, 62, 15);
-    vinylSpeedBox.setBounds (vinylTypeBox.getRight() + typeGap, layout.deck.getY() + typeRowY + 15, typeBoxWidth, 30);
-    valveTypeLabel.setBounds (vinylSpeedBox.getRight() + typeGap, layout.deck.getY() + typeRowY, 45, 15);
-    valveTypeBox.setBounds (vinylSpeedBox.getRight() + typeGap, layout.deck.getY() + typeRowY + 15, typeBoxWidth, 30);
-    ampTypeLabel.setBounds (valveTypeBox.getRight() + typeGap, layout.deck.getY() + typeRowY, 45, 15);
-    ampTypeBox.setBounds (valveTypeBox.getRight() + typeGap, layout.deck.getY() + typeRowY + 15, typeBoxWidth, 30);
-    transformerTypeLabel.setBounds (ampTypeBox.getRight() + typeGap, layout.deck.getY() + typeRowY, 62, 15);
-    transformerTypeBox.setBounds (ampTypeBox.getRight() + typeGap, layout.deck.getY() + typeRowY + 15, typeBoxWidth, 30);
-    digitalTypeLabel.setBounds (transformerTypeBox.getRight() + typeGap, layout.deck.getY() + typeRowY, 55, 15);
-    digitalTypeBox.setBounds (transformerTypeBox.getRight() + typeGap, layout.deck.getY() + typeRowY + 15, typeBoxWidth, 30);
-
-    // ---- line 1's BPM readout: deck furniture, on the model row -------------
-    bpmLabel.setBounds (speedBox.getRight() + 18, layout.deck.getY() + 41, 40, 16);
-    bpmReadout.setBounds (bpmLabel.getRight(), layout.deck.getY() + 38, 96, 18);
-
-    // TRANSPORT is a deck: STOP / PLAY / START and the momentary SPINDOWN. They sit
-    // on their own line under POLARITY / AUTO GAIN, in the empty band the deck keeps
-    // between the switches row (y + 74) and the preset row (y + 146). That band was
-    // dead space at every panel width, and the switches row itself has no room for
-    // four keys once INSTRUMENT, GL and the harmonics block have taken theirs - the
-    // earlier attempt to squeeze them in beside INSTRUMENT overlapped GL at the
-    // minimum width. Here they have the whole left half of the deck to themselves.
-    const auto transportRowY = layout.deck.getY() + 226;
-    const auto transportLeft = layout.deck.getX() + 18;
-    const auto keyWidth = 62;
-    const auto keyGap = 4;
-
-    transportLabel.setBounds (transportLeft, transportRowY - 13, keyWidth * 3 + keyGap * 2, 12);
-    spindownLabel.setBounds (transportLeft + (keyWidth + keyGap) * 3 + 8, transportRowY - 13,
-                             keyWidth + 12, 12);
-
-    transportStopButton.setBounds (transportLeft, transportRowY, keyWidth, 28);
-    transportPlayButton.setBounds (transportLeft + (keyWidth + keyGap), transportRowY,
-                                   keyWidth, 28);
-    transportStartButton.setBounds (transportLeft + (keyWidth + keyGap) * 2, transportRowY,
-                                    keyWidth, 28);
-    spindownButton.setBounds (transportLeft + (keyWidth + keyGap) * 3 + 8, transportRowY,
-                              keyWidth + 12, 28);
-    // GL sits in the gap the switches row already has: instrumentBox on its
-    // left, the right-aligned harmonics readout on its right. glLeft was a
-    // leftover of a removed layout block; harmonicsLeft is computed above and
-    // is exactly the right anchor.
-    glButton.setBounds (harmonicsLeft - 6 - 64, layout.deck.getY() + 74, 64, 32);
-
-    // The machine-state readout sits to the right of the transport keys on the same
-    // line, so the words and the keys read together instead of the state living on
-    // a caption elsewhere on the deck.
-    deckHintLabel.setBounds (spindownButton.getRight() + 14, transportRowY + 2, 190, 24);
-
-    // DELAY TYPE and the two mode switches share the transport row's right end.
-    // That row ends at the deck hint label (about x + 664 of 752 at the minimum),
-    // and the harmonics block starts at x + 608, so there is a genuine gap between
-    // them on the switches row - which is where these three go, stacked against
-    // the readout rather than competing with the transport chain on the left.
-    // The mode cycle button sits at the deck row's right end. The DELAY TYPE /
-    // SYNC / RATE trio is NOT here any more: it is a tab member of SPACE (see
-    // placeDeckSwitch in the grid section), which is where its listeners look
-    // for it and where it can no longer collide with anything.
-    // The mode cycle button shares the TRANSPORT row, right-aligned, rather than
-    // taking a row of its own. It was given a row and that row was the preset
-    // row's: modeCycleButton ran from x + 588 to x + 738 at y + 260..292, and
-    // the preset chain runs from x + 66 to x + 749 on exactly that band, so
-    // COMPARE, UNDO, REDO and the badge were all printed underneath it. Putting
-    // it beside the transport keys is both correct - OFF / LO-FI / MODERN is a
-    // machine switch, and the transport keys are where the machine's state
-    // lives - and free: the transport row's right end holds nothing above
-    // x + 502 at the 752 px minimum, and the mode button starts at x + 588.
+    // ------------------------------------------------------------------
+    //  Spreading a row across the deck.
     //
-    // The DELAY TYPE / SYNC / RATE trio is NOT in the deck at all: each of the
-    // three is a tab member of SPACE (see placeDeckSwitch in the grid section),
-    // which is where its listeners look for it and where it can no longer
-    // collide with anything.
-    modeCycleButton.setBounds (layout.deck.getRight() - 14 - 150, transportRowY, 150, 32);
+    //  The deck was drawn for the 752 px minimum and the editor opens at 1060,
+    //  so every row that pinned a group to the left and another to the right
+    //  left a hole in the middle that GREW with the window: 32 to 96 px of it
+    //  at the minimum, and 312 to 486 px at the size the window actually opens
+    //  at. Nothing was wrong with any single number - the widths were right and
+    //  the anchors were right - and the sum of the two was a deck with its
+    //  middle missing. A layout written for one width does not look wrong at
+    //  that width; it looks wrong at every other one, which is the whole of
+    //  what "the deck is crooked" meant.
+    //
+    //  So the slack is shared. Half of it opens up the gaps and half goes into
+    //  the items themselves, which is what stops a row from looking like small
+    //  controls drifting apart: a row reads as one thing that grew, rather than
+    //  as three things with holes between them.
+    //
+    //  Three properties keep this safe rather than merely different:
+    //
+    //    - every item's base width is still written down, next to its own name,
+    //      so a row can never claim more space than its content needs, and the
+    //      same number describes the item at every panel size;
+    //    - the gap is FLOORED at the constant the row used before, so at the
+    //      minimum width this is a small perturbation of the layout that
+    //      shipped, and the guarantee is one-sided - it can only ever add space,
+    //      never take any away, and so can never bring two controls closer
+    //      together than they have ever been;
+    //    - a caption and the control it names are GLUED: their gap is written
+    //      in the table and is never elastic, and a caption stacked on its own
+    //      readout rides the readout's column rather than adding a second one.
+    //      That is the exact failure the previous pass fixed on this panel -
+    //      INSTRUMENT's caption printed straight through its own combo box -
+    //      and a rule that redistributed slack between the two would be a way
+    //      of walking back into it.
+    //
+    //  The row returns the widest gap it left, so the drifting particles are
+    //  told where the free space actually is instead of being told a pair of
+    //  coordinates that was only ever right at one width.
+    // ------------------------------------------------------------------
+    struct DeckRowItem
+    {
+        juce::Component* component;
+        int width;         // the column this item opens; ignored when sameColumn
+        int gapAfter;      // -1 elastic, or a fixed gap; ignored when sameColumn
+        int y;             // relative to the row's own y
+        int height;
+        bool sameColumn;   // rides the column the previous item opened (a
+                          // caption above its own readout, or its own box)
+    };
+
+    const auto placeDeckRow = [] (const std::vector<DeckRowItem>& items,
+                                  int left, int right, int rowY, int minimumGap)
+    {
+        int content = 0;
+        int elasticGaps = 0;
+
+        for (std::size_t i = 0; i < items.size(); ++i)
+        {
+            if (! items[i].sameColumn)
+                content += items[i].width;
+
+            // A gap belongs to the item that ENDS a column: the caption of a
+            // horizontal pair, and the value of a stacked one.
+            if (i + 1 < items.size() && ! items[i + 1].sameColumn)
+            {
+                if (items[i].gapAfter < 0)
+                {
+                    content += minimumGap;
+                    ++elasticGaps;
+                }
+                else
+                {
+                    content += items[i].gapAfter;
+                }
+            }
+        }
+
+        // Never negative: a row whose own widths are wider than the panel packs
+        // left at the minimum gap rather than overlapping itself.
+        const auto slack = juce::jmax (0, right - left - content);
+        const auto gapShare = elasticGaps > 0
+                                ? static_cast<int> (slack * 0.5) / elasticGaps : 0;
+        const auto widthShare = items.empty()
+                                  ? 0
+                                  : static_cast<int> (slack * 0.5) / static_cast<int> (items.size());
+
+        auto widest = juce::Range<int> (0, 0);
+        int edge = left;
+        int columnLeft = left;
+        int columnWidth = 0;
+
+        for (std::size_t i = 0; i < items.size(); ++i)
+        {
+            const auto& item = items[i];
+
+            // A stacked item does not open a column: it rides the one the item
+            // before it opened, at that item's width, so a caption and the
+            // readout under it are always the same width by construction and
+            // there is no second number that could disagree with the first.
+            if (! item.sameColumn)
+            {
+                columnLeft = edge;
+                columnWidth = item.width + widthShare;
+            }
+
+            item.component->setBounds (columnLeft, rowY + item.y, columnWidth, item.height);
+
+            // The gap belongs to the item that ENDS the column, so a stacked
+            // pair still leaves the row with the gap it was promised.
+            if (i + 1 < items.size() && ! items[i + 1].sameColumn)
+            {
+                const auto elastic = item.gapAfter < 0;
+                const auto gap = elastic ? minimumGap + gapShare : item.gapAfter;
+
+                if (elastic && gap > widest.getLength())
+                    widest = { columnLeft + columnWidth, columnLeft + columnWidth + gap };
+
+                edge = columnLeft + columnWidth + gap;
+            }
+        }
+
+        return widest;
+    };
+
+    constexpr int deckRightInset = 14;
+
+    // The reel and the tape ribbon own the deck's top-right corner, and the ribbon
+    // hangs down through the model row's band: it starts at the reel (deck.right -
+    // 42, y + 26) and falls to y + 60, which is the row the tape box and the BPM
+    // readout sit in. So the model row stops 70 px short - twenty-eight to the
+    // right of the ribbon's leftmost point - and every other row uses the standard
+    // inset. This is not a margin that has to be re-tuned per row; it is the
+    // ribbon's own width, and the rows below it do not need it because the ribbon
+    // ends above them.
+    constexpr int reelCorridor = 70;
+
+    // ---- row 1: MODEL -------------------------------------------------------
+    {
+        const std::vector<DeckRowItem> row {
+            { &tapeTypeLabel,  45,  3,  9, 16, false },
+            { &tapeTypeBox,   148, -1,  0, 32, false },
+            { &speedLabel,     45,  3,  9, 16, false },
+            { &speedBox,      104, -1,  0, 32, false },
+            { &bpmLabel,       40,  0,  8, 16, false },
+            { &bpmReadout,     96, -1,  8, 18, false }
+        };
+
+        placeDeckRow (row, layout.deck.getX() + 18, layout.deck.getRight() - reelCorridor,
+                      layout.deck.getY() + 30, 16);
+    }
+
+    // ---- row 2: SWITCHES ----------------------------------------------------
+    // GL has no caption - it is a pill that carries its own text - and the three
+    // readouts are caption over value, so each is one column rather than two.
+    {
+        const std::vector<DeckRowItem> row {
+            { &oversamplingLabel, 40,  2, 11, 16, false },
+            { &oversamplingBox,   72, -1,  0, 32, false },
+            { &instrumentLabel,   68,  8, 11, 16, false },
+            { &instrumentBox,    112, -1,  0, 32, false },
+            { &glButton,          64, -1,  0, 32, false },
+
+            { &harmonicsLabel,    96, -1,  0, 14, false },
+            { &harmonicsReadout,   0, -1, 14, 13, true  },
+            { &subfundLabel,      96, -1,  0, 14, false },
+            { &subfundReadout,     0, -1, 14, 13, true  },
+            { &antiPhaseLabel,    96, -1,  0, 14, false },
+            { &antiPhaseReadout,   0, -1, 14, 13, true  }
+        };
+
+        const auto freeGap = placeDeckRow (row, layout.deck.getX() + 18,
+                                           layout.deck.getRight() - deckRightInset,
+                                           layout.deck.getY() + 74, 12);
+
+        // The readouts are the only deck text whose width now depends on the
+        // panel, so they are the only ones that can run out of room - and they
+        // are also the only ones whose TEXT changes while the editor is open
+        // ("idle - no note tracked", "412.5 Hz 87 %"). setMinimumHorizontalScale
+        // is the one fit that keeps working: it is a property of the label, so
+        // every later setText is measured against the width the row gave it,
+        // rather than being clipped at whatever size it happened to be at when
+        // the last resize happened to run.
+        for (auto* label : { &harmonicsLabel, &harmonicsReadout,
+                             &subfundLabel, &subfundReadout,
+                             &antiPhaseLabel, &antiPhaseReadout })
+            label->setMinimumHorizontalScale (0.55f);
+
+        // Where the particles may drift: the gap this row actually left. Under
+        // twenty pixels there is nowhere free to put them, and drawing them
+        // anyway would put decoration on top of a control - the one thing this
+        // whole pass exists to stop. paint() skips them when this is empty.
+        deckParticleCorridorX = freeGap.getLength() >= 20 ? freeGap
+                                                          : juce::Range<int> (0, 0);
+        deckParticleCorridorY = { layout.deck.getY() + 76, layout.deck.getY() + 104 };
+    }
+
+    // ---- row 3: the six type switches ---------------------------------------
+    {
+        const std::vector<DeckRowItem> row {
+            { &vinylTypeLabel,       100, -1,  0, 15, false },
+            { &vinylTypeBox,           0, -1, 15, 30, true  },
+            { &vinylSpeedLabel,      100, -1,  0, 15, false },
+            { &vinylSpeedBox,          0, -1, 15, 30, true  },
+            { &valveTypeLabel,       100, -1,  0, 15, false },
+            { &valveTypeBox,           0, -1, 15, 30, true  },
+            { &ampTypeLabel,         100, -1,  0, 15, false },
+            { &ampTypeBox,             0, -1, 15, 30, true  },
+            { &transformerTypeLabel, 100, -1,  0, 15, false },
+            { &transformerTypeBox,     0, -1, 15, 30, true  },
+            { &digitalTypeLabel,     100, -1,  0, 15, false },
+            { &digitalTypeBox,         0, -1, 15, 30, true  }
+        };
+
+        placeDeckRow (row, layout.deck.getX() + 18, layout.deck.getRight() - deckRightInset,
+                      layout.deck.getY() + 116, 14);
+    }
+
+    // ---- row 4: TRANSPORT ---------------------------------------------------
+    {
+        const std::vector<DeckRowItem> row {
+            { &transportStopButton,   62,  4,  0, 28, false },
+            { &transportPlayButton,   62,  4,  0, 28, false },
+            { &transportStartButton,  62,  4,  0, 28, false },
+            { &spindownButton,        74, -1,  0, 28, false },
+            { &deckHintLabel,        190, -1,  2, 24, false },
+            { &modeCycleButton,      150, -1,  0, 32, false }
+        };
+
+        const auto transportRowY = layout.deck.getY() + 183;
+
+        placeDeckRow (row, layout.deck.getX() + 18, layout.deck.getRight() - deckRightInset,
+                      transportRowY, 14);
+
+        // The two transport captions sit ABOVE the key bank rather than beside
+        // their own key, so they cannot be a column of the row - they are placed
+        // from the buttons the row just gave them. Reading the placed bounds
+        // back is what keeps them correct at every width: written as
+        // `keyWidth * 3 + gap * 2` they would name a span three keys wider than
+        // the bank actually is once the row starts growing them.
+        transportLabel.setBounds (transportStopButton.getX(), transportRowY - 13,
+                                  transportStartButton.getRight() - transportStopButton.getX(), 12);
+        spindownLabel.setBounds (spindownButton.getX(), transportRowY - 13,
+                                 spindownButton.getWidth(), 12);
+
+        transportLabel.setFont (shrinkingFont (transportLabel.getText(), 7.0f,
+                                              juce::Font::plain,
+                                              static_cast<float> (transportLabel.getWidth()) - 3.0f));
+        spindownLabel.setFont (shrinkingFont (spindownLabel.getText(), 7.0f,
+                                              juce::Font::plain,
+                                              static_cast<float> (spindownLabel.getWidth()) - 3.0f));
+    }
 
     // The preset workflow chain is eleven items and it did not fit: written as
     // a left-to-right chain of `previous.getRight() + gap`, the last item - the
     // compare badge - ended sixteen pixels past the deck's right edge at the
     // 780 px minimum, so it was drawn over the panel border and the frame.
     //
-    // It is now walked from BOTH ends: the head of the chain from the deck's
-    // left inset, the tail from its right inset, each with the same cursor
+    // It is walked from BOTH ends: the head of the chain from the deck's left
+    // inset, the tail from its right inset, each with the same cursor
     // discipline as the header's switch rows. Every item's width is written
     // once, next to its own name, and the two chains meet in the middle - so
     // adding a button to either end costs one line and cannot push the other
-    // end off the panel, which is the failure a single chain always has.
-    const auto presetRowY = layout.deck.getY() + 260;
+    // end off the panel, which is the failure a single chain always has. It is
+    // not spread like the rows above because it already spans the full width at
+    // the minimum: there is no slack to share, and a gap that grew with the
+    // window would only pull its two halves further apart.
+    const auto presetRowY = layout.deck.getY() + 217;
     const auto presetRowHeight = 32;
     constexpr int presetRowGap = 5;
 
@@ -4677,7 +4831,7 @@ void FirstAudioProcessorEditor::resized()
         edge -= width + presetRowGap;
     };
 
-    presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 269, 46, 16);
+    presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 226, 46, 16);
 
     {
         // Head, from the left: the factory list, the user list, save, delete.
@@ -4708,10 +4862,7 @@ void FirstAudioProcessorEditor::resized()
     // The badge band is inset further than the other deck text (22 px instead of 18)
     // and its caption is fitted to the width it actually has, so neither "FACTORY
     // STATE" nor a long user-preset name can run into the panel edges or be clipped.
-    // It sits BELOW the preset row, on its own strip at the bottom of the deck, so
-    // the preset boxes and the badge never share a band - the deck grew a line for
-    // the transport keys, so everything under it moved down with it.
-    presetBadgeLabel.setBounds (layout.deck.getX() + 22, layout.deck.getY() + 296,
+    presetBadgeLabel.setBounds (layout.deck.getX() + 22, layout.deck.getY() + 253,
                                 layout.deck.getWidth() - 44, 14);
     presetBadgeLabel.setFont (shrinkingFont (presetBadgeLabel.getText(), 8.0f,
                                              juce::Font::plain,

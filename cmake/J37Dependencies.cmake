@@ -230,6 +230,43 @@ CPMAddPackage(
 
 j37_declare_header_only_library(pocketfft "${pocketfft_SOURCE_DIR}")
 
+# ==============================================================================
+#  nlohmann/json - JSON for Modern C++, a header-only DOM parser and
+#  serialiser.
+#
+#  The newest release is 3.12.0 (2025-04-11), and it is fetched the same way
+#  the other header-only boxes here are: DOWNLOAD_ONLY, so the repository's own
+#  CMakeLists is never added as a subproject. That is not a shortcut - it is the
+#  point. Upstream's top-level file opens with a cmake_minimum_required whose
+#  floor has sat below 3.5 for years, and CMake 4.x removed compatibility with
+#  minimums that low, so configuring it through add_subdirectory aborts the
+#  whole build on the runners that ship CMake 4. That is exactly the failure
+#  libsndfile caused here before it was pinned to a commit (see the note
+#  further down), and it is why "fetch the sources, expose the include
+#  directory" is the established pattern in this file for a single-header C++
+#  library rather than a decision made twice by accident.
+#
+#  single_include/nlohmann/json.hpp is the one file upstream ships for exactly
+#  this use - the amalgamated header, resolved and dependency-ordered - and it
+#  is what every other distribution form is generated from. single_include over
+#  include/ also means one translation unit's worth of header, and no way for a
+#  call site to pick up half the library from here and half from somewhere else.
+#
+#  Note that RTNeural, fetched further down, bundles its own copy of JSON for
+#  its model format at modules/json/json.hpp (3.11.1). It is a different path
+#  and a different version, and both are header-only, so there is nothing to
+#  link and nothing that collides at build time. Code in this project should
+#  include the canonical <nlohmann/json.hpp> and let this target's include
+#  directory resolve it, rather than reaching for RTNeural's copy.
+# ==============================================================================
+CPMAddPackage(
+    NAME nlohmann_json
+    GITHUB_REPOSITORY nlohmann/json
+    GIT_TAG v3.12.0
+    DOWNLOAD_ONLY YES)
+
+j37_declare_header_only_library(nlohmann_json "${nlohmann_json_SOURCE_DIR}/single_include")
+
 # farbot - hogliux/farbot, "FAbian's Realtime Box o' Tricks": the
 # realtime-safe patterns (RealtimeObject, fifo, AsyncCaller). The library part
 # is HEADER-ONLY (its CMake only builds tests, and googletest is a submodule
