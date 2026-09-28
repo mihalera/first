@@ -455,9 +455,9 @@ FirstAudioProcessor::FirstAudioProcessor()
     //  a set of ids - and both are invisible at runtime by construction. So
     //  they are checked here instead, from the three sources themselves rather
     //  than from a count written down beside them: the names, the table, and
-    //  the parameter layout. A fourth source of the same class of bug, a
-    //  map key naming a parameter that does not exist, is checked inside
-    //  factoryPresetValues() where the keys are.
+    //  the parameters the processor actually registered. A fourth source of the
+    //  same class of bug - a map key naming a parameter that does not exist - is
+    //  checked here too, as the keys are collected.
     //
     //  DEBUG only. It is O(presets x parameters) with a ValueTree read per key,
     //  which is nothing to pay for while developing and nothing to pay for at
@@ -467,13 +467,42 @@ FirstAudioProcessor::FirstAudioProcessor()
         const auto names = getPresetNames();
         jassert (names.size() == numFactoryPresets);
 
+        // The REAL parameter set, from the processor rather than from a list
+        // written out beside it: getParameters() is what was registered with the
+        // host, and the APVTS member has already built and installed it by the
+        // time this constructor body runs.
+        //
+        //  The layout object is not the source, and asking it is not an option:
+        //  JUCE 9's ParameterLayout exposes only add() - its storage vector and
+        //  anything that would enumerate it are private - so getParameterIds()
+        //  and getParameter() do not exist on it. The cast is to
+        //  RangedAudioParameter because that is where the id lives; a parameter
+        //  that is not one (a group) has no single id and is skipped, which is
+        //  right - the layout registers no groups.
+        std::set<juce::String> registered;
+        for (const auto* parameter : getParameters())
+            if (const auto* ranged = dynamic_cast<const juce::RangedAudioParameter*> (parameter))
+                registered.insert (ranged->paramID);
+
+        // On the list itself: an empty one would make every check below pass for
+        //  the wrong reason, which is the one way a check written this way fails
+        //  to fail.
+        jassert (! registered.empty());
+
         // Every id any preset mentions, so the "is every parameter in a preset"
         // pass below can be the complement of this set rather than a second
-        // hand-written list that drifts from the first.
+        // hand-written list that drifts from the first. And every key is
+        // checked against the real set as it is collected: a key naming a
+        // parameter that does not exist is dropped SILENTLY by
+        // applyFactoryPreset()'s getParameter() guard, so the preset loads with
+        // that one control left wherever the session had it.
         std::set<juce::String> covered;
         for (int i = 0; i < numFactoryPresets; ++i)
-            for (const auto& pair : factoryPresetValues (i))
-                covered.insert (pair.first);
+            for (const auto& entry : factoryPresetValues (i))
+            {
+                jassert (registered.count (entry.first) != 0);
+                covered.insert (entry.first);
+            }
 
         // The five parameters a preset deliberately does NOT state, and the
         // reason for each. This list is the point: the check is only useful if
@@ -499,12 +528,9 @@ FirstAudioProcessor::FirstAudioProcessor()
             "bypass", "delta", "ui_sounds", "transport", "spindown"
         };
 
-        for (const auto& parameterID : createParameterLayout().getParameterIds())
-        {
-            const auto id = juce::String (parameterID);
+        for (const auto& id : registered)
             jassert (covered.count (id) != 0
                   || intentionallyNotPresettable.count (id) != 0);
-        }
     }
 #endif
 }
@@ -1182,22 +1208,21 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
     };
 
 #if DEBUG
-    // A key that is not a parameter is dropped by applyFactoryPreset()'s
-    // getParameter() guard, so the preset loads with that control left exactly
-    // where the session had it and nothing says so. The values above are all
-    // `preset.someField`, so the failure mode is a typo in a field NAME rather
-    // than a value - cheap to make and invisible until someone selects the
-    // preset and wonders. Checked here, where the keys are, against the real
-    // layout rather than against a list written out beside them.
-    // The layout is built ONCE and then queried, not rebuilt per key: it
-    // constructs eighty-odd AudioParameter objects on every call, so querying it
-    // in a loop would turn a cheap check into the most expensive thing in the
-    // constructor.
-    {
-        const auto layout = createParameterLayout();
-        for (const auto& pair : values)
-            jassert (layout.getParameter (pair.first) != nullptr);
-    }
+    //  A key that is not a parameter is dropped by applyFactoryPreset()'s
+    //  getParameter() guard, so the preset loads with that control left exactly
+    //  where the session had it and nothing says so. The values above are all
+    //  `preset.someField`, so the failure mode is a typo in a field NAME rather
+    //  than a value - cheap to make and invisible until someone selects the
+    //  preset and wonders.
+    //
+    //  It is NOT checked here, and the reason is worth writing down: this
+    //  function is static, so it has no processor to ask, and the layout object
+    //  cannot be asked either - JUCE 9's ParameterLayout exposes only add(). A
+    //  version of this check that called layout.getParameter() compiled in
+    //  neither configuration and was caught only by the Debug build, which is
+    //  precisely the point of a Debug-only check. It lives in the constructor
+    //  instead, where the registered parameter set is actually available.
+    // =======================================================================
 #endif
 
     return values;
