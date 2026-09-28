@@ -32,6 +32,17 @@ if(NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
 endif()
 
+# Android: everything that ends up inside the Standalone wrapper's shared
+# library - the JUCE modules, the Oboe runtime they bundle, and every CPM
+# static library on the link line - must be position-independent. A shared
+# object cannot reference a non-PIC static archive, and the link fails with
+# "relocation R_AARCH64_... cannot be used against symbol ... recompile with
+# -fPIC". Set before add_subdirectory(JUCE) so every target in the build
+# inherits it. Desktop builds are untouched.
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
+endif()
+
 set(CMAKE_CXX_STANDARD 20)
 set(CMAKE_CXX_STANDARD_REQUIRED ON)
 set(CMAKE_CXX_EXTENSIONS OFF)
