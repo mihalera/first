@@ -26,25 +26,29 @@ namespace
     // Returned by reference from a function-local static, so the single list is
     // also the single definition - no header, no duplicated initialiser, and the
     // range-for in both callers reads it without copying.
-    const std::array<const char*, 69>& parametersTrackedForDirtyBadge()
+    const std::array<const char*, 83>& parametersTrackedForDirtyBadge()
     {
-        static const std::array<const char*, 69> ids
+        static const std::array<const char*, 83> ids
         {
             "input", "output", "bypass", "polarity", "auto_gain",
             "subfund",
             "stereo_width", "tape_type", "speed", "instrument", "drive", "bias",
-            "oversampling", "tone", "wow", "flutter", "mix",
+            "oversampling", "tone", "wow", "flutter", "mix", "tracks",
             "character", "delta", "delay_time", "delay_feedback",
+            "delay_pingpong",
             "st_offset", "noise", "noise_lvl", "transport", "spindown",
             "ui_sounds",
             "blend", "shape", "sag", "presence", "cabinet", "amp_bias",
             "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
+            "di", "di_load", "di_transformer", "di_pad",
             "delay_type", "distortion", "modern_mode", "lofi_mode",
             "vinyl", "vinyl_crackle", "vinyl_rumble", "vinyl_speed",
             "vinyl_dust", "vinyl_scratch", "vinyl_warp", "vinyl_electrical",
             "vinyl_clicks", "vinyl_generation", "vinyl_turntable", "vinyl_cartridge",
             "in_low", "in_mid", "in_high",
+            "in_hp_freq", "in_lp_freq", "in_eq_order", "in_eq_q",
             "out_low", "out_mid", "out_high",
+            "out_hp_freq", "out_lp_freq", "out_eq_order", "out_eq_q",
             "st_link",
             "valve_type", "amp_type", "transformer_type",
             "digital_type", "vinyl_type",
@@ -307,6 +311,7 @@ FirstAudioProcessor::FirstAudioProcessor()
     wowParam      = parameters.getRawParameterValue ("wow");
     flutterParam  = parameters.getRawParameterValue ("flutter");
     mixParam      = parameters.getRawParameterValue ("mix");
+    tracksParam   = parameters.getRawParameterValue ("tracks");
     outputDbParam = parameters.getRawParameterValue ("output");
     widthParam    = parameters.getRawParameterValue ("stereo_width");
     tapeTypeParam  = parameters.getRawParameterValue ("tape_type");
@@ -324,6 +329,7 @@ FirstAudioProcessor::FirstAudioProcessor()
     subFundamentalParam = parameters.getRawParameterValue ("subfund");
     delayTimeParam = parameters.getRawParameterValue ("delay_time");
     delayFeedbackParam = parameters.getRawParameterValue ("delay_feedback");
+    delayPingPongParam = parameters.getRawParameterValue ("delay_pingpong");
     stOffsetParam = parameters.getRawParameterValue ("st_offset");
     noiseParam = parameters.getRawParameterValue ("noise");
     noiseLvlParam = parameters.getRawParameterValue ("noise_lvl");
@@ -337,6 +343,10 @@ FirstAudioProcessor::FirstAudioProcessor()
     cabinetParam = parameters.getRawParameterValue ("cabinet");
     ampBiasParam = parameters.getRawParameterValue ("amp_bias");
     preampParam = parameters.getRawParameterValue ("preamp");
+    diParam = parameters.getRawParameterValue ("di");
+    diLoadParam = parameters.getRawParameterValue ("di_load");
+    diTransformerParam = parameters.getRawParameterValue ("di_transformer");
+    diPadParam = parameters.getRawParameterValue ("di_pad");
     fluxParam = parameters.getRawParameterValue ("flux");
     wearParam = parameters.getRawParameterValue ("wear");
     mechanicsParam = parameters.getRawParameterValue ("mechanics");
@@ -364,6 +374,14 @@ FirstAudioProcessor::FirstAudioProcessor()
     outputEqLowParam = parameters.getRawParameterValue ("out_low");
     outputEqMidParam = parameters.getRawParameterValue ("out_mid");
     outputEqHighParam = parameters.getRawParameterValue ("out_high");
+    inputEqHpFreqParam = parameters.getRawParameterValue ("in_hp_freq");
+    inputEqLpFreqParam = parameters.getRawParameterValue ("in_lp_freq");
+    inputEqOrderParam = parameters.getRawParameterValue ("in_eq_order");
+    inputEqQParam = parameters.getRawParameterValue ("in_eq_q");
+    outputEqHpFreqParam = parameters.getRawParameterValue ("out_hp_freq");
+    outputEqLpFreqParam = parameters.getRawParameterValue ("out_lp_freq");
+    outputEqOrderParam = parameters.getRawParameterValue ("out_eq_order");
+    outputEqQParam = parameters.getRawParameterValue ("out_eq_q");
     valveTypeParam = parameters.getRawParameterValue ("valve_type");
     ampTypeParam = parameters.getRawParameterValue ("amp_type");
     transformerTypeParam = parameters.getRawParameterValue ("transformer_type");
@@ -1031,6 +1049,68 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "out_high", 1 },
                                                             "Out EQ High", eqBandRange, 0.0f, eqBandAttributes));
 
+    // -------------------------------------------------------------------------
+    //  The EQ's two FILTERS, one pair per equaliser.
+    //
+    //  Separate from the three bands above because they are a different kind of
+    //  control. A shelf shapes a band and leaves everything else at unity; a
+    //  FILTER removes everything outside its passband. That is what you reach
+    //  for to take the rumble off a turntable, the hum off a bad earth loop, or
+    //  the hiss off before printing - none of which a shelf can do, because a
+    //  shelf can never reach zero.
+    //
+    //  ORDER is in dB per octave, which is the unit a filter is specified in: 6
+    //  is one pole, 12 is two, up to 48. The engine implements each pole as the
+    //  one-pole section the rest of the plugin already uses, so the number on
+    //  the panel is the slope you get.
+    //
+    //  FREQUENCY's floors and ceilings are chosen so that both ends of each
+    //  control's travel are REAL bypasses: HP at 20 Hz and LP at 20 kHz are not
+    //  filters, and the engine treats them as such, so a neutral EQ is bit-for-
+    //  bit transparent rather than "transparent to within a gentle filter".
+    //
+    //  Q is shared between the two filters of one EQ, because a per-filter Q
+    //  would be two more knobs for a parameter that matters far less than the
+    //  corner and the slope. It is capped at 1.5 - a resonant filter ringing on
+    //  a tape emulation is a fault, not a feature.
+    // -------------------------------------------------------------------------
+    const auto hpFreqRange = juce::NormalisableRange<float> (20.0f, 500.0f, 1.0f);
+    hpFreqRange.setSkewForCentre (100.0f);
+    const auto lpFreqRange = juce::NormalisableRange<float> (2000.0f, 20000.0f, 10.0f);
+    lpFreqRange.setSkewForCentre (8000.0f);
+    const auto eqOrderRange = juce::NormalisableRange<float> (6.0f, 48.0f, 6.0f);
+    const auto eqQRange = juce::NormalisableRange<float> (0.5f, 1.5f, 0.01f);
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "in_hp_freq", 1 },
+                                                            "In EQ HP Freq", hpFreqRange, 20.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("Hz")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "in_lp_freq", 1 },
+                                                            "In EQ LP Freq", lpFreqRange, 20000.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("Hz")));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "in_eq_order", 1 },
+                                                            "In EQ Order",
+                                                            juce::StringArray { "6 dB/oct", "12 dB/oct", "18 dB/oct",
+                                                                                 "24 dB/oct", "36 dB/oct", "48 dB/oct" },
+                                                            0));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "in_eq_q", 1 },
+                                                            "In EQ Q", eqQRange, 0.7f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("Q")));
+
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "out_hp_freq", 1 },
+                                                            "Out EQ HP Freq", hpFreqRange, 20.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("Hz")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "out_lp_freq", 1 },
+                                                            "Out EQ LP Freq", lpFreqRange, 20000.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("Hz")));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "out_eq_order", 1 },
+                                                            "Out EQ Order",
+                                                            juce::StringArray { "6 dB/oct", "12 dB/oct", "18 dB/oct",
+                                                                                 "24 dB/oct", "36 dB/oct", "48 dB/oct" },
+                                                            0));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "out_eq_q", 1 },
+                                                            "Out EQ Q", eqQRange, 0.7f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("Q")));
+
     // SUBFUND: the subharmonic generator. Every other stage here makes overtones - a
     // 100 Hz note gains 200, 300, 400 Hz. This one produces the subharmonic series:
     // an 8-stage downward harmonic cascade (1/2, 1/3, 1/4, 1/5, 1/6, 1/7, 1/8, 1/9)
@@ -1152,6 +1232,45 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             50.0f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
 
+    // -------------------------------------------------------------------------
+    //  MODELED TRACKS - the track layout of the machine.
+    //
+    //  A tape machine is not one wide track: it is a number of narrow parallel
+    //  tracks on the same tape, recorded by a head with that many gaps and read
+    //  by the same. Which layout the machine has changes the sound in ways that
+    //  are not a trim, because they are geometric:
+    //
+    //    2      a stereo deck: two tracks, one per channel, each with the full
+    //           width of its half of the tape. The most low end per channel and
+    //           the least crosstalk - there is nothing adjacent to leak from.
+    //
+    //    2+3    a FOUR-track deck used as two, on tracks 2 and 3. There is a
+    //           whole track's worth of tape between the two channels, so the
+    //           spacing is the widest of the three and the channels are the most
+    //           separated - but the two unused tracks (1 and 4) still carry the
+    //           guard band and its own fringing, which is why this is not the
+    //           same thing as "2 with more separation".
+    //
+    //    3      a three-track deck: three narrow tracks, so each one is NARROWER
+    //           than either layout above. A narrower track has less low end and
+    //           a noticeably higher noise floor for the same tape, and the two
+    //           adjacent tracks are close enough that the head's fringing field
+    //           reaches them - so the crosstalk is the highest of the three.
+    //
+    //  The model applies three things, all of them consequences of the geometry:
+    //
+    //    - the track WIDTH, which scales the low end and the noise floor
+    //    - the CROSSTALK between the two channels, from the head's fringing
+    //    - the SPACING, which is what the crosstalk's own delay/phase depends on
+    //
+    //  Default 2, which is the two-track stereo deck every earlier build assumed,
+    //  so an existing session loads the machine it was saved with.
+    // -------------------------------------------------------------------------
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "tracks", 1 },
+                                                            "Modeled Tracks",
+                                                            juce::StringArray { "2", "2+3", "3" },
+                                                            0));
+
     // TONE is the added macro: a crossfade BETWEEN TAPE SETTINGS rather than between
     // dry and wet. At 0 % the transport behaves like the classic slow machine - soft
     // head damping, gentle roll-off, warmer wow. At 100 % it behaves like the fast
@@ -1184,6 +1303,32 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     // head is, LEVEL says how loud its output is.
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "delay_feedback", 1 }, "Delay Level",
                                                             percentageRange (0.40f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+    // -------------------------------------------------------------------------
+    //  PING-PONG - where the second head's feedback goes.
+    //
+    //  At 0 the repeat is written back into its OWN channel, so the echoes stay
+    //  where they started: a normal tape slap. At 100 the repeat is written into
+    //  the OTHER channel, so each pass arrives on the opposite side and the
+    //  echoes alternate left, right, left - the classic ping-pong.
+    //
+    //  In between it is a genuine crossfade rather than a switch: the feedback is
+    //  split between the two lines in proportion to the control, so the echoes
+    //  MOVE across the image as the knob turns instead of jumping. The two
+    //  partial writes always sum to the same amount, which is why the total
+    //  energy - and therefore the decay of the repeats - does not change as the
+    //  control sweeps. Only their position does.
+    //
+    //  It is not a second delay unit. It is the SAME head, read on the other side
+    //  of the machine, which is what ping-pong physically is when two heads are
+    //  wired across a stereo pair.
+    //
+    //  Default 0 - every earlier build behaved this way, so an existing session
+    //  loads the delay it was saved with.
+    // -------------------------------------------------------------------------
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "delay_pingpong", 1 }, "Ping-Pong",
+                                                            percentageRange (0.50f), 0.0f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
 
     // -------------------------------------------------------------------------
@@ -1351,6 +1496,51 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "preamp", 1 }, "Preamp",
                                                             percentageRange (0.45f), 0.0f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+    // =========================================================================
+    //  THE DI BOX.
+    //
+    //  A DI box is not a preamp and not a gain stage: it is the box a guitar or
+    //  a synth is plugged into BEFORE anything else. It takes an unbalanced,
+    //  high-impedance, instrument-level signal and hands a balanced,
+    //  low-impedance, mic-level one to the desk.
+    //
+    //  It is FIRST in this plugin's chain for exactly that reason - which also
+    //  means it changes what everything after it hears, so the preamp, the
+    //  saturation curve and the glue stages all respond to a loaded or padded
+    //  signal differently. That is how the hardware behaves.
+    //
+    //  Four controls, and each is one of the four things a real DI actually does:
+    //
+    //    DI      how much of the box is engaged at all (0 = a straight wire)
+    //    LOAD    how heavily it loads the source, which damps that source's own
+    //            top-end resonance - the single largest reason two DI boxes sound
+    //            different on the same guitar
+    //    TRANS   its transformer's own colour: a small low-end bloom and a
+    //            slight softness on top
+    //    PAD     -0..-30 dB BEFORE the transformer, so a hot source can be plugged
+    //            in without driving the box's core - a decision, not a level trim
+    //
+    //  There is deliberately no separate ground-lift switch: the ground loop is
+    //  folded into the DI amount, because a DI with a bad earth hums and one with
+    //  a lifted ground does not, and that is a property of the box rather than a
+    //  separate control. The hum it can make is discussed with the stage itself.
+    //
+    //  All four default to OFF/neutral, so a fresh instance has no DI in the
+    //  path and the machine is unchanged.
+    // =========================================================================
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "di", 1 }, "DI",
+                                                            percentageRange (0.45f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "di_load", 1 }, "DI Load",
+                                                            percentageRange (0.45f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "di_transformer", 1 }, "DI XFMR",
+                                                            percentageRange (0.45f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "di_pad", 1 }, "DI Pad",
+                                                            juce::StringArray { "0 dB", "-10 dB", "-20 dB", "-30 dB" },
+                                                            0));
 
     // =========================================================================
     //  FLUX - the magnetic flux the record head actually puts on the tape.
@@ -1945,6 +2135,14 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     vinylL.reset();
     vinylR.reset();
 
+    // The DI's own smoother starts from the value the parameter restores, so a
+    // session saved with the box engaged does not spend its first 20 ms sliding
+    // into it.
+    diSmoothed.setCurrentAndTargetValue (diParam != nullptr ? diParam->load() : 0.0f);
+    diLoadSmoothed.setCurrentAndTargetValue (diLoadParam != nullptr ? diLoadParam->load() : 0.0f);
+    diTransformerSmoothed.setCurrentAndTargetValue (diTransformerParam != nullptr
+                                                        ? diTransformerParam->load() : 0.0f);
+
     // Reseeded rather than zeroed: zero is a degenerate LCG state, and the two
     // channels get different seeds so their clock noise is uncorrelated - sharing
     // one would put the BBD buzz in the centre of the image.
@@ -2454,6 +2652,55 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto inputDb = inputDbParam->load();
     const auto stereoWidth = widthParam->load() * 2.0f;
 
+    // -------------------------------------------------------------------------
+    //  MODELED TRACKS: the geometry of the tape, read once per block.
+    //
+    //  Three consequences of the layout, all of them geometry rather than taste:
+    //
+    //    widthScale   how WIDE each track is. A stereo deck's two tracks each
+    //                 get half the tape; a three-track deck's get a third. A
+    //                 narrower track reads less low end per channel and a
+    //                 proportionally higher noise floor for the same tape, so
+    //                 this is the same number driving both.
+    //
+    //    crosstalk    how much of the OTHER channel leaks into this one, from
+    //                 the head's fringing field. The closer the tracks, the
+    //                 more - so a three-track deck leaks most and the 2+3
+    //                 layout, with a whole track between the two channels,
+    //                 leaks least.
+    //
+    //    spacingDelay how long the leakage takes to arrive, in samples. The
+    //                 fringing path is short but it is not instant, and on a
+    //                 multitrack the spacing between the tracks is what sets
+    //                 it - which is why the leak is a tiny DELAY rather than an
+    //                 instantaneous blend. It is a fraction of a millisecond in
+    //                 every real layout, so it reads as thickening rather than
+    //                 as an echo, which is exactly what track-to-track bleed is.
+    // -------------------------------------------------------------------------
+    const auto tracksIndex = tracksParam != nullptr
+                                 ? juce::jlimit (0, 2, static_cast<int> (tracksParam->load())) : 0;
+
+    //       2-track        2+3 (4-track used as 2)     3-track
+    //       widest/tightest spacing,       widest spacing,        narrowest tracks,
+    //       least crosstalk                least crosstalk        most crosstalk
+    static constexpr float tracksWidthScale[3]   { 1.00f, 0.94f, 0.82f };
+    static constexpr float tracksCrosstalk[3]    { 0.020f, 0.010f, 0.055f };
+    static constexpr float tracksSpacingMs[3]    { 0.018f, 0.042f, 0.009f };
+    static constexpr float tracksNoiseScale[3]   { 1.00f, 1.06f, 1.22f };
+
+    const float trackWidthScale = tracksWidthScale[tracksIndex];
+    const float trackCrosstalk = tracksCrosstalk[tracksIndex];
+    const float trackNoiseScale = tracksNoiseScale[tracksIndex];
+
+    // The bleed's own delay, in samples. A one-sample floor keeps the line valid
+    // at every rate, and at any normal rate the figure is tens of samples - far
+    // below the ear's ability to hear it as a separate event, which is the
+    // point: it is an infinitesimal smear, not an echo. It is a hard limit that
+    // the maximum spacing is well under, so the wrap below never loops.
+    const int trackBleedDelaySamples = juce::jlimit (
+        1, tracksBleedBufferLength - 2,
+        juce::roundToInt (tracksSpacingMs[tracksIndex] * 0.001f * engineSampleRate));
+
     // Output-stage switches, read once per block: polarity is a pure sign flip on
     // whatever leaves the machine, and auto gain gates the slow programme
     // compensator (see the final gain compensation section below).
@@ -2471,6 +2718,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // and fed to smoothers, so none of them can step the signal.
     const auto delayMs = delayTimeParam != nullptr ? delayTimeParam->load() : 0.0f;
     const auto delayFeedback = delayFeedbackParam != nullptr ? delayFeedbackParam->load() : 0.0f;
+    const auto delayPingPong = delayPingPongParam != nullptr ? delayPingPongParam->load() : 0.0f;
     const auto stOffsetUs = stOffsetParam != nullptr ? stOffsetParam->load() : 0.0f;
     const auto noiseAmount = noiseParam != nullptr ? noiseParam->load() : 0.5f;
     const auto noiseLvlAmount = noiseLvlParam != nullptr ? noiseLvlParam->load() : 1.0f;
@@ -2552,6 +2800,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         juce::jlimit (0.0f, static_cast<float> (juce::jmax (0, delayBufferLength - 1)),
                       effectiveDelayMs * 0.001f * engineSampleRate));
     delayFeedbackSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, delayFeedback));
+    pingPongSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, delayPingPong));
 
     // ST OFFSET is given in microseconds and converted to samples the same way. Only
     // the magnitude is the read offset; the sign decides WHICH channel is delayed, so
@@ -2604,6 +2853,45 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
     preampSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, preampAmount));
     distortionSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, distortionAmount));
+
+    // -----------------------------------------------------------------------
+    //  The DI box.
+    //
+    //  The pad is a CHOICE parameter (0 / -10 / -20 / -30 dB), so its raw value
+    //  is the index and the dB it means is looked up in ONE place here. A pad is
+    //  a switch, not a sweep, which is why it goes through no smoother - a
+    //  smoothed pad would glide between two pads and briefly sit at a level that
+    //  is neither.
+    //
+    //  The load and transformer coefficients are built from the engine rate, so
+    //  the box behaves identically at every rate and at every oversampling
+    //  factor - they are rate-dependent time constants like every other one in
+    //  this file. The hum increment is the mains frequency the ground loop picks
+    //  up (50 Hz), converted the same way.
+    // -----------------------------------------------------------------------
+    diSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, diParam != nullptr ? diParam->load() : 0.0f));
+    diLoadSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f,
+                                                 diLoadParam != nullptr ? diLoadParam->load() : 0.0f));
+    diTransformerSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f,
+                                                        diTransformerParam != nullptr
+                                                            ? diTransformerParam->load() : 0.0f));
+
+    {
+        static constexpr float padDbValues[4] { 0.0f, -10.0f, -20.0f, -30.0f };
+        const auto padIndex = diPadParam != nullptr
+                                  ? juce::jlimit (0, 3, static_cast<int> (diPadParam->load())) : 0;
+        diPadDb = padDbValues[padIndex];
+    }
+
+    // The load's own bandwidth: a very high input impedance is effectively
+    // transparent (12 kHz at the neutral end), and a heavy load damps the
+    // source's top octave. The LOAD control then scales this further inside the
+    // stage, so the two together give the full range from "no load" to "heavy".
+    diLoadCoefficient = onePoleCoefficientHz (12000.0f, engineSampleRate);
+    // The DI transformer's own low split: small transformers bloom the bottom of
+    // their band, and 200 Hz is where that starts being audible as "thickness".
+    diTransformerCoefficient = onePoleCoefficientHz (200.0f, engineSampleRate);
+    diHumIncrement = 50.0f / engineSampleRate;
     fluxSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, fluxAmount));
     wearSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, wearAmount));
     mechanicsSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, mechanicsAmount));
@@ -2680,12 +2968,25 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // half speed, so the RIAA is deep and the surface is almost silent.
             { 0.55f, 0.70f, 0.30f, 0.99920f, 0.02f },
         };
-        const auto& v = voices[vinylTypeCached];
+
+        // VINYL TYPE = OFF: no DISC at all.
+        //
+        // The record is removed from the turntable, so what is left is the
+        // PLAYBACK CHAIN with nothing in the groove: no RIAA, no crackle, no
+        // rumble, no groove hiss, no surface character. The stage's own controls
+        // (DUST, SCRATCH, WARP, CLICKS, ELECTRICAL) still work, because they
+        // describe the record and the deck modelling rather than the pressing -
+        // but with the disc off they act on a silent groove, so the faults that
+        // need programme (dust, which follows the level) fall silent with it.
+        //
+        // It is the reference state for hearing what the DISC contributes.
+        const bool vinylTypeOff = (vinylTypeCached == modelOffIndex);
+        const auto& v = voices[juce::jlimit (0, 5, vinylTypeCached)];
         for (auto* stage : { &vinylL, &vinylR })
         {
-            stage->riaaAmount    = v[0];
-            stage->rumbleAmount  = v[1];
-            stage->crackleAmount = v[2];
+            stage->riaaAmount    = vinylTypeOff ? 0.0f : v[0];
+            stage->rumbleAmount  = vinylTypeOff ? 0.0f : v[1];
+            stage->crackleAmount = vinylTypeOff ? 0.0f : v[2];
             stage->crackleDecay  = v[3];
             stage->surfaceNoise  = v[4];
         }
@@ -2881,6 +3182,37 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // -------------------------------------------------------------------------
     inputEq.prepare (engineSampleRate);
     outputEq.prepare (engineSampleRate);
+
+    // The two corners, orders and Q values, read once per block.
+    //
+    // The ORDER is a choice parameter, so its raw value is the INDEX into the
+    // dB/octave list (0 = 6, 5 = 48), and the conversion to a slope happens in
+    // ONE place here rather than in the filter - the filter wants a slope, the
+    // panel wants a name, and this is the join between them.
+    const auto eqOrderSlope = [] (std::atomic<float>* parameter) -> float
+    {
+        // Six entries: 6, 12, 18, 24, 36, 48. The list is not an arithmetic
+        // series because 6, 12, 18, 24 are the useful everyday slopes and 36 and
+        // 48 are the "get it out of the way" end - a straight 6..48 line would
+        // spend three of its six positions on 30, 36 and 42, which nobody asks
+        // for.
+        static constexpr float slopes[6] { 6.0f, 12.0f, 18.0f, 24.0f, 36.0f, 48.0f };
+        const auto index = parameter != nullptr
+                               ? juce::jlimit (0, 5, static_cast<int> (parameter->load())) : 0;
+        return slopes[index];
+    };
+
+    inputEq.prepareFilters (engineSampleRate,
+                            inputEqHpFreqParam != nullptr ? inputEqHpFreqParam->load() : 20.0f,
+                            inputEqLpFreqParam != nullptr ? inputEqLpFreqParam->load() : 20000.0f,
+                            eqOrderSlope (inputEqOrderParam),
+                            inputEqQParam != nullptr ? inputEqQParam->load() : 0.7f);
+
+    outputEq.prepareFilters (engineSampleRate,
+                             outputEqHpFreqParam != nullptr ? outputEqHpFreqParam->load() : 20.0f,
+                             outputEqLpFreqParam != nullptr ? outputEqLpFreqParam->load() : 20000.0f,
+                             eqOrderSlope (outputEqOrderParam),
+                             outputEqQParam != nullptr ? outputEqQParam->load() : 0.7f);
 
     const float inputEqMidCoefficient = inputEq.midBandCoefficient (engineSampleRate);
     const float outputEqMidCoefficient = outputEq.midBandCoefficient (engineSampleRate);
@@ -3158,6 +3490,38 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // the same constant the parameter and the panel read, so this fires in a debug
     // build on the first block whenever the three stop agreeing.
     jassert (tapeType >= 0 && tapeType < tapeStockCount);
+
+    // -------------------------------------------------------------------------
+    //  TAPE TYPE = OFF: the magnetic medium is removed.
+    //
+    //  What is left is a solid-state amplifier: no hysteresis, no oxide floor,
+    //  no head damping, no bias asymmetry - the machine's own electronics with
+    //  no tape in it. It is the reference state for hearing what the MEDIUM
+    //  contributes, because everything else in the chain is untouched by it.
+    //
+    //  It is implemented by (a) telling the saturation core that the tape
+    //  principle is absent, so the blend redistributes its share among the
+    //  principles still present, and (b) skipping the stock voicing switch
+    //  entirely, which is what the early flag below does. BOTH are needed:
+    //  the core alone would still have the stock's hiss and head damping riding
+    //  on top of a tape-less blend.
+    // -------------------------------------------------------------------------
+    const bool tapeModelOff = (tapeType == modelOffIndex);
+    saturationL.tapeOff = tapeModelOff;
+    saturationR.tapeOff = tapeModelOff;
+
+    if (tapeModelOff)
+    {
+        // A solid-state machine: no medium, so no medium noise and no head-gap
+        // damping. The transport still runs - the electronics are still moving
+        // the tape past a head - so wow and flutter stay, which is exactly the
+        // distinction that makes this a useful reference rather than a bypass.
+        tapeHiss = 0.0f;
+        headDampingHz = 26000.0f;
+        hysteresis = 0.10f;
+        tapeAsymmetry = 0.0f;
+    }
+    else
     switch (tapeType)
     {
         case 0: // J37 - the classic EMI reference sound
@@ -3508,7 +3872,13 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // mix of every noise source; this is the level both floors share. It rides
     // the same smoother family, so a drag glides rather than steps.
     const float hissGain = tapeHiss * 0.00042f * modernHissScale
-                         * noiseLvlSmoothed.getCurrentValue();
+                         * noiseLvlSmoothed.getCurrentValue()
+                         // A narrower track has a proportionally higher noise
+                         // floor for the same tape, because the signal it carries
+                         // is smaller and the medium's noise is not. This is the
+                         // same geometric fact that costs the low end below -
+                         // one cause, two consequences.
+                         * trackNoiseScale;
 
     // The floor is gated by the transport. Tape hiss exists only while the tape is
     // actually MOVING across the head: a machine at rest is silent, because the
@@ -4048,6 +4418,31 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             //  that sets it, and these two only change the character.
             // ------------------------------------------------------------------
             auto& inputStage = channel == 0 ? inputStageL : inputStageR;
+
+            // ------------------------------------------------------------------
+            //  THE DI BOX, first in the chain.
+            //
+            //  First for a physical reason, not an arbitrary one: a DI box is
+            //  what the instrument is plugged INTO, so everything after it - the
+            //  distortion, the preamp, the saturation curve, the glue stages -
+            //  hears a signal the box has already loaded, padded and coloured.
+            //  That ordering is what makes the DI a real part of the chain
+            //  rather than a tone control: a padded signal drives the tape curve
+            //  differently from an unpadded one at the same level.
+            //
+            //  It runs before the IN EQ as well, because on the hardware the
+            //  box is physically between the instrument and everything else.
+            // ------------------------------------------------------------------
+            const float diNow = diSmoothed.getCurrentValue();
+            if (diNow > 1.0e-5f)
+            {
+                x = inputStage.processDiBox (x, diNow,
+                                             diLoadSmoothed.getCurrentValue(),
+                                             diPadDb, diTransformerSmoothed.getCurrentValue(),
+                                             diLoadCoefficient, diTransformerCoefficient,
+                                             diHumIncrement);
+            }
+
             const float distortionNow = distortionSmoothed.getCurrentValue();
             if (distortionNow > 1.0e-5f)
                 x = inputStage.processDistortion (x, distortionNow);
@@ -4305,9 +4700,29 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             const float headLoss = highFreqMemory[0];
             highFreqMemory[1] = afterTapeLoss;
 
+            // ------------------------------------------------------------------
+            //  MODELED TRACKS: the track WIDTH's two consequences.
+            //
+            //  A narrower track reads less low end per channel, because the head
+            //  gap sees less of the recorded wavelength at the bottom of the
+            //  band. That is the same geometry that raised the noise floor above,
+            //  and it is applied here as a gentle bottom-end tilt rather than as
+            //  a level change: the machine's overall level is the OUTPUT
+            //  control's job, and a layout should not be a volume knob.
+            //
+            // The tilt is taken from the same split the tape condition stage
+            // uses, so a narrower track's difference lands in the same place a
+            // FLUX change does - which is correct, because both are statements
+            // about how much of the medium's depth is being used. At the
+            // two-track default the scale is exactly 1.0, so the machine is
+            // bit-for-bit what it always was.
+            // ------------------------------------------------------------------
+            const float widthTilt = juce::jlimit (0.75f, 1.15f,
+                                                  1.0f + (trackWidthScale - 1.0f) * 0.65f);
+
             // Scale compensation, gentle level-dependent bias compression and the
             // tape noise floor ride on the modulated signal.
-            const float compensation = tapeCurve / 1.30f;
+            const float compensation = tapeCurve / 1.30f * widthTilt;
 
             // Nonlinearity costs level, but only when the shaper is actually working. The
             // corrected shaper is near-unity at low drive, so this correction scales with
@@ -4525,14 +4940,57 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
             const float delayTap = delayCharacter * delayFeedbackSmoothed.getCurrentValue();
 
-            // What is written back into the line is the wet signal PLUS the damped
-            // repeat, which is what makes this a head on the machine rather than a
-            // parallel effect: the echo is recorded onto the tape, so it saturates
-            // on the way round.
+            // ------------------------------------------------------------------
+            //  What is written back into the line.
+            //
+            //  Two things matter here, and both are what make this a head on the
+            //  machine rather than a parallel effect:
+            //
+            //    - the wet signal is written, so the echo is recorded onto the
+            //      tape and saturates on the way round;
+            //
+            //    - the FEEDBACK goes into the line as well, and which line it
+            //      goes into is what PING-PONG changes. At 0 the repeat is written
+            //      back into its own channel, so the echoes stay where they started
+            //      - a normal tape slap. At 1 it is written into the OTHER channel,
+            //      so each repeat arrives on the opposite side and the echoes
+            //      alternate left, right, left - the classic ping-pong.
+            //
+            //  The delay line itself is one stereo buffer indexed by channel, so
+            //  "the other channel" is a one-bit difference in this index. That is
+            //  the whole of the implementation: ping-pong is not a second delay
+            //  unit, it is the SAME head read on the other side of the machine,
+            //  which is what it physically is when two heads are wired across a
+            //  stereo pair.
+            // ------------------------------------------------------------------
             if (delayBufferLength > 0)
             {
+                // The channel the feedback is written into. At a full ping-pong
+                // this is the other side; in between it is neither, and the two
+                // writes below distribute the feedback across both lines so the
+                // control sweeps continuously rather than switching.
+                const int feedbackChannel = 1 - channel;
+                const float feedbackAmount = delayFeedbackSmoothed.getCurrentValue()
+                                           * damp;
+                const float pingPongNow = pingPongSmoothed.getCurrentValue();
+
                 auto* delayWrite = delayBuffer.getWritePointer (channel);
-                delayWrite[delayWritePosition] = dcBlocked + damp * delayFeedbackSmoothed.getCurrentValue();
+
+                // The dry-ish wet signal always goes into its OWN line: the head
+                // is recording what it hears, and that does not move when the
+                // feedback is re-routed.
+                delayWrite[delayWritePosition] = dcBlocked;
+
+                // The feedback: partly into this channel's line and partly into
+                // the other's, split by the control. The sum of the two partial
+                // writes is the same total energy at every position, so sweeping
+                // PING-PONG moves the echoes across the image rather than fading
+                // them.
+                delayWrite[delayWritePosition] += feedbackAmount * (1.0f - pingPongNow);
+
+                if (feedbackChannel != channel)
+                    delayBuffer.getWritePointer (feedbackChannel)[delayWritePosition]
+                        += feedbackAmount * pingPongNow;
             }
 
             const float withDelay = dcBlocked + delayTap;
@@ -4634,6 +5092,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         if (delayBufferLength > 0)
             delayWritePosition = (delayWritePosition + 1) % delayBufferLength;
         stOffsetWritePosition = (stOffsetWritePosition + 1) % stOffsetBufferLength;
+
+        // The track-bleed ring advances once per FRAME for the same reason the
+        // other two do: advancing it per channel would move it twice per stereo
+        // frame and halve the spacing between the two heads.
+        tracksBleedWritePosition = (tracksBleedWritePosition + 1) % tracksBleedBufferLength;
 
         // The reference is a per-channel average now, the same scale the
         // post-compressor power below is measured on.
@@ -4855,6 +5318,48 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
         if (activeChannels == 2)
         {
+            // ------------------------------------------------------------------
+            //  MODELED TRACKS: the bleed between the two heads.
+            //
+            //  Each channel reads what the OTHER wrote a few samples ago and
+            //  adds a little of it to itself - the fringing field reaching the
+            //  neighbouring track. It runs BEFORE the width stage because it is
+            //  part of what the machine put on the tape, not part of how the
+            //  image is presented: the width control is the user's choice, the
+            //  bleed is the layout's consequence.
+            //
+            //  The writes happen FIRST, for both channels, so the read below
+            //  always sees the other channel's CURRENT frame rather than a frame
+            //  that has already been overwritten by this one. That is the same
+            //  discipline the ST OFFSET buffer uses and for the same reason.
+            //
+            //  At a two-track layout with the crosstalk figures above the leak
+            //  is 0.010 to 0.055 - about -40 to -25 dB, which is the range real
+            //  track-to-track bleed sits in. It is a small number on purpose: it
+            //  should be felt as the image sitting slightly differently, not
+            //  heard as anything at all.
+            // ------------------------------------------------------------------
+            tracksBleedBuffer[0][static_cast<std::size_t> (tracksBleedWritePosition)]
+                = outputSignal[0];
+            tracksBleedBuffer[1][static_cast<std::size_t> (tracksBleedWritePosition)]
+                = outputSignal[1];
+
+            // The read position, wrapped rather than clamped: the ring is a
+            // circle, and the delay is always well under its length.
+            int bleedReadPosition = tracksBleedWritePosition - trackBleedDelaySamples;
+            if (bleedReadPosition < 0)
+                bleedReadPosition += tracksBleedBufferLength;
+
+            // Each channel takes the OTHER channel's delayed sample. This is what
+            // makes the two sides of a three-track deck sound slightly closer
+            // together: the leak is symmetric, so the image narrows a touch
+            // without either side gaining on the other.
+            const float bleedToLeft  = tracksBleedBuffer[1][static_cast<std::size_t> (bleedReadPosition)];
+            const float bleedToRight = tracksBleedBuffer[0][static_cast<std::size_t> (bleedReadPosition)];
+
+            outputSignal[0] += (bleedToLeft  - outputSignal[0]) * trackCrosstalk;
+            outputSignal[1] += (bleedToRight - outputSignal[1]) * trackCrosstalk;
+
             const float mid = 0.5f * (outputSignal[0] + outputSignal[1]);
             const float side = 0.5f * (outputSignal[0] - outputSignal[1]) * currentWidth;
             outputSignal[0] = mid + side;

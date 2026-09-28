@@ -196,13 +196,31 @@ namespace j37math
     The third list, the engine's switch, is checked at run time instead: C++ cannot
     count case labels. See the jassert that guards it.
 */
-inline constexpr int tapeStockCount = 12;
+inline constexpr int tapeStockCount = 13;
 
 inline constexpr std::array<const char*, tapeStockCount> tapeStockNames
 {
     "J37", "Ampex 456", "Studer A800", "Chrome", "Type 111", "GP9",
-    "Quantegy 499", "RTM SM911", "SM 468", "888", "815", "811"
+    "Quantegy 499", "RTM SM911", "SM 468", "888", "815", "811",
+    // The OFF entry, and it is deliberately LAST rather than first.
+    //
+    // A model list is indexed by NUMBER everywhere - the parameter, the
+    // presets, the saved sessions, the engine's switch - so inserting an entry
+    // at the front would renumber all twelve real stocks and silently load a
+    // different tape into every existing session and factory preset. Appending
+    // costs nothing but a scroll to the bottom of the list, and it is the only
+    // ordering that keeps the existing twelve where they were.
+    //
+    // What OFF means is per-family, but it is always the same idea: the stage
+    // does not exist. On a TAPE model list it makes the machine a pure
+    // solid-state amplifier with no magnetic medium in it at all.
+    "Off"
 };
+
+/** The index of the OFF entry in every model list. Named, because the engine
+    tests for it in six different switches and a bare 12 would be a magic number
+    that silently stops being right the moment a model is appended. */
+inline constexpr int modelOffIndex = tapeStockCount - 1;
 
 /**
     Whether every slot of tapeStockNames was actually given a name.
@@ -262,11 +280,12 @@ inline juce::StringArray tapeStockNameList()
 */
 
 // -- VALVE ------------------------------------------------------------------
-inline constexpr int valveTypeCount = 6;
+inline constexpr int valveTypeCount = 7;
 
 inline constexpr std::array<const char*, valveTypeCount> valveTypeNames
 {
-    "12AX7", "ECC82", "EL34", "6L6", "300B", "KT88"
+    "12AX7", "ECC82", "EL34", "6L6", "300B", "KT88",
+    "Off"   // see the note on tapeStockNames: OFF is appended, never inserted
 };
 
 inline constexpr bool valveTypeNamesAreComplete()
@@ -289,11 +308,12 @@ inline juce::StringArray valveTypeNameList()
 }
 
 // -- AMP ---------------------------------------------------------------------
-inline constexpr int ampTypeCount = 6;
+inline constexpr int ampTypeCount = 7;
 
 inline constexpr std::array<const char*, ampTypeCount> ampTypeNames
 {
-    "Fender Blackface", "Marshall Plexi", "Vox AC30", "Hiwatt DR103", "Mesa Recto", "Matchless HC30"
+    "Fender Blackface", "Marshall Plexi", "Vox AC30", "Hiwatt DR103", "Mesa Recto", "Matchless HC30",
+    "Off"   // see the note on tapeStockNames: OFF is appended, never inserted
 };
 
 inline constexpr bool ampTypeNamesAreComplete()
@@ -316,11 +336,12 @@ inline juce::StringArray ampTypeNameList()
 }
 
 // -- TRANSFORMER ---------------------------------------------------------------
-inline constexpr int transformerTypeCount = 5;
+inline constexpr int transformerTypeCount = 6;
 
 inline constexpr std::array<const char*, transformerTypeCount> transformerTypeNames
 {
-    "Jensen JT-11P", "Cinemag CM-7510", "Lundahl LL1544", "OEP A262", "Sowter 4381"
+    "Jensen JT-11P", "Cinemag CM-7510", "Lundahl LL1544", "OEP A262", "Sowter 4381",
+    "Off"   // see the note on tapeStockNames: OFF is appended, never inserted
 };
 
 inline constexpr bool transformerTypeNamesAreComplete()
@@ -343,11 +364,12 @@ inline juce::StringArray transformerTypeNameList()
 }
 
 // -- DIGITAL -------------------------------------------------------------------
-inline constexpr int digitalTypeCount = 5;
+inline constexpr int digitalTypeCount = 6;
 
 inline constexpr std::array<const char*, digitalTypeCount> digitalTypeNames
 {
-    "16-bit", "12-bit", "8-bit", "Bit Crush", "Sample Hold"
+    "16-bit", "12-bit", "8-bit", "Bit Crush", "Sample Hold",
+    "Off"   // see the note on tapeStockNames: OFF is appended, never inserted
 };
 
 inline constexpr bool digitalTypeNamesAreComplete()
@@ -376,11 +398,12 @@ inline juce::StringArray digitalTypeNameList()
 // the RIAA playback character - and the VINYL TYPE switch re-voices that stage:
 // how a record is pressed, how worn it is and how the cutting lathe was set up
 // are genuinely different sounds, which is exactly what a type selector means.
-inline constexpr int vinylTypeCount = 6;
+inline constexpr int vinylTypeCount = 7;
 
 inline constexpr std::array<const char*, vinylTypeCount> vinylTypeNames
 {
-    "Standard LP", "Single", "Shellac 78", "Worn Classic", "Dubplate", "Half-Speed Master"
+    "Standard LP", "Single", "Shellac 78", "Worn Classic", "Dubplate", "Half-Speed Master",
+    "Off"   // see the note on tapeStockNames: OFF is appended, never inserted
 };
 
 inline constexpr bool vinylTypeNamesAreComplete()
@@ -533,6 +556,31 @@ struct SaturationCore
         if (b > 0.98f) { digitalWeight = 1.0f; tapeWeight = valveWeight = cassetteWeight
                                                     = ampWeight   = transformerWeight = 0.0f; }
 
+        // ------------------------------------------------------------------
+        //  OFF principles.
+        //
+        //  A principle whose own model list is set to OFF contributes nothing,
+        //  and its share is REDISTRIBUTED among the principles that are still
+        //  present by the normalisation below - not simply dropped, which would
+        //  make the machine quieter whenever a model was switched off.
+        //
+        //  The redistribution is the whole point of the feature: turning the
+        //  TRANSFORMER off does not leave a hole in the blend, it re-weights the
+        //  tape, the valve and the rest to cover it, so the machine still
+        //  saturates to the same degree and only the CHARACTER changes. A user
+        //  who wants a pure solid-state machine turns off the tape and gets
+        //  whatever else is in the blend carrying the whole signal.
+        //
+        //  This runs after the two end-seeds above deliberately: an end-seed
+        //  claims its principle outright, and if that principle is OFF the
+        //  normalisation that follows is what keeps the output from vanishing.
+        // ------------------------------------------------------------------
+        if (valveOff)       valveWeight = 0.0f;
+        if (ampOff)         ampWeight = 0.0f;
+        if (transformerOff) transformerWeight = 0.0f;
+        if (digitalOff)     digitalWeight = 0.0f;
+        if (tapeOff)        tapeWeight = 0.0f;
+
         const auto sum = tapeWeight + valveWeight + cassetteWeight + ampWeight
                                + transformerWeight + digitalWeight;
         if (sum > 1.0e-6f)
@@ -634,11 +682,27 @@ struct SaturationCore
 
     void setValveVoice (int type) noexcept
     {
+        // OFF: the valve principle is not present, so its curve becomes an exact
+        // pass-through. This is what OFF means for every one of these voice
+        // selectors - the PRINCIPLE is removed, and the blend then distributes
+        // whatever it would have contributed to the remaining principles.
+        // Returning the input unchanged is what makes that true rather than
+        // merely quiet: a scaled-down curve would still add its own harmonics.
+        valveOff = (type >= valveTypeCount - 1);
+        if (valveOff)
+            return;
+
         static constexpr float cold[6] = { 0.30f, 0.40f, 0.55f, 0.65f, 0.80f, 0.45f };
         static constexpr float sag [6] = { 0.35f, 0.50f, 0.45f, 0.65f, 0.30f, 0.75f };
         valveColdness = cold[type];
         valveSag      = sag [type];
     }
+
+    bool valveOff = false;
+    /** True when the TAPE principle's own model list is OFF. Set from the TAPE
+        TYPE switch by the engine; see the note in setBlend for what an OFF
+        principle does and, more importantly, what it does NOT do. */
+    bool tapeOff = false;
 
     float shapeValve (float x, float drive, float asymmetry) noexcept
     {
@@ -773,11 +837,19 @@ struct SaturationCore
 
     void setAmpVoice (int type) noexcept
     {
+        // OFF: see setValveVoice for what OFF means on a principle's own model
+        // list - the principle is removed, not merely turned down.
+        ampOff = (type >= ampTypeCount - 1);
+        if (ampOff)
+            return;
+
         static constexpr float g1[6] = { 3.2f, 4.8f, 3.8f, 4.0f, 5.6f, 4.2f };
         static constexpr float g2[6] = { 1.0f, 1.4f, 1.1f, 1.3f, 1.6f, 1.2f };
         ampGain1 = g1[type];
         ampGain2 = g2[type];
     }
+
+    bool ampOff = false;
 
     float shapeAmp (float x, float drive, float asymmetry) noexcept
     {
@@ -826,11 +898,19 @@ struct SaturationCore
 
     void setTransformerVoice (int type) noexcept
     {
+        // OFF: see setValveVoice for what OFF means on a principle's own model
+        // list - the principle is removed, not merely turned down.
+        transformerOff = (type >= transformerTypeCount - 1);
+        if (transformerOff)
+            return;
+
         static constexpr float spd[5] = { 0.016f, 0.020f, 0.024f, 0.014f, 0.022f };
         static constexpr float sft[5] = { 1.15f, 1.05f, 0.95f, 1.25f, 0.90f };
         transformerSpeed    = spd[type];
         transformerSoftness = sft[type];
     }
+
+    bool transformerOff = false;
 
     /**
         TRANSFORMER - a passive input transformer, driven into its core.
@@ -965,11 +1045,19 @@ struct SaturationCore
 
     void setDigitalVoice (int type) noexcept
     {
+        // OFF: see setValveVoice for what OFF means on a principle's own model
+        // list - the principle is removed, not merely turned down.
+        digitalOff = (type >= digitalTypeCount - 1);
+        if (digitalOff)
+            return;
+
         static constexpr float dep[5] = { 0.00f, 0.35f, 0.80f, 1.00f, 0.60f };
         static constexpr float hld[5] = { 0.00f, 0.10f, 0.30f, 0.20f, 1.00f };
         digitalDepth      = dep[type];
         digitalHoldAmount = hld[type];
     }
+
+    bool digitalOff = false;
 
     /**
         DIGITAL - a converter's ceiling.
@@ -1215,6 +1303,33 @@ struct AmpVoicing
 
     DISTORTION is a diode clipper: a hard knee with a pre-gain, deliberately
     abrupt. Where the saturation core bends, this breaks.
+
+    The DI BOX is a different kind of thing again, and it is first in the chain
+    for a physical reason: a DI box is what a guitar or a synth is plugged into
+    BEFORE anything else. It takes an unbalanced, high-impedance, instrument-level
+    signal and hands a balanced, low-impedance, mic-level one to the desk. Three
+    things in it are audible, and all three are modelled here:
+
+      TRANSFORMER  a real DI has one, and it is why a DI'd guitar sounds
+                   slightly soft on top and slightly fatter in the low-middle
+                   than the same guitar plugged straight in. It is a behaviour,
+                   not a fault.
+
+      IMPEDANCE    the box's input impedance LOADS the source. A high-impedance
+                   instrument (a passive guitar pickup, most obviously) has a
+                   resonant peak in the top octave, and the load the DI presents
+                   moves and damps that peak. This is the single largest reason
+                   two DI boxes sound different on the same guitar.
+
+      PAD          most DIs offer a -20 or -30 dB pad for a hot source. It is a
+                   clean attenuation BEFORE the transformer, so an active synth
+                   or a hot pedal can be plugged in without driving the box's
+                   own core into saturation - which is a real and useful decision
+                   rather than a level control.
+
+    Being FIRST also means the DI changes what everything after it hears: the
+    preamp, the saturation curve and the glue stages all respond to a padded or
+    loaded signal differently, which is exactly how the hardware behaves.
 */
 struct InputStage
 {
@@ -1226,11 +1341,27 @@ struct InputStage
     // pedestal behind it for the tape stage to swallow.
     float distortionLowState = 0.0f;
 
+    // ------------------------------------------------------------------
+    //  The DI box's state.
+    //
+    //    diLoadState      the input load's own split, which is where the
+    //                     impedance damping happens
+    //    diTransformerState  the DI transformer's low-end and its own slight
+    //                     hysteresis thickness
+    //    diGroundHumPhase the ground loop's mains phase, per channel
+    // ------------------------------------------------------------------
+    float diLoadState = 0.0f;
+    float diTransformerState = 0.0f;
+    float diGroundHumPhase = 0.0f;
+
     void reset() noexcept
     {
         preampLowState = 0.0f;
         preampBiasState = 0.0f;
         distortionLowState = 0.0f;
+        diLoadState = 0.0f;
+        diTransformerState = 0.0f;
+        diGroundHumPhase = 0.0f;
     }
 
     /**
@@ -1310,6 +1441,92 @@ struct InputStage
         const float scaled = clipped / gain;
         distortionLowState += (scaled - distortionLowState) * 0.0006f;
         return scaled - distortionLowState;
+    }
+
+    /**
+        Runs the DI box. All three of its controls arrive together because they
+        are one decision - a DI is a box you plug into, and the box is the sum of
+        its transformer, its load and its pad.
+
+        `amount`     0..1 - how much the box is engaged at all. At 0 it is a
+                     straight wire, bit-for-bit, so a session with no DI is
+                     exactly the signal it always was.
+
+        `load`       0..1 - how heavily the input loads the source. 0 is a very
+                     high-impedance (transparent) input and 1 is a heavy load
+                     that damps the source's own top-end resonance.
+
+        `padDb`      the pad in dB (0 or negative). Applied BEFORE the
+                     transformer, which is the whole point of a pad: it stops a
+                     hot source saturating the box rather than merely turning it
+                     down.
+
+        `humAmount`  0..1 - the ground loop. A DI with a lifted ground is
+                     silent; a DI with a bad earth hums, and the hum is at the
+                     mains frequency. It is a fault the box either has or does
+                     not, which is why it is part of the DI rather than a
+                     separate control.
+
+        The remaining three arguments are coefficient/phase values the caller
+        builds per block from the engine rate, so this stage stays rate-agnostic
+        like every other one here.
+    */
+    float processDiBox (float x, float amount, float load, float padDb, float humAmount,
+                        float loadCoefficient, float transformerCoefficient,
+                        float humIncrement) noexcept
+    {
+        if (amount <= 1.0e-5f)
+            return x;
+
+        // The PAD, first, before the transformer sees anything. A pad after the
+        // transformer would be a level control; a pad before it is what lets a
+        // hot source into a DI without driving the core, which is the decision
+        // the switch exists for.
+        float padded = x * juce::Decibels::decibelsToGain (padDb);
+
+        // The input LOAD. A one-pole low-pass whose corner moves with the
+        // control: a heavy load damps the source's top octave and its resonant
+        // peak, which is what makes a passive guitar pickup sound fatter and
+        // softer through one DI than another. It is taken as a SPLIT so the
+        // removed top can be folded back at low level rather than simply lost -
+        // a real load damps the peak, it does not silence the octave.
+        const float corner = loadCoefficient * (1.0f - load * 0.85f);
+        diLoadState += (padded - diLoadState) * corner;
+        const float loadedLow = diLoadState;
+        const float loadedHigh = padded - diLoadState;
+        const float loaded = loadedLow + loadedHigh * (1.0f - load * 0.55f);
+
+        // The DI TRANSFORMER. A real one is a small, often cheap transformer,
+        // and its signature is a gentle low-end bloom and a slight thickness in
+        // the low middle. A one-pole low split with the bottom band lifted is
+        // the same mechanism the tape condition stage and the vinyl degree use,
+        // which is why it is one line here rather than a model of its own.
+        diTransformerState += (loaded - diTransformerState) * transformerCoefficient;
+        const float transformerLow = diTransformerState;
+        const float transformerHigh = loaded - diTransformerState;
+        const float transformerOut = transformerLow * 1.12f + transformerHigh * 0.97f;
+
+        // The GROUND LOOP. A 50 Hz hum, added rather than folded in, because it
+        // is an interference the box picks up rather than something it does to
+        // the signal.
+        float groundHum = 0.0f;
+        if (humAmount > 0.0f)
+        {
+            diGroundHumPhase += humIncrement;
+            if (diGroundHumPhase >= 1.0f)
+                diGroundHumPhase -= 1.0f;
+
+            // The fundamental and its second harmonic - a mains loop is rarely
+            // a pure sine, and the harmonic is what makes it read as a hum
+            // rather than as a low tone.
+            groundHum = (std::sin (diGroundHumPhase * 6.2831853f)
+                           + 0.30f * std::sin (diGroundHumPhase * 12.5663706f))
+                      * humAmount * humAmount * 0.010f;
+        }
+
+        // The whole box is mixed in by `amount`, so the control is a real
+        // engagement rather than a set of simultaneous switches.
+        return x + (transformerOut + groundHum - x) * amount;
     }
 };
 
@@ -2190,35 +2407,45 @@ struct VinylStage
 
 //==============================================================================
 /**
-    A three-band tone control - the plugin's two equalisers.
+    The plugin's equaliser: three tone bands plus a high-pass and a low-pass.
 
-    The same stage is instantiated twice, at the two ends of the chain, and the
-    reason it is one struct rather than two is that the two equalisers have to
-    be the SAME instrument: an INPUT EQ and an OUTPUT EQ that did not share a
-    topology would colour the signal in ways the user could not predict from the
-    panel, and matching them by hand is how they drift apart.
-
-    Three bands, each a genuinely different filter rather than three of the same:
+    THE TONE STACK. Three bands, each a genuinely different filter rather than
+    three of the same:
 
       LOW   a low shelf. It lifts or cuts everything below the corner, which is
             where weight lives. A shelf rather than a peak, because "more bass"
             on a master means the whole bottom octave, not one frequency.
 
-      MID   a peak with a bell. It lifts or cuts around a centre frequency,
-            leaving both ends alone - the band that decides whether something
-            sounds present or hollow.
+      MID   a bell around 1 kHz inside the 200 Hz - 4 kHz band, leaving both ends
+            alone - the band that decides whether something sounds present or
+            hollow.
 
-      HIGH  a high shelf, the mirror of LOW. Air, or the lack of it.
+      HIGH  a high shelf above 4 kHz, the mirror of LOW. Air, or the lack of it.
 
-    Each band is a one-pole split with a matched gain pair, which is the same
-    technique the vinyl stage and the tape tilt already use - so the whole plugin
-    shapes tone with ONE mechanism, and a reader who has understood one of these
-    stages has understood all of them. A biquad would be steeper, but steepness
-    is not what these controls are for; what they are for is being inaudible at
-    0 dB and musical at everything else.
+    THE FILTERS. A high-pass and a low-pass, each with a real ORDER (how steep it
+    is) and a real Q (how much it rings at the corner). They are deliberately not
+    the same control as the shelves above:
 
-    At 0 dB on all three bands the pair of gains is (1, 1) on every band, so the
-    signal passes through untouched and the EQ is bit-for-bit transparent.
+      - a shelf shapes a band and leaves everything else at unity, so it can
+        never remove anything completely;
+      - a FILTER removes everything outside its passband, which is what you need
+        to get rid of rumble, a hum, a hiss, or the sub-audio content a tape
+        machine's own transport can produce.
+
+    ORDER is expressed in dB PER OCTAVE - 6, 12, 18, 24, 36, 48 - because that is
+    the unit a filter is actually specified in. Six is one pole, twelve is two,
+    and the engine implements each pole as a one-pole section exactly like every
+    other filter in this plugin, so the number the user picks is the slope they
+    get, to within the usual one-pole approximation.
+
+    Q is the resonance at the corner. At 0.5 the filter is critically damped
+    (the gentlest, no overshoot); at higher values there is a lift at the corner.
+    It is capped well short of self-oscillation, because a resonant filter that
+    rings on a tape emulation is a fault rather than a feature - the Q control
+    exists to let a steep filter be usable, not to make it sing.
+
+    At 0 dB on all three bands, HP at its floor, LP at its ceiling and Q at its
+    default, the whole stage is bit-for-bit transparent.
 */
 struct ThreeBandEq
 {
@@ -2233,29 +2460,57 @@ struct ThreeBandEq
     float midGain = 1.0f;
     float highGain = 1.0f;
 
-    // The mid bell's width, as the fraction of the band that passes through the
+    // The mid bell the fraction of the band that passes through the
     // -3 dB point. A narrower bell is useful for taming a resonance, a wider one
     // for shaping a whole region, so Q is a control rather than a constant.
     float midWidth = 0.6f;
 
-    // Per-channel filter state: the low/high split, the mid/high split, and the
-    // mid bell's own two poles (the bell is built from two low-passes over the
-    // same band, so it needs both of their memories).
+    // ------------------------------------------------------------------
+    //  The high-pass and the low-pass.
+    //
+    //  `hpCoefficient` and `lpCoefficient` are the ONE-POLE coefficients every
+    //  pole of the filter reuses - the order control only changes how many times
+    //  each pole is applied, which is what makes a one-pole section stack into
+    //  a 24 dB/octave filter without any of the biquad coefficient maths.
+    //
+    //  `hpPoles` and `lpPoles` are the pole COUNT (1, 2, 3, 4, 6, 8 for 6, 12,
+    //  18, 24, 36, 48 dB/octave). `hpQ` and `lpQ` trim the corner lift.
+    // ------------------------------------------------------------------
+    float hpCoefficient = 0.0f;
+    float lpCoefficient = 0.0f;
+    int   hpPoles = 1;
+    int   lpPoles = 1;
+    float hpQ = 0.7f;
+    float lpQ = 0.7f;
+
+    // Per-channel filter state. The tone stack needs three memories per channel
+    // (the low/high split, the mid/high split and the bell), and the two filters
+    // need one each per pole - eight poles deep, which is the worst case and
+    // costs sixty-four floats for the pair. That is nothing, and a static array
+    // is what keeps this stage allocation-free on the audio thread.
     float lowStateL = 0.0f, lowStateR = 0.0f;
     float midLowL = 0.0f, midLowR = 0.0f;
     float bellStateL = 0.0f, bellStateR = 0.0f;
 
-    /** Rebuilds the two split coefficients for a rate. Called from prepareToPlay
+    static constexpr int maxPoles = 8;
+    std::array<float, maxPoles> hpStateL {}, hpStateR {};
+    std::array<float, maxPoles> lpStateL {}, lpStateR {};
+
+    // The filters are bypassed when the control is at its floor/ceiling, so a
+    // neutral EQ costs one comparison rather than eight multiplies.
+    bool hpActive = false;
+    bool lpActive = false;
+
+    /** Rebuilds every split coefficient for a rate. Called from prepareToPlay
         and from the per-block path, because the rate the engine runs at can
         change with oversampling without prepareToPlay running again. */
     void prepare (float sampleRate) noexcept
     {
         // 200 Hz and 4 kHz, converted with the same one-pole helper everything
         // else in the plugin uses, so they mean the same thing at every rate.
-        const auto omegaLow = juce::MathConstants<float>::twoPi * 200.0f
-                            / juce::jmax (1.0f, sampleRate);
-        const auto omegaHigh = juce::MathConstants<float>::twoPi * 4000.0f
-                             / juce::jmax (1.0f, sampleRate);
+        const auto rate = juce::jmax (1.0f, sampleRate);
+        const auto omegaLow = juce::MathConstants<float>::twoPi * 200.0f / rate;
+        const auto omegaHigh = juce::MathConstants<float>::twoPi * 4000.0f / rate;
         lowCoefficient = juce::jlimit (0.0f, 1.0f - std::exp (-omegaLow));
         highCoefficient = juce::jlimit (0.0f, 1.0f - std::exp (-omegaHigh));
     }
@@ -2272,7 +2527,59 @@ struct ThreeBandEq
         const float widthHz = 2000.0f + midWidth * 6000.0f;
         const auto omega = juce::MathConstants<float>::twoPi * widthHz
                          / juce::jmax (1.0f, sampleRate);
-        return juce::jlimit (0.0f, 1.0f, 1.0f - std::exp (-omega));
+        return juce::jlimit (0.0f, 1.0f - std::exp (-omega));
+    }
+
+    /** Rebuilds the two filter coefficients and the pole counts.
+
+        `hpHz` is the high-pass corner, `lpHz` the low-pass corner, `order` the
+        slope in dB/octave and `q` the corner resonance. This is called once per
+        BLOCK, not per sample: all four are controls, so they change on block
+        boundaries at the fastest, and the eight std::exp below would be eight
+        per sample otherwise.
+    */
+    void prepareFilters (float sampleRate, float hpHz, float lpHz,
+                         float orderDbPerOctave, float q) noexcept
+    {
+        const auto rate = juce::jmax (1.0f, sampleRate);
+
+        // The pole count from the slope: one pole is 6 dB per octave, so the
+        // count is the slope divided by six. Clamped to the array's own size,
+        // which is what makes the array's size the highest order on offer.
+        const auto poles = juce::jlimit (1, maxPoles,
+                                         juce::roundToInt (orderDbPerOctave / 6.0f));
+        hpPoles = poles;
+        lpPoles = poles;
+
+        // "Off" positions. A corner below audibility is not a filter, and a
+        // corner at or above Nyquist cannot exist - so both ends of each control's
+        // travel are REAL bypasses rather than a filter that happens to be very
+        // gentle. That is what makes a neutral EQ bit-for-bit transparent.
+        hpActive = hpHz > 22.0f;
+        lpActive = lpHz < rate * 0.45f;
+
+        // Q: the corner lift. One-pole sections in series multiply their own
+        // gentle knee, so a stack of them gives a rounded corner rather than a
+        // resonant one - which is why the Q control acts on the CORNER only, by
+        // trimming the pole's own response rather than by adding a resonant
+        // biquad on top. 0.5 is critically damped, 1.5 is the practical maximum
+        // before a steep stack starts to ring audibly at the corner.
+        hpQ = juce::jlimit (0.5f, 1.5f, q);
+        lpQ = hpQ;
+
+        const auto hpOmega = juce::MathConstants<float>::twoPi
+                           * juce::jlimit (22.0f, rate * 0.45f, hpHz) / rate;
+        const auto lpOmega = juce::MathConstants<float>::twoPi
+                           * juce::jlimit (22.0f, rate * 0.45f, lpHz) / rate;
+
+        // The Q trims the coefficient: a higher Q makes the pole respond further
+        // per step, which is the corner lift, and 1.0 is the neutral multiplier
+        // so a Q of 0.7 is deliberately slightly under-damped rather than a
+        // no-op - that is what a real one-pole corner looks like.
+        hpCoefficient = juce::jlimit (0.0f, 1.0f,
+                                      (1.0f - std::exp (-hpOmega)) * hpQ);
+        lpCoefficient = juce::jlimit (0.0f, 1.0f,
+                                      (1.0f - std::exp (-lpOmega)) * lpQ);
     }
 
     void reset() noexcept
@@ -2280,6 +2587,8 @@ struct ThreeBandEq
         lowStateL = lowStateR = 0.0f;
         midLowL = midLowR = 0.0f;
         bellStateL = bellStateR = 0.0f;
+        hpStateL.fill (0.0f); hpStateR.fill (0.0f);
+        lpStateL.fill (0.0f); lpStateR.fill (0.0f);
     }
 
     /** One sample through the three bands.
@@ -2291,19 +2600,46 @@ struct ThreeBandEq
     */
     float process (float x, int channel, float midCoefficient) noexcept
     {
+        // ------------------------------------------------------------------
+        //  The HIGH-PASS, first, so everything downstream sees a signal that is
+        //  already free of whatever it removes.
+        //
+        //  Each pole is a one-pole high-pass built from a one-pole low-pass, the
+        //  same split every other filter in this plugin uses: what the low-pass
+        //  keeps is subtracted from the input, and what is left is the high side.
+        //  Stacking the poles in series is what makes 6 dB/octave into 24 - the
+        //  slope is the pole COUNT and nothing else, which is why the order
+        //  control needs no coefficient maths of its own.
+        //
+        //  `hpActive` is false at the control's floor, in which case the whole
+        //  loop is skipped and the sample passes untouched. That is what keeps a
+        //  neutral EQ bit-for-bit transparent rather than "transparent to within
+        //  a very gentle filter".
+        // ------------------------------------------------------------------
+        float filtered = x;
+        if (hpActive)
+        {
+            auto& hpState = channel == 0 ? hpStateL : hpStateR;
+            for (int pole = 0; pole < hpPoles; ++pole)
+            {
+                auto& state = hpState[static_cast<std::size_t> (pole)];
+                state += (filtered - state) * hpCoefficient;
+                filtered -= state;   // the low side removed, the high side left
+            }
+        }
+
         // The low/high split: what the low-pass keeps is the LOW band, what it
         // removes is everything above it.
         auto& lowState = channel == 0 ? lowStateL : lowStateR;
-        lowState += (x - lowState) * lowCoefficient;
+        lowState += (filtered - lowState) * lowCoefficient;
         const float lowBand = lowState;
-        const float upperBand = x - lowState;
+        const float upperBand = filtered - lowState;
 
         // The upper band is split again at 4 kHz into the MID and HIGH bands.
         auto& midState = channel == 0 ? midLowL : midLowR;
         midState += (upperBand - midState) * highCoefficient;
         const float midHighBand = upperBand - midState;   // everything above 4 kHz
         const float midBand = midState;                   // 200 Hz .. 4 kHz
-
         // The mid BELL. MID is a resonant-style bell rather than a second
         // low/high pair, and that is a deliberate difference: a full-band mid
         // shelf would drag the low and high ends with it, so turning MID up
@@ -2328,9 +2664,36 @@ struct ThreeBandEq
         const float midOut = midBand + bellBand * (midGain - 1.0f)
                                     + bellRest * (midGain - 1.0f) * 0.15f;
 
-        return lowBand * lowGain
-             + midOut
-             + midHighBand * highGain;
+        const float tonal = lowBand * lowGain
+                          + midOut
+                          + midHighBand * highGain;
+
+        // ------------------------------------------------------------------
+        //  The LOW-PASS, last: the mirror of the high-pass above and built the
+        //  same way, one pole at a time, with the pole COUNT being what the
+        //  order control changes. It is the control that takes a hiss off, or
+        //  that rounds the top of the machine off before it leaves the plugin.
+        //
+        //  A low-pass cannot be "off" at the top of its range the way a
+        //  high-pass is at the bottom: a corner above Nyquist is not a filter at
+        //  all, so the control's own maximum IS the bypass and `lpActive` tests
+        //  for exactly that. The two filters are therefore symmetric in the
+        //  panel and symmetric here - each has one end that is genuinely no
+        //  filter rather than a very gentle one.
+        // ------------------------------------------------------------------
+        float out = tonal;
+        if (lpActive)
+        {
+            auto& lpState = channel == 0 ? lpStateL : lpStateR;
+            for (int pole = 0; pole < lpPoles; ++pole)
+            {
+                auto& state = lpState[static_cast<std::size_t> (pole)];
+                state += (out - state) * lpCoefficient;
+                out = state;
+            }
+        }
+
+        return out;
     }
 };
 
@@ -3889,6 +4252,9 @@ private:
     std::atomic<float>* wowParam = nullptr;
     std::atomic<float>* flutterParam = nullptr;
     std::atomic<float>* mixParam = nullptr;
+    // The machine's track layout: 2 / 2+3 / 3. Read once per block like every
+    // other choice, so the per-sample crosstalk branch is on a plain int.
+    std::atomic<float>* tracksParam = nullptr;
     std::atomic<float>* outputDbParam = nullptr;
     std::atomic<float>* widthParam = nullptr;
     std::atomic<float>* bypassParam = nullptr;
@@ -3902,6 +4268,8 @@ private:
     std::atomic<float>* subFundamentalParam = nullptr;
     std::atomic<float>* delayTimeParam = nullptr;
     std::atomic<float>* delayFeedbackParam = nullptr;
+    // PING-PONG's own control, read once per block like the rest of the delay.
+    std::atomic<float>* delayPingPongParam = nullptr;
     std::atomic<float>* stOffsetParam = nullptr;
     std::atomic<float>* noiseParam = nullptr;
     std::atomic<float>* transportParam = nullptr;
@@ -3917,6 +4285,12 @@ private:
     std::atomic<float>* cabinetParam = nullptr;
     std::atomic<float>* ampBiasParam = nullptr;
     std::atomic<float>* preampParam = nullptr;
+
+    // The DI box: engagement, input load, transformer colour and the pad choice.
+    std::atomic<float>* diParam = nullptr;
+    std::atomic<float>* diLoadParam = nullptr;
+    std::atomic<float>* diTransformerParam = nullptr;
+    std::atomic<float>* diPadParam = nullptr;
     std::atomic<float>* fluxParam = nullptr;
     std::atomic<float>* wearParam = nullptr;
     std::atomic<float>* mechanicsParam = nullptr;
@@ -3960,6 +4334,17 @@ private:
     std::atomic<float>* outputEqLowParam = nullptr;
     std::atomic<float>* outputEqMidParam = nullptr;
     std::atomic<float>* outputEqHighParam = nullptr;
+
+    // The EQ filters: corner, order (as a choice index into the dB/octave list)
+    // and Q, per equaliser.
+    std::atomic<float>* inputEqHpFreqParam = nullptr;
+    std::atomic<float>* inputEqLpFreqParam = nullptr;
+    std::atomic<float>* inputEqOrderParam = nullptr;
+    std::atomic<float>* inputEqQParam = nullptr;
+    std::atomic<float>* outputEqHpFreqParam = nullptr;
+    std::atomic<float>* outputEqLpFreqParam = nullptr;
+    std::atomic<float>* outputEqOrderParam = nullptr;
+    std::atomic<float>* outputEqQParam = nullptr;
 
     // The five type switches. Read once per block like every other choice, so the
     // per-sample loops branch on plain ints rather than on atomics.
@@ -4302,6 +4687,13 @@ private:
     SampleSmoother delaySamplesSmoothed { sampleClock };
     SampleSmoother delayFeedbackSmoothed { sampleClock };
 
+    // PING-PONG is smoothed for the same reason the feedback amount is: it
+    // decides how much of the repeat is written into each of the two delay
+    // lines, and a step there would be a step in the waveform. It is a genuine
+    // crossfade between the two routings, so the echoes move across the image
+    // as the control turns rather than jumping sides.
+    SampleSmoother pingPongSmoothed { sampleClock };
+
     // The delay's own feedback path is damped: each repeat loses top end, the way
     // a real second head loses it through the same tape losses the main path has.
     // Without this the repeats stack into a bright metallic ring.
@@ -4324,6 +4716,27 @@ private:
     std::array<float, stOffsetBufferLength> stOffsetBuffer {};
     int stOffsetWritePosition = 0;
     SampleSmoother stOffsetSamplesSmoothed { sampleClock };
+
+    // -----------------------------------------------------------------------
+    //  MODELED TRACKS: the head-to-head bleed.
+    //
+    //  One shared per-channel history per channel, because the bleed is what
+    //  this channel's head picks up OUT OF THE OTHER ONE - so each channel needs
+    //  to be able to read what the other channel wrote a few samples ago.
+    //
+    //  The buffer is deliberately tiny: the longest layout's spacing is a few
+    //  hundredths of a millisecond, which is a handful of samples even at 8x
+    //  oversampling of 192 kHz. A 256-sample ring is generous by two orders of
+    //  magnitude, which is the point - it cannot overflow at any supported rate,
+    //  so the index maths needs no bounds test beyond the modulo.
+    //
+    //  The two channels share ONE ring: they write into their own track's slice
+    //  and read the other's, which is what makes the bleed symmetric. Two
+    //  separate rings would let one side's leak arrive before the other's.
+    // -----------------------------------------------------------------------
+    static constexpr int tracksBleedBufferLength = 256;
+    std::array<std::array<float, tracksBleedBufferLength>, 2> tracksBleedBuffer {};
+    int tracksBleedWritePosition = 0;
 
     // -----------------------------------------------------------------------
     //  Transport state (STOP / PLAY / START), and SPINDOWN.
@@ -4546,6 +4959,22 @@ private:
 
     SampleSmoother preampSmoothed { sampleClock };
     SampleSmoother distortionSmoothed { sampleClock };
+
+    // -----------------------------------------------------------------------
+    //  The DI box.
+    //
+    //  Three smoothed controls (engagement, load and transformer) and one
+    //  block-rate value (the pad, which is a choice rather than a sweep and so
+    //  needs no ramp). The three coefficients and the hum increment are built
+    //  per block from the engine rate, like every other rate-dependent value.
+    // -----------------------------------------------------------------------
+    SampleSmoother diSmoothed { sampleClock };
+    SampleSmoother diLoadSmoothed { sampleClock };
+    SampleSmoother diTransformerSmoothed { sampleClock };
+    float diPadDb = 0.0f;
+    float diLoadCoefficient = 0.5f;
+    float diTransformerCoefficient = 0.1f;
+    float diHumIncrement = 0.0f;
 
     // The preamp's input-transformer low-cut, built once per block from the rate.
     float preampLowCutCoefficient = 0.5f;

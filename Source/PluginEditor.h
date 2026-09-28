@@ -42,7 +42,25 @@
 class J37LookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
-    void setDarkTheme (bool shouldUseDarkTheme) noexcept { darkTheme = shouldUseDarkTheme; }
+    /** The three front panels. A plain int-typed enum so it can be a parameter
+        value, a member and a switch subject without casts. */
+    enum class ThemeChoice { ivory = 0, charcoal = 1, metal = 2 };
+
+    // The bool entry point is kept because every paint routine in this file calls
+    // it and the two DARK themes share every code path - this is the older,
+    // coarser question ("is this a dark panel?"). setTheme() is the finer one.
+    void setDarkTheme (bool shouldUseDarkTheme) noexcept
+    {
+        theme = shouldUseDarkTheme ? ThemeChoice::charcoal : ThemeChoice::ivory;
+    }
+
+    void setTheme (ThemeChoice newTheme) noexcept { theme = newTheme; }
+    ThemeChoice getTheme() const noexcept { return theme; }
+
+    /** True for the two dark panels. Used by every drawing routine, which only
+        ever needs to know dark-or-light rather than which dark. */
+    bool isDarkTheme() const noexcept { return theme != ThemeChoice::ivory; }
+
     void setActivity (float newActivity) noexcept { activity = newActivity; }
     void setDrift (float newDrift) noexcept { drift = newDrift; }
     void advanceFrame() noexcept { animationPhase += 0.11f; }
@@ -68,7 +86,7 @@ public:
                          bool, bool) override;
 
 private:
-    bool darkTheme = false;
+    ThemeChoice theme = ThemeChoice::ivory;
     float activity = 0.0f;   ///< Compressor activity, drives the glow around the knobs.
     float drift = 0.0f;      ///< Transport drift, drives the fine wobble in the ticks.
     float animationPhase = 0.0f;
@@ -113,7 +131,12 @@ private:
 class J37InlineLookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
-    void setDarkTheme (bool shouldUseDarkTheme) noexcept { darkTheme = shouldUseDarkTheme; }
+    void setTheme (J37LookAndFeel::ThemeChoice newTheme) noexcept { theme = newTheme; }
+    void setDarkTheme (bool shouldUseDarkTheme) noexcept
+    {
+        theme = shouldUseDarkTheme ? J37LookAndFeel::ThemeChoice::charcoal
+                                   : J37LookAndFeel::ThemeChoice::ivory;
+    }
 
     /** The list drawing: a flat recessed field. */
     void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
@@ -131,7 +154,7 @@ public:
                            bool shouldDrawButtonAsDown) override;
 
 private:
-    bool darkTheme = false;
+    J37LookAndFeel::ThemeChoice theme = J37LookAndFeel::ThemeChoice::ivory;
 };
 
 class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor,
@@ -239,7 +262,7 @@ private:
     // read at run time. The tab table is checked against controlCount by a
     // static_assert too, so a knob that no tab lists is a build error, not a knob
     // that silently disappears from the panel.
-    static constexpr std::size_t controlCount = 44;
+    static constexpr std::size_t controlCount = 54;
     static constexpr int tabColumns = 4;
     // Seven tabs: MACHINE, DRIVE, CHARACTER, NOISE, VINYL, SPACE, SETTINGS. The
     // seventh arrived with the four record faults (DUST / SCRATCH / WARP /
@@ -324,6 +347,24 @@ private:
     // The UI-sounds switch, on the SETTINGS tab beside GL.
     juce::ToggleButton uiSoundsButton { "UI SOUNDS" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> uiSoundsAttachment;
+
+    // The remaining choice parameters: the DI pad, the machine's track layout,
+    // and the two EQ orders. Each is a list rather than a knob because its
+    // values are discrete machines/settings, not points on a scale - and each
+    // uses the IN-TAB look and feel, because that is what a list inside a tab
+    // is drawn with.
+    juce::ComboBox diPadBox;
+    juce::ComboBox tracksBox;
+    juce::ComboBox inputEqOrderBox;
+    juce::ComboBox outputEqOrderBox;
+    juce::Label diPadLabel;
+    juce::Label tracksLabel;
+    juce::Label inputEqOrderLabel;
+    juce::Label outputEqOrderLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> diPadAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tracksAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> inputEqOrderAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> outputEqOrderAttachment;
     // Transport: STOP / PLAY / START as three buttons rather than a combo, because
     // the whole point of the gesture is that START and STOP are momentary presses
     // and PLAY is a resting state. A combo made the user open a menu to stop a
@@ -508,6 +549,18 @@ private:
     float reelAngle = 0.0f;
     float reelSpeed = 0.0f;
     bool currentBypassDisplay = false;
+
+    // -----------------------------------------------------------------------
+    //  The front panel's theme.
+    //
+    //  Three panels - ivory, charcoal and metal - so this is an enum rather
+    //  than the bool it used to be. The bool survives as isDarkTheme() because
+    //  every drawing routine only ever needs to know dark-or-light and the two
+    //  dark themes share all of those code paths; the enum is what tells the two
+    //  of them apart, in the one place that has to (paletteForTheme).
+    // -----------------------------------------------------------------------
+    J37LookAndFeel::ThemeChoice themeChoice = J37LookAndFeel::ThemeChoice::ivory;
+    bool darkTheme = false;   // true for charcoal AND metal; see the note above
 
     // Transport presentation. `lastShownTransport` is the parameter index the
     // buttons were last painted for, so the three of them are only restyled when

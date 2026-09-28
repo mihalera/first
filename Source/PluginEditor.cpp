@@ -239,9 +239,63 @@ namespace
         juce::Colour::fromRGB (122, 174, 128)    // status
     };
 
+    // ------------------------------------------------------------------
+    //  The METAL theme: brushed steel rather than wood or paper.
+    //
+    //  A third theme rather than a tint of the other two, because it says a
+    //  different thing about the machine: ivory is a piece of studio furniture
+    //  and charcoal is an old console, while metal is a rack unit - the
+    //  19-inch, grey, slightly cold piece of gear that lives in a machine room.
+    //
+    //  The palette is built around that: the chassis is a NEUTRAL grey rather
+    //  than a warm one, the accent is a cool cyan rather than gold or amber,
+    //  and the "metal" itself comes from the contrast between the raised
+    //  surfaces and the recesses rather than from a warm colour. Every colour
+    //  is deliberately desaturated - a metal panel gets its depth from its
+    //  lighting, not from its pigment - which is also what keeps the accent
+    //  reading as an indicator lamp rather than as a decoration.
+    //
+    //  It is DARK in the sense the code means - it draws dark text on light
+    //  and light text on dark - so the two flags below keep it on the same
+    //  code paths as charcoal and only the colours differ.
+    // ------------------------------------------------------------------
+    const UiPalette metalPalette {
+        juce::Colour::fromRGB (38, 41, 45),      // background - cold neutral grey
+        juce::Colour::fromRGB (66, 70, 75),      // panel - brushed steel
+        juce::Colour::fromRGB (92, 97, 103),     // raised
+        juce::Colour::fromRGB (128, 134, 141),   // border - a machined edge
+        juce::Colour::fromRGB (96, 200, 216),    // accent - a cool indicator cyan
+        juce::Colour::fromRGB (233, 238, 242),   // text - near-white, faintly blue
+        juce::Colour::fromRGB (168, 176, 184),   // secondary
+        juce::Colour::fromRGB (78, 83, 89),      // knobFace
+        juce::Colour::fromRGB (124, 130, 137),   // knobHighlight
+        juce::Colour::fromRGB (150, 157, 165),   // knobEdge
+        juce::Colour::fromRGB (26, 29, 33),      // readout
+        juce::Colour::fromRGB (206, 213, 219),   // gaugeFace
+        juce::Colour::fromRGB (42, 46, 51),      // gaugeInk
+        juce::Colour::fromRGB (222, 96, 78),     // needle - a red LED
+        juce::Colour::fromRGB (118, 206, 148)    // status
+    };
+
     const UiPalette& paletteFor (bool darkTheme)
     {
         return darkTheme ? charcoalPalette : ivoryPalette;
+    }
+
+    // The three-theme lookup. `paletteFor(bool)` above is kept because it is what
+    // every paint routine already calls, and the two dark themes share every
+    // code path - this is the one place the two of them are told apart.
+    enum class ThemeChoice { ivory = 0, charcoal = 1, metal = 2 };
+
+    const UiPalette& paletteForTheme (ThemeChoice theme)
+    {
+        switch (theme)
+        {
+            case ThemeChoice::metal:    return metalPalette;
+            case ThemeChoice::charcoal: return charcoalPalette;
+            case ThemeChoice::ivory:
+            default:                    return ivoryPalette;
+        }
     }
 
     // The three tabs the knob grid is split across. Each entry names a tab and lists the
@@ -303,7 +357,7 @@ namespace
         //  preamp, distortion, drive, bias, blend, shape, amp_bias, sag, subfund
         { "DRIVE", "The gain stages in front of the tape, then everything that bends "
                    "the signal.",
-                     9, { 21, 22, 1, 2, 10, 11, 12, 13, 20 } },
+                     12, { 44, 45, 46, 21, 22, 1, 2, 10, 11, 12, 13, 20 } },
         //  flux, cabinet, presence
         { "CHARACTER", "The head and the medium's tone.",
                      3, { 23, 15, 14 } },
@@ -322,7 +376,7 @@ namespace
         { "SPACE", "The two time-based stages: the second head, then the room. The "
                    "deck's TYPE / SYNC DELAY / RATE switches belong to the second "
                    "head, so they show on this tab.",
-                     5, { 16, 17, 18, 26, 27 } },
+                     6, { 16, 17, 18, 53, 26, 27 } },
         //  dust, scratch, warp, electrical - the four physical faults of a record
         //  and a turntable. They live on their own page because each is a
         //  genuinely different mechanism rather than another amount of noise, and
@@ -349,14 +403,14 @@ namespace
                     "is the EQ you use to feed the machine what it wants. LOW is a "
                     "shelf at 200 Hz, MID a bell at 1 kHz, HIGH a shelf above "
                     "4 kHz; all three are transparent at 0 dB.",
-                     3, { 38, 39, 40 } },
+                     6, { 38, 39, 40, 47, 48, 49 } },
         //  out_low, out_mid, out_high - the output equaliser.
         { "OUT EQ", "The output equaliser, after the machine and before the "
                      "output trim. Nothing downstream responds to what it does, so "
                      "it corrects the RESULT rather than the input - the neutral, "
                      "predictable EQ you use to place the finished sound. Same three "
                      "bands as the input EQ, same transparency at 0 dB.",
-                     3, { 41, 42, 43 } },
+                     6, { 41, 42, 43, 50, 51, 52 } },
         //  No knobs of its own: SETTINGS is where the three engine-level switches
         //  live - GL, OVERSAMPLING and the interface sounds - shown by
         //  setCurrentTab, not by the grid.
@@ -396,7 +450,7 @@ constexpr std::size_t numTabPages = 9;
 constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tabs,
                                      std::size_t total)
     {
-        std::array<int, 44> seen {};
+        std::array<int, 54> seen {};
 
         for (const auto& tab : tabs)
             for (std::size_t i = 0; i < tab.count; ++i)
@@ -581,7 +635,7 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                                        const float rotaryEndAngle,
                                        juce::Slider& slider)
 {
-    const auto& palette = paletteFor (darkTheme);
+    const auto& palette = paletteForTheme (theme);
     const auto bounds = juce::Rectangle<float> (static_cast<float> (x),
                                                  static_cast<float> (y),
                                                  static_cast<float> (width),
@@ -730,7 +784,7 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
 void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button,
                                        bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
 {
-    const auto& palette = paletteFor (darkTheme);
+    const auto& palette = paletteForTheme (theme);
     const auto bounds = button.getLocalBounds().toFloat().reduced (2.0f, 3.0f);
     const auto isOn = button.getToggleState();
 
@@ -843,7 +897,7 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
 void J37LookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button,
                                      bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
 {
-    const auto& palette = paletteFor (darkTheme);
+    const auto& palette = paletteForTheme (theme);
 
     auto colour = button.findColour (button.getToggleState() ? juce::TextButton::textColourOnId
                                                              : juce::TextButton::textColourOffId);
@@ -882,7 +936,7 @@ void J37InlineLookAndFeel::drawComboBox (juce::Graphics& g, int width, int heigh
                                          int, int, int, int,
                                          juce::ComboBox& box)
 {
-    const auto& palette = paletteFor (darkTheme);
+    const auto& palette = paletteForTheme (theme);
     const auto bounds = juce::Rectangle<float> (0.0f, 0.0f,
                                                  static_cast<float> (width),
                                                  static_cast<float> (height)).reduced (0.5f);
@@ -949,7 +1003,7 @@ void J37InlineLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButt
                                              bool shouldDrawButtonAsHighlighted,
                                              bool shouldDrawButtonAsDown)
 {
-    const auto& palette = paletteFor (darkTheme);
+    const auto& palette = paletteForTheme (theme);
     const auto bounds = button.getLocalBounds().toFloat().reduced (2.0f, 3.0f);
     const auto isOn = button.getToggleState();
 
@@ -1904,7 +1958,11 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                          "vinyl_dust", "vinyl_scratch", "vinyl_warp",
                                          "vinyl_electrical", "vinyl_clicks",
                                          "in_low", "in_mid", "in_high",
-                                         "out_low", "out_mid", "out_high" };
+                                         "out_low", "out_mid", "out_high",
+                                         "di", "di_load", "di_transformer",
+                                         "in_hp_freq", "in_lp_freq", "in_eq_q",
+                                         "out_hp_freq", "out_lp_freq", "out_eq_q",
+                                         "delay_pingpong" };
     const juce::StringArray controlNames { "INPUT", "DRIVE", "BIAS",
                                            "BRIGHT", "TONE", "WOW",
                                            "FLUTTER", "MIX", "OUTPUT",
@@ -1921,7 +1979,11 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                            "DUST", "SCRATCH", "WARP",
                                            "ELECTRICAL", "CLICKS",
                                            "IN LO", "IN MID", "IN HI",
-                                           "OUT LO", "OUT MID", "OUT HI" };
+                                           "OUT LO", "OUT MID", "OUT HI",
+                                           "DI", "DI LOAD", "DI XFMR",
+                                           "IN HP", "IN LP", "IN Q",
+                                           "OUT HP", "OUT LP", "OUT Q",
+                                           "PING-PONG" };
     // One double-click reset value per controlIds entry, in the SAME order, each one
     // the default createParameterLayout() registers for that parameter. These are
     // three views of ONE list, so a value that lands on a different control is a
@@ -1956,7 +2018,11 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                                                            0.0, 0.0, 0.0,
                                                            0.0, 0.0,
                                                            0.0, 0.0, 0.0,
-                                                           0.0, 0.0, 0.0 };
+                                                           0.0, 0.0, 0.0,
+                                                           0.0, 0.0, 0.0,
+                                                           20.0, 20000.0, 0.7,
+                                                           20.0, 20000.0, 0.7,
+                                                           0.0 };
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -2365,6 +2431,42 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 return juce::jlimit (-12.0, 12.0, text.getDoubleValue());
             };
         }
+        else if (id == "in_hp_freq" || id == "in_lp_freq"
+                 || id == "out_hp_freq" || id == "out_lp_freq")
+        {
+            // The EQ filters' corners, in Hz. The two ends are the two REAL
+            // bypasses: 20 Hz is below anything on a record, and 20 kHz is at or
+            // above the top of the band - so the engine treats each end as "no
+            // filter" rather than as a very gentle one, which is what makes a
+            // neutral EQ bit-for-bit transparent.
+            //
+            // The high-pass is skewed toward its low end because that is where
+            // the useful range is (a rumble filter lives between 20 and 120 Hz),
+            // and the low-pass toward its middle for the same reason.
+            if (id == "in_hp_freq" || id == "out_hp_freq")
+            {
+                slider.setSkewFactorFromMidPoint (100.0);
+                slider.setRange (20.0, 500.0, 1.0);
+            }
+            else
+            {
+                slider.setSkewFactorFromMidPoint (8000.0);
+                slider.setRange (2000.0, 20000.0, 10.0);
+            }
+
+            slider.setNumDecimalPlacesToDisplay (0);
+            slider.setTextValueSuffix (" Hz");
+        }
+        else if (id == "in_eq_q" || id == "out_eq_q")
+        {
+            // The filters' corner resonance. Capped at 1.5: a resonant filter
+            // ringing on a tape emulation is a fault rather than a feature, so
+            // the control exists to let a steep filter be usable rather than to
+            // make it sing.
+            slider.setRange (0.5, 1.5, 0.01);
+            slider.setNumDecimalPlacesToDisplay (2);
+            slider.setTextValueSuffix (" Q");
+        }
         else
         {
             slider.setRange (0.0, 1.0, 0.001);
@@ -2490,11 +2592,31 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (deltaButton);
 
     themeButton.setButtonText ("DARK THEME");
-    themeButton.setTooltip ("Switch between the ivory and charcoal front panels.");
+    themeButton.setTooltip ("Cycle the front panel: IVORY is the paper-and-brass "
+                            "studio panel, CHARCOAL the old console, and METAL a "
+                            "rack unit - a cold neutral grey with a cool cyan "
+                            "indicator. The button names the panel you are on; "
+                            "pressing it moves to the next one.");
     themeButton.setLookAndFeel (&customLookAndFeel);
     themeButton.onClick = [this]
     {
-        darkTheme = ! darkTheme;
+        // The theme button now CYCLES through all three panels rather than
+        // toggling two, because there are three. The order is the order they
+        // read in: the paper panel, the old console, the rack unit - and it
+        // wraps, so there is no "stuck" state and no second button to find.
+        switch (themeChoice)
+        {
+            case J37LookAndFeel::ThemeChoice::ivory:
+                themeChoice = J37LookAndFeel::ThemeChoice::charcoal;
+                break;
+            case J37LookAndFeel::ThemeChoice::charcoal:
+                themeChoice = J37LookAndFeel::ThemeChoice::metal;
+                break;
+            case J37LookAndFeel::ThemeChoice::metal:
+            default:
+                themeChoice = J37LookAndFeel::ThemeChoice::ivory;
+                break;
+        }
         applyTheme();
     };
 
@@ -2860,6 +2982,71 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     uiSoundsAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
         (audioProcessor.parameters, "ui_sounds", uiSoundsButton);
     addAndMakeVisible (uiSoundsButton);
+
+    // ---------------------------------------------------------------
+    //  The remaining choice lists: the DI pad, the track layout and the two
+    //  EQ orders. All four are lists rather than knobs because their values are
+    //  discrete settings, not points on a scale - and all four use the IN-TAB
+    //  look and feel, because that is what a list inside a tab is drawn with.
+    // ---------------------------------------------------------------
+    const auto setUpInlineList = [this] (juce::Label& label, juce::ComboBox& box,
+                                         const juce::String& caption,
+                                         const juce::StringArray& items,
+                                         const juce::String& tip)
+    {
+        styleLabel (label, caption, 9.0f, paletteFor (false).secondary,
+                    true, juce::Justification::left);
+        addAndMakeVisible (label);
+        box.addItemList (items, 1);
+        box.setTooltip (tip);
+        box.setLookAndFeel (&inlineLookAndFeel);
+        addAndMakeVisible (box);
+    };
+
+    setUpInlineList (diPadLabel, diPadBox, "DI PAD",
+                     juce::StringArray { "0 dB", "-10 dB", "-20 dB", "-30 dB" },
+                     "The DI box's input pad, applied BEFORE its transformer. A pad "
+                     "is a switch rather than a level trim because that is the "
+                     "decision it makes: a hot source (an active synth, a boosted "
+                     "pedal) can be plugged in without driving the box's own core "
+                     "into saturation. 0 dB is no pad.");
+
+    setUpInlineList (tracksLabel, tracksBox, "TRACKS",
+                     juce::StringArray { "2", "2+3", "3" },
+                     "The machine's track layout, which is geometry rather than "
+                     "taste. 2 is a stereo deck: two tracks each with half the "
+                     "tape, the most low end per channel and no adjacent track to "
+                     "leak from. 2+3 is a four-track deck used as two on tracks 2 "
+                     "and 3: a whole track's worth of tape between the channels, "
+                     "so the widest spacing and the least crosstalk. 3 is a "
+                     "three-track deck: narrower tracks, so less low end and a "
+                     "higher noise floor for the same tape, with the most bleed "
+                     "between the heads.");
+
+    const juce::StringArray eqOrderItems { "6 dB/oct", "12 dB/oct", "18 dB/oct",
+                                           "24 dB/oct", "36 dB/oct", "48 dB/oct" };
+    setUpInlineList (inputEqOrderLabel, inputEqOrderBox, "ORDER", eqOrderItems,
+                     "The slope of the input EQ's high-pass and low-pass, in dB "
+                     "per octave. 6 is one pole, 12 is two, up to 48 for a filter "
+                     "that gets out of the way completely. The number on the panel "
+                     "is the slope you get: the engine stacks one-pole sections, "
+                     "one per 6 dB.");
+
+    setUpInlineList (outputEqOrderLabel, outputEqOrderBox, "ORDER", eqOrderItems,
+                     "The slope of the output EQ's high-pass and low-pass, in dB "
+                     "per octave. Separate from the input EQ's because the two "
+                     "equalisers make different decisions: the input one shapes "
+                     "what the machine hears, the output one corrects what it "
+                     "produced.");
+
+    diPadAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "di_pad", diPadBox);
+    tracksAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "tracks", tracksBox);
+    inputEqOrderAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "in_eq_order", inputEqOrderBox);
+    outputEqOrderAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "out_eq_order", outputEqOrderBox);
 
     // ---------------------------------------------------------------
     //  Premium workflow bar.
@@ -3305,12 +3492,18 @@ FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayo
 
 void FirstAudioProcessorEditor::applyTheme()
 {
-    const auto& palette = paletteFor (darkTheme);
-    customLookAndFeel.setDarkTheme (darkTheme);
-    // The in-tab look and feel carries its own theme flag for the same reason the
+    // The editor's own bool is derived from the three-way choice, so every one of
+    // the ~50 `paletteFor (darkTheme)` call sites in this file keeps working
+    // unchanged - and the two dark themes genuinely DO share all of them. The
+    // only place the two are told apart is this next line.
+    darkTheme = themeChoice != J37LookAndFeel::ThemeChoice::ivory;
+
+    const auto& palette = paletteForTheme (themeChoice);
+    customLookAndFeel.setTheme (themeChoice);
+    // The in-tab look and feel carries its own theme for the same reason the
     // deck's does: it reads the palette live at paint time, so the lists and the
     // pill switches recolour on the same frame as everything else.
-    inlineLookAndFeel.setDarkTheme (darkTheme);
+    inlineLookAndFeel.setTheme (themeChoice);
     inputMeter.setDarkTheme (darkTheme);
     outputMeter.setDarkTheme (darkTheme);
     {
@@ -3442,7 +3635,22 @@ void FirstAudioProcessorEditor::applyTheme()
     compressorMeterIn.setDarkTheme (darkTheme);
     compressorMeterOut.setDarkTheme (darkTheme);
 
-    themeButton.setButtonText (darkTheme ? "LIGHT THEME" : "DARK THEME");
+    // The caption names the theme you are ON, and the tooltip says what the next
+    // press will do - so the label can never be read as "press this to become X"
+    // when it is already X.
+    switch (themeChoice)
+    {
+        case J37LookAndFeel::ThemeChoice::ivory:
+            themeButton.setButtonText ("IVORY");
+            break;
+        case J37LookAndFeel::ThemeChoice::charcoal:
+            themeButton.setButtonText ("CHARCOAL");
+            break;
+        case J37LookAndFeel::ThemeChoice::metal:
+        default:
+            themeButton.setButtonText ("METAL");
+            break;
+    }
 
     updateWorkflowButtons();
     repaint();
@@ -4374,6 +4582,21 @@ void FirstAudioProcessorEditor::resized()
     const auto settingsTab = index_of_tab_named ("SETTINGS") == currentTab;
     const auto spaceTab = index_of_tab_named ("SPACE") == currentTab;
     const auto vinylTab = index_of_tab_named ("VINYL") == currentTab;
+    const auto driveTab = index_of_tab_named ("DRIVE") == currentTab;
+    const auto inEqTab = index_of_tab_named ("IN EQ") == currentTab;
+    const auto outEqTab = index_of_tab_named ("OUT EQ") == currentTab;
+    const auto machineTab = index_of_tab_named ("MACHINE") == currentTab;
+
+    // The four new lists follow the same rule as the deck switches: each is a
+    // full member of exactly one tab, so it is visible only while that tab is.
+    diPadLabel.setVisible (driveTab);
+    diPadBox.setVisible (driveTab);
+    tracksLabel.setVisible (machineTab);
+    tracksBox.setVisible (machineTab);
+    inputEqOrderLabel.setVisible (inEqTab);
+    inputEqOrderBox.setVisible (inEqTab);
+    outputEqOrderLabel.setVisible (outEqTab);
+    outputEqOrderBox.setVisible (outEqTab);
     oversamplingLabel.setVisible (settingsTab);
     oversamplingBox.setVisible (settingsTab);
     glButton.setVisible (settingsTab);
