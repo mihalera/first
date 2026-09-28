@@ -1,5 +1,7 @@
 # Nonlin Analog Saturator
 
+https://github.com/mihalera/first
+
 **Nonlin Analog Saturator** - a JUCE-based **mastering-grade analog saturation plugin** built around a nonlinear magnetic tape model, with switchable tape stock, transport speed and tape-style coloration.
 
 This is, first and foremost, a **bus / mastering tool**: two independent glue compressors wrap the tape stage, the output level is calibrated in dB, the loudness metering is four-way (peak / RMS / LUFS / VU), and the output protection chain guarantees that what leaves the plugin is clean and controlled. Use it on the master bus, a drum bus or any programme material where you want the density and warmth of tape without losing control of the level.
