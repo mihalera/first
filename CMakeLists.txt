@@ -117,6 +117,16 @@ option(COPY_PLUGIN_AFTER_BUILD "Copy plugins to the user plugin folders after bu
 # that the Info.plist and the PRODUCT_BUNDLE_IDENTIFIER build setting disagree.
 set(J37_BUNDLE_ID "com.MCsmes.first")
 
+# The format list is platform-conditional for one reason: JUCE's platform kind
+# list reduces to Standalone alone on Android, and a FORMATS entry JUCE cannot
+# produce there is simply intersected away - leaving an empty active-format set
+# and a build with no wrapper to link. On desktop this stays exactly what it
+# always was.
+set(J37_PLUGIN_FORMATS AU AUv3 VST3)
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    set(J37_PLUGIN_FORMATS Standalone)
+endif()
+
 juce_add_plugin(first
     COMPANY_NAME                "MCsmes"
     COMPANY_WEBSITE             "https://www.MCsmes.com"
@@ -142,7 +152,7 @@ juce_add_plugin(first
     PLUGIN_CODE                 Zy59
     PRODUCT_NAME                "Nonlin Analog Saturator"
     DESCRIPTION                 "Nonlinear analog tape saturation and magnetic coloration"
-    FORMATS                     AU AUv3 VST3
+    FORMATS                     ${J37_PLUGIN_FORMATS}
     IS_SYNTH                    FALSE
     NEEDS_MIDI_INPUT            FALSE
     NEEDS_MIDI_OUTPUT           FALSE
@@ -240,9 +250,9 @@ target_link_libraries(first
         PFFFT
         RTNeural
         dr_libs
-        SndFile::sndfile
         yin_pitch
         pitch_detector
+        audio_fft
         dattorro_verb
     PUBLIC
         juce::juce_recommended_config_flags
@@ -313,7 +323,7 @@ message(STATUS "  Libraries   : chowdsp_utils, melatonin_inspector, melatonin_bl
 message(STATUS "                signalsmith-stretch, fftconvolver, imgui, iPlug2 (source only)")
 message(STATUS "                chowcentaur, vcv_prototype, rack, soundpipe, aubio (source only)")
 message(STATUS "                farbot, readerwriterqueue, kissfft, pocketfft, yasio, dywapitchtrack, pffft")
-message(STATUS "                RTNeural, dr_libs, sndfile, yin_pitch, pitch_detector (MPM), dattorro_verb")
+message(STATUS "                RTNeural, dr_libs, yin_pitch, pitch_detector (MPM), dattorro_verb (libsndfile skipped - see cmake/J37Dependencies.cmake)")
 if(J37_HAVE_VDSP)
     message(STATUS "  Vector libs : Apple vDSP (Accelerate)")
 elseif(APPLE)

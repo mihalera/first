@@ -477,35 +477,12 @@ CPMAddPackage(
 j37_declare_header_only_library(dr_libs "${dr_libs_SOURCE_DIR}")
 
 # ==============================================================================
-#  libsndfile - libsndfile/libsndfile, the reference C library for reading and
-#  writing sound files (WAV/AIFF/FLAC and friends), for offline preset-render
-#  and analysis tooling.
-#
-#  A real CMake project, configured like any other package, with its optional
-#  codecs and programs switched off: ENABLE_EXTERNAL_LIBS would make CMake
-#  demand Ogg/Vorbis/Opus/FLAC development packages before it would configure,
-#  ENABLE_MPEG adds the LAME-based decoder path, BUILD_PROGRAMS/BUILD_EXAMPLES
-#  build command-line tools a plugin never needs, and ENABLE_CPACK only
-#  matters to libsndfile's own release process. The library builds STATIC by
-#  default upstream; stated anyway so a future default flip cannot silently
-#  drag a DLL into the plugin. The imported alias SndFile::sndfile is what the
-#  link line below names. Pinned to the 1.2.2 tag.
+#  libsndfile is deliberately NOT fetched. Its 1.2.2 CMakeLists opens with
+#  cmake_minimum_required(VERSION 3.1..3.18), and CMake 4.x - the release the
+#  current CI runners ship - removed compatibility with minimums below 3.5, so
+#  configuring it aborts the whole build (surfaced on the macOS and Windows
+#  runners). Re-add it pinned to a release whose minimum CMake is 3.5 or newer.
 # ==============================================================================
-CPMAddPackage(
-    NAME sndfile
-    GITHUB_REPOSITORY libsndfile/libsndfile
-    GIT_TAG 1.2.2
-    EXCLUDE_FROM_ALL YES
-    SYSTEM YES
-    OPTIONS
-        "BUILD_SHARED_LIBS OFF"
-        "BUILD_PROGRAMS OFF"
-        "BUILD_EXAMPLES OFF"
-        "BUILD_REGTEST OFF"
-        "BUILD_TESTING OFF"
-        "ENABLE_EXTERNAL_LIBS OFF"
-        "ENABLE_MPEG OFF"
-        "ENABLE_CPACK OFF")
 
 # ==============================================================================
 #  YIN pitch tracking - ashokfernandez/Yin-Pitch-Tracking, the embedded-minded
@@ -554,11 +531,31 @@ endif()
 #  framework linked for vDSP. No tags exist on either repository;
 #  both are pinned to the master heads.
 # ==============================================================================
+#  The wrapper module (adamski/audio_fft) is what juce_add_module must see: its
+#  root carries audio_fft.h - the module header the declaration and the include
+#  path both come from. It compiles exactly one unit, audio_fft.cpp, which
+#  #includes "AudioFFT/AudioFFT.cpp" - the HiFi-LoFi library vendored as a GIT
+#  SUBMODULE of the wrapper, and therefore pinned into that exact slot below.
+#  (Two first-pass layouts were wrong and both surfaced in CI: registering the
+#  HiFi-LoFi checkout as the module left <audio_fft/audio_fft.h> unresolvable,
+#  and spelling the wrapper's folder with a capital A broke the same include on
+#  case-sensitive filesystems.)
+CPMAddPackage(
+    NAME audio_fft_module
+    GITHUB_REPOSITORY adamski/audio_fft
+    GIT_TAG 922b30a8518c737ffad6ed4c7337704770e8c82c
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/pitch_detector/audio_fft"
+    DOWNLOAD_ONLY YES)
+
+#  The library itself, into the submodule slot the wrapper's sources include
+#  through. Ordered AFTER the wrapper above: git can clone into an existing
+#  EMPTY directory, but not into a populated one, and the wrapper's checkout
+#  creates the empty AudioFFT/ slot its .gitmodules describes.
 CPMAddPackage(
     NAME AudioFFT
     GITHUB_REPOSITORY HiFi-LoFi/AudioFFT
     GIT_TAG 0893b532dd357c7270609425f5ae9d9b5ae7d725
-    SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/pitch_detector/AudioFFT"
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/pitch_detector/audio_fft/AudioFFT"
     DOWNLOAD_ONLY YES)
 
 CPMAddPackage(
@@ -569,8 +566,9 @@ CPMAddPackage(
     DOWNLOAD_ONLY YES)
 
 if(NOT TARGET audio_fft)
-    juce_add_module("${CMAKE_BINARY_DIR}/deps/pitch_detector/AudioFFT")
+    juce_add_module("${CMAKE_BINARY_DIR}/deps/pitch_detector/audio_fft")
 endif()
+# (audio_fft_module's checkout IS the module; AudioFFT is its vendored engine.)
 
 if(NOT TARGET pitch_detector)
     juce_add_module("${CMAKE_BINARY_DIR}/deps/pitch_detector/pitch_detector")

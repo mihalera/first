@@ -1,4 +1,4 @@
-﻿﻿#include "PluginProcessor.h"
+﻿#include "PluginProcessor.h"
 #include "PluginEditor.h"
 
 #if JUCE_DEBUG
