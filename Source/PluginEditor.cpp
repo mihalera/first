@@ -285,16 +285,18 @@ namespace
     // The three-theme lookup. `paletteFor(bool)` above is kept because it is what
     // every paint routine already calls, and the two dark themes share every
     // code path - this is the one place the two of them are told apart.
-    enum class ThemeChoice { ivory = 0, charcoal = 1, metal = 2 };
-
-    const UiPalette& paletteForTheme (ThemeChoice theme)
+    // The parameter is J37LookAndFeel::ThemeChoice itself: a second, local
+    // enum with the same enumerators compiled on its own and then could not
+    // accept the look-and-feel's member (two distinct types), which is what
+    // broke drawToggleButton. One enum, declared once in the header.
+    const UiPalette& paletteForTheme (J37LookAndFeel::ThemeChoice theme)
     {
         switch (theme)
         {
-            case ThemeChoice::metal:    return metalPalette;
-            case ThemeChoice::charcoal: return charcoalPalette;
-            case ThemeChoice::ivory:
-            default:                    return ivoryPalette;
+            case J37LookAndFeel::ThemeChoice::metal:    return metalPalette;
+            case J37LookAndFeel::ThemeChoice::charcoal: return charcoalPalette;
+            case J37LookAndFeel::ThemeChoice::ivory:
+            default:                                    return ivoryPalette;
         }
     }
 
@@ -350,7 +352,7 @@ namespace
     // on SETTINGS, and the delay TYPE / RATE / SYNC trio shows on SPACE. They are
     // not knobs - the grid below cannot place them - so their visibility is
     // managed in setCurrentTab beside the knobs'.
-    constexpr std::array<TabSpec, 7> tabSpecs { {
+    constexpr std::array<TabSpec, 9> tabSpecs { {
         //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
         { "MACHINE", "What goes in, how the machine colours it, and what comes out.",
                      7, { 0, 3, 4, 7, 9, 8, 32 } },
@@ -1596,11 +1598,15 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
     // `this`, so there is no ownership question and nothing to disconnect.
     const auto playClick = [this] { uiSounds.trigger (UiSoundEngine::Voice::click); };
 
-    for (auto* button : { &bypassButton, &deltaButton, &polarityButton, &autoGainButton,
+    // juce::Button* named explicitly: the members mix ToggleButton and
+    // TextButton, and an initializer_list cannot be deduced from a
+    // heterogeneous braced list - the common base is what the loop wants.
+    const std::array<juce::Button*, 16> stateButtons { { &bypassButton, &deltaButton, &polarityButton, &autoGainButton,
                           &modernModeButton, &lofiModeButton, &delaySyncButton,
                           &themeButton, &glButton, &savePresetButton, &deletePresetButton,
                           &copyAButton, &copyBButton, &compareButton,
-                          &undoButton, &redoButton })
+                          &undoButton, &redoButton } };
+    for (auto* button : stateButtons)
         button->onStateChange = [this, button, playClick, previous = button->onStateChange]
         {
             playClick();
@@ -4413,7 +4419,11 @@ void FirstAudioProcessorEditor::resized()
                                     keyWidth, 28);
     spindownButton.setBounds (transportLeft + (keyWidth + keyGap) * 3 + 8, transportRowY,
                               keyWidth + 12, 28);
-    glButton.setBounds (glLeft, layout.deck.getY() + 74, 64, 32);
+    // GL sits in the gap the switches row already has: instrumentBox on its
+    // left, the right-aligned harmonics readout on its right. glLeft was a
+    // leftover of a removed layout block; harmonicsLeft is computed above and
+    // is exactly the right anchor.
+    glButton.setBounds (harmonicsLeft - 6 - 64, layout.deck.getY() + 74, 64, 32);
 
     // The machine-state readout sits to the right of the transport keys on the same
     // line, so the words and the keys read together instead of the state living on

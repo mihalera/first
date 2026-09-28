@@ -645,8 +645,8 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
           .speed = 2, .instrument = 3, .oversampling = 2 },  // Saturated Crunch
                 { .subfund = 0.10f, .drive = 0.36f, .bias = 0.45f, .tone = 0.60f, .wow = 0.30f,
           .flutter = 0.34f, .speed = 0, .instrument = 3, .oversampling = 1,
-          .vinyl = 0.30f, .vinylDust = 0.35f, .vinylWarp = 0.60f,
-          .vinylScratch = 0.15f },  // Wobbly Cassette
+          .vinyl = 0.30f, .vinylDust = 0.35f,
+          .vinylScratch = 0.15f, .vinylWarp = 0.60f },  // Wobbly Cassette
                 { .inputDb = -1.0f, .drive = 0.55f, .bias = 0.44f, .tone = 0.68f, .character = 0.58f,
           .wow = 0.12f, .flutter = 0.16f, .outputDb = -0.5f, .width = 0.58f, .tapeType = 2,
           .speed = 2, .instrument = 4, .oversampling = 1 },  // Bright Air Tape
@@ -1075,9 +1075,9 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     //  corner and the slope. It is capped at 1.5 - a resonant filter ringing on
     //  a tape emulation is a fault, not a feature.
     // -------------------------------------------------------------------------
-    const auto hpFreqRange = juce::NormalisableRange<float> (20.0f, 500.0f, 1.0f);
+    auto hpFreqRange = juce::NormalisableRange<float> (20.0f, 500.0f, 1.0f);
     hpFreqRange.setSkewForCentre (100.0f);
-    const auto lpFreqRange = juce::NormalisableRange<float> (2000.0f, 20000.0f, 10.0f);
+    auto lpFreqRange = juce::NormalisableRange<float> (2000.0f, 20000.0f, 10.0f);
     lpFreqRange.setSkewForCentre (8000.0f);
     const auto eqOrderRange = juce::NormalisableRange<float> (6.0f, 48.0f, 6.0f);
     const auto eqQRange = juce::NormalisableRange<float> (0.5f, 1.5f, 0.01f);
@@ -5886,7 +5886,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 }
 
 //==============================================================================
-TelemetryFrame FirstAudioProcessor::getTelemetry() const
+FirstAudioProcessor::TelemetryFrame FirstAudioProcessor::getTelemetry() const
 {
 #if J37_HAS_RWQ
     // Drain to the NEWEST frame rather than taking the first: the editor polls at
@@ -5911,14 +5911,14 @@ TelemetryFrame FirstAudioProcessor::getTelemetry() const
     // Either the library is absent or nothing has been pushed yet (the very first
     // UI frame, before the first block). Fall back to the atomics, which processBlock
     // keeps current on every path including the bypass return.
-    TelemetryFrame frame;
-    frame.inputPeakDb = telemetryInputPeakDb.load (std::memory_order_relaxed);
-    frame.outputPeakDb = telemetryOutputPeakDb.load (std::memory_order_relaxed);
-    frame.inputRmsDb = telemetryInputRmsDb.load (std::memory_order_relaxed);
-    frame.outputRmsDb = telemetryOutputRmsDb.load (std::memory_order_relaxed);
-    frame.antiPhaseAmount = telemetryAntiPhase.load (std::memory_order_relaxed);
-    frame.transportRamp = telemetryPlatter.load (std::memory_order_relaxed);
-    return frame;
+    TelemetryFrame fallback;
+    fallback.inputPeakDb = telemetryInputPeakDb.load (std::memory_order_relaxed);
+    fallback.outputPeakDb = telemetryOutputPeakDb.load (std::memory_order_relaxed);
+    fallback.inputRmsDb = telemetryInputRmsDb.load (std::memory_order_relaxed);
+    fallback.outputRmsDb = telemetryOutputRmsDb.load (std::memory_order_relaxed);
+    fallback.antiPhaseAmount = telemetryAntiPhase.load (std::memory_order_relaxed);
+    fallback.transportRamp = telemetryPlatter.load (std::memory_order_relaxed);
+    return fallback;
 }
 
 //==============================================================================

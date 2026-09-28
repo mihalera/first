@@ -4852,7 +4852,10 @@ private:
         the whole ring is cache-friendly. The producer never blocks: if the UI has
         not drained it the push simply fails and the frame is dropped, which is
         the correct behaviour for telemetry (an old meter reading is worthless). */
-    moodycamel::ReaderWriterQueue<TelemetryFrame, 32> telemetryQueue;
+    // mutable: getTelemetry() is const and drains the queue to the newest
+    // frame. Draining mutates the queue's internal read cursor but not the
+    // machine's state, so the queue is mutable rather than the accessor.
+    mutable moodycamel::ReaderWriterQueue<TelemetryFrame, 32> telemetryQueue;
 #endif
 
     /** The most recent frame, published by the audio thread. The editor reads it
