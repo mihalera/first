@@ -1,4 +1,4 @@
-#include "PluginProcessor.h"
+﻿﻿#include "PluginProcessor.h"
 #include "PluginEditor.h"
 
 #if JUCE_DEBUG
@@ -314,10 +314,31 @@ constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tab
         // ------------------------------------------------------------------
         //  Drop shadow. The light source is up-and-left, consistently with the
         //  knob highlights and the screw slots, so the shadow falls down-and-
-        //  right. Drawn as three progressively wider, fainter rounded rectangles
-        //  rather than a blur: at this size a real blur is not distinguishable
-        //  and would cost a melatonin_blur pass on every frame.
+        //  right.
+        //
+        //  melatonin_blur draws this as one real Gaussian-ish shadow rather than a
+        //  stack of three flat rounded rectangles, which is what makes the panel
+        //  read as sitting ABOVE the chassis instead of being outlined on it. The
+        //  library caches the blurred mask against its path and radius, so the
+        //  cost is one blur the first time and a blit on every frame after - which
+        //  is why it is affordable on a panel repainted at 30 Hz. Without the
+        //  module the hand-drawn approximation below is unchanged.
         // ------------------------------------------------------------------
+#if J37_HAS_MELATONIN_BLUR
+        {
+            // Same API the knob halo uses: setters, then render against a Path. A
+            // rounded rectangle is built as a path so the proven render(g, Path)
+            // overload is the one called, and the shadow is cached against it.
+            melatonin::DropShadow panelShadow;
+            panelShadow.setColor (juce::Colours::black.withAlpha (0.30f));
+            panelShadow.setRadius (cornerSize + 2.0f);
+
+            juce::Path panelPath;
+            panelPath.addRoundedRectangle (rect.getX(), rect.getY(),
+                                           rect.getWidth(), rect.getHeight(), cornerSize);
+            panelShadow.render (g, panelPath);
+        }
+#else
         for (int layer = 3; layer >= 1; --layer)
         {
             const auto spread = static_cast<float> (layer) * 1.5f;
@@ -326,6 +347,7 @@ constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tab
                                         .expanded (spread * 0.5f),
                                     cornerSize + spread * 0.5f);
         }
+#endif
 
         // The face: a subtle vertical gradient, brighter at the top because that
         // is where the light lands.
@@ -1101,10 +1123,61 @@ void FirstAudioProcessorEditor::styleGlButton (bool isOn)
     glButton.repaint();
 }
 
-// The tab bar's colours, by the same rule as styleGlButton: a plain TextButton's
-// getToggleState() is always false, so the selected tab's colours have to be written
-// to BOTH the ...Id and the ...OnId pair or the active tab renders with the
-// unselected text colour on top of the accent background.
+// The three transport keys plus the momentary spindown button. Same rule as the tab
+// bar: a plain TextButton's getToggleState() is always false, so the lit key's
+// colours are written to BOTH the ...Id and the ...OnId pair. START and SPINUP share
+// the START key's lamp, because START is what the engine advances into PLAY - the
+// key that is lit is the state that is running.
+int FirstAudioProcessorEditor::currentTransportState() const
+{
+    // Read through the parameter, not a local mirror, so an automation lane moving
+    // the transport repaints the panel on the next frame. convertFrom0to1() gives
+    // the choice index back as a 0..2 float for a three-entry AudioParameterChoice.
+    if (auto* parameter = audioProcessor.parameters.getParameter ("transport"))
+        return juce::jlimit (0, 2,
+                             juce::roundToInt (parameter->convertFrom0to1 (parameter->getValue())));
+
+    return 1;
+}
+
+void FirstAudioProcessorEditor::styleTransportButtons()
+{
+    const auto& palette = paletteFor (darkTheme);
+    const auto state = lastShownTransport;
+
+    const auto styleKey = [&palette] (juce::TextButton& button, bool isOn)
+    {
+        button.setColour (juce::TextButton::buttonColourId, isOn ? palette.accent : palette.raised);
+        button.setColour (juce::TextButton::buttonOnColourId, isOn ? palette.accent : palette.raised);
+        button.setColour (juce::TextButton::textColourOffId, isOn ? palette.readout : palette.text);
+        button.setColour (juce::TextButton::textColourOnId, isOn ? palette.readout : palette.text);
+        button.repaint();
+    };
+
+    // STOP is lit when the machine is at rest; PLAY when it is running (including
+    // the internal SPINUP state, which is a running platter); START is lit while the
+    // capstan is actively climbing, which is the one moment the two are different.
+    styleKey (transportStopButton, state == 0);
+    styleKey (transportPlayButton, state == 1);
+    styleKey (transportStartButton, state == 2);
+}
+
+void FirstAudioProcessorEditor::styleSpindownButton()
+{
+    const auto& palette = paletteFor (darkTheme);
+    const auto held = lastShownSpindown;
+
+    // Held uses the needle colour rather than the accent: a spindown is a deliberate
+    // fault (the platter is being starved of power), and the panel's one other red is
+    // the meter needle, which is the same idea - something is being pushed.
+    const auto heldColour = palette.needle;
+    spindownButton.setColour (juce::TextButton::buttonColourId, held ? heldColour : palette.raised);
+    spindownButton.setColour (juce::TextButton::buttonOnColourId, held ? heldColour : palette.raised);
+    spindownButton.setColour (juce::TextButton::textColourOffId, held ? palette.readout : palette.secondary);
+    spindownButton.setColour (juce::TextButton::textColourOnId, held ? palette.readout : palette.secondary);
+    spindownButton.repaint();
+}
+
 void FirstAudioProcessorEditor::styleTabButtons()
 {
     const auto& palette = paletteFor (darkTheme);
@@ -1189,9 +1262,9 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // the floor, because a window you cannot see is worse than a tight one); the floor
     // only governs how far the user may drag the edges afterwards.
     constexpr int minEditorWidth = 780;
-    constexpr int minEditorHeight = 680;
+    constexpr int minEditorHeight = 742;
     constexpr int preferredEditorWidth = 1060;
-    constexpr int preferredEditorHeight = 900;
+    constexpr int preferredEditorHeight = 960;
 
     // The horizontal margin keeps the frame off the edge of the display. The vertical
     // one is larger because a decorated window's title bar and border sit OUTSIDE the
@@ -1300,7 +1373,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 true, juce::Justification::left);
     styleLabel (speedLabel, "SPEED", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
-    styleLabel (deckHintLabel, "Tape formula and speed.", 9.0f,
+    styleLabel (deckHintLabel, "PLAY / AT SPEED", 9.0f,
                 paletteFor (false).secondary, false, juce::Justification::centredLeft);
     styleLabel (controlsHeadingLabel, "TABS", 10.0f, paletteFor (false).accent,
                 true, juce::Justification::left);
@@ -1925,29 +1998,73 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (instrumentBox);
 
     // ---------------------------------------------------------------
-    //  Transport: STOP / PLAY / START.
+    //  Transport: STOP / PLAY / START, plus the momentary SPINDOWN hold.
     //
-    //  A three-state control rather than a play/stop pair, because a tape machine
-    //  has three states and the middle one is not "stopped". STOP lets the capstan
-    //  coast down, so the hiss, the modulation and the delay tail all go with it
-    //  and the machine reaches true silence. START is the moment of engagement:
-    //  the transport runs flat and the pitch rides up into tune over about a
-    //  second, which is the sound a deck makes when you hit play on a take.
+    //  Three buttons, not a combo. A tape machine's transport is a row of keys
+    //  and the gesture matters: START and STOP are momentary, PLAY is where the
+    //  machine rests. The three drive the `transport` choice through
+    //  setTransportState(), and the engine writes that same parameter back when
+    //  START settles into PLAY, so the lit key always matches the engine.
+    //
+    //  STOP-to-PLAY is handled as a TOGGLE on the same key: pressing STOP while
+    //  running stops, pressing STOP again starts, which is what the request asked
+    //  for and what a single transport key does on a deck. START is the explicit
+    //  "spin up from rest" key and is what settles into PLAY.
     // ---------------------------------------------------------------
     styleLabel (transportLabel, "TRANSPORT", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
     addAndMakeVisible (transportLabel);
-    transportBox.addItemList (juce::StringArray { "Stop", "Play", "Start" }, 1);
-    transportBox.setTooltip ("Transport state. STOP lets the machine coast to rest: "
-                             "no hiss, no wow, no delay tail - true silence, not a mute. "
-                             "PLAY is normal running. START spins the capstan up from "
-                             "rest, so the transport runs flat and the pitch climbs into "
-                             "tune over about a second, the way a deck sounds when you "
-                             "hit play on a take.");
-    transportBox.setLookAndFeel (&customLookAndFeel);
-    transportAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
-        (audioProcessor.parameters, "transport", transportBox);
-    addAndMakeVisible (transportBox);
+
+    transportStopButton.setTooltip ("STOP - the capstan comes to rest. True silence: no "
+                                    "hiss, no wow, no delay tail. Pressing it again while "
+                                    "stopped spins the machine back up to PLAY.");
+    transportPlayButton.setTooltip ("PLAY - normal running. This is where the machine rests "
+                                     "after START has spun it up.");
+    transportStartButton.setTooltip ("START - spins the capstan up from rest over about a "
+                                      "second, the way a deck sounds when you hit play on a "
+                                      "take. The pitch climbs into tune and the state settles "
+                                      "into PLAY by itself when the machine reaches speed.");
+
+    for (auto* button : { &transportStopButton, &transportPlayButton, &transportStartButton })
+    {
+        button->setLookAndFeel (&customLookAndFeel);
+        addAndMakeVisible (*button);
+    }
+
+    transportStopButton.onClick = [this]
+    {
+        // Toggle on the same key: STOP stops, and a second press starts. That is
+        // the "Start is Stop and vice versa" behaviour, and it keeps the key
+        // useful whichever state the machine is in.
+        const auto state = currentTransportState();
+        if (state == 0)
+            audioProcessor.setTransportState (2);   // stopped -> spin up (START)
+        else
+            audioProcessor.setTransportState (0);   // running -> stop
+    };
+    transportPlayButton.onClick = [this] { audioProcessor.setTransportState (1); };
+    transportStartButton.onClick = [this] { audioProcessor.setTransportState (2); };
+
+    // SPINDOWN: a momentary hold, so its hold edges come from the button's own
+    // mouseDown/mouseUp rather than onClick. setSpindownHeld() writes both the
+    // engine atomic and the host-visible parameter, so an automation lane and a
+    // finger on this button are the same event.
+    styleLabel (spindownLabel, "SPINDOWN", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    addAndMakeVisible (spindownLabel);
+    spindownButton.setLookAndFeel (&customLookAndFeel);
+    spindownButton.setTooltip ("Hold to cut the platter's power: the record runs down and "
+                               "the pitch falls away, the way a turntable coasting to a stop "
+                               "sounds. Release and it spins back up into PLAY. It also "
+                               "brings the platter up if the machine was stopped, so the "
+                               "gesture always has something to act on.");
+    spindownButton.onHoldChanged = [this] (bool held)
+    {
+        audioProcessor.setSpindownHeld (held);
+        lastShownSpindown = held;
+        styleSpindownButton();
+    };
+    addAndMakeVisible (spindownButton);
 
     // ---------------------------------------------------------------
     //  DELAY TYPE - which machine the second head behaves as.
@@ -2348,7 +2465,10 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     autoGainButton.setLookAndFeel (nullptr);
     oversamplingBox.setLookAndFeel (nullptr);
     instrumentBox.setLookAndFeel (nullptr);
-    transportBox.setLookAndFeel (nullptr);
+    transportStopButton.setLookAndFeel (nullptr);
+    transportPlayButton.setLookAndFeel (nullptr);
+    transportStartButton.setLookAndFeel (nullptr);
+    spindownButton.setLookAndFeel (nullptr);
     delayTypeBox.setLookAndFeel (nullptr);
     delayRateBox.setLookAndFeel (nullptr);
     delaySyncButton.setLookAndFeel (nullptr);
@@ -2489,13 +2609,14 @@ FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayo
     EditorLayout layout;
 
     // Header and deck are fixed-height, so they keep their proportions at small panel
-    // sizes and on high-DPI displays. The deck is four control lines tall - transport,
-    // then switches / oversampling, then the five type switches, then presets and the
-    // A/B cluster - plus a badge band at the bottom, so no two groups ever share a row
-    // and nothing can overlap even at the minimum panel size.
+    // sizes and on high-DPI displays. The deck is five control lines tall - transport,
+    // then switches / oversampling, then the five type switches, then the transport
+    // keys with the machine-state readout, then presets and the A/B cluster - plus a
+    // badge band at the bottom, so no two groups ever share a row and nothing can
+    // overlap even at the minimum panel size.
     layout.header = remaining.removeFromTop (70);
     remaining.removeFromTop (8);
-    layout.deck = remaining.removeFromTop (200);
+    layout.deck = remaining.removeFromTop (262);
     remaining.removeFromTop (8);
 
     // The meters panel has to hold a 2 x 2 grid of dials, so it claims a share of the
@@ -2590,7 +2711,12 @@ void FirstAudioProcessorEditor::applyTheme()
 
     styleCombo (oversamplingBox);
     styleCombo (instrumentBox);
-    styleCombo (transportBox);
+    // The transport keys and the spindown button are TextButtons, not combos, so
+    // they take their colours from styleTransportButtons() / styleSpindownButton(),
+    // which read the palette AND the live state - that is what makes the active key
+    // stay highlighted across a theme switch.
+    styleTransportButtons();
+    styleSpindownButton();
     styleCombo (delayTypeBox);
     styleCombo (delayRateBox);
     styleCombo (valveTypeBox);
@@ -2616,6 +2742,7 @@ void FirstAudioProcessorEditor::applyTheme()
     oversamplingLabel.setColour (juce::Label::textColourId, palette.secondary);
     instrumentLabel.setColour (juce::Label::textColourId, palette.secondary);
     transportLabel.setColour (juce::Label::textColourId, palette.secondary);
+    spindownLabel.setColour (juce::Label::textColourId, palette.secondary);
     delayTypeLabel.setColour (juce::Label::textColourId, palette.secondary);
     delayRateLabel.setColour (juce::Label::textColourId, palette.secondary);
     compareBadgeLabel.setColour (juce::Label::textColourId,
@@ -2770,17 +2897,24 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     // The decorative reel lives in the deck's TOP-RIGHT corner, in the heading band
     // (y + 6..22) where no control sits, and clear of the harmonics readout, which is
     // right-aligned below it on the switches line. It used to sit ON the readout text.
+    //
+    // The reel is now a real transport indicator rather than decoration: its hub
+    // dims as the platter slows, so a STOP empties it and a held SPINDOWN is
+    // visible as the ring going grey before the spokes stop.
     const auto reelCentre = juce::Point<float> (static_cast<float> (layout.deck.getRight() - 42),
                                                 static_cast<float> (layout.deck.getY() + 14));
-    g.setColour (palette.accent.withAlpha (0.22f));
+    const auto platterNow = juce::jlimit (0.0f, 1.0f, smoothedMachineSpeed);
+    g.setColour (palette.accent.withAlpha (0.10f + 0.30f * platterNow));
     for (const auto radius : { 11.0f, 7.0f, 2.0f })
         g.drawEllipse (reelCentre.x - radius, reelCentre.y - radius,
                        radius * 2.0f, radius * 2.0f, 1.0f);
     g.drawLine (reelCentre.x - 14.0f, reelCentre.y, reelCentre.x + 14.0f, reelCentre.y, 0.8f);
     g.drawLine (reelCentre.x, reelCentre.y - 14.0f, reelCentre.x, reelCentre.y + 14.0f, 0.8f);
 
-    // Spokes: density tracks the selected tape speed, drift tracks the modulation.
-    const auto spokeAlpha = 0.20f + 0.45f * glowAmount;
+    // Spokes: density tracks the selected tape speed, drift tracks the modulation,
+    // and the whole set fades out as the platter coasts down - which is what makes a
+    // spindown read as a turntable losing its drive rather than as a paused picture.
+    const auto spokeAlpha = (0.20f + 0.45f * glowAmount) * (0.25f + 0.75f * platterNow);
     for (int spoke = 0; spoke < 6; ++spoke)
     {
         const auto spokeAngle = reelAngle + static_cast<float> (spoke)
@@ -3041,15 +3175,64 @@ void FirstAudioProcessorEditor::timerCallback()
                                         : paletteFor (darkTheme).status);
     }
 
-    // The reel spins according to the selected tape speed and the live drift.
+    // The reels spin at the machine's ACTUAL platter speed, which is the transport
+    // ramp multiplied by the spindown ramp - so a START makes them visibly come up
+    // to speed and a held SPINDOWN makes them coast down and stop. That is the
+    // whole point of publishing getTransportRamp(): before this the reels only knew
+    // the SPEED combo, so the transport did not move them at all.
     // getSelectedId() returns 0 while nothing is selected, which would index the
     // combo's item list at -1, so the index is clamped before it is used.
     const auto speedIndex = juce::jlimit (0, 2, speedBox.getSelectedId() - 1);
     const auto speedScale = speedIndex == 0 ? 0.55f : (speedIndex == 1 ? 0.85f : 1.25f);
-    reelSpeed += ((speedScale * (0.9f + driftAmount * 0.5f)) - reelSpeed) * 0.08f;
+
+    // Follow the machine's own platter with a display-only lag, so the reels ease
+    // into a spindown rather than snapping when a block boundary lands.
+    const auto machineSpeed = audioProcessor.getTransportRamp();
+    smoothedMachineSpeed += (machineSpeed - smoothedMachineSpeed) * 0.20f;
+
+    const auto targetReelSpeed = speedScale * (0.9f + driftAmount * 0.5f) * smoothedMachineSpeed;
+    reelSpeed += (targetReelSpeed - reelSpeed) * 0.08f;
     reelAngle += reelSpeed * 0.09f;
     if (reelAngle > juce::MathConstants<float>::twoPi)
         reelAngle -= juce::MathConstants<float>::twoPi;
+
+    // The spindown lamp follows both the parameter (so automation lights it) and
+    // the button's own mouse state (so the lamp is instant on a press, before the
+    // 30 Hz poll would see the parameter change).
+    const auto transportNow = currentTransportState();
+    const auto spindownNow = audioProcessor.isSpindownHeld()
+                              || spindownButton.isDown();
+
+    // The three transport keys relight only when the state actually changes.
+    if (transportNow != lastShownTransport)
+    {
+        lastShownTransport = transportNow;
+        styleTransportButtons();
+    }
+
+    if (spindownNow != lastShownSpindown)
+    {
+        lastShownSpindown = spindownNow;
+        styleSpindownButton();
+    }
+
+    // The deck hint reads the machine's actual state rather than a fixed caption,
+    // so the panel answers "what is the transport doing" in words as well as with
+    // the key lamps and the reels. The four states are the ones the engine can be
+    // in, and the spindown takes priority because it is the momentary one.
+    const auto machineStateText = spindownNow ? "SPINDOWN / POWER CUT"
+                                    : transportNow == 0 ? "STOPPED / AT REST"
+                                    : transportNow == 2 ? "START / SPINNING UP"
+                                                        : "PLAY / AT SPEED";
+    if (machineStateText != lastShownMachineState)
+    {
+        lastShownMachineState = machineStateText;
+        deckHintLabel.setText (machineStateText, juce::dontSendNotification);
+        deckHintLabel.setColour (juce::Label::textColourId,
+                                 spindownNow ? paletteFor (darkTheme).needle
+                                 : transportNow == 0 ? paletteFor (darkTheme).secondary
+                                                     : paletteFor (darkTheme).status);
+    }
 
     customLookAndFeel.setActivity (glowAmount);
     customLookAndFeel.setDrift (driftAmount);
@@ -3154,8 +3337,18 @@ void FirstAudioProcessorEditor::resized()
     themeButton.setBounds (layout.header.getRight() - 348, layout.header.getY() + 20, 126, 30);
     statusLabel.setBounds (layout.header.getRight() - 202, layout.header.getY() + 20, 181, 30);
 
-    // The deck has four dedicated lines, each chain width tuned to fit the minimum
+    // The deck has five dedicated lines, each chain width tuned to fit the minimum
     // deck width without any overlap:
+    //   line 1 (y + 32) - MODEL | tape box | SPEED | speed box | BYPASS | DELTA | state
+    //   line 2 (y + 74) - POLARITY | AUTO GAIN | OVER | oversampling box | INSTRUMENT
+    //                     | GL; the harmonics and BPM readouts take the right end.
+    //   line 3 (y + 96) - the five type switches: VINYL | VINYL SPEED | VALVE | AMP
+    //                     | XFMR | DIGITAL, each label above its box.
+    //   line 4 (y + 148)- TRANSPORT: STOP | PLAY | START | SPINDOWN, with the
+    //                     machine-state readout beside them.
+    //   line 5 (y + 194)- the mode switches; and the preset row | factory box | USER
+    //                     box | SAVE | DEL | A/B | undo | redo, with the badge band
+    //                     under them at y + 230.
     //   line 1 (y + 32) - transport: MODEL | tape box | SPEED | speed box | BYPASS | hint
     //   line 2 (y + 96) - the five type switches: VALVE | AMP | XFMR | DIGITAL | VINYL,
     //                     each label above its box, five boxes of 118 px on 14 px gaps.
@@ -3237,20 +3430,42 @@ void FirstAudioProcessorEditor::resized()
     subfundLabel.setBounds (harmonicsLeft, layout.deck.getY() + 108, harmonicsWidth, 14);
     subfundReadout.setBounds (harmonicsLeft, layout.deck.getY() + 122, harmonicsWidth, 13);
 
-    // TRANSPORT sits after INSTRUMENT on the switches row, and GL moves to the right
-    // end of the row just left of the harmonics readout, so the chain fits the deck:
-    // 18 + 92 + 6 + 100 + 16 + 40 + 58 + 72 + 16 + 68 + 112 + 14 + 62 leaves about
-    // 78 px before the readout's 130 px block, which is what TRANSPORT takes.
-    transportLabel.setBounds (instrumentBox.getRight() + 14, layout.deck.getY() + 83, 62, 16);
-    transportBox.setBounds (instrumentBox.getRight() + 14, layout.deck.getY() + 74, 78, 32);
-    glButton.setBounds (harmonicsLeft - 10 - 64, layout.deck.getY() + 74, 64, 32);
+    // TRANSPORT is a deck: STOP / PLAY / START and the momentary SPINDOWN. They sit
+    // on their own line under POLARITY / AUTO GAIN, in the empty band the deck keeps
+    // between the switches row (y + 74) and the preset row (y + 146). That band was
+    // dead space at every panel width, and the switches row itself has no room for
+    // four keys once INSTRUMENT, GL and the harmonics block have taken theirs - the
+    // earlier attempt to squeeze them in beside INSTRUMENT overlapped GL at the
+    // minimum width. Here they have the whole left half of the deck to themselves.
+    const auto transportRowY = layout.deck.getY() + 148;
+    const auto transportLeft = layout.deck.getX() + 18;
+    const auto keyWidth = 62;
+    const auto keyGap = 4;
+
+    transportLabel.setBounds (transportLeft, transportRowY - 13, keyWidth * 3 + keyGap * 2, 12);
+    spindownLabel.setBounds (transportLeft + (keyWidth + keyGap) * 3 + 8, transportRowY - 13,
+                             keyWidth + 12, 12);
+
+    transportStopButton.setBounds (transportLeft, transportRowY, keyWidth, 28);
+    transportPlayButton.setBounds (transportLeft + (keyWidth + keyGap), transportRowY,
+                                   keyWidth, 28);
+    transportStartButton.setBounds (transportLeft + (keyWidth + keyGap) * 2, transportRowY,
+                                    keyWidth, 28);
+    spindownButton.setBounds (transportLeft + (keyWidth + keyGap) * 3 + 8, transportRowY,
+                              keyWidth + 12, 28);
+    glButton.setBounds (glLeft, layout.deck.getY() + 74, 64, 32);
+
+    // The machine-state readout sits to the right of the transport keys on the same
+    // line, so the words and the keys read together instead of the state living on
+    // a caption elsewhere on the deck.
+    deckHintLabel.setBounds (spindownButton.getRight() + 14, transportRowY + 2, 190, 24);
 
     // DELAY TYPE and the two mode switches share the transport row's right end.
     // That row ends at the deck hint label (about x + 664 of 752 at the minimum),
     // and the harmonics block starts at x + 608, so there is a genuine gap between
     // them on the switches row - which is where these three go, stacked against
     // the readout rather than competing with the transport chain on the left.
-    const auto modeRowY = layout.deck.getY() + 146;
+    const auto modeRowY = layout.deck.getY() + 194;
     const auto modeRight = layout.deck.getRight() - 14;
     lofiModeButton.setBounds (modeRight - 74, modeRowY, 74, 32);
     modernModeButton.setBounds (lofiModeButton.getX() - 6 - 82, modeRowY, 82, 32);
@@ -3264,26 +3479,25 @@ void FirstAudioProcessorEditor::resized()
     delayRateLabel.setBounds (delayRateBox.getX() - 6 - 34, modeRowY + 9, 34, 15);
     delaySyncButton.setBounds (delayRateLabel.getX() - 8 - 64, modeRowY, 64, 32);
 
-    presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 155, 46, 16);
-    presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 146, 128, 32);
-    userPresetBox.setBounds (presetBox.getRight() + 6, layout.deck.getY() + 146, 100, 32);
-    savePresetButton.setBounds (userPresetBox.getRight() + 5, layout.deck.getY() + 146, 40, 32);
-    deletePresetButton.setBounds (savePresetButton.getRight() + 4, layout.deck.getY() + 146, 38, 32);
-    copyAButton.setBounds (deletePresetButton.getRight() + 10, layout.deck.getY() + 146, 64, 32);
-    copyBButton.setBounds (copyAButton.getRight() + 5, layout.deck.getY() + 146, 64, 32);
-    compareButton.setBounds (copyBButton.getRight() + 5, layout.deck.getY() + 146, 54, 32);
-    undoButton.setBounds (compareButton.getRight() + 5, layout.deck.getY() + 146, 44, 32);
-    redoButton.setBounds (undoButton.getRight() + 5, layout.deck.getY() + 146, 44, 32);
-    compareBadgeLabel.setBounds (redoButton.getRight() + 8, layout.deck.getY() + 146, 54, 32);
+    presetHeadingLabel.setBounds (layout.deck.getX() + 18, layout.deck.getY() + 203, 46, 16);
+    presetBox.setBounds (layout.deck.getX() + 66, layout.deck.getY() + 194, 128, 32);
+    userPresetBox.setBounds (presetBox.getRight() + 6, layout.deck.getY() + 194, 100, 32);
+    savePresetButton.setBounds (userPresetBox.getRight() + 5, layout.deck.getY() + 194, 40, 32);
+    deletePresetButton.setBounds (savePresetButton.getRight() + 4, layout.deck.getY() + 194, 38, 32);
+    copyAButton.setBounds (deletePresetButton.getRight() + 10, layout.deck.getY() + 194, 64, 32);
+    copyBButton.setBounds (copyAButton.getRight() + 5, layout.deck.getY() + 194, 64, 32);
+    compareButton.setBounds (copyBButton.getRight() + 5, layout.deck.getY() + 194, 54, 32);
+    undoButton.setBounds (compareButton.getRight() + 5, layout.deck.getY() + 194, 44, 32);
+    redoButton.setBounds (undoButton.getRight() + 5, layout.deck.getY() + 194, 44, 32);
+    compareBadgeLabel.setBounds (redoButton.getRight() + 8, layout.deck.getY() + 194, 54, 32);
 
     // The badge band is inset further than the other deck text (22 px instead of 18)
     // and its caption is fitted to the width it actually has, so neither "FACTORY
     // STATE" nor a long user-preset name can run into the panel edges or be clipped.
-    // y + 146 (not y + 149) so the badge has clear air BOTH above and below: the old
-    // position left it hugging the deck's bottom border with the divider right under
-    // it, which read as a caption that had fallen off the panel. 4 px above, 3 px
-    // below, 2 px taller for the text.
-    presetBadgeLabel.setBounds (layout.deck.getX() + 22, layout.deck.getY() + 146,
+    // It sits BELOW the preset row, on its own strip at the bottom of the deck, so
+    // the preset boxes and the badge never share a band - the deck grew a line for
+    // the transport keys, so everything under it moved down with it.
+    presetBadgeLabel.setBounds (layout.deck.getX() + 22, layout.deck.getY() + 230,
                                 layout.deck.getWidth() - 44, 14);
     presetBadgeLabel.setFont (shrinkingFont (presetBadgeLabel.getText(), 8.0f,
                                              juce::Font::plain,

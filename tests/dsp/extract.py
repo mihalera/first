@@ -114,20 +114,6 @@ def extract_math_bridge(header: str) -> str:
     return header[start:end]
 
 
-
-    """Cuts the j37math namespace block out of the header.
-
-    The bridge is two guarded namespace blocks (chowdsp branch, std:: fallback).
-    The harness never has chowdsp on its include path, so only the fallback half
-    is useful - but it is the SHIPPING text, not a retyped copy, so the harness
-    cannot drift from what the plugin compiles.
-    """
-    start = header.index(MATH_BRIDGE_START)
-    else_at = header.index("\n#else\n", start)
-    end = header.index(MATH_BRIDGE_END, else_at) + len(MATH_BRIDGE_END)
-    return header[start:end]
-
-
 def main() -> int:
     destination = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "extracted_dsp.inc")
     header = HEADER.read_text()

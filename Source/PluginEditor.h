@@ -241,11 +241,43 @@ private:
     juce::ComboBox vinylSpeedBox;
     juce::ComboBox speedBox;
     juce::ComboBox instrumentBox;
-    // Transport: STOP / PLAY / START. A combo rather than three buttons, so the
-    // state is one host-visible parameter and the panel shows which state is
-    // engaged without a lamp per position.
-    juce::ComboBox transportBox;
+    // Transport: STOP / PLAY / START as three buttons rather than a combo, because
+    // the whole point of the gesture is that START and STOP are momentary presses
+    // and PLAY is a resting state. A combo made the user open a menu to stop a
+    // machine; three buttons make the deck behave like a deck.
+    //
+    // The buttons do NOT carry a ButtonAttachment: the transport is not a simple
+    // on/off parameter, it is a three-way choice the engine also writes back to
+    // (START settles into PLAY), and START-to-STOP is a TOGGLE on the same key.
+    // The editor drives it through FirstAudioProcessor::setTransportState and
+    // paints the active state from the parameter, so panel and engine agree.
+    juce::TextButton transportStopButton { "STOP" };
+    juce::TextButton transportPlayButton { "PLAY" };
+    juce::TextButton transportStartButton { "START" };
     juce::Label transportLabel;
+    // SPINDOWN - the momentary platter hold. Press and hold and the machine runs
+    // down under the current transport; release and it spins back up. A button's
+    // onClick is a click, so the press/release edges are read from its
+    // mouseDown/mouseUp through a Button subclass below.
+    class SpindownButton final : public juce::TextButton
+    {
+    public:
+        std::function<void (bool)> onHoldChanged;
+        void mouseDown (const juce::MouseEvent& e) override
+        {
+            juce::TextButton::mouseDown (e);
+            if (onHoldChanged != nullptr)
+                onHoldChanged (true);
+        }
+        void mouseUp (const juce::MouseEvent& e) override
+        {
+            juce::TextButton::mouseUp (e);
+            if (onHoldChanged != nullptr)
+                onHoldChanged (false);
+        }
+    };
+    SpindownButton spindownButton { "SPINDOWN" };
+    juce::Label spindownLabel;
     juce::TextButton glButton { "GL ON" };
     juce::ToggleButton bypassButton { "BYPASS" };
     juce::ToggleButton deltaButton { "DELTA" };
@@ -316,7 +348,6 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> vinylSpeedAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> speedAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> instrumentAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> transportAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> delayTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> delayRateAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> delaySyncAttachment;
@@ -386,6 +417,22 @@ private:
     float reelAngle = 0.0f;
     float reelSpeed = 0.0f;
     bool currentBypassDisplay = false;
+
+    // Transport presentation. `lastShownTransport` is the parameter index the
+    // buttons were last painted for, so the three of them are only restyled when
+    // the state actually changes; `lastShownSpindown` does the same for the
+    // momentary button's lamp. `smoothedMachineSpeed` follows
+    // getTransportRamp() with a display-only lag, which is what drives the reels.
+    int lastShownTransport = -1;
+    bool lastShownSpindown = false;
+    juce::String lastShownMachineState;
+    float smoothedMachineSpeed = 1.0f;
+
+    // Which transport state is live, read from the parameter rather than tracked
+    // locally, so an automation lane moving it repaints the panel.
+    int currentTransportState() const;
+    void styleTransportButtons();
+    void styleSpindownButton();
 
     std::unique_ptr<b2World> physicsWorld;
     std::array<PhysicsOrb, decorativeOrbCount> physicsOrbs {};

@@ -17,6 +17,38 @@ namespace
     constexpr float minTrack = 0.0f;
     constexpr float maxTrack = 1.0f;
 
+    // Every parameter whose change should light the editor's "edited" badge. One
+    // list, read by both the constructor and the destructor, so the listener and
+    // the removal can never disagree about which ids they cover. The editor's own
+    // knobs are listed too: a host automation pass and a user drag arrive here by
+    // the same route, and both should mark the preset dirty.
+    //
+    // Returned by reference from a function-local static, so the single list is
+    // also the single definition - no header, no duplicated initialiser, and the
+    // range-for in both callers reads it without copying.
+    const std::array<const char*, 55>& parametersTrackedForDirtyBadge()
+    {
+        static const std::array<const char*, 55> ids
+        {
+            "input", "output", "bypass", "polarity", "auto_gain",
+            "subfund",
+            "stereo_width", "tape_type", "speed", "instrument", "drive", "bias",
+            "oversampling", "tone", "wow", "flutter", "mix",
+            "character", "delta", "delay_time", "delay_feedback",
+            "st_offset", "noise", "noise_lvl", "transport", "spindown",
+            "blend", "shape", "sag", "presence", "cabinet", "amp_bias",
+            "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
+            "delay_type", "distortion", "modern_mode", "lofi_mode",
+            "vinyl", "vinyl_crackle", "vinyl_rumble", "vinyl_speed",
+            "st_link",
+            "valve_type", "amp_type", "transformer_type",
+            "digital_type", "vinyl_type",
+            "delay_sync", "delay_rate"
+        };
+
+        return ids;
+    }
+
     // Symmetric decibel range shared by the input and output stage controls.
     constexpr float minInputDb = -32.0f;
     constexpr float maxInputDb = 32.0f;
@@ -291,6 +323,7 @@ FirstAudioProcessor::FirstAudioProcessor()
     noiseParam = parameters.getRawParameterValue ("noise");
     noiseLvlParam = parameters.getRawParameterValue ("noise_lvl");
     transportParam = parameters.getRawParameterValue ("transport");
+    spindownParam = parameters.getRawParameterValue ("spindown");
     blendParam = parameters.getRawParameterValue ("blend");
     shapeParam = parameters.getRawParameterValue ("shape");
     sagParam = parameters.getRawParameterValue ("sag");
@@ -340,39 +373,19 @@ FirstAudioProcessor::FirstAudioProcessor()
     // edited badge in the editor. Host automation ALSO flows through here, which is
     // fine - the badge is advisory and matches what the DAW's own "plugin modified"
     // indication would say.
-    for (const auto* parameterID : { "input", "output", "bypass", "polarity", "auto_gain",
-                                     "subfund",
-                                     "stereo_width", "tape_type", "speed", "instrument", "drive", "bias",
-                                     "oversampling", "tone", "wow", "flutter", "mix",
-                                     "character", "delta", "delay_time", "delay_feedback",
-                                     "st_offset", "noise", "noise_lvl", "transport",
-                                     "blend", "shape", "sag", "presence", "cabinet", "amp_bias",
-                                     "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
-                                     "delay_type", "distortion", "modern_mode", "lofi_mode",
-                                     "vinyl", "vinyl_crackle", "vinyl_rumble", "vinyl_speed",
-                                     "st_link",
-                                     "valve_type", "amp_type", "transformer_type",
-                                     "digital_type", "vinyl_type",
-                                     "delay_sync", "delay_rate" })
+    //
+    // One list, used by both the constructor and the destructor. It used to be two
+    // hand-copied spellings of the same 45 ids, so a parameter added to one and not
+    // the other left a listener that was never removed - harmless while the object
+    // lives, a dangling callback the moment it does not. parametersTrackedForDirtyBadge()
+    // below is the single source of truth for both.
+    for (const auto* parameterID : parametersTrackedForDirtyBadge())
         parameters.addParameterListener (parameterID, this);
 }
 
 FirstAudioProcessor::~FirstAudioProcessor()
 {
-    for (const auto* parameterID : { "input", "output", "bypass", "polarity", "auto_gain",
-                                     "subfund",
-                                     "stereo_width", "tape_type", "speed", "instrument", "drive", "bias",
-                                     "oversampling", "tone", "wow", "flutter", "mix",
-                                     "character", "delta", "delay_time", "delay_feedback",
-                                     "st_offset", "noise", "noise_lvl", "transport",
-                                     "blend", "shape", "sag", "presence", "cabinet", "amp_bias",
-                                     "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
-                                     "delay_type", "distortion", "modern_mode", "lofi_mode",
-                                     "vinyl", "vinyl_crackle", "vinyl_rumble", "vinyl_speed",
-                                     "st_link",
-                                     "valve_type", "amp_type", "transformer_type",
-                                     "digital_type", "vinyl_type",
-                                     "delay_sync", "delay_rate" })
+    for (const auto* parameterID : parametersTrackedForDirtyBadge())
         parameters.removeParameterListener (parameterID, this);
 }
 
@@ -1146,6 +1159,23 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             1));
 
     // -------------------------------------------------------------------------
+    //  SPINDOWN - the momentary hold, exposed as a host-visible parameter.
+    //
+    //  A bool rather than a fourth entry in the transport choice, because it
+    //  ACTS on the transport rather than replacing it: held, the platter runs
+    //  down under the current transport, and released, it spins back up and the
+    //  transport settles into Play. As a parameter it can be automated (a
+    //  spindown at the end of a section is a real production move /
+    //  and it survives in the preset state, which is what makes the editor's
+    //  momentary button and a saved automation lane the same thing.
+    //
+    //  The editor's button writes it through the attached ButtonAttachment, so
+    //  the button and the host cannot disagree about whether it is held.
+    // -------------------------------------------------------------------------
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "spindown", 1 },
+                                                            "Spindown", false));
+
+    // -------------------------------------------------------------------------
     //  Saturation blend.
     //
     //  The plugin's shaper has always been ONE curve - magnetic hysteresis. These
@@ -1664,8 +1694,13 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // A transport given no state yet starts at speed if the parameter says PLAY,
     // so a fresh instance is not silent until the user touches the switch. The
     // constructor leaves lastTransportState at -1, so seeding it here is what
-    // makes the first block land on the right ramp.
+    // makes the first block land on the right ramp. The spindown ramp starts at
+    // speed too, and syncs from the parameter so a session that was saved
+    // mid-hold comes back held.
     transportRamp = 1.0f;
+    spindownRamp = 1.0f;
+    if (spindownParam != nullptr)
+        spindownHeld.store (spindownParam->load() >= 0.5f, std::memory_order_relaxed);
 
     // The delay's damping is tied to the machine's own low-pass so a dark tape
     // gives dark repeats without a second control to keep in sync.
@@ -1985,6 +2020,42 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     processTapeEngine (buffer, midiMessages);
 }
 
+//==============================================================================
+void FirstAudioProcessor::setTransportState (int state)
+{
+    // The transport choice parameter is the single source of truth: the host, the
+    // preset state and the panel's combo all read it. Writing it here - rather than
+    // a private flag beside it - is what keeps those three in agreement, and it is
+    // also why START can settle into PLAY on its own: the engine writes the same
+    // parameter when the capstan arrives (see processTapeEngine).
+    if (auto* parameter = parameters.getParameter ("transport"))
+    {
+        const auto target = static_cast<float> (juce::jlimit (0, 2, state));
+        parameter->setValueNotifyingHost (parameter->convertTo0to1 (target));
+    }
+}
+
+void FirstAudioProcessor::setSpindownHeld (bool shouldHold)
+{
+    // Two things have to happen, and both are cheap:
+    //
+    //   1. The atomic the engine reads every block. That is what actually runs the
+    //      platter down, and it is the only path that touches the audio thread -
+    //      a relaxed store, no lock, no allocation.
+    //   2. The `spindown` parameter, so a host that records automation sees the
+    //      gesture and a saved session can hold it. It is written through the
+    //      parameter rather than through the attachment in the editor so a button
+    //      press and an automation lane are the same event.
+    //
+    // The engine treats a held spindown as a running transport, so a hold started
+    // from STOP brings the platter up and then cuts it: the gesture always has
+    // something to act on.
+    spindownHeld.store (shouldHold, std::memory_order_relaxed);
+
+    if (auto* parameter = parameters.getParameter ("spindown"))
+        parameter->setValueNotifyingHost (shouldHold ? 1.0f : 0.0f);
+}
+
 void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                              juce::MidiBuffer& midiMessages)
 {
@@ -2151,8 +2222,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto stOffsetUs = stOffsetParam != nullptr ? stOffsetParam->load() : 0.0f;
     const auto noiseAmount = noiseParam != nullptr ? noiseParam->load() : 0.5f;
     const auto noiseLvlAmount = noiseLvlParam != nullptr ? noiseLvlParam->load() : 1.0f;
-    const auto transportState = transportParam != nullptr
-                                    ? static_cast<int> (transportParam->load()) : 1;
+    // The transport state is advanced by the engine too (START settles into PLAY),
+    // so it is not const here: it is a local mirror of the parameter, written back
+    // through it below when the spin-up completes.
+    auto transportState = transportParam != nullptr
+                              ? static_cast<int> (transportParam->load()) : 1;
 
     // -----------------------------------------------------------------------
     //  Tempo, from the host.
@@ -2452,20 +2526,95 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // be lifted out of a function the DSP harness cuts up on its own.
     limiterCeiling = 0.70f;
 
-    // Transport: the ramp target is 0 for STOP and 1 for PLAY or START. The
-    // coefficient sets how fast it gets there - a spin-up takes about a second, which
-    // is what a capstan sounds like coming up to speed.
-    const float transportTarget = (transportState == 0) ? 0.0f : 1.0f;
+    // -------------------------------------------------------------------------
+    //  Transport, rebuilt so the three states are genuinely different and START
+    //  is a real transient.
+    //
+    //  STOP drives the ramp to 0. PLAY holds it at 1. START drives it to 1 over
+    //  about a second and is then DONE - the state advances to PLAY when the ramp
+    //  arrives (see the auto-advance just below, which runs on the audio thread
+    //  and writes the parameter so the host and the panel see the same change).
+    //
+    //  Each transition picks its own ramp length, which the previous version only
+    //  did for the spin-up case: a STOP from PLAY reused the last coefficient and
+    //  therefore coasted down on a spin-up's timing.
+    //
+    //  The spindown hold OVERRIDES this and is handled with it: a spindown is a
+    //  running state, so while it is held the transport is treated as running
+    //  (the platter must not also be stopped) and the platter speed comes from
+    //  the spindown ramp below.
+    // -------------------------------------------------------------------------
+    const bool spindownNow = spindownHeld.load (std::memory_order_relaxed);
+
+    // Detect the release edge of the spindown hold. A spindown pressed from STOP
+    // forces the platter to run (below), so on release the machine must settle into
+    // PLAY rather than snapping back to silence - the gesture put the platter in
+    // motion and releasing the power leaves it running. That is written to the
+    // parameter, so the panel's keys and the host's lane follow.
+    if (lastSpindownHeld && ! spindownNow && transportState == 0)
+    {
+        transportState = static_cast<int> (TransportState::play);
+        lastTransportState = -1;   // force the switch below to re-arm the ramp
+
+        if (auto* parameter = parameters.getParameter ("transport"))
+            parameter->setValueNotifyingHost (parameter->convertTo0to1 (1.0f));
+    }
+
+    lastSpindownHeld = spindownNow;
+
+    // The transport the engine should DRIVE toward, before the spindown mask.
+    // A spindown forces a running transport so a held platter that was stopped
+    // does not stay silent; released, the machine settles into PLAY and the
+    // transport state is written to match.
     if (transportState != lastTransportState)
     {
-        // A fresh START from a standstill restarts the spin-up; a START from PLAY is a
-        // re-lock, so it gets a much shorter ramp rather than a full second of pitch
-        // slide for a button press that changed nothing.
-        const bool spinUpFromRest = (transportState == 2 && lastTransportState == 0);
-        const float rampSeconds = spinUpFromRest ? 1.0f : 0.35f;
-        transportRampCoefficient = 1.0f - std::exp (-1.0f / (engineSampleRate * rampSeconds));
+        switch (transportState)
+        {
+            case 0:   // STOP - settle to rest. Quicker than a spin-up: a stopped
+                      // capstan is braked, not coasting.
+                transportRampCoefficient = onePoleCoefficient (350.0f, engineSampleRate);
+                transportSpinningUp = false;
+                break;
+
+            case 2:   // START - the full spin-up, from wherever the ramp is.
+                transportRampCoefficient = onePoleCoefficient (1000.0f, engineSampleRate);
+                transportSpinningUp = true;
+                break;
+
+            case 1:   // PLAY - if we arrived here from START the ramp is already
+                      // running and must keep its spin-up timing; if the user
+                      // selected PLAY directly it is a short re-lock.
+            default:
+                if (! transportSpinningUp)
+                    transportRampCoefficient = onePoleCoefficient (350.0f, engineSampleRate);
+                break;
+        }
+
         lastTransportState = transportState;
     }
+
+    // -------------------------------------------------------------------------
+    //  SPINDOWN: the momentary hold.
+    //
+    //  While held, the machine runs down like a turntable whose power has been
+    //  cut. The coefficient is chosen for the run-down (~1.2 s, so the pitch
+    //  slides audibly rather than stopping) and for the spin-back-up when the
+    //  button is released (~0.5 s, so releasing it feels like power returning).
+    //
+    //  It multiplies the transport ramp rather than replacing it, so a spindown
+    //  from PLAY runs down and a spindown from STOP does nothing - which is
+    //  correct, because a stopped machine cannot slow further.
+    //
+    //  The transport target is forced to `running` while the hold is engaged, so
+    //  a spindown pressed from STOP brings the platter up instead of doing
+    //  nothing. That is what a DJ pressing the stop button on a deck expects: the
+    //  record is under the head, so the gesture always has something to act on.
+    // -------------------------------------------------------------------------
+    const bool transportRunning = spindownNow || transportState != 0;
+    const float transportTarget = transportRunning ? 1.0f : 0.0f;
+    const float spindownTarget = spindownNow ? 0.0f : 1.0f;
+    spindownCoefficient = spindownNow ? onePoleCoefficient (1200.0f, engineSampleRate)
+                                      : onePoleCoefficient (500.0f, engineSampleRate);
 
     // -------------------------------------------------------------------------
     //  Analogue transfer curves.
@@ -2778,6 +2927,61 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                * instrumentTransportScale;
     const float speedBias = 0.84f + speedScale * 0.30f;
 
+    // -------------------------------------------------------------------------
+    //  Device couplings: where one control changes what another one MEANS.
+    //
+    //  A machine is not a list of independent knobs. A worn capstan makes the wow
+    //  deeper at the same WOW setting; a harder-driven head makes its own hiss
+    //  louder; a dark head gap hides modulation; a spent platter loses speed before
+    //  it loses signal. These are the interactions that make a tape model feel like
+    //  one object instead of a chain of processors, and every one of them is a
+    //  plain product of two already-computed signals - no extra oscillator, no
+    //  extra state, nothing to keep in sync.
+    //
+    //  Each coupling is deliberately ASYMMETRIC and bounded: the couplings can only
+    //  add, never invert, so a control at zero always means zero and the machine
+    //  cannot be talked into a state its design does not have.
+    // -------------------------------------------------------------------------
+    const auto mechanismWear = juce::jlimit (0.0f, 1.0f,
+                                             mechanicsSmoothed.getCurrentValue()
+                                                 + wearSmoothed.getCurrentValue());
+
+    // WEAR and MECHANICS deepen the transport's own wander. Both are already folded
+    // into the per-sample modulation; this is the part they own on their own, so a
+    // worn machine wanders even with WOW and FLUTTER closed - which is the one case
+    // where the transport gate below is wrong to silence it, and is why this term is
+    // added AFTER the gate is taken.
+    const float wearWowCoupling = mechanismWear * 0.006f;
+
+    // A hot record head is a noisier head: the hiss floor rises with the drive that
+    // is actually reaching the tape, not with the DRIVE control alone, so it follows
+    // the compressor-coupled driveAmount computed above.
+    const float driveHissCoupling = juce::jlimit (0.0f, 1.0f, driveAmount * 0.35f);
+
+    // A dark head gap hides the fine modulation before it hides anything else, so
+    // the top of the TONE travel rolls the grain and the flutter off together. It
+    // reads the TONE control directly rather than the cached toneLpAc coefficient:
+    // that coefficient is only recomputed when tone or character actually move, so
+    // on the first block it can still be 0 and would dampen the modulation before
+    // the knob had been touched. The 0.55 floor means TONE can never silence the
+    // transport's own movement, only soften it - which is what a biased head does
+    // to pitch shimmer.
+    const float toneNorm = juce::jlimit (0.0f, 1.0f, tone);
+    const float headGapModulationMask = juce::jlimit (0.55f, 1.0f, 0.55f + toneNorm * 0.45f);
+
+    // A plunger that is slowing loses speed before it loses signal. The whole point
+    // of SPINDOWN is that the pitch goes first, so the platter speed is mapped
+    // through a curve that stays near 1 until the platter is well below speed and
+    // then falls away quickly - an exponent above 1 would do the opposite and make
+    // the very start of the run-down audible as a fade. The value is applied in the
+    // per-sample loop, where the platter speed actually lives.
+    constexpr float platterPitchExponent = 1.35f;
+
+    // A hard-driven machine also runs its transport more loosely: pushing a deck
+    // that hard is a physical load, and the speed error is the same term the ramp
+    // uses, read here as a small extra wander.
+    const float loadInducedSpeedError = driveAmount * 0.004f;
+
     // The transport activity gate: 0 when both Wow and Flutter are closed, 1 from
     // roughly 50 % on either. The machine only makes a sound of any kind while its
     // transport moves, so EVERYTHING the transport does is gated by this one factor:
@@ -2864,7 +3068,15 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // the machine coasting to rest rather than a mute-switch drop. This is the fix
     // for the "noise while paused with Wow and Flutter at zero" report: the floor
     // was the only ungated always-on source left in the engine.
-    const float gatedHissGain = hissGain * transportActivityGate;
+    //
+    // driveHissCoupling rides on top of that: a head driven harder is a noisier head,
+    // so the floor rises with the drive actually reaching the tape. It is added to the
+    // gate rather than to the gain, so a machine whose transport is at rest still
+    // cannot hiss - the coupling only makes a moving machine louder, which is the
+    // physical thing it models.
+    const float gatedHissGain = hissGain * juce::jlimit (0.0f, 1.0f,
+                                                        transportActivityGate + driveHissCoupling * 0.6f
+                                                            * transportActivityGate);
 
     // The two slow random sources - the MECHANICS drift and the WEAR contact
     // noise - are advanced ONCE per block, not per sample. Both are sub-audio
@@ -3157,24 +3369,78 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         const auto wetGain = std::sin (mixAngle);
 
         // ------------------------------------------------------------------
-        //  Transport ramp.
+        //  Transport ramp and the spindown platter ramp.
         //
-        //  Advanced once per FRAME and used for the whole frame, so both channels
-        //  ride the same capstan - advancing it per channel would put the sides a
-        //  sample apart, which is a channel skew, not a transport.
+        //  Both are advanced once per FRAME and used for the whole frame, so both
+        //  channels ride the same capstan - advancing a ramp per channel would put
+        //  the sides a sample apart, which is a channel skew, not a transport.
         //
-        //  STOP drives it to 0, PLAY holds it at 1, and START lets it climb back
-        //  from wherever it was, which is what makes a fresh START from rest a
-        //  spin-up and a START from PLAY a brief re-lock.
+        //  STOP drives the transport to 0, PLAY holds it at 1, and START lets it
+        //  climb back from wherever it was. The spindown ramp runs the platter
+        //  speed the other way: 1 at speed, 0 fully stopped, and it MULTIPLIES the
+        //  transport, so the two compose into one platter speed.
         // ------------------------------------------------------------------
         transportRamp += (transportTarget - transportRamp) * transportRampCoefficient;
         if (transportTarget <= 0.0f && transportRamp < 1.0e-5f)
             transportRamp = 0.0f;
 
-        // The spin-up pitch error: while the capstan is below speed the transport
+        spindownRamp += (spindownTarget - spindownRamp) * spindownCoefficient;
+        if (spindownTarget <= 0.0f && spindownRamp < 1.0e-5f)
+            spindownRamp = 0.0f;
+
+        // The platter's actual speed, which is what the machine's pitch, its
+        // modulation depth and its reels all follow. This is the single value the
+        // rest of the loop reads; it is the PRODUCT of the two ramps rather than
+        // either one, which is what makes a spindown from a stopped transport and
+        // a stop during a spindown both land at the same place.
+        const float platterSpeed = transportRamp * spindownRamp;
+
+        // The spin-up pitch error: while the platter is below speed the transport
         // runs flat, and that is what makes the ramp read as a machine engaging
-        // rather than as a fade-in.
-        const float speedError = 1.0f - (1.0f - transportRamp) * 0.7f;
+        // rather than as a fade-in. A spindown drives the same term the other
+        // way, so the pitch falls away as the platter coasts down.
+        //
+        // The curve is raised to platterPitchExponent so the pitch holds near speed
+        // until the platter is genuinely slow, then falls away quickly. That is what
+        // makes a spindown read as a turntable losing its drive rather than as a
+        // fade-out, and it is why the exponent has to be ABOVE 1: below 1 the pitch
+        // would droop the instant the button went down.
+        const float pitchedPlatter = std::pow (platterSpeed, platterPitchExponent);
+        const float speedError = (1.0f - (1.0f - pitchedPlatter) * 0.7f)
+                               * (1.0f - loadInducedSpeedError);
+
+        // ------------------------------------------------------------------
+        //  START is transient: advance it to PLAY once the capstan arrives.
+        //
+        //  A tape deck has no "starting" position - you press play, it comes up to
+        //  speed, and then it IS playing. That is what this does, and it is the
+        //  fix for START never ending: the ramp reaches speed, the state is written
+        //  back as PLAY, and the transport control settles on Play by itself.
+        //
+        //  The write goes through the parameter rather than straight into
+        //  transportState, so the host's automation lane and the panel's combo box
+        //  both show the same thing the engine is doing. It is a host-facing call
+        //  from the audio thread, which JUCE permits (the parameter is a plain
+        //  atomic set behind it) and which is exactly what a plugin does when it
+        //  drives one of its own parameters.
+        // ------------------------------------------------------------------
+        if (transportState == static_cast<int> (TransportState::start)
+              && transportSpinningUp
+              && transportRamp >= 0.999f)
+        {
+            transportSpinningUp = false;
+            transportState = static_cast<int> (TransportState::play);
+            lastTransportState = transportState;
+
+            if (auto* parameter = parameters.getParameter ("transport"))
+                parameter->setValueNotifyingHost (parameter->convertTo0to1 (1.0f));
+        }
+
+        // Publish the platter speed and the spindown alone for the editor's reels
+        // and momentary button. Relaxed stores: these are advisory UI values, and
+        // the UI reads them with relaxed loads, so there is nothing to synchronise.
+        transportRampPublished.store (platterSpeed, std::memory_order_relaxed);
+        spindownRampPublished.store (spindownRamp, std::memory_order_relaxed);
 
         std::array<float, 2> tapeOutput {};
 
@@ -3373,15 +3639,24 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // modulation that already exists - they make it less even, not more.
             const float mechanicsNow = mechanicsSmoothed.getCurrentValue();
             const float wearNowMod = wearSmoothed.getCurrentValue();
+            // Two couplings meet here:
+            //   - wearWowCoupling, the part WEAR/MECHANICS own on their own, so a
+            //     worn machine wanders even with WOW and FLUTTER closed;
+            //   - headGapModulationMask, the dark-head damping that softens the
+            //     pitch shimmer at the top of the TONE travel before it softens
+            //     anything else. Both are block-rate constants.
             const float irregularDepth = wowDepth
                                        + mechanicsNow * 0.006f
-                                       + wearNowMod * 0.003f;
+                                       + wearNowMod * 0.003f
+                                       + wearWowCoupling;
             const float irregularOffset = (channel == 0 ? tapeConditionL : tapeConditionR).driftState
                                         * mechanicsNow * 0.010f;
 
-            const float wowMod = (1.0f + wowLfo * irregularDepth + irregularOffset) * speedError;
+            const float wowMod = (1.0f + wowLfo * irregularDepth + irregularOffset)
+                                 * headGapModulationMask * speedError;
             const float flutterMod = (1.0f + flutterLfo * flutterDepth
-                                        * flutterScaleSmoothed.getCurrentValue()) * speedError;
+                                        * flutterScaleSmoothed.getCurrentValue())
+                                     * headGapModulationMask * speedError;
             const float grainMod = 1.0f + tapeHiss * 0.10f * transportActivityGate * grainLfo;
 
             // Record head: pre-emphasis, tape bias offset and drive. With DRIVE at zero
@@ -3833,7 +4108,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // tape signal, driven by the smoothed MIX. 0 % is a transparent dry signal
             // and 100 % is all tape, both at unity, with the level held across the
             // middle of the travel.
-            const float wetMix = aligned * wetGain * transportRamp;
+            const float wetMix = aligned * wetGain * platterSpeed;
             const float dryMix = x * dryGain;
             tapeOutput[static_cast<std::size_t> (channel)] = dryMix + wetMix;
         }
@@ -4507,6 +4782,10 @@ void FirstAudioProcessor::setStateInformation (const void* data, int sizeInBytes
     copyToCompareSlot (0);
     copyToCompareSlot (1);
     activeSlot.store (0, std::memory_order_relaxed);
+
+    // The engine's own copy of the momentary spindown is synced by
+    // parameterChanged(), which replaceState() above drives for every restored
+    // parameter - so there is nothing to do here for it.
 
     // A session load restores the parameters, not the preset that produced them:
     // the badge starts clean and unnamed, exactly like a freshly opened plugin.

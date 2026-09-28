@@ -3081,6 +3081,41 @@ public:
     /** How solidly the detector is tracking, 0..1. Zero means nothing is being generated. */
     float getSubfundConfidence() const noexcept { return subfundConfidence.load (std::memory_order_relaxed); }
 
+    //==============================================================================
+    //  Transport control, from the editor.
+    //
+    //  The editor owns the momentary SPINDOWN button and must be able to drive the
+    //  three-state transport without re-implementing the state machine. These are
+    //  the two entry points it uses, and both are realtime-safe.
+    //==============================================================================
+
+    /** Sets the transport state. `state` is the transport AudioParameterChoice
+        index (0 = Stop, 1 = Play, 2 = Start). Start is transient: it is armed
+        here and the engine advances it to Play when the capstan arrives.
+
+        Writes through to the parameter so the host (and the preset/session) sees
+        the change, then forwards to the engine immediately so the audio thread
+        does not have to wait for the next automation pass. */
+    void setTransportState (int state);
+
+    /** The momentary SPINDOWN hold. While held the machine runs down like a
+        turntable whose power has been cut; on release it spins back up and the
+        transport settles into Play. Both calls are safe to make from the message
+        thread and are messages to the audio thread, never a lock on it. */
+    void setSpindownHeld (bool shouldHold);
+
+    /** True while spindown is held. For the panel's button lamp. */
+    bool isSpindownHeld() const noexcept { return spindownHeld.load (std::memory_order_relaxed); }
+
+    /** The platter speed the engine is actually running at, 0..1, as the product
+        of the transport ramp and the spindown ramp. Published so the editor can
+        spin its reels at the real speed rather than at a guess. */
+    float getTransportRamp() const noexcept { return transportRampPublished.load (std::memory_order_relaxed); }
+
+    /** The spindown run-down alone, 0..1, 1 = at speed. Lets the panel show the
+        pitch falling away during a hold even while the transport itself is Play. */
+    float getSpindownRamp() const noexcept { return spindownRampPublished.load (std::memory_order_relaxed); }
+
 private:
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
@@ -3114,13 +3149,23 @@ private:
         presetDirty.store (false, std::memory_order_relaxed);
     }
 
-    /** AudioProcessorValueTreeState::Listener: any parameter change dirties the badge. */
-    void parameterChanged (const juce::String&, float) override
+    /** AudioProcessorValueTreeState::Listener: any parameter change dirties the
+        badge, and a change to `spindown` syncs the engine's momentary flag. */
+    void parameterChanged (const juce::String& parameterID, float newValue) override
     {
         // Reads and writes only atomics: APVTS forwards host automation here from the
         // audio thread, and the badge is advisory state, never control state.
         if (presetNameNonEmpty.load (std::memory_order_relaxed))
             presetDirty.store (true, std::memory_order_relaxed);
+
+        // `spindown` is the one parameter whose value the engine keeps a second
+        // copy of (the atomic it reads every block). Keeping it in step here means
+        // a preset load, an undo/redo or an automation pass that moves the
+        // parameter also moves the platter - without a second code path that could
+        // drift from this one. The comparison first means the common case of the
+        // button writing the parameter is a no-op rather than a redundant store.
+        if (parameterID == "spindown")
+            spindownHeld.store (newValue >= 0.5f, std::memory_order_relaxed);
     }
 
     /** Rebuilds the A/B dirty flag from the two stored slot states. */
@@ -3151,6 +3196,7 @@ private:
     std::atomic<float>* stOffsetParam = nullptr;
     std::atomic<float>* noiseParam = nullptr;
     std::atomic<float>* transportParam = nullptr;
+    std::atomic<float>* spindownParam = nullptr;
     std::atomic<float>* blendParam = nullptr;
     std::atomic<float>* shapeParam = nullptr;
     std::atomic<float>* sagParam = nullptr;
@@ -3543,19 +3589,78 @@ private:
     SampleSmoother stOffsetSamplesSmoothed { sampleClock };
 
     // -----------------------------------------------------------------------
-    //  Transport state (STOP / PLAY / START).
+    //  Transport state (STOP / PLAY / START), and SPINDOWN.
     //
-    //  `transportRamp` is 0 when the machine is at rest and 1 when it is running
-    //  at speed. STOP drives it to 0, PLAY holds it at 1, and START drives it
-    //  toward 1 from wherever it was, so hitting START from STOP is a genuine
-    //  spin-up and hitting it from PLAY is a brief re-lock rather than a jump.
+    //  `transportRamp` is 0 when the capstan is at rest and 1 when it is running
+    //  at speed. It scales the wet path AND the transport modulation together,
+    //  which is what makes STOP true silence rather than a mute and START a
+    //  pitch ramp rather than a fade.
     //
-    //  It scales the whole wet path and the transport modulation together, which
-    //  is what makes STOP silent and START a pitch ramp instead of a gate.
+    //  The STATE.
+    //
+    //  0 STOP   - the capstan is at rest. True silence: no hiss, no modulation,
+    //             no delay tail.
+    //  1 PLAY   - normal running. This is the resting "engaged" state and the one
+    //             START settles into.
+    //  2 START  - a TRANSIENT, not a third resting position. The capstan spins up
+    //             over about a second and START is immediately done: the state
+    //             advances to PLAY by itself (see the auto-advance in
+    //             processTapeEngine).
+    //
+    //  START must NOT loop or stay engaged: the previous implementation left the
+    //  ramp climbing forever because START and PLAY shared a target and the state
+    //  never advanced. The auto-advance is now the point: pressing START, the
+    //  capstan arrives at speed and the control reads PLAY.
     // -----------------------------------------------------------------------
     float transportRamp = 1.0f;
     float transportRampCoefficient = 0.0f;
     int lastTransportState = -1;
+
+    // True while START (or a spindown recovery) is spinning the capstan up. The
+    // auto-advance to PLAY watches this, so the transition happens once per
+    // spin-up rather than being re-armed on every block.
+    bool transportSpinningUp = false;
+
+    /** The transport states, named rather than as bare integers so a reader can
+        tell 2 from a typo. Values match the `transport` AudioParameterChoice. */
+    enum class TransportState : int
+    {
+        stop    = 0,
+        play    = 1,
+        start   = 2
+    };
+
+    // -----------------------------------------------------------------------
+    //  SPINDOWN.
+    //
+    //  A momentary hold, not a state: while the button is held the machine runs
+    //  down like a turntable whose power has been cut, and when it is released
+    //  the machine is simply stopped. That is a performance control rather than a
+    //  transport setting, which is why it is not a fourth entry in the transport
+    //  combo - it acts ON the transport rather than replacing it.
+    //
+    //  The run-down is deliberately slower than STOP's settle: a platter with
+    //  mass does not stop instantly, and the whole point of the effect is the
+    //  long tail as the pitch falls away. It also runs the pitch DOWN rather
+    //  than the level, because a slowing turntable loses speed before it loses
+    //  signal.
+    //
+    //  `spindownHeld` is written by the editor (message thread) and read by the
+    //  engine (audio thread) every block, so it is an atomic. The two ramps are
+    //  engine-only state and stay plain floats.
+    // -----------------------------------------------------------------------
+    std::atomic<bool> spindownHeld { false };
+    float spindownRamp = 1.0f;              // 1 = at speed, 0 = fully stopped
+    float spindownCoefficient = 0.0f;       // built from the rate
+    // The previous block's hold state, so the release edge can be seen once. Engine
+    // only: it is not read by the editor and needs no atomic.
+    bool lastSpindownHeld = false;
+
+    // Published for the editor's reels and lamp. Written once per block by the
+    // audio thread, read with a relaxed load by the UI, exactly like the other
+    // telemetry on this class.
+    std::atomic<float> transportRampPublished { 1.0f };
+    std::atomic<float> spindownRampPublished { 1.0f };
 
     // Noise floor trim, smoothed like every other control-derived gain so moving
     // the NOISE knob cannot step the hiss level.
