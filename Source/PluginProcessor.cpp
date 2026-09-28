@@ -47,8 +47,10 @@ namespace
             "vinyl_clicks", "vinyl_generation", "vinyl_turntable", "vinyl_cartridge",
             "in_low", "in_mid", "in_high",
             "in_hp_freq", "in_lp_freq", "in_eq_order", "in_eq_q",
+            "in_hp_on", "in_lp_on",
             "out_low", "out_mid", "out_high",
             "out_hp_freq", "out_lp_freq", "out_eq_order", "out_eq_q",
+            "out_hp_on", "out_lp_on",
             "st_link",
             "valve_type", "amp_type", "transformer_type",
             "digital_type", "vinyl_type",
@@ -376,10 +378,14 @@ FirstAudioProcessor::FirstAudioProcessor()
     outputEqHighParam = parameters.getRawParameterValue ("out_high");
     inputEqHpFreqParam = parameters.getRawParameterValue ("in_hp_freq");
     inputEqLpFreqParam = parameters.getRawParameterValue ("in_lp_freq");
+    inputEqHpOnParam = parameters.getRawParameterValue ("in_hp_on");
+    inputEqLpOnParam = parameters.getRawParameterValue ("in_lp_on");
     inputEqOrderParam = parameters.getRawParameterValue ("in_eq_order");
     inputEqQParam = parameters.getRawParameterValue ("in_eq_q");
     outputEqHpFreqParam = parameters.getRawParameterValue ("out_hp_freq");
     outputEqLpFreqParam = parameters.getRawParameterValue ("out_lp_freq");
+    outputEqHpOnParam = parameters.getRawParameterValue ("out_hp_on");
+    outputEqLpOnParam = parameters.getRawParameterValue ("out_lp_on");
     outputEqOrderParam = parameters.getRawParameterValue ("out_eq_order");
     outputEqQParam = parameters.getRawParameterValue ("out_eq_q");
     valveTypeParam = parameters.getRawParameterValue ("valve_type");
@@ -521,12 +527,19 @@ void FirstAudioProcessor::applyStateWithUndo (const juce::ValueTree& targetState
 //==============================================================================
 juce::StringArray FirstAudioProcessor::getPresetNames()
 {
+    // The names must be exactly numFactoryPresets and in the table's order: the
+    // preset box, the undo label and the badge all index by position, and the
+    // six type-selector presets at the end were missing here - a box showing
+    // twenty names over a twenty-six row table, with rows 20..25 loaded as
+    // whichever preset the selection happened to name.
     return { "Default", "Minimum", "Maximum",
              "Gentle Warmth", "Bus Glue Tape", "Drum Slam",
              "Vintage Lo-Fi", "Wide Master", "Clean Glue", "Saturated Crunch",
              "Wobbly Cassette", "Bright Air Tape", "Mix Saturation", "Master Bounce",
              "Vocal Rail", "Drum Room Warm", "Bass Weight", "Master Safety",
-             "Lo-Fi Radio", "Ferric Master" };
+             "Lo-Fi Radio", "Ferric Master",
+             "British Valve", "Plexi Bite", "Iron Bloom",
+             "12-bit Bounce", "Dubplate Dub", "Shellac Radio" };
 }
 
 std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int index)
@@ -1088,6 +1101,16 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "in_lp_freq", 1 },
                                                             "In EQ LP Freq", lpFreqRange, 20000.0f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("Hz")));
+
+    // The high-pass / low-pass switches. The corner knobs already bypass
+    // themselves at their travel's ends, but an explicit switch is the control a
+    // user means by "turn the EQ's HP off": the corner stays where it was and the
+    // filter is removed outright. Default ON, and the default corners ARE
+    // bypasses (20 Hz / 20 kHz), so the default sound does not move.
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "in_hp_on", 1 },
+                                                            "In EQ HP On", true));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "in_lp_on", 1 },
+                                                            "In EQ LP On", true));
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "in_eq_order", 1 },
                                                             "In EQ Order",
                                                             juce::StringArray { "6 dB/oct", "12 dB/oct", "18 dB/oct",
@@ -1103,6 +1126,10 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "out_lp_freq", 1 },
                                                             "Out EQ LP Freq", lpFreqRange, 20000.0f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("Hz")));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "out_hp_on", 1 },
+                                                            "Out EQ HP On", true));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "out_lp_on", 1 },
+                                                            "Out EQ LP On", true));
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "out_eq_order", 1 },
                                                             "Out EQ Order",
                                                             juce::StringArray { "6 dB/oct", "12 dB/oct", "18 dB/oct",
@@ -1422,7 +1449,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     //  that shapes the sound.
     // -------------------------------------------------------------------------
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "ui_sounds", 1 },
-                                                            "UI Sounds", false));
+                                                            "UI Sounds", true));
 
     // -------------------------------------------------------------------------
     //  Saturation blend.
@@ -3208,12 +3235,21 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                             inputEqLpFreqParam != nullptr ? inputEqLpFreqParam->load() : 20000.0f,
                             eqOrderSlope (inputEqOrderParam),
                             inputEqQParam != nullptr ? inputEqQParam->load() : 0.7f);
+    // An explicit OFF on the switch wins over the corner's own travel-bypass.
+    if (inputEqHpOnParam != nullptr && inputEqHpOnParam->load() < 0.5f)
+        inputEq.hpActive = false;
+    if (inputEqLpOnParam != nullptr && inputEqLpOnParam->load() < 0.5f)
+        inputEq.lpActive = false;
 
     outputEq.prepareFilters (engineSampleRate,
                              outputEqHpFreqParam != nullptr ? outputEqHpFreqParam->load() : 20.0f,
                              outputEqLpFreqParam != nullptr ? outputEqLpFreqParam->load() : 20000.0f,
                              eqOrderSlope (outputEqOrderParam),
                              outputEqQParam != nullptr ? outputEqQParam->load() : 0.7f);
+    if (outputEqHpOnParam != nullptr && outputEqHpOnParam->load() < 0.5f)
+        outputEq.hpActive = false;
+    if (outputEqLpOnParam != nullptr && outputEqLpOnParam->load() < 0.5f)
+        outputEq.lpActive = false;
 
     const float inputEqMidCoefficient = inputEq.midBandCoefficient (engineSampleRate);
     const float outputEqMidCoefficient = outputEq.midBandCoefficient (engineSampleRate);

@@ -4338,10 +4338,14 @@ private:
     // The EQ filters: corner, order (as a choice index into the dB/octave list)
     // and Q, per equaliser.
     std::atomic<float>* inputEqHpFreqParam = nullptr;
+    std::atomic<float>* inputEqHpOnParam = nullptr;
+    std::atomic<float>* inputEqLpOnParam = nullptr;
     std::atomic<float>* inputEqLpFreqParam = nullptr;
     std::atomic<float>* inputEqOrderParam = nullptr;
     std::atomic<float>* inputEqQParam = nullptr;
     std::atomic<float>* outputEqHpFreqParam = nullptr;
+    std::atomic<float>* outputEqHpOnParam = nullptr;
+    std::atomic<float>* outputEqLpOnParam = nullptr;
     std::atomic<float>* outputEqLpFreqParam = nullptr;
     std::atomic<float>* outputEqOrderParam = nullptr;
     std::atomic<float>* outputEqQParam = nullptr;

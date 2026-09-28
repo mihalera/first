@@ -451,10 +451,12 @@ private:
     juce::ComboBox delayRateBox;
     juce::Label delayRateLabel;
 
-    // The two whole-machine mode switches. Rockers like BYPASS and POLARITY, drawn
-    // by the panel's own LookAndFeel, because they are state rather than amount.
-    juce::ToggleButton modernModeButton { "MODERN" };
-    juce::ToggleButton lofiModeButton { "LO-FI" };
+    // The two whole-machine mode switches became ONE cycling button: OFF ->
+    // LO-FI -> MODERN -> OFF. The modes are mutually exclusive by design and the
+    // engine reads two bools, so the button is the only state holder on the panel
+    // and writes both parameters itself (no attachment: a ButtonAttachment on
+    // each side would fight the cycle).
+    juce::TextButton modeCycleButton { "MODE: OFF" };
     juce::Label presetHeadingLabel;
     juce::Label compareBadgeLabel;
     juce::Label presetBadgeLabel;
@@ -481,8 +483,7 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> delayTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> delayRateAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> delaySyncAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> modernModeAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> lofiModeAttachment;
+
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> oversamplingAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> bypassAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> deltaAttachment;
@@ -582,6 +583,7 @@ private:
     int currentTransportState() const;
     void styleTransportButtons();
     void styleSpindownButton();
+    void refreshModeButtonCaption();
 
     std::unique_ptr<b2World> physicsWorld;
     std::array<PhysicsOrb, decorativeOrbCount> physicsOrbs {};
