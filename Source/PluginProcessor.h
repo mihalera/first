@@ -2511,8 +2511,8 @@ struct ThreeBandEq
         const auto rate = juce::jmax (1.0f, sampleRate);
         const auto omegaLow = juce::MathConstants<float>::twoPi * 200.0f / rate;
         const auto omegaHigh = juce::MathConstants<float>::twoPi * 4000.0f / rate;
-        lowCoefficient = juce::jlimit (0.0f, 1.0f - std::exp (-omegaLow));
-        highCoefficient = juce::jlimit (0.0f, 1.0f - std::exp (-omegaHigh));
+        lowCoefficient = juce::jlimit (0.0f, 1.0f, 1.0f - std::exp (-omegaLow));
+        highCoefficient = juce::jlimit (0.0f, 1.0f, 1.0f - std::exp (-omegaHigh));
     }
 
     /** The bell's own coefficient, derived from the split and the width. The mid
@@ -2527,7 +2527,7 @@ struct ThreeBandEq
         const float widthHz = 2000.0f + midWidth * 6000.0f;
         const auto omega = juce::MathConstants<float>::twoPi * widthHz
                          / juce::jmax (1.0f, sampleRate);
-        return juce::jlimit (0.0f, 1.0f - std::exp (-omega));
+        return juce::jlimit (0.0f, 1.0f, 1.0f - std::exp (-omega));
     }
 
     /** Rebuilds the two filter coefficients and the pole counts.
@@ -4852,7 +4852,10 @@ private:
         the whole ring is cache-friendly. The producer never blocks: if the UI has
         not drained it the push simply fails and the frame is dropped, which is
         the correct behaviour for telemetry (an old meter reading is worthless). */
-    moodycamel::ReaderWriterQueue<TelemetryFrame, 32> telemetryQueue;
+    // mutable: getTelemetry() is const and drains the queue to the newest
+    // frame. Draining mutates the queue's internal read cursor but not the
+    // machine's state, so the queue is mutable rather than the accessor.
+    mutable moodycamel::ReaderWriterQueue<TelemetryFrame, 32> telemetryQueue;
 #endif
 
     /** The most recent frame, published by the audio thread. The editor reads it

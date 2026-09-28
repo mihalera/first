@@ -37,6 +37,18 @@ MIX_SMOOTHER = re.compile(
 MATH_BRIDGE_START = "#if J37_HAS_CHOWDSP_MATH\nnamespace j37math"
 MATH_BRIDGE_END = "#endif\n"
 
+# The namespace-level constants SaturationCore's set<Family>Voice methods
+# reference. The struct extraction cuts only the struct's own text, and these
+# live at namespace scope above it - so without this list the harness compiles
+# against constants that do not exist (exactly how adc23c9's new DIGITAL voice
+# broke it: the method text arrived, the constant it reads did not).
+CONSTANT_PIECES = [
+    "inline constexpr int valveTypeCount",
+    "inline constexpr int ampTypeCount",
+    "inline constexpr int transformerTypeCount",
+    "inline constexpr int digitalTypeCount",
+]
+
 HEADER_PIECES = [
     ("GlueCompressor", "struct GlueCompressor"),
     ("LoudnessMeter", "struct LoudnessMeter"),
@@ -129,6 +141,14 @@ def main() -> int:
     chunks.append(extract_math_bridge(header))
     chunks.append("")
     chunks.append("")
+
+    # Namespace constants first: the structs below reference them.
+    for declaration in CONSTANT_PIECES:
+        line_start = header.index(declaration)
+        end = header.index("\n", line_start) + 1
+        chunks.append("// ---- constant (PluginProcessor.h) " + "-" * 38)
+        chunks.append(header[line_start:end])
+        chunks.append("")
 
     for name, declaration in HEADER_PIECES:
         chunks.append(f"// ---- {name} (PluginProcessor.h) " + "-" * 40)

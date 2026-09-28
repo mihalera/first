@@ -754,7 +754,7 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
 
 - Audio plugin: **VST3**, **Audio Unit** and **AUv3**
 - Framework: JUCE 9.0.2 (pinned as a git submodule)
-- Target platforms: Windows (x64), macOS (universal: arm64 + x86_64), Linux (x64, VST3)
+- Target platforms: Windows (x64), macOS (universal: arm64 + x86_64), Linux (x64, VST3), Android (arm64-v8a, Standalone)
 - Build system: **CMake** (3.22+), driving MSVC on Windows and Xcode on macOS
 
 AU and AUv3 are macOS-only formats. JUCE compiles them to nothing on Windows, which is why
@@ -856,6 +856,85 @@ macOS   : ~/Library/Audio/Plug-Ins/VST3/Nonlin Analog Saturator.vst3
 
 AUv3 is discovered through its containing app rather than copied by hand; run the app that
 wraps the extension once so the system registers it.
+
+## Інструкція для користувачів macOS 🍏
+
+Оскільки плагін є безкоштовним та open-source, він не має платного підпису Apple
+Developer. Якщо ваша система macOS або DAW видає помилку при спробі його запустити,
+виконайте дві прості команди в Терміналі.
+
+1. Перейдіть до папки з вашими VST3 плагінами:
+
+```bash
+cd ~/Library/Audio/Plug-Ins/VST3/
+```
+
+2. Зніміть мітку карантину Apple Gatekeeper з файлу плагіна:
+
+```bash
+xattr -cr "Nonlin Analog Saturator.vst3"
+```
+
+Будьте обачні, використовуючи код.
+
+(Аналогічно для папки `Components` та розширення `.component`, якщо ви використовуєте
+формат Audio Unit.)
+
+Артефакти CI мають ad-hoc підпис: цього достатньо, щоб збірка запускалась на
+Apple Silicon, але цього недостатньо, щоб минати перевірку Gatekeeper, тому
+команда вище потрібна для завантажених копій.
+
+## Android 🤖
+
+JUCE's CMake layer reduces to the **Standalone** format on Android: the plugin
+kinds VST3 / AU / AUv3 are desktop-host formats and are excluded there
+(`_juce_get_platform_plugin_kinds`), and there is no Gradle exporter in the CMake
+layer. So "Android support" here means the plugin's whole engine - DSP, editor
+and every third-party library in the build - compiling for the Android NDK as
+the Standalone wrapper, a shared library a Gradle project loads.
+
+### Building for Android
+
+The CI job `build-android` proves the cross-build on every push (arm64-v8a,
+min API 28, NDK from the runner). To build by hand you need the Android NDK
+(r23+) - via Android Studio's SDK Manager or `commandlinetools` - and then:
+
+```sh
+cmake -S . -B build-android \
+    -DCMAKE_BUILD_TYPE=Release \
+    -DCMAKE_SYSTEM_NAME=Android \
+    -DCMAKE_ANDROID_API=29 \
+    -DCMAKE_ANDROID_NDK=$ANDROID_NDK_LATEST_HOME \
+    -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a
+cmake --build build-android --parallel
+```
+
+The output is the Standalone wrapper `.so` plus the static libraries it links.
+
+### Turning the .so into an app
+
+CMake cannot host an Android app - the APK, its manifest, the activity classes,
+the resources and the signing all belong to a Gradle project. The skeleton:
+
+```gradle
+// app/build.gradle.kts
+android {
+    namespace = "com.MCsmes.first"
+    compileSdk = 34
+    defaultConfig { minSdk = 28 }
+    externalNativeBuild { cmake {
+        path = file("../../CMakeLists.txt")   // this repository's build
+        version = "3.22.1"
+    } }
+}
+```
+
+The CMake configure must then receive the same Android variables as above
+(Gradle sets `CMAKE_SYSTEM_NAME`, the API level and the ABI itself; the STL
+defaults to `c++_static`, which is what this project's single-`.so` Standalone
+wants). Point the manifest's activity at a JUCE standalone activity subclass or
+at a thin launcher that opens the plugin window - that part is app code, and
+this repository deliberately does not ship an app shell.
 
 ## Build system notes
 

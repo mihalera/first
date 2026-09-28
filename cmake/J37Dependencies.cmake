@@ -196,6 +196,25 @@ CPMAddPackage(
     GIT_TAG 1.4.0
     DOWNLOAD_ONLY YES)
 
+#  signalsmith-linear: since the plugin's sources started including the
+#  stretch header directly, its sibling matters: signalsmith-stretch.h line 4
+#  does #include "signalsmith-linear/stft.h", pointing at
+#  Signalsmith-Audio/linear. The relative include means the sibling must sit
+#  NEXT TO the stretch checkout under a directory literally named
+#  "signalsmith-linear" - the include resolves against the includING file's
+#  directory first, so that layout is the whole integration; exposing linear's
+#  root on the include path would NOT work, because the include is namespaced
+#  by the folder name. Pinned to the 0.6.4 tag.
+CPMAddPackage(
+    NAME signalsmith-linear
+    GITHUB_REPOSITORY Signalsmith-Audio/linear
+    GIT_TAG 0.6.4
+    # ...inside the stretch checkout, because the stretch header sits at that
+    # checkout's ROOT (not under include/), so the quoted include resolves
+    # against the checkout root as the base directory.
+    SOURCE_DIR "${signalsmith-dsp_SOURCE_DIR}/signalsmith-linear"
+    DOWNLOAD_ONLY YES)
+
 j37_declare_header_only_library(signalsmith-stretch
     "${signalsmith-dsp_SOURCE_DIR}/include")
 
@@ -427,3 +446,174 @@ CPMAddPackage(
         "YASIO_BUILD_TESTS OFF"
         "YASIO_BUILD_EXAMPLES OFF"
         "YASIO_SSL_BACKEND 0")
+
+# ==============================================================================
+#  RTNeural - jatinchowdhury18/RTNeural, the real-time neural inference engine
+#  behind Chowdhury's amp and pedal models (LSTM / GRU / Dense / Conv1D).
+#
+#  Configured as a real CMake subproject, but with the backend choice taken
+#  away from its root script: that script's include(SIMDExtensions.cmake) plus
+#  its ChooseBackend default would demand the modules/Eigen submodule (which a
+#  CPM checkout cannot carry - CPM downloads no submodules), and its AVX probe
+#  would plant -mavx2 into a binary that has to run on machines without AVX.
+#  So BUILD_TESTS/BUILD_BENCH/BUILD_EXAMPLES are off and RTNEURAL_STL=ON is
+#  passed before the checkout is configured: RTNEURAL_STL is checked FIRST in
+#  ChooseBackend.cmake, the Eigen default branch never runs, and no backend
+#  macro is defined at all - the STL path compiles straight out of the checkout
+#  (verified: RTNeural.cpp -> a 223 KB object with no external headers).
+#  The engine already pins xsimd 14.3.0; switching RTNeural onto it is a
+#  per-model decision for the day a model is actually adopted.
+#  Pinned to the current master head (upstream publishes no tags).
+# ==============================================================================
+CPMAddPackage(
+    NAME RTNeural
+    GITHUB_REPOSITORY jatinchowdhury18/RTNeural
+    GIT_TAG 95c3c0f987a6fe903e7eec71e797405dbed7caf7
+    EXCLUDE_FROM_ALL YES
+    SYSTEM YES
+    OPTIONS
+        "RTNEURAL_STL ON"
+        "BUILD_TESTS OFF"
+        "BUILD_BENCH OFF"
+        "BUILD_EXAMPLES OFF")
+
+# ==============================================================================
+#  dr_libs - mackron/dr_libs, the single-header decoders dr_wav / dr_mp3 /
+#  dr_flac (used by miniaudio, SoLoud and half the audio-tooling world).
+#
+#  Nothing here is compiled: the headers self-contain their implementation
+#  behind DR_WAV_IMPLEMENTATION and friends, which exactly one translation unit
+#  may define, so the target is include-only and the implementation units are
+#  added by whoever adopts a decoder. Pinned to the wav-0.14.5 tag (upstream
+#  tags per component, wav-* and mp3-*, and wav is the newest of the two).
+# ==============================================================================
+CPMAddPackage(
+    NAME dr_libs
+    GITHUB_REPOSITORY mackron/dr_libs
+    GIT_TAG wav-0.14.5
+    DOWNLOAD_ONLY YES)
+
+j37_declare_header_only_library(dr_libs "${dr_libs_SOURCE_DIR}")
+
+# ==============================================================================
+#  libsndfile is deliberately NOT fetched. Its 1.2.2 CMakeLists opens with
+#  cmake_minimum_required(VERSION 3.1..3.18), and CMake 4.x - the release the
+#  current CI runners ship - removed compatibility with minimums below 3.5, so
+#  configuring it aborts the whole build (surfaced on the macOS and Windows
+#  runners). Re-add it pinned to a release whose minimum CMake is 3.5 or newer.
+# ==============================================================================
+
+# ==============================================================================
+#  YIN pitch tracking - ashokfernandez/Yin-Pitch-Tracking, the embedded-minded
+#  C port of the Yin fundamental-frequency estimator (de Cheveigne & Kawahara).
+#
+#  Two C files at the repository root and nothing else: Yin.h (stdint only -
+#  verified) and Yin.c (compiles alone under plain gcc). There is no CMake
+#  upstream, so the checkout is downloaded only and the pair is compiled here
+#  into a static library. The repository's audioData.h and Test_Yin.c are a
+#  test fixture, not library code, and stay out of the build. The upstream
+#  YIN_SAMPLING_RATE define (44100) is NOT used by the algorithm - the caller
+#  divides by the real sample rate - so no patching is needed for 48/96 kHz.
+#  No tags exist upstream; pinned to the master head.
+# ==============================================================================
+CPMAddPackage(
+    NAME yin_pitch
+    GITHUB_REPOSITORY ashokfernandez/Yin-Pitch-Tracking
+    GIT_TAG 69483b048bea0faac73a49e209577aebeb5e9680
+    DOWNLOAD_ONLY YES)
+
+if(NOT TARGET yin_pitch)
+    add_library(yin_pitch STATIC EXCLUDE_FROM_ALL
+        "${yin_pitch_SOURCE_DIR}/Yin.c")
+    target_include_directories(yin_pitch SYSTEM PUBLIC
+        "${yin_pitch_SOURCE_DIR}")
+endif()
+
+# ==============================================================================
+#  MPM (McLeod Pitch Method) - adamski/pitch_detector, a JUCE module wrapping
+#  the NSDF-based MPM tracker plus a YIN class, built on the same author's
+#  audio_fft module (a JUCE module wrapping HiFi-LoFi's AudioFFT).
+#
+#  It is a JUCE module and is registered like the other JUCE modules in this
+#  build, which is also the only way its dependencies resolve: the module
+#  header declares juce_core + juce_audio_basics + audio_fft, and
+#  juce_add_module wires those to whatever the linking target already links.
+#  audio_fft is fetched separately because pitch_detector carries it as a GIT
+#  SUBMODULE - CPM downloads no submodules, so the AudioFFT/ directory would
+#  otherwise be an empty hole in the checkout. audio_fft in turn vendors
+#  HiFi-LoFi/AudioFFT (its AudioFFT/ directory is a submodule too), so the
+#  upstream HiFi-LoFi checkout is fetched directly and CPM's SOURCE_DIR pins
+#  it into the exact path audio_fft's includes expect. One line -
+#  audio_fft.cpp - is all audio_fft compiles: it includes AudioFFT.cpp, whose
+#  backend is chosen by define, and on Apple PitchMPM.h already switches that
+#  define to AUDIOFFT_APPLE_ACCELERATE, so the FFT rides the Accelerate
+#  framework linked for vDSP. No tags exist on either repository;
+#  both are pinned to the master heads.
+# ==============================================================================
+#  The wrapper module (adamski/audio_fft) is what juce_add_module must see: its
+#  root carries audio_fft.h - the module header the declaration and the include
+#  path both come from. It compiles exactly one unit, audio_fft.cpp, which
+#  #includes "AudioFFT/AudioFFT.cpp" - the HiFi-LoFi library vendored as a GIT
+#  SUBMODULE of the wrapper, and therefore pinned into that exact slot below.
+#  (Two first-pass layouts were wrong and both surfaced in CI: registering the
+#  HiFi-LoFi checkout as the module left <audio_fft/audio_fft.h> unresolvable,
+#  and spelling the wrapper's folder with a capital A broke the same include on
+#  case-sensitive filesystems.)
+CPMAddPackage(
+    NAME audio_fft_module
+    GITHUB_REPOSITORY adamski/audio_fft
+    GIT_TAG 922b30a8518c737ffad6ed4c7337704770e8c82c
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/pitch_detector/audio_fft"
+    DOWNLOAD_ONLY YES)
+
+#  The library itself, into the submodule slot the wrapper's sources include
+#  through. Ordered AFTER the wrapper above: git can clone into an existing
+#  EMPTY directory, but not into a populated one, and the wrapper's checkout
+#  creates the empty AudioFFT/ slot its .gitmodules describes.
+CPMAddPackage(
+    NAME AudioFFT
+    GITHUB_REPOSITORY HiFi-LoFi/AudioFFT
+    GIT_TAG 0893b532dd357c7270609425f5ae9d9b5ae7d725
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/pitch_detector/audio_fft/AudioFFT"
+    DOWNLOAD_ONLY YES)
+
+CPMAddPackage(
+    NAME pitch_detector
+    GITHUB_REPOSITORY adamski/pitch_detector
+    GIT_TAG d3b60970e1096889f7b2727f62179ccb3f832640
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/pitch_detector/pitch_detector"
+    DOWNLOAD_ONLY YES)
+
+if(NOT TARGET audio_fft)
+    juce_add_module("${CMAKE_BINARY_DIR}/deps/pitch_detector/audio_fft")
+endif()
+# (audio_fft_module's checkout IS the module; AudioFFT is its vendored engine.)
+
+if(NOT TARGET pitch_detector)
+    juce_add_module("${CMAKE_BINARY_DIR}/deps/pitch_detector/pitch_detector")
+endif()
+
+# ==============================================================================
+#  Dattorro reverb - el-visio/dattorro-verb, a compact C implementation of
+#  Jon Dattorro's 1997 plate reverb (the input diffusers, the two tank halves
+#  with their damping and decay filters, and the stereo taps).
+#
+#  "DattorroReverb" names an algorithm, not a repository: GitHub search by that
+#  name returns single-file throwaway projects, one of which #includes
+#  <sndfile.h> in its library code - not vendorable. This checkout is plain C
+#  (verb.h / verb_structs.h / verb.c, stdint/math/string only - verified to
+#  compile alone) with an opaque-struct API, so it is compiled here into a
+#  static library like YIN. No tags upstream; pinned to the master head.
+# ==============================================================================
+CPMAddPackage(
+    NAME dattorro_verb
+    GITHUB_REPOSITORY el-visio/dattorro-verb
+    GIT_TAG 41e976a0228a2472156f5c010b3bfbb444e777d2
+    DOWNLOAD_ONLY YES)
+
+if(NOT TARGET dattorro_verb)
+    add_library(dattorro_verb STATIC EXCLUDE_FROM_ALL
+        "${dattorro_verb_SOURCE_DIR}/verb.c")
+    target_include_directories(dattorro_verb SYSTEM PUBLIC
+        "${dattorro_verb_SOURCE_DIR}")
+endif()

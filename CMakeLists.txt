@@ -12,6 +12,8 @@
 #     Windows : Visual Studio / x64                -> VST3
 #     macOS   : Xcode / universal (arm64 + x86_64) -> VST3, AU, AUv3
 #     Linux   : GCC / Clang x64                    -> VST3
+#     Android : NDK (arm64-v8a)                    -> Standalone (the only format
+#                                                    JUCE's CMake layer produces there)
 #
 #   AU and AUv3 are Apple-only formats. JUCE compiles them to nothing on
 #   Windows and Linux, so the FORMATS list below is safe to share between platforms.
@@ -28,6 +30,17 @@ project(first
 # Keep the generated project files out of the source tree.
 if(NOT CMAKE_RUNTIME_OUTPUT_DIRECTORY)
     set(CMAKE_RUNTIME_OUTPUT_DIRECTORY "${CMAKE_BINARY_DIR}/bin")
+endif()
+
+# Android: everything that ends up inside the Standalone wrapper's shared
+# library - the JUCE modules, the Oboe runtime they bundle, and every CPM
+# static library on the link line - must be position-independent. A shared
+# object cannot reference a non-PIC static archive, and the link fails with
+# "relocation R_AARCH64_... cannot be used against symbol ... recompile with
+# -fPIC". Set before add_subdirectory(JUCE) so every target in the build
+# inherits it. Desktop builds are untouched.
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    set(CMAKE_POSITION_INDEPENDENT_CODE ON)
 endif()
 
 set(CMAKE_CXX_STANDARD 20)
@@ -115,6 +128,16 @@ option(COPY_PLUGIN_AFTER_BUILD "Copy plugins to the user plugin folders after bu
 # that the Info.plist and the PRODUCT_BUNDLE_IDENTIFIER build setting disagree.
 set(J37_BUNDLE_ID "com.MCsmes.first")
 
+# The format list is platform-conditional for one reason: JUCE's platform kind
+# list reduces to Standalone alone on Android, and a FORMATS entry JUCE cannot
+# produce there is simply intersected away - leaving an empty active-format set
+# and a build with no wrapper to link. On desktop this stays exactly what it
+# always was.
+set(J37_PLUGIN_FORMATS AU AUv3 VST3)
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    set(J37_PLUGIN_FORMATS Standalone)
+endif()
+
 juce_add_plugin(first
     COMPANY_NAME                "MCsmes"
     COMPANY_WEBSITE             "https://www.MCsmes.com"
@@ -140,7 +163,7 @@ juce_add_plugin(first
     PLUGIN_CODE                 Zy59
     PRODUCT_NAME                "Nonlin Analog Saturator"
     DESCRIPTION                 "Nonlinear analog tape saturation and magnetic coloration"
-    FORMATS                     AU AUv3 VST3
+    FORMATS                     ${J37_PLUGIN_FORMATS}
     IS_SYNTH                    FALSE
     NEEDS_MIDI_INPUT            FALSE
     NEEDS_MIDI_OUTPUT           FALSE
@@ -236,6 +259,12 @@ target_link_libraries(first
         yasio
         dywapitchtrack
         PFFFT
+        RTNeural
+        dr_libs
+        yin_pitch
+        pitch_detector
+        audio_fft
+        dattorro_verb
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
@@ -277,6 +306,15 @@ j37_apply_macos_settings(first)
 j37_apply_windows_settings(first)
 
 # ------------------------------------------------------------------------------
+#  Android. See cmake/J37Platform.cmake (j37_apply_android_settings) for the
+#  detail; the short version is that CMake cannot host an Android app - Gradle
+#  owns the APK, the manifest, the resources and the signing - so CMake builds
+#  the plugin's Standalone wrapper as a shared library into a Gradle project
+#  skeleton, and Gradle does everything a phone needs around it.
+# ------------------------------------------------------------------------------
+j37_apply_android_settings(first)
+
+# ------------------------------------------------------------------------------
 #  Summary
 # ------------------------------------------------------------------------------
 message(STATUS "")
@@ -296,6 +334,7 @@ message(STATUS "  Libraries   : chowdsp_utils, melatonin_inspector, melatonin_bl
 message(STATUS "                signalsmith-stretch, fftconvolver, imgui, iPlug2 (source only)")
 message(STATUS "                chowcentaur, vcv_prototype, rack, soundpipe, aubio (source only)")
 message(STATUS "                farbot, readerwriterqueue, kissfft, pocketfft, yasio, dywapitchtrack, pffft")
+message(STATUS "                RTNeural, dr_libs, yin_pitch, pitch_detector (MPM), dattorro_verb (libsndfile skipped - see cmake/J37Dependencies.cmake)")
 if(J37_HAVE_VDSP)
     message(STATUS "  Vector libs : Apple vDSP (Accelerate)")
 elseif(APPLE)
