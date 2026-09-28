@@ -196,6 +196,25 @@ CPMAddPackage(
     GIT_TAG 1.4.0
     DOWNLOAD_ONLY YES)
 
+#  signalsmith-linear: since the plugin's sources started including the
+#  stretch header directly, its sibling matters: signalsmith-stretch.h line 4
+#  does #include "signalsmith-linear/stft.h", pointing at
+#  Signalsmith-Audio/linear. The relative include means the sibling must sit
+#  NEXT TO the stretch checkout under a directory literally named
+#  "signalsmith-linear" - the include resolves against the includING file's
+#  directory first, so that layout is the whole integration; exposing linear's
+#  root on the include path would NOT work, because the include is namespaced
+#  by the folder name. Pinned to the 0.6.4 tag.
+CPMAddPackage(
+    NAME signalsmith-linear
+    GITHUB_REPOSITORY Signalsmith-Audio/linear
+    GIT_TAG 0.6.4
+    # ...inside the stretch checkout, because the stretch header sits at that
+    # checkout's ROOT (not under include/), so the quoted include resolves
+    # against the checkout root as the base directory.
+    SOURCE_DIR "${signalsmith-dsp_SOURCE_DIR}/signalsmith-linear"
+    DOWNLOAD_ONLY YES)
+
 j37_declare_header_only_library(signalsmith-stretch
     "${signalsmith-dsp_SOURCE_DIR}/include")
 
