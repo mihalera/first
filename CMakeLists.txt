@@ -266,6 +266,7 @@ target_link_libraries(first
         audio_fft
         dattorro_verb
         sndfile
+        nlohmann_json
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
@@ -336,6 +337,7 @@ message(STATUS "                signalsmith-stretch, fftconvolver, imgui, iPlug2
 message(STATUS "                chowcentaur, vcv_prototype, rack, soundpipe, aubio (source only)")
 message(STATUS "                farbot, readerwriterqueue, kissfft, pocketfft, yasio, dywapitchtrack, pffft")
 message(STATUS "                RTNeural, dr_libs, yin_pitch, pitch_detector (MPM), dattorro_verb, sndfile")
+message(STATUS "                nlohmann_json (header only)")
 if(J37_HAVE_VDSP)
     message(STATUS "  Vector libs : Apple vDSP (Accelerate)")
 elseif(APPLE)
