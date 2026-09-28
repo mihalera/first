@@ -855,7 +855,35 @@ macOS   : ~/Library/Audio/Plug-Ins/VST3/Nonlin Analog Saturator.vst3
 AUv3 is discovered through its containing app rather than copied by hand; run the app that
 wraps the extension once so the system registers it.
 
+## Інструкція для користувачів macOS 🍏
+
+Оскільки плагін є безкоштовним та open-source, він не має платного підпису Apple
+Developer. Якщо ваша система macOS або DAW видає помилку при спробі його запустити,
+виконайте дві прості команди в Терміналі.
+
+1. Перейдіть до папки з вашими VST3 плагінами:
+
+```bash
+cd ~/Library/Audio/Plug-Ins/VST3/
+```
+
+2. Зніміть мітку карантину Apple Gatekeeper з файлу плагіна:
+
+```bash
+xattr -cr "Nonlin Analog Saturator.vst3"
+```
+
+Будьте обачні, використовуючи код.
+
+(Аналогічно для папки `Components` та розширення `.component`, якщо ви використовуєте
+формат Audio Unit.)
+
+Артефакти CI мають ad-hoc підпис: цього достатньо, щоб збірка запускалась на
+Apple Silicon, але цього недостатньо, щоб минати перевірку Gatekeeper, тому команда вище
+потрібна для завантажених копій.
+
 ## Build system notes
+
 
 ### Why CMake, and what changed
 

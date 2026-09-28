@@ -395,6 +395,38 @@ jobs:
             exit 1
           }
 
+      # Ad-hoc signing. There is no Developer ID certificate in CI (see README
+      # "Signing and notarisation"), so the bundles leave the build unsigned -
+      # except that an arm64 slice MUST be signed for macOS to execute it at
+      # all, even ad-hoc. "--sign -" writes exactly that: a signature with no
+      # identity, which carries no notarisation and no trust, but satisfies the
+      # arm64 requirement and keeps a downloaded build one "xattr -cr" away from
+      # loading (README, the macOS user section). --deep is deprecated for
+      # signing *distributable* products but is the right tool here: it reaches
+      # the nested executables (the AUv3 appex) that a parent-only signing
+      # would leave unsigned. Paths: JUCE lays the AU bundle under the AU/
+      # format folder - "Components" is the name of the INSTALLED folder under
+      # ~/Library/Audio/Plug-Ins, not of the build tree - and the bundle name
+      # ends .vst3, not .vstizer. Each bundle is located by pattern rather than
+      # by name so a PRODUCT_NAME change cannot silently break the step.
+      - name: Ad-hoc codesign the plugin bundles
+        run: |
+          set -euo pipefail
+          BASE="build/first_artefacts/${{ env.BUILD_TYPE }}"
+
+          sign() {
+            local found
+            found=$(find "$BASE/$1" -maxdepth 1 -name "*.$2" -print -quit 2>/dev/null || true)
+            if [ -n "$found" ]; then
+              echo "codesign (ad-hoc): $found"
+              codesign --force --deep --sign - "$found"
+            fi
+          }
+
+          sign VST3 vst3
+          sign AU component
+          sign AUv3 appex
+
       # JUCE's CMake build lays the bundles out as
       #   <build>/first_artefacts/<Config>/<FORMAT>/<PRODUCT_NAME>.<extension>
       # so the paths are Release/VST3/*.vst3, Release/AU/*.component and

@@ -449,6 +449,179 @@ CPMAddPackage(
 #  with its own accelerator backends, and what the portable FFTs below (KISS
 #  FFT / PocketFFT / PFFFT) are here for.
 # ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+#  RTNeural - jatinchowdhury18/RTNeural, the real-time neural inference engine
+#  behind Chowdhury's amp and pedal models (LSTM / GRU / Dense / Conv1D).
+#
+#  Configured as a real CMake subproject, but with the backend choice taken
+#  away from its root script: that script's include(SIMDExtensions.cmake) plus
+#  its ChooseBackend default would demand the modules/Eigen submodule (which a
+#  CPM checkout cannot carry - CPM downloads no submodules), and its AVX probe
+#  would plant -mavx2 into a binary that has to run on machines without AVX.
+#  So BUILD_TESTS/BUILD_BENCH/BUILD_EXAMPLES are off and RTNEURAL_STL=ON is
+#  passed before the checkout is configured: RTNEURAL_STL is checked FIRST in
+#  ChooseBackend.cmake, the Eigen default branch never runs, and no backend
+#  macro is defined at all - the STL path compiles straight out of the checkout
+#  (verified: RTNeural.cpp -> a 223 KB object with no external headers).
+#  The engine already pins xsimd 14.3.0; switching RTNeural onto it is a
+#  per-model decision for the day a model is actually adopted.
+#  Pinned to the current master head (upstream publishes no tags).
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME RTNeural
+    GITHUB_REPOSITORY jatinchowdhury18/RTNeural
+    GIT_TAG 95c3c0f987a6fe903e7eec71e797405dbed7caf7
+    EXCLUDE_FROM_ALL YES
+    SYSTEM YES
+    OPTIONS
+        "RTNEURAL_STL ON"
+        "BUILD_TESTS OFF"
+        "BUILD_BENCH OFF"
+        "BUILD_EXAMPLES OFF")
+
+# ------------------------------------------------------------------------------
+#  dr_libs -mackron/dr_libs, the single-header decoders dr_wav / dr_mp3 /
+#  dr_flac (used by miniaudio, SoLoud and half the audio-tooling world).
+#
+#  Nothing here is compiled: the headers self-contain their implementation
+#  behind DR_WAV_IMPLEMENTATION and friends, which exactly one translation unit
+#  may define, so the target is include-only and the implementation units are
+#  added by whoever adopts a decoder. Pinned to the wav-0.14.5 tag (upstream
+#  tags per component, wav-* and mp3-*, and wav is the newest of the two).
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME dr_libs
+    GITHUB_REPOSITORY mackron/dr_libs
+    GIT_TAG wav-0.14.5
+    DOWNLOAD_ONLY YES)
+
+j37_declare_header_only_library(dr_libs "${dr_libs_SOURCE_DIR}")
+
+# ------------------------------------------------------------------------------
+#  libsndfile - libsndfile/libsndfile, the reference C library for reading and
+#  writing sound files (WAV/AIFF/FLAC and friends), for offline preset-render
+#  and analysis tooling.
+#
+#  A real CMake project, configured like any other package, with its optional
+#  codecs and programs switched off: ENABLE_EXTERNAL_LIBS would make CMake
+#  demand Ogg/Vorbis/Opus/FLAC development packages before it would configure,
+#  ENABLE_MPEG adds the LAME-based decoder path, BUILD_PROGRAMS/BUILD_EXAMPLES
+#  build command-line tools a plugin never needs, and ENABLE_CPACK only
+#  matters to libsndfile's own release process. The library builds STATIC by
+#  default upstream; stated anyway so a future default flip cannot silently
+#  drag a DLL into the plugin. The imported alias SndFile::sndfile is what the
+#  link line below names. Pinned to the 1.2.2 tag.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME sndfile
+    GITHUB_REPOSITORY libsndfile/libsndfile
+    GIT_TAG 1.2.2
+    EXCLUDE_FROM_ALL YES
+    SYSTEM YES
+    OPTIONS
+        "BUILD_SHARED_LIBS OFF"
+        "BUILD_PROGRAMS OFF"
+        "BUILD_EXAMPLES OFF"
+        "BUILD_REGTEST OFF"
+        "BUILD_TESTING OFF"
+        "ENABLE_EXTERNAL_LIBS OFF"
+        "ENABLE_MPEG OFF"
+        "ENABLE_CPACK OFF")
+
+# ------------------------------------------------------------------------------
+#  YIN pitch tracking - ashokfernandez/Yin-Pitch-Tracking, the embedded-minded
+#  C port of the Yin fundamental-frequency estimator (de Cheveigne & Kawahara).
+#
+#  Two C files at the repository root and nothing else: Yin.h (stdint only -
+#  verified) and Yin.c (compiles alone under plain gcc). There is no CMake
+#  upstream, so the checkout is downloaded only and the pair is compiled here
+#  into a static library. The repository's audioData.h and Test_Yin.c are a
+#  test fixture, not library code, and stay out of the build. The upstream
+#  YIN_SAMPLING_RATE define (44100) is NOT used by the algorithm - the caller
+#  divides by the real sample rate - so no patching is needed for 48/96 kHz.
+#  No tags exist upstream; pinned to the master head.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME yin_pitch
+    GITHUB_REPOSITORY ashokfernandez/Yin-Pitch-Tracking
+    GIT_TAG 69483b048bea0faac73a49e209577aebeb5e9680
+    DOWNLOAD_ONLY YES)
+
+if(NOT TARGET yin_pitch)
+    add_library(yin_pitch STATIC EXCLUDE_FROM_ALL
+        "${yin_pitch_SOURCE_DIR}/Yin.c")
+    target_include_directories(yin_pitch SYSTEM PUBLIC
+        "${yin_pitch_SOURCE_DIR}")
+endif()
+
+# ------------------------------------------------------------------------------
+#  MPM (McLeod Pitch Method) - adamski/pitch_detector, a JUCE module wrapping
+#  the NSDF-based MPM tracker plus a YIN class, built on the same author's
+#  audio_fft module (a JUCE module wrapping HiFi-LoFi's AudioFFT).
+#
+#  It is a JUCE module and is registered like the other JUCE modules in this
+#  build, which is also the only way its dependencies resolve: the module
+#  header declares juce_core + juce_audio_basics + audio_fft, and
+#  juce_add_module wires those to whatever the linking target already links.
+#  audio_fft is fetched separately because pitch_detector carries it as a GIT
+#  SUBMODULE - CPM downloads no submodules, so the AudioFFT/ directory would
+#  otherwise be an empty hole in the checkout. audio_fft in turn vendors
+#  HiFi-LoFi/AudioFFT (its AudioFFT/ directory is a submodule too), so the
+#  upstream HiFi-LoFi checkout is fetched directly and CPM's SOURCE_DIR pins
+#  it into the exact path audio_fft's includes expect. One line -
+#  audio_fft.cpp - is all audio_fft compiles: it includes AudioFFT.cpp, whose
+#  backend is chosen by define, and on Apple PitchMPM.h already switches that
+#  define to AUDIOFFT_APPLE_ACCELERATE, so the FFT rides the Accelerate
+#  framework linked for vDSP above. No tags exist on either repository;
+#  both are pinned to the master heads.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME AudioFFT
+    GITHUB_REPOSITORY HiFi-LoFi/AudioFFT
+    GIT_TAG 0893b532dd357c7270609425f5ae9d9b5ae7d725
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/pitch_detector/AudioFFT"
+    DOWNLOAD_ONLY YES)
+
+CPMAddPackage(
+    NAME pitch_detector
+    GITHUB_REPOSITORY adamski/pitch_detector
+    GIT_TAG d3b60970e1096889f7b2727f62179ccb3f832640
+    SOURCE_DIR "${CMAKE_BINARY_DIR}/deps/pitch_detector/pitch_detector"
+    DOWNLOAD_ONLY YES)
+
+if(NOT TARGET audio_fft)
+    juce_add_module("${CMAKE_BINARY_DIR}/deps/pitch_detector/AudioFFT")
+endif()
+
+if(NOT TARGET pitch_detector)
+    juce_add_module("${CMAKE_BINARY_DIR}/deps/pitch_detector/pitch_detector")
+endif()
+
+# ------------------------------------------------------------------------------
+#  Dattorro reverb - el-visio/dattorro-verb, a compact C implementation of
+#  Jon Dattorro's 1997 plate reverb (the input diffusers, the two tank halves
+#  with their damping and decay filters, and the stereo taps).
+#
+#  "DattorroReverb" names an algorithm, not a repository: GitHub search by that
+#  name returns single-file throwaway projects, one of which #includes
+#  <sndfile.h> in its library code - not vendorable. This checkout is plain C
+#  (verb.h / verb_structs.h / verb.c, stdint/math/string only - verified to
+#  compile alone) with an opaque-struct API, so it is compiled here into a
+#  static library like YIN. No tags upstream; pinned to the master head.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME dattorro_verb
+    GITHUB_REPOSITORY el-visio/dattorro-verb
+    GIT_TAG 41e976a0228a2472156f5c010b3bfbb444e777d2
+    DOWNLOAD_ONLY YES)
+
+if(NOT TARGET dattorro_verb)
+    add_library(dattorro_verb STATIC EXCLUDE_FROM_ALL
+        "${dattorro_verb_SOURCE_DIR}/verb.c")
+    target_include_directories(dattorro_verb SYSTEM PUBLIC
+        "${dattorro_verb_SOURCE_DIR}")
+endif()
+
 option(J37_ENABLE_IPP "Use Intel IPP when the oneAPI SDK is found on this machine" ON)
 
 set(J37_HAVE_VDSP OFF)
@@ -988,6 +1161,12 @@ target_link_libraries(first
         yasio
         dywapitchtrack
         PFFFT
+        RTNeural
+        dr_libs
+        SndFile::sndfile
+        yin_pitch
+        pitch_detector
+        dattorro_verb
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
