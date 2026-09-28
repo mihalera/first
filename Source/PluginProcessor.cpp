@@ -723,10 +723,11 @@ std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int inde
                 { .inputDb = +1.0f, .drive = 0.62f, .bias = 0.52f, .tone = 0.30f, .character = 0.35f,
           .wow = 0.30f, .flutter = 0.26f, .mix = 100.0f, .outputDb = -3.0f, .width = 0.25f,
           .oversampling = 0, .blend = 0.55f, .shape = 0.25f, .vinyl = 0.85f,
-          .vinylCrackle = 0.80f, .vinylRumble = 0.85f, .valveType = 2,
-          .ampType = 0, .transformerType = 4, .digitalType = 0, .vinylType = 2,
-          .vinylSpeed = 2, .vinylDust = 0.45f, .vinylScratch = 0.35f,
-          .vinylWarp = 0.55f, .vinylElectrical = 0.30f },
+          .vinylCrackle = 0.80f, .vinylRumble = 0.85f,
+          .vinylDust = 0.45f, .vinylScratch = 0.35f,
+          .vinylWarp = 0.55f, .vinylElectrical = 0.30f,
+          .valveType = 2, .ampType = 0, .transformerType = 4, .digitalType = 0,
+          .vinylType = 2, .vinylSpeed = 2 },
           // Shellac Radio
     }};
 

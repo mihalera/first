@@ -191,13 +191,16 @@ endfunction()# -----------------------------------------------------------------
 #
 #      cmake -S . -B build-android \
 #          -DCMAKE_SYSTEM_NAME=Android \
-#          -DCMAKE_ANDROID_API=24 \
+#          -DCMAKE_ANDROID_API=28 \
 #          -DCMAKE_ANDROID_NDK=<ndk path> \
 #          -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a
 #
-#  minSdkVersion 24 is the floor the JUCE modules need; the JUCE runtimes want
-#  it, and 24 covers ~97% of active devices. ARMEABI-V7A can be added as a
-#  second ABI but doubles build time for the shrinking 32-bit device base.
+#  API 28 is the floor, and the reason is a hard dependency rather than taste:
+#  chowdsp_core's aligned allocator calls std::aligned_alloc, and bionic has
+#  had that function only since API 28 - building against anything lower fails
+#  inside the chowdsp headers with "reference to unresolved using
+#  declaration". ARMEABI-V7A can be added as a second ABI but doubles build
+#  time for the shrinking 32-bit device base.
 function(j37_apply_android_settings target)
     if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
         return()

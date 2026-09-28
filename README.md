@@ -896,14 +896,14 @@ the Standalone wrapper, a shared library a Gradle project loads.
 ### Building for Android
 
 The CI job `build-android` proves the cross-build on every push (arm64-v8a,
-min API 24, NDK from the runner). To build by hand you need the Android NDK
+min API 28, NDK from the runner). To build by hand you need the Android NDK
 (r23+) - via Android Studio's SDK Manager or `commandlinetools` - and then:
 
 ```sh
 cmake -S . -B build-android \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_SYSTEM_NAME=Android \
-    -DCMAKE_ANDROID_API=24 \
+    -DCMAKE_ANDROID_API=28 \
     -DCMAKE_ANDROID_NDK=$ANDROID_NDK_LATEST_HOME \
     -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a
 cmake --build build-android --parallel
@@ -921,7 +921,7 @@ the resources and the signing all belong to a Gradle project. The skeleton:
 android {
     namespace = "com.MCsmes.first"
     compileSdk = 34
-    defaultConfig { minSdk = 24 }
+    defaultConfig { minSdk = 28 }
     externalNativeBuild { cmake {
         path = file("../../CMakeLists.txt")   // this repository's build
         version = "3.22.1"

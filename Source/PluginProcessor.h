@@ -2511,8 +2511,8 @@ struct ThreeBandEq
         const auto rate = juce::jmax (1.0f, sampleRate);
         const auto omegaLow = juce::MathConstants<float>::twoPi * 200.0f / rate;
         const auto omegaHigh = juce::MathConstants<float>::twoPi * 4000.0f / rate;
-        lowCoefficient = juce::jlimit (0.0f, 1.0f - std::exp (-omegaLow));
-        highCoefficient = juce::jlimit (0.0f, 1.0f - std::exp (-omegaHigh));
+        lowCoefficient = juce::jlimit (0.0f, 1.0f, 1.0f - std::exp (-omegaLow));
+        highCoefficient = juce::jlimit (0.0f, 1.0f, 1.0f - std::exp (-omegaHigh));
     }
 
     /** The bell's own coefficient, derived from the split and the width. The mid
@@ -2527,7 +2527,7 @@ struct ThreeBandEq
         const float widthHz = 2000.0f + midWidth * 6000.0f;
         const auto omega = juce::MathConstants<float>::twoPi * widthHz
                          / juce::jmax (1.0f, sampleRate);
-        return juce::jlimit (0.0f, 1.0f - std::exp (-omega));
+        return juce::jlimit (0.0f, 1.0f, 1.0f - std::exp (-omega));
     }
 
     /** Rebuilds the two filter coefficients and the pole counts.

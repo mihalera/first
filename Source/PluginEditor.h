@@ -386,6 +386,12 @@ private:
     class SpindownButton final : public juce::TextButton
     {
     public:
+        // The member is brace-initialised with its caption ({ "SPINDOWN" }),
+        // which needs TextButton's own constructors; a derived class without
+        // this using-declaration has none of them and the initialiser does
+        // not compile.
+        using juce::TextButton::TextButton;
+
         std::function<void (bool)> onHoldChanged;
         void mouseDown (const juce::MouseEvent& e) override
         {
@@ -540,7 +546,6 @@ private:
     LevelMeter outputMeter { "OUTPUT", "LEVEL / dBFS" };
     CompressorMeter compressorMeterIn { "COMP IN", "after input trim" };
     CompressorMeter compressorMeterOut { "COMP OUT", "before output trim" };
-    bool darkTheme = false;
 
     // Animated presentation state, advanced one step per editor frame.
     float glowPhase = 0.0f;
