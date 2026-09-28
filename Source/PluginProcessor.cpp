@@ -306,6 +306,23 @@ namespace
 }
 
 //==============================================================================
+//  The factory presets are defined further down this file, in their own
+//  namespace. The debug audit inside the constructor below is the only code
+//  that reaches them from above that point, so the two entry points it uses
+//  are declared here.
+//
+//  They were previously called with no declaration at all, which is a name
+//  lookup failure - but only in a debug build, because the audit sits inside
+//  #if DEBUG. Every release build compiles the mistake out of existence, so
+//  nothing else in the build could have caught it.
+//==============================================================================
+namespace FactoryPresets
+{
+    inline int count();
+    inline bool isSentinelValue (float value) noexcept;
+}
+
+//==============================================================================
 FirstAudioProcessor::FirstAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
      : AudioProcessor (BusesProperties()
