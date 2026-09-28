@@ -213,6 +213,132 @@ target_sources(first PRIVATE
 target_include_directories(first PRIVATE Source)
 
 # ------------------------------------------------------------------------------
+#  Embedded resources - the factory presets and the translation tables.
+#
+#  Both used to live in the C++ source: the twenty-six factory presets were a
+#  160-field struct plus twenty-six rows of hand-written initialisers (about 290
+#  lines of numbers), and every string was a literal. Neither belongs there. A
+#  preset is DATA, and data that lives in code can only be changed by a
+#  programmer, reviewed as a diff of numbers, and rebuilt to take effect.
+#
+#  So each preset is a JSON file of its own under Source/Presets/Factory, and
+#  each language is a JUCE .txt mapping table under Source/Translations. Both
+#  are compiled into the binary, so the factory presets cannot be deleted by the
+#  user and the translations need no files beside the plugin.
+#
+#  The ORDER of the presets is a list, and the list is the only place it is
+#  written: FactoryPresetIndex.h is generated from this same variable, so the
+#  C++ cannot disagree with the build about which file is preset 3. Adding a
+#  preset is one line here and one new file - the loader, the count and the
+#  preset box all derive themselves.
+# ------------------------------------------------------------------------------
+set(FACTORY_PRESET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Source/Presets/Factory")
+
+set(FACTORY_PRESET_FILES
+    ${FACTORY_PRESET_DIR}/default.json
+    ${FACTORY_PRESET_DIR}/minimum.json
+    ${FACTORY_PRESET_DIR}/maximum.json
+    ${FACTORY_PRESET_DIR}/gentle_warmth.json
+    ${FACTORY_PRESET_DIR}/bus_glue_tape.json
+    ${FACTORY_PRESET_DIR}/drum_slam.json
+    ${FACTORY_PRESET_DIR}/vintage_lo_fi.json
+    ${FACTORY_PRESET_DIR}/wide_master.json
+    ${FACTORY_PRESET_DIR}/clean_glue.json
+    ${FACTORY_PRESET_DIR}/saturated_crunch.json
+    ${FACTORY_PRESET_DIR}/wobbly_cassette.json
+    ${FACTORY_PRESET_DIR}/bright_air_tape.json
+    ${FACTORY_PRESET_DIR}/mix_saturation.json
+    ${FACTORY_PRESET_DIR}/master_bounce.json
+    ${FACTORY_PRESET_DIR}/vocal_rail.json
+    ${FACTORY_PRESET_DIR}/drum_room_warm.json
+    ${FACTORY_PRESET_DIR}/bass_weight.json
+    ${FACTORY_PRESET_DIR}/master_safety.json
+    ${FACTORY_PRESET_DIR}/lo_fi_radio.json
+    ${FACTORY_PRESET_DIR}/ferric_master.json
+    ${FACTORY_PRESET_DIR}/british_valve.json
+    ${FACTORY_PRESET_DIR}/plexi_bite.json
+    ${FACTORY_PRESET_DIR}/iron_bloom.json
+    ${FACTORY_PRESET_DIR}/twelve_bit_bounce.json
+    ${FACTORY_PRESET_DIR}/dubplate_dub.json
+    ${FACTORY_PRESET_DIR}/shellac_radio.json)
+
+# A guard, not a convention: a path that does not exist is a typo, and CMake
+# would otherwise pass it to the binary-data builder and fail with a message
+# about a generated C++ symbol rather than about the file you meant to name.
+foreach(preset_file IN LISTS FACTORY_PRESET_FILES)
+    if(NOT EXISTS "${preset_file}")
+        message(FATAL_ERROR "Factory preset not found: ${preset_file}")
+    endif()
+endforeach()
+
+set(TRANSLATION_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Source/Translations")
+set(TRANSLATION_FILES
+    ${TRANSLATION_DIR}/en.txt
+    ${TRANSLATION_DIR}/uk.txt)
+
+foreach(translation_file IN LISTS TRANSLATION_FILES)
+    if(NOT EXISTS "${translation_file}")
+        message(FATAL_ERROR "Translation table not found: ${translation_file}")
+    endif()
+endforeach()
+
+juce_add_binary_data(PluginResources
+    HEADER_NAME BinaryData.h
+    NAMESPACE BinaryData
+    SOURCES ${FACTORY_PRESET_FILES} ${TRANSLATION_FILES})
+
+# The index header: the preset list, in order, as data. Written from the same
+# CMake variable that feeds juce_add_binary_data, so the two cannot drift.
+# juceaide names a resource's symbol after its file name with '.' and ' ' turned
+# into '_'; every preset file is named with [a-z0-9_] precisely so that rule is
+# the identity here, and the two lines that derive one from the other can be
+# read at a glance instead of having to be trusted.
+set(FACTORY_PRESET_INDEX "")
+foreach(preset_file IN LISTS FACTORY_PRESET_FILES)
+    get_filename_component(preset_name "${preset_file}" NAME)
+    string(REGEX REPLACE "\\.json$" "" preset_symbol "${preset_name}")
+    string(APPEND FACTORY_PRESET_INDEX
+           "    { BinaryData::${preset_symbol}_json, BinaryData::${preset_symbol}_jsonSize },\n")
+endforeach()
+
+file(WRITE "${CMAKE_CURRENT_BINARY_DIR}/generated/FactoryPresetIndex.h"
+"// ==============================================================================
+//  GENERATED - do not edit.
+//
+//  Written by CMakeLists.txt from FACTORY_PRESET_FILES, the same list that
+//  feeds juce_add_binary_data. The order here is the order of the preset box,
+//  the undo label and the badge, all of which index by POSITION - so this file
+//  existing at all is the point: there is no second list of preset names in the
+//  source left to fall out of step with the files.
+//
+//  Add a preset: drop the JSON in Source/Presets/Factory and add one line to
+//  FACTORY_PRESET_FILES. Nothing else changes.
+// ==============================================================================
+#pragma once
+
+namespace FactoryPresetIndex
+{
+    struct Entry { const char* data; int size; };
+
+    // const, NOT constexpr: juce_add_binary_data declares each resource as
+    // `extern const char name[]`, and an extern array of unknown size is not a
+    // constant expression - so `constexpr` here is a hard compile error, in
+    // every translation unit that includes this header, on every platform. The
+    // table is still initialised once and lives in the header; it just is not
+    // a compile-time constant, which nothing here needs it to be.
+    inline const Entry entries[] {
+${FACTORY_PRESET_INDEX}    };
+}
+")
+
+# target_sources on a binary-data target is what adds its generated directory to
+# this target's include path and makes the build depend on it being regenerated.
+# The generated index is written above, not by juce_add_binary_data, so it needs
+# its own include directory. FactoryPresetIndex.h is the only header the plugin
+# includes from here.
+target_include_directories(first PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated")
+
+# ------------------------------------------------------------------------------
 #  Module set
 #
 #  Only the modules the plugin actually uses. The Projucer project enabled
@@ -267,6 +393,7 @@ target_link_libraries(first
         dattorro_verb
         sndfile
         nlohmann_json
+        PluginResources
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags

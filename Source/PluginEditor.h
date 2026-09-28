@@ -11,6 +11,7 @@
 
 #include <array>
 #include <memory>
+#include <vector>
 
 #include <juce_box2d/juce_box2d.h>
 #include <juce_opengl/juce_opengl.h>
@@ -284,6 +285,32 @@ private:
     void styleLabel (juce::Label& label, const juce::String& text, float size,
                      juce::Colour colour, bool bold, juce::Justification justification);
 
+    // ---------------------------------------------------------------------
+    //  Language and tooltips.
+    //
+    //  setTip() is what every tooltip in this panel goes through, rather than
+    //  Component::setTooltip directly. It does two things: it translates the
+    //  English through the current language table, and it REMEMBERS the English
+    //  against the component. The remembering is the whole point - a tooltip is
+    //  set once, in the constructor, and changing the language has to put the
+    //  new text back on all thirty-three of them. Without the record there is
+    //  nothing to re-apply from, because by then the English has been replaced
+    //  by the translation and the original cannot be recovered from the
+    //  component. So the English is kept, and updateTooltips() replays it.
+    // ---------------------------------------------------------------------
+    // juce::SettableTooltipClient, not juce::Component: setTooltip is on the
+    // mixin, and Component itself has no such method. (TooltipClient alone is
+    // not enough either - that is the read-only half, getTooltip with no
+    // setter.) Every component this panel gives a tooltip to derives from
+    // SettableTooltipClient.
+    void setTip (juce::SettableTooltipClient& component, const juce::String& english);
+    void updateTooltips();
+
+    /** Loads the translation table for `languageIndex` (0 = English, 1 = Ukrainian)
+        from the embedded Source/Translations data, installs it as JUCE's current
+        mappings, and re-applies every tooltip. */
+    void applyLanguage (int languageIndex);
+
     // The GL switch's colours follow the context rather than the theme alone: it is a
     // plain TextButton, so it needs a themed background (it was the one TextButton in
     // the panel without one) and an explicit ON colour, since getToggleState() is
@@ -316,6 +343,20 @@ private:
     // SharedResourcePointer default-constructs the object; the hover delay is set in
     // the editor's constructor through setMillisecondsBeforeTipAppears().
     juce::SharedResourcePointer<juce::TooltipWindow> tooltipWindow;
+
+    // component -> the English it was given, so updateTooltips() has something to
+    // replay. A vector rather than a map: the order tooltips were set in is the
+    // order they are refreshed in, and nothing here needs lookup by key.
+    struct TooltipSource
+    {
+        juce::SettableTooltipClient* component;
+        juce::String english;
+    };
+    std::vector<TooltipSource> tooltipSources;
+
+    juce::Label languageLabel { {}, "LANGUAGE" };
+    juce::ComboBox languageBox;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> languageAttachment;
 
     std::array<juce::Slider, controlCount> controls;
     std::array<juce::Label, controlCount> controlLabels;

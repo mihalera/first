@@ -1,0 +1,22 @@
+// =============================================================================
+//  English - the source language.
+//
+//  Two kinds of entry live here, and the difference matters.
+//
+//  1. KEYED entries, for strings with no natural English sentence to key on -
+//     the language selector's own labels. Written  "KEY" = "value";
+//
+//  2. SENTENCE entries, which are the bulk of a real translation file. The key
+//     is the English sentence itself, exactly as it appears in the source, and
+//     the value is its translation. tr() in PluginEditor.cpp looks up whatever
+//     it is given, so a tooltip is written once, in English, where it is used -
+//     and a translation is one line here. See the note above tr() for why the
+//     English is the key rather than a short name like "DRIVE_TIP".
+//
+//  A sentence with no entry here shows its English, which is correct: a
+//  half-translated plugin is better than one that shows the user a key.
+// =============================================================================
+
+"LANGUAGE_ENGLISH" = "English";
+"LANGUAGE_UKRAINIAN" = "Українська";
+"LANGUAGE_CAPTION" = "LANGUAGE";
