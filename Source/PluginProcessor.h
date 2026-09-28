@@ -3902,13 +3902,15 @@ public:
     /** Undo manager shared with the editor (wired to Ctrl+Z / Ctrl+Y there). */
     juce::UndoManager& getUndoManager() noexcept { return undoManager; }
 
-    /** Number of factory presets, including the Minimum and Maximum range endpoints. */
-    static constexpr int numFactoryPresets = 26;
+    /** Number of factory presets, including the Minimum and Maximum range endpoints.
+        Derived from the resource list, which CMake builds from the JSON files - so
+        it cannot be 26 while the files say something else. */
+    static int numFactoryPresets();
 
-    /** Display names of the factory presets, in order. */
+    /** Display names of the factory presets, in order, read from the JSON files. */
     static juce::StringArray getPresetNames();
 
-    /** Applies factory preset `index` (0..numFactoryPresets-1) with one undo transaction. */
+    /** Applies factory preset `index` (0..numFactoryPresets()-1) with one undo transaction. */
     void applyFactoryPreset (int index);
 
     /** The index of the last factory preset the user (or a session load) selected. */

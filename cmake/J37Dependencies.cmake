@@ -694,3 +694,245 @@ if(NOT TARGET dattorro_verb)
     target_include_directories(dattorro_verb SYSTEM PUBLIC
         "${dattorro_verb_SOURCE_DIR}")
 endif()
+
+# ==============================================================================
+#  Transient shaping, DSP and graphics libraries.
+#
+#  Requested as a group. They are not one thing: three are libraries this build
+#  can compile against today, three are SOURCE ONLY because the thing that was
+#  asked for is not C++, and one does not exist. Each says which, below, rather
+#  than being wrapped in a target that would fail to link or a note that would
+#  have to be found later.
+#
+#  Five of the six carry a permissive licence - BSL-1.0, Zlib, MIT, BSD-3 and
+#  MIT - so they are safe to vendor into a closed-source plugin. The sixth
+#  (cycfi/infra, below) ships NO licence at all, which is a question for a
+#  lawyer rather than something to paper over; it is fetched because Q cannot
+#  compile without it, and it is called out again at its own block.
+#
+#  None of these is currently CALLED by the plugin. They are pinned and
+#  available, which is what was asked for; adopting one is a separate decision
+#  that the profiling should make.
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+#  Q - cycfi/q, the Q Audio DSP Library. A header-only C++20 audio DSP library
+#  (BSL-1.0, the Boost licence: permissive, and not MIT as one might assume from
+#  the author's other projects): filters, oscillators, envelopes, pitch and
+#  onset detection, written to run on small microcontrollers. Pin v1.0.1, the
+#  1.0 release. C++20 matches this project, so the standard is not a barrier.
+#
+#  DOWNLOAD_ONLY and exposed include-only rather than added as a subproject. Q
+#  DOES ship a CMakeLists - it declares an INTERFACE target called libq, so
+#  add_subdirectory would work - but it is a build of Q's own examples, tests
+#  and q_io (Q_BUILD_EXAMPLES / Q_BUILD_TEST / Q_BUILD_IO all default ON) and it
+#  pulls a second dependency, cycfi/infra, through FetchContent at configure
+#  time. Adding a plugin to this project should not silently start compiling
+#  someone else's test suite, so the headers are taken and the build is not.
+#
+#  The include path is q_lib/include, NOT the repository root, and there is no
+#  umbrella header: Q is included per module, so the canonical forms are
+#      #include <q/fx/delay.hpp>        a delay line
+#      #include <q/fx/biquad.hpp>       filter coefficients
+#      #include <q/utility/...>         the small helpers
+#  Passing the repository root would compile nothing at all, which is why the
+#  path is written out here. q_io/ is deliberately left off the include path:
+#  it is file and stream I/O, which a plugin has no use for.
+#
+#  Header-only means nothing to link - target_include_directories is the entire
+#  integration. Note that Q is a fairly small-footprint embedded library, so it
+#  is a better fit for per-block helper maths than for the tape engine; the
+#  engine's own filters are hand-written and stay that way.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME q_dsp
+    GITHUB_REPOSITORY cycfi/q
+    GIT_TAG v1.0.1
+    DOWNLOAD_ONLY YES)
+
+j37_declare_header_only_library(q_dsp "${q_dsp_SOURCE_DIR}/q_lib/include")
+
+#  cycfi/infra - Q cannot compile without it. Q's headers include
+#  <infra/support.hpp>, and the only place that header comes from is this
+#  repository, which Q's own CMakeLists pulls in with FetchContent. Taking Q
+#  as headers only therefore takes this too, and forgetting it is a confusing
+#  failure: the error names infra/support.hpp, in a library the reader did not
+#  ask about. It is pinned to the same 2024_MAY tag Q names.
+#
+#  LICENCE: there is none. The repository has no licence file, no SPDX metadata
+#  and a four-line README that does not mention one, so there is no grant of
+#  rights to rely on. It is fetched so that Q is not broken on arrival, and
+#  because it is on the include path of anything that uses Q, it is worth
+#  settling before any of it ships. Vendoring it into a closed-source plugin is
+#  the case that needs an answer.
+CPMAddPackage(
+    NAME cycfi_infra
+    GITHUB_REPOSITORY cycfi/infra
+    GIT_TAG 2024_MAY
+    DOWNLOAD_ONLY YES)
+
+j37_declare_header_only_library(cycfi_infra "${cycfi_infra_SOURCE_DIR}/include")
+
+#  infra needs four include paths, not one - its own CMakeLists names all four -
+#  and the other three are the backports it falls back to when the standard
+#  library is short of them. The helper above takes a single directory, so the
+#  rest are added here, each only if it is actually present: these are git
+#  submodules, and a checkout made without them should still configure rather
+#  than fail on a -isystem pointing at nothing.
+foreach(infra_extra IN ITEMS
+        external/filesystem/include
+        external/optional-lite/include
+        external/string-view-lite/include)
+    if(EXISTS "${cycfi_infra_SOURCE_DIR}/${infra_extra}")
+        target_include_directories(cycfi_infra SYSTEM INTERFACE
+            "${cycfi_infra_SOURCE_DIR}/${infra_extra}")
+    endif()
+endforeach()
+
+# Transitive, so that linking q_dsp is enough: whoever includes Q gets infra's
+# include path without having to know that Q has a dependency of its own.
+target_link_libraries(q_dsp INTERFACE cycfi_infra)
+
+# ------------------------------------------------------------------------------
+#  Sokol GFX - floooh/sokol, the single-header immediate-mode 3D renderer
+#  (Zlib). The name asked for is sokol_gfx.h, but it is not standalone: a
+#  working integration is three headers, and which three is a decision, so all
+#  of the useful ones are exposed rather than just the one that was named.
+#
+#    sokol_gfx.h       the renderer
+#    sokol_glue.h      wires sokol_gfx to a windowing layer - INCLUDE THIS LAST
+#    sokol_log.h       sokol_gfx.h includes it, so it must be reachable
+#    sokol_time.h      likewise
+#
+#  There is no sokol_gpucam.h in this tree, which is worth saying because it is
+#  the header sokol's own examples use for a camera and it used to exist: it was
+#  folded into sokol_gfx upstream. The mat4 work it did is what GLM below is
+#  for, and that pairing is the intended one - sokol for the renderer, GLM for
+#  the maths, rather than both carrying a partial copy of it.
+#
+#  sokol_app.h is deliberately NOT exposed as a target of its own, because it is
+#  sokol's own windowing and event layer and JUCE already is one. Two of them
+#  fighting over the same window is the integration that does not work.
+#
+#  Two things whoever uses this needs to know, both of which are silent when
+#  they are wrong: the backend must be selected by defining SOKOL_GLCORE (or
+#  SOKOL_METAL / SOKOL_D3D11) before including sokol_gfx.h, and the
+#  implementation must be compiled exactly once in the whole program by
+#  defining SOKOL_IMPL in a single translation unit. The other headers are
+#  declaration-only and including sokol_glue.h anywhere else just declares the
+#  same functions again.
+#
+#  No tags upstream - the release tags are pre-* snapshots of upcoming API
+#  changes, not versions - so this is pinned to the master head, the same
+#  choice dattorro_verb makes.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME sokol_gfx
+    GITHUB_REPOSITORY floooh/sokol
+    GIT_TAG 2e75443dbd4940b5aa8d76a8e479f8e4b270b9a3
+    DOWNLOAD_ONLY YES)
+
+j37_declare_header_only_library(sokol_gfx "${sokol_gfx_SOURCE_DIR}")
+
+# ------------------------------------------------------------------------------
+#  GLM - g-truc/glm, OpenGL Mathematics (MIT): the header-only C++ maths
+#  library whose types and semantics follow the GLSL specification, so shader
+#  maths and host maths read the same. Pin 1.0.3, the current release.
+#
+#  The include path is the repository root, which is what makes the canonical
+#  `#include <glm/glm.hpp>` resolve. GLM needs no configuration, but it does
+#  respond to it: the defaults are float-only and no extensions, so anything
+#  expecting doubles or a particular packed layout should say so with
+#  GLM_FORCE_* rather than discovering it at the call site.
+#
+#  This is the companion to sokol_gfx above rather than a duplicate of it:
+#  sokol_gpucam.h carries the handful of mat4 helpers sokol itself needs, and
+#  GLM is the general library for everything else.
+# ------------------------------------------------------------------------------
+CPMAddPackage(
+    NAME glm
+    GITHUB_REPOSITORY g-truc/glm
+    GIT_TAG 1.0.3
+    DOWNLOAD_ONLY YES)
+
+j37_declare_header_only_library(glm "${glm_SOURCE_DIR}")
+
+# ------------------------------------------------------------------------------
+#  SOURCE ONLY - three transient shapers, none of which is a C++ library.
+#
+#  All three were asked for by name as if they were dependencies. They are
+#  vendored so the source is here and the algorithm is readable, and none of
+#  them is compiled, because there is nothing here a C++ build could consume.
+#  Stating that here is the point: a target that could not link would be worse
+#  than an honest comment, and a silent no-op is worse than both.
+# ------------------------------------------------------------------------------
+
+#  TransDes - ylmrx/transdes (MIT, tag 0.0.3): a transient DESIGNER - an
+#  envelope detector with separate attack and sustain sensitivity, a gain
+#  computer, and a detector that can be split across two signals. A finished
+#  JUCE plugin, not a library: Source/ is one plugin's code and TransDes.jucer
+#  is its project file, so the DSP is reachable but the pieces are a processor,
+#  not an API.
+#  Its detector is the interesting part for this engine: a differentiated
+#  envelope with a high-pass on the derivative, which is what separates a
+#  transient from a sustained change in level.
+CPMAddPackage(
+    NAME transdes
+    GITHUB_REPOSITORY ylmrx/transdes
+    GIT_TAG 0.0.3
+    DOWNLOAD_ONLY YES)
+
+#  Whetstone - unicornsasfuel/whetstone (BSD-3): a band-limited transient
+#  shaper - it extracts a band you choose with a low and a high cutoff, shapes
+#  only that band, and mixes it back. Written in FAUST, and that is the whole
+#  of the problem: whetstone.dsp is Faust source, and the juce/ folder is a
+#  Projucer project wrapping a FaustPluginProcessor whose real DSP is a
+#  Faust-generated C++ file that is not in the repository.
+#  Consuming it means running the Faust compiler in the build and checking in
+#  or generating that output, which is a toolchain decision rather than a
+#  dependency one - so it is left as source. If the band-split behaviour is
+#  wanted, the algorithm is legible in the .dsp and is a small amount of work
+#  to write directly.
+#  No tags upstream; pinned to the main head.
+CPMAddPackage(
+    NAME whetstone
+    GITHUB_REPOSITORY unicornsasfuel/whetstone
+    GIT_TAG 83d715a09357841c75ed12151b2061901b2a4625
+    DOWNLOAD_ONLY YES)
+
+#  Bark-scale multi-band transient shaper - sevagh/multiband-transient-shaper
+#  (MIT): a Bark frequency filterbank feeding a differential-envelope
+#  transient shaper - an implementation of the SPL design. This one is not
+#  C++ at all: the repository is assets/, matlab/ and python/, with the last
+#  commit in 2020. It is the ALGORITHM, written out in the language it was
+#  developed in, and there is nothing here to compile into a plugin.
+#  It is worth having for the read: a Bark filterbank is the standard answer
+#  to "shape transients in one band without touching the rest", and the
+#  filterbank design is more reusable than the shaper around it.
+#  No tags upstream; pinned to the master head.
+CPMAddPackage(
+    NAME multiband_transient_shaper
+    GITHUB_REPOSITORY sevagh/multiband-transient-shaper
+    GIT_TAG 7c77e23c1708f4252ba04fc08dcad503f340bab4
+    DOWNLOAD_ONLY YES)
+
+# ------------------------------------------------------------------------------
+#  juce_opengl_3d - NOT FETCHED, because it does not exist.
+#
+#  There is no JUCE module by that name. The module list in this checkout
+#  contains juce_opengl and no 3D sibling of it, and the 3D drawing support in
+#  JUCE is shader-level: you write a GLSL shader and hand it to
+#  OpenGLShaderProgram, rather than being handed a scene graph. So there is
+#  nothing to pin and no tag to record.
+#
+#  What already covers it:
+#    juce::juce_opengl      OpenGLContext, OpenGLRenderer, OpenGLShaderProgram -
+#                          ALREADY LINKED by this target for the panel's
+#                          best-effort accelerated repaint. A 3D panel would be
+#                          a shader on that existing context, not a new module.
+#    sokol_gfx + glm       above in this file - the renderer and the maths, if
+#                          the 3D work outgrows hand-written GLSL.
+#  If a specific third-party JUCE module called juce_opengl_3d was meant, it is
+#  a fork or a private module rather than something upstream publishes, and it
+#  would have to be named by repository and tag before it could be added here.
+# ------------------------------------------------------------------------------

@@ -9,9 +9,16 @@
 #include "PluginProcessor.h"
 #include "PluginEditor.h"
 
+// The two generated headers from the build: the resource accessors, and the
+// preset list in build order. Both come from CMakeLists.txt rather than from a
+// list written out in this file - see the note above FactoryPresets below.
+#include <BinaryData.h>
+#include <FactoryPresetIndex.h>
+
 #include <array>
 #include <cstdint>
 #include <set>
+#include <vector>
 
 namespace
 {
@@ -44,7 +51,7 @@ namespace
             "character", "delta", "delay_time", "delay_feedback",
             "delay_pingpong",
             "st_offset", "noise", "noise_lvl", "transport", "spindown",
-            "ui_sounds",
+            "ui_sounds", "language",
             "blend", "shape", "sag", "presence", "cabinet", "amp_bias",
             "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
             "di", "di_load", "di_transformer", "di_pad",
@@ -299,6 +306,23 @@ namespace
 }
 
 //==============================================================================
+//  The factory presets are defined further down this file, in their own
+//  namespace. The debug audit inside the constructor below is the only code
+//  that reaches them from above that point, so the two entry points it uses
+//  are declared here.
+//
+//  They were previously called with no declaration at all, which is a name
+//  lookup failure - but only in a debug build, because the audit sits inside
+//  #if DEBUG. Every release build compiles the mistake out of existence, so
+//  nothing else in the build could have caught it.
+//==============================================================================
+namespace FactoryPresets
+{
+    inline int count();
+    inline bool isSentinelValue (float value) noexcept;
+}
+
+//==============================================================================
 FirstAudioProcessor::FirstAudioProcessor()
 #ifndef JucePlugin_PreferredChannelConfigurations
      : AudioProcessor (BusesProperties()
@@ -465,7 +489,19 @@ FirstAudioProcessor::FirstAudioProcessor()
     // =======================================================================
     {
         const auto names = getPresetNames();
-        jassert (names.size() == numFactoryPresets);
+        jassert (names.size() == FactoryPresets::count());
+
+        // A name that is empty, or the same as another, is the same class of bug
+        // as a name list that is the wrong length: the box would show two blank
+        // entries and the user would have no way to tell which is which. Cheap to
+        // check here, invisible from the outside until it happens.
+        for (int i = 0; i < names.size(); ++i)
+        {
+            jassert (names[i].isNotEmpty());
+
+            for (int j = i + 1; j < names.size(); ++j)
+                jassert (names[i] != names[j]);
+        }
 
         // The REAL parameter set, from the processor rather than from a list
         // written out beside it: getParameters() is what was registered with the
@@ -497,10 +533,11 @@ FirstAudioProcessor::FirstAudioProcessor()
         // applyFactoryPreset()'s getParameter() guard, so the preset loads with
         // that one control left wherever the session had it.
         std::set<juce::String> covered;
-        for (int i = 0; i < numFactoryPresets; ++i)
+        for (int i = 0; i < FactoryPresets::count(); ++i)
             for (const auto& entry : factoryPresetValues (i))
             {
                 jassert (registered.count (entry.first) != 0);
+                jassert (! FactoryPresets::isSentinelValue (entry.second));
                 covered.insert (entry.first);
             }
 
@@ -525,7 +562,7 @@ FirstAudioProcessor::FirstAudioProcessor()
         // Anything else missing from every preset is a bug, and the jassert
         // says which id by name rather than just failing.
         const std::set<juce::String> intentionallyNotPresettable {
-            "bypass", "delta", "ui_sounds", "transport", "spindown"
+            "bypass", "delta", "ui_sounds", "language", "transport", "spindown"
         };
 
         for (const auto& id : registered)
@@ -633,604 +670,165 @@ void FirstAudioProcessor::applyStateWithUndo (const juce::ValueTree& targetState
 //  panel a name for a different machine, which is the same class of bug as a
 //  mismatched choice count: nothing fails, the list just quietly lies.
 //==============================================================================
+//  The factory presets.
+//
+//  These used to be a 160-field struct plus twenty-six rows of hand-written
+//  C++ initialisers - about 590 lines of numbers, in the same file as the
+//  processor, where a new preset meant retyping a row of positional floats and
+//  recompiling. They are now twenty-six JSON files under Source/Presets/Factory,
+//  compiled into the binary, and this is the whole of what knows how to read
+//  them.
+//
+//  Three things fell out of the move, each of them a bug the old table could
+//  have and these files cannot:
+//
+//    1. THE LIST IS WRITTEN ONCE. FactoryPresetIndex.h is generated by CMake
+//       from the same list that feeds juce_add_binary_data, so the preset box,
+//       the undo label, the dirty badge and the JSON files cannot disagree about
+//       which file is preset 3. That disagreement was real: twenty names over a
+//       twenty-six row table, and the box, the label and the badge all index by
+//       POSITION, so six rows loaded as whichever preset the selection happened
+//       to name.
+//
+//    2. THE NAME IS DATA TOO. It lives in the file under "name", so renaming a
+//       preset is editing that file, not a list in a different one. There is no
+//       second list of names left to fall out of step with the files.
+//
+//    3. A MALFORMED VALUE IS VISIBLE. A key that is not a number is the failure
+//       this file used to be able to have quietly: a value silently dropped, so
+//       the preset loaded "mostly". It cannot be silent here - see
+//       isSentinelValue() below, which the debug audit turns into an assert that
+//       names the key.
+//==============================================================================
+namespace FactoryPresets
+{
+    // One parse per process, not one per call.
+    //
+    // factoryPresetValues() is called in a loop by the debug audit and once per
+    // preset click; parsing twenty-six JSON objects on each of those is work
+    // done for nothing. The cache is a function-local static, so it is built on
+    // first use and its initialisation is thread-safe without a mutex (C++11
+    // guarantees this for function-local statics). The reference returned is to
+    // storage that outlives every caller.
+    struct Preset
+    {
+        juce::String name;
+        std::map<juce::String, float> values;
+    };
+
+    // The value written in place of anything that was not a number. Chosen to be
+    // outside every parameter's range, so even if the audit below is compiled out
+    // the parameter rejects it and the control ends up at a legal value rather
+    // than at a nonsense one.
+    inline constexpr float notANumber = -1.0e9f;
+
+    inline bool isSentinelValue (float value) noexcept
+    {
+        // Compared as int, not float: the sentinel is exactly representable, so
+        // the comparison is exact, and -Wfloat-equal is right to object to a
+        // float == in a codebase that has it on.
+        return static_cast<int> (value) == static_cast<int> (notANumber);
+    }
+
+    const std::vector<Preset>& all()
+    {
+        static const std::vector<Preset> parsed = []
+        {
+            std::vector<Preset> result;
+            result.reserve (juce::numElementsInArray (FactoryPresetIndex::entries));
+
+            for (const auto& entry : FactoryPresetIndex::entries)
+            {
+                Preset preset;
+
+                // The name is read separately because it is the one field with a
+                // type of its own: everything else in the file is a number
+                // destined for a parameter.
+                const auto text = juce::String::createStringFromData (entry.data, entry.size);
+                const auto parsedJson = juce::JSON::parse (text);
+
+                if (const auto* object = parsedJson.getDynamicObject())
+                {
+                    preset.name = object->getProperty ("name").toString();
+
+                    // getProperties(), not getPropertyNames(): a NamedValueSet is
+                    // what a DynamicObject actually holds, and iterating it yields
+                    // the name and the value together, so the two cannot be read
+                    // out of step.
+                    for (const auto& property : object->getProperties())
+                    {
+                        // toString(): a NamedValueSet names its entries with
+                        // juce::Identifier, and comparing one of those to a string
+                        // literal is ambiguous rather than merely wrong. The
+                        // preset's keys are strings everywhere else, so this is
+                        // where that conversion belongs.
+                        const auto propertyName = property.name.toString();
+
+                        if (propertyName == "name")
+                            continue;
+
+                        // A value that is not a number is a typo in a key, and a
+                        // typo in a key is precisely the bug this file used to
+                        // have. It is not skipped quietly; it is recorded, and the
+                        // audit in the constructor fails on it by name.
+                        const auto value = property.value;
+
+                        if (value.isInt() || value.isInt64() || value.isDouble() || value.isBool())
+                            preset.values.emplace (propertyName, static_cast<float> (value));
+                        else
+                            preset.values.emplace (propertyName, notANumber);
+                    }
+                }
+
+                result.push_back (std::move (preset));
+            }
+
+            return result;
+        }();
+
+        return parsed;
+    }
+
+    inline int count()
+    {
+        return static_cast<int> (all().size());
+    }
+}
+
+int FirstAudioProcessor::numFactoryPresets()
+{
+    return FactoryPresets::count();
+}
+
 juce::StringArray FirstAudioProcessor::getPresetNames()
 {
-    // The names must be exactly numFactoryPresets and in the table's order: the
-    // preset box, the undo label and the badge all index by position, and the
-    // six type-selector presets at the end were missing here - a box showing
-    // twenty names over a twenty-six row table, with rows 20..25 loaded as
-    // whichever preset the selection happened to name.
-    return { "Default", "Minimum", "Maximum",
-             "Gentle Warmth", "Bus Glue Tape", "Drum Slam",
-             "Vintage Lo-Fi", "Wide Master", "Clean Glue", "Saturated Crunch",
-             "Wobbly Cassette", "Bright Air Tape", "Mix Saturation", "Master Bounce",
-             "Vocal Rail", "Drum Room Warm", "Bass Weight", "Master Safety",
-             "Lo-Fi Radio", "Ferric Master",
-             "British Valve", "Plexi Bite", "Iron Bloom",
-             "12-bit Bounce", "Dubplate Dub", "Shellac Radio" };
+    // Read from the data rather than written beside it. The names come back in
+    // the ORDER of the files, because the preset box, the undo label and the
+    // dirty badge all index by position - which is what used to break.
+    juce::StringArray names;
+
+    for (const auto& preset : FactoryPresets::all())
+        names.add (preset.name);
+
+    return names;
 }
 
 std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int index)
 {
-    // One preset as NAMED fields. The first eighteen rows were fifteen positional
-    // floats each, which is how a value ends up in the wrong slot with nothing to
-    // catch it; a name can only be in one place, and a field left out takes the
-    // machine default below, so the table reads as the sounds it names.
-    struct FactoryPreset
-    {
-        // The machine, and the transport it runs on.
-        float subfund    = 0.0f;   // sub-harmonic generator, 0..1
-        float inputDb    = 0.0f;   // input trim, -32..+32 dB
-        float drive      = 0.30f;  // how hard the tape is pushed, 0..1
-        float bias       = 0.42f;
-        float tone       = 0.50f;  // the parameter the host calls Brightness
-        float character  = 0.50f;  // the parameter the host calls Tone
-        float wow        = 0.14f;
-        float flutter    = 0.18f;
-        float mix        = 100.0f; // percent wet, 0..100 (a percentage, not 0..1)
-        float outputDb   = 0.0f;   // output trim, -32..+32 dB
-        float width      = 0.50f;  // stereo width, 0..1
-        int   tapeType   = 0;      // choice index: J37 .. RTM SM911
-        int   speed      = 1;      // choice index: 7.5 / 15 / 30 ips
-        int   instrument = 0;      // choice index: Master Bus .. Drums
-        int   oversampling = 0;    // choice index: Off / 2x / 4x / 8x
+    const auto& presets = FactoryPresets::all();
+    // size() is unsigned and index is signed, and jmax/jlimit are templates that
+    // will not mix the two - so the bound is converted once, here, rather than
+    // at three call sites.
+    const auto last = juce::jmax (1, static_cast<int> (presets.size())) - 1;
+    const auto clamped = juce::jlimit (0, last, index);
 
-        // Saturation core: the blend of tape, valve, cassette, amp, transformer
-        // and digital, and the amp voicing. Added after the eighteen presets
-        // above were written, so every one of them leaves these at the machine
-        // defaults - pure tape, no voicing - and still loads the machine it was
-        // designed on.
-        float blend      = 0.0f;   // tape -> valve -> cassette -> amp -> transformer -> digital
-        float shape      = 0.50f;  // how concentrated that blend is
-        float ampBias    = 0.50f;  // the input stage's DC operating point
-        float sag        = 0.0f;   // supply droop under demand
-        float presence   = 0.50f;  // feedback top-end lift after the clipping
-        float cabinet    = 0.0f;   // the speaker and its box
-
-        // Head and transport extras.
-        float delayTime  = 0.0f;   // 0..250 ms
-        float delayLevel = 0.0f;   // feedback into the echo, 0..1
-        float stOffset   = 0.0f;   // head alignment, -500..500 samples
-        float noise      = 0.0f;   // tape floor, 0..1
-
-        // Head and transport extras, continued.
-        float reverb       = 0.0f; // the room's mix, 0..1
-        float reverbSize   = 0.40f;
-        float vinyl        = 0.0f; // the vinyl stage's mix, 0..1
-        float vinylCrackle = 0.50f;
-        float vinylRumble  = 0.35f;
-
-        // The four physical faults of a record and a turntable. All default to 0 -
-        // a clean pressing has none of them - and the presets that are ABOUT a
-        // damaged record (Shellac Radio, Lo-Fi Radio, Wobbly Cassette, Vintage
-        // Lo-Fi) turn the ones their sound depends on on. They were added after the
-        // presets were written, so every preset that does not list one plays the
-        // record clean, which is what its existing sound was designed on.
-        float vinylDust       = 0.0f;
-        float vinylScratch    = 0.0f;
-        float vinylWarp       = 0.0f;
-        float vinylElectrical = 0.0f;
-
-        // The five type switches. The defaults are the machine every preset above
-        // was designed on, so they are left at 0 here and overridden only where a
-        // preset asks for a voice.
-        int   valveType       = 0;
-        int   ampType         = 0;
-        int   transformerType = 0;
-        int   digitalType     = 0;
-        int   vinylType       = 0;
-        int   vinylSpeed      = 0;
-
-        // ------------------------------------------------------------------
-        //  Added with the panel rework: everything a preset should be able to
-        //  say that the original twenty-six rows could not.
-        //
-        //  These were NOT missing by accident - they were simply not part of
-        //  the machine when the table was written, and a preset that does not
-        //  list a parameter inherits whatever the session happened to have,
-        //  which is how a factory preset can load and sound like nothing the
-        //  name promises. Every field below defaults to the parameter's own
-        //  default, so a row that says nothing still loads the neutral
-        //  machine, and the rows that DO speak are the ones that changed.
-        // ------------------------------------------------------------------
-
-        // The two equalisers. The three bands are the audible part; the corners
-        // and their orders are how a preset states "this is a mastering EQ"
-        // rather than leaving the user to guess why the top end is polite.
-        //
-        // The IN pair is declared before the OUT pair, and each one's bands
-        // before its corners, because a C++20 designated initialiser list must
-        // run in DECLARATION order - the rows below are written the way an
-        // engineer reads a preset (in, then out; bands, then corners) and this
-        // order is the one that lets them be written that way.
-        float inLow        = 0.0f;   // -12..+12 dB
-        float inMid        = 0.0f;
-        float inHigh       = 0.0f;
-        float inHpFreq     = 20.0f;   // 20..500 Hz
-        float inLpFreq     = 20000.0f; // 200..20000 Hz
-        int   inEqOrder    = 0;       // 6 / 12 / 18 / 24 / 36 / 48 dB per octave
-        float inEqQ        = 0.7f;
-        int   inHpOn       = 1;       // the corner's own travel-bypass handles the
-        int   inLpOn       = 1;       // neutral end, so these stay ON by default
-        float outLow       = 0.0f;
-        float outMid       = 0.0f;
-        float outHigh      = 0.0f;
-        float outHpFreq    = 20.0f;
-        float outLpFreq    = 20000.0f;
-        int   outEqOrder   = 0;
-        float outEqQ       = 0.7f;
-        int   outHpOn      = 1;       // and a preset only states them to say
-        int   outLpOn      = 1;       // "this filter is deliberately out"
-
-        // The noise floor's own level, split out of NOISE MIX so a preset can
-        // raise the hiss without raising the crackle with it.
-        float noiseLevel   = 1.0f;
-
-        // The fifth record fault (CLICKS) and the three selectors that re-voice
-        // the whole vinyl stage. Shellac Radio and the Lo-Fi family are ABOUT a
-        // worn pressing, so for them these are load-bearing, not decoration.
-        float vinylClicks      = 0.0f;
-        int   vinylGeneration  = 0;   // Laquer / Direct / Dub
-        int   vinylTurntable   = 0;   // Belt / Direct / Rim
-        int   vinylCartridge   = 0;   // MM / MC
-
-        // The two glue compressors' link state, the tape's track count, and
-        // the two whole-machine modes - all of which a preset that was written
-        // before they existed would otherwise leave to chance.
-        float stLink        = 1.0f;
-        int   tracks        = 0;      // 2 / 2+3 / 4
-        int   lofiMode      = 0;
-        int   modernMode    = 0;
-
-        // ------------------------------------------------------------------
-        //  The last of the sound-bearing parameters, added with the preset
-        //  audit below.
-        //
-        //  Every field above this block was present when the table was first
-        //  written or was added to it deliberately. These fifteen were NOT:
-        //  they existed as parameters from the start and simply never got a
-        //  column, and a parameter a preset does not mention keeps whatever the
-        //  session had. So "Vintage Lo-Fi" loaded the vinyl wear and the
-        //  saturation blend it was named for and left the DI box, the input
-        //  preamp, the extra distortion stage, the flux field's own drift, the
-        //  medium's wear and mechanics, and the entire second head at whatever
-        //  the previous preset had left - which is why selecting a different
-        //  factory preset twice gave two different results, and why the presets
-        //  read as "mostly not working".
-        //
-        //  Declared after the fields above, so the rows below are written in
-        //  declaration order without disturbing the twenty-six rows' existing
-        //  order: the gain chain first (it is the front of the signal), then
-        //  the medium's own condition, then the second head.
-        // ------------------------------------------------------------------
-        float preamp        = 0.0f;   // the input stage, 0..100 %
-        float di            = 0.0f;   // the direct-inject feed into the core
-        float diLoad        = 0.0f;   // how hard that feed is pushed
-        float diTransformer = 0.0f;   // the transformer on the DI path
-        int   diPad         = 0;      // 0 dB / -10 / -20 / -30
-        float distortion    = 0.0f;   // the extra shaping stage after the core
-        float flux          = 0.50f;  // field drift, 0..100 %
-        float wear          = 0.0f;   // the medium's own wear
-        float mechanics     = 0.0f;   // the mechanism's noise and clatter
-        int   delayType     = 0;      // Tape / BBD / Modern
-        int   delayRate     = 2;      // 1/1 .. 1/4 D - the note value SYNC reads
-        int   delaySync     = 0;      // SYNC on: the note value follows tempo
-        float pingPong      = 0.0f;   // the second head's stereo spread
-        int   polarity      = 0;      // output inversion
-        int   autoGain      = 0;      // the output stage's level compensation
-    };
-
-    static const std::array<FactoryPreset, numFactoryPresets> table {{
-        // DEFAULT: the neutral machine, stated completely. Every corner, every
-        // selector and both modes are named here even though they sit at their
-        // defaults, because "Default" is the preset a user checks against when
-        // something is not working - it has to be the machine's actual default
-        // in every parameter, including the ones added after this table was
-        // first written. That is what stops a reset from inheriting the
-        // session's EQ, noise level or lo-fi mode.
-                { .drive = 0.28f, .oversampling = 1, .inHpFreq = 20.0f, .inLpFreq = 20000.0f, .inEqOrder = 0,
-      .inEqQ = 0.7f, .inHpOn = 1, .inLpOn = 1, .outHpFreq = 20.0f, .outLpFreq = 20000.0f,
-      .outEqOrder = 0, .outEqQ = 0.7f, .outHpOn = 1, .outLpOn = 1, .noiseLevel = 1.0f,
-      .stLink = 1.0f, .tracks = 0, .lofiMode = 0, .modernMode = 0,
-      .preamp = 0.00f, .di = 0.00f, .diLoad = 0.00f, .diTransformer = 0.00f, .diPad = 0,
-      .distortion = 0.00f, .flux = 0.50f, .wear = 0.00f, .mechanics = 0.00f,
-      .delayType = 0, .delayRate = 2, .delaySync = 0, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // Default
-
-        // MINIMUM - every control at its floor. MIX at zero is the point: the tape
-        // path leaves the signal completely, so this is the plugin's null test -
-        // what you hear is the input, untouched, and any difference from a bypass
-        // is a bug rather than a sound.
-                { .drive = 0.0f, .bias = 0.0f, .tone = 0.0f, .character = 0.0f, .wow = 0.0f, .flutter = 0.0f,
-      .mix = 0.0f, .width = 0.0f, .speed = 0, .shape = 0.0f, .ampBias = 0.0f, .presence = 0.0f,
-      .inHpOn = 0, .inLpOn = 0, .outHpOn = 0, .outLpOn = 0, .noiseLevel = 0.0f, .lofiMode = 0,
-      .modernMode = 0,
-      .preamp = 0.00f, .di = 0.00f, .diLoad = 0.00f, .diTransformer = 0.00f, .diPad = 0,
-      .distortion = 0.00f, .flux = 0.00f, .wear = 0.00f, .mechanics = 0.00f,
-      .delayType = 0, .delayRate = 2, .delaySync = 0, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // Minimum
-
-        // MAXIMUM - every control at the top of its range: the whole sub-fundamental
-        // generator, the amp end of the blend with the cabinet open, a quarter
-        // second of echo at full feedback, the head pushed 500 samples, the noise
-        // floor at its loudest, and 8x oversampling. The trims are the exception,
-        // +12 in and -12 out: a reference that clips the host on the way in tells
-        // you nothing about the machine, and this one is meant to be heard.
-                { .subfund = 1.0f, .inputDb = +12.0f, .drive = 1.0f, .bias = 1.0f, .tone = 1.0f,
-      .character = 1.0f, .wow = 1.0f, .flutter = 1.0f, .outputDb = -12.0f, .width = 1.0f,
-      .tapeType = 7, .speed = 2, .instrument = 5, .oversampling = 3, .blend = 1.0f,
-      .shape = 1.0f, .ampBias = 1.0f, .sag = 1.0f, .presence = 1.0f, .cabinet = 1.0f,
-      .delayTime = 250.0f, .delayLevel = 1.0f, .stOffset = 500.0f, .noise = 1.0f,
-      .valveType = 4, .ampType = 4, .transformerType = 3, .digitalType = 3, .vinylType = 4,
-      .vinylSpeed = 2, .inLow = 12.0f, .inMid = 12.0f, .inHigh = 12.0f, .inHpFreq = 500.0f,
-      .inLpFreq = 200.0f, .inEqOrder = 5, .outLow = 12.0f, .outMid = 12.0f, .outHigh = 12.0f,
-      .outHpFreq = 500.0f, .outLpFreq = 200.0f, .outEqOrder = 5, .noiseLevel = 2.0f,
-      .vinylClicks = 1.0f, .tracks = 2, .lofiMode = 1, .modernMode = 1,
-      .preamp = 1.00f, .di = 1.00f, .diLoad = 1.00f, .diTransformer = 1.00f, .diPad = 0,
-      .distortion = 1.00f, .flux = 1.00f, .wear = 1.00f, .mechanics = 1.00f,
-      .delayType = 2, .delayRate = 2, .delaySync = 1, .pingPong = 1.00f,
-      .polarity = 1, .autoGain = 1 },  // Maximum
-                { .subfund = 0.15f, .inputDb = -3.0f, .drive = 0.28f, .bias = 0.30f, .tone = 0.48f,
-      .character = 0.30f, .wow = 0.10f, .flutter = 0.12f, .mix = 65.0f, .outputDb = -1.0f,
-      .oversampling = 1, .inHpFreq = 32.0f, .outLpFreq = 18000.0f, .outEqOrder = 1,
-      .preamp = 0.12f, .di = 0.00f, .diLoad = 0.00f, .diTransformer = 0.00f, .diPad = 0,
-      .distortion = 0.00f, .flux = 0.55f, .wear = 0.00f, .mechanics = 0.00f,
-      .delayType = 0, .delayRate = 2, .delaySync = 0, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // Gentle Warmth
-                { .subfund = 0.20f, .inputDb = +1.5f, .drive = 0.62f, .bias = 0.48f, .tone = 0.66f,
-      .character = 0.62f, .wow = 0.16f, .flutter = 0.22f, .outputDb = -0.5f, .width = 0.55f,
-      .tapeType = 1, .oversampling = 1, .inHpFreq = 28.0f, .inEqOrder = 2,
-      .outLpFreq = 19000.0f,
-      .preamp = 0.08f, .di = 0.00f, .diLoad = 0.00f, .diTransformer = 0.00f, .diPad = 0,
-      .distortion = 0.00f, .flux = 0.60f, .wear = 0.05f, .mechanics = 0.04f,
-      .delayType = 0, .delayRate = 2, .delaySync = 0, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // Bus Glue Tape
-                { .subfund = 0.35f, .drive = 0.75f, .tone = 0.74f, .character = 0.70f, .wow = 0.12f,
-      .flutter = 0.20f, .outputDb = -1.0f, .tapeType = 2, .speed = 2, .instrument = 5,
-      .oversampling = 2, .inMid = -2.0f, .inHigh = 1.5f, .inHpFreq = 45.0f, .inEqOrder = 2,
-      .preamp = 0.22f, .di = 0.10f, .diLoad = 0.08f, .diTransformer = 0.00f, .diPad = 0,
-      .distortion = 0.18f, .flux = 0.50f, .wear = 0.08f, .mechanics = 0.06f,
-      .delayType = 0, .delayRate = 2, .delaySync = 0, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // Drum Slam
-                { .drive = 0.35f, .bias = 0.34f, .tone = 0.55f, .character = 0.45f, .wow = 0.22f,
-      .flutter = 0.28f, .mix = 70.0f, .speed = 0, .instrument = 3, .oversampling = 1,
-      .vinyl = 0.25f, .vinylDust = 0.40f, .vinylElectrical = 0.20f, .outLpFreq = 12000.0f,
-      .outEqOrder = 1, .vinylClicks = 0.30f, .vinylGeneration = 2, .vinylTurntable = 2,
-      .vinylCartridge = 2, .lofiMode = 1,
-      .preamp = 0.30f, .di = 0.18f, .diLoad = 0.20f, .diTransformer = 0.15f, .diPad = 0,
-      .distortion = 0.22f, .flux = 0.62f, .wear = 0.20f, .mechanics = 0.18f,
-      .delayType = 1, .delayRate = 3, .delaySync = 0, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // Vintage Lo-Fi
-                { .subfund = 0.12f, .drive = 0.32f, .bias = 0.44f, .tone = 0.62f, .character = 0.55f,
-      .wow = 0.18f, .flutter = 0.24f, .mix = 55.0f, .width = 0.62f, .oversampling = 1,
-      .inHpFreq = 30.0f, .inEqOrder = 1, .outHigh = 1.5f, .outLpOn = 0,
-      .preamp = 0.00f, .di = 0.00f, .diLoad = 0.00f, .diTransformer = 0.00f, .diPad = 0,
-      .distortion = 0.00f, .flux = 0.50f, .wear = 0.00f, .mechanics = 0.00f,
-      .delayType = 0, .delayRate = 2, .delaySync = 1, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // Wide Master
-                { .inputDb = -6.0f, .drive = 0.22f, .bias = 0.30f, .character = 0.35f, .wow = 0.10f,
-      .flutter = 0.14f, .mix = 45.0f, .tapeType = 3, .speed = 2, .oversampling = 1,
-      .inHpOn = 0, .inLpOn = 0, .outHpOn = 0, .outLpOn = 0, .noiseLevel = 0.55f, .lofiMode = 0,
-      .modernMode = 0,
-      .preamp = 0.10f, .di = 0.00f, .diLoad = 0.00f, .diTransformer = 0.00f, .diPad = 0,
-      .distortion = 0.00f, .flux = 0.50f, .wear = 0.00f, .mechanics = 0.00f,
-      .delayType = 2, .delayRate = 2, .delaySync = 1, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // Clean Glue
-                { .subfund = 0.25f, .inputDb = +3.0f, .drive = 0.85f, .bias = 0.52f, .tone = 0.70f,
-      .character = 0.78f, .flutter = 0.26f, .outputDb = -1.5f, .width = 0.45f, .tapeType = 1,
-      .speed = 2, .instrument = 3, .oversampling = 2, .inHpFreq = 25.0f, .outHigh = 2.0f,
-      .outLpFreq = 19000.0f, .noiseLevel = 0.8f,
-      .preamp = 0.42f, .di = 0.15f, .diLoad = 0.18f, .diTransformer = 0.12f, .diPad = 0,
-      .distortion = 0.35f, .flux = 0.48f, .wear = 0.10f, .mechanics = 0.10f,
-      .delayType = 0, .delayRate = 2, .delaySync = 0, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // Saturated Crunch
-                { .subfund = 0.10f, .drive = 0.36f, .bias = 0.45f, .tone = 0.60f, .wow = 0.30f,
-      .flutter = 0.34f, .speed = 0, .instrument = 3, .oversampling = 1, .vinyl = 0.30f,
-      .vinylDust = 0.35f, .vinylScratch = 0.15f, .vinylWarp = 0.60f, .outLpFreq = 9000.0f,
-      .outEqOrder = 1, .noiseLevel = 1.4f, .vinylClicks = 0.35f, .vinylTurntable = 2,
-      .lofiMode = 1,
-      .preamp = 0.28f, .di = 0.12f, .diLoad = 0.22f, .diTransformer = 0.00f, .diPad = 0,
-      .distortion = 0.15f, .flux = 0.66f, .wear = 0.28f, .mechanics = 0.30f,
-      .delayType = 1, .delayRate = 3, .delaySync = 0, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // Wobbly Cassette
-                { .inputDb = -1.0f, .drive = 0.55f, .bias = 0.44f, .tone = 0.68f, .character = 0.58f,
-      .wow = 0.12f, .flutter = 0.16f, .outputDb = -0.5f, .width = 0.58f, .tapeType = 2,
-      .speed = 2, .instrument = 4, .oversampling = 1, .inHigh = 2.0f, .inHpFreq = 60.0f,
-      .inEqOrder = 2, .outHpOn = 0, .outLpOn = 0, .noiseLevel = 0.7f,
-      .preamp = 0.06f, .di = 0.00f, .diLoad = 0.00f, .diTransformer = 0.00f, .diPad = 0,
-      .distortion = 0.00f, .flux = 0.50f, .wear = 0.00f, .mechanics = 0.00f,
-      .delayType = 2, .delayRate = 2, .delaySync = 0, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // Bright Air Tape
-                { .subfund = 0.20f, .inputDb = +1.0f, .drive = 0.68f, .bias = 0.46f, .tone = 0.64f,
-      .character = 0.66f, .wow = 0.16f, .flutter = 0.20f, .outputDb = -1.0f, .width = 0.40f,
-      .tapeType = 1, .oversampling = 2, .inHpFreq = 35.0f, .outLow = -0.5f, .outLpOn = 0,
-      .tracks = 1,
-      .preamp = 0.25f, .di = 0.12f, .diLoad = 0.10f, .diTransformer = 0.08f, .diPad = 0,
-      .distortion = 0.25f, .flux = 0.50f, .wear = 0.05f, .mechanics = 0.05f,
-      .delayType = 0, .delayRate = 2, .delaySync = 0, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // Mix Saturation
-                { .subfund = 0.10f, .drive = 0.40f, .bias = 0.45f, .tone = 0.62f, .character = 0.52f,
-      .wow = 0.15f, .flutter = 0.19f, .oversampling = 2, .outLpOn = 0, .noiseLevel = 0.5f,
-      .tracks = 0,
-      .preamp = 0.30f, .di = 0.20f, .diLoad = 0.25f, .diTransformer = 0.18f, .diPad = 1,
-      .distortion = 0.30f, .flux = 0.45f, .wear = 0.10f, .mechanics = 0.08f,
-      .delayType = 0, .delayRate = 2, .delaySync = 0, .pingPong = 0.30f,
-      .polarity = 0, .autoGain = 0 },  // Master Bounce
-                { .inputDb = +1.0f, .drive = 0.38f, .tone = 0.60f, .character = 0.42f, .wow = 0.08f,
-      .flutter = 0.10f, .mix = 70.0f, .outputDb = -1.0f, .instrument = 1, .oversampling = 1,
-      .inLow = -1.5f, .inMid = 2.0f, .inHigh = 2.5f, .inHpFreq = 90.0f, .inEqOrder = 2,
-      .inEqQ = 0.9f, .outLpFreq = 16000.0f,
-      .preamp = 0.32f, .di = 0.25f, .diLoad = 0.30f, .diTransformer = 0.20f, .diPad = 1,
-      .distortion = 0.20f, .flux = 0.50f, .wear = 0.05f, .mechanics = 0.04f,
-      .delayType = 0, .delayRate = 2, .delaySync = 0, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // Vocal Rail
-                { .subfund = 0.18f, .inputDb = +2.0f, .drive = 0.55f, .bias = 0.50f, .tone = 0.45f,
-      .character = 0.38f, .wow = 0.18f, .flutter = 0.22f, .outputDb = -1.0f, .tapeType = 1,
-      .speed = 0, .instrument = 5, .oversampling = 1, .inHpFreq = 35.0f, .inEqOrder = 2,
-      .outLow = 1.5f, .stLink = 1.0f,
-      .preamp = 0.18f, .di = 0.10f, .diLoad = 0.10f, .diTransformer = 0.00f, .diPad = 0,
-      .distortion = 0.12f, .flux = 0.55f, .wear = 0.06f, .mechanics = 0.05f,
-      .delayType = 1, .delayRate = 2, .delaySync = 0, .pingPong = 0.20f,
-      .polarity = 0, .autoGain = 0 },  // Drum Room Warm
-                { .subfund = 0.65f, .inputDb = +2.5f, .drive = 0.48f, .bias = 0.36f, .tone = 0.42f,
-      .character = 0.35f, .wow = 0.06f, .flutter = 0.08f, .outputDb = -2.0f, .tapeType = 2,
-      .speed = 2, .instrument = 2, .oversampling = 2, .inLow = 4.0f, .inHpFreq = 26.0f,
-      .inEqOrder = 2, .inEqQ = 0.8f, .outLow = 1.0f, .outHpFreq = 30.0f, .outEqOrder = 1,
-      .preamp = 0.26f, .di = 0.20f, .diLoad = 0.22f, .diTransformer = 0.16f, .diPad = 0,
-      .distortion = 0.16f, .flux = 0.52f, .wear = 0.04f, .mechanics = 0.04f,
-      .delayType = 0, .delayRate = 2, .delaySync = 0, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // Bass Weight
-                { .drive = 0.25f, .bias = 0.40f, .tone = 0.66f, .character = 0.62f, .wow = 0.05f,
-      .flutter = 0.07f, .width = 0.55f, .tapeType = 3, .speed = 2, .oversampling = 2,
-      .inHpFreq = 25.0f, .inEqOrder = 3, .outHpFreq = 40.0f, .outLpFreq = 16000.0f,
-      .outEqOrder = 3, .noiseLevel = 0.6f,
-      .preamp = 0.12f, .di = 0.00f, .diLoad = 0.00f, .diTransformer = 0.00f, .diPad = 0,
-      .distortion = 0.05f, .flux = 0.50f, .wear = 0.00f, .mechanics = 0.00f,
-      .delayType = 0, .delayRate = 2, .delaySync = 1, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 1 },  // Master Safety
-                { .inputDb = +4.0f, .drive = 0.62f, .bias = 0.30f, .tone = 0.28f, .character = 0.30f,
-      .wow = 0.26f, .flutter = 0.32f, .mix = 65.0f, .outputDb = -4.0f, .width = 0.35f,
-      .tapeType = 3, .speed = 0, .instrument = 3, .oversampling = 1, .vinyl = 0.45f,
-      .vinylDust = 0.55f, .vinylWarp = 0.40f, .vinylElectrical = 0.25f, .inHpFreq = 120.0f,
-      .inEqOrder = 3, .outLpFreq = 5000.0f, .outEqOrder = 3, .noiseLevel = 1.6f,
-      .vinylClicks = 0.55f, .vinylGeneration = 2, .vinylTurntable = 1, .vinylCartridge = 2,
-      .lofiMode = 1,
-      .preamp = 0.34f, .di = 0.22f, .diLoad = 0.26f, .diTransformer = 0.20f, .diPad = 0,
-      .distortion = 0.30f, .flux = 0.64f, .wear = 0.30f, .mechanics = 0.26f,
-      .delayType = 1, .delayRate = 3, .delaySync = 0, .pingPong = 0.15f,
-      .polarity = 0, .autoGain = 0 },  // Lo-Fi Radio
-                { .subfund = 0.12f, .drive = 0.34f, .bias = 0.44f, .tone = 0.55f, .wow = 0.10f,
-      .flutter = 0.13f, .width = 0.52f, .tapeType = 7, .oversampling = 1, .inHpFreq = 22.0f,
-      .outHigh = 0.5f, .outHpFreq = 22.0f, .outLpFreq = 19500.0f,
-      .preamp = 0.16f, .di = 0.08f, .diLoad = 0.08f, .diTransformer = 0.00f, .diPad = 0,
-      .distortion = 0.10f, .flux = 0.58f, .wear = 0.12f, .mechanics = 0.08f,
-      .delayType = 0, .delayRate = 2, .delaySync = 0, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // Ferric Master
-
-        // ---- The six built on the type selectors and the vinyl stage ------------
-
-        // BRITISH VALVE: the blend parked on the valve end, an EL34's fat drift,
-        // the transport gated to a whisper so the valve speaks alone.
-                { .drive = 0.55f, .bias = 0.58f, .tone = 0.52f, .character = 0.55f, .wow = 0.05f,
-      .flutter = 0.06f, .mix = 100.0f, .outputDb = -1.0f, .oversampling = 1, .blend = 0.20f,
-      .shape = 0.15f, .valveType = 2, .ampType = 1, .transformerType = 1, .digitalType = 0,
-      .vinylType = 0, .vinylSpeed = 0, .inLow = -1.5f, .inMid = -1.0f, .inHpFreq = 45.0f,
-      .inEqOrder = 2, .outLpFreq = 14000.0f, .noiseLevel = 0.5f,
-      .preamp = 0.30f, .di = 0.20f, .diLoad = 0.18f, .diTransformer = 0.20f, .diPad = 0,
-      .distortion = 0.30f, .flux = 0.50f, .wear = 0.06f, .mechanics = 0.05f,
-      .delayType = 0, .delayRate = 2, .delaySync = 0, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // British Valve
-
-        // PLEXI BITE: the amp end, a Plexi's second-stage slam, bright head, tight
-        // memory, and the delay off - the bite needs no room.
-                { .inputDb = +2.0f, .drive = 0.72f, .bias = 0.40f, .tone = 0.62f, .character = 0.68f,
-      .wow = 0.08f, .flutter = 0.10f, .mix = 100.0f, .outputDb = -2.0f, .width = 0.45f,
-      .oversampling = 2, .blend = 0.60f, .shape = 0.12f, .valveType = 1, .ampType = 1,
-      .transformerType = 0, .digitalType = 0, .vinylType = 0, .vinylSpeed = 1, .inHigh = 2.0f,
-      .inEqQ = 0.8f, .inHpOn = 0, .inLpOn = 0, .outHpOn = 0, .outLpOn = 0, .noiseLevel = 0.65f,
-      .preamp = 0.38f, .di = 0.24f, .diLoad = 0.16f, .diTransformer = 0.14f, .diPad = 0,
-      .distortion = 0.38f, .flux = 0.48f, .wear = 0.08f, .mechanics = 0.07f,
-      .delayType = 0, .delayRate = 2, .delaySync = 0, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // Plexi Bite
-
-        // IRON BLOOM: transformer-heavy, low end bent first, the LP's crackle
-        // riding under a warm tape floor. The thump preset.
-                { .inputDb = +1.0f, .drive = 0.48f, .bias = 0.50f, .tone = 0.42f, .character = 0.40f,
-      .wow = 0.14f, .flutter = 0.16f, .mix = 100.0f, .outputDb = -1.5f, .width = 0.60f,
-      .oversampling = 1, .blend = 0.80f, .shape = 0.18f, .vinyl = 0.35f, .vinylRumble = 0.55f,
-      .valveType = 3, .ampType = 2, .transformerType = 1, .digitalType = 0, .vinylType = 0,
-      .vinylSpeed = 0, .inLow = 3.0f, .inHpFreq = 50.0f, .inEqOrder = 2, .inEqQ = 0.6f,
-      .outLpFreq = 13000.0f, .outLpOn = 0, .noiseLevel = 0.6f,
-      .preamp = 0.36f, .di = 0.26f, .diLoad = 0.14f, .diTransformer = 0.12f, .diPad = 0,
-      .distortion = 0.34f, .flux = 0.50f, .wear = 0.10f, .mechanics = 0.08f,
-      .delayType = 0, .delayRate = 2, .delaySync = 0, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // Iron Bloom
-
-        // 12-BIT BOUNCE: the converter end, 12-bit ceiling with a little hold,
-        // a fast machine, echo at an eighth. The sampler-character preset.
-                { .inputDb = +1.5f, .drive = 0.52f, .bias = 0.38f, .tone = 0.58f, .character = 0.72f,
-      .wow = 0.06f, .flutter = 0.08f, .mix = 100.0f, .outputDb = -2.0f, .width = 0.40f,
-      .oversampling = 0, .blend = 1.0f, .shape = 0.10f, .delayTime = 125.0f,
-      .delayLevel = 0.35f, .valveType = 0, .ampType = 4, .transformerType = 2,
-      .digitalType = 1, .vinylType = 0, .vinylSpeed = 1, .inHpFreq = 30.0f,
-      .outLpFreq = 11000.0f, .outEqOrder = 4, .outLpOn = 1, .noiseLevel = 1.3f,
-      .preamp = 0.20f, .di = 0.10f, .diLoad = 0.10f, .diTransformer = 0.00f, .diPad = 0,
-      .distortion = 0.15f, .flux = 0.50f, .wear = 0.04f, .mechanics = 0.04f,
-      .delayType = 2, .delayRate = 2, .delaySync = 0, .pingPong = 0.00f,
-      .polarity = 0, .autoGain = 0 },  // 12-bit Bounce
-
-        // DUBPLATE DUB: the vinyl stage front and centre - a fresh loud lacquer,
-        // deep RIAA, almost no crackle - over a hot tape floor and a big room.
-                { .inputDb = 0.0f, .drive = 0.42f, .bias = 0.46f, .tone = 0.48f, .character = 0.44f,
-      .wow = 0.18f, .flutter = 0.14f, .mix = 100.0f, .outputDb = -1.0f, .width = 0.65f,
-      .oversampling = 1, .blend = 0.35f, .shape = 0.30f, .reverb = 0.22f, .reverbSize = 0.60f,
-      .vinyl = 0.70f, .vinylCrackle = 0.15f, .vinylRumble = 0.45f, .valveType = 4,
-      .ampType = 2, .transformerType = 1, .digitalType = 0, .vinylType = 4, .vinylSpeed = 1,
-      .inLow = 1.5f, .inHpFreq = 55.0f, .inEqOrder = 4, .outHpFreq = 28.0f,
-      .outLpFreq = 18000.0f, .vinylGeneration = 0, .vinylTurntable = 0, .vinylCartridge = 1,
-      .lofiMode = 0, .modernMode = 0,
-      .preamp = 0.24f, .di = 0.18f, .diLoad = 0.20f, .diTransformer = 0.15f, .diPad = 0,
-      .distortion = 0.22f, .flux = 0.60f, .wear = 0.22f, .mechanics = 0.20f,
-      .delayType = 1, .delayRate = 2, .delaySync = 1, .pingPong = 0.35f,
-      .polarity = 0, .autoGain = 0 },  // Dubplate Dub
-
-        // SHELLAC RADIO: a 78 through everything, all at once - loud shellac
-        // surface, a wind-up motor's wander, the hot vintage stock and a dark head.
-                { .inputDb = +1.0f, .drive = 0.62f, .bias = 0.52f, .tone = 0.30f, .character = 0.35f,
-      .wow = 0.30f, .flutter = 0.26f, .mix = 100.0f, .outputDb = -3.0f, .width = 0.25f,
-      .oversampling = 0, .blend = 0.55f, .shape = 0.25f, .vinyl = 0.85f, .vinylCrackle = 0.80f,
-      .vinylRumble = 0.85f, .vinylDust = 0.45f, .vinylScratch = 0.35f, .vinylWarp = 0.55f,
-      .vinylElectrical = 0.30f, .valveType = 2, .ampType = 0, .transformerType = 4,
-      .digitalType = 0, .vinylType = 2, .vinylSpeed = 2, .inHpFreq = 150.0f, .inEqOrder = 5,
-      .outLpFreq = 4000.0f, .outEqOrder = 5, .noiseLevel = 1.8f, .vinylClicks = 0.70f,
-      .vinylGeneration = 2, .vinylTurntable = 2, .vinylCartridge = 2, .tracks = 0,
-      .lofiMode = 1,
-      .preamp = 0.32f, .di = 0.20f, .diLoad = 0.24f, .diTransformer = 0.18f, .diPad = 0,
-      .distortion = 0.26f, .flux = 0.66f, .wear = 0.32f, .mechanics = 0.30f,
-      .delayType = 1, .delayRate = 3, .delaySync = 0, .pingPong = 0.10f,
-      .polarity = 0, .autoGain = 0 },  // Shellac Radio
-    }};
-
-    // The same guard the switch used to provide: an index outside the list is not a
-    // preset, and reading past the end of the table would not answer that question.
-    if (index < 0 || index >= static_cast<int> (table.size()))
-        return {};
-
-    const auto& preset = table[static_cast<std::size_t> (index)];
-
-    // Raw parameter values, not normalised ones - see the saved-state format note
-    // above. The tree stores denormalised values, so normalising here is what made
-    // a -3 dB INPUT come back as 0.45 dB and MIX 100 as 1 %.
-    // clang-format off
-    const auto values = std::map<juce::String, float>
-    {
-        { "subfund",        preset.subfund },
-        { "input",          preset.inputDb },
-        { "drive",          preset.drive },
-        { "bias",           preset.bias },
-        { "tone",           preset.tone },
-        { "character",      preset.character },
-        { "wow",            preset.wow },
-        { "flutter",        preset.flutter },
-        { "mix",            preset.mix },
-        { "output",         preset.outputDb },
-        { "stereo_width",   preset.width },
-        { "blend",          preset.blend },
-        { "shape",          preset.shape },
-        { "amp_bias",       preset.ampBias },
-        { "sag",            preset.sag },
-        { "presence",       preset.presence },
-        { "cabinet",        preset.cabinet },
-        { "delay_time",     preset.delayTime },
-        { "delay_feedback",  preset.delayLevel },
-        { "st_offset",      preset.stOffset },
-        { "noise",          preset.noise },
-        { "tape_type",      static_cast<float> (preset.tapeType) },
-        { "speed",          static_cast<float> (preset.speed) },
-        { "instrument",     static_cast<float> (preset.instrument) },
-        { "oversampling",   static_cast<float> (preset.oversampling) },
-        { "valve_type",       static_cast<float> (preset.valveType) },
-        { "amp_type",         static_cast<float> (preset.ampType) },
-        { "transformer_type", static_cast<float> (preset.transformerType) },
-        { "digital_type",     static_cast<float> (preset.digitalType) },
-        { "vinyl_type",       static_cast<float> (preset.vinylType) },
-        { "vinyl_speed",      static_cast<float> (preset.vinylSpeed) },
-        { "reverb",           preset.reverb },
-        { "reverb_size",      preset.reverbSize },
-        { "vinyl",            preset.vinyl },
-        { "vinyl_crackle",    preset.vinylCrackle },
-        { "vinyl_rumble",     preset.vinylRumble },
-        { "vinyl_dust",       preset.vinylDust },
-        { "vinyl_scratch",    preset.vinylScratch },
-        { "vinyl_warp",       preset.vinylWarp },
-        { "vinyl_electrical", preset.vinylElectrical },
-        { "vinyl_clicks",     preset.vinylClicks },
-        { "vinyl_generation", static_cast<float> (preset.vinylGeneration) },
-        { "vinyl_turntable",  static_cast<float> (preset.vinylTurntable) },
-        { "vinyl_cartridge",  static_cast<float> (preset.vinylCartridge) },
-
-        // The equalisers. The corner frequencies and their slope orders are the
-        // part that matters: a band is a taste, a corner is a statement about
-        // what the machine is for, and a preset that only lists the bands leaves
-        // the corners wherever the session had them.
-        { "in_low",           preset.inLow },
-        { "in_mid",           preset.inMid },
-        { "in_high",          preset.inHigh },
-        { "in_hp_freq",       preset.inHpFreq },
-        { "in_lp_freq",       preset.inLpFreq },
-        { "in_eq_order",      static_cast<float> (preset.inEqOrder) },
-        { "in_eq_q",          preset.inEqQ },
-        { "in_hp_on",         static_cast<float> (preset.inHpOn) },
-        { "in_lp_on",         static_cast<float> (preset.inLpOn) },
-        { "out_low",          preset.outLow },
-        { "out_mid",          preset.outMid },
-        { "out_high",         preset.outHigh },
-        { "out_hp_freq",      preset.outHpFreq },
-        { "out_lp_freq",      preset.outLpFreq },
-        { "out_eq_order",     static_cast<float> (preset.outEqOrder) },
-        { "out_eq_q",         preset.outEqQ },
-        { "out_hp_on",        static_cast<float> (preset.outHpOn) },
-        { "out_lp_on",        static_cast<float> (preset.outLpOn) },
-
-        // The rest of the machine's state. ST LINK and TRACKS are structural -
-        // they change what the compressor and the head are doing, not how the
-        // result sounds directly - so they belong in a preset all the more.
-        { "noise_lvl",        preset.noiseLevel },
-        { "st_link",          preset.stLink },
-        { "tracks",           static_cast<float> (preset.tracks) },
-        { "lofi_mode",        static_cast<float> (preset.lofiMode) },
-        { "modern_mode",      static_cast<float> (preset.modernMode) },
-
-        // The gain chain in front of the tape, the medium's own condition and
-        // the second head. These fifteen were MISSING from this map, which is
-        // what made the factory presets unreliable rather than merely plain:
-        // every one of them kept the session's value, so the same preset loaded
-        // differently depending on what had been loaded before it, and a preset
-        // like "Vintage Lo-Fi" or "Master Bounce" - which is entirely ABOUT the
-        // DI feed, the input preamp and the second head - left all three to
-        // chance. The fields are set in the table, so the map and the table
-        // cannot disagree about what a preset says.
-        { "preamp",           preset.preamp },
-        { "di",               preset.di },
-        { "di_load",          preset.diLoad },
-        { "di_transformer",   preset.diTransformer },
-        { "di_pad",           static_cast<float> (preset.diPad) },
-        { "distortion",       preset.distortion },
-        { "flux",             preset.flux },
-        { "wear",             preset.wear },
-        { "mechanics",        preset.mechanics },
-        { "delay_type",       static_cast<float> (preset.delayType) },
-        { "delay_rate",       static_cast<float> (preset.delayRate) },
-        { "delay_sync",       static_cast<float> (preset.delaySync) },
-        { "delay_pingpong",   preset.pingPong },
-        { "polarity",         static_cast<float> (preset.polarity) },
-        { "auto_gain",        static_cast<float> (preset.autoGain) },
-    };
-
-#if DEBUG
-    //  A key that is not a parameter is dropped by applyFactoryPreset()'s
-    //  getParameter() guard, so the preset loads with that control left exactly
-    //  where the session had it and nothing says so. The values above are all
-    //  `preset.someField`, so the failure mode is a typo in a field NAME rather
-    //  than a value - cheap to make and invisible until someone selects the
-    //  preset and wonders.
-    //
-    //  It is NOT checked here, and the reason is worth writing down: this
-    //  function is static, so it has no processor to ask, and the layout object
-    //  cannot be asked either - JUCE 9's ParameterLayout exposes only add(). A
-    //  version of this check that called layout.getParameter() compiled in
-    //  neither configuration and was caught only by the Debug build, which is
-    //  precisely the point of a Debug-only check. It lives in the constructor
-    //  instead, where the registered parameter set is actually available.
-    // =======================================================================
-#endif
-
-    return values;
+    return presets[static_cast<std::size_t> (clamped)].values;
 }
+
 
 void FirstAudioProcessor::applyFactoryPreset (int index)
 {
-    const auto clampedIndex = juce::jlimit (0, numFactoryPresets - 1, index);
+    const auto clampedIndex = juce::jlimit (0, FactoryPresets::count() - 1, index);
     const auto& values = factoryPresetValues (clampedIndex);
     if (values.empty())
         return;
@@ -1880,6 +1478,26 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     // -------------------------------------------------------------------------
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "ui_sounds", 1 },
                                                             "UI Sounds", true));
+
+    // -------------------------------------------------------------------------
+    //  Language.
+    //
+    //  A parameter rather than a member of the editor for one reason that
+    //  matters: persistence. A language held in the editor is lost the moment the
+    //  user closes the plugin, and a plugin that forgets how to speak Ukrainian
+    //  every time it is reopened is not a translation. As a parameter it is saved
+    //  with the session, restored with it, and carried by the host's own state
+    //  handling - no ApplicationProperties, no separate settings file, and
+    //  nothing to keep in step with the host's idea of the project.
+    //
+    //  It is deliberately NOT part of a preset: a factory preset is a sound, and
+    //  the person who loads it may not read the language it was written in. It is
+    //  listed as intentionally not presettable for the same reason ui_sounds is.
+    // -------------------------------------------------------------------------
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "language", 1 },
+                                                              "Language",
+                                                              juce::StringArray { "English", "\u0423\u043a\u0440\u0430\u0457\u043d\u0441\u044c\u043a\u0430" },
+                                                              0));
 
     // -------------------------------------------------------------------------
     //  Saturation blend.

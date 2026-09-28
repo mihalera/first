@@ -1,6 +1,6 @@
 #!/usr/bin/env python3
 """
-Checks the factory-preset table for the three ways it can quietly lie.
+Checks the factory presets, which now live as JSON under Source/Presets/Factory.
 
     python3 tests/presets/check_presets.py
 
@@ -18,219 +18,132 @@ release build to say why:
      "mostly" - the same preset gave different results depending on what had
      been loaded before it.
 
-  3. A MAP KEY OR FIELD NAME WAS TYPED WRONG. The values are written
-     `preset.someField`, so a misspelt field is a compile error, but a
-     misspelt KEY - `{ "prempa", ... }` - is not: applyFactoryPreset()'s
-     getParameter() guard drops it and the parameter keeps the session's value,
-     silently.
+  3. A KEY WAS TYPED WRONG. A misspelt key in a JSON file is not a compile
+     error: the loader records it, applyFactoryPreset()'s getParameter() guard
+     drops it, and the parameter silently keeps the session's value.
 
 None of these can fail at runtime, which is why C++ cannot catch them and why
-this reads the source instead. It checks:
+this reads the source and the data instead.
 
-  * numFactoryPresets == len(getPresetNames()) == number of table rows
-  * every table row's trailing comment is the name at the same INDEX
-  * every key in factoryPresetValues() is a declared parameter id
-  * every declared parameter id is either such a key, or named - with a reason -
-    in the exclusion list the plugin itself declares
-  * every `preset.x` the map reads is a field the FactoryPreset struct declares
-  * the exclusion list here is the one in the C++ audit, so the two cannot
-    disagree about what a preset is allowed to leave alone
+What it checks now, against the JSON rather than a C++ table:
 
-The C++ side of the same check is the DEBUG block in the processor's
-constructor. That one catches a wrong VALUE at a breakpoint; this one runs in
-CI against a release build and names the offending id in the log.
+  * every file in Source/Presets/Factory is named in FACTORY_PRESET_FILES, and
+    every file named there exists - the build graph and the data cannot drift
+  * every file parses, and every name is non-empty and unique
+  * every key is a real, registered parameter id
+  * every value is a number (a string or an object is a typo the loader would
+    turn into the sentinel, and the debug audit would then fail on it)
+  * every registered parameter is either set by some preset or listed in the
+    C++ intentionallyNotPresettable set, and the two lists are compared
 """
-
+import json
+import os
 import re
 import sys
-from pathlib import Path
 
-SOURCE = Path(__file__).resolve().parents[2] / "Source" / "PluginProcessor.cpp"
+ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+PRESET_DIR = os.path.join(ROOT, "Source", "Presets", "Factory")
+CMAKE = os.path.join(ROOT, "CMakeLists.txt")
+PROCESSOR = os.path.join(ROOT, "Source", "PluginProcessor.cpp")
 
-# The count itself lives in the header, beside the declaration that uses it;
-# everything else is in the .cpp. Both are read because the disagreement this
-# checks for is precisely between a header constant and a .cpp list.
-HEADER = Path(__file__).resolve().parents[2] / "Source" / "PluginProcessor.h"
-
-# The five parameters a preset deliberately does not state, and why. Kept here
-# as a literal so the check has something to hold the plugin to, and compared
-# against the C++ list below - the two drifting apart is itself a bug.
-EXPECTED_EXCLUSIONS = {
-    "bypass",
-    "delta",
-    "ui_sounds",
-    "transport",
-    "spindown",
-}
+problems = []
 
 
-def fail(problems, message):
-    problems.append(message)
+def read(path):
+    with open(path, encoding="utf-8") as handle:
+        return handle.read()
 
 
-def main() -> int:
-    if not SOURCE.is_file():
-        print(f"check_presets: {SOURCE} not found")
-        return 1
+# ---------------------------------------------------------------------------
+# 1. The preset list, from CMake, and the files on disk.
+# ---------------------------------------------------------------------------
+cmake = read(CMAKE)
+block = re.search(r"set\(FACTORY_PRESET_FILES(.*?)\)", cmake, re.S)
+if not block:
+    sys.exit("check_presets: FACTORY_PRESET_FILES not found in CMakeLists.txt")
 
-    text = SOURCE.read_text(encoding="utf-8")
-    header = HEADER.read_text(encoding="utf-8")
-    problems = []
+listed = re.findall(r"\$\{FACTORY_PRESET_DIR\}/([A-Za-z0-9_]+)\.json", block.group(1))
+if len(listed) != len(set(listed)):
+    problems.append("FACTORY_PRESET_FILES names the same file twice")
 
-    # ------------------------------------------------------------------
-    #  The three sources of truth, sliced out of the one file.
-    # ------------------------------------------------------------------
+on_disk = sorted(f[:-5] for f in os.listdir(PRESET_DIR) if f.endswith(".json"))
+missing = sorted(set(on_disk) - set(listed))
+extra = sorted(set(listed) - set(on_disk))
+for name in missing:
+    problems.append("on disk but not built: %s.json" % name)
+for name in extra:
+    problems.append("built but not on disk: %s.json" % name)
 
-    count_match = re.search(
-        r"numFactoryPresets\s*=\s*(\d+)", header)
-    if count_match is None:
-        print("check_presets: numFactoryPresets not found")
-        return 1
-    declared_count = int(count_match.group(1))
+if not listed:
+    sys.exit("check_presets: FACTORY_PRESET_FILES is empty")
 
-    names_block = re.search(
-        r"juce::StringArray FirstAudioProcessor::getPresetNames\(\)\s*\{(.*?)\n\}",
-        text, re.S)
-    if names_block is None:
-        print("check_presets: getPresetNames() not found")
-        return 1
-    names = re.findall(r'"([^"]+)"', names_block.group(1))
+# ---------------------------------------------------------------------------
+# 2. The registered parameter ids, and the deliberate exclusions, from source.
+# ---------------------------------------------------------------------------
+processor = read(PROCESSOR)
 
-    table_start = text.index(
-        "static const std::array<FactoryPreset, numFactoryPresets> table {{")
-    table_end = text.index("\n    }};", table_start)
-    table = text[table_start:table_end]
+ids_block = re.search(r"static const auto ids = std::array\s*\{(.*?)\};", processor, re.S)
+if not ids_block:
+    sys.exit("check_presets: the registered id list not found in PluginProcessor.cpp")
+ids = set(re.findall(r'"([a-z0-9_]+)"', ids_block.group(1)))
+ids |= set(re.findall(r'ParameterID \{ "([a-z0-9_]+)"', processor))
 
-    # A row ends at the comment the table puts on every row. The comment is the
-    # only thing in the table that says which sound a row is, so it is the row's
-    # name for this check - and that is precisely why a name missing HERE, in
-    # getPresetNames(), is a bug rather than a style choice.
-    row_names = [
-        m.group(1).strip()
-        for m in re.finditer(r"\},  // ([^\n]*)$", table, re.M)
-    ]
+excluded_block = re.search(
+    r"intentionallyNotPresettable\s*\{(.*?)\};", processor, re.S)
+if not excluded_block:
+    sys.exit("check_presets: intentionallyNotPresettable not found in PluginProcessor.cpp")
+excluded = set(re.findall(r'"([a-z0-9_]+)"', excluded_block.group(1)))
 
-    map_start = text.index("factoryPresetValues (int index)")
-    map_block = re.search(
-        r"const auto values = std::map<juce::String, float>\s*\{(.*?)\n    \};",
-        text[map_start:], re.S)
-    if map_block is None:
-        print("check_presets: the values map in factoryPresetValues() not found")
-        return 1
-    map_body = map_block.group(1)
-    map_keys = re.findall(r'\{\s*"([^"]+)"\s*,', map_body)
-    map_fields = re.findall(r"preset\.(\w+)", map_body)
+# ---------------------------------------------------------------------------
+# 3. The data itself.
+# ---------------------------------------------------------------------------
+covered = set()
+names = []
 
-    struct_start = text.index("struct FactoryPreset\n    {")
-    struct_end = text.index("\n    };", struct_start)
-    struct_fields = set(
-        re.findall(r"^\s+(?:float|int)\s+(\w+)", text[struct_start:struct_end], re.M))
+for name in listed:
+    path = os.path.join(PRESET_DIR, name + ".json")
+    if not os.path.exists(path):
+        continue
+    try:
+        preset = json.loads(read(path))
+    except ValueError as error:
+        problems.append("%s.json does not parse: %s" % (name, error))
+        continue
 
-    declared_params = set(re.findall(r'ParameterID\s*\{\s*"([^"]+)"', text))
+    label = preset.get("name")
+    if not isinstance(label, str) or not label.strip():
+        problems.append("%s.json has no usable \"name\"" % name)
+    else:
+        names.append(label)
 
-    # The exclusion list, parsed out of the C++ audit so it is the plugin's own
-    # list rather than a second copy of it.
-    exclusion_block = re.search(
-        r"intentionallyNotPresettable\s*\{(.*?)\}", text, re.S)
-    cpp_exclusions = set()
-    if exclusion_block is not None:
-        cpp_exclusions = set(re.findall(r'"([^"]+)"', exclusion_block.group(1)))
+    for key, value in preset.items():
+        if key == "name":
+            continue
+        if key not in ids:
+            problems.append("%s.json: \"%s\" is not a registered parameter" % (name, key))
+            continue
+        if isinstance(value, bool) or not isinstance(value, (int, float)):
+            problems.append("%s.json: \"%s\" is %s, not a number" % (name, key, type(value).__name__))
+            continue
+        covered.add(key)
 
-    # ------------------------------------------------------------------
-    #  1. One count, written once, held by all three sources.
-    # ------------------------------------------------------------------
+duplicates = {n for n in names if names.count(n) > 1}
+for name in sorted(duplicates):
+    problems.append("two presets are both called \"%s\"" % name)
 
-    if len(names) != declared_count:
-        fail(problems,
-             f"getPresetNames() returns {len(names)} names but "
-             f"numFactoryPresets is {declared_count}. Every row past the "
-             f"short list is loaded under the name above it, because the box, "
-             f"the undo label and the badge all index by POSITION.")
+missing_from_presets = sorted(ids - covered - excluded)
+for key in missing_from_presets:
+    problems.append("parameter \"%s\" is in no preset and is not excluded" % key)
 
-    if len(row_names) != declared_count:
-        fail(problems,
-             f"the table has {len(row_names)} named rows but numFactoryPresets "
-             f"is {declared_count}.")
+stale_exclusions = sorted(excluded - ids)
+for key in stale_exclusions:
+    problems.append("intentionallyNotPresettable names \"%s\", which is not a parameter" % key)
 
-    if len(names) == len(row_names):
-        for index, (name, row) in enumerate(zip(names, row_names)):
-            if name != row:
-                fail(problems,
-                     f"row {index} is named {row!r} in the table but "
-                     f"{name!r} in getPresetNames().")
+# ---------------------------------------------------------------------------
+if problems:
+    for problem in problems:
+        print("check_presets: " + problem)
+    sys.exit(1)
 
-    if len(set(names)) != len(names):
-        duplicates = sorted({n for n in names if names.count(n) > 1})
-        fail(problems, f"duplicate preset names: {', '.join(duplicates)}")
-
-    # ------------------------------------------------------------------
-    #  2. Every key is a parameter the plugin actually has.
-    # ------------------------------------------------------------------
-
-    for key in sorted(set(map_keys)):
-        if key not in declared_params:
-            fail(problems,
-                 f"factoryPresetValues() writes the key {key!r}, which is not a "
-                 f"parameter. applyFactoryPreset() drops it and the parameter "
-                 f"keeps the session's value, so the preset loads 'mostly'.")
-
-    # ------------------------------------------------------------------
-    #  3. Every parameter is either in a preset or named as an exclusion.
-    # ------------------------------------------------------------------
-
-    if cpp_exclusions != EXPECTED_EXCLUSIONS:
-        fail(problems,
-             "the exclusion list in the constructor's audit is "
-             f"{sorted(cpp_exclusions)} but this check expects "
-             f"{sorted(EXPECTED_EXCLUSIONS)}. One of the two is out of date.")
-
-    for parameter in sorted(declared_params - set(map_keys)):
-        if parameter not in EXPECTED_EXCLUSIONS:
-            fail(problems,
-                 f"the parameter {parameter!r} is declared but no preset states "
-                 f"it, so it keeps the session's value on every load. If that "
-                 f"is deliberate, add it to EXPECTED_EXCLUSIONS in this file "
-                 f"and to intentionallyNotPresettable in the processor, with "
-                 f"the reason.")
-
-    for parameter in sorted(EXPECTED_EXCLUSIONS):
-        if parameter not in declared_params:
-            fail(problems,
-                 f"{parameter!r} is on the exclusion list but is not a "
-                 f"parameter any more - the list is stale.")
-
-    # ------------------------------------------------------------------
-    #  4. Every field the map reads is a field the struct declares.
-    # ------------------------------------------------------------------
-
-    for field in sorted(set(map_fields)):
-        if field not in struct_fields:
-            fail(problems,
-                 f"factoryPresetValues() reads preset.{field}, which the "
-                 f"FactoryPreset struct does not declare.")
-
-    # ------------------------------------------------------------------
-    #  Report.
-    # ------------------------------------------------------------------
-
-    if problems:
-        print("check_presets: the factory presets are not consistent.")
-        print()
-        for problem in problems:
-            print(f"  - {problem}")
-        print()
-        print(f"{len(problems)} problem(s). The preset table, the name list and "
-              f"the parameter layout must agree.")
-        return 1
-
-    print(f"check_presets: {declared_count} presets consistent.")
-    print(f"  names           {len(names)}")
-    print(f"  table rows      {len(row_names)}")
-    print(f"  parameters set  {len(set(map_keys))} of {len(declared_params)}")
-    print(f"  not presettable {', '.join(sorted(EXPECTED_EXCLUSIONS))}")
-    print(f"  struct fields   {len(struct_fields)}, all read by the map")
-    return 0
-
-
-if __name__ == "__main__":
-    sys.exit(main())
+print("check_presets: %d presets consistent, %d of %d parameters set, %d excluded"
+      % (len(listed), len(covered), len(ids), len(excluded)))
