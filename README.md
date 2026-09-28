@@ -903,7 +903,7 @@ min API 28, NDK from the runner). To build by hand you need the Android NDK
 cmake -S . -B build-android \
     -DCMAKE_BUILD_TYPE=Release \
     -DCMAKE_SYSTEM_NAME=Android \
-    -DCMAKE_ANDROID_API=28 \
+    -DCMAKE_ANDROID_API=29 \
     -DCMAKE_ANDROID_NDK=$ANDROID_NDK_LATEST_HOME \
     -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a
 cmake --build build-android --parallel

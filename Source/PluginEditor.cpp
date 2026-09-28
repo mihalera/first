@@ -4156,7 +4156,10 @@ void FirstAudioProcessorEditor::timerCallback()
                                     : transportNow == 0 ? "STOPPED / AT REST"
                                     : transportNow == 2 ? "START / SPINNING UP"
                                                         : "PLAY / AT SPEED";
-    if (machineStateText != lastShownMachineState)
+    // Explicit juce::String construction: comparing const char* against a
+    // juce::String with != is ambiguous (candidates on both sides), so the
+    // left operand is materialised first.
+    if (juce::String (machineStateText) != lastShownMachineState)
     {
         lastShownMachineState = machineStateText;
         deckHintLabel.setText (machineStateText, juce::dontSendNotification);
