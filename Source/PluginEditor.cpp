@@ -1,4 +1,4 @@
-#include "PluginProcessor.h"
+﻿#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
@@ -3623,6 +3623,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (presetHeadingLabel);
 
     refreshPresetList();
+    // The box now starts with nothing selected on a fresh instance (honest display:
+    // no factory preset has been applied yet), so it needs a placeholder for the
+    // empty row rather than the base Look and Feel's blank field.
+    presetBox.setTextWhenNothingSelected ("FACTORY...");
     setTip (presetBox, "Factory presets. Loading one replaces the whole machine state "
                           "in a single undoable step.");
     presetBox.setLookAndFeel (&customLookAndFeel);
@@ -3632,8 +3636,19 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         if (selectedId <= 0)
             return;
         const auto presetIndex = selectedId - 1;
-        if (presetIndex == audioProcessor.getLastPresetIndex())
-            return; // re-selecting the displayed entry is not a state change
+
+        // Re-selecting the displayed entry IS a state change whenever the machine
+        // has drifted from that preset since it was loaded (the EDITED badge is
+        // exactly that fact, on screen). The old guard returned whenever the
+        // index matched, which made the one gesture a user reaches for after
+        // tweaking - "put this preset back" - do nothing at all: the box already
+        // showed the preset, the click re-picked it, and the panel kept the
+        // edited state. Reload whenever the machine is dirty; skip only when
+        // that preset is both loaded AND clean.
+        if (presetIndex == audioProcessor.getLastPresetIndex()
+            && ! audioProcessor.isPresetDirty())
+            return;
+
         audioProcessor.applyFactoryPreset (presetIndex);
         lastShownPreset = presetIndex;
     };
@@ -3944,9 +3959,15 @@ void FirstAudioProcessorEditor::refreshPresetList()
     const auto names = FirstAudioProcessor::getPresetNames();
     for (auto i = 0; i < names.size(); ++i)
         presetBox.addItem (names[i], i + 1);
-    presetBox.setSelectedItemIndex (juce::jmax (0, audioProcessor.getLastPresetIndex()),
-                                    juce::dontSendNotification);
-    lastShownPreset = audioProcessor.getLastPresetIndex();
+
+    // A fresh instance has NO preset loaded (index -1): showing "Default" as the
+    // box's selection then was a lie - the panel held the raw parameter defaults
+    // (DRIVE 0.30), not that preset's values (DRIVE 0.28), and picking "Default"
+    // looked like it had done nothing. Nothing selected is the honest display; the
+    // first honest load happens when the user (or a session) actually applies one.
+    const auto loaded = audioProcessor.getLastPresetIndex();
+    presetBox.setSelectedItemIndex (loaded >= 0 ? loaded : -1, juce::dontSendNotification);
+    lastShownPreset = loaded;
 }
 
 void FirstAudioProcessorEditor::updateWorkflowButtons()
@@ -4926,11 +4947,14 @@ void FirstAudioProcessorEditor::timerCallback()
     if (presetNow != lastShownPreset)
     {
         lastShownPreset = presetNow;
-        // Item IDs are index + 1, so 0 means "no selection" - exactly what a user
-        // preset (index -1) should show in the FACTORY combo.
+        // Item IDs are index + 1, so 0 means "no selection" - what a user preset
+        // (index -1) should show in the FACTORY combo.
         presetBox.setSelectedId (presetNow + 1, juce::dontSendNotification);
         refreshUserPresetList(); // a factory load clears the user-preset selection
     }
+    // The box's SELECTED ENTRY follows the loaded preset, but a preset that is
+    // loaded-and-then-edited keeps its entry while the machine drifts; that is
+    // correct (the badge says EDITED) and needs no per-frame re-selection here.
 
     const auto userPresetNow = audioProcessor.getCurrentPresetName();
     const auto presetDirtyNow = audioProcessor.isPresetDirty();
@@ -5414,18 +5438,23 @@ void FirstAudioProcessorEditor::resized()
 
     // ---- row 3: the six type switches ---------------------------------------
     {
+        // 108 per column, not 100: the longest stock values ("Fender Blackface",
+        // "Jensen JT-11P") ellipsised in the deck's own combo drawing at the old
+        // width on every panel under ~1400 px. 108 is the largest the row holds at
+        // the 780 px minimum ((720 - 5 x 14 gaps) / 6 = 108), and above that width
+        // the row's elastic gap shrinks before any column does.
         const std::vector<DeckRowItem> row {
-            { &vinylTypeLabel,       100, -1,  0, 15, false },
+            { &vinylTypeLabel,       108, -1,  0, 15, false },
             { &vinylTypeBox,           0, -1, 15, 30, true  },
-            { &vinylSpeedLabel,      100, -1,  0, 15, false },
+            { &vinylSpeedLabel,      108, -1,  0, 15, false },
             { &vinylSpeedBox,          0, -1, 15, 30, true  },
-            { &valveTypeLabel,       100, -1,  0, 15, false },
+            { &valveTypeLabel,       108, -1,  0, 15, false },
             { &valveTypeBox,           0, -1, 15, 30, true  },
-            { &ampTypeLabel,         100, -1,  0, 15, false },
+            { &ampTypeLabel,         108, -1,  0, 15, false },
             { &ampTypeBox,             0, -1, 15, 30, true  },
-            { &transformerTypeLabel, 100, -1,  0, 15, false },
+            { &transformerTypeLabel, 108, -1,  0, 15, false },
             { &transformerTypeBox,     0, -1, 15, 30, true  },
-            { &digitalTypeLabel,     100, -1,  0, 15, false },
+            { &digitalTypeLabel,     108, -1,  0, 15, false },
             { &digitalTypeBox,         0, -1, 15, 30, true  }
         };
 
