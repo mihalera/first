@@ -1,4 +1,4 @@
-﻿﻿#include "PluginProcessor.h"
+﻿#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
