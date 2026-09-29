@@ -208,7 +208,8 @@ juce_generate_juce_header(first)
 # ------------------------------------------------------------------------------
 target_sources(first PRIVATE
     Source/PluginProcessor.cpp
-    Source/PluginEditor.cpp)
+    Source/PluginEditor.cpp
+    Source/GUI/TapeScene.cpp)
 
 target_include_directories(first PRIVATE Source)
 
