@@ -14,6 +14,13 @@
 // depend on that.
 #include <juce_opengl/juce_opengl.h>
 
+// glm is linked by CMake (see cmake/J37Dependencies.cmake) and is used for the
+// scene's matrices. It is a header-only library, so this is the whole of what it
+// takes to have it here - and having it here rather than in the .cpp is what
+// lets the bank's own draw signature and the editor's hit-test agree on what a
+// matrix is instead of passing raw floats between them.
+#include <glm/glm.hpp>
+
 #include <atomic>
 #include <array>
 #include <cstring>
@@ -100,6 +107,20 @@ public:
         Message thread only, and it allocates: the editor calls it when the
         visible bank changes, never per frame. */
     void setKnobCaptions (const juce::String* captions, int count) noexcept;
+
+    /** Which control a point in this component falls on, or -1 for none.
+
+        The editor owns the mouse: this component is set not to intercept clicks,
+        because a 3D control that swallowed them would also swallow the drag on
+        the 2D control underneath. So the bank is HIT-TESTED here and the result
+        handed back, and the editor decides what a click on it means.
+
+        The projection is recomputed from the same constants renderOpenGL() uses,
+        so the answer and the picture cannot disagree about where a knob is. */
+    int controlIndexAt (juce::Point<int> positionInThisComponent) const;
+
+    /** The value a control is showing, 0..1, or 0.5 when it has none. */
+    float getControlValue (int controlIndex) const noexcept;
 
     /** The window's colours, so it follows the panel's theme. Called from the
         editor whenever the theme changes and once at construction. */
@@ -203,6 +224,12 @@ private:
         placement table both read it, and the two drifting apart would put a knob
         caption over a keycap. */
     static constexpr int bankKnobCount = 3;
+
+    /** The control the editor puts a tooltip on, and the one a click on the bank
+        is taken to mean. One control, not three: the bank is a picture of the
+        machine rather than a second set of knobs, and a user who wants a knob
+        uses the real one. */
+    static constexpr int bankInteractiveIndex = 0;
 
     void drawControlBank (const glm::mat4& viewProjection,
                           const glm::mat4& scene,
