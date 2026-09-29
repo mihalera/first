@@ -87,6 +87,21 @@ public:
     void drawButtonText (juce::Graphics&, juce::TextButton&,
                          bool, bool) override;
 
+    /** Where the ComboBox's value Label sits, and its font.
+
+        juce::ComboBox paints its value with an internal juce::Label that this
+        callback places - drawComboBox() draws only the field. Positioning the
+        Label is what keeps the value printed exactly once; a custom
+        drawComboBox that prints the text too shows it twice, slightly offset,
+        which is the overlap that made the lists unreadable. */
+    void positionComboBoxText (juce::ComboBox&, juce::Label&) override;
+
+    /** The combo value Label's own paint: ink only, no fill. juce::ComboBox
+        paints its value with an internal juce::Label, and a Label carrying the
+        base LookAndFeel's opaque background would cover the field's drawn
+        face - the flat card that made the workflow lists unreadable. */
+    void drawLabel (juce::Graphics&, juce::Label&) override;
+
 private:
     ThemeChoice theme = ThemeChoice::ivory;
     float activity = 0.0f;   ///< Compressor activity, drives the glow around the knobs.
@@ -149,6 +164,13 @@ public:
         than the deck's tall rows. */
     juce::Font getComboBoxFont (juce::ComboBox&) override;
     juce::Font getPopupMenuFont() override;
+
+    /** Value placement for the in-tab lists: left-aligned like a settings row,
+        clear of the caret (see J37LookAndFeel's note for why this exists). */
+    void positionComboBoxText (juce::ComboBox&, juce::Label&) override;
+
+    /** Ink-only value Label paint, matching the deck style's (no fill card). */
+    void drawLabel (juce::Graphics&, juce::Label&) override;
 
     /** The small pill switch used for the tab's on/off controls. */
     void drawToggleButton (juce::Graphics&, juce::ToggleButton&,

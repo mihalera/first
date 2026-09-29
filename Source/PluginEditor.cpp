@@ -1,4 +1,4 @@
-#include "PluginProcessor.h"
+﻿#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
@@ -993,6 +993,44 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
 }
 
 //==============================================================================
+//  The deck's combo boxes (MODEL, SPEED, the workflow lists) are painted by
+//  LookAndFeel_V4::drawComboBox, which reserves a 30 px arrow zone on the right -
+//  but V4's positionComboBoxText was never overridden, so the value Label sat in
+//  geometry inherited from wherever the last Look and Feel left it. Any list whose
+//  Label geometry drifted ended up printing its text twice, a few pixels apart -
+//  text on text, unreadable. Pinning the Label here gives every deck list one
+//  authoritative placement: inside the arrow zone, at the combo font V4 chooses.
+//==============================================================================
+void J37LookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
+{
+    label.setBounds (1, 1, juce::jmax (0, box.getWidth() - 30), box.getHeight() - 2);
+    label.setFont (getComboBoxFont (box));
+}
+
+//==============================================================================
+//  The combo value Label: juce::ComboBox paints its text with an internal
+//  juce::Label through THIS virtual, so the Label's own paint must not add
+//  anything the field does not want - an opaque fill would sit on top of the
+//  drawn background (a flat white card over the deck's colours, exactly the
+//  band the workflow lists arrived with), and a proportional face would make
+//  the same entry change width between the box and the open menu.
+//==============================================================================
+void J37LookAndFeel::drawLabel (juce::Graphics& g, juce::Label& label)
+{
+    g.setColour (label.findColour (juce::Label::textColourId));
+    g.setFont (label.getFont());
+
+    auto area = label.getLocalBounds().toFloat();
+    if (! label.isEnabled())
+        g.setOpacity (0.45f);
+
+    g.drawFittedText (label.getText(), area.toNearestInt(),
+                      label.getJustificationType(),
+                      juce::jmax (1, static_cast<int> (area.getHeight() / g.getCurrentFont().getHeight())),
+                      label.getMinimumHorizontalScale());
+}
+
+//==============================================================================
 //  Text-button captions are measured against each button's own width rather than
 //  drawn at whatever size the default Look and Feel happens to choose. The
 //  preset / A/B row is width-constrained at the minimum panel size, so a caption
@@ -1062,14 +1100,11 @@ void J37InlineLookAndFeel::drawComboBox (juce::Graphics& g, int width, int heigh
 
     // The value is drawn LEFT-aligned, like a settings row, rather than centred
     // like a button caption - that is the single biggest thing that makes this
-    // read as a list rather than as a switch.
-    const auto valueArea = bounds.reduced (6.0f, 0.0f).withTrimmedRight (14.0f);
-    const auto valueText = box.getText();
-
-    g.setColour (box.isEnabled() ? palette.text : palette.secondary.withAlpha (0.6f));
-    g.setFont (shrinkingFont (valueText, juce::jmin (12.0f, bounds.getHeight() * 0.52f),
-                               juce::Font::plain, valueArea.getWidth()));
-    g.drawText (valueText, valueArea, juce::Justification::centredLeft, true);
+    // read as a list rather than as a switch. The text itself is NOT drawn here:
+    // juce::ComboBox paints its own internal Label over this call, so printing
+    // the value here as well drew every list twice, a few pixels apart - text on
+    // text, which is the self-overlap the lists arrived with. positionComboBoxText
+    // below places that Label; this override only paints the field around it.
 
     // A slim caret, drawn as two short strokes rather than a filled triangle:
     // at this size a filled triangle reads as a decoration, a chevron reads as
@@ -1094,6 +1129,37 @@ juce::Font J37InlineLookAndFeel::getComboBoxFont (juce::ComboBox& box)
     // on a larger panel without a second constant to keep in step.
     const auto height = juce::jlimit (9.0f, 14.0f, static_cast<float> (box.getHeight()) * 0.50f);
     return juce::Font (juce::FontOptions (height));
+}
+
+void J37InlineLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
+{
+    // The value Label, placed for the in-tab style: left-aligned with the same
+    // inset the old hand-drawn text used, and trimmed on the right so a long
+    // entry ellipsises before it reaches the caret. Print-the-value lives ONLY
+    // here (see drawComboBox above): the base class never runs for these lists,
+    // so without this override the Label kept V4's geometry - centred, 30 px
+    // reserved for an arrow zone the flat field does not draw.
+    label.setBounds (6, 1, juce::jmax (0, box.getWidth() - 26), box.getHeight() - 2);
+    label.setFont (getComboBoxFont (box));
+    label.setJustificationType (juce::Justification::centredLeft);
+}
+
+void J37InlineLookAndFeel::drawLabel (juce::Graphics& g, juce::Label& label)
+{
+    // Same argument as the deck style's drawLabel: the internal Label paints
+    // itself over the field, so its own paint must be ink only - no opaque
+    // background card, and the same face the field's own drawing used.
+    g.setColour (label.findColour (juce::Label::textColourId));
+    g.setFont (label.getFont());
+
+    auto area = label.getLocalBounds().toFloat();
+    if (! label.isEnabled())
+        g.setOpacity (0.45f);
+
+    g.drawFittedText (label.getText(), area.toNearestInt(),
+                      label.getJustificationType(),
+                      juce::jmax (1, static_cast<int> (area.getHeight() / g.getCurrentFont().getHeight())),
+                      label.getMinimumHorizontalScale());
 }
 
 juce::Font J37InlineLookAndFeel::getPopupMenuFont()
@@ -1595,10 +1661,18 @@ void FirstAudioProcessorEditor::styleLabel (juce::Label& label, const juce::Stri
                                             float size, juce::Colour colour,
                                             bool bold, juce::Justification justification)
 {
+    // The small captions beside the engine switches and under the member rows
+    // used to render a size (or two) larger than the control they name, which is
+    // what read as off on this panel - a caption should sit UNDER its control,
+    // not beside it. One size down from what the call site asks for, with a
+    // slight squeeze floor so a long caption ellipsises instead of spilling into
+    // the neighbour's cell.
     label.setText (text, juce::dontSendNotification);
-    label.setFont (juce::Font (juce::FontOptions (size, bold ? juce::Font::bold : juce::Font::plain)));
-    label.setColour (juce::Label::textColourId, colour);
+    label.setFont (juce::Font (juce::FontOptions (juce::jmax (8.5f, size - 1.0f),
+                                                  bold ? juce::Font::bold : juce::Font::plain)));
     label.setJustificationType (justification);
+    label.setMinimumHorizontalScale (0.82f);
+    label.setColour (juce::Label::textColourId, colour);
     label.setInterceptsMouseClicks (false, false);
 }
 
@@ -3205,6 +3279,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         addAndMakeVisible (label);
         box.addItemList (items, 1);
         setTip (box, tip);
+        // The flat field is painted by the inline Look and Feel, but the VALUE
+        // is painted by juce::ComboBox's internal Label reading
+        // ComboBox::textColourId - unstyled, that stayed the base LookAndFeel's
+        // black on the dark panels, which is what made these lists unreadable.
+        // applyTheme() re-inks it on every theme switch; this call is what makes
+        // the very first paint legible.
+        box.setColour (juce::ComboBox::textColourId, paletteFor (false).text);
         box.setLookAndFeel (&inlineLookAndFeel);
         addAndMakeVisible (box);
         juce::ignoreUnused (parameterID);
@@ -3382,7 +3463,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 true, juce::Justification::left);
     styleLabel (delaySyncLabel, "SYNC DELAY", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
-    styleLabel (glLabel, "GL", 9.0f, paletteFor (false).secondary,
+    // The GL pill carries its own caption ("GL ON" / "GL OFF"), so its LABEL is
+    // never drawn - the caption lives in placeDeckSwitch's SETTINGS branch, which
+    // setText()s it when that tab is laid out. The constructor keeps the text off:
+    // an empty label paints nothing, so the first frame (and every frame until the
+    // SETTINGS tab is opened) shows no stray "GL" floating in the deck block. The
+    // label still exists as the caption slot for placeDeckSwitch to fill.
+    styleLabel (glLabel, "", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
     addAndMakeVisible (delayRateLabel);
     delayRateBox.addItemList (juce::StringArray { "1/1", "1/2", "1/4", "1/8", "1/16",
@@ -3530,6 +3617,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         addAndMakeVisible (label);
         box.addItemList (items, 1);
         setTip (box, tip);
+        // The flat field is painted by the inline Look and Feel, but the VALUE
+        // is painted by juce::ComboBox's internal Label reading
+        // ComboBox::textColourId - unstyled, that stayed the base LookAndFeel's
+        // black on the dark panels, which is what made these lists unreadable.
+        // applyTheme() re-inks it on every theme switch; this call is what makes
+        // the very first paint legible.
+        box.setColour (juce::ComboBox::textColourId, paletteFor (false).text);
         box.setLookAndFeel (&inlineLookAndFeel);
         addAndMakeVisible (box);
     };
@@ -3623,6 +3717,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (presetHeadingLabel);
 
     refreshPresetList();
+    // The box now starts with nothing selected on a fresh instance (honest display:
+    // no factory preset has been applied yet), so it needs a placeholder for the
+    // empty row rather than the base Look and Feel's blank field.
+    presetBox.setTextWhenNothingSelected ("FACTORY...");
     setTip (presetBox, "Factory presets. Loading one replaces the whole machine state "
                           "in a single undoable step.");
     presetBox.setLookAndFeel (&customLookAndFeel);
@@ -3632,8 +3730,19 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         if (selectedId <= 0)
             return;
         const auto presetIndex = selectedId - 1;
-        if (presetIndex == audioProcessor.getLastPresetIndex())
-            return; // re-selecting the displayed entry is not a state change
+
+        // Re-selecting the displayed entry IS a state change whenever the machine
+        // has drifted from that preset since it was loaded (the EDITED badge is
+        // exactly that fact, on screen). The old guard returned whenever the
+        // index matched, which made the one gesture a user reaches for after
+        // tweaking - "put this preset back" - do nothing at all: the box already
+        // showed the preset, the click re-picked it, and the panel kept the
+        // edited state. Reload whenever the machine is dirty; skip only when
+        // that preset is both loaded AND clean.
+        if (presetIndex == audioProcessor.getLastPresetIndex()
+            && ! audioProcessor.isPresetDirty())
+            return;
+
         audioProcessor.applyFactoryPreset (presetIndex);
         lastShownPreset = presetIndex;
     };
@@ -3944,9 +4053,15 @@ void FirstAudioProcessorEditor::refreshPresetList()
     const auto names = FirstAudioProcessor::getPresetNames();
     for (auto i = 0; i < names.size(); ++i)
         presetBox.addItem (names[i], i + 1);
-    presetBox.setSelectedItemIndex (juce::jmax (0, audioProcessor.getLastPresetIndex()),
-                                    juce::dontSendNotification);
-    lastShownPreset = audioProcessor.getLastPresetIndex();
+
+    // A fresh instance has NO preset loaded (index -1): showing "Default" as the
+    // box's selection then was a lie - the panel held the raw parameter defaults
+    // (DRIVE 0.30), not that preset's values (DRIVE 0.28), and picking "Default"
+    // looked like it had done nothing. Nothing selected is the honest display; the
+    // first honest load happens when the user (or a session) actually applies one.
+    const auto loaded = audioProcessor.getLastPresetIndex();
+    presetBox.setSelectedItemIndex (loaded >= 0 ? loaded : -1, juce::dontSendNotification);
+    lastShownPreset = loaded;
 }
 
 void FirstAudioProcessorEditor::updateWorkflowButtons()
@@ -4233,6 +4348,22 @@ void FirstAudioProcessorEditor::applyTheme()
     // a box that matched nothing else on the panel.
     styleCombo (languageBox);
 
+    // The lists' popup menus paint through the LookAndFeel_V4 item drawing, which
+    // reads THESE colour ids off the attached LookAndFeel - at theme time there is
+    // no PopupMenu object to style directly, so both LookAndFeels carry the palette
+    // and whichever box opens a menu uses its own. A dark panel without them opened
+    // the base look's light menu, whose black text on the menu's black selection
+    // highlight was unreadable (the complaint behind "text is not readable").
+    const auto stylePopupMenu = [&palette] (juce::LookAndFeel& lf)
+    {
+        lf.setColour (juce::PopupMenu::backgroundColourId, palette.panel.brighter (0.08f));
+        lf.setColour (juce::PopupMenu::textColourId, palette.text);
+        lf.setColour (juce::PopupMenu::highlightedBackgroundColourId, palette.accent.withAlpha (0.85f));
+        lf.setColour (juce::PopupMenu::highlightedTextColourId, palette.readout);
+    };
+    stylePopupMenu (customLookAndFeel);
+    stylePopupMenu (inlineLookAndFeel);
+
     const auto styleWorkflowButton = [&palette] (juce::TextButton& button, bool emphasised)
     {
         button.setColour (juce::TextButton::buttonColourId, palette.raised);
@@ -4247,26 +4378,36 @@ void FirstAudioProcessorEditor::applyTheme()
 
     styleCombo (oversamplingBox);
     styleCombo (instrumentBox);
-    // The three vinyl selectors deliberately do NOT go through styleCombo: they
+    // The seven tab-member lists deliberately do NOT go through styleCombo: they
     // are drawn by J37InlineLookAndFeel, which reads the palette live and has
-    // its own, flatter treatment. Styling them here as well would fight it.
-    styleCombo (vinylGenerationBox);
-    styleCombo (vinylTurntableBox);
-    styleCombo (vinylCartridgeBox);
+    // its own, flatter treatment. Styling their field would fight it. The VALUE
+    // colour and font below are not part of that treatment either - juce::ComboBox
+    // paints its value with an internal Label reading ComboBox::textColourId, and
+    // an unstyled list kept the base LookAndFeel's BLACK value on the dark panels:
+    // DI PAD, TRACKS, ORDER and the vinyl trio were simply unreadable. The font is
+    // set through the same Label, so the in-tab lists use the flat field's own
+    // compact size instead of whatever V4 scales to the box.
+    const auto styleInlineListValue = [&palette] (juce::ComboBox& box)
+    {
+        box.setColour (juce::ComboBox::textColourId, palette.text);
+    };
+    styleInlineListValue (diPadBox);
+    styleInlineListValue (tracksBox);
+    styleInlineListValue (inputEqOrderBox);
+    styleInlineListValue (outputEqOrderBox);
+    styleInlineListValue (vinylGenerationBox);
+    styleInlineListValue (vinylTurntableBox);
+    styleInlineListValue (vinylCartridgeBox);
+    // The delay trio is on the deck Look and Feel (see its construction), so it
+    // follows styleCombo like every other deck list.
+    styleCombo (delayTypeBox);
+    styleCombo (delayRateBox);
     // The transport keys and the spindown button are TextButtons, not combos, so
     // they take their colours from styleTransportButtons() / styleSpindownButton(),
     // which read the palette AND the live state - that is what makes the active key
     // stay highlighted across a theme switch.
     styleTransportButtons();
     styleSpindownButton();
-    styleCombo (delayTypeBox);
-    styleCombo (delayRateBox);
-    styleCombo (valveTypeBox);
-    styleCombo (ampTypeBox);
-    styleCombo (transformerTypeBox);
-    styleCombo (digitalTypeBox);
-    styleCombo (vinylTypeBox);
-    styleCombo (vinylSpeedBox);
     // modeCycleButton is a TextButton whose colours styleWorkflowButton-style
     // calls do not own; it reads the palette through the look and feel, and its
     // caption is refreshed by refreshModeButtonCaption() below.
@@ -4926,11 +5067,14 @@ void FirstAudioProcessorEditor::timerCallback()
     if (presetNow != lastShownPreset)
     {
         lastShownPreset = presetNow;
-        // Item IDs are index + 1, so 0 means "no selection" - exactly what a user
-        // preset (index -1) should show in the FACTORY combo.
+        // Item IDs are index + 1, so 0 means "no selection" - what a user preset
+        // (index -1) should show in the FACTORY combo.
         presetBox.setSelectedId (presetNow + 1, juce::dontSendNotification);
         refreshUserPresetList(); // a factory load clears the user-preset selection
     }
+    // The box's SELECTED ENTRY follows the loaded preset, but a preset that is
+    // loaded-and-then-edited keeps its entry while the machine drifts; that is
+    // correct (the badge says EDITED) and needs no per-frame re-selection here.
 
     const auto userPresetNow = audioProcessor.getCurrentPresetName();
     const auto presetDirtyNow = audioProcessor.isPresetDirty();
@@ -4999,7 +5143,11 @@ void FirstAudioProcessorEditor::timerCallback()
         // The machine's own platter speed, already lagged in smoothedMachineSpeed
         // - so a STOP stops the reels and a held SPINDOWN coasts them down, and
         // the tape only transfers while the transport is actually running.
-        juce::jlimit (0.0f, 1.0f, smoothedMachineSpeed));
+        juce::jlimit (0.0f, 1.0f, smoothedMachineSpeed),
+        // The frame's own loudest sample, linear 0..1, drained from the processor
+        // once per tick (getOutputPeakLevel is an exchange) so the scene's peak
+        // lamp reads the same transient the meter needle just fell for.
+        juce::jlimit (0.0f, 1.0f, audioProcessor.getOutputPeakLevel()));
 
     // The scene's own attach retries, on the same timer and the same bounded
     // budget as this editor's context: a child component cannot have a context
@@ -5414,18 +5562,23 @@ void FirstAudioProcessorEditor::resized()
 
     // ---- row 3: the six type switches ---------------------------------------
     {
+        // 108 per column, not 100: the longest stock values ("Fender Blackface",
+        // "Jensen JT-11P") ellipsised in the deck's own combo drawing at the old
+        // width on every panel under ~1400 px. 108 is the largest the row holds at
+        // the 780 px minimum ((720 - 5 x 14 gaps) / 6 = 108), and above that width
+        // the row's elastic gap shrinks before any column does.
         const std::vector<DeckRowItem> row {
-            { &vinylTypeLabel,       100, -1,  0, 15, false },
+            { &vinylTypeLabel,       108, -1,  0, 15, false },
             { &vinylTypeBox,           0, -1, 15, 30, true  },
-            { &vinylSpeedLabel,      100, -1,  0, 15, false },
+            { &vinylSpeedLabel,      108, -1,  0, 15, false },
             { &vinylSpeedBox,          0, -1, 15, 30, true  },
-            { &valveTypeLabel,       100, -1,  0, 15, false },
+            { &valveTypeLabel,       108, -1,  0, 15, false },
             { &valveTypeBox,           0, -1, 15, 30, true  },
-            { &ampTypeLabel,         100, -1,  0, 15, false },
+            { &ampTypeLabel,         108, -1,  0, 15, false },
             { &ampTypeBox,             0, -1, 15, 30, true  },
-            { &transformerTypeLabel, 100, -1,  0, 15, false },
+            { &transformerTypeLabel, 108, -1,  0, 15, false },
             { &transformerTypeBox,     0, -1, 15, 30, true  },
-            { &digitalTypeLabel,     100, -1,  0, 15, false },
+            { &digitalTypeLabel,     108, -1,  0, 15, false },
             { &digitalTypeBox,         0, -1, 15, 30, true  }
         };
 
@@ -5698,6 +5851,9 @@ void FirstAudioProcessorEditor::resized()
                                               : columnsWide * cellWidth
                                                   + (columnsWide - 1) * (cellWidth / columnsWide),
                                           grid.getBottom() - memberRowY);
+        // This setText() every layout is also why the GL label's constructor
+        // emptiness is safe: the caption is re-written here every time its tab is
+        // live, so a resize between tab switches can never leave a stale one.
         label.setText (caption, juce::dontSendNotification);
         label.setBounds (cell.getX() + 5, cell.getY() + 1, cell.getWidth() - 10, 17);
         box.setBounds (cell.getX() + 12, cell.getY() + 20,
