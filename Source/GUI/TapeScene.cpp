@@ -1,4 +1,4 @@
-﻿/*
+﻿﻿/*
   ==============================================================================
     TapeScene - the deck's transport, rendered as geometry and lit on the GPU.
   ==============================================================================
@@ -10,7 +10,9 @@
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 // JUCE 9 keeps every GL command and every GL enum in juce::gl, and documents
 // `using namespace ::juce::gl;` as the supported way to bring them into scope -
@@ -543,6 +545,44 @@ namespace
 
     constexpr int bankPlacementCount = static_cast<int> (std::size (bankPlacements));
 
+    // The height of one caption glyph, in scene units. Big enough to read at the
+    // size the window opens at, small enough that a nine-letter caption still
+    // fits inside a knob's own column.
+    constexpr float bankLabelSize = 0.0125f;
+
+    /** The glyph index for an ASCII byte, in the shader's own alphabet.
+
+        The alphabet is A-Z, 0-9 and four separators, which is what a control
+        caption needs; anything else becomes 0, which glyphBits() answers with no
+        ink at all - so an accented character in a translated caption draws a gap
+        rather than a wrong letter. It is the price of a procedural alphabet, and
+        it is paid where it is cheapest: in the range check. */
+    int glyphIndexFor (unsigned char character) noexcept
+    {
+        if (character >= 'A' && character <= 'Z')
+            return character - 'A';
+
+        if (character >= 'a' && character <= 'z')
+            return character - 'a';
+
+        if (character >= '0' && character <= '9')
+            return 26 + character - '0';
+
+        if (character == '-')
+            return 36;
+
+        if (character == '.')
+            return 37;
+
+        if (character == '/')
+            return 38;
+
+        if (character == ':')
+            return 39;
+
+        return -1;
+    }
+
     //==========================================================================
     //  GLSL
     //
@@ -631,6 +671,7 @@ namespace
         "uniform float uArcAngle;\n"
         "uniform float uKeyDown;\n"
         "uniform vec3 uPanelHalf;\n"
+        "uniform float uLabelCentreX;\n"
         "uniform float uLabelHalfWidth;\n"
         "uniform float uLabelBaseY;\n"
         "uniform float uLabelSize;\n"
@@ -739,7 +780,7 @@ namespace
         "    if (y < 0.0 || y > 7.0)\n"
         "        return 0.0;\n"
         "\n"
-        "    TAPE_SCENE_HIGHP float x = (local.x + uLabelHalfWidth) / uLabelSize;\n"
+        "    TAPE_SCENE_HIGHP float x = (local.x - uLabelCentreX + uLabelHalfWidth) / uLabelSize;\n"
         "    if (x < 0.0)\n"
         "        return 0.0;\n"
         "\n"
@@ -837,7 +878,8 @@ namespace
         "\n"
         "    TAPE_SCENE_HIGHP float plateY = (vLocal.y - uLabelBaseY - 3.5 * uLabelSize)\n"
         "                                 / (uLabelSize * 5.4);\n"
-        "    TAPE_SCENE_HIGHP float plateX = vLocal.x / (uLabelHalfWidth + uLabelSize * 0.9);\n"
+        "    TAPE_SCENE_HIGHP float plateX = (vLocal.x - uLabelCentreX)\n"
+        "                                 / (uLabelHalfWidth + uLabelSize * 0.9);\n"
         "    if (abs (plateY) < 1.0 && abs (plateX) < 1.0)\n"
         "    {\n"
         "        TAPE_SCENE_HIGHP float plate = smoothstep (1.0, 0.86, abs (plateX))\n"
@@ -969,24 +1011,44 @@ void TapeScene::setKnobCaptions (const juce::String* captions, int count) noexce
     repaint();
 }
 
-void TapeScene::setControlValues (const float* values, int count) noexcept
+void TapeScene::setPalette (juce::Colour background,
+                            juce::Colour body,
+                            juce::Colour highlight,
+                            juce::Colour tape) noexcept
 {
-    // The knobs and their captions come from the same list, so the count is
-    // clamped once against both. A caller that hands over fewer than the panel
-    // has leaves the rest of the bank at the panel's rest position rather than
-    // at whatever the previous frame put there - which is what makes this safe
-    // to call with a partial list rather than something that has to be got
-    // exactly right or it shows a stale angle.
-    const auto usable = juce::jlimit (0, bankKnobCount, count);
-
-    for (int i = 0; i < bankKnobCount; ++i)
-        knobValues[static_cast<std::size_t> (i)].store (i < usable ? values[i] : 0.5f,
-                                                        std::memory_order_relaxed);
-
+    // Colours cross the same thread boundary as the floats, so they travel as
+    // the packed form they already are rather than as a Colour - which holds a
+    // pointer into JUCE's named-colour table and must not be copied between
+    // threads.
+    backgroundColour.store (background.getARGB(), std::memory_order_relaxed);
+    bodyColour.store (body.getARGB(), std::memory_order_relaxed);
+    highlightColour.store (highlight.getARGB(), std::memory_order_relaxed);
+    tapeColour.store (tape.getARGB(), std::memory_order_relaxed);
     repaint();
 }
 
-void TapeScene::setKnobCaptions (const juce::String* captions, int count) noexcept
+void TapeScene::setSceneEnabled (bool shouldBeEnabled)
+{
+    if (sceneEnabled == shouldBeEnabled)
+        return;
+
+    sceneEnabled = shouldBeEnabled;
+
+    if (sceneEnabled)
+    {
+        // A component has no context until the host has given it a native peer,
+        // and the editor may not have done that yet, so the first try is not a
+        // verdict. Thirty is about a second of the editor's 30 Hz timer, which
+        // is as long as the editor's own context gives itself.
+        attachAttemptsLeft = 30;
+        serviceContextAttachment();
+    }
+    else
+    {
+        openGLContext.detach();
+    }
+}
+
 void TapeScene::serviceContextAttachment()
 {
     if (! sceneEnabled)
@@ -1016,6 +1078,124 @@ void TapeScene::resized()
 bool TapeScene::isSceneLive() const noexcept
 {
     return sceneEnabled && programLinked.load() != 0 && openGLContext.isAttached();
+}
+
+int TapeScene::controlIndexAt (juce::Point<int> position) const
+{
+    const auto width = getWidth();
+    const auto height = getHeight();
+
+    if (width <= 0 || height <= 0 || ! isSceneLive())
+        return -1;
+
+    // The camera, rebuilt here from the same constants renderOpenGL() uses. This
+    // is deliberately a second computation rather than a matrix kept from the
+    // last frame: that matrix would be written on the render thread and read on
+    // the message thread, which is a data race for the sake of saving one
+    // perspective divide per click.
+    const auto aspect = static_cast<float> (width) / static_cast<float> (height);
+    const auto halfFovTangent = std::tan (cameraFieldOfViewDegrees
+                                            * juce::MathConstants<float>::pi / 360.0f);
+    const auto requiredHalfHeight = std::max (sceneHalfHeight, sceneHalfWidth / aspect);
+    const auto cameraDistance = requiredHalfHeight / halfFovTangent + sceneHalfDepth;
+
+    const auto projection = glm::perspective (cameraFieldOfViewDegrees
+                                                * juce::MathConstants<float>::pi / 180.0f,
+                                              aspect,
+                                              std::max (0.05f, cameraDistance - 1.2f),
+                                              cameraDistance + 1.2f);
+
+    const auto viewProjection = projection
+                              * glm::translate (glm::mat4 (1.0f), { 0.0f, -cameraDistance });
+
+    const auto scene = glm::rotate (glm::mat4 (1.0f), cameraPitchRadians, { 1.0f, 0.0f, 0.0f })
+                     * glm::rotate (glm::mat4 (1.0f), cameraYawRadians, { 0.0f, 1.0f, 0.0f });
+
+    // Where the click is, in the normalised device coordinates the projection
+    // works in: x to the right, y UP, both -1 at the edge and +1 at the other.
+    const auto ndcX = 2.0f * static_cast<float> (position.x) / static_cast<float> (width) - 1.0f;
+    const auto ndcY = 1.0f - 2.0f * static_cast<float> (position.y) / static_cast<float> (height);
+
+    // A ray through the click, built from the inverse projection. unProject
+    // takes the matrix the clip-space point is multiplied by, so the inverse of
+    // the view-projection is what turns a screen point back into the scene.
+    const auto inverse = glm::inverse (viewProjection);
+
+    const auto nearPoint = inverse * glm::vec4 (ndcX, ndcY, -1.0f, 1.0f);
+    const auto farPoint = inverse * glm::vec4 (ndcX, ndcY, 1.0f, 1.0f);
+
+    if (std::abs (nearPoint.w) < 1.0e-6f || std::abs (farPoint.w) < 1.0e-6f)
+        return -1;
+
+    const auto rayOrigin = glm::vec3 (nearPoint) / nearPoint.w;
+    const auto rayEnd = glm::vec3 (farPoint) / farPoint.w;
+    const auto rayDirection = glm::normalize (rayEnd - rayOrigin);
+
+    // The face's plane, in world space: its point is the bank's centre pushed
+    // out to its front, and its normal is the scene's own z turned by the two
+    // camera rotations.
+    const auto planePoint = glm::vec3 (scene * glm::vec4 (0.0f, 0.0f, bankFaceZ, 1.0f));
+    const auto planeNormal = glm::normalize (glm::vec3 (scene * glm::vec4 (0.0f, 0.0f, 1.0f, 0.0f)));
+
+    const auto denominator = glm::dot (rayDirection, planeNormal);
+
+    // Parallel to the face, or leaving it: no hit either way. The epsilon is a
+    // reciprocal rather than a zero so a ray that grazes the plane at a very
+    // shallow angle cannot blow the intersection out to infinity.
+    if (std::abs (denominator) < 1.0e-4f)
+        return -1;
+
+    const auto distance = glm::dot (planePoint - rayOrigin, planeNormal) / denominator;
+
+    if (distance <= 0.0f)
+        return -1;
+
+    const auto hit = rayOrigin + rayDirection * distance;
+
+    // Into the bank's own frame, where a placement's x is what it was written as.
+    const auto local = glm::vec3 (glm::inverse (scene * glm::translate (glm::mat4 (1.0f),
+                                                                        { 0.0f, bankCentreZ }))
+                                  * glm::vec4 (hit, 1.0f));
+
+    // The nearest control whose own footprint contains the point. A knob is a
+    // disc and a key is a rectangle, but both are tested as a box of their own
+    // half-extents - which is what a control's clickable area IS: nobody aims at
+    // the rim of a knob, they aim at the knob.
+    auto best = -1;
+    auto bestDistance = std::numeric_limits<float>::max();
+
+    for (int i = 0; i < bankPlacementCount; ++i)
+    {
+        const auto& placement = bankPlacements[i];
+        const auto halfWidth = placement.isKey ? bankKeyHalfX : bankKnobRadius;
+        const auto halfHeight = placement.isKey ? bankKeyHalfY : bankKnobRadius;
+
+        const auto offsetX = std::abs (local.x - placement.x);
+        const auto offsetY = std::abs (local.y);
+
+        if (offsetX > halfWidth || offsetY > halfHeight)
+            continue;
+
+        // A ray can cross two controls' boxes at a shallow angle; the one it
+        // crosses first is the one the user sees, so the nearer wins.
+        const auto squared = offsetX * offsetX + offsetY * offsetY;
+
+        if (squared < bestDistance)
+        {
+            bestDistance = squared;
+            best = i;
+        }
+    }
+
+    return best;
+}
+
+float TapeScene::getControlValue (int controlIndex) const noexcept
+{
+    if (controlIndex < 0 || controlIndex >= bankKnobCount)
+        return 0.5f;
+
+    return knobValues[static_cast<std::size_t> (controlIndex)].load (std::memory_order_relaxed);
 }
 
 //==============================================================================
@@ -1373,25 +1553,32 @@ void TapeScene::drawControlBank (const glm::mat4& viewProjection,
                                body.getFloatBlue());
     shaderProgram->setUniform ("uPanelHalf", bankHalfWidth, bankHalfHeight);
 
-    // The captions the editor handed over, as glyph indices. The conversion from
+    // The caption the editor handed over, as glyph indices. The conversion from
     // UTF-8 happens here rather than on the message thread because the message
     // thread has no idea which of these characters a shader can draw - the answer
-    // is "A to Z, 0 to 9 and four separators", and anything else becomes a space.
+    // is "A to Z, 0 to 9 and four separators", and anything else becomes a gap.
+    //
+    // It is ONE caption on one plate, under the interactive control, because the
+    // plate is drawn by the face's own fragment shader and the face is one mesh.
+    // Three captions would mean three plates at this size, which is a wall of
+    // text rather than a label.
     {
-        const auto labelX = bankPlacements[0].x;
-        const auto spacing = bankPlacements[1].x - bankPlacements[0].x;
+        const auto length = juce::jmin (captionLengths[0].load (std::memory_order_acquire), 8);
+        const auto* bytes = captionBytes[0].data();
 
-        // One plate per knob: the plate is drawn as part of the face's own
-        // fragment shader, so the label uniforms are set once and the face is
-        // drawn once. A face per knob would be three draws and three plates with
-        // hard edges between them.
-        for (int i = 0; i < bankKnobCount; ++i)
-        {
-            const auto length = captionLengths[static_cast<std::size_t> (i)]
-                                    .load (std::memory_order_acquire);
+        for (int i = 0; i < 8; ++i)
+            labelGlyphs[static_cast<std::size_t> (i)] = i < length ? glyphIndexFor (bytes[i]) : -1;
 
-            juce::ignoreUnused (labelX, spacing, length);
-        }
+        // The plate follows the interactive knob rather than the bank's centre,
+        // so the two line up at every panel size: the placement, not a second
+        // constant, is what says where that knob is.
+        shaderProgram->setUniform ("uLabelCentreX", bankPlacements[bankInteractiveIndex].x);
+        shaderProgram->setUniform ("uLabelLength", length);
+        shaderProgram->setUniform ("uLabelHalfWidth",
+                                   static_cast<float> (length) * 3.0f * bankLabelSize);
+        shaderProgram->setUniform ("uLabelBaseY", -bankHalfHeight * 0.62f);
+        shaderProgram->setUniform ("uLabelSize", bankLabelSize);
+        shaderProgram->setUniform ("uLabel", labelGlyphs.data(), 8);
     }
 
     drawMesh (bankBody);
@@ -1756,6 +1943,708 @@ void TapeScene::renderOpenGL()
     // rather than as everything spinning together.
     const auto headModel = scene * glm::translate (glm::mat4 (1.0f),
                                                    { headCentreX, headCentreY, headCentreZ });
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+    shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
+                               highlight.getFloatGreen() * 0.55f + 0.06f,
+                               highlight.getFloatBlue() * 0.55f + 0.07f);
+    drawMesh (head);
+
+    // The tape itself, last so it is over the head's face.
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (scene), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (ribbonMode));
+    shaderProgram->setUniform ("uBaseColour", tape.getFloatRed() * 1.35f + 0.02f,
+                               tape.getFloatGreen() * 1.35f + 0.02f,
+                               tape.getFloatBlue() * 1.35f + 0.02f);
+    drawMesh (ribbon);
+
+    // The control bank, in FRONT of the machine: it is the only geometry here
+    // with a z of its own, and drawing it last costs nothing because the depth
+    // buffer is what decides, not the order.
+    drawControlBank (viewProjection, scene, body, highlight);
+}                                                  { headCentreX, headCentreY, headCentreZ });
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+    shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
+                               highlight.getFloatGreen() * 0.55f + 0.06f,
+                               highlight.getFloatBlue() * 0.55f + 0.07f);
+    drawMesh (head);
+
+    // The tape itself, last so it is over the head's face.
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (scene), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (ribbonMode));
+    shaderProgram->setUniform ("uBaseColour", tape.getFloatRed() * 1.35f + 0.02f,
+                               tape.getFloatGreen() * 1.35f + 0.02f,
+                               tape.getFloatBlue() * 1.35f + 0.02f);
+    drawMesh (ribbon);
+
+    // The control bank, in FRONT of the machine: it is the only geometry here
+    // with a z of its own, and drawing it last costs nothing because the depth
+    // buffer is what decides, not the order.
+    drawControlBank (viewProjection, scene, body, highlight);
+}
+    const auto drawReel = [this, &scene, &body, &tape] (float centreX, float centreY, float radius,
+                                                        float angle, float packOuter)
+    {
+        const auto model = scene
+                         * glm::translate (glm::mat4 (1.0f), { centreX, centreY, 0.0f })
+                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 1.0f })
+                         * glm::scale (glm::mat4 (1.0f), { radius, radius, radius });
+
+        shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (model), 1, GL_FALSE);
+
+        shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+        shaderProgram->setUniform ("uBaseColour", body.getFloatRed(), body.getFloatGreen(),
+                                   body.getFloatBlue());
+        drawMesh (reel);
+
+        shaderProgram->setUniform ("uMode", static_cast<float> (packMode));
+        shaderProgram->setUniform ("uPackInner", packInnerFraction);
+        shaderProgram->setUniform ("uPackOuter", packOuter);
+        shaderProgram->setUniform ("uBaseColour", tape.getFloatRed(), tape.getFloatGreen(),
+                                   tape.getFloatBlue());
+        drawMesh (tapePack);
+    };
+
+    // The supply reel empties as the take-up one fills: the same two numbers,
+    // one of them the other one's complement.
+    const auto supplyPackOuter = packEmptyFraction
+                               + (packFullFraction - packEmptyFraction) * (1.0f - tapeTransfer);
+    const auto takeUpPackOuter = packEmptyFraction
+                               + (packFullFraction - packEmptyFraction) * tapeTransfer;
+
+    drawReel (supplyCentreX, supplyCentreY, supplyRadius, supplyAngle, supplyPackOuter);
+    drawReel (takeUpCentreX, takeUpCentreY, takeUpRadius, takeUpAngle, takeUpPackOuter);
+
+    // The head: the one solid in the scene that does not move, which is what
+    // makes the tape's movement between the two reels readable as movement
+    // rather than as everything spinning together.
+    const auto headModel = scene * glm::translate (glm::mat4 (1.0f),
+                                                   { headCentreX, headCentreY, headCentreZ });
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+    shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
+                               highlight.getFloatGreen() * 0.55f + 0.06f,
+                               highlight.getFloatBlue() * 0.55f + 0.07f);
+    drawMesh (head);
+
+    // The tape itself, last so it is over the head's face.
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (scene), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (ribbonMode));
+    shaderProgram->setUniform ("uBaseColour", tape.getFloatRed() * 1.35f + 0.02f,
+                               tape.getFloatGreen() * 1.35f + 0.02f,
+                               tape.getFloatBlue() * 1.35f + 0.02f);
+    drawMesh (ribbon);
+
+    // The control bank, in FRONT of the machine: it is the only geometry here
+    // with a z of its own, and drawing it last costs nothing because the depth
+    // buffer is what decides, not the order.
+    drawControlBank (viewProjection, scene, body, highlight);
+}                                                  { headCentreX, headCentreY, headCentreZ });
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+    shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
+                               highlight.getFloatGreen() * 0.55f + 0.06f,
+                               highlight.getFloatBlue() * 0.55f + 0.07f);
+    drawMesh (head);
+
+    // The tape itself, last so it is over the head's face.
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (scene), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (ribbonMode));
+    shaderProgram->setUniform ("uBaseColour", tape.getFloatRed() * 1.35f + 0.02f,
+                               tape.getFloatGreen() * 1.35f + 0.02f,
+                               tape.getFloatBlue() * 1.35f + 0.02f);
+    drawMesh (ribbon);
+
+    // The control bank, in FRONT of the machine: it is the only geometry here
+    // with a z of its own, and drawing it last costs nothing because the depth
+    // buffer is what decides, not the order.
+    drawControlBank (viewProjection, scene, body, highlight);
+}   shaderProgram->setUniformMat4 ("uViewProjection", glm::value_ptr (viewProjection), 1, GL_FALSE);
+    shaderProgram->setUniform ("uTime", static_cast<float> (elapsed));
+    shaderProgram->setUniform ("uFlutter", flutter);
+    shaderProgram->setUniform ("uGlow", reduction);
+    shaderProgram->setUniform ("uDrive", driveAmount);
+    shaderProgram->setUniform ("uLightDirection", lightX, lightY, lightZ);
+
+    const auto drawReel = [this, &scene, &body, &tape] (float centreX, float centreY, float radius,
+                                                        float angle, float packOuter)
+    {
+        const auto model = scene
+                         * glm::translate (glm::mat4 (1.0f), { centreX, centreY, 0.0f })
+                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 1.0f })
+                         * glm::scale (glm::mat4 (1.0f), { radius, radius, radius });
+
+        shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (model), 1, GL_FALSE);
+
+        shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+        shaderProgram->setUniform ("uBaseColour", body.getFloatRed(), body.getFloatGreen(),
+                                   body.getFloatBlue());
+        drawMesh (reel);
+
+        shaderProgram->setUniform ("uMode", static_cast<float> (packMode));
+        shaderProgram->setUniform ("uPackInner", packInnerFraction);
+        shaderProgram->setUniform ("uPackOuter", packOuter);
+        shaderProgram->setUniform ("uBaseColour", tape.getFloatRed(), tape.getFloatGreen(),
+                                   tape.getFloatBlue());
+        drawMesh (tapePack);
+    };
+
+    // The supply reel empties as the take-up one fills: the same two numbers,
+    // one of them the other one's complement.
+    const auto supplyPackOuter = packEmptyFraction
+                               + (packFullFraction - packEmptyFraction) * (1.0f - tapeTransfer);
+    const auto takeUpPackOuter = packEmptyFraction
+                               + (packFullFraction - packEmptyFraction) * tapeTransfer;
+
+    drawReel (supplyCentreX, supplyCentreY, supplyRadius, supplyAngle, supplyPackOuter);
+    drawReel (takeUpCentreX, takeUpCentreY, takeUpRadius, takeUpAngle, takeUpPackOuter);
+
+    // The head: the one solid in the scene that does not move, which is what
+    // makes the tape's movement between the two reels readable as movement
+    // rather than as everything spinning together.
+    const auto headModel = scene * glm::translate (glm::mat4 (1.0f),
+                                                   { headCentreX, headCentreY, headCentreZ });
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+    shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
+                               highlight.getFloatGreen() * 0.55f + 0.06f,
+                               highlight.getFloatBlue() * 0.55f + 0.07f);
+    drawMesh (head);
+
+    // The tape itself, last so it is over the head's face.
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (scene), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (ribbonMode));
+    shaderProgram->setUniform ("uBaseColour", tape.getFloatRed() * 1.35f + 0.02f,
+                               tape.getFloatGreen() * 1.35f + 0.02f,
+                               tape.getFloatBlue() * 1.35f + 0.02f);
+    drawMesh (ribbon);
+
+    // The control bank, in FRONT of the machine: it is the only geometry here
+    // with a z of its own, and drawing it last costs nothing because the depth
+    // buffer is what decides, not the order.
+    drawControlBank (viewProjection, scene, body, highlight);
+}                                                  { headCentreX, headCentreY, headCentreZ });
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+    shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
+                               highlight.getFloatGreen() * 0.55f + 0.06f,
+                               highlight.getFloatBlue() * 0.55f + 0.07f);
+    drawMesh (head);
+
+    // The tape itself, last so it is over the head's face.
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (scene), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (ribbonMode));
+    shaderProgram->setUniform ("uBaseColour", tape.getFloatRed() * 1.35f + 0.02f,
+                               tape.getFloatGreen() * 1.35f + 0.02f,
+                               tape.getFloatBlue() * 1.35f + 0.02f);
+    drawMesh (ribbon);
+
+    // The control bank, in FRONT of the machine: it is the only geometry here
+    // with a z of its own, and drawing it last costs nothing because the depth
+    // buffer is what decides, not the order.
+    drawControlBank (viewProjection, scene, body, highlight);
+}
+    const auto drawReel = [this, &scene, &body, &tape] (float centreX, float centreY, float radius,
+                                                        float angle, float packOuter)
+    {
+        const auto model = scene
+                         * glm::translate (glm::mat4 (1.0f), { centreX, centreY, 0.0f })
+                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 1.0f })
+                         * glm::scale (glm::mat4 (1.0f), { radius, radius, radius });
+
+        shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (model), 1, GL_FALSE);
+
+        shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+        shaderProgram->setUniform ("uBaseColour", body.getFloatRed(), body.getFloatGreen(),
+                                   body.getFloatBlue());
+        drawMesh (reel);
+
+        shaderProgram->setUniform ("uMode", static_cast<float> (packMode));
+        shaderProgram->setUniform ("uPackInner", packInnerFraction);
+        shaderProgram->setUniform ("uPackOuter", packOuter);
+        shaderProgram->setUniform ("uBaseColour", tape.getFloatRed(), tape.getFloatGreen(),
+                                   tape.getFloatBlue());
+        drawMesh (tapePack);
+    };
+
+    // The supply reel empties as the take-up one fills: the same two numbers,
+    // one of them the other one's complement.
+    const auto supplyPackOuter = packEmptyFraction
+                               + (packFullFraction - packEmptyFraction) * (1.0f - tapeTransfer);
+    const auto takeUpPackOuter = packEmptyFraction
+                               + (packFullFraction - packEmptyFraction) * tapeTransfer;
+
+    drawReel (supplyCentreX, supplyCentreY, supplyRadius, supplyAngle, supplyPackOuter);
+    drawReel (takeUpCentreX, takeUpCentreY, takeUpRadius, takeUpAngle, takeUpPackOuter);
+
+    // The head: the one solid in the scene that does not move, which is what
+    // makes the tape's movement between the two reels readable as movement
+    // rather than as everything spinning together.
+    const auto headModel = scene * glm::translate (glm::mat4 (1.0f),
+                                                   { headCentreX, headCentreY, headCentreZ });
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+    shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
+                               highlight.getFloatGreen() * 0.55f + 0.06f,
+                               highlight.getFloatBlue() * 0.55f + 0.07f);
+    drawMesh (head);
+
+    // The tape itself, last so it is over the head's face.
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (scene), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (ribbonMode));
+    shaderProgram->setUniform ("uBaseColour", tape.getFloatRed() * 1.35f + 0.02f,
+                               tape.getFloatGreen() * 1.35f + 0.02f,
+                               tape.getFloatBlue() * 1.35f + 0.02f);
+    drawMesh (ribbon);
+
+    // The control bank, in FRONT of the machine: it is the only geometry here
+    // with a z of its own, and drawing it last costs nothing because the depth
+    // buffer is what decides, not the order.
+    drawControlBank (viewProjection, scene, body, highlight);
+}                                                  { headCentreX, headCentreY, headCentreZ });
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+    shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
+                               highlight.getFloatGreen() * 0.55f + 0.06f,
+                               highlight.getFloatBlue() * 0.55f + 0.07f);
+    drawMesh (head);
+
+    // The tape itself, last so it is over the head's face.
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (scene), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (ribbonMode));
+    shaderProgram->setUniform ("uBaseColour", tape.getFloatRed() * 1.35f + 0.02f,
+                               tape.getFloatGreen() * 1.35f + 0.02f,
+                               tape.getFloatBlue() * 1.35f + 0.02f);
+    drawMesh (ribbon);
+
+    // The control bank, in FRONT of the machine: it is the only geometry here
+    // with a z of its own, and drawing it last costs nothing because the depth
+    // buffer is what decides, not the order.
+    drawControlBank (viewProjection, scene, body, highlight);
+}   const auto driveAmount = drive.load (std::memory_order_relaxed);
+    const auto reduction = gainReduction.load (std::memory_order_relaxed);
+    const auto flutter = wowFlutter.load (std::memory_order_relaxed);
+    const auto speed = transportSpeed.load (std::memory_order_relaxed);
+
+    const auto background = juce::Colour (backgroundColour.load (std::memory_order_relaxed));
+    const auto body = juce::Colour (bodyColour.load (std::memory_order_relaxed));
+    const auto highlight = juce::Colour (highlightColour.load (std::memory_order_relaxed));
+    const auto tape = juce::Colour (tapeColour.load (std::memory_order_relaxed));
+
+    // -------------------------------------------------------------------------
+    //  Time. The reel angles are INTEGRATED rather than derived from elapsed
+    //  seconds, so a transport that is sped up or stopped turns the reels by the
+    //  right amount instead of snapping to wherever elapsed * speed happens to
+    //  land - which is the difference between a machine changing speed and a
+    //  machine stuttering.
+    //
+    //  The bank's own values lag the ones they follow, for the same reason: a
+    //  real knob does not jump. Each is a one-pole filter with a time constant
+    //  chosen per signal - the knobs settle in about a fifth of a second, the
+    //  peak meter falls slowly enough to be read.
+    // -------------------------------------------------------------------------
+    const auto now = juce::Time::getMillisecondCounterHiRes();
+
+    if (timeOriginSeconds <= 0.0)
+    {
+        timeOriginSeconds = now;
+        previousFrameSeconds = now;
+    }
+
+    const auto elapsed = now - timeOriginSeconds;
+    const auto frameSeconds = juce::jlimit (0.0, 0.1, now - previousFrameSeconds);
+    previousFrameSeconds = now;
+
+    const auto frame = static_cast<float> (frameSeconds);
+    const auto follow = [frame] (float current, float target, float timeConstant)
+    {
+        if (timeConstant <= 0.0f)
+            return target;
+
+        const auto coefficient = juce::jlimit (0.0f, 1.0f, frame / timeConstant);
+        return current + (target - current) * coefficient;
+    };
+
+    bankDrive = follow (bankDrive, driveAmount, 0.18f);
+    bankReduction = follow (bankReduction, reduction, 0.12f);
+
+    // The peak readout rises on the signal and falls on its own clock, which is
+    // what makes it read as a meter rather than as a copy of the level.
+    bankPeak = juce::jmax (peak, bankPeak - frame * 0.8f);
+
+    // The two keycaps: SPIN while the transport runs, REC while the machine is
+    // doing something to the signal. Both are states of the machine, so both are
+    // read from what the machine is already reporting rather than kept here.
+    bankSpinning = speed > 0.05f;
+    bankRecording = reduction > 0.02f || driveAmount > 0.25f;
+
+    bankTransfer = follow (bankTransfer, tapeTransfer, 0.25f);
+
+    supplyAngle = std::fmod (supplyAngle + frame * 2.6f * speed,
+                             static_cast<float> (juce::MathConstants<float>::twoPi));
+    takeUpAngle = std::fmod (takeUpAngle + frame * 2.3f * speed,
+                             static_cast<float> (juce::MathConstants<float>::twoPi));
+
+    if (speed > 0.001f)
+    {
+        // Tape off the supply reel and onto the take-up one, faster when there
+        // is signal to record. It is the one number in the scene that has to
+        // remember anything, which is why it is a member and not a uniform.
+        tapeTransfer = juce::jlimit (0.0f, 1.0f,
+                                     tapeTransfer + frame * (0.010f + 0.075f * level));
+    }
+
+    // -------------------------------------------------------------------------
+    //  The camera. Perspective rather than orthographic, because a real transport
+    //  is seen at an angle and the convergence is most of what sells it.
+    //
+    //  The distance is solved rather than fixed: the column is about a quarter as
+    //  wide as it is tall, so a camera placed for the content alone would crop
+    //  the reels the moment the deck got a few pixels shorter. Backing off until
+    //  the scene's own half-extents fit the FRAME keeps the same composition at
+    //  the panel's minimum and at the size it opens at, and the near and far
+    //  planes follow the distance so the depth buffer is not asked to resolve a
+    //  40-unit range to tell a pack's front face from its back.
+    // -------------------------------------------------------------------------
+    const auto aspect = static_cast<float> (width) / static_cast<float> (height);
+    const auto halfFovTangent = std::tan (cameraFieldOfViewDegrees
+                                            * juce::MathConstants<float>::pi / 360.0f);
+    const auto requiredHalfHeight = std::max (sceneHalfHeight, sceneHalfWidth / aspect);
+    const auto cameraDistance = requiredHalfHeight / halfFovTangent + sceneHalfDepth;
+
+    const auto projection = glm::perspective (cameraFieldOfViewDegrees
+                                                * juce::MathConstants<float>::pi / 180.0f,
+                                              aspect,
+                                              std::max (0.05f, cameraDistance - 1.2f),
+                                              cameraDistance + 1.2f);
+
+    const auto viewProjection = projection
+                              * glm::translate (glm::mat4 (1.0f), { 0.0f, -cameraDistance });
+
+    // The deck plate is turned twice, which is the whole of the 3D in the
+    // composition: down onto it, and round towards the operator's left.
+    const auto scene = glm::rotate (glm::mat4 (1.0f), cameraPitchRadians, { 1.0f, 0.0f, 0.0f })
+                     * glm::rotate (glm::mat4 (1.0f), cameraYawRadians, { 0.0f, 1.0f, 0.0f });
+
+    // -------------------------------------------------------------------------
+    //  Draw state. The clear takes the colour and the depth, and the background
+    //  is the panel's own so the window reads as a recess rather than as a hole.
+    // -------------------------------------------------------------------------
+    juce::OpenGLHelpers::clear (background);
+
+    glEnable (GL_DEPTH_TEST);
+    glDepthFunc (GL_LEQUAL);
+    glDisable (GL_CULL_FACE);
+    glDisable (GL_BLEND);
+    glDisable (GL_TEXTURE_2D);
+
+    shaderProgram->use();
+    shaderProgram->setUniformMat4 ("uViewProjection", glm::value_ptr (viewProjection), 1, GL_FALSE);
+    shaderProgram->setUniform ("uTime", static_cast<float> (elapsed));
+    shaderProgram->setUniform ("uFlutter", flutter);
+    shaderProgram->setUniform ("uGlow", reduction);
+    shaderProgram->setUniform ("uDrive", driveAmount);
+    shaderProgram->setUniform ("uLightDirection", lightX, lightY, lightZ);
+
+    const auto drawReel = [this, &scene, &body, &tape] (float centreX, float centreY, float radius,
+                                                        float angle, float packOuter)
+    {
+        const auto model = scene
+                         * glm::translate (glm::mat4 (1.0f), { centreX, centreY, 0.0f })
+                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 1.0f })
+                         * glm::scale (glm::mat4 (1.0f), { radius, radius, radius });
+
+        shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (model), 1, GL_FALSE);
+
+        shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+        shaderProgram->setUniform ("uBaseColour", body.getFloatRed(), body.getFloatGreen(),
+                                   body.getFloatBlue());
+        drawMesh (reel);
+
+        shaderProgram->setUniform ("uMode", static_cast<float> (packMode));
+        shaderProgram->setUniform ("uPackInner", packInnerFraction);
+        shaderProgram->setUniform ("uPackOuter", packOuter);
+        shaderProgram->setUniform ("uBaseColour", tape.getFloatRed(), tape.getFloatGreen(),
+                                   tape.getFloatBlue());
+        drawMesh (tapePack);
+    };
+
+    // The supply reel empties as the take-up one fills: the same two numbers,
+    // one of them the other one's complement.
+    const auto supplyPackOuter = packEmptyFraction
+                               + (packFullFraction - packEmptyFraction) * (1.0f - tapeTransfer);
+    const auto takeUpPackOuter = packEmptyFraction
+                               + (packFullFraction - packEmptyFraction) * tapeTransfer;
+
+    drawReel (supplyCentreX, supplyCentreY, supplyRadius, supplyAngle, supplyPackOuter);
+    drawReel (takeUpCentreX, takeUpCentreY, takeUpRadius, takeUpAngle, takeUpPackOuter);
+
+    // The head: the one solid in the scene that does not move, which is what
+    // makes the tape's movement between the two reels readable as movement
+    // rather than as everything spinning together.
+    const auto headModel = scene * glm::translate (glm::mat4 (1.0f),
+                                                   { headCentreX, headCentreY, headCentreZ });
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+    shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
+                               highlight.getFloatGreen() * 0.55f + 0.06f,
+                               highlight.getFloatBlue() * 0.55f + 0.07f);
+    drawMesh (head);
+
+    // The tape itself, last so it is over the head's face.
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (scene), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (ribbonMode));
+    shaderProgram->setUniform ("uBaseColour", tape.getFloatRed() * 1.35f + 0.02f,
+                               tape.getFloatGreen() * 1.35f + 0.02f,
+                               tape.getFloatBlue() * 1.35f + 0.02f);
+    drawMesh (ribbon);
+
+    // The control bank, in FRONT of the machine: it is the only geometry here
+    // with a z of its own, and drawing it last costs nothing because the depth
+    // buffer is what decides, not the order.
+    drawControlBank (viewProjection, scene, body, highlight);
+}                                                  { headCentreX, headCentreY, headCentreZ });
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+    shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
+                               highlight.getFloatGreen() * 0.55f + 0.06f,
+                               highlight.getFloatBlue() * 0.55f + 0.07f);
+    drawMesh (head);
+
+    // The tape itself, last so it is over the head's face.
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (scene), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (ribbonMode));
+    shaderProgram->setUniform ("uBaseColour", tape.getFloatRed() * 1.35f + 0.02f,
+                               tape.getFloatGreen() * 1.35f + 0.02f,
+                               tape.getFloatBlue() * 1.35f + 0.02f);
+    drawMesh (ribbon);
+
+    // The control bank, in FRONT of the machine: it is the only geometry here
+    // with a z of its own, and drawing it last costs nothing because the depth
+    // buffer is what decides, not the order.
+    drawControlBank (viewProjection, scene, body, highlight);
+}
+    const auto drawReel = [this, &scene, &body, &tape] (float centreX, float centreY, float radius,
+                                                        float angle, float packOuter)
+    {
+        const auto model = scene
+                         * glm::translate (glm::mat4 (1.0f), { centreX, centreY, 0.0f })
+                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 1.0f })
+                         * glm::scale (glm::mat4 (1.0f), { radius, radius, radius });
+
+        shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (model), 1, GL_FALSE);
+
+        shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+        shaderProgram->setUniform ("uBaseColour", body.getFloatRed(), body.getFloatGreen(),
+                                   body.getFloatBlue());
+        drawMesh (reel);
+
+        shaderProgram->setUniform ("uMode", static_cast<float> (packMode));
+        shaderProgram->setUniform ("uPackInner", packInnerFraction);
+        shaderProgram->setUniform ("uPackOuter", packOuter);
+        shaderProgram->setUniform ("uBaseColour", tape.getFloatRed(), tape.getFloatGreen(),
+                                   tape.getFloatBlue());
+        drawMesh (tapePack);
+    };
+
+    // The supply reel empties as the take-up one fills: the same two numbers,
+    // one of them the other one's complement.
+    const auto supplyPackOuter = packEmptyFraction
+                               + (packFullFraction - packEmptyFraction) * (1.0f - tapeTransfer);
+    const auto takeUpPackOuter = packEmptyFraction
+                               + (packFullFraction - packEmptyFraction) * tapeTransfer;
+
+    drawReel (supplyCentreX, supplyCentreY, supplyRadius, supplyAngle, supplyPackOuter);
+    drawReel (takeUpCentreX, takeUpCentreY, takeUpRadius, takeUpAngle, takeUpPackOuter);
+
+    // The head: the one solid in the scene that does not move, which is what
+    // makes the tape's movement between the two reels readable as movement
+    // rather than as everything spinning together.
+    const auto headModel = scene * glm::translate (glm::mat4 (1.0f),
+                                                   { headCentreX, headCentreY, headCentreZ });
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+    shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
+                               highlight.getFloatGreen() * 0.55f + 0.06f,
+                               highlight.getFloatBlue() * 0.55f + 0.07f);
+    drawMesh (head);
+
+    // The tape itself, last so it is over the head's face.
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (scene), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (ribbonMode));
+    shaderProgram->setUniform ("uBaseColour", tape.getFloatRed() * 1.35f + 0.02f,
+                               tape.getFloatGreen() * 1.35f + 0.02f,
+                               tape.getFloatBlue() * 1.35f + 0.02f);
+    drawMesh (ribbon);
+
+    // The control bank, in FRONT of the machine: it is the only geometry here
+    // with a z of its own, and drawing it last costs nothing because the depth
+    // buffer is what decides, not the order.
+    drawControlBank (viewProjection, scene, body, highlight);
+}                                                  { headCentreX, headCentreY, headCentreZ });
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+    shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
+                               highlight.getFloatGreen() * 0.55f + 0.06f,
+                               highlight.getFloatBlue() * 0.55f + 0.07f);
+    drawMesh (head);
+
+    // The tape itself, last so it is over the head's face.
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (scene), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (ribbonMode));
+    shaderProgram->setUniform ("uBaseColour", tape.getFloatRed() * 1.35f + 0.02f,
+                               tape.getFloatGreen() * 1.35f + 0.02f,
+                               tape.getFloatBlue() * 1.35f + 0.02f);
+    drawMesh (ribbon);
+
+    // The control bank, in FRONT of the machine: it is the only geometry here
+    // with a z of its own, and drawing it last costs nothing because the depth
+    // buffer is what decides, not the order.
+    drawControlBank (viewProjection, scene, body, highlight);
+}   shaderProgram->setUniformMat4 ("uViewProjection", glm::value_ptr (viewProjection), 1, GL_FALSE);
+    shaderProgram->setUniform ("uTime", static_cast<float> (elapsed));
+    shaderProgram->setUniform ("uFlutter", flutter);
+    shaderProgram->setUniform ("uGlow", reduction);
+    shaderProgram->setUniform ("uDrive", driveAmount);
+    shaderProgram->setUniform ("uLightDirection", lightX, lightY, lightZ);
+
+    const auto drawReel = [this, &scene, &body, &tape] (float centreX, float centreY, float radius,
+                                                        float angle, float packOuter)
+    {
+        const auto model = scene
+                         * glm::translate (glm::mat4 (1.0f), { centreX, centreY, 0.0f })
+                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 1.0f })
+                         * glm::scale (glm::mat4 (1.0f), { radius, radius, radius });
+
+        shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (model), 1, GL_FALSE);
+
+        shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+        shaderProgram->setUniform ("uBaseColour", body.getFloatRed(), body.getFloatGreen(),
+                                   body.getFloatBlue());
+        drawMesh (reel);
+
+        shaderProgram->setUniform ("uMode", static_cast<float> (packMode));
+        shaderProgram->setUniform ("uPackInner", packInnerFraction);
+        shaderProgram->setUniform ("uPackOuter", packOuter);
+        shaderProgram->setUniform ("uBaseColour", tape.getFloatRed(), tape.getFloatGreen(),
+                                   tape.getFloatBlue());
+        drawMesh (tapePack);
+    };
+
+    // The supply reel empties as the take-up one fills: the same two numbers,
+    // one of them the other one's complement.
+    const auto supplyPackOuter = packEmptyFraction
+                               + (packFullFraction - packEmptyFraction) * (1.0f - tapeTransfer);
+    const auto takeUpPackOuter = packEmptyFraction
+                               + (packFullFraction - packEmptyFraction) * tapeTransfer;
+
+    drawReel (supplyCentreX, supplyCentreY, supplyRadius, supplyAngle, supplyPackOuter);
+    drawReel (takeUpCentreX, takeUpCentreY, takeUpRadius, takeUpAngle, takeUpPackOuter);
+
+    // The head: the one solid in the scene that does not move, which is what
+    // makes the tape's movement between the two reels readable as movement
+    // rather than as everything spinning together.
+    const auto headModel = scene * glm::translate (glm::mat4 (1.0f),
+                                                   { headCentreX, headCentreY, headCentreZ });
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+    shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
+                               highlight.getFloatGreen() * 0.55f + 0.06f,
+                               highlight.getFloatBlue() * 0.55f + 0.07f);
+    drawMesh (head);
+
+    // The tape itself, last so it is over the head's face.
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (scene), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (ribbonMode));
+    shaderProgram->setUniform ("uBaseColour", tape.getFloatRed() * 1.35f + 0.02f,
+                               tape.getFloatGreen() * 1.35f + 0.02f,
+                               tape.getFloatBlue() * 1.35f + 0.02f);
+    drawMesh (ribbon);
+
+    // The control bank, in FRONT of the machine: it is the only geometry here
+    // with a z of its own, and drawing it last costs nothing because the depth
+    // buffer is what decides, not the order.
+    drawControlBank (viewProjection, scene, body, highlight);
+}                                                  { headCentreX, headCentreY, headCentreZ });
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+    shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
+                               highlight.getFloatGreen() * 0.55f + 0.06f,
+                               highlight.getFloatBlue() * 0.55f + 0.07f);
+    drawMesh (head);
+
+    // The tape itself, last so it is over the head's face.
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (scene), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (ribbonMode));
+    shaderProgram->setUniform ("uBaseColour", tape.getFloatRed() * 1.35f + 0.02f,
+                               tape.getFloatGreen() * 1.35f + 0.02f,
+                               tape.getFloatBlue() * 1.35f + 0.02f);
+    drawMesh (ribbon);
+
+    // The control bank, in FRONT of the machine: it is the only geometry here
+    // with a z of its own, and drawing it last costs nothing because the depth
+    // buffer is what decides, not the order.
+    drawControlBank (viewProjection, scene, body, highlight);
+}
+    const auto drawReel = [this, &scene, &body, &tape] (float centreX, float centreY, float radius,
+                                                        float angle, float packOuter)
+    {
+        const auto model = scene
+                         * glm::translate (glm::mat4 (1.0f), { centreX, centreY, 0.0f })
+                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 1.0f })
+                         * glm::scale (glm::mat4 (1.0f), { radius, radius, radius });
+
+        shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (model), 1, GL_FALSE);
+
+        shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+        shaderProgram->setUniform ("uBaseColour", body.getFloatRed(), body.getFloatGreen(),
+                                   body.getFloatBlue());
+        drawMesh (reel);
+
+        shaderProgram->setUniform ("uMode", static_cast<float> (packMode));
+        shaderProgram->setUniform ("uPackInner", packInnerFraction);
+        shaderProgram->setUniform ("uPackOuter", packOuter);
+        shaderProgram->setUniform ("uBaseColour", tape.getFloatRed(), tape.getFloatGreen(),
+                                   tape.getFloatBlue());
+        drawMesh (tapePack);
+    };
+
+    // The supply reel empties as the take-up one fills: the same two numbers,
+    // one of them the other one's complement.
+    const auto supplyPackOuter = packEmptyFraction
+                               + (packFullFraction - packEmptyFraction) * (1.0f - tapeTransfer);
+    const auto takeUpPackOuter = packEmptyFraction
+                               + (packFullFraction - packEmptyFraction) * tapeTransfer;
+
+    drawReel (supplyCentreX, supplyCentreY, supplyRadius, supplyAngle, supplyPackOuter);
+    drawReel (takeUpCentreX, takeUpCentreY, takeUpRadius, takeUpAngle, takeUpPackOuter);
+
+    // The head: the one solid in the scene that does not move, which is what
+    // makes the tape's movement between the two reels readable as movement
+    // rather than as everything spinning together.
+    const auto headModel = scene * glm::translate (glm::mat4 (1.0f),
+                                                   { headCentreX, headCentreY, headCentreZ });
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
+    shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
+                               highlight.getFloatGreen() * 0.55f + 0.06f,
+                               highlight.getFloatBlue() * 0.55f + 0.07f);
+    drawMesh (head);
+
+    // The tape itself, last so it is over the head's face.
+    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (scene), 1, GL_FALSE);
+    shaderProgram->setUniform ("uMode", static_cast<float> (ribbonMode));
+    shaderProgram->setUniform ("uBaseColour", tape.getFloatRed() * 1.35f + 0.02f,
+                               tape.getFloatGreen() * 1.35f + 0.02f,
+                               tape.getFloatBlue() * 1.35f + 0.02f);
+    drawMesh (ribbon);
+
+    // The control bank, in FRONT of the machine: it is the only geometry here
+    // with a z of its own, and drawing it last costs nothing because the depth
+    // buffer is what decides, not the order.
+    drawControlBank (viewProjection, scene, body, highlight);
+}                                                  { headCentreX, headCentreY, headCentreZ });
     shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
     shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
     shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,

@@ -295,6 +295,20 @@ private:
     std::array<std::array<char, 32>, bankKnobCount> captionBytes {};
     std::array<std::atomic<int>, bankKnobCount> captionLengths {};
 
+    /** The caption the panel's plate is currently drawing, as the shader's own
+        glyph indices. Written on the render thread and read only by it, so this
+        is a plain member and not an atomic - it is this thread's own scratch. */
+    std::array<int, 8> labelGlyphs { -1, -1, -1, -1 };
+
+    // The bank's own presentation state: what the lit discs follow, and what the
+    // two keycaps show. Lagged from the audio values in renderOpenGL(), because
+    // a real knob does not jump and a real lamp does not step.
+    float bankDrive = 0.0f;
+    float bankPeak = 0.0f;
+    float bankReduction = 0.0f;
+    bool bankSpinning = false;
+    bool bankRecording = false;
+
     //==========================================================================
     //  Message thread only.
     //==========================================================================
