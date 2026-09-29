@@ -1419,9 +1419,18 @@ struct TransientShaper
         // lift and about a quarter of the original on a full cut, so the stage
         // can be dramatic without ever being able to invert or blow up the
         // signal. The clamp is the safety net the whole chain relies on.
+        //
+        // The two halves are ADDED and SUBTRACTED, and the asymmetry is the whole
+        // of it. `attackPart` is the positive half of the transient and
+        // `sustainPart` the negative one, so adding the second with its own sign
+        // means SUSTAIN +1 shrinks the tail - the control named for the thing it
+        // does, doing its exact opposite. Subtracting a term that is already
+        // negative is what makes the name true: +1 lifts what follows the edge,
+        // -1 shortens it. ATTACK needs no correction, because its part is the
+        // positive one and positive is the direction +1 is meant to push.
         const float shaping = 1.0f
                             + attackPart * attackAmount * 2.0f
-                            + sustainPart * sustainAmount * 2.0f;
+                            - sustainPart * sustainAmount * 2.0f;
         const float target = juce::jlimit (0.25f, 4.0f, shaping);
 
         appliedGain += (target - appliedGain) * gainCoefficient;
