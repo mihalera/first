@@ -1710,6 +1710,99 @@ void FirstAudioProcessorEditor::syncGlSwitchState()
     glButton.setButtonText (isOn ? "GL ON" : "GL OFF");
     styleGlButton (isOn);
     tapeScene.setSceneEnabled (isOn);
+
+    // The texture image is palette-aware (the ink follows the theme), so a
+    // theme flip rebuilds it on the spot.
+    rebuildPanelTextureLayers();
+}
+
+// The arithmetic texture's doses, one call for both renderers (see paint() and
+// TapeScene::panelTexture): grain = static tooth, shimmer = live tape grain,
+// wear = the blotches. The shimmer term carries the drive and the gain
+// reduction, so the surface is ALIVE where the machine pushes signal - the
+// same weights the fragment shader reads.
+void FirstAudioProcessorEditor::configureTextureWeights (float drive, float gainReduction)
+{
+    constexpr float grainWeight  = 0.040f;
+    constexpr float shimmerBase  = 0.015f;
+    constexpr float shimmerDrive = 0.030f;
+    constexpr float wearWeight   = 0.030f;
+
+    panelTextureDrive = juce::jlimit (0.0f, 1.0f, drive);
+    panelTextureGainReduction = juce::jlimit (0.0f, 1.0f, gainReduction);
+
+    const auto shimmer = shimmerBase + shimmerDrive * panelTextureDrive;
+    panelTextureWeights = { grainWeight, shimmer, wearWeight };
+
+    tapeScene.setTextureWeights (grainWeight, shimmer, wearWeight);
+}
+
+// One image per resize: the static grain (hash of screen pixels) and the wear
+// blotches (value noise over a coarse grid), both at the design doses. Built at
+// half resolution and scaled on draw, which is what keeps the one-time cost at
+// a fraction of a second and the per-frame cost at a single blit.
+void FirstAudioProcessorEditor::rebuildPanelTextureLayers()
+{
+    const auto bounds = getLocalBounds();
+    if (bounds.isEmpty())
+    {
+        panelTextureImage = {};
+        return;
+    }
+
+    constexpr float grainWeight = 0.040f;
+    constexpr float wearWeight  = 0.030f;
+
+    const auto w = juce::jmax (1, bounds.getWidth() / 2);
+    const auto h = juce::jmax (1, bounds.getHeight() / 2);
+    auto image = juce::Image (juce::Image::ARGB, w, h, true);
+
+    const auto hashOf = [] (float x)
+    {
+        return std::fmod (std::abs (std::sin (x) * 43758.5453123f), 1.0f);
+    };
+
+    // Grain: the shader's hash(face * 7.5) against half-res pixel coordinates,
+    // one centered ink dot per cell, centered on the panel colour so the layer
+    // only adds texture, never tint.
+    const auto grainInk = paletteFor (darkTheme).text;
+    const auto grainEdge = paletteFor (darkTheme).knobEdge;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+        {
+            const auto n = hashOf (static_cast<float> (x * y) * 7.5f
+                                   + static_cast<float> (x) * 1.7f
+                                   + static_cast<float> (y) * 2.3f);
+            const auto bright = n > 0.5f;
+            const auto alpha = grainWeight * std::abs (n - 0.5f) * 2.0f;
+            image.setPixelAt (x, y, (bright ? grainInk : grainEdge)
+                                        .withAlpha (juce::jlimit (0.0f, 1.0f, alpha)));
+        }
+
+    // Wear: big soft blotches from the shader's value-noise grid, drawn as
+    // translucent ellipses over the grain.
+    juce::Graphics imageGraphics (image);
+    for (int gy = 0; gy < 5; ++gy)
+        for (int gx = 0; gx < 9; ++gx)
+        {
+            const auto fi = static_cast<float> (gy * 9 + gx);
+            const auto n = hashOf (fi * 4.19f + 2.17f);
+            if (n < 0.55f)
+                continue;
+
+            const auto cx = (static_cast<float> (gx) + hashOf (fi * 1.61f)) / 9.0f;
+            const auto cy = (static_cast<float> (gy) + hashOf (fi * 2.71f)) / 5.0f;
+            const auto size = 30.0f + 40.0f * hashOf (fi * 3.37f);
+            const auto alpha = wearWeight * (n - 0.5f) * 2.0f;
+
+            imageGraphics.setColour (grainEdge.withAlpha (
+                juce::jlimit (0.0f, 1.0f, alpha)));
+            imageGraphics.fillEllipse (cx * static_cast<float> (w) - size * 0.5f,
+                                       cy * static_cast<float> (h) - size * 0.5f,
+                                       size, size);
+        }
+
+    panelTextureImage = std::move (image);
 }
 
 // The three transport keys plus the momentary spindown button. Same rule as the tab
@@ -1848,13 +1941,31 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
 
     // The combo boxes (the deck's type switches): a click when the selection
     // actually changes, which is what flipping a rotary switch feels like.
+    //
+    //  THE OLD CODE WAS THE PRESET BUG. `box->onChange = ...` ASSIGNS the
+    //  std::function, so for presetBox and userPresetBox this line REPLACED the
+    //  handler the constructor had installed two hundred lines earlier - the
+    //  one that applies the preset through the processor. attachInterfaceSounds
+    //  runs last, so the sound wrapper won: a click played, and the machine
+    //  kept the values it had, on every preset, every time. The buttons in this
+    //  file never had this bug because they were already wrapped as a CHAIN
+    //  (previous + play) - the boxes now take exactly that chain too: the
+    //  previous handler first, the click on top.
     for (auto* box : { &tapeTypeBox, &valveTypeBox, &ampTypeBox, &transformerTypeBox,
                        &digitalTypeBox, &vinylTypeBox, &vinylSpeedBox, &speedBox,
                        &instrumentBox, &oversamplingBox, &presetBox, &userPresetBox,
                        &delayTypeBox, &delayRateBox, &vinylGenerationBox,
                        &vinylTurntableBox, &vinylCartridgeBox })
         if (box != nullptr)
-            box->onChange = [this] { uiSounds.trigger (UiSoundEngine::Voice::click); };
+        {
+            const auto previous = box->onChange;
+            box->onChange = [this, playClick, previous]
+            {
+                if (previous != nullptr)
+                    previous();
+                playClick();
+            };
+        }
 }
 
 void FirstAudioProcessorEditor::refreshModeButtonCaption()
@@ -2058,10 +2169,12 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
         juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
         "*.json;*.rtn;*");
 
-    const auto flags = juce::FileBrowserComponent::openMode
-                     | juce::FileBrowserComponent::canSelectFiles;
+    // browserFlags, not `flags`: a local name that shadows nothing is cheaper
+    // than proving no future member will ever be called flags (C4458).
+    const auto browserFlags = juce::FileBrowserComponent::openMode
+                            | juce::FileBrowserComponent::canSelectFiles;
 
-    chooser->launchAsync (flags, [this, chooser] (const juce::FileChooser& fc)
+    chooser->launchAsync (browserFlags, [this, chooser] (const juce::FileChooser& fc)
     {
         const auto file = fc.getResult();
         if (! file.existsAsFile())
@@ -4521,12 +4634,71 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
             g.drawHorizontalLine (juce::roundToInt (y),
                                   chassis.getX() + 6.0f, chassis.getRight() - 6.0f);
 
+    // (The arithmetic texture is blitted further down, AFTER the panels, so the
+    // panels' own faces sit over the chassis grain rather than over the texture.)
+
 
     drawPanel (g, getLocalBounds().reduced (8), palette, 7.0f);
     drawPanel (g, layout.header, palette, 5.0f);
     drawPanel (g, layout.deck, palette, 5.0f);
     drawPanel (g, layout.controls, palette, 5.0f);
     drawPanel (g, layout.meters, palette, 5.0f);
+
+    // ----------------------------------------------------------------------
+    //  The panel's texture, 2D and mathematical - the same three terms the GPU
+    //  scene shades, in the same doses (uTextureWeights there):
+    //
+    //   - static grain + wear blotches: ONE image, built once per resize in
+    //     rebuildPanelTextureLayers() from the same hash spaces the shader
+    //     uses (grain = fract(sin(p*7.5)), wear = value noise), blitted here
+    //     in one call - AFTER the panels, so their faces carry it rather than
+    //     hiding it, and BEFORE the child controls, which paint on top of
+    //     everything here by being children;
+    //   - live shimmer: a sparse drift of dots whose positions are the shader's
+    //     hash(face*40 + t*(1+GR)) evaluated at a walking time offset - so the
+    //     surface visibly responds to DRIVE and to the compressors. THIS is
+    //     what the GL switch switches between: with the context attached the
+    //     scene's fragment shader draws the identical texture definition on
+    //     the GPU; without it, this ink does.
+    //  Every dose is centered, so no branch can shift the panel's colour.
+    // ----------------------------------------------------------------------
+    if (panelTextureImage.isValid())
+        // The image is built at half resolution; this overload SCALES it back
+        // over the whole panel (drawImageAt would have pasted it 1:1 into the
+        // top-left quarter).
+        g.drawImage (panelTextureImage,
+                     0, 0, getWidth(), getHeight(),
+                     0, 0, panelTextureImage.getWidth(), panelTextureImage.getHeight());
+
+    if (panelTextureWeights.shimmer > 0.0f)
+    {
+        const auto timeNow = static_cast<float> (juce::Time::getMillisecondCounterHiRes()) * 0.001f;
+        // The shimmer animates only across the two bands the timer repaints
+        // (header + deck): dots elsewhere would freeze between full repaints,
+        // and a frozen shimmer reads as dirt rather than as life.
+        const auto area = layout.header.getUnion (layout.deck).toFloat();
+        const auto hashOf = [] (float x)
+        {
+            return std::fmod (std::abs (std::sin (x) * 43758.5453123f), 1.0f);
+        };
+        const auto timeStep = std::floor (timeNow * 8.0f);
+        const auto drift = timeStep * 0.35f * (1.0f + panelTextureGainReduction);
+
+        for (int i = 0; i < panelShimmerDotCount; ++i)
+        {
+            const auto fi = static_cast<float> (i);
+            const auto u = hashOf (fi * 1.37f + drift);
+            const auto v = hashOf (fi * 3.11f + drift * 0.73f + 19.7f);
+            const auto a = hashOf (fi * 7.77f - drift * 1.31f + 5.3f);
+            const auto bright = a > 0.5f;
+            const auto ink = bright ? palette.text : palette.knobEdge;
+            const auto alpha = panelTextureWeights.shimmer * (0.35f + 0.65f * std::abs (a - 0.5f) * 2.0f);
+
+            g.setColour (ink.withAlpha (juce::jlimit (0.0f, 1.0f, alpha)));
+            g.fillEllipse (area.getX() + u * area.getWidth(),
+                           area.getY() + v * area.getHeight(), 1.7f, 1.7f);
+        }
+    }
 
     g.setColour (palette.accent.withAlpha (0.85f));
     g.fillRect (layout.header.getX() + 17, layout.header.getY() + 14, 3,
@@ -5149,6 +5321,13 @@ void FirstAudioProcessorEditor::timerCallback()
         // lamp reads the same transient the meter needle just fell for.
         juce::jlimit (0.0f, 1.0f, audioProcessor.getOutputPeakLevel()));
 
+    // The texture's doses follow the machine: the shimmer term scales with
+    // drive and with the compressors' reduction, so the panel's surface is
+    // alive where the signal pushes. One call feeds both renderers - the 2D
+    // ink in paint() and the scene's uTextureWeights uniform.
+    configureTextureWeights (sceneDrive,
+                             juce::jlimit (0.0f, 1.0f, std::abs (reduction) / 6.0f));
+
     // The scene's own attach retries, on the same timer and the same bounded
     // budget as this editor's context: a child component cannot have a context
     // until the host has given it a native peer, and that may not have happened
@@ -5158,6 +5337,12 @@ void FirstAudioProcessorEditor::timerCallback()
 
 void FirstAudioProcessorEditor::resized()
 {
+    // The static texture layers (grain + wear) are sized to the window, so a
+    // resize rebuilds them. Cheap enough at half resolution to pay on every
+    // drag of the window's edge, and it keeps the texture from ever being
+    // stretched over a size it was not built for.
+    rebuildPanelTextureLayers();
+
     const auto layout = getEditorLayout();
 
     // Header captions: the small brand strip sits ABOVE the big title (they used to
@@ -5229,8 +5414,8 @@ void FirstAudioProcessorEditor::resized()
 
             placeFromRight (headerEdge, languageBox, languageBoxWidth, headerRowTwoY);
 
-            languageLabel.setBounds (languageBox.getX() - 62, headerRowTwoY,
-                                     62 - languageGap, headerSwitchHeight);
+            languageLabel.setBounds (languageBox.getX() - 68, headerRowTwoY,
+                                     68 - languageGap, headerSwitchHeight);
         }
     }
 
@@ -5446,9 +5631,20 @@ void FirstAudioProcessorEditor::resized()
                                       ? static_cast<int> (slack * 0.5) / elasticGaps : 0;
         const auto gapShare = juce::jmin (wantedGapShare, maximumGapGrowth);
         const auto usedByGaps = gapShare * elasticGaps;
-        const auto widthShare = items.empty()
+
+        // The width share divides by COLUMNS, not by items: a stacked caption
+        // rides its column and must not eat a share of its own. Dividing by the
+        // item count gave five-share voids on every row that stacks caption over
+        // value - slack the row collected and never spent, which the user saw as
+        // controls spaced 'at random' with a hole at the row's end.
+        int columnCount = 0;
+        for (const auto& item : items)
+            if (! item.sameColumn)
+                ++columnCount;
+
+        const auto widthShare = columnCount == 0
                                   ? 0
-                                  : (slack - usedByGaps) / static_cast<int> (items.size());
+                                  : (slack - usedByGaps) / columnCount;
 
         auto widest = juce::Range<int> (0, 0);
         int edge = left;
@@ -5516,15 +5712,16 @@ void FirstAudioProcessorEditor::resized()
     }
 
     // ---- row 2: SWITCHES ----------------------------------------------------
-    // GL has no caption - it is a pill that carries its own text - and the three
-    // readouts are caption over value, so each is one column rather than two.
+    // OVERSAMPLING and GL are NOT in this row: they are SETTINGS-tab members and
+    // live in the member row under that tab's knobs (placeDeckSwitch below).
+    // They used to sit here on EVERY tab while being visible only on SETTINGS -
+    // so five tabs out of six showed two unexplained holes in this line. The
+    // three readouts are caption over value, one column each, and follow the
+    // instrument list directly.
     {
         const std::vector<DeckRowItem> row {
-            { &oversamplingLabel, 40,  2, 11, 16, false },
-            { &oversamplingBox,   72, -1,  0, 32, false },
             { &instrumentLabel,   68,  8, 11, 16, false },
             { &instrumentBox,    112, -1,  0, 32, false },
-            { &glButton,          64, -1,  0, 32, false },
 
             { &harmonicsLabel,    96, -1,  0, 14, false },
             { &harmonicsReadout,   0, -1, 14, 13, true  },

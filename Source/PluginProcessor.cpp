@@ -1569,7 +1569,8 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     // -------------------------------------------------------------------------
     layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "language", 1 },
                                                               "Language",
-                                                              juce::StringArray { "English", "\u0423\u043a\u0440\u0430\u0457\u043d\u0441\u044c\u043a\u0430" },
+                                                              juce::StringArray { "English",
+                                                                  juce::CharPointer_UTF8 ("\xd0\xa3\xd0\xba\xd1\x80\xd0\xb0\xd1\x97\xd0\xbd\xd1\x81\xd1\x8c\xd0\xba\xd0\xb0") },
                                                               0));
 
     // -------------------------------------------------------------------------

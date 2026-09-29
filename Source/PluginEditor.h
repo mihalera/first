@@ -726,6 +726,36 @@ private:
     juce::SpinLock renderOrbsLock;
     juce::OpenGLContext openGLContext;
 
+    // =====================================================================
+    //  The panel's arithmetic texture, 2D half. The GPU half lives in
+    //  TapeScene (uTextureWeights); both read the SAME three doses, so GL ON
+    //  and GL OFF are two renders of one texture definition - which is what
+    //  makes the GL switch change something the eye can see.
+    // =====================================================================
+    struct PanelTextureWeights
+    {
+        float grain = 0.0f;    // static per-pixel tooth
+        float shimmer = 0.0f;  // live tape grain (drive + gain reduction)
+        float wear = 0.0f;     // the slow wear blotches
+    };
+
+    PanelTextureWeights panelTextureWeights;
+    float panelTextureDrive = 0.0f;
+    float panelTextureGainReduction = 0.0f;
+
+    static constexpr int panelShimmerDotCount = 220;
+
+    /** The static layers (grain + wear) as one image, rebuilt on resize. */
+    juce::Image panelTextureImage;
+
+    /** Sets the three texture doses for BOTH renderers; called from the
+        timer with the live drive and gain reduction. */
+    void configureTextureWeights (float drive, float gainReduction);
+
+    /** Rebuilds the static texture image (grain + wear) from the current
+        size and palette; called from resized() and after a theme change. */
+    void rebuildPanelTextureLayers();
+
     // The deck's 3D transport. A child component with its OWN context, because a
     // JUCE context is either a component painter or a custom renderer and never
     // both - and this editor's is already the component painter for the 2D

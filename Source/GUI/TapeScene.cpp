@@ -11,7 +11,9 @@
 #include <glm/gtc/type_ptr.hpp>
 
 #include <algorithm>
+#include <array>
 #include <cmath>
+#include <cstdint>
 #include <limits>
 
 // JUCE 9 keeps every GL command and every GL enum in juce::gl, and documents
@@ -585,6 +587,53 @@ namespace
         "uniform float uLabelSize;\n"
         "uniform int uLabelLength;\n"
         "uniform float uLabel[8];\n"
+        "uniform vec3 uTextureWeights;\n"
+        "\n"
+        "// ---------------------------------------------------------------------------\n"
+        "//  The panel's texture, as pure arithmetic - there is no texture object\n"
+        "//  anywhere in this program and there never was one. The doses are small\n"
+        "//  by design: this is a powder on the paint, not a wallpaper.\n"
+        "// ---------------------------------------------------------------------------\n"
+        "float hash (vec2 p)\n"
+        "{\n"
+        "    return fract (sin (dot (p, vec2 (127.1, 311.7))) * 43758.5453123);\n"
+        "}\n"
+        "\n"
+        "float valueNoise (vec2 p)\n"
+        "{\n"
+        "    vec2 i = floor (p);\n"
+        "    vec2 f = fract (p);\n"
+        "    vec2 u = f * f * (3.0 - 2.0 * f);\n"
+        "\n"
+        "    return mix (mix (hash (i), hash (i + vec2 (1.0, 0.0)), u.x),\n"
+        "                mix (hash (i + vec2 (0.0, 1.0)), hash (i + vec2 (1.0, 1.0)), u.x), u.y);\n"
+        "}\n"
+        "\n"
+        "// The one texture input that cannot be a uniform: the face's LOCAL xy is\n"
+        "// what the grain is sampled against, and it arrives on the varying.\n"
+        "//\n"
+        "//  THREE terms, each three lines and each with a duty:\n"
+        "//   - staticGrain   a per-pixel crystal - the aluminium paint's tooth;\n"
+        "//   - tapeNoise     a slow, signal-driven shimmer - the tape machine's\n"
+        "//                   own grain, alive only while the transport runs;\n"
+        "//   - wearPattern   big, slow blotches - where the paint has worn back.\n"
+        "//  The weights arrive as uniforms (uTextureWeights) so the panel and the\n"
+        "//  scene are one system, not two textures tuned apart.\n"
+        "vec3 panelTexture (vec2 face)\n"
+        "{\n"
+        "    vec3 textureAccumulator = vec3 (0.0);\n"
+        "\n"
+        "    textureAccumulator += vec3 ((hash (face * 7.5) - 0.5) * uTextureWeights.x);\n"
+        "\n"
+        "    float tapeNoise = hash (face * 40.0\n"
+        "                            + vec2 (0.0, uTime * 6.0 * (1.0 + uGlow)));\n"
+        "    textureAccumulator += vec3 ((tapeNoise - 0.5) * uTextureWeights.y);\n"
+        "\n"
+        "    float wearPattern = valueNoise (face * 4.0);\n"
+        "    textureAccumulator -= vec3 ((1.0 - wearPattern) * uTextureWeights.z);\n"
+        "\n"
+        "    return textureAccumulator;\n"
+        "}\n"
         "\n"
         "// ---------------------------------------------------------------------------\n"
         "//  A procedural alphabet.\n"
@@ -741,12 +790,13 @@ namespace
         "\n"
         "    if (uMode < 3.5)\n"
         "    {\n"
-        "        // The control bank's body: a machined face with a brushed grain. The\n"
-        "        // grain runs along x and is one line of arithmetic - what makes a\n"
-        "        // flat plate read as metal rather than as a coloured rectangle is\n"
-        "        // that its highlight is not perfectly uniform.\n"
+        "        // The control bank's body: a machined face with a brushed grain,\n"
+        "        // plus the arithmetic texture (see panelTexture above) sampled\n"
+        "        // against the face's local xy - grain, live tape shimmer and wear\n"
+        "        // in one accumulation, doses governed by uTextureWeights.\n"
         "        TAPE_SCENE_HIGHP float brush = 0.965\n"
         "                                 + 0.035 * abs (fract (vLocal.y * 46.0) - 0.5) * 2.0;\n"
+        "        colour += panelTexture (vLocal);\n"
         "        gl_FragColor = vec4 (colour * brush, 1.0);\n"
         "        return;\n"
         "    }\n"
@@ -794,6 +844,11 @@ namespace
         "    // window's real size the plate dominated the face and read as a pale card\n"
         "    // with nothing legible in it. The glyph geometry (captionCoverage) and the\n"
         "    // label uniforms are kept intact so the plate can return unchanged.\n"
+        "\n"
+        "    // The same arithmetic texture as the bank body, at the face's own dose -\n"
+        "    // so the plate the machine is set into matches its front, rather than\n"
+        "    // reading as a separate, smoother material.\n"
+        "    colour += panelTexture (vLocal);\n"
         "\n"
         "    // A soft vignette on the face, so the bank's edges fall away rather than\n"
         "    // ending on a hard line under the machine's front.\n"
@@ -1411,8 +1466,13 @@ void TapeScene::drawMesh (const Mesh& mesh)
     glBindBuffer (GL_ARRAY_BUFFER, mesh.vertexBuffer);
     glVertexAttribPointer (static_cast<GLuint> (positionLocation), 4, GL_FLOAT, GL_FALSE,
                            vertexStride, nullptr);
+    // C4312 keeps a GLsizei off a pointer cast honest: the offset goes up
+    // through uintptr_t, so the pointer is built from an integer of its own
+    // width instead of the compiler guessing at a widening it cannot verify.
     glVertexAttribPointer (static_cast<GLuint> (normalLocation), 3, GL_FLOAT, GL_FALSE,
-                           vertexStride, reinterpret_cast<const void*> (normalOffset));
+                           vertexStride,
+                           reinterpret_cast<const void*> (
+                               static_cast<std::uintptr_t> (normalOffset)));
     glEnableVertexAttribArray (static_cast<GLuint> (positionLocation));
     glEnableVertexAttribArray (static_cast<GLuint> (normalLocation));
 
@@ -1814,6 +1874,15 @@ void TapeScene::renderOpenGL()
     shaderProgram->setUniform ("uGlow", reduction);
     shaderProgram->setUniform ("uDrive", driveAmount);
     shaderProgram->setUniform ("uLightDirection", lightX, lightY, lightZ);
+    // The arithmetic texture's three doses (grain / tape shimmer / wear), one
+    // palette-carried vector - see panelTexture in the fragment source.
+    shaderProgram->setUniform ("uTextureWeights",
+                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
+                                 .getFloatRed(),
+                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
+                                 .getFloatGreen(),
+                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
+                                 .getFloatBlue());
 
     const auto drawReel = [this, &scene, &body, &tape] (float centreX, float centreY, float radius,
                                                         float angle, float packOuter)
@@ -1984,6 +2053,15 @@ void TapeScene::renderOpenGL()
     shaderProgram->setUniform ("uGlow", reduction);
     shaderProgram->setUniform ("uDrive", driveAmount);
     shaderProgram->setUniform ("uLightDirection", lightX, lightY, lightZ);
+    // The arithmetic texture's three doses (grain / tape shimmer / wear), one
+    // palette-carried vector - see panelTexture in the fragment source.
+    shaderProgram->setUniform ("uTextureWeights",
+                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
+                                 .getFloatRed(),
+                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
+                                 .getFloatGreen(),
+                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
+                                 .getFloatBlue());
 
     const auto drawReel = [this, &scene, &body, &tape] (float centreX, float centreY, float radius,
                                                         float angle, float packOuter)
@@ -2264,6 +2342,15 @@ void TapeScene::renderOpenGL()
     shaderProgram->setUniform ("uGlow", reduction);
     shaderProgram->setUniform ("uDrive", driveAmount);
     shaderProgram->setUniform ("uLightDirection", lightX, lightY, lightZ);
+    // The arithmetic texture's three doses (grain / tape shimmer / wear), one
+    // palette-carried vector - see panelTexture in the fragment source.
+    shaderProgram->setUniform ("uTextureWeights",
+                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
+                                 .getFloatRed(),
+                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
+                                 .getFloatGreen(),
+                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
+                                 .getFloatBlue());
 
     const auto drawReel = [this, &scene, &body, &tape] (float centreX, float centreY, float radius,
                                                         float angle, float packOuter)
@@ -2426,6 +2513,15 @@ void TapeScene::renderOpenGL()
     shaderProgram->setUniform ("uGlow", reduction);
     shaderProgram->setUniform ("uDrive", driveAmount);
     shaderProgram->setUniform ("uLightDirection", lightX, lightY, lightZ);
+    // The arithmetic texture's three doses (grain / tape shimmer / wear), one
+    // palette-carried vector - see panelTexture in the fragment source.
+    shaderProgram->setUniform ("uTextureWeights",
+                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
+                                 .getFloatRed(),
+                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
+                                 .getFloatGreen(),
+                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
+                                 .getFloatBlue());
 
     const auto drawReel = [this, &scene, &body, &tape] (float centreX, float centreY, float radius,
                                                         float angle, float packOuter)

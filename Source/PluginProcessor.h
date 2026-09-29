@@ -5206,7 +5206,13 @@ private:
     // mutable: getTelemetry() is const and drains the queue to the newest
     // frame. Draining mutates the queue's internal read cursor but not the
     // machine's state, so the queue is mutable rather than the accessor.
+    //
+    // The queue's own alignas(8) is what trips C4324 ("structure was padded
+    // due to alignment specifier") on every class that holds one. It is the
+    // third-party header's choice, not ours - suppressed, not argued with.
+    JUCE_BEGIN_IGNORE_WARNINGS_MSVC (4324)
     mutable moodycamel::ReaderWriterQueue<TelemetryFrame, 32> telemetryQueue;
+    JUCE_END_IGNORE_WARNINGS_MSVC
 #endif
 
     /** The most recent frame, published by the audio thread. The editor reads it
