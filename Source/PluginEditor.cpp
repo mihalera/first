@@ -1,4 +1,4 @@
-﻿#include "PluginProcessor.h"
+#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
@@ -1793,6 +1793,23 @@ void FirstAudioProcessorEditor::refreshModeButtonCaption()
     modeCycleButton.setButtonText (modernOn ? "MODE: MODERN"
                                   : lofiOn  ? "MODE: LO-FI"
                                             : "MODE: OFF");
+
+    // The button's background is drawn by the base Look and Feel - this class
+    // overrides captions, not button backgrounds - so the state has to arrive as
+    // colours: lit with the accent while a mode is engaged, the raised panel
+    // colour at OFF, the same language the transport keys and the GL switch
+    // speak. Without this the button kept the base Look and Feel's own grey,
+    // which matched nothing else on the panel.
+    const auto& palette = paletteFor (darkTheme);
+    const auto modeOn = modernOn || lofiOn;
+    modeCycleButton.setColour (juce::TextButton::buttonColourId,
+                               modeOn ? palette.accent : palette.raised);
+    modeCycleButton.setColour (juce::TextButton::buttonOnColourId,
+                               modeOn ? palette.accent : palette.raised);
+    modeCycleButton.setColour (juce::TextButton::textColourOffId,
+                               modeOn ? palette.readout : palette.text);
+    modeCycleButton.setColour (juce::TextButton::textColourOnId,
+                               modeOn ? palette.readout : palette.text);
 }
 
 void FirstAudioProcessorEditor::styleSpindownButton()
@@ -1942,6 +1959,16 @@ void FirstAudioProcessorEditor::applyLanguage (int languageIndex)
     // are UTF-8, and the plugin reads them as such.
     juce::LocalisedStrings::setCurrentMappings (
         new juce::LocalisedStrings (juce::String::createStringFromData (text, size), false));
+
+    // The language selector's own rows are keyed strings, and they are added to
+    // the box BEFORE this function first runs - through a table that did not
+    // exist yet, so the box showed its raw keys ("LANGUAGE_...") where the
+    // language names belong. Re-apply the rows through the table just installed:
+    // the items exist on every path that reaches here (the constructor adds them
+    // before its first call), and a later switch re-translates them the same way.
+    languageBox.changeItemText (1, xlat ("LANGUAGE_ENGLISH"));
+    languageBox.changeItemText (2, xlat ("LANGUAGE_UKRAINIAN"));
+    languageBox.repaint();
 
     updateTooltips();
 }
@@ -2218,6 +2245,11 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     styleLabel (digitalTypeLabel, "DIGITAL", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
     styleLabel (vinylTypeLabel, "VINYL", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    // The second selector of the six-type row is the turntable's motor speed; it
+    // had a layout slot and a combo but was never given a caption, so "33 RPM"
+    // sat under an empty label. RPM is what the box itself shows (33 / 45 / 78).
+    styleLabel (vinylSpeedLabel, "RPM", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
     styleLabel (speedLabel, "SPEED", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
@@ -4137,6 +4169,31 @@ void FirstAudioProcessorEditor::applyTheme()
     for (auto& label : controlLabels)
         label.setColour (juce::Label::textColourId, palette.secondary);
 
+    // The deck's and the tabs' remaining captions. Every label the constructor
+    // styles with paletteFor(false) has to be re-inked here as well, or a theme
+    // switch leaves it in the previous panel's colour - the six type selectors,
+    // the machine readouts and the tab-member captions all kept ivory-brown text
+    // on the charcoal and metal panels until this block existed.
+    languageLabel.setColour (juce::Label::textColourId, palette.secondary);
+    bpmLabel.setColour (juce::Label::textColourId, palette.secondary);
+    bpmReadout.setColour (juce::Label::textColourId, palette.secondary);
+    vinylTypeLabel.setColour (juce::Label::textColourId, palette.secondary);
+    vinylSpeedLabel.setColour (juce::Label::textColourId, palette.secondary);
+    valveTypeLabel.setColour (juce::Label::textColourId, palette.secondary);
+    ampTypeLabel.setColour (juce::Label::textColourId, palette.secondary);
+    transformerTypeLabel.setColour (juce::Label::textColourId, palette.secondary);
+    digitalTypeLabel.setColour (juce::Label::textColourId, palette.secondary);
+    diPadLabel.setColour (juce::Label::textColourId, palette.secondary);
+    tracksLabel.setColour (juce::Label::textColourId, palette.secondary);
+    inputEqOrderLabel.setColour (juce::Label::textColourId, palette.secondary);
+    outputEqOrderLabel.setColour (juce::Label::textColourId, palette.secondary);
+    vinylGenerationLabel.setColour (juce::Label::textColourId, palette.secondary);
+    vinylTurntableLabel.setColour (juce::Label::textColourId, palette.secondary);
+    vinylCartridgeLabel.setColour (juce::Label::textColourId, palette.secondary);
+    delaySyncLabel.setColour (juce::Label::textColourId, palette.secondary);
+    glLabel.setColour (juce::Label::textColourId, palette.secondary);
+    neuralStatusLabel.setColour (juce::Label::textColourId, palette.secondary);
+
     // The tab buttons carry the theme, and styleTabButtons() reads currentTab as well,
     // so the selected tab keeps its accent highlight across a theme switch.
     styleTabButtons();
@@ -4170,6 +4227,11 @@ void FirstAudioProcessorEditor::applyTheme()
     // list - and of the one in applyTheme() below - so it kept LookAndFeel_V4's light
     // default background on a dark panel and never followed the theme toggle.
     styleCombo (userPresetBox);
+    // The language selector is drawn by the deck Look and Feel (which overrides
+    // captions, not combo backgrounds), so like the user-preset list it needs its
+    // palette colours set here or it keeps the base Look and Feel's own grey -
+    // a box that matched nothing else on the panel.
+    styleCombo (languageBox);
 
     const auto styleWorkflowButton = [&palette] (juce::TextButton& button, bool emphasised)
     {
@@ -4258,6 +4320,9 @@ void FirstAudioProcessorEditor::applyTheme()
     }
 
     updateWorkflowButtons();
+    // The mode button's colours read the palette (see refreshModeButtonCaption),
+    // so a theme switch must re-run it - the caption is unchanged, the ink is not.
+    refreshModeButtonCaption();
     repaint();
 }
 
@@ -5544,14 +5609,44 @@ void FirstAudioProcessorEditor::resized()
     const auto& activeTab = tabSpecs[static_cast<std::size_t> (currentTab)];
     const auto tabControlCount = static_cast<int> (activeTab.count);
     const auto cellWidth = grid.getWidth() / tabColumns;
-    // SETTINGS holds no knobs of its own, which made gridRows evaluate to 0 and
-    // the row height below divide by it - a NaN cell rectangle, and a plugin plus
-    // DAW crash the first time that tab was opened. An empty knob grid is legal:
-    // the guard skips the loop and the tab's deck switches are laid out beneath.
-    const auto gridRows = tabControlCount == 0
-                              ? 1
-                              : (tabControlCount + tabColumns - 1) / tabColumns;
-    const auto rowHeight = grid.getHeight() / gridRows;
+
+    // Which tab is live, looked up by name from the tabSpecs table - the single
+    // source of truth - rather than carried as numbers that drift when a page is
+    // added or reordered. Hoisted ABOVE the row arithmetic because the member row
+    // is decided by the same flags the layout chain below reads.
+    const auto settingsTab = index_of_tab_named ("SETTINGS") == currentTab;
+    const auto spaceTab = index_of_tab_named ("SPACE") == currentTab;
+    const auto characterTab = index_of_tab_named ("CHARACTER") == currentTab;
+    const auto driveTab = index_of_tab_named ("DRIVE") == currentTab;
+    const auto inEqTab = index_of_tab_named ("IN EQ") == currentTab;
+    const auto outEqTab = index_of_tab_named ("OUT EQ") == currentTab;
+    const auto machineTab = index_of_tab_named ("MACHINE") == currentTab;
+    const auto dynamicsTab = index_of_tab_named ("DYN") == currentTab;
+
+    // The knob rows the active tab needs (zero on SETTINGS, which holds no knobs),
+    // and one row more when the tab owns member switches - the non-knob combos and
+    // pills placeDeckSwitch lays out under the knobs. SETTINGS is the worst case
+    // and the reason the arithmetic is shared: with no knobs at all, sizing the
+    // grid for knob rows alone left its whole height for a member row that was
+    // then appended BELOW the grid, off the panel - GL and OVERSAMPLING were
+    // clipped by the window's bottom edge on the very tab that holds nothing else.
+    const auto knobRows = (tabControlCount + tabColumns - 1) / tabColumns;
+    const auto memberRows = (settingsTab || spaceTab || characterTab
+                             || dynamicsTab || inEqTab || outEqTab
+                             || machineTab || driveTab) ? 1 : 0;
+
+    // The member band is a FIXED strip - a caption band plus a control band -
+    // reserved under the knob rows, and the knob rows share what is left. A
+    // uniform division would tax a page's knobs for a single combo: DRIVE holds
+    // twelve knobs in three rows, and splitting the grid four ways instead of
+    // three would cost every one of them a quarter of its height. A fixed strip
+    // takes a fixed price, and every knob page keeps the row height its own knob
+    // count asks for. 50 px is the label band (17) plus the control's 30 at its
+    // 20 px offset - the geometry placeDeckSwitch below already assumes.
+    constexpr int memberBandHeight = 50;
+    const auto knobAreaHeight = grid.getHeight()
+                              - (memberRows != 0 ? memberBandHeight : 0);
+    const auto knobRowHeight = knobRows > 0 ? knobAreaHeight / knobRows : 0;
 
     for (int slot = 0; slot < tabControlCount; ++slot)
     {
@@ -5559,13 +5654,13 @@ void FirstAudioProcessorEditor::resized()
         const auto row = slot / tabColumns;
         const auto column = slot % tabColumns;
         auto cell = juce::Rectangle<int> (grid.getX() + column * cellWidth,
-                                          grid.getY() + row * rowHeight,
+                                          grid.getY() + row * knobRowHeight,
                                           column == tabColumns - 1
                                               ? grid.getRight() - (grid.getX() + column * cellWidth)
                                               : cellWidth,
-                                          row == gridRows - 1
-                                              ? grid.getBottom() - (grid.getY() + row * rowHeight)
-                                              : rowHeight);
+                                          row == knobRows - 1 && memberRows == 0
+                                              ? grid.getBottom() - (grid.getY() + row * knobRowHeight)
+                                              : knobRowHeight);
         controlLabels[i].setBounds (cell.getX() + 5, cell.getY() + 1,
                                     cell.getWidth() - 10, 17);
         auto sliderBounds = cell.reduced (5);
@@ -5578,29 +5673,31 @@ void FirstAudioProcessorEditor::resized()
     // convention - so they are laid out HERE rather than on the fixed deck rows.
     // A combo is taller than a knob cell wants, so the box rides the cell's lower
     // half under its label.
+    //
     // Tab members (the combos and switches that are not knobs) ride the SAME
-    // grid the knobs use, on an explicit EXTRA row appended under the knob
-    // rows - row indices passed here are relative to that reserved row. This is
-    // the systemic fix for the crooked DELAY TYPE / SYNC / RATE trio: the old
-    // code hand-computed each member's rectangle from raw coordinates, so every
+    // grid the knobs use, in one reserved band under the knob rows. This is the
+    // systemic fix for the crooked DELAY TYPE / SYNC / RATE trio: the old code
+    // hand-computed each member's rectangle from raw coordinates, so every
     // caller reinvented the cell arithmetic and the results could (and did)
     // collide with the knob rows and with each other. Now the arithmetic exists
-    // exactly once: label band 17 px, control band 30 px, both centred in the
-    // cell, control capped at 34 px so it can never overflow the row.
-    const auto memberRowY = grid.getY() + gridRows * rowHeight;
+    // exactly once: label band 17 px, control band 30 px at its 20 px offset,
+    // the control capped at 30 px so it can never overflow the band.
+    // memberRowY is computed from the same arithmetic: the band starts where
+    // the knob rows end (at the grid's top on SETTINGS, which holds no knobs)
+    // and runs to the grid's bottom, so the division's remainder lands inside
+    // the band rather than above it.
+    const auto memberRowY = grid.getY() + knobRows * knobRowHeight;
     const auto placeDeckSwitch = [&] (juce::Label& label, juce::Component& box,
-                                      int column, int rowOffset, int columnsWide,
+                                      int column, int columnsWide,
                                       const juce::String& caption)
     {
-        const auto row = gridRows + rowOffset;
         auto cell = juce::Rectangle<int> (grid.getX() + column * cellWidth,
-                                          memberRowY + rowOffset * rowHeight,
+                                          memberRowY,
                                           columnsWide == tabColumns
                                               ? grid.getRight() - (grid.getX() + column * cellWidth)
                                               : columnsWide * cellWidth
                                                   + (columnsWide - 1) * (cellWidth / columnsWide),
-                                          rowHeight);
-        juce::ignoreUnused (row);
+                                          grid.getBottom() - memberRowY);
         label.setText (caption, juce::dontSendNotification);
         label.setBounds (cell.getX() + 5, cell.getY() + 1, cell.getWidth() - 10, 17);
         box.setBounds (cell.getX() + 12, cell.getY() + 20,
@@ -5611,19 +5708,9 @@ void FirstAudioProcessorEditor::resized()
     // setCurrentTab, because resized() also runs from setSize() in the constructor
     // - BEFORE some of these widgets had a parent - and a show/hide decision made
     // only at tab-switch time left the switches permanently visible on tabs that
-    // were not theirs. The active tab decides; every resize re-applies it.
-    // Tab indexes are no longer hard-coded: the numbers came from the order of the
-    // tabSpecs table, which once drifted from the buttons on screen and left the
-    // SETTINGS switches appearing on the nameless seventh tab. The table is the one
-    // source of truth; looking the tab up by name cannot drift from it.
-    const auto settingsTab = index_of_tab_named ("SETTINGS") == currentTab;
-    const auto spaceTab = index_of_tab_named ("SPACE") == currentTab;
-    const auto characterTab = index_of_tab_named ("CHARACTER") == currentTab;
-    const auto driveTab = index_of_tab_named ("DRIVE") == currentTab;
-    const auto inEqTab = index_of_tab_named ("IN EQ") == currentTab;
-    const auto outEqTab = index_of_tab_named ("OUT EQ") == currentTab;
-    const auto machineTab = index_of_tab_named ("MACHINE") == currentTab;
-    const auto dynamicsTab = index_of_tab_named ("DYN") == currentTab;
+    // were not theirs. The active tab decides; every resize re-applies it. The
+    // flags themselves are read from the tabSpecs table at the top of the grid
+    // section above, where the member-row arithmetic needs them too.
 
     // The four new lists follow the same rule as the deck switches: each is a
     // full member of exactly one tab, so it is visible only while that tab is.
@@ -5671,11 +5758,23 @@ void FirstAudioProcessorEditor::resized()
     vinylCartridgeLabel.setVisible (characterTab);
     vinylCartridgeBox.setVisible (characterTab);
 
-    if (settingsTab)
+    if (machineTab)
+    {
+        // MACHINE: seven knobs fill two rows (the second holds three), so the
+        // member row under them is where the machine's TRACKS selector lives.
+        placeDeckSwitch (tracksLabel, tracksBox, 0, 1, "TRACKS");
+    }
+    else if (driveTab)
+    {
+        // DRIVE: twelve knobs in three full rows, so the member row under them
+        // carries the DI pad - the front end's input switch.
+        placeDeckSwitch (diPadLabel, diPadBox, 0, 1, "DI PAD");
+    }
+    else if (settingsTab)
     {
         // SETTINGS: GL and OVERSAMPLING, two cells on one row.
-        placeDeckSwitch (glLabel, glButton, 0, 0, 1, "GL");
-        placeDeckSwitch (oversamplingLabel, oversamplingBox, 1, 0, 1, "OVER");
+        placeDeckSwitch (glLabel, glButton, 0, 1, "GL");
+        placeDeckSwitch (oversamplingLabel, oversamplingBox, 1, 1, "OVER");
 
         // UI SOUNDS takes the third cell of the same row. It is the same KIND of
         // switch as GL and OVERSAMPLING - an engine-level preference rather than
@@ -5684,33 +5783,35 @@ void FirstAudioProcessorEditor::resized()
         // button text, which the in-tab style draws beside the pill, so no
         // Label of its own is needed.
         uiSoundsButton.setBounds (grid.getX() + 2 * cellWidth + 12,
-                                  grid.getY() + 20 + rowHeight * 0,
-                                  cellWidth - 24, 30);
+                                  memberRowY + 20,
+                                  cellWidth - 24,
+                                  juce::jmin (30, grid.getBottom() - memberRowY - 22));
     }
     else if (spaceTab)
     {
-        // SPACE: the delay trio rides the row under the five knobs.
-        placeDeckSwitch (delayTypeLabel, delayTypeBox, 0, 1, 1, "TYPE");
-        placeDeckSwitch (delaySyncLabel, delaySyncButton, 1, 1, 1, "SYNC DELAY");
-        placeDeckSwitch (delayRateLabel, delayRateBox, 2, 1, 1, "RATE");
+        // SPACE: the delay trio rides the member row under the delay knobs.
+        placeDeckSwitch (delayTypeLabel, delayTypeBox, 0, 1, "TYPE");
+        placeDeckSwitch (delaySyncLabel, delaySyncButton, 1, 1, "SYNC DELAY");
+        placeDeckSwitch (delayRateLabel, delayRateBox, 2, 1, "RATE");
     }
     else if (characterTab)
     {
-        // CHARACTER: three knobs in the first row, so the second row is free and
-        // that is where the three vinyl voicing selectors live - the order the
+        // CHARACTER: three knobs in the first row, so the member row under them
+        // is where the three vinyl voicing selectors live - the order the
         // record is made in: what was cut, what plays it, what reads it.
-        placeDeckSwitch (vinylGenerationLabel, vinylGenerationBox, 0, 1, 1, "GENERATION");
-        placeDeckSwitch (vinylTurntableLabel, vinylTurntableBox, 1, 1, 1, "TURNTABLE");
-        placeDeckSwitch (vinylCartridgeLabel, vinylCartridgeBox, 2, 1, 1, "CARTRIDGE");
+        placeDeckSwitch (vinylGenerationLabel, vinylGenerationBox, 0, 1, "GENERATION");
+        placeDeckSwitch (vinylTurntableLabel, vinylTurntableBox, 1, 1, "TURNTABLE");
+        placeDeckSwitch (vinylCartridgeLabel, vinylCartridgeBox, 2, 1, "CARTRIDGE");
     }
     else if (dynamicsTab)
     {
-        // DYNAMICS: four knobs fill the first row, so the second row is where the
-        // neural model picker lives - LOAD and CLEAR side by side in the first
-        // two cells, with the status readout under them. The picker is not a knob
-        // (it opens a file), so it is laid out here rather than by the grid.
-        const auto buttonY = memberRowY + rowHeight + 20;
-        const auto buttonH = juce::jmin (30, rowHeight - 22);
+        // DYNAMICS: four knobs fill the first row, so the member row under them
+        // is where the neural model picker lives - LOAD and CLEAR side by side
+        // in the first two cells, with the status readout beside them. The
+        // picker is not a knob (it opens a file), so it is laid out here rather
+        // than by the grid.
+        const auto buttonY = memberRowY + 20;
+        const auto buttonH = juce::jmin (30, grid.getBottom() - memberRowY - 22);
 
         loadNeuralButton.setBounds (grid.getX() + 12, buttonY,
                                     cellWidth - 24, buttonH);
@@ -5733,13 +5834,13 @@ void FirstAudioProcessorEditor::resized()
         // of them would be a guess about the other's.
         const auto isIn = inEqTab;
         placeDeckSwitch (isIn ? inputEqOrderLabel : outputEqOrderLabel,
-                         isIn ? inputEqOrderBox : outputEqOrderBox, 0, 1, 1, "ORDER");
+                         isIn ? inputEqOrderBox : outputEqOrderBox, 0, 1, "ORDER");
 
         const auto placeEqCorner = [&] (juce::Component& button, int column)
         {
             auto cell = juce::Rectangle<int> (grid.getX() + column * cellWidth,
-                                              memberRowY + rowHeight,
-                                              cellWidth, rowHeight);
+                                              memberRowY,
+                                              cellWidth, grid.getBottom() - memberRowY);
             button.setBounds (cell.getX() + 12, cell.getY() + 20,
                               cell.getWidth() - 24,
                               juce::jmin (30, cell.getHeight() - 22));
@@ -5770,9 +5871,10 @@ void FirstAudioProcessorEditor::resized()
     const auto rowGap = 8;
     const auto columnWidth = (meterArea.getWidth() - columnGap) / 2;
 
-    // Note the separate name: `rowHeight` is already taken by the control grid above, so
-    // reusing it here would shadow it through the rest of the function and trip the
-    // redefinition error rather than silently picking the wrong cell size.
+    // Note the separate name: the control grid's row height is taken by the knob
+    // arithmetic above (knobRowHeight), so reusing that name here would shadow it
+    // through the rest of the function and trip the redefinition error rather
+    // than silently picking the wrong cell size.
     const auto meterRowHeight = (meterArea.getHeight() - rowGap) / 2;
 
     const auto leftColumn = meterArea.getX();
