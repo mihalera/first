@@ -4348,14 +4348,21 @@ void FirstAudioProcessorEditor::applyTheme()
     // a box that matched nothing else on the panel.
     styleCombo (languageBox);
 
-    // The list's own popup menu: it paints through LookAndFeel_V4's item drawing,
-    // which reads THESE colour ids - a dark panel without them opened the base
-    // look's light menu, whose black text on the menu's black selection highlight
-    // was unreadable (the complaint behind "text is not readable").
-    menu.setColour (juce::PopupMenu::backgroundColourId, palette.panel.brighter (0.08f));
-    menu.setColour (juce::PopupMenu::textColourId, palette.text);
-    menu.setColour (juce::PopupMenu::highlightBackgroundColourId, palette.accent.withAlpha (0.85f));
-    menu.setColour (juce::PopupMenu::highlightedTextColourId, palette.readout);
+    // The lists' popup menus paint through the LookAndFeel_V4 item drawing, which
+    // reads THESE colour ids off the attached LookAndFeel - at theme time there is
+    // no PopupMenu object to style directly, so both LookAndFeels carry the palette
+    // and whichever box opens a menu uses its own. A dark panel without them opened
+    // the base look's light menu, whose black text on the menu's black selection
+    // highlight was unreadable (the complaint behind "text is not readable").
+    const auto stylePopupMenu = [&palette] (juce::LookAndFeel& lf)
+    {
+        lf.setColour (juce::PopupMenu::backgroundColourId, palette.panel.brighter (0.08f));
+        lf.setColour (juce::PopupMenu::itemTextColourId, palette.text);
+        lf.setColour (juce::PopupMenu::highlightedBackgroundColourId, palette.accent.withAlpha (0.85f));
+        lf.setColour (juce::PopupMenu::highlightedTextColourId, palette.readout);
+    };
+    stylePopupMenu (customLookAndFeel);
+    stylePopupMenu (inlineLookAndFeel);
 
     const auto styleWorkflowButton = [&palette] (juce::TextButton& button, bool emphasised)
     {
