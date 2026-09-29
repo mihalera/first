@@ -1,4 +1,4 @@
-﻿﻿#include "PluginProcessor.h"
+﻿#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
@@ -1622,6 +1622,20 @@ void FirstAudioProcessorEditor::styleGlButton (bool isOn)
     glButton.setColour (juce::TextButton::textColourOffId, isOn ? palette.readout : palette.text);
     glButton.setColour (juce::TextButton::textColourOnId, isOn ? palette.readout : palette.text);
     glButton.repaint();
+}
+
+void FirstAudioProcessorEditor::syncGlSwitchState()
+{
+    // Read the context, never a cached flag: attachTo() returns void, so the only
+    // honest answer to "did it work" is to ask afterwards. The 3D transport takes
+    // the same answer, which is what stops the panel from showing a lit button
+    // beside a blank window - or a 3D transport on a machine where the user has
+    // turned the accelerator off.
+    const auto isOn = openGLContext.isAttached();
+
+    glButton.setButtonText (isOn ? "GL ON" : "GL OFF");
+    styleGlButton (isOn);
+    tapeScene.setSceneEnabled (isOn);
 }
 
 // The three transport keys plus the momentary spindown button. Same rule as the tab
@@ -3748,6 +3762,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     speedAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "speed", speedBox);
 
+    // The 3D transport goes in FIRST, so it is the bottom-most child. It is a
+    // child component rather than part of this editor's own painting because it
+    // needs a custom renderer and this editor's context is a component painter -
+    // see Source/GUI/TapeScene.h. It sits in the strip resized() keeps clear of
+    // every control, so nothing here can end up drawn on top of it.
+    addAndMakeVisible (tapeScene);
+
     addAndMakeVisible (inputMeter);
     addAndMakeVisible (outputMeter);
     addAndMakeVisible (compressorMeterIn);
@@ -3774,9 +3795,9 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 
     // The GL switch mirrors the context's real state rather than a wish: on
     // machines where the context never came up the button reads OFF and the
-    // software renderer is what the user sees.
-    glButton.setButtonText (openGLContext.isAttached() ? "GL ON" : "GL OFF");
-    styleGlButton (openGLContext.isAttached());
+    // software renderer is what the user sees. The 3D transport follows the same
+    // switch, because it is an accelerator rather than a feature.
+    syncGlSwitchState();
 
     // OpenGL is ON by default, and a failed first attach is usually not a final
     // answer: the host may not have created the editor's native peer yet, and there
@@ -3795,12 +3816,12 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         else
             openGLContext.attachTo (*this);
 
-        // One place decides what the switch says and how it looks, and both read the
-        // context's state afterwards: attachTo() can fail on a driver, a remote
-        // session or a VM, and a branch that assumed success would leave the button
-        // claiming GL is on while the software renderer is drawing the panel.
-        glButton.setButtonText (openGLContext.isAttached() ? "GL ON" : "GL OFF");
-        styleGlButton (openGLContext.isAttached());
+        // One place decides what the switch says, how it looks, and whether the
+        // 3D transport gets a context, and all three read the context's state
+        // afterwards: attachTo() can fail on a driver, a remote session or a VM,
+        // and a branch that assumed success would leave the button claiming GL is
+        // on while the software renderer is drawing the panel.
+        syncGlSwitchState();
     };
 
     // The interface sounds are attached LAST, after every control they watch
@@ -4077,6 +4098,18 @@ void FirstAudioProcessorEditor::applyTheme()
     inlineLookAndFeel.setTheme (themeChoice);
     inputMeter.setDarkTheme (darkTheme);
     outputMeter.setDarkTheme (darkTheme);
+
+    // The 3D transport reads the same palette rather than keeping colours of its
+    // own, so it follows a theme switch on the same frame as everything else.
+    // The four are chosen for what each one IS rather than for which palette slot
+    // it resembles: the window is the panel's dead-black readout recess, the reel
+    // is its machined plate, the highlight and the head are the accent (so the
+    // specular reads as the machine's one indicator lamp), and the tape is the
+    // knob face warmed and desaturated - a roll of tape, not a second accent.
+    tapeScene.setPalette (palette.readout,
+                          palette.raised,
+                          palette.accent,
+                          palette.knobFace.brighter (0.28f).withSaturation (0.55f));
     {
         const juce::SpinLock::ScopedLockType lock (renderOrbsLock);
         for (std::size_t i = 0; i < decorativeOrbCount; ++i)
@@ -4359,6 +4392,15 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     if (! inClip (layout.deck))
         return;
 
+    // The reel and the ribbon below are the deck's SOFTWARE transport, and they are
+    // drawn only when the 3D one is not. tapeScene.isSceneLive() is true only once
+    // its context is up AND its shader linked, so a failed context, a driver that
+    // will not oblige, and the user turning GL off all land back here - the panel
+    // is never left with a hole where the transport was, and never shows two
+    // transports at once. The particles further down are NOT gated: they live in
+    // the gap the switches row left, a different part of the deck from the 3D
+    // transport's window, so the two never overlap.
+    //
     // The decorative reel lives in the deck's TOP-RIGHT corner, in the heading band
     // (y + 6..22) where no control sits, and clear of the harmonics readout, which is
     // right-aligned below it on the switches line. It used to sit ON the readout text.
@@ -4366,51 +4408,54 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     // The reel is now a real transport indicator rather than decoration: its hub
     // dims as the platter slows, so a STOP empties it and a held SPINDOWN is
     // visible as the ring going grey before the spokes stop.
-    const auto reelCentre = juce::Point<float> (static_cast<float> (layout.deck.getRight() - 42),
-                                                static_cast<float> (layout.deck.getY() + 14));
-    const auto platterNow = juce::jlimit (0.0f, 1.0f, smoothedMachineSpeed);
-    g.setColour (palette.accent.withAlpha (0.10f + 0.30f * platterNow));
-    for (const auto radius : { 11.0f, 7.0f, 2.0f })
-        g.drawEllipse (reelCentre.x - radius, reelCentre.y - radius,
-                       radius * 2.0f, radius * 2.0f, 1.0f);
-    g.drawLine (reelCentre.x - 14.0f, reelCentre.y, reelCentre.x + 14.0f, reelCentre.y, 0.8f);
-    g.drawLine (reelCentre.x, reelCentre.y - 14.0f, reelCentre.x, reelCentre.y + 14.0f, 0.8f);
-
-    // Spokes: density tracks the selected tape speed, drift tracks the modulation,
-    // and the whole set fades out as the platter coasts down - which is what makes a
-    // spindown read as a turntable losing its drive rather than as a paused picture.
-    const auto spokeAlpha = (0.20f + 0.45f * glowAmount) * (0.25f + 0.75f * platterNow);
-    for (int spoke = 0; spoke < 6; ++spoke)
+    if (! tapeScene.isSceneLive())
     {
-        const auto spokeAngle = reelAngle + static_cast<float> (spoke)
-                                              * juce::MathConstants<float>::pi / 3.0f;
-        const auto spokeInner = juce::Point<float> (reelCentre.x + std::cos (spokeAngle) * 2.0f,
-                                                    reelCentre.y + std::sin (spokeAngle) * 2.0f);
-        const auto spokeOuter = juce::Point<float> (reelCentre.x + std::cos (spokeAngle) * 10.5f,
-                                                    reelCentre.y + std::sin (spokeAngle) * 10.5f);
-        g.setColour (palette.accent.withAlpha (spokeAlpha));
-        g.drawLine (spokeInner.x, spokeInner.y, spokeOuter.x, spokeOuter.y, 1.4f);
+        const auto reelCentre = juce::Point<float> (static_cast<float> (layout.deck.getRight() - 42),
+                                                    static_cast<float> (layout.deck.getY() + 14));
+        const auto platterNow = juce::jlimit (0.0f, 1.0f, smoothedMachineSpeed);
+        g.setColour (palette.accent.withAlpha (0.10f + 0.30f * platterNow));
+        for (const auto radius : { 11.0f, 7.0f, 2.0f })
+            g.drawEllipse (reelCentre.x - radius, reelCentre.y - radius,
+                           radius * 2.0f, radius * 2.0f, 1.0f);
+        g.drawLine (reelCentre.x - 14.0f, reelCentre.y, reelCentre.x + 14.0f, reelCentre.y, 0.8f);
+        g.drawLine (reelCentre.x, reelCentre.y - 14.0f, reelCentre.x, reelCentre.y + 14.0f, 0.8f);
 
-        g.setColour (palette.readout.withAlpha (0.10f + 0.25f * glowAmount));
-        g.fillEllipse (spokeOuter.x - 1.6f, spokeOuter.y - 1.6f, 3.2f, 3.2f);
-    }
+        // Spokes: density tracks the selected tape speed, drift tracks the modulation,
+        // and the whole set fades out as the platter coasts down - which is what makes a
+        // spindown read as a turntable losing its drive rather than as a paused picture.
+        const auto spokeAlpha = (0.20f + 0.45f * glowAmount) * (0.25f + 0.75f * platterNow);
+        for (int spoke = 0; spoke < 6; ++spoke)
+        {
+            const auto spokeAngle = reelAngle + static_cast<float> (spoke)
+                                                  * juce::MathConstants<float>::pi / 3.0f;
+            const auto spokeInner = juce::Point<float> (reelCentre.x + std::cos (spokeAngle) * 2.0f,
+                                                        reelCentre.y + std::sin (spokeAngle) * 2.0f);
+            const auto spokeOuter = juce::Point<float> (reelCentre.x + std::cos (spokeAngle) * 10.5f,
+                                                        reelCentre.y + std::sin (spokeAngle) * 10.5f);
+            g.setColour (palette.accent.withAlpha (spokeAlpha));
+            g.drawLine (spokeInner.x, spokeInner.y, spokeOuter.x, spokeOuter.y, 1.4f);
 
-    // Tape ribbon from the small reel down the deck's right edge, sagging with the
-    // wow/flutter drift. It hangs from the reel at deck.right - 42, so the only row
-    // that has to stay clear of it is the model row, and that row stops at the
-    // standard right inset (deck.right - 14) - twenty-eight pixels to the right of
-    // the ribbon's leftmost point. That is a fact about the ribbon, not a number
-    // that has to be kept in step with the row's width by hand.
-    const auto sag = (driftAmount - 0.5f) * 5.0f;
-    juce::Path tapeRibbon;
-    tapeRibbon.startNewSubPath (reelCentre.x, reelCentre.y + 12.0f);
-    const auto deckY = static_cast<float> (layout.deck.getY());
-    tapeRibbon.quadraticTo (reelCentre.x + 30.0f + sag,
-                            deckY + 56.0f,
-                            reelCentre.x + 6.0f + sag,
-                            deckY + 60.0f);
-    g.setColour (palette.knobEdge.withAlpha (0.35f));
-    g.strokePath (tapeRibbon, juce::PathStrokeType (1.4f));
+            g.setColour (palette.readout.withAlpha (0.10f + 0.25f * glowAmount));
+            g.fillEllipse (spokeOuter.x - 1.6f, spokeOuter.y - 1.6f, 3.2f, 3.2f);
+        }
+
+        // Tape ribbon from the small reel down the deck's right edge, sagging with the
+        // wow/flutter drift. It hangs from the reel at deck.right - 42, so the only row
+        // that has to stay clear of it is the model row, and that row stops at the
+        // standard right inset (deck.right - 14) - twenty-eight pixels to the right of
+        // the ribbon's leftmost point. That is a fact about the ribbon, not a number
+        // that has to be kept in step with the row's width by hand.
+        const auto sag = (driftAmount - 0.5f) * 5.0f;
+        juce::Path tapeRibbon;
+        tapeRibbon.startNewSubPath (reelCentre.x, reelCentre.y + 12.0f);
+        const auto deckY = static_cast<float> (layout.deck.getY());
+        tapeRibbon.quadraticTo (reelCentre.x + 30.0f + sag,
+                                deckY + 56.0f,
+                                reelCentre.x + 6.0f + sag,
+                                deckY + 60.0f);
+        g.setColour (palette.knobEdge.withAlpha (0.35f));
+        g.strokePath (tapeRibbon, juce::PathStrokeType (1.4f));
+    } // ! tapeScene.isSceneLive()
 
     std::array<RenderOrb, decorativeOrbCount> orbsToDraw;
     {
@@ -4522,8 +4567,7 @@ void FirstAudioProcessorEditor::timerCallback()
             if (openGLContext.isAttached())
             {
                 glAttachAttemptsLeft = 0;
-                glButton.setButtonText ("GL ON");
-                styleGlButton (true);
+                syncGlSwitchState();
             }
         }
     }
@@ -4865,6 +4909,38 @@ void FirstAudioProcessorEditor::timerCallback()
         const juce::SpinLock::ScopedLockType lock (renderOrbsLock);
         renderOrbs = nextFrame;
     }
+
+    // Finally, the 3D transport. It is fed last so every number it sees is the
+    // one this tick settled on, and it is fed FIVE PLAIN FLOATS and nothing else:
+    // the scene owns a second OpenGL context on its own render thread, and the
+    // one thing that must never happen is a parameter tree or a JUCE Component
+    // being read from there. Each is normalised here, in the thread that owns the
+    // parameter, so the render thread has no idea what a dB is.
+    if (const auto* rawDrive = audioProcessor.parameters.getRawParameterValue ("drive"))
+        sceneDrive = rawDrive->load();
+
+    tapeScene.setAudioState (
+        // Output loudness over the range the meters themselves use for "moving":
+        // below -48 dB the machine is at the noise floor and the scene goes quiet.
+        juce::jlimit (0.0f, 1.0f, juce::jmap (telemetry.outputCombinedDb, -48.0f, 0.0f, 0.0f, 1.0f)),
+        juce::jlimit (0.0f, 1.0f, sceneDrive),
+        // Both compressors' total reduction, on the same six-decibel scale the
+        // panel's glow uses, so the reels' rim light and the knobs agree.
+        juce::jlimit (0.0f, 1.0f, std::abs (reduction) / 6.0f),
+        // The transport's drift, re-centred: the panel carries it as 0..1 with
+        // 0.5 as steady, and the scene wants it signed so the ribbon waves to
+        // either side of the path rather than always to one.
+        juce::jlimit (-1.0f, 1.0f, (driftAmount - 0.5f) * 2.0f),
+        // The machine's own platter speed, already lagged in smoothedMachineSpeed
+        // - so a STOP stops the reels and a held SPINDOWN coasts them down, and
+        // the tape only transfers while the transport is actually running.
+        juce::jlimit (0.0f, 1.0f, smoothedMachineSpeed));
+
+    // The scene's own attach retries, on the same timer and the same bounded
+    // budget as this editor's context: a child component cannot have a context
+    // until the host has given it a native peer, and that may not have happened
+    // on the first tick.
+    tapeScene.serviceContextAttachment();
 }
 
 void FirstAudioProcessorEditor::resized()
@@ -5403,6 +5479,17 @@ void FirstAudioProcessorEditor::resized()
                                               controlsHeadingLabel.getRight() + 24);
     controlsHintLabel.setBounds (controlsHintLeft, layout.controls.getY() + 10,
                                  juce::jmax (0, controlsHintRight - controlsHintLeft), 19);
+
+    // The 3D transport's window: the deck's top-right block, which is the one
+    // region resized() keeps free of controls. reelCorridor is 70 px wide and the
+    // heading band starts six px down, so the scene gets a 64 x 58 block that is
+    // the same size at every panel size - which is what lets the scene be laid out
+    // in its own units and framed by the camera rather than by a pixel count.
+    // It stops 8 px short of the switches row below it, so the two never touch.
+    tapeScene.setBounds (layout.deck.getRight() - reelCorridor,
+                         layout.deck.getY() + 6,
+                         reelCorridor - 6,
+                         58);
 
     // ------------------------------------------------------------------
     //  The tab bar.

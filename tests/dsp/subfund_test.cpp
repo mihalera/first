@@ -938,23 +938,45 @@ void testTransientShaperAttackDirection()
     std::printf ("\n6. ATTACK sharpens when positive and softens when negative\n");
 
     const auto input = makeTransientTrain();
-    const auto boosted = renderTransientShaper (input, 1.0f, 0.0f, 1.0f);
+    const auto neutral  = renderTransientShaper (input,  0.0f, 0.0f, 1.0f);
+    const auto boosted  = renderTransientShaper (input,  1.0f, 0.0f, 1.0f);
     const auto softened = renderTransientShaper (input, -1.0f, 0.0f, 1.0f);
 
-    const double boostedRatio = peakToSustainRatio (boosted);
+    const double neutralRatio  = peakToSustainRatio (neutral);
+    const double boostedRatio  = peakToSustainRatio (boosted);
     const double softenedRatio = peakToSustainRatio (softened);
 
-    std::printf ("     ATTACK +1 peak-to-tail ratio %.3f, ATTACK -1 %.3f\n",
-                 boostedRatio, softenedRatio);
+    std::printf ("     ATTACK peak-to-tail ratio: neutral %.3f, +1 %.3f, -1 %.3f\n",
+                 neutralRatio, boostedRatio, softenedRatio);
 
-    char label[160];
+    // The comparisons are against the SAME signal with the control at zero, not
+    // against a constant. An absolute threshold cannot work here: the ratio is
+    // peak over the average of the last third of each 250 ms period, and the
+    // bursts decay with a 50 ms constant, so the untouched signal already
+    // measures about 88 - the window is looking at the near-silence between hits.
+    // Nothing a transient shaper does to a decaying burst can pull that below
+    // 1.0, which needs the tail louder than the peak.
+
+    // Against neutral, which is also what makes this a real assertion: a stage
+    // that did nothing but change gain would leave all three identical.
+    char label[192];
     std::snprintf (label, sizeof label,
-                   "ATTACK +1 raises the peak-to-tail ratio to %.3f (want > 1.0)", boostedRatio);
-    check (boostedRatio > 1.0, label);
+                   "ATTACK +1 raises the peak-to-tail ratio above neutral "
+                   "(%.3f vs %.3f)", boostedRatio, neutralRatio);
+    check (boostedRatio > neutralRatio, label);
 
     std::snprintf (label, sizeof label,
-                   "ATTACK -1 lowers it to %.3f (want < 1.0)", softenedRatio);
-    check (softenedRatio < 1.0, label);
+                   "ATTACK -1 lowers it below neutral (%.3f vs %.3f)",
+                   softenedRatio, neutralRatio);
+    check (softenedRatio < neutralRatio, label);
+
+    // And the two ends are far enough apart that swapping the signs - the bug
+    // this test exists to catch - cannot slip through the two comparisons above,
+    // which are individually close to neutral by construction.
+    std::snprintf (label, sizeof label,
+                   "ATTACK +1 (%.3f) sits well above ATTACK -1 (%.3f)",
+                   boostedRatio, softenedRatio);
+    check (boostedRatio > softenedRatio * 1.25, label);
 }
 
 void testTransientShaperSustainDirection()
