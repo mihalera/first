@@ -589,7 +589,8 @@ FirstAudioProcessor::FirstAudioProcessor()
         // the apply path (values -> tree -> replaceState) runs here against the
         // real engine, so a broken round-trip is a named key on the console rather
         // than a user's impression. It runs in the constructor, before any editor
-        // exists, and restores nothing - the host state lands immediately after.
+        // exists; afterwards the "no preset loaded" state is put back, so the host
+        // state lands on top of a clean tree, not on the last audited preset.
         {
             // A FRESH copy per read: replaceState installs a new tree object, so a
             // tree captured once would go stale after the very first apply.
@@ -624,7 +625,10 @@ FirstAudioProcessor::FirstAudioProcessor()
                 {
                     const auto landed = readBack (entry.first);
 
-                    if (landed != landed || juce::approximatelyEqual (landed, entry.second) == false)
+                    // approximatelyEqual also catches a NaN read-back: a missing
+                    // key prints with "nan" as the value instead of silently
+                    // passing, and the float-equal warning flag stays happy.
+                    if (! juce::approximatelyEqual (landed, entry.second))
                         DBG ("[presets] preset " << i << " key " << entry.first
                              << ": wanted " << entry.second << ", tree holds " << landed);
                 }
