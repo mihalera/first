@@ -15,6 +15,8 @@
 #include <juce_opengl/juce_opengl.h>
 
 #include <atomic>
+#include <array>
+#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -69,12 +71,35 @@ public:
         @param gainReduction   both compressors' total reduction, 0..1
         @param wowFlutter      the transport's drift, signed, -1..1, zero is steady
         @param transportSpeed  the machine's speed, 0..1 - zero stops the reels
+        @param outputPeak      output peak, 0..1 - the loudest sample in the frame
     */
     void setAudioState (float outputLevel,
                         float drive,
                         float gainReduction,
                         float wowFlutter,
-                        float transportSpeed) noexcept;
+                        float transportSpeed,
+                        float outputPeak) noexcept;
+
+    /** The values of the controls standing in front of the machine, 0..1 each, in
+        the order of the scene's own placements - and NOT the plugin's parameter
+        order, because the window shows five of a bank of fifty-eight and which
+        five is a decision this class makes, not one the parameter tree does.
+
+        Called from the editor's timer, on the message thread. The values cross to
+        the render thread as atomics; nothing else does. */
+    void setControlValues (const float* values, int count) noexcept;
+
+    /** The captions under those controls, drawn in the window itself.
+
+        Not text on a 2D overlay: a label painted by juce::Graphics would sit at a
+        fixed screen position while the bank it belongs to moves with the camera,
+        which is exactly the mismatch this whole component exists to avoid. The
+        GLSL in here stamps each caption out of a procedural 5 x 7 alphabet, so a
+        knob's name is part of the same picture as the knob.
+
+        Message thread only, and it allocates: the editor calls it when the
+        visible bank changes, never per frame. */
+    void setKnobCaptions (const juce::String* captions, int count) noexcept;
 
     /** The window's colours, so it follows the panel's theme. Called from the
         editor whenever the theme changes and once at construction. */
@@ -145,6 +170,45 @@ private:
     static Geometry buildRibbon();
     static Geometry buildHead();
 
+    /** The control bank in FRONT of the deck, the one piece of geometry that is not
+        part of the machine: a strip of three machined knobs and two raised keys on
+        a common face, each built round its own origin so drawKnob() can place and
+        turn one with a single matrix. */
+    struct ControlBank
+    {
+        Geometry body;      ///< the face they are set into
+        Geometry knob;      ///< one knob with its own index mark, built round the origin
+        Geometry key;       ///< one switch cap, built round the origin
+        Geometry knobGlow;  ///< the disc a lit knob lays on the face
+    };
+
+    static ControlBank buildControlBank();
+
+    /** One control in the bank, and where it sits on the face. */
+    struct ControlPlacement
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float radius = 0.0f;
+        float angle = 0.0f;
+        bool isKey = false;
+        bool isLit = false;
+        float colour[3] { 0.0f, 0.0f, 0.0f };
+    };
+
+    static constexpr int controlBankCount = 5;
+
+    /** The first controlBankCount of those are knobs; the rest are keys. A
+        constant rather than a literal 3 because the GLSL's branch and the host's
+        placement table both read it, and the two drifting apart would put a knob
+        caption over a keycap. */
+    static constexpr int bankKnobCount = 3;
+
+    void drawControlBank (const glm::mat4& viewProjection,
+                          const glm::mat4& scene,
+                          const juce::Colour& bodyColour,
+                          const juce::Colour& highlightColour);
+
     void uploadMesh (Mesh& mesh, const Geometry& geometry);
     void releaseMesh (Mesh& mesh) noexcept;
     void drawMesh (const Mesh& mesh);
@@ -164,6 +228,11 @@ private:
     Mesh ribbon {};
     Mesh head {};
 
+    Mesh bankBody {};
+    Mesh bankKnob {};
+    Mesh bankKey {};
+    Mesh bankGlow {};
+
     GLint positionLocation = -1;
     GLint normalLocation = -1;
 
@@ -178,6 +247,7 @@ private:
     //  thread are not steps of one loop.
     //==========================================================================
     std::atomic<float> outputLevel { 0.0f };
+    std::atomic<float> outputPeak { 0.0f };
     std::atomic<float> drive { 0.0f };
     std::atomic<float> gainReduction { 0.0f };
     std::atomic<float> wowFlutter { 0.0f };
@@ -190,6 +260,13 @@ private:
 
     /** The GL thread's half of the answer to isSceneLive(). */
     std::atomic<int> programLinked { 0 };
+
+    /** The bank's knob angles, 0..1, and the five captions under them. The
+        captions are published as bytes plus a length rather than as a String
+        because a juce::String allocates, and the render thread must not. */
+    std::array<std::atomic<float>, bankKnobCount> knobValues {};
+    std::array<std::array<char, 32>, bankKnobCount> captionBytes {};
+    std::array<std::atomic<int>, bankKnobCount> captionLengths {};
 
     //==========================================================================
     //  Message thread only.
@@ -205,6 +282,18 @@ private:
     float tapeTransfer = 0.5f;
     float supplyAngle = 0.0f;
     float takeUpAngle = 0.0f;
+
+    // The control bank's own state, and the reason it is state rather than a
+    // function of the audio: a real knob does not jump. Each value follows what
+    // the machine is doing with a lag, so a transient moves the knob and then it
+    // settles - which is what a knob with a hand on it looks like, and what a
+    // parameter read once per frame does not.
+    float bankDrive = 0.0f;
+    float bankPeak = 0.0f;
+    float bankTransfer = 0.5f;
+    float bankReduction = 0.0f;
+    bool bankSpinning = false;
+    bool bankRecording = false;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (TapeScene)
 };
