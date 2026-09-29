@@ -117,8 +117,8 @@ namespace
     //  fourth being the payload the vertex shader branches on - and three of
     //  normal. Twenty-eight bytes, which is what drawMesh() strides with.
     //==========================================================================
-    constexpr GLsizei vertexStride = 7 * sizeof (float);
-    constexpr GLsizei normalOffset = 4 * sizeof (float);
+    constexpr GLsizei vertexStride = static_cast<GLsizei> (7 * sizeof (float));
+    constexpr GLsizei normalOffset = static_cast<GLsizei> (4 * sizeof (float));
 
     enum MeshMode
     {
