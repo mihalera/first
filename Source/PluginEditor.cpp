@@ -4357,7 +4357,7 @@ void FirstAudioProcessorEditor::applyTheme()
     const auto stylePopupMenu = [&palette] (juce::LookAndFeel& lf)
     {
         lf.setColour (juce::PopupMenu::backgroundColourId, palette.panel.brighter (0.08f));
-        lf.setColour (juce::PopupMenu::itemTextColourId, palette.text);
+        lf.setColour (juce::PopupMenu::textColourId, palette.text);
         lf.setColour (juce::PopupMenu::highlightedBackgroundColourId, palette.accent.withAlpha (0.85f));
         lf.setColour (juce::PopupMenu::highlightedTextColourId, palette.readout);
     };
