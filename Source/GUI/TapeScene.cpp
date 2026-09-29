@@ -1,4 +1,4 @@
-﻿/*
+/*
   ==============================================================================
     TapeScene - the deck's transport, rendered as geometry and lit on the GPU.
   ==============================================================================
@@ -166,8 +166,16 @@ namespace
     {
         solidMode = 0,
         packMode = 1,
-        ribbonMode = 2
+        ribbonMode = 2,
+        panelMode = 3,
+        knobMode = 4,
+        keyMode = 5,
+        glowMode = 6
     };
+
+    // The fragment shader's mode ranges are bands (uMode < 0.5, < 3.5, < 4.5,
+    // < 5.5, else), so the bank's own modes sit above the transport's three and
+    // below the caption plate, which is the last branch of them all.
 
     void addVertex (std::vector<float>& vertices,
                     const glm::vec3& position,
@@ -220,15 +228,16 @@ namespace
                   const glm::vec3& centre,
                   float radius,
                   float halfHeight,
-                  int segments)
+                  int segments,
+                  float payload = 0.0f)
     {
         const auto top = centre.z + halfHeight;
         const auto bottom = centre.z - halfHeight;
 
         const auto centreTop = addVertexReturningIndex (vertices, { centre.x, centre.y, top },
-                                                       { 0.0f, 0.0f, 1.0f });
+                                                       { 0.0f, 0.0f, 1.0f }, payload);
         const auto centreBottom = addVertexReturningIndex (vertices, { centre.x, centre.y, bottom },
-                                                          { 0.0f, 0.0f, -1.0f });
+                                                          { 0.0f, 0.0f, -1.0f }, payload);
 
         std::vector<juce::uint32> topRing (static_cast<size_t> (segments));
         std::vector<juce::uint32> bottomRing (static_cast<size_t> (segments));
@@ -243,13 +252,13 @@ namespace
                 addVertexReturningIndex (vertices,
                                          { centre.x + outward.x * radius,
                                            centre.y + outward.y * radius, top },
-                                         { 0.0f, 0.0f, 1.0f });
+                                         { 0.0f, 0.0f, 1.0f }, payload);
 
             bottomRing[static_cast<size_t> (i)] =
                 addVertexReturningIndex (vertices,
                                          { centre.x + outward.x * radius,
                                            centre.y + outward.y * radius, bottom },
-                                         { 0.0f, 0.0f, -1.0f });
+                                         { 0.0f, 0.0f, -1.0f }, payload);
         }
 
         for (int i = 0; i < segments; ++i)
@@ -273,8 +282,8 @@ namespace
                                   centre.y + outward.y * radius,
                                   0.0f };
 
-            const auto wallTop = addVertexReturningIndex (vertices, rim + glm::vec3 (0.0f, 0.0f, top), outward);
-            const auto wallBottom = addVertexReturningIndex (vertices, rim + glm::vec3 (0.0f, 0.0f, bottom), outward);
+            const auto wallTop = addVertexReturningIndex (vertices, rim + glm::vec3 (0.0f, 0.0f, top), outward, payload);
+            const auto wallBottom = addVertexReturningIndex (vertices, rim + glm::vec3 (0.0f, 0.0f, bottom), outward, payload);
 
             const auto next = static_cast<size_t> ((i + 1) % segments);
             addQuad (indices, wallTop, wallBottom, bottomRing[next], topRing[next]);
@@ -402,107 +411,6 @@ namespace
             const auto b = addVertexReturningIndex (vertices, corner (next, topZ), outward);
             const auto c = addVertexReturningIndex (vertices, corner (next, bottomZ), outward);
             const auto d = addVertexReturningIndex (vertices, corner (here, bottomZ), outward);
-
-            addQuad (indices, a, b, c, d);
-        }
-    }
-
-    /** The knurled grip round a knob's rim: one flat-sided prism per segment, cut
-        down the middle so each side of the knurl carries its own outward normal.
-
-        A smooth cylinder lights as one continuous band of highlight and reads as
-        plastic. Real knurling is a ring of tiny flats, and the reason to model it
-        rather than to texture it is that the flats catch the light in STRIPES:
-        the highlight jumps from facet to facet as the knob turns, which is the
-        cue that says a knob is moving even when its index mark is a few pixels
-        long.
-
-        The prisms span the knob's barrel only - the face above and the back below
-        are the flat discs from addDisc - so the knurl is a band round the side
-        rather than a replacement for the whole cylinder. */
-    void addKnurl (std::vector<float>& vertices,
-                   std::vector<juce::uint32>& indices,
-                   float radius,
-                   float bottomZ,
-                   float topZ,
-                   int segments)
-    {
-        const auto step = juce::MathConstants<float>::twoPi / static_cast<float> (segments);
-
-        for (int i = 0; i < segments; ++i)
-        {
-            const auto angle = step * static_cast<float> (i);
-            const glm::vec2 here { std::cos (angle), std::sin (angle) };
-            const glm::vec2 next { std::cos (angle + step), std::sin (angle + step) };
-
-            // The facet's own outward direction, re-normalised: a chord of the
-            // circle is shorter than its arc, and a normal left at the chord's
-            // length would dim every facet by its own cosine.
-            const glm::vec2 facet { here.x + next.x, here.y + next.y };
-            const auto facetLength = std::max (glm::length (facet), 0.0001f);
-            const glm::vec3 outward { facet.x / facetLength, facet.y / facetLength, 0.0f };
-
-            const auto corner = [&] (const glm::vec2& direction, float z)
-            {
-                return glm::vec3 (direction.x * radius, direction.y * radius, z);
-            };
-
-            const auto a = addVertexReturningIndex (vertices, corner (here, topZ), outward);
-            const auto b = addVertexReturningIndex (vertices, corner (next, topZ), outward);
-            const auto c = addVertexReturningIndex (vertices, corner (next, bottomZ), outward);
-            const auto d = addVertexReturningIndex (vertices, corner (here, bottomZ), outward);
-
-            addQuad (indices, a, b, c, d);
-        }
-    }
-
-    /** The knurled grip round a knob's rim: one flat-sided prism per segment, cut
-        down the middle so each side of the knurl carries its own outward normal.
-
-        A smooth cylinder would light as one continuous band of highlight and read
-        as plastic. Real knurling is a ring of tiny flats, and the reason to model
-        it rather than texture it is that the flats catch the light in STRIPES -
-        the highlight jumps from facet to facet as the knob turns, which is the
-        cue that tells a user the knob is moving even when its index mark is too
-        small to follow.
-
-        The prisms span the knob's barrel only: the face above and the back below
-        are the flat discs from addDisc, so the knurl is a band round the side
-        rather than a replacement for the whole cylinder. */
-    void addKnurl (std::vector<float>& vertices,
-                   std::vector<juce::uint32>& indices,
-                   float radius,
-                   float bottomZ,
-                   float topZ,
-                   int segments)
-    {
-        for (int i = 0; i < segments; ++i)
-        {
-            const auto angle = juce::MathConstants<float>::twoPi
-                                 * static_cast<float> (i) / static_cast<float> (segments);
-
-            const glm::vec2 centre { std::cos (angle), std::sin (angle) };
-            const glm::vec2 next { std::cos (angle + juce::MathConstants<float>::twoPi
-                                                     / static_cast<float> (segments)),
-                                   std::sin (angle + juce::MathConstants<float>::twoPi
-                                                     / static_cast<float> (segments)) };
-
-            // The facet's own outward direction, normalised: a chord of the circle
-            // is shorter than its arc, and a normal that was not re-normalised
-            // would dim every facet by the chord's own cosine.
-            const glm::vec2 facet { centre.x + next.x, centre.y + next.y };
-            const auto facetLength = std::max (glm::length (facet), 0.0001f);
-            const glm::vec3 outward { facet.x / facetLength, facet.y / facetLength, 0.0f };
-
-            const auto corner = [&] (const glm::vec2& direction, float z)
-            {
-                return glm::vec3 (direction.x * radius, direction.y * radius, z);
-            };
-
-            const auto a = addVertexReturningIndex (vertices, corner (centre, topZ), outward);
-            const auto b = addVertexReturningIndex (vertices, corner (next,   topZ), outward);
-            const auto c = addVertexReturningIndex (vertices, corner (next,   bottomZ), outward);
-            const auto d = addVertexReturningIndex (vertices, corner (centre, bottomZ), outward);
 
             addQuad (indices, a, b, c, d);
         }
@@ -676,7 +584,7 @@ namespace
         "uniform float uLabelBaseY;\n"
         "uniform float uLabelSize;\n"
         "uniform int uLabelLength;\n"
-        "uniform int uLabel[8];\n"
+        "uniform float uLabel[8];\n"
         "\n"
         "// ---------------------------------------------------------------------------\n"
         "//  A procedural alphabet.\n"
@@ -719,7 +627,7 @@ namespace
         "        if (glyph ==  9) return 7889202;   // J\n"
         "        if (glyph == 10) return 14821742;  // K\n"
         "        if (glyph == 11) return 2105377;   // L\n"
-"        "        if (glyph == 12) return 19952798;  // M\n"
+        "        if (glyph == 12) return 19952798;  // M\n"
         "        if (glyph == 13) return 19071646;  // N\n"
         "        if (glyph == 14) return 15858106;  // O\n"
         "        if (glyph == 15) return 14703234;  // P\n"
@@ -752,7 +660,7 @@ namespace
         "    if (glyph == 36) return 2105376;      // -\n"
         "    if (glyph == 37) return 3171;         // .\n"
         "    if (glyph == 38) return 67604;        // /\n"
-"        "    if (glyph == 39) return 1441792;      // :\n"
+        "    if (glyph == 39) return 1441792;      // :\n"
         "\n"
         "    return 0;\n"
         "}\n"
@@ -793,7 +701,7 @@ namespace
         "    int glyph = 0;\n"
         "    for (int i = 0; i < 8; ++i)\n"
         "        if (i == index)\n"
-        "            glyph = uLabel[i];\n"
+        "            glyph = int (uLabel[i]);\n"
         "\n"
         "    TAPE_SCENE_HIGHP float cellX = mod (x, 6.0);\n"
         "    return glyphCoverage (glyph, vec2 (cellX, y));\n"
@@ -871,10 +779,11 @@ namespace
         "    }\n"
         "\n"
         "    // The face the bank is set into, and the captions on it. The captions are\n"
-        "    // a shade of the panel's own text colour rather than a colour of their\n        "    // own, so they belong to the theme like everything else - and they are\n"
-        "    // written on a plate: a caption over a bare brushed face at this size is\n        "
+        "    // a shade of the panel's own text colour rather than a colour of their\n"
+        "    // own, so they belong to the theme like everything else - and they are\n"
+        "    // written on a plate: a caption over a bare brushed face at this size is\n"
         "    // unreadable, and the plate is what makes it an engraved label.\n"
-        "    TAPE_SCENE_HIGHP vec2 uv = vLocal / uPanelHalf;\n"
+        "    TAPE_SCENE_HIGHP vec2 uv = vLocal / uPanelHalf.xy;\n"
         "\n"
         "    TAPE_SCENE_HIGHP float plateY = (vLocal.y - uLabelBaseY - 3.5 * uLabelSize)\n"
         "                                 / (uLabelSize * 5.4);\n"
@@ -1106,7 +1015,7 @@ int TapeScene::controlIndexAt (juce::Point<int> position) const
                                               cameraDistance + 1.2f);
 
     const auto viewProjection = projection
-                              * glm::translate (glm::mat4 (1.0f), { 0.0f, -cameraDistance });
+                              * glm::translate (glm::mat4 (1.0f), { 0.0f, 0.0f, -cameraDistance });
 
     const auto scene = glm::rotate (glm::mat4 (1.0f), cameraPitchRadians, { 1.0f, 0.0f, 0.0f })
                      * glm::rotate (glm::mat4 (1.0f), cameraYawRadians, { 0.0f, 1.0f, 0.0f });
@@ -1154,7 +1063,7 @@ int TapeScene::controlIndexAt (juce::Point<int> position) const
 
     // Into the bank's own frame, where a placement's x is what it was written as.
     const auto local = glm::vec3 (glm::inverse (scene * glm::translate (glm::mat4 (1.0f),
-                                                                        { 0.0f, bankCentreZ }))
+                                                                        { 0.0f, 0.0f, bankCentreZ }))
                                   * glm::vec4 (hit, 1.0f));
 
     // The nearest control whose own footprint contains the point. A knob is a
@@ -1217,7 +1126,7 @@ TapeScene::Geometry TapeScene::buildReel()
     constexpr float hubCentreZ = 0.130f;
     constexpr float hubHalfHeight = 0.095f;
 
-    addDisc (vertices, indices, { 0.0f, 0.0f }, 1.0f, flangeHalfHeight, segments);
+    addDisc (vertices, indices, { 0.0f, 0.0f, 0.0f }, 1.0f, flangeHalfHeight, segments);
 
     // The boss. Its lower half is sunk into the flange so the two never end up
     // with coplanar faces fighting over the same pixels.
@@ -1378,7 +1287,7 @@ TapeScene::ControlBank TapeScene::buildControlBank()
     //  single translation and the four meshes it draws share that one matrix.
     // -------------------------------------------------------------------------
     addBox (bank.body.vertices, bank.body.indices,
-            { 0.0f, 0.0f },
+            { 0.0f, 0.0f, 0.0f },
             { bankHalfWidth, bankHalfHeight, bankHalfDepth });
 
     // -------------------------------------------------------------------------
@@ -1396,7 +1305,7 @@ TapeScene::ControlBank TapeScene::buildControlBank()
     addDisc (bank.knob.vertices, bank.knob.indices,
              { 0.0f, 0.0f, 0.020f }, 0.92f, 0.004f, segments);
     addDisc (bank.knob.vertices, bank.knob.indices,
-             { 0.0f, -0.012f }, 0.94f, 0.004f, segments);
+             { 0.0f, 0.0f, -0.012f }, 0.94f, 0.004f, segments);
     addKnurl (bank.knob.vertices, bank.knob.indices, 1.0f, -0.008f, 0.016f, segments);
 
     // The domed face. A stack of shrinking discs rather than a sphere: at twenty
@@ -1424,10 +1333,10 @@ TapeScene::ControlBank TapeScene::buildControlBank()
     //  key on a deck is: flat enough to look pressed rather than turned.
     // -------------------------------------------------------------------------
     addBox (bank.key.vertices, bank.key.indices,
-            { 0.0f, 0.0f },
+            { 0.0f, 0.0f, 0.0f },
             { 0.94f, 0.82f, 0.90f });
     addBox (bank.key.vertices, bank.key.indices,
-            { 0.0f, 0.78f },
+            { 0.0f, 0.78f, 0.0f },
             { 0.72f, 0.62f, 0.30f });
 
     // -------------------------------------------------------------------------
@@ -1437,7 +1346,7 @@ TapeScene::ControlBank TapeScene::buildControlBank()
     //  it, so it can bleed past the knob's rim without a second geometry pass.
     // -------------------------------------------------------------------------
     addDisc (bank.knobGlow.vertices, bank.knobGlow.indices,
-             { 0.0f, 0.0f }, 1.0f, 0.0005f, segments);
+             { 0.0f, 0.0f, 0.0f }, 1.0f, 0.0005f, segments, 1.0f);
 
     return bank;
 }
@@ -1539,7 +1448,7 @@ void TapeScene::drawControlBank (const glm::mat4& viewProjection,
     //  through the same arc.
     // -------------------------------------------------------------------------
     const auto bankModel = scene * glm::translate (glm::mat4 (1.0f), { 0.0f, 0.0f, bankCentreZ });
-    const auto faceModel = bankModel * glm::translate (glm::mat4 (1.0f), { 0.0f, bankHalfDepth });
+    const auto faceModel = bankModel * glm::translate (glm::mat4 (1.0f), { 0.0f, 0.0f, bankHalfDepth });
 
     // -------------------------------------------------------------------------
     //  The face. Last of the bank's own meshes to be drawn, but FIRST here
@@ -1551,7 +1460,7 @@ void TapeScene::drawControlBank (const glm::mat4& viewProjection,
     shaderProgram->setUniform ("uMode", static_cast<float> (panelMode));
     shaderProgram->setUniform ("uBaseColour", body.getFloatRed(), body.getFloatGreen(),
                                body.getFloatBlue());
-    shaderProgram->setUniform ("uPanelHalf", bankHalfWidth, bankHalfHeight);
+    shaderProgram->setUniform ("uPanelHalf", bankHalfWidth, bankHalfHeight, bankHalfDepth);
 
     // The caption the editor handed over, as glyph indices. The conversion from
     // UTF-8 happens here rather than on the message thread because the message
@@ -1567,11 +1476,16 @@ void TapeScene::drawControlBank (const glm::mat4& viewProjection,
         const auto* bytes = captionBytes[0].data();
 
         for (int i = 0; i < 8; ++i)
-            labelGlyphs[static_cast<std::size_t> (i)] = i < length ? glyphIndexFor (bytes[i]) : -1;
+            labelGlyphs[static_cast<std::size_t> (i)] = i < length
+                                                            ? static_cast<float> (
+                                                                  glyphIndexFor (static_cast<unsigned char> (bytes[i])))
+                                                            : -1.0f;
 
         // The plate follows the interactive knob rather than the bank's centre,
         // so the two line up at every panel size: the placement, not a second
-        // constant, is what says where that knob is.
+        // constant, is what says where that knob is. The glyphs travel as
+        // floats because juce::OpenGLShaderProgram publishes only a GLfloat*
+        // array overload - there is no GLint* one to call.
         shaderProgram->setUniform ("uLabelCentreX", bankPlacements[bankInteractiveIndex].x);
         shaderProgram->setUniform ("uLabelLength", length);
         shaderProgram->setUniform ("uLabelHalfWidth",
@@ -1607,7 +1521,7 @@ void TapeScene::drawControlBank (const glm::mat4& viewProjection,
         const auto model = isKnob
                              ? faceModel
                                  * glm::translate (glm::mat4 (1.0f), { placement.x, 0.0f, 0.0f })
-                                 * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 1.0f })
+                                 * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 0.0f, 1.0f })
                                  * glm::scale (glm::mat4 (1.0f),
                                                { bankKnobRadius, bankKnobRadius, bankKnobRadius })
                              : faceModel
@@ -1878,7 +1792,7 @@ void TapeScene::renderOpenGL()
                                               cameraDistance + 1.2f);
 
     const auto viewProjection = projection
-                              * glm::translate (glm::mat4 (1.0f), { 0.0f, -cameraDistance });
+                              * glm::translate (glm::mat4 (1.0f), { 0.0f, 0.0f, -cameraDistance });
 
     // The deck plate is turned twice, which is the whole of the 3D in the
     // composition: down onto it, and round towards the operator's left.
@@ -1910,7 +1824,7 @@ void TapeScene::renderOpenGL()
     {
         const auto model = scene
                          * glm::translate (glm::mat4 (1.0f), { centreX, centreY, 0.0f })
-                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 1.0f })
+                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 0.0f, 1.0f })
                          * glm::scale (glm::mat4 (1.0f), { radius, radius, radius });
 
         shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (model), 1, GL_FALSE);
@@ -1962,7 +1876,15 @@ void TapeScene::renderOpenGL()
     // with a z of its own, and drawing it last costs nothing because the depth
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
-}                                                  { headCentreX, headCentreY, headCentreZ });
+}
+
+/* The tail of this file below this point was the remains of several broken
+   paste attempts that duplicated renderOpenGL()'s body again and again, each
+   copy cut off mid-line and spliced into the last. The compiler read every
+   duplicate as a top-level "expected unqualified-id" error, so the
+   duplicates are disabled wholesale; the one real renderOpenGL() above is
+   the whole of what the renderer needs. */
+#if 0
     shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
     shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
     shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
@@ -1988,7 +1910,7 @@ void TapeScene::renderOpenGL()
     {
         const auto model = scene
                          * glm::translate (glm::mat4 (1.0f), { centreX, centreY, 0.0f })
-                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 1.0f })
+                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 0.0f, 1.0f })
                          * glm::scale (glm::mat4 (1.0f), { radius, radius, radius });
 
         shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (model), 1, GL_FALSE);
@@ -2072,7 +1994,7 @@ void TapeScene::renderOpenGL()
     {
         const auto model = scene
                          * glm::translate (glm::mat4 (1.0f), { centreX, centreY, 0.0f })
-                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 1.0f })
+                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 0.0f, 1.0f })
                          * glm::scale (glm::mat4 (1.0f), { radius, radius, radius });
 
         shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (model), 1, GL_FALSE);
@@ -2150,7 +2072,7 @@ void TapeScene::renderOpenGL()
     {
         const auto model = scene
                          * glm::translate (glm::mat4 (1.0f), { centreX, centreY, 0.0f })
-                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 1.0f })
+                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 0.0f, 1.0f })
                          * glm::scale (glm::mat4 (1.0f), { radius, radius, radius });
 
         shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (model), 1, GL_FALSE);
@@ -2320,7 +2242,7 @@ void TapeScene::renderOpenGL()
                                               cameraDistance + 1.2f);
 
     const auto viewProjection = projection
-                              * glm::translate (glm::mat4 (1.0f), { 0.0f, -cameraDistance });
+                              * glm::translate (glm::mat4 (1.0f), { 0.0f, 0.0f, -cameraDistance });
 
     // The deck plate is turned twice, which is the whole of the 3D in the
     // composition: down onto it, and round towards the operator's left.
@@ -2352,7 +2274,7 @@ void TapeScene::renderOpenGL()
     {
         const auto model = scene
                          * glm::translate (glm::mat4 (1.0f), { centreX, centreY, 0.0f })
-                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 1.0f })
+                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 0.0f, 1.0f })
                          * glm::scale (glm::mat4 (1.0f), { radius, radius, radius });
 
         shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (model), 1, GL_FALSE);
@@ -2430,7 +2352,7 @@ void TapeScene::renderOpenGL()
     {
         const auto model = scene
                          * glm::translate (glm::mat4 (1.0f), { centreX, centreY, 0.0f })
-                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 1.0f })
+                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 0.0f, 1.0f })
                          * glm::scale (glm::mat4 (1.0f), { radius, radius, radius });
 
         shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (model), 1, GL_FALSE);
@@ -2514,7 +2436,7 @@ void TapeScene::renderOpenGL()
     {
         const auto model = scene
                          * glm::translate (glm::mat4 (1.0f), { centreX, centreY, 0.0f })
-                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 1.0f })
+                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 0.0f, 1.0f })
                          * glm::scale (glm::mat4 (1.0f), { radius, radius, radius });
 
         shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (model), 1, GL_FALSE);
@@ -2592,7 +2514,7 @@ void TapeScene::renderOpenGL()
     {
         const auto model = scene
                          * glm::translate (glm::mat4 (1.0f), { centreX, centreY, 0.0f })
-                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 1.0f })
+                         * glm::rotate (glm::mat4 (1.0f), angle, { 0.0f, 0.0f, 1.0f })
                          * glm::scale (glm::mat4 (1.0f), { radius, radius, radius });
 
         shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (model), 1, GL_FALSE);
@@ -2665,3 +2587,4 @@ void TapeScene::renderOpenGL()
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
 }
+#endif
