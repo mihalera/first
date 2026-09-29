@@ -5023,7 +5023,11 @@ void FirstAudioProcessorEditor::timerCallback()
         // The machine's own platter speed, already lagged in smoothedMachineSpeed
         // - so a STOP stops the reels and a held SPINDOWN coasts them down, and
         // the tape only transfers while the transport is actually running.
-        juce::jlimit (0.0f, 1.0f, smoothedMachineSpeed));
+        juce::jlimit (0.0f, 1.0f, smoothedMachineSpeed),
+        // The frame's own loudest sample, linear 0..1, drained from the processor
+        // once per tick (getOutputPeakLevel is an exchange) so the scene's peak
+        // lamp reads the same transient the meter needle just fell for.
+        juce::jlimit (0.0f, 1.0f, audioProcessor.getOutputPeakLevel()));
 
     // The scene's own attach retries, on the same timer and the same bounded
     // budget as this editor's context: a child component cannot have a context
