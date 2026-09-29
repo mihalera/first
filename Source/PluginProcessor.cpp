@@ -17,6 +17,7 @@
 
 #include <array>
 #include <cstdint>
+#include <limits>
 #include <set>
 #include <vector>
 
@@ -581,6 +582,61 @@ FirstAudioProcessor::FirstAudioProcessor()
         for (const auto& id : registered)
             jassert (covered.count (id) != 0
                   || intentionallyNotPresettable.count (id) != 0);
+
+        // THE LOAD ITSELF, exercised: apply each preset and re-read what landed in
+        // the tree. Every listed key must come back equal to the file's value and
+        // nothing may throw. This is the objective half of "presets don't work":
+        // the apply path (values -> tree -> replaceState) runs here against the
+        // real engine, so a broken round-trip is a named key on the console rather
+        // than a user's impression. It runs in the constructor, before any editor
+        // exists, and restores nothing - the host state lands immediately after.
+        {
+            // A FRESH copy per read: replaceState installs a new tree object, so a
+            // tree captured once would go stale after the very first apply.
+            const auto idProperty = juce::Identifier ("id");
+            const auto valueProperty = juce::Identifier ("value");
+            auto readBack = [&] (const juce::String& key) -> float
+            {
+                const auto state = parameters.copyState();
+
+                for (int i = 0; i < state.getNumChildren(); ++i)
+                {
+                    const auto child = state.getChild (i);
+                    if (child.hasProperty (idProperty)
+                        && child.getProperty (idProperty).toString() == key)
+                        return static_cast<float> (child.getProperty (valueProperty));
+                }
+
+                return std::numeric_limits<float>::quiet_NaN();
+            };
+
+            for (int i = 0; i < FactoryPresets::count(); ++i)
+            {
+                applyFactoryPreset (i);
+
+                // A key whose value did not land exactly (a choice parameter
+                // clamped to a legal step, or a key the engine rounds) is PRINTED,
+                // not asserted: the constructor cannot know what state the host
+                // has already pushed, so equality here is a report rather than a
+                // contract. What makes it objective is that it names the key and
+                // the two numbers, from the real apply path.
+                for (const auto& entry : factoryPresetValues (i))
+                {
+                    const auto landed = readBack (entry.first);
+
+                    if (landed != landed || juce::approximatelyEqual (landed, entry.second) == false)
+                        DBG ("[presets] preset " << i << " key " << entry.first
+                             << ": wanted " << entry.second << ", tree holds " << landed);
+                }
+            }
+
+            // Back to the untouched "no preset loaded" state the session opens with,
+            // and no factory load left in the undo history: the audit's 29 swaps are
+            // bookkeeping, not something Ctrl+Z should walk a debug session through.
+            lastPresetIndex.store (-1, std::memory_order_relaxed);
+            markPresetClean ({});
+            undoManager.clearUndoHistory();
+        }
     }
 #endif
 }
