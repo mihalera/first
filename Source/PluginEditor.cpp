@@ -2489,7 +2489,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 #endif
     styleLabel (buildLabel, "BUILD " + buildId, 8.0f, paletteFor (false).secondary,
                 true, juce::Justification::centredRight);
-    styleLabel (tapeTypeLabel, "MODEL", 9.0f, paletteFor (false).secondary,
+    styleLabel (tapeTypeLabel, "TAPE", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
     styleLabel (valveTypeLabel, "VALVE", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
@@ -3324,6 +3324,32 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                               "wow rate and depth, so the same record wanders "
                               "differently at 33 and 45, and a 78's wind-up motor "
                               "wobbles hardest. 33 RPM is the default.");
+
+    // The deck's readout pairs: the numbers change at 30 Hz, so a tooltip on
+    // the VALUE would sit under a moving mouse on every frame. The caption
+    // carries the explanation instead - it is static, and it is what a user
+    // actually points at when reading a column.
+    setTip (harmonicsLabel, "HARMONICS - the ratio the harmonic engine settled on: "
+                               "E is the even-order share (tape and valve warmth), "
+                               "O the odd-order share (transistor edge). The mix "
+                               "follows the BLEND knob; this readout shows what the "
+                               "blend actually produced.");
+    setTip (subfundLabel, "SUBFUND TRACK - the pitch the subharmonic generator is "
+                             "currently locked to. It only tracks while the machine "
+                             "is fed a clean enough fundamental; 'idle - no note "
+                             "tracked' means the input did not give it one.");
+    setTip (antiPhaseLabel, "ANTI-PHASE - how much of the stereo pair cancels when "
+                               "the channels are summed to mono. 'clean' is safe; a "
+                               "percentage warns that a mono fold-down will lose "
+                               "bass or body. It watches the OUTPUT side, so output "
+                               "stage switches move it too.");
+    setTip (bpmLabel, "BPM - the host tempo the delay and modulation sections sync "
+                         "to. It follows your DAW's transport; it is a readout here, "
+                         "not a setting.");
+    setTip (tapeTypeLabel, "TAPE - the formula the machine's saturation is built "
+                              "from. Each stock bends harmonics, compression and "
+                              "noise differently. The selector below is where it is "
+                              "chosen.");
     tapeTypeBox.setLookAndFeel (&customLookAndFeel);
     valveTypeBox.setLookAndFeel (&customLookAndFeel);
     ampTypeBox.setLookAndFeel (&customLookAndFeel);
@@ -4737,20 +4763,42 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     //  Every dose is centered, so no branch can shift the panel's colour.
     // ----------------------------------------------------------------------
     if (panelTextureImage.isValid())
-        // The image is built at half resolution; this overload SCALES it back
-        // over the whole panel (drawImageAt would have pasted it 1:1 into the
-        // top-left quarter).
+    {
+        // Two rules keep the surface from reading as "square blocks":
+        //
+        //  1. RESAMPLING QUALITY. The ten-argument drawImage carries no quality
+        //     of its own - the blit runs at whatever Graphics::setImageResamplingQuality
+        //     last set, and Graphics' default is LOW, i.e. nearest-neighbour:
+        //     a half-res layer drawn through it arrives as 2x2 blocks, which is
+        //     precisely the "quadrats" the user saw on alternating frames. The
+        //     quality is set explicitly for this one blit and restored after, so
+        //     every other image in the panel keeps its old speed.
+        //
+        //  2. OPACITY-EXACT. The layer was built with per-pixel alpha already
+        //     carrying the dose, so multiplying it again would brighten the grain
+        //     whenever a repaint had to re-blend the layer, and the texture would
+        //     visibly jump between "normal" and "too strong" as frames
+        //     alternated. The alpha in the image IS the final amount.
+        g.setOpacity (1.0f);
+        g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
         g.drawImage (panelTextureImage,
                      0, 0, getWidth(), getHeight(),
-                     0, 0, panelTextureImage.getWidth(), panelTextureImage.getHeight());
+                     0, 0, panelTextureImage.getWidth(), panelTextureImage.getHeight(),
+                     false /* fillAlphaChannelWithCurrentBrush: NO - the alpha in
+                              the image is the final dose, re-multiplying it with
+                              a brush would double the ink */);
+        g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality);
+    }
 
     if (panelTextureWeights.shimmer > 0.0f)
     {
         const auto timeNow = static_cast<float> (juce::Time::getMillisecondCounterHiRes()) * 0.001f;
-        // The shimmer animates only across the two bands the timer repaints
-        // (header + deck): dots elsewhere would freeze between full repaints,
-        // and a frozen shimmer reads as dirt rather than as life.
-        const auto area = layout.header.getUnion (layout.deck).toFloat();
+        // The shimmer drifts across the WHOLE panel: the timer now repaints
+        // everything every tick, and the dots' hash chains are keyed to the
+        // area they land in, so pinning them to the header+deck union while
+        // the grain layer covered the whole editor read as two different
+        // materials on one surface.
+        const auto area = getLocalBounds().toFloat();
         const auto hashOf = [] (float x)
         {
             return std::fmod (std::abs (std::sin (x) * 43758.5453123f), 1.0f);
@@ -5277,21 +5325,24 @@ void FirstAudioProcessorEditor::timerCallback()
 
     uiSounds.setBrightness (juce::jlimit (0.0f, 1.0f, glowAmount * 0.7f + activity * 0.3f));
 
-    // Repaint only what actually animates: the header lamp, and the deck (reel,
-    // ribbon, particles).
+    // The WHOLE panel repaints on every tick now, and the reason is the
+    // texture: the grain + wear layer spans the entire editor, and repainting
+    // only the header + deck made the controls and meters sit on a texture
+    // that was there on the frames their band happened to redraw and frozen on
+    // the ones it did not - the user's "now it is normal, now it is squares,
+    // now it is gone". A full-editor repaint at 30 Hz is the one schedule
+    // under which the surface is uniform and its cost stays bounded.
     //
-    // The control band used to be in this list, for the knob halos and tracers.
-    // repaint() on a parent never repaints its children in JUCE - the sliders are
-    // child components and repaint themselves when their own value changes - so that
-    // call never reached a knob. What it did redraw, thirty times a second, was this
-    // component's own static content in that band: the panel gradient, the grain and
-    // the divider. With a context attached, each of those is a separate render of the
-    // panel, so it was roughly a third of the per-frame work for a picture that never
-    // changed. The knobs look the same without it, because they were never coming
-    // from here.
-    const auto layout = getEditorLayout();
-    repaint (layout.header);
-    repaint (layout.deck);
+    // The control band used to be excluded on purpose: repaint() on a parent
+    // never repaints its children in JUCE - the sliders are child components
+    // and repaint themselves when their own value changes - so the old call
+    // never reached a knob anyway. What it did redraw, thirty times a second,
+    // was this component's own static content in that band: the panel gradient,
+    // the grain and the divider. With a context attached, each of those is a
+    // separate render of the panel, so it was roughly a third of the per-frame
+    // work for a picture that never changed. The knobs look the same without
+    // it, because they were never coming from here.
+    repaint();
 
     // Workflow state is cheap to poll at 30 Hz and makes the panel self-healing:
     // if the host, a session load or a preset change moves anything, the buttons,
@@ -5450,8 +5501,13 @@ void FirstAudioProcessorEditor::resized()
     //  Clearance at the 780 px minimum: the grid is 386 px wide (4 x 92 + 3 x 6)
     //  and starts at header.right - 386 = x + 366 on a 780 panel, clearing the
     //  title block (ends x + 346) by 20 px at the tightest size and more above it.
-    //  The status readout moved to the deck's badge line, where the machine's
-    //  other readouts live (see the deck below).
+    //  The machine-state readout (BYPASSED/DRY, STEREO/REAL TIME) does NOT live
+    //  in the header at all - the user twice reported the header controls
+    //  printing over the "Real-Time/Stereo" caption, and the only layout that
+    //  can never overlap is one where they never share a band: the readout
+    //  belongs with the machine's other readouts on the deck's badge line
+    //  (see the badge band below). The grid now owns the header's right half
+    //  outright; nothing else is placed there.
     // ------------------------------------------------------------------------------
     const auto headerRight = layout.header.getRight();
     constexpr int headerGap = 6;
@@ -5764,19 +5820,22 @@ void FirstAudioProcessorEditor::resized()
     // ends above them.
     constexpr int reelCorridor = 70;
 
-    // ---- row 1: MODEL -------------------------------------------------------
-    //  The same GRID the type row uses: three equal 108 px columns, caption
-    //  above its control, 14 px between columns. Every deck row is now the
-    //  same arithmetic, so a column in row one stands exactly above a column
-    //  in row three - the alignment a user reads as "designed".
+    // ---- row 1: TRANSPORT SPEED ---------------------------------------------
+    //  Everything that reads as a RATE lives in one row now, which is what the
+    //  user asked for: the tape speed (ips) and the turntable's motor speed
+    //  (RPM) sit side by side, and the host-tempo readout rides with them -
+    //  three rate readouts a user scans as one group instead of MODEL | SPEED
+    //  | BPM, where the model sat between two kinds of speed.
+    //  The empty columns to the right are deliberate: the type row below has
+    //  six columns and the rows should breathe together, not stretch to fill.
     {
         const std::vector<DeckRowItem> row {
-            { &tapeTypeLabel,  108, -1,  0, 15, false },
-            { &tapeTypeBox,      0, -1, 15, 30, true  },
-            { &speedLabel,     108, -1,  0, 15, false },
-            { &speedBox,         0, -1, 15, 30, true  },
-            { &bpmLabel,       108, -1,  0, 15, false },
-            { &bpmReadout,       0, -1, 15, 13, true  }
+            { &speedLabel,       108, -1,  0, 15, false },
+            { &speedBox,           0, -1, 15, 30, true  },
+            { &vinylSpeedLabel,  108, -1,  0, 15, false },
+            { &vinylSpeedBox,      0, -1, 15, 30, true  },
+            { &bpmLabel,         108, -1,  0, 15, false },
+            { &bpmReadout,         0, -1, 15, 13, true  }
         };
 
         placeDeckRow (row, layout.deck.getX() + 18, layout.deck.getRight() - reelCorridor,
@@ -5831,18 +5890,24 @@ void FirstAudioProcessorEditor::resized()
         deckParticleCorridorY = juce::Range<int> (deckTop (2) + 2, deckTop (2) + 30);
     }
 
-    // ---- row 3: the six type switches ---------------------------------------
+    // ---- row 3: the six type selectors --------------------------------------
     {
+        // The model selector (renamed TAPE, its old caption read MODEL) joined
+        // the row of type selectors - the user read MODEL | SPEED | BPM as
+        // three unrelated things on one line, when the selector is a TYPE like
+        // VINYL or VALVE and belongs with them. Six columns as before, so the
+        // row arithmetic and the 108 px column are unchanged.
+        //
         // 108 per column, not 100: the longest stock values ("Fender Blackface",
         // "Jensen JT-11P") ellipsised in the deck's own combo drawing at the old
         // width on every panel under ~1400 px. 108 is the largest the row holds at
         // the 780 px minimum ((720 - 5 x 14 gaps) / 6 = 108), and above that width
         // the row's elastic gap shrinks before any column does.
         const std::vector<DeckRowItem> row {
+            { &tapeTypeLabel,        108, -1,  0, 15, false },
+            { &tapeTypeBox,            0, -1, 15, 30, true  },
             { &vinylTypeLabel,       108, -1,  0, 15, false },
             { &vinylTypeBox,           0, -1, 15, 30, true  },
-            { &vinylSpeedLabel,      108, -1,  0, 15, false },
-            { &vinylSpeedBox,          0, -1, 15, 30, true  },
             { &valveTypeLabel,       108, -1,  0, 15, false },
             { &valveTypeBox,           0, -1, 15, 30, true  },
             { &ampTypeLabel,         108, -1,  0, 15, false },
@@ -5934,9 +5999,30 @@ void FirstAudioProcessorEditor::resized()
         // items - both of them lists that shorten their own font before they
         // clip - buys sixteen, and the chain then has room for a button added
         // at either end without the two ends touching.
+        //
+        //  THE WIDE-WINDOW HOLE. Both chains were laid out against the 780 px
+        //  minimum, and on anything wider the unspent width sat between them
+        //  as one hole that grew with the panel - the deck's last "random
+        //  gap". The hole belongs to the two LISTS: they are the chain's
+        //  widest members and the only two items a wider bounds actually
+        //  improves (a longer preset name shown instead of a longer emptiness;
+        //  a button or a badge would only read as stretched). The lists absorb
+        //  it in shares - 60/40, each capped - and at the minimum the shares
+        //  are zero by construction, so the tight layout is untouched.
+        constexpr int presetBoxWidth  = 120;
+        constexpr int userPresetWidth =  94;
+        constexpr int headWidths = presetBoxWidth + userPresetWidth + 40 + 38;
+        constexpr int tailWidths = 54 + 44 + 44 + 54 + 64 + 64;
+        const auto chainSpan = (layout.deck.getRight() - 14)
+                                   - (layout.deck.getX() + 66);
+        const auto chainVoid = juce::jmax (0, chainSpan - (headWidths + tailWidths
+                                                              + 9 * presetRowGap));
+        const auto presetGrowth = juce::jmin (chainVoid * 3 / 5, 160);
+        const auto userGrowth   = juce::jmin (chainVoid - presetGrowth, 120);
+
         int headEdge = layout.deck.getX() + 66;
-        placeForward (headEdge, presetBox,         120);
-        placeForward (headEdge, userPresetBox,      94);
+        placeForward (headEdge, presetBox,          presetBoxWidth  + presetGrowth);
+        placeForward (headEdge, userPresetBox,      userPresetWidth + userGrowth);
         placeForward (headEdge, savePresetButton,  40);
         placeForward (headEdge, deletePresetButton, 38);
     }
@@ -5968,9 +6054,15 @@ void FirstAudioProcessorEditor::resized()
     statusLabel.setBounds (layout.deck.getRight() - badgeLineInset - statusCellWidth,
                            deckTop (6), statusCellWidth, 14);
 
+    // The state cell is RIGHT-anchored, so it only needs the badge to stop
+    // short of it - the badge's width was incorrectly written as the band
+    // minus the whole cell, shrinking the badge by ~190 px at every size to
+    // avoid a collision that only exists in the cell's own 180 px. The badge
+    // now spans to the cell's left edge; at the 780 px minimum that is 78 px
+    // MORE badge than before.
     presetBadgeLabel.setBounds (layout.deck.getX() + 22, deckTop (6),
-                                layout.deck.getWidth() - 44 - statusCellWidth
-                                    + badgeLineInset - 8, 14);
+                                layout.deck.getRight() - badgeLineInset - statusCellWidth
+                                    - (layout.deck.getX() + 22), 14);
     presetBadgeLabel.setFont (shrinkingFont (presetBadgeLabel.getText(), 8.0f,
                                              juce::Font::plain,
                                              static_cast<float> (presetBadgeLabel.getWidth()) - 4.0f));
