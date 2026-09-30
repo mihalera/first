@@ -93,6 +93,74 @@ function(j37_declare_header_only_library name include_dir)
     endif()
 endfunction()
 
+# ------------------------------------------------------------------------------
+#  VENDORED THIRD-PARTY LIBRARIES (ThirdParty/).
+#
+#  The libraries the plugin's own sources INCLUDE are checked into the
+#  repository under ThirdParty/ at the exact versions CPM used to pin, and
+#  every block below prefers the vendored copy when it exists. CPM's fetch
+#  becomes the FALLBACK, not the source of truth: a fresh clone configures
+#  and builds offline, with no .cpm-cache and no network, and CI downloads
+#  nothing but JUCE itself.
+#
+#  Version discipline: the vendored tree is the SAME pin as the CPM block
+#  beside it. When re-pinning, change both in one commit or the two paths
+#  silently build against different sources.
+#
+#    ThirdParty/farbot/              hogliux/farbot  @ d8f132c2 (include/)
+#    ThirdParty/pocketfft/           mreineck/pocketfft @ c90e55b3 (root header)
+#    ThirdParty/signalsmith-stretch/ Signalsmith-Audio/signalsmith-stretch @ 1.4.0
+#                                    + sibling signalsmith-linear @ 0.6.4 inside
+#    ThirdParty/nlohmann_json/       nlohmann/json @ v3.12.0 (single_include/)
+#    ThirdParty/xsimd/               xtensor-stack/xsimd @ 14.3.0 (include/)
+#    ThirdParty/glm/                 g-truc/glm @ 1.0.3 (repo root)
+#    ThirdParty/RTNeural/            jatinchowdhury18/RTNeural @ 95c3c0f9 (STL backend)
+#
+#  All licences are permissive and ship inside their folders.
+# ------------------------------------------------------------------------------
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/farbot/include")
+    j37_declare_header_only_library(farbot
+        "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/farbot/include")
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/pocketfft/pocketfft_hdronly.h")
+    j37_declare_header_only_library(pocketfft
+        "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/pocketfft")
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/signalsmith-stretch/include/signalsmith-stretch/signalsmith-stretch.h")
+    j37_declare_header_only_library(signalsmith-stretch
+        "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/signalsmith-stretch/include")
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/nlohmann_json/single_include/nlohmann/json.hpp")
+    j37_declare_header_only_library(nlohmann_json
+        "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/nlohmann_json/single_include")
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/xsimd/include/xsimd/xsimd.hpp")
+    j37_declare_header_only_library(xsimd
+        "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/xsimd/include")
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/glm/glm/glm.hpp")
+    j37_declare_header_only_library(glm
+        "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/glm")
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/RTNeural/RTNeural/RTNeural.h")
+    # The vendored checkout is already pruned to the STL backend's needs: no
+    # Eigen submodule, xsimd optional. Its include path is the checkout root;
+    # its bundled modules/json serves the model loader's json parse.
+    #
+    # The INTERFACE target is named exactly RTNeural - the name the top-level
+    # target_link_libraries links - so the vendored path and the CPM fallback
+    # satisfy the same reference, and neither branch of this file needs to
+    # know which one won.
+    j37_declare_header_only_library(RTNeural
+        "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/RTNeural")
+endif()
+
 # ==============================================================================
 #  Graphics and DSP toolboxes - configured packages
 # ==============================================================================
@@ -164,6 +232,8 @@ CPMAddPackage(
 # xsimd: header-only portable SIMD. Pinned by tag like everything else.
 # BUILD_TESTS is already OFF by default upstream, but it is stated here anyway:
 # it pulls in xsimd's own test suite, and a plugin build must not pay for that.
+#  Vendored copy wins; CPM is the fallback.
+if(NOT TARGET xsimd)
 CPMAddPackage(
     NAME xsimd
     GITHUB_REPOSITORY xtensor-stack/xsimd
@@ -174,6 +244,7 @@ CPMAddPackage(
         "BUILD_TESTS OFF"
         "BUILD_BENCHMARK OFF"
         "BUILD_EXAMPLES OFF")
+endif ()
 
 # ==============================================================================
 #  Header-only libraries. Each one ships no CMake (or a CMake this project
@@ -190,6 +261,8 @@ CPMAddPackage(
 # it carries a CMake file demanding CMake >= 3.24, which this project cannot
 # raise, so it is downloaded WITHOUT being configured and registered as a
 # header-only target instead - the library is one self-contained header.
+#  Vendored copy wins (block at the top of this file); CPM is the fallback.
+if(NOT TARGET signalsmith-stretch)
 CPMAddPackage(
     NAME signalsmith-dsp
     GITHUB_REPOSITORY Signalsmith-Audio/signalsmith-stretch
@@ -205,6 +278,12 @@ CPMAddPackage(
 #  directory first, so that layout is the whole integration; exposing linear's
 #  root on the include path would NOT work, because the include is namespaced
 #  by the folder name. Pinned to the 0.6.4 tag.
+#
+#  Both fetches are guarded together and registered together: the sibling
+#  download's SOURCE_DIR is derived from the stretch checkout's, so fetching
+#  it without the parent would try to populate a directory named by an EMPTY
+#  variable - which is a path at the filesystem root, and configure dies
+#  there with "Read-only file system".
 CPMAddPackage(
     NAME signalsmith-linear
     GITHUB_REPOSITORY Signalsmith-Audio/linear
@@ -217,11 +296,14 @@ CPMAddPackage(
 
 j37_declare_header_only_library(signalsmith-stretch
     "${signalsmith-dsp_SOURCE_DIR}/include")
+endif ()
 
 # PocketFFT - mreineck/pocketfft, the FFT behind NumPy: exact transforms for
 # arbitrary sizes out of one header. The "cpp" branch is the header-only
 # edition (pocketfft_hdronly.h at the repository root); the master branch is
 # the C/Fortran hybrid, which is not what a plugin wants.
+#  Vendored copy wins; CPM is the fallback.
+if(NOT TARGET pocketfft)
 CPMAddPackage(
     NAME pocketfft
     GITHUB_REPOSITORY mreineck/pocketfft
@@ -229,6 +311,7 @@ CPMAddPackage(
     DOWNLOAD_ONLY YES)
 
 j37_declare_header_only_library(pocketfft "${pocketfft_SOURCE_DIR}")
+endif ()
 
 # ==============================================================================
 #  nlohmann/json - JSON for Modern C++, a header-only DOM parser and
@@ -259,6 +342,8 @@ j37_declare_header_only_library(pocketfft "${pocketfft_SOURCE_DIR}")
 #  include the canonical <nlohmann/json.hpp> and let this target's include
 #  directory resolve it, rather than reaching for RTNeural's copy.
 # ==============================================================================
+#  Vendored copy wins; CPM is the fallback.
+if(NOT TARGET nlohmann_json)
 CPMAddPackage(
     NAME nlohmann_json
     GITHUB_REPOSITORY nlohmann/json
@@ -266,11 +351,14 @@ CPMAddPackage(
     DOWNLOAD_ONLY YES)
 
 j37_declare_header_only_library(nlohmann_json "${nlohmann_json_SOURCE_DIR}/single_include")
+endif ()
 
 # farbot - hogliux/farbot, "FAbian's Realtime Box o' Tricks": the
 # realtime-safe patterns (RealtimeObject, fifo, AsyncCaller). The library part
 # is HEADER-ONLY (its CMake only builds tests, and googletest is a submodule
 # this build never initialises), so it is downloaded and exposed include-only.
+#  Vendored copy wins; CPM is the fallback.
+if(NOT TARGET farbot)
 CPMAddPackage(
     NAME farbot
     GITHUB_REPOSITORY hogliux/farbot
@@ -278,6 +366,7 @@ CPMAddPackage(
     DOWNLOAD_ONLY YES)
 
 j37_declare_header_only_library(farbot "${farbot_SOURCE_DIR}/include")
+endif ()
 
 # Rack DSP - VCVRack/Rack, the VCV Rack SDK: the DSP utilities (SVF, filters,
 # quantizers, envelopes, resamplers) plus the whole module engine. The DSP
@@ -502,6 +591,9 @@ CPMAddPackage(
 #  per-model decision for the day a model is actually adopted.
 #  Pinned to the current master head (upstream publishes no tags).
 # ==============================================================================
+#  Vendored copy wins (registered at the top of this file under its own name,
+#  RTNeural - the name target_link_libraries references); CPM is the fallback.
+if(NOT TARGET RTNeural)
 CPMAddPackage(
     NAME RTNeural
     GITHUB_REPOSITORY jatinchowdhury18/RTNeural
@@ -513,6 +605,7 @@ CPMAddPackage(
         "BUILD_TESTS OFF"
         "BUILD_BENCH OFF"
         "BUILD_EXAMPLES OFF")
+endif ()
 
 # ==============================================================================
 #  dr_libs - mackron/dr_libs, the single-header decoders dr_wav / dr_mp3 /
@@ -849,6 +942,8 @@ j37_declare_header_only_library(sokol_gfx "${sokol_gfx_SOURCE_DIR}")
 #  sokol_gpucam.h carries the handful of mat4 helpers sokol itself needs, and
 #  GLM is the general library for everything else.
 # ------------------------------------------------------------------------------
+#  Vendored copy wins; CPM is the fallback.
+if(NOT TARGET glm)
 CPMAddPackage(
     NAME glm
     GITHUB_REPOSITORY g-truc/glm
@@ -856,6 +951,7 @@ CPMAddPackage(
     DOWNLOAD_ONLY YES)
 
 j37_declare_header_only_library(glm "${glm_SOURCE_DIR}")
+endif ()
 
 # ------------------------------------------------------------------------------
 #  SOURCE ONLY - three transient shapers, none of which is a C++ library.

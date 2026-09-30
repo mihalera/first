@@ -339,6 +339,49 @@ namespace
         return paletteForTheme (liveThemeChoice);
     }
 
+    // Shading for the cylindrical switch bodies (drawToggleButton, both look
+    // and feels). The switch is a cylinder lying along its own length, lit
+    // from above: a point on the projected face has its surface normal tilted
+    // by the cross-section angle a, so the light it catches is cos(a) - the
+    // brightness peaks just ABOVE the centreline (where the curvature faces
+    // the lamp), falls to the rim on top, and dies into shadow underneath.
+    // That profile is painted twice: once as the barrel's gradient, once as a
+    // thin specular line riding the same falloff - which is what turns a
+    // filled shape into something that reads as machined metal.
+    void fillCylinderBarrel (juce::Graphics& g, const juce::Rectangle<float>& barrel,
+                             juce::Colour face, juce::Colour edge)
+    {
+        if (barrel.getWidth() < 2.0f || barrel.getHeight() < 2.0f)
+            return;
+
+        // The barrel: cosine shading down the height, one-sided because the
+        // light sits above the machine. The silhouette is the full capsule
+        // (radius = half the height), which IS the cylinder's projection.
+        juce::ColourGradient shading (
+            edge, barrel.getCentreX(), barrel.getY(),
+            edge.darker (0.35f), barrel.getCentreX(), barrel.getBottom(), false);
+        shading.addColour (0.30, face.brighter (0.30f));
+        shading.addColour (0.62, face);
+        g.setGradientFill (shading);
+        g.fillRoundedRectangle (barrel, barrel.getHeight() * 0.5f);
+
+        // The specular: a thin bright line along the barrel's length, riding
+        // above the centreline. It is the single strongest cue that the
+        // surface is curved rather than flat.
+        const auto streak = juce::Rectangle<float> (
+            barrel.getX() + barrel.getWidth() * 0.06f,
+            barrel.getY() + barrel.getHeight() * 0.12f,
+            barrel.getWidth() * 0.88f,
+            juce::jmin (barrel.getHeight() * 0.16f, 3.5f));
+        juce::ColourGradient specular (
+            face.brighter (0.60f).withAlpha (0.65f),
+            streak.getX(), streak.getY(),
+            face.brighter (0.60f).withAlpha (0.0f),
+            streak.getX(), streak.getBottom(), false);
+        g.setGradientFill (specular);
+        g.fillRoundedRectangle (streak, streak.getHeight() * 0.5f);
+    }
+
     // The three tabs the knob grid is split across. Each entry names a tab and lists the
     // controlIds indices it holds, in the order they are drawn: left to right, then down.
     //
@@ -880,11 +923,12 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
 
 //==============================================================================
 //  Toggle switches are drawn as small hardware rockers instead of the default
-//  text-button look: a recessed body with engraved OFF / ON captions, a thumb
-//  that physically slides between the two positions, and a status LED that
-//  lights when the switch is engaged. This is what the panel's BYPASS /
-//  POLARITY / AUTO GAIN controls were missing - they used to look like plain
-//  buttons that happened to hold state.
+//  text-button look: a cylindrical metal body shaded by the cosine of its own
+//  cross-section angle (see fillCylinderBarrel - the same profile the 3D scene
+//  uses), engraved captions, a thumb that physically slides between the two
+//  positions, and a status LED that lights when the switch is engaged. This is
+//  what the panel's BYPASS / POLARITY / AUTO GAIN controls were missing - they
+//  used to look like plain buttons that happened to hold state.
 //==============================================================================
 void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button,
                                        bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
@@ -893,17 +937,15 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     const auto bounds = button.getLocalBounds().toFloat().reduced (2.0f, 3.0f);
     const auto isOn = button.getToggleState();
 
-    // Recessed body: darker fill with a vertical sheen, bevel on the inside.
-    juce::ColourGradient body (palette.readout.darker (isOn ? 0.25f : 0.05f),
-                               bounds.getX(), bounds.getY(),
-                               palette.readout.darker (0.45f),
-                               bounds.getX(), bounds.getBottom(), false);
-    g.setGradientFill (body);
-    g.fillRoundedRectangle (bounds, 4.0f);
+    // The body is a cylinder lying along the switch - fillCylinderBarrel
+    // shades it by the cosine of its cross-section angle - not a flat slab.
+    // Engaging the switch darkens the barrel too, so the state reads through
+    // the shading itself and not only through the thumb.
+    fillCylinderBarrel (g, bounds,
+                        palette.readout.darker (isOn ? 0.22f : 0.02f),
+                        palette.readout.darker (0.42f));
     g.setColour (palette.border.withAlpha (0.9f));
-    g.drawRoundedRectangle (bounds, 4.0f, 1.0f);
-    g.setColour (palette.panel.brighter (0.15f).withAlpha (0.5f));
-    g.drawRoundedRectangle (bounds.reduced (2.0f), 3.0f, 0.7f);
+    g.drawRoundedRectangle (bounds, bounds.getHeight() * 0.5f, 1.0f);
 
     // Two bands sized from the switch itself, so nothing ever fights for width:
     //   top band    - the function name, engraved across the full switch width
@@ -915,8 +957,12 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     //                 the thumb caption).
     const auto labelHeight = juce::jlimit (10.0f, 14.0f, bounds.getHeight() * 0.44f);
     const auto labelBand = bounds.withHeight (labelHeight);
+    // The groove is inset deeper than before because the body is now a full
+    // capsule: at its rounded bottom the silhouette pulls in fast, and a
+    // groove that ran to the old 4 px inset would paint past the arc.
     const auto track = bounds.withTrimmedTop (labelHeight)
-                            .withTrimmedLeft (4.0f).withTrimmedRight (4.0f);
+                            .withTrimmedLeft (7.0f).withTrimmedRight (7.0f)
+                            .withTrimmedBottom (3.0f);
 
     // Status lamp: one explicit circular footprint, concentric at every scale. The
     // previous square slot made the lamp's visual centre depend on the band height,
@@ -971,12 +1017,12 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     const auto thumbX = isOn ? track.getRight() - thumbWidth - 1.0f : track.getX() + 1.0f;
     const auto thumbY = track.getY() + 1.0f + (shouldDrawButtonAsDown ? 1.0f : 0.0f);
     const auto thumb = juce::Rectangle<float> (thumbX, thumbY, thumbWidth, thumbHeight);
-    juce::ColourGradient thumbFill (palette.knobHighlight, thumb.getX(), thumb.getY(),
-                                    palette.knobFace, thumb.getX(), thumb.getBottom(), false);
-    g.setGradientFill (thumbFill);
-    g.fillRoundedRectangle (thumb, 3.0f);
+    // The thumb is a small cylinder of its own riding the groove, pressed one
+    // pixel into the body while the mouse is down (thumbY above already
+    // shifts it): shading, not colour, carries the mechanics.
+    fillCylinderBarrel (g, thumb, palette.knobFace, palette.knobEdge);
     g.setColour (palette.knobEdge.withAlpha (0.85f));
-    g.drawRoundedRectangle (thumb, 3.0f, 1.0f);
+    g.drawRoundedRectangle (thumb, thumb.getHeight() * 0.5f, 1.0f);
 
     // State text on the thumb, fitted to the thumb. The thumb is the authoritative
     // state readout, so its text must never be the thing that gets clipped.
@@ -1189,11 +1235,15 @@ void J37InlineLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButt
                                               bounds.getCentreY() - pillHeight * 0.5f,
                                               pillWidth, pillHeight);
 
-    // The track: filled with the accent when on, the recessed readout when off.
-    // A two-colour track is what makes the state readable at a glance without
-    // reading the word.
-    g.setColour (isOn ? palette.accent.withAlpha (0.85f) : palette.readout.darker (0.35f));
-    g.fillRoundedRectangle (pill, pillHeight * 0.5f);
+    // The track is a cylinder too (same shading helper), with the accent as
+    // its face when on: the two-colour fill keeps the state readable at a
+    // glance, and the curvature is what makes it read as hardware rather
+    // than as a settings-app pill.
+    fillCylinderBarrel (g, pill,
+                        isOn ? palette.accent.withAlpha (0.85f)
+                             : palette.readout.darker (0.35f),
+                        isOn ? palette.accent.darker (0.35f)
+                             : palette.readout.darker (0.55f));
     g.setColour (palette.border.withAlpha (0.85f));
     g.drawRoundedRectangle (pill, pillHeight * 0.5f, 1.0f);
 
@@ -1710,6 +1760,117 @@ void FirstAudioProcessorEditor::syncGlSwitchState()
     glButton.setButtonText (isOn ? "GL ON" : "GL OFF");
     styleGlButton (isOn);
     tapeScene.setSceneEnabled (isOn);
+
+    // The texture image is palette-aware (the ink follows the theme), so a
+    // theme flip rebuilds it on the spot.
+    rebuildPanelTextureLayers();
+}
+
+// The arithmetic texture's doses, one call for both renderers (see paint() and
+// TapeScene::panelTexture): grain = static tooth, shimmer = live tape grain,
+// wear = the blotches. The shimmer term carries the drive and the gain
+// reduction, so the surface is ALIVE where the machine pushes signal - the
+// same weights the fragment shader reads.
+void FirstAudioProcessorEditor::configureTextureWeights (float drive, float gainReduction)
+{
+    constexpr float grainWeight  = 0.040f;
+    constexpr float shimmerBase  = 0.015f;
+    constexpr float shimmerDrive = 0.030f;
+    constexpr float wearWeight   = 0.030f;
+
+    // The doses above were tuned on the dark panel, where a faint light ink
+    // reads against a near-black face. On the light panel the SAME alpha of a
+    // DARK ink sits on a bright face and mostly vanishes - the user's own
+    // report: the texture simply was not there. So light-theme doses are
+    // multiplied up: both renderers receive the boosted weights (this feeds
+    // the 2D image AND the scene's uTextureWeights), so GPU and software
+    // panels keep showing the same surface.
+    const auto doseBoost = darkTheme ? 1.0f : 2.2f;
+
+    panelTextureDrive = juce::jlimit (0.0f, 1.0f, drive);
+    panelTextureGainReduction = juce::jlimit (0.0f, 1.0f, gainReduction);
+
+    const auto shimmer = (shimmerBase + shimmerDrive * panelTextureDrive) * doseBoost;
+    panelTextureWeights = { grainWeight * doseBoost, shimmer, wearWeight * doseBoost };
+
+    tapeScene.setTextureWeights (grainWeight * doseBoost, shimmer, wearWeight * doseBoost);
+}
+
+// One image per resize: the static grain (hash of screen pixels) and the wear
+// blotches (value noise over a coarse grid), both at the design doses. Built at
+// half resolution and scaled on draw, which is what keeps the one-time cost at
+// a fraction of a second and the per-frame cost at a single blit.
+void FirstAudioProcessorEditor::rebuildPanelTextureLayers()
+{
+    const auto bounds = getLocalBounds();
+    if (bounds.isEmpty())
+    {
+        panelTextureImage = {};
+        return;
+    }
+
+    constexpr float grainWeight = 0.040f;
+    constexpr float wearWeight  = 0.030f;
+
+    // Light theme prints DARK ink on a bright face, where the same alpha
+    // nearly disappears - so the static layers are boosted by the same
+    // factor configureTextureWeights uses for the live ones. The two dose
+    // sets have to agree or the static grain and the shimmer read as two
+    // different materials.
+    const auto doseBoost = darkTheme ? 1.0f : 2.2f;
+    const auto grainDose = grainWeight * doseBoost;
+    const auto wearDose  = wearWeight * doseBoost;
+
+    const auto w = juce::jmax (1, bounds.getWidth() / 2);
+    const auto h = juce::jmax (1, bounds.getHeight() / 2);
+    auto image = juce::Image (juce::Image::ARGB, w, h, true);
+
+    const auto hashOf = [] (float x)
+    {
+        return std::fmod (std::abs (std::sin (x) * 43758.5453123f), 1.0f);
+    };
+
+    // Grain: the shader's hash(face * 7.5) against half-res pixel coordinates,
+    // one centered ink dot per cell, centered on the panel colour so the layer
+    // only adds texture, never tint.
+    const auto grainInk = paletteFor (darkTheme).text;
+    const auto grainEdge = paletteFor (darkTheme).knobEdge;
+    for (int y = 0; y < h; ++y)
+        for (int x = 0; x < w; ++x)
+        {
+            const auto n = hashOf (static_cast<float> (x * y) * 7.5f
+                                   + static_cast<float> (x) * 1.7f
+                                   + static_cast<float> (y) * 2.3f);
+            const auto bright = n > 0.5f;
+            const auto alpha = grainDose * std::abs (n - 0.5f) * 2.0f;
+            image.setPixelAt (x, y, (bright ? grainInk : grainEdge)
+                                        .withAlpha (juce::jlimit (0.0f, 1.0f, alpha)));
+        }
+
+    // Wear: big soft blotches from the shader's value-noise grid, drawn as
+    // translucent ellipses over the grain.
+    juce::Graphics imageGraphics (image);
+    for (int gy = 0; gy < 5; ++gy)
+        for (int gx = 0; gx < 9; ++gx)
+        {
+            const auto fi = static_cast<float> (gy * 9 + gx);
+            const auto n = hashOf (fi * 4.19f + 2.17f);
+            if (n < 0.55f)
+                continue;
+
+            const auto cx = (static_cast<float> (gx) + hashOf (fi * 1.61f)) / 9.0f;
+            const auto cy = (static_cast<float> (gy) + hashOf (fi * 2.71f)) / 5.0f;
+            const auto size = 30.0f + 40.0f * hashOf (fi * 3.37f);
+            const auto alpha = wearDose * (n - 0.5f) * 2.0f;
+
+            imageGraphics.setColour (grainEdge.withAlpha (
+                juce::jlimit (0.0f, 1.0f, alpha)));
+            imageGraphics.fillEllipse (cx * static_cast<float> (w) - size * 0.5f,
+                                       cy * static_cast<float> (h) - size * 0.5f,
+                                       size, size);
+        }
+
+    panelTextureImage = std::move (image);
 }
 
 // The three transport keys plus the momentary spindown button. Same rule as the tab
@@ -1848,13 +2009,31 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
 
     // The combo boxes (the deck's type switches): a click when the selection
     // actually changes, which is what flipping a rotary switch feels like.
+    //
+    //  THE OLD CODE WAS THE PRESET BUG. `box->onChange = ...` ASSIGNS the
+    //  std::function, so for presetBox and userPresetBox this line REPLACED the
+    //  handler the constructor had installed two hundred lines earlier - the
+    //  one that applies the preset through the processor. attachInterfaceSounds
+    //  runs last, so the sound wrapper won: a click played, and the machine
+    //  kept the values it had, on every preset, every time. The buttons in this
+    //  file never had this bug because they were already wrapped as a CHAIN
+    //  (previous + play) - the boxes now take exactly that chain too: the
+    //  previous handler first, the click on top.
     for (auto* box : { &tapeTypeBox, &valveTypeBox, &ampTypeBox, &transformerTypeBox,
                        &digitalTypeBox, &vinylTypeBox, &vinylSpeedBox, &speedBox,
                        &instrumentBox, &oversamplingBox, &presetBox, &userPresetBox,
                        &delayTypeBox, &delayRateBox, &vinylGenerationBox,
                        &vinylTurntableBox, &vinylCartridgeBox })
         if (box != nullptr)
-            box->onChange = [this] { uiSounds.trigger (UiSoundEngine::Voice::click); };
+        {
+            const auto previous = box->onChange;
+            box->onChange = [this, playClick, previous]
+            {
+                if (previous != nullptr)
+                    previous();
+                playClick();
+            };
+        }
 }
 
 void FirstAudioProcessorEditor::refreshModeButtonCaption()
@@ -2058,10 +2237,12 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
         juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
         "*.json;*.rtn;*");
 
-    const auto flags = juce::FileBrowserComponent::openMode
-                     | juce::FileBrowserComponent::canSelectFiles;
+    // browserFlags, not `flags`: a local name that shadows nothing is cheaper
+    // than proving no future member will ever be called flags (C4458).
+    const auto browserFlags = juce::FileBrowserComponent::openMode
+                            | juce::FileBrowserComponent::canSelectFiles;
 
-    chooser->launchAsync (flags, [this, chooser] (const juce::FileChooser& fc)
+    chooser->launchAsync (browserFlags, [this, chooser] (const juce::FileChooser& fc)
     {
         const auto file = fc.getResult();
         if (! file.existsAsFile())
@@ -2308,7 +2489,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 #endif
     styleLabel (buildLabel, "BUILD " + buildId, 8.0f, paletteFor (false).secondary,
                 true, juce::Justification::centredRight);
-    styleLabel (tapeTypeLabel, "MODEL", 9.0f, paletteFor (false).secondary,
+    styleLabel (tapeTypeLabel, "TAPE", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
     styleLabel (valveTypeLabel, "VALVE", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
@@ -3143,6 +3324,32 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                               "wow rate and depth, so the same record wanders "
                               "differently at 33 and 45, and a 78's wind-up motor "
                               "wobbles hardest. 33 RPM is the default.");
+
+    // The deck's readout pairs: the numbers change at 30 Hz, so a tooltip on
+    // the VALUE would sit under a moving mouse on every frame. The caption
+    // carries the explanation instead - it is static, and it is what a user
+    // actually points at when reading a column.
+    setTip (harmonicsLabel, "HARMONICS - the ratio the harmonic engine settled on: "
+                               "E is the even-order share (tape and valve warmth), "
+                               "O the odd-order share (transistor edge). The mix "
+                               "follows the BLEND knob; this readout shows what the "
+                               "blend actually produced.");
+    setTip (subfundLabel, "SUBFUND TRACK - the pitch the subharmonic generator is "
+                             "currently locked to. It only tracks while the machine "
+                             "is fed a clean enough fundamental; 'idle - no note "
+                             "tracked' means the input did not give it one.");
+    setTip (antiPhaseLabel, "ANTI-PHASE - how much of the stereo pair cancels when "
+                               "the channels are summed to mono. 'clean' is safe; a "
+                               "percentage warns that a mono fold-down will lose "
+                               "bass or body. It watches the OUTPUT side, so output "
+                               "stage switches move it too.");
+    setTip (bpmLabel, "BPM - the host tempo the delay and modulation sections sync "
+                         "to. It follows your DAW's transport; it is a readout here, "
+                         "not a setting.");
+    setTip (tapeTypeLabel, "TAPE - the formula the machine's saturation is built "
+                              "from. Each stock bends harmonics, compression and "
+                              "noise differently. The selector below is where it is "
+                              "chosen.");
     tapeTypeBox.setLookAndFeel (&customLookAndFeel);
     valveTypeBox.setLookAndFeel (&customLookAndFeel);
     ampTypeBox.setLookAndFeel (&customLookAndFeel);
@@ -4271,6 +4478,12 @@ void FirstAudioProcessorEditor::applyTheme()
     titleLabel.setColour (juce::Label::textColourId, palette.text);
     subtitleLabel.setColour (juce::Label::textColourId, palette.secondary);
     statusLabel.setColour (juce::Label::textColourId, palette.status);
+
+    // The texture's doses are theme-dependent (light ink needs more), so a
+    // theme flip recomputes them for BOTH renderers before the static layers
+    // are rebuilt - otherwise a light panel would keep the dark theme's
+    // weights until the next timer tick pushed new ones in.
+    configureTextureWeights (panelTextureDrive, panelTextureGainReduction);
     deckHeadingLabel.setColour (juce::Label::textColourId, palette.accent);
     buildLabel.setColour (juce::Label::textColourId, palette.secondary);
     tapeTypeLabel.setColour (juce::Label::textColourId, palette.secondary);
@@ -4521,12 +4734,93 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
             g.drawHorizontalLine (juce::roundToInt (y),
                                   chassis.getX() + 6.0f, chassis.getRight() - 6.0f);
 
+    // (The arithmetic texture is blitted further down, AFTER the panels, so the
+    // panels' own faces sit over the chassis grain rather than over the texture.)
+
 
     drawPanel (g, getLocalBounds().reduced (8), palette, 7.0f);
     drawPanel (g, layout.header, palette, 5.0f);
     drawPanel (g, layout.deck, palette, 5.0f);
     drawPanel (g, layout.controls, palette, 5.0f);
     drawPanel (g, layout.meters, palette, 5.0f);
+
+    // ----------------------------------------------------------------------
+    //  The panel's texture, 2D and mathematical - the same three terms the GPU
+    //  scene shades, in the same doses (uTextureWeights there):
+    //
+    //   - static grain + wear blotches: ONE image, built once per resize in
+    //     rebuildPanelTextureLayers() from the same hash spaces the shader
+    //     uses (grain = fract(sin(p*7.5)), wear = value noise), blitted here
+    //     in one call - AFTER the panels, so their faces carry it rather than
+    //     hiding it, and BEFORE the child controls, which paint on top of
+    //     everything here by being children;
+    //   - live shimmer: a sparse drift of dots whose positions are the shader's
+    //     hash(face*40 + t*(1+GR)) evaluated at a walking time offset - so the
+    //     surface visibly responds to DRIVE and to the compressors. THIS is
+    //     what the GL switch switches between: with the context attached the
+    //     scene's fragment shader draws the identical texture definition on
+    //     the GPU; without it, this ink does.
+    //  Every dose is centered, so no branch can shift the panel's colour.
+    // ----------------------------------------------------------------------
+    if (panelTextureImage.isValid())
+    {
+        // Two rules keep the surface from reading as "square blocks":
+        //
+        //  1. RESAMPLING QUALITY. The ten-argument drawImage carries no quality
+        //     of its own - the blit runs at whatever Graphics::setImageResamplingQuality
+        //     last set, and Graphics' default is LOW, i.e. nearest-neighbour:
+        //     a half-res layer drawn through it arrives as 2x2 blocks, which is
+        //     precisely the "quadrats" the user saw on alternating frames. The
+        //     quality is set explicitly for this one blit and restored after, so
+        //     every other image in the panel keeps its old speed.
+        //
+        //  2. OPACITY-EXACT. The layer was built with per-pixel alpha already
+        //     carrying the dose, so multiplying it again would brighten the grain
+        //     whenever a repaint had to re-blend the layer, and the texture would
+        //     visibly jump between "normal" and "too strong" as frames
+        //     alternated. The alpha in the image IS the final amount.
+        g.setOpacity (1.0f);
+        g.setImageResamplingQuality (juce::Graphics::highResamplingQuality);
+        g.drawImage (panelTextureImage,
+                     0, 0, getWidth(), getHeight(),
+                     0, 0, panelTextureImage.getWidth(), panelTextureImage.getHeight(),
+                     false /* fillAlphaChannelWithCurrentBrush: NO - the alpha in
+                              the image is the final dose, re-multiplying it with
+                              a brush would double the ink */);
+        g.setImageResamplingQuality (juce::Graphics::lowResamplingQuality);
+    }
+
+    if (panelTextureWeights.shimmer > 0.0f)
+    {
+        const auto timeNow = static_cast<float> (juce::Time::getMillisecondCounterHiRes()) * 0.001f;
+        // The shimmer drifts across the WHOLE panel: the timer now repaints
+        // everything every tick, and the dots' hash chains are keyed to the
+        // area they land in, so pinning them to the header+deck union while
+        // the grain layer covered the whole editor read as two different
+        // materials on one surface.
+        const auto area = getLocalBounds().toFloat();
+        const auto hashOf = [] (float x)
+        {
+            return std::fmod (std::abs (std::sin (x) * 43758.5453123f), 1.0f);
+        };
+        const auto timeStep = std::floor (timeNow * 8.0f);
+        const auto drift = timeStep * 0.35f * (1.0f + panelTextureGainReduction);
+
+        for (int i = 0; i < panelShimmerDotCount; ++i)
+        {
+            const auto fi = static_cast<float> (i);
+            const auto u = hashOf (fi * 1.37f + drift);
+            const auto v = hashOf (fi * 3.11f + drift * 0.73f + 19.7f);
+            const auto a = hashOf (fi * 7.77f - drift * 1.31f + 5.3f);
+            const auto bright = a > 0.5f;
+            const auto ink = bright ? palette.text : palette.knobEdge;
+            const auto alpha = panelTextureWeights.shimmer * (0.35f + 0.65f * std::abs (a - 0.5f) * 2.0f);
+
+            g.setColour (ink.withAlpha (juce::jlimit (0.0f, 1.0f, alpha)));
+            g.fillEllipse (area.getX() + u * area.getWidth(),
+                           area.getY() + v * area.getHeight(), 1.7f, 1.7f);
+        }
+    }
 
     g.setColour (palette.accent.withAlpha (0.85f));
     g.fillRect (layout.header.getX() + 17, layout.header.getY() + 14, 3,
@@ -5031,21 +5325,24 @@ void FirstAudioProcessorEditor::timerCallback()
 
     uiSounds.setBrightness (juce::jlimit (0.0f, 1.0f, glowAmount * 0.7f + activity * 0.3f));
 
-    // Repaint only what actually animates: the header lamp, and the deck (reel,
-    // ribbon, particles).
+    // The WHOLE panel repaints on every tick now, and the reason is the
+    // texture: the grain + wear layer spans the entire editor, and repainting
+    // only the header + deck made the controls and meters sit on a texture
+    // that was there on the frames their band happened to redraw and frozen on
+    // the ones it did not - the user's "now it is normal, now it is squares,
+    // now it is gone". A full-editor repaint at 30 Hz is the one schedule
+    // under which the surface is uniform and its cost stays bounded.
     //
-    // The control band used to be in this list, for the knob halos and tracers.
-    // repaint() on a parent never repaints its children in JUCE - the sliders are
-    // child components and repaint themselves when their own value changes - so that
-    // call never reached a knob. What it did redraw, thirty times a second, was this
-    // component's own static content in that band: the panel gradient, the grain and
-    // the divider. With a context attached, each of those is a separate render of the
-    // panel, so it was roughly a third of the per-frame work for a picture that never
-    // changed. The knobs look the same without it, because they were never coming
-    // from here.
-    const auto layout = getEditorLayout();
-    repaint (layout.header);
-    repaint (layout.deck);
+    // The control band used to be excluded on purpose: repaint() on a parent
+    // never repaints its children in JUCE - the sliders are child components
+    // and repaint themselves when their own value changes - so the old call
+    // never reached a knob anyway. What it did redraw, thirty times a second,
+    // was this component's own static content in that band: the panel gradient,
+    // the grain and the divider. With a context attached, each of those is a
+    // separate render of the panel, so it was roughly a third of the per-frame
+    // work for a picture that never changed. The knobs look the same without
+    // it, because they were never coming from here.
+    repaint();
 
     // Workflow state is cheap to poll at 30 Hz and makes the panel self-healing:
     // if the host, a session load or a preset change moves anything, the buttons,
@@ -5149,6 +5446,13 @@ void FirstAudioProcessorEditor::timerCallback()
         // lamp reads the same transient the meter needle just fell for.
         juce::jlimit (0.0f, 1.0f, audioProcessor.getOutputPeakLevel()));
 
+    // The texture's doses follow the machine: the shimmer term scales with
+    // drive and with the compressors' reduction, so the panel's surface is
+    // alive where the signal pushes. One call feeds both renderers - the 2D
+    // ink in paint() and the scene's uTextureWeights uniform.
+    configureTextureWeights (sceneDrive,
+                             juce::jlimit (0.0f, 1.0f, std::abs (reduction) / 6.0f));
+
     // The scene's own attach retries, on the same timer and the same bounded
     // budget as this editor's context: a child component cannot have a context
     // until the host has given it a native peer, and that may not have happened
@@ -5158,6 +5462,12 @@ void FirstAudioProcessorEditor::timerCallback()
 
 void FirstAudioProcessorEditor::resized()
 {
+    // The static texture layers (grain + wear) are sized to the window, so a
+    // resize rebuilds them. Cheap enough at half resolution to pay on every
+    // drag of the window's edge, and it keeps the texture from ever being
+    // stretched over a size it was not built for.
+    rebuildPanelTextureLayers();
+
     const auto layout = getEditorLayout();
 
     // Header captions: the small brand strip sits ABOVE the big title (they used to
@@ -5180,59 +5490,58 @@ void FirstAudioProcessorEditor::resized()
     // individual line is correct and only the SUM is wrong. With the cursor the
     // gap is the only number, and a row cannot overlap itself.
     //
-    // Widths, for the clearance argument at the 780 px minimum: row one is
-    // 359 px (status 181, delta 74, bypass 92 and two 6 px gaps) and row two
-    // is 300 px (theme 96, auto gain 100, polarity 92). The title block ends
-    // at x + 346, so the wider row starts at 780 - 14 - 359 = x + 407 and
-    // clears it by 61 px.
+    //  THE GRID. Five switches used to sit here in two rows of per-button
+    //  widths (74 / 92 / 96 / 100 / 181), cursor-placed: no two buttons the
+    //  same width, their columns never lining up, which is exactly the
+    //  "arranged at random" look. The header is now ONE GRID - four equal
+    //  columns, two rows - and every switch is one cell. Rows read left to
+    //  right in the order a user scans them; nothing overlaps by construction
+    //  (cells cannot intersect) and nothing drifts (no elastic gaps to grow).
+    //
+    //  Clearance at the 780 px minimum: the grid is 386 px wide (4 x 92 + 3 x 6)
+    //  and starts at header.right - 386 = x + 366 on a 780 panel, clearing the
+    //  title block (ends x + 346) by 20 px at the tightest size and more above it.
+    //  The machine-state readout (BYPASSED/DRY, STEREO/REAL TIME) does NOT live
+    //  in the header at all - the user twice reported the header controls
+    //  printing over the "Real-Time/Stereo" caption, and the only layout that
+    //  can never overlap is one where they never share a band: the readout
+    //  belongs with the machine's other readouts on the deck's badge line
+    //  (see the badge band below). The grid now owns the header's right half
+    //  outright; nothing else is placed there.
+    // ------------------------------------------------------------------------------
     const auto headerRight = layout.header.getRight();
-    constexpr int headerSwitchGap = 6;
+    constexpr int headerGap = 6;
     constexpr int headerSwitchHeight = 28;
+    constexpr int headerColumnWidth = 92;
+    constexpr int headerColumns = 4;
     const auto headerRowOneY = layout.header.getY() + 10;
     const auto headerRowTwoY = layout.header.getY() + 44;
+    const auto headerGridLeft = headerRight
+                              - (headerColumns * headerColumnWidth
+                                 + (headerColumns - 1) * headerGap);
 
-    // Places one header item and returns the x the next one to its left starts
-    // at. Taking the cursor by reference is what makes this a walk rather than
-    // five independent calculations.
-    const auto placeFromRight = [&] (int& edge, juce::Component& component,
-                                     int width, int y)
+    const auto headerCell = [&] (juce::Component& component, int column, int rowY)
     {
-        component.setBounds (edge - width, y, width, headerSwitchHeight);
-        edge -= width + headerSwitchGap;
+        component.setBounds (headerGridLeft + column * (headerColumnWidth + headerGap),
+                             rowY, headerColumnWidth, headerSwitchHeight);
     };
 
-    {
-        int headerEdge = headerRight;
+    // Row one: the four engine switches, equal cells, one grid.
+    headerCell (deltaButton,     0, headerRowOneY);
+    headerCell (bypassButton,    1, headerRowOneY);
+    headerCell (polarityButton,  2, headerRowOneY);
+    headerCell (autoGainButton,  3, headerRowOneY);
 
-        // Row one, right to left: the status readout, then DELTA, then BYPASS.
-        placeFromRight (headerEdge, statusLabel, 181, headerRowOneY);
-        placeFromRight (headerEdge, deltaButton, 74, headerRowOneY);
-        placeFromRight (headerEdge, bypassButton, 92, headerRowOneY);
-    }
-
-    {
-        int headerEdge = headerRight;
-
-        // Row two, right to left: THEME, then AUTO GAIN, then POLARITY.
-        placeFromRight (headerEdge, themeButton, 96, headerRowTwoY);
-        placeFromRight (headerEdge, autoGainButton, 100, headerRowTwoY);
-        placeFromRight (headerEdge, polarityButton, 92, headerRowTwoY);
-
-        // LANGUAGE goes last in this chain, so it is the leftmost of the four and
-        // the caption rides the box rather than taking a column of its own. The
-        // gap between the caption and the box is fixed, never elastic: a caption
-        // and the control it names are glued, which is the rule the deck rows
-        // already follow for the same reason.
-        {
-            constexpr int languageBoxWidth = 108;
-            constexpr int languageGap = 6;
-
-            placeFromRight (headerEdge, languageBox, languageBoxWidth, headerRowTwoY);
-
-            languageLabel.setBounds (languageBox.getX() - 62, headerRowTwoY,
-                                     62 - languageGap, headerSwitchHeight);
-        }
-    }
+    // Row two: THEME, then the language pair - caption cell + a box that spans
+    // the last two cells (a 108 px combo in a 190 px span, left-aligned, so the
+    // row still fills all four columns with no hole at its end).
+    headerCell (themeButton,     0, headerRowTwoY);
+    headerCell (languageLabel,   1, headerRowTwoY);
+    languageLabel.setJustificationType (juce::Justification::centredRight);
+    languageBox.setBounds (headerGridLeft + 2 * (headerColumnWidth + headerGap),
+                           headerRowTwoY,
+                           2 * headerColumnWidth + headerGap,
+                           headerSwitchHeight);
 
     // ------------------------------------------------------------------
     //  The deck.
@@ -5446,9 +5755,20 @@ void FirstAudioProcessorEditor::resized()
                                       ? static_cast<int> (slack * 0.5) / elasticGaps : 0;
         const auto gapShare = juce::jmin (wantedGapShare, maximumGapGrowth);
         const auto usedByGaps = gapShare * elasticGaps;
-        const auto widthShare = items.empty()
+
+        // The width share divides by COLUMNS, not by items: a stacked caption
+        // rides its column and must not eat a share of its own. Dividing by the
+        // item count gave five-share voids on every row that stacks caption over
+        // value - slack the row collected and never spent, which the user saw as
+        // controls spaced 'at random' with a hole at the row's end.
+        int columnCount = 0;
+        for (const auto& item : items)
+            if (! item.sameColumn)
+                ++columnCount;
+
+        const auto widthShare = columnCount == 0
                                   ? 0
-                                  : (slack - usedByGaps) / static_cast<int> (items.size());
+                                  : (slack - usedByGaps) / columnCount;
 
         auto widest = juce::Range<int> (0, 0);
         int edge = left;
@@ -5500,38 +5820,48 @@ void FirstAudioProcessorEditor::resized()
     // ends above them.
     constexpr int reelCorridor = 70;
 
-    // ---- row 1: MODEL -------------------------------------------------------
+    // ---- row 1: TRANSPORT SPEED ---------------------------------------------
+    //  Everything that reads as a RATE lives in one row now, which is what the
+    //  user asked for: the tape speed (ips) and the turntable's motor speed
+    //  (RPM) sit side by side, and the host-tempo readout rides with them -
+    //  three rate readouts a user scans as one group instead of MODEL | SPEED
+    //  | BPM, where the model sat between two kinds of speed.
+    //  The empty columns to the right are deliberate: the type row below has
+    //  six columns and the rows should breathe together, not stretch to fill.
     {
         const std::vector<DeckRowItem> row {
-            { &tapeTypeLabel,  45,  3,  9, 16, false },
-            { &tapeTypeBox,   148, -1,  0, 32, false },
-            { &speedLabel,     45,  3,  9, 16, false },
-            { &speedBox,      104, -1,  0, 32, false },
-            { &bpmLabel,       40,  0,  8, 16, false },
-            { &bpmReadout,     96, -1,  8, 18, false }
+            { &speedLabel,       108, -1,  0, 15, false },
+            { &speedBox,           0, -1, 15, 30, true  },
+            { &vinylSpeedLabel,  108, -1,  0, 15, false },
+            { &vinylSpeedBox,      0, -1, 15, 30, true  },
+            { &bpmLabel,         108, -1,  0, 15, false },
+            { &bpmReadout,         0, -1, 15, 13, true  }
         };
 
         placeDeckRow (row, layout.deck.getX() + 18, layout.deck.getRight() - reelCorridor,
-                      deckTop (1), 16);
+                      deckTop (1), 14);
     }
 
     // ---- row 2: SWITCHES ----------------------------------------------------
-    // GL has no caption - it is a pill that carries its own text - and the three
-    // readouts are caption over value, so each is one column rather than two.
+    // OVERSAMPLING and GL are NOT in this row: they are SETTINGS-tab members and
+    // live in the member row under that tab's knobs (placeDeckSwitch below).
+    // They used to sit here on EVERY tab while being visible only on SETTINGS -
+    // so five tabs out of six showed two unexplained holes in this line.
+    //
+    //  Four equal 108 px columns, the type row's grid again: INSTRUMENT, then
+    //  the three readout pairs - caption above value, one column each, all
+    //  standing exactly above the type row's columns.
     {
         const std::vector<DeckRowItem> row {
-            { &oversamplingLabel, 40,  2, 11, 16, false },
-            { &oversamplingBox,   72, -1,  0, 32, false },
-            { &instrumentLabel,   68,  8, 11, 16, false },
-            { &instrumentBox,    112, -1,  0, 32, false },
-            { &glButton,          64, -1,  0, 32, false },
+            { &instrumentLabel,  108, -1,  0, 15, false },
+            { &instrumentBox,      0, -1, 15, 30, true  },
 
-            { &harmonicsLabel,    96, -1,  0, 14, false },
-            { &harmonicsReadout,   0, -1, 14, 13, true  },
-            { &subfundLabel,      96, -1,  0, 14, false },
-            { &subfundReadout,     0, -1, 14, 13, true  },
-            { &antiPhaseLabel,    96, -1,  0, 14, false },
-            { &antiPhaseReadout,   0, -1, 14, 13, true  }
+            { &harmonicsLabel,   108, -1,  0, 15, false },
+            { &harmonicsReadout,   0, -1, 15, 13, true  },
+            { &subfundLabel,     108, -1,  0, 15, false },
+            { &subfundReadout,     0, -1, 15, 13, true  },
+            { &antiPhaseLabel,   108, -1,  0, 15, false },
+            { &antiPhaseReadout,   0, -1, 15, 13, true  }
         };
 
         const auto freeGap = placeDeckRow (row, layout.deck.getX() + 18,
@@ -5560,18 +5890,24 @@ void FirstAudioProcessorEditor::resized()
         deckParticleCorridorY = juce::Range<int> (deckTop (2) + 2, deckTop (2) + 30);
     }
 
-    // ---- row 3: the six type switches ---------------------------------------
+    // ---- row 3: the six type selectors --------------------------------------
     {
+        // The model selector (renamed TAPE, its old caption read MODEL) joined
+        // the row of type selectors - the user read MODEL | SPEED | BPM as
+        // three unrelated things on one line, when the selector is a TYPE like
+        // VINYL or VALVE and belongs with them. Six columns as before, so the
+        // row arithmetic and the 108 px column are unchanged.
+        //
         // 108 per column, not 100: the longest stock values ("Fender Blackface",
         // "Jensen JT-11P") ellipsised in the deck's own combo drawing at the old
         // width on every panel under ~1400 px. 108 is the largest the row holds at
         // the 780 px minimum ((720 - 5 x 14 gaps) / 6 = 108), and above that width
         // the row's elastic gap shrinks before any column does.
         const std::vector<DeckRowItem> row {
+            { &tapeTypeLabel,        108, -1,  0, 15, false },
+            { &tapeTypeBox,            0, -1, 15, 30, true  },
             { &vinylTypeLabel,       108, -1,  0, 15, false },
             { &vinylTypeBox,           0, -1, 15, 30, true  },
-            { &vinylSpeedLabel,      108, -1,  0, 15, false },
-            { &vinylSpeedBox,          0, -1, 15, 30, true  },
             { &valveTypeLabel,       108, -1,  0, 15, false },
             { &valveTypeBox,           0, -1, 15, 30, true  },
             { &ampTypeLabel,         108, -1,  0, 15, false },
@@ -5663,9 +5999,30 @@ void FirstAudioProcessorEditor::resized()
         // items - both of them lists that shorten their own font before they
         // clip - buys sixteen, and the chain then has room for a button added
         // at either end without the two ends touching.
+        //
+        //  THE WIDE-WINDOW HOLE. Both chains were laid out against the 780 px
+        //  minimum, and on anything wider the unspent width sat between them
+        //  as one hole that grew with the panel - the deck's last "random
+        //  gap". The hole belongs to the two LISTS: they are the chain's
+        //  widest members and the only two items a wider bounds actually
+        //  improves (a longer preset name shown instead of a longer emptiness;
+        //  a button or a badge would only read as stretched). The lists absorb
+        //  it in shares - 60/40, each capped - and at the minimum the shares
+        //  are zero by construction, so the tight layout is untouched.
+        constexpr int presetBoxWidth  = 120;
+        constexpr int userPresetWidth =  94;
+        constexpr int headWidths = presetBoxWidth + userPresetWidth + 40 + 38;
+        constexpr int tailWidths = 54 + 44 + 44 + 54 + 64 + 64;
+        const auto chainSpan = (layout.deck.getRight() - 14)
+                                   - (layout.deck.getX() + 66);
+        const auto chainVoid = juce::jmax (0, chainSpan - (headWidths + tailWidths
+                                                              + 9 * presetRowGap));
+        const auto presetGrowth = juce::jmin (chainVoid * 3 / 5, 160);
+        const auto userGrowth   = juce::jmin (chainVoid - presetGrowth, 120);
+
         int headEdge = layout.deck.getX() + 66;
-        placeForward (headEdge, presetBox,         120);
-        placeForward (headEdge, userPresetBox,      94);
+        placeForward (headEdge, presetBox,          presetBoxWidth  + presetGrowth);
+        placeForward (headEdge, userPresetBox,      userPresetWidth + userGrowth);
         placeForward (headEdge, savePresetButton,  40);
         placeForward (headEdge, deletePresetButton, 38);
     }
@@ -5684,8 +6041,28 @@ void FirstAudioProcessorEditor::resized()
     // The badge band is inset further than the other deck text (22 px instead of 18)
     // and its caption is fitted to the width it actually has, so neither "FACTORY
     // STATE" nor a long user-preset name can run into the panel edges or be clipped.
+    //
+    // The machine state moved here from the header: it is a readout of what the
+    // engine is doing, and this is the band the deck's other readouts (the
+    // preset badge, the compare badge) already live on. It takes a fixed cell
+    // off the band's right end and the preset badge gives up exactly that
+    // width, so a long preset name shrinks into what is left rather than
+    // printing under the state text - the shrinking font below measures the
+    // label's ACTUAL bounds, so narrowing it is the whole fix.
+    constexpr int statusCellWidth = 180;
+    constexpr int badgeLineInset = 14;
+    statusLabel.setBounds (layout.deck.getRight() - badgeLineInset - statusCellWidth,
+                           deckTop (6), statusCellWidth, 14);
+
+    // The state cell is RIGHT-anchored, so it only needs the badge to stop
+    // short of it - the badge's width was incorrectly written as the band
+    // minus the whole cell, shrinking the badge by ~190 px at every size to
+    // avoid a collision that only exists in the cell's own 180 px. The badge
+    // now spans to the cell's left edge; at the 780 px minimum that is 78 px
+    // MORE badge than before.
     presetBadgeLabel.setBounds (layout.deck.getX() + 22, deckTop (6),
-                                layout.deck.getWidth() - 44, 14);
+                                layout.deck.getRight() - badgeLineInset - statusCellWidth
+                                    - (layout.deck.getX() + 22), 14);
     presetBadgeLabel.setFont (shrinkingFont (presetBadgeLabel.getText(), 8.0f,
                                              juce::Font::plain,
                                              static_cast<float> (presetBadgeLabel.getWidth()) - 4.0f));

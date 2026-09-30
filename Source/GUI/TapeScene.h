@@ -129,6 +129,17 @@ public:
                      juce::Colour highlight,
                      juce::Colour tape) noexcept;
 
+    /** The arithmetic texture's three doses (grain, tape shimmer, wear), as
+        RGB, one call for both the scene's uniforms and the editor's 2D ink. */
+    void setTextureWeights (float grain, float shimmer, float wear) noexcept
+    {
+        const auto packed = juce::Colour::fromFloatRGBA (juce::jlimit (0.0f, 1.0f, grain),
+                                                         juce::jlimit (0.0f, 1.0f, shimmer),
+                                                         juce::jlimit (0.0f, 1.0f, wear),
+                                                         1.0f).getARGB();
+        textureWeights.store (packed, std::memory_order_relaxed);
+    }
+
     /** The editor's GL switch. False detaches the context and stops the scene;
         true starts the attach attempts again. */
     void setSceneEnabled (bool shouldBeEnabled);
@@ -284,6 +295,14 @@ private:
     std::atomic<juce::uint32> bodyColour { 0xff3a4048 };
     std::atomic<juce::uint32> highlightColour { 0xffd8a45a };
     std::atomic<juce::uint32> tapeColour { 0xff241a14 };
+
+    /** The arithmetic texture's three doses, packed into a colour's channels
+        (r = static grain, g = live tape shimmer, b = wear blotches). It rides
+        setPalette like the four colours, so one call textures both the scene
+        and the 2D panel with the same hand. Zeroed by default: until the
+        editor dials the weights, the scene draws untextured rather than
+        guessing. */
+    std::atomic<juce::uint32> textureWeights { 0x00000000 };
 
     /** The GL thread's half of the answer to isSceneLive(). */
     std::atomic<int> programLinked { 0 };
