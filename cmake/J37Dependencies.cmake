@@ -268,7 +268,6 @@ CPMAddPackage(
     GITHUB_REPOSITORY Signalsmith-Audio/signalsmith-stretch
     GIT_TAG 1.4.0
     DOWNLOAD_ONLY YES)
-endif ()
 
 #  signalsmith-linear: since the plugin's sources started including the
 #  stretch header directly, its sibling matters: signalsmith-stretch.h line 4
@@ -279,6 +278,12 @@ endif ()
 #  directory first, so that layout is the whole integration; exposing linear's
 #  root on the include path would NOT work, because the include is namespaced
 #  by the folder name. Pinned to the 0.6.4 tag.
+#
+#  Both fetches are guarded together and registered together: the sibling
+#  download's SOURCE_DIR is derived from the stretch checkout's, so fetching
+#  it without the parent would try to populate a directory named by an EMPTY
+#  variable - which is a path at the filesystem root, and configure dies
+#  there with "Read-only file system".
 CPMAddPackage(
     NAME signalsmith-linear
     GITHUB_REPOSITORY Signalsmith-Audio/linear
@@ -291,6 +296,7 @@ CPMAddPackage(
 
 j37_declare_header_only_library(signalsmith-stretch
     "${signalsmith-dsp_SOURCE_DIR}/include")
+endif ()
 
 # PocketFFT - mreineck/pocketfft, the FFT behind NumPy: exact transforms for
 # arbitrary sizes out of one header. The "cpp" branch is the header-only
