@@ -327,6 +327,13 @@ private:
     // setter.) Every component this panel gives a tooltip to derives from
     // SettableTooltipClient.
     void setTip (juce::SettableTooltipClient& component, const juce::String& english);
+
+    // The knob variant: registers the sentence alone (its translation key) and
+    // shows it with the shared interaction hints appended, each half translated
+    // independently so a language switch re-renders both.
+    void setTippedSentence (juce::SettableTooltipClient& component,
+                            const juce::String& englishSentence,
+                            const juce::String& englishHints);
     void updateTooltips();
 
     /** Loads the translation table for `languageIndex` (0 = English, 1 = Ukrainian)
