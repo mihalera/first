@@ -1,4 +1,4 @@
-﻿#include "PluginProcessor.h"
+#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
@@ -5365,59 +5365,53 @@ void FirstAudioProcessorEditor::resized()
     // individual line is correct and only the SUM is wrong. With the cursor the
     // gap is the only number, and a row cannot overlap itself.
     //
-    // Widths, for the clearance argument at the 780 px minimum: row one is
-    // 359 px (status 181, delta 74, bypass 92 and two 6 px gaps) and row two
-    // is 300 px (theme 96, auto gain 100, polarity 92). The title block ends
-    // at x + 346, so the wider row starts at 780 - 14 - 359 = x + 407 and
-    // clears it by 61 px.
+    //  THE GRID. Five switches used to sit here in two rows of per-button
+    //  widths (74 / 92 / 96 / 100 / 181), cursor-placed: no two buttons the
+    //  same width, their columns never lining up, which is exactly the
+    //  "arranged at random" look. The header is now ONE GRID - four equal
+    //  columns, two rows - and every switch is one cell. Rows read left to
+    //  right in the order a user scans them; nothing overlaps by construction
+    //  (cells cannot intersect) and nothing drifts (no elastic gaps to grow).
+    //
+    //  Clearance at the 780 px minimum: the grid is 386 px wide (4 x 92 + 3 x 6)
+    //  and starts at header.right - 386 = x + 366 on a 780 panel, clearing the
+    //  title block (ends x + 346) by 20 px at the tightest size and more above it.
+    //  The status readout moved to the deck's badge line, where the machine's
+    //  other readouts live (see the deck below).
+    // ------------------------------------------------------------------------------
     const auto headerRight = layout.header.getRight();
-    constexpr int headerSwitchGap = 6;
+    constexpr int headerGap = 6;
     constexpr int headerSwitchHeight = 28;
+    constexpr int headerColumnWidth = 92;
+    constexpr int headerColumns = 4;
     const auto headerRowOneY = layout.header.getY() + 10;
     const auto headerRowTwoY = layout.header.getY() + 44;
+    const auto headerGridLeft = headerRight
+                              - (headerColumns * headerColumnWidth
+                                 + (headerColumns - 1) * headerGap);
 
-    // Places one header item and returns the x the next one to its left starts
-    // at. Taking the cursor by reference is what makes this a walk rather than
-    // five independent calculations.
-    const auto placeFromRight = [&] (int& edge, juce::Component& component,
-                                     int width, int y)
+    const auto headerCell = [&] (juce::Component& component, int column, int rowY)
     {
-        component.setBounds (edge - width, y, width, headerSwitchHeight);
-        edge -= width + headerSwitchGap;
+        component.setBounds (headerGridLeft + column * (headerColumnWidth + headerGap),
+                             rowY, headerColumnWidth, headerSwitchHeight);
     };
 
-    {
-        int headerEdge = headerRight;
+    // Row one: the four engine switches, equal cells, one grid.
+    headerCell (deltaButton,     0, headerRowOneY);
+    headerCell (bypassButton,    1, headerRowOneY);
+    headerCell (polarityButton,  2, headerRowOneY);
+    headerCell (autoGainButton,  3, headerRowOneY);
 
-        // Row one, right to left: the status readout, then DELTA, then BYPASS.
-        placeFromRight (headerEdge, statusLabel, 181, headerRowOneY);
-        placeFromRight (headerEdge, deltaButton, 74, headerRowOneY);
-        placeFromRight (headerEdge, bypassButton, 92, headerRowOneY);
-    }
-
-    {
-        int headerEdge = headerRight;
-
-        // Row two, right to left: THEME, then AUTO GAIN, then POLARITY.
-        placeFromRight (headerEdge, themeButton, 96, headerRowTwoY);
-        placeFromRight (headerEdge, autoGainButton, 100, headerRowTwoY);
-        placeFromRight (headerEdge, polarityButton, 92, headerRowTwoY);
-
-        // LANGUAGE goes last in this chain, so it is the leftmost of the four and
-        // the caption rides the box rather than taking a column of its own. The
-        // gap between the caption and the box is fixed, never elastic: a caption
-        // and the control it names are glued, which is the rule the deck rows
-        // already follow for the same reason.
-        {
-            constexpr int languageBoxWidth = 108;
-            constexpr int languageGap = 6;
-
-            placeFromRight (headerEdge, languageBox, languageBoxWidth, headerRowTwoY);
-
-            languageLabel.setBounds (languageBox.getX() - 68, headerRowTwoY,
-                                     68 - languageGap, headerSwitchHeight);
-        }
-    }
+    // Row two: THEME, then the language pair - caption cell + a box that spans
+    // the last two cells (a 108 px combo in a 190 px span, left-aligned, so the
+    // row still fills all four columns with no hole at its end).
+    headerCell (themeButton,     0, headerRowTwoY);
+    headerCell (languageLabel,   1, headerRowTwoY);
+    languageLabel.setJustificationType (juce::Justification::centredRight);
+    languageBox.setBounds (headerGridLeft + 2 * (headerColumnWidth + headerGap),
+                           headerRowTwoY,
+                           2 * headerColumnWidth + headerGap,
+                           headerSwitchHeight);
 
     // ------------------------------------------------------------------
     //  The deck.
@@ -5697,38 +5691,44 @@ void FirstAudioProcessorEditor::resized()
     constexpr int reelCorridor = 70;
 
     // ---- row 1: MODEL -------------------------------------------------------
+    //  The same GRID the type row uses: three equal 108 px columns, caption
+    //  above its control, 14 px between columns. Every deck row is now the
+    //  same arithmetic, so a column in row one stands exactly above a column
+    //  in row three - the alignment a user reads as "designed".
     {
         const std::vector<DeckRowItem> row {
-            { &tapeTypeLabel,  45,  3,  9, 16, false },
-            { &tapeTypeBox,   148, -1,  0, 32, false },
-            { &speedLabel,     45,  3,  9, 16, false },
-            { &speedBox,      104, -1,  0, 32, false },
-            { &bpmLabel,       40,  0,  8, 16, false },
-            { &bpmReadout,     96, -1,  8, 18, false }
+            { &tapeTypeLabel,  108, -1,  0, 15, false },
+            { &tapeTypeBox,      0, -1, 15, 30, true  },
+            { &speedLabel,     108, -1,  0, 15, false },
+            { &speedBox,         0, -1, 15, 30, true  },
+            { &bpmLabel,       108, -1,  0, 15, false },
+            { &bpmReadout,       0, -1, 15, 13, true  }
         };
 
         placeDeckRow (row, layout.deck.getX() + 18, layout.deck.getRight() - reelCorridor,
-                      deckTop (1), 16);
+                      deckTop (1), 14);
     }
 
     // ---- row 2: SWITCHES ----------------------------------------------------
     // OVERSAMPLING and GL are NOT in this row: they are SETTINGS-tab members and
     // live in the member row under that tab's knobs (placeDeckSwitch below).
     // They used to sit here on EVERY tab while being visible only on SETTINGS -
-    // so five tabs out of six showed two unexplained holes in this line. The
-    // three readouts are caption over value, one column each, and follow the
-    // instrument list directly.
+    // so five tabs out of six showed two unexplained holes in this line.
+    //
+    //  Four equal 108 px columns, the type row's grid again: INSTRUMENT, then
+    //  the three readout pairs - caption above value, one column each, all
+    //  standing exactly above the type row's columns.
     {
         const std::vector<DeckRowItem> row {
-            { &instrumentLabel,   68,  8, 11, 16, false },
-            { &instrumentBox,    112, -1,  0, 32, false },
+            { &instrumentLabel,  108, -1,  0, 15, false },
+            { &instrumentBox,      0, -1, 15, 30, true  },
 
-            { &harmonicsLabel,    96, -1,  0, 14, false },
-            { &harmonicsReadout,   0, -1, 14, 13, true  },
-            { &subfundLabel,      96, -1,  0, 14, false },
-            { &subfundReadout,     0, -1, 14, 13, true  },
-            { &antiPhaseLabel,    96, -1,  0, 14, false },
-            { &antiPhaseReadout,   0, -1, 14, 13, true  }
+            { &harmonicsLabel,   108, -1,  0, 15, false },
+            { &harmonicsReadout,   0, -1, 15, 13, true  },
+            { &subfundLabel,     108, -1,  0, 15, false },
+            { &subfundReadout,     0, -1, 15, 13, true  },
+            { &antiPhaseLabel,   108, -1,  0, 15, false },
+            { &antiPhaseReadout,   0, -1, 15, 13, true  }
         };
 
         const auto freeGap = placeDeckRow (row, layout.deck.getX() + 18,
