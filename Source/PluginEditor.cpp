@@ -5559,23 +5559,26 @@ void FirstAudioProcessorEditor::resized()
                               - (headerColumns * headerColumnWidth
                                  + (headerColumns - 1) * headerGap);
 
+    // No default argument on height: a lambda's default argument may not name
+    // a local variable (the exact "local variable may not appear in this
+    // context" GCC hands back), so every call passes its row height in full.
     const auto headerCell = [&] (juce::Component& component, int column, int rowY,
-                                 int height = headerSwitchHeight)
+                                 int height)
     {
         component.setBounds (headerGridLeft + column * (headerColumnWidth + headerGap),
                              rowY, headerColumnWidth, height);
     };
 
     // Row one: the four engine switches, equal cells, one grid.
-    headerCell (deltaButton,     0, headerRowOneY);
-    headerCell (bypassButton,    1, headerRowOneY);
-    headerCell (polarityButton,  2, headerRowOneY);
-    headerCell (autoGainButton,  3, headerRowOneY);
+    headerCell (deltaButton,     0, headerRowOneY, headerSwitchHeight);
+    headerCell (bypassButton,    1, headerRowOneY, headerSwitchHeight);
+    headerCell (polarityButton,  2, headerRowOneY, headerSwitchHeight);
+    headerCell (autoGainButton,  3, headerRowOneY, headerSwitchHeight);
 
     // Row two: THEME, then the language pair - caption cell + a box that spans
     // the last two cells.
-    headerCell (themeButton,     0, headerRowTwoY);
-    headerCell (languageLabel,   1, headerRowTwoY);
+    headerCell (themeButton,     0, headerRowTwoY, headerSwitchHeight);
+    headerCell (languageLabel,   1, headerRowTwoY, headerSwitchHeight);
     languageLabel.setJustificationType (juce::Justification::centredRight);
     languageBox.setBounds (headerGridLeft + 2 * (headerColumnWidth + headerGap),
                            headerRowTwoY,
@@ -5598,7 +5601,7 @@ void FirstAudioProcessorEditor::resized()
                            headerStatusHeight);
     statusLabel.setJustificationType (juce::Justification::centredLeft);
     statusLabel.setFont (statusLabel.getFont().withHeight (9.0f));
-    statusLabel.setInset (juce::BorderSize<int> (0, 26, 0, 0));
+    statusLabel.setBorderSize (juce::BorderSize<int> (0, 26, 0, 0));
 
     // ------------------------------------------------------------------
     //  The deck.
