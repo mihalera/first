@@ -172,6 +172,33 @@
 "OUT HI - the output equaliser's high shelf above 4 kHz. Air, or the lack of it, applied to the finished machine. Range -12 to +12 dB, flat at 0 dB." = "OUT HI — верхня полиця вихідного еквалайзера вище 4 кГц. Повітря, чи його відсутність, на готовій машині. Діапазон від -12 до +12 дБ, плоско на 0 дБ.";
 "CLICKS - the sharp, discrete groove faults. CRACKLE is fine surface texture and DUST is grit in the groove; a CLICK is an actual ridge or pit that the stylus hits as a single hard transient - a fast bipolar impact with almost no ring, which is why it reads as a click rather than as more crackle. Above half the travel a fraction of the clicks becomes PERIODIC, locked to the platter, so a badly pressed record ticks in time rather than at random. Default 0 percent." = "CLICKS — різкі дискретні вади канавки. CRACKLE — дрібна текстура поверхні, DUST — шорсткість у канавці; CLICK — справжній гребінь чи ямка, які голка зустрічає як один твердий транзієнт — швидкий двополярний удар майже без дзвону, тому чується як клік, а не як ще один тріск. Після половини ходу частина кліків стає ПЕРІОДИЧНОЮ, прив’язаною до платівки, тож погано пресована платівка тікає в час, а не навмання. Типове 0 відсотків.";
 
+// -- The eleven knobs that previously fell through to a bare hint ----------------
+"DI - the instrument input's direct-injection stage in FRONT of the machine: a high-impedance buffer that keeps a guitar or synth pickup from loading down, plus the pad, load and transformer that follow it. Default 0 percent - the plain input path." = "DI — стадія прямого входу інструменту ПЕРЕД машиною: високімпедансний буфер, що не дає гітарному чи синтезаторному датчику просідати, плюс пад, навантаження і трансформатор після нього. Типове 0 відсотків — простий вхідний шлях.";
+"DI LOAD - the input impedance the instrument sees in the DI stage. A pickup is a reactive source: 1 M keeps a guitar bright and open, 220 k tames a hot active bass, and lower still tightens a synth's output stage. Default 0 percent." = "DI LOAD — вхідний імпеданс, який бачить інструмент у стадії DI. Датчик — реактивне джерело: 1 М лишає гітарі яскравість і відкритість, 220 к приборкує гарячу активну бас-гітару, а ще нижчий підтягує вихідну стадію синтезатора. Типове 0 відсотків.";
+"DI XFMR - the DI's output transformer. OFF is a clean electronic path; the transformer adds its iron colour, a gentle low cut and the slight phase smear a real direct box gives. Default 0 percent - off." = "DI XFMR — вихідний трансформатор DI. OFF — чистий електронний шлях; трансформатор додає своє залізне забарвлення, м’який низький зріз і легке розмиття фази, як у справжнього direct box. Типове 0 відсотків — вимкнено.";
+"ST LINK - gangs the stereo pair's shared controls so one knob sets both channels. Off splits the machine into two independent sides for separate left/right settings. Default linked." = "ST LINK — зчіплює спільні контролі стереопари, тож одна крутилка задає обидва канали. Вимкнений ділить машину на дві незалежні сторони для окремих налаштувань лівого/правого. Типово зчеплено.";
+"PING-PONG - bounces the second head's repeats between the left and right output instead of doubling them in both channels. Off, every repeat lands centred. Default 0 percent - off." = "PING-PONG — перекидає повтори другої головки між лівим і правим виходом, замість дублювати їх в обох каналах. Вимкнено — кожен повтор падає в центр. Типове 0 відсотків — вимкнено.";
+"IN Q - the input equaliser's corner resonance, shared by its bell and the shoulders of its shelves. 0.7 is the flat Butterworth corner; higher sharpens the bell's shoulder and rings slightly at the corner frequency. Default 0.7." = "IN Q — резонанс кута вхідного еквалайзера, спільний для дзвона й плечей полиць. 0,7 — плоский кут Баттерворта; вище — загострює плече дзвона і трохи дзвенить на кутовій частоті. Типове 0,7.";
+"OUT Q - the output equaliser's corner resonance, shared by its bell and the shoulders of its shelves. Same curve as the input Q, applied AFTER the machine, where it shapes the result rather than the drive. Default 0.7." = "OUT Q — резонанс кута вихідного еквалайзера, спільний для дзвона й плечей полиць. Та сама крива, що й у вхідного Q, але ПІСЛЯ машини — формує результат, а не драйв. Типове 0,7.";
+"IN HP - the input equaliser's high-pass corner. Everything below it is removed BEFORE the machine, so a bass-heavy source can be kept from flapping the tape's low end. 20 Hz is effectively out of the way." = "IN HP — кут ФВЧ вхідного еквалайзера. Усе нижче видаляється ПЕРЕД машиною, тож басовите джерело не хльостава низ стрічки. 20 Гц — фактично поза дорогою.";
+"IN LP - the input equaliser's low-pass corner. Everything above it is removed BEFORE the machine, the way a deck's record electronics roll the top off. 20 kHz is effectively out of the way." = "IN LP — кут ФНЧ вхідного еквалайзера. Усе вище видаляється ПЕРЕД машиною, як зрізає верх записувальна електроніка деки. 20 кГц — фактично поза дорогою.";
+"OUT HP - the output equaliser's high-pass corner. Everything below it is removed AFTER the machine, on the finished sound, where nothing downstream responds to it. 20 Hz is effectively out of the way." = "OUT HP — кут ФВЧ вихідного еквалайзера. Усе нижче видаляється ПІСЛЯ машини, на готовому звуці, на який далі ніщо не реагує. 20 Гц — фактично поза дорогою.";
+"OUT LP - the output equaliser's low-pass corner. Everything above it is removed AFTER the machine, on the finished sound, where nothing downstream responds to it. 20 kHz is effectively out of the way." = "OUT LP — кут ФНЧ вихідного еквалайзера. Усе вище видаляється ПІСЛЯ машини, на готовому звуці, на який далі ніщо не реагує. 20 кГц — фактично поза дорогою.";
+
+// -- Neural picker state words and the tab menu ----------------------------------
+"NO MODEL" = "НЕМАЄ МОДЕЛІ";
+"INVALID MODEL" = "ХИБНА МОДЕЛЬ";
+"MACHINE" = "MACHINE";
+"DRIVE" = "DRIVE";
+"CHARACTER" = "CHARACTER";
+"NOISE" = "NOISE";
+"SPACE" = "SPACE";
+"DYN" = "DYN";
+"VINYL" = "VINYL";
+"IN EQ" = "IN EQ";
+"OUT EQ" = "OUT EQ";
+"SETTINGS" = "SETTINGS";
+
 // -- Deck readouts: BPM, HARMONICS, SUBFUND TRACK, ANTI-PHASE ------------------
 "-" = "-";
 "even / odd" = "парні / непарні";

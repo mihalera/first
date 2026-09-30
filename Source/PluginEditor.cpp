@@ -789,8 +789,19 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                                                  static_cast<float> (width),
                                                  static_cast<float> (height)).reduced (6.0f);
     const auto centre = bounds.getCentre();
-    const auto radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.34f;
-    const auto outerRadius = radius + 8.0f;
+    // The track ring and the tick marks live OUTSIDE the knob face (face at
+    // radius, ring at +8, ticks up to +9 more), and DRIVE's cells are WIDER
+    // than they are tall: the unconstrained ring was taller than the cell, so
+    // the rasteriser clipped its top and bottom and the surviving left/right
+    // fragments read as broken crescents - the "crooked toggles" on the DRIVE
+    // page. The ring now clamps to the half-extent the cell can actually show;
+    // the face takes what is left, so the whole assembly stays concentric and
+    // fully visible at every cell shape.
+    const auto faceRadius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.34f;
+    const auto outerRadius = juce::jmin (faceRadius + 8.0f,
+                                         bounds.getWidth() * 0.5f - 2.0f,
+                                         bounds.getHeight() * 0.5f - 2.0f);
+    const auto radius = juce::jmin (faceRadius, outerRadius - 4.0f);
     const auto angle = juce::jmap (sliderPos, 0.0f, 1.0f, rotaryStartAngle, rotaryEndAngle);
     // JUCE's Path::addCentredArc measures clockwise from 12 o'clock and places a
     // point at (sin(angle), -cos(angle)). Convert that same angle to ordinary screen
@@ -1012,9 +1023,17 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
 
     // Thumb sized to fully cover its half of the track (was a fixed 23 px on a track
     // whose half-width changed with the control, so it could overhang the right edge).
+    // The thumb GLIDES between its stops: noteToggle() recorded this switch's
+    // target and updateToggleAnimations() eases the position every timer
+    // frame, so a click sends the thumb sliding instead of teleporting - the
+    // one mechanical motion a real rocker has, and the animation the page was
+    // missing. A switch the L&F was never told about draws at its true state.
+    noteToggle (&button, isOn);
+    const auto glide = toggleGlide (&button, isOn);
     const auto thumbWidth = juce::jmax (12.0f, (track.getWidth() - 2.0f) * 0.5f);
     const auto thumbHeight = juce::jmax (8.0f, track.getHeight() - 2.0f);
-    const auto thumbX = isOn ? track.getRight() - thumbWidth - 1.0f : track.getX() + 1.0f;
+    const auto travel = track.getWidth() - thumbWidth - 2.0f;
+    const auto thumbX = track.getX() + 1.0f + glide * travel;
     const auto thumbY = track.getY() + 1.0f + (shouldDrawButtonAsDown ? 1.0f : 0.0f);
     const auto thumb = juce::Rectangle<float> (thumbX, thumbY, thumbWidth, thumbHeight);
     // The thumb is a small cylinder of its own riding the groove, pressed one
@@ -2110,6 +2129,8 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
                    "every knob must be listed by exactly one tab");
 
     currentTab = juce::jlimit (0, numTabs - 1, newTab);
+    // paint() gates the neural card on this: it is CHARACTER's page furniture.
+    activeTabIsCharacter = (currentTab == 2);
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -2234,8 +2255,15 @@ void FirstAudioProcessorEditor::applyLanguage (int languageIndex)
     // language names belong. Re-apply the rows through the table just installed:
     // the items exist on every path that reaches here (the constructor adds them
     // before its first call), and a later switch re-translates them the same way.
+    //
+    // applyLanguage runs BEFORE the constructor finishes its styling block
+    // (styleCombo below), so re-ink the box's text colour here as well: on a
+    // session that opens Ukrainian, the constructor's paletteFor(false) would
+    // otherwise repaint the box with the theme's text colour and wipe this -
+    // which is exactly the raw-key value the user screenshotted.
     languageBox.changeItemText (1, xlat ("LANGUAGE_ENGLISH"));
     languageBox.changeItemText (2, xlat ("LANGUAGE_UKRAINIAN"));
+    languageBox.setColour (juce::ComboBox::textColourId, paletteFor (darkTheme).text);
     languageBox.repaint();
 
     updateTooltips();
@@ -2298,7 +2326,10 @@ void FirstAudioProcessorEditor::refreshNeuralStatus()
         return;
 
     lastShownNeuralStatus = status;
-    neuralStatusLabel.setText (status, juce::dontSendNotification);
+    // The two state words go through the table so the picker reads in the
+    // panel's language; a model FILE NAME is data, not a sentence, and shows
+    // as loaded regardless of language.
+    neuralStatusLabel.setText (xlat (status), juce::dontSendNotification);
     neuralStatusLabel.setColour (juce::Label::textColourId,
                                  audioProcessor.hasNeuralModel()
                                      ? paletteFor (false).accent
@@ -3123,6 +3154,67 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "the untouched signal, so it is always a crossfade. At 0, "
                        "or with no model loaded, the stage is transparent. "
                        "Default 0 percent.";
+            // The eleven knobs that were falling through to an empty sentence:
+            // they showed the shared interaction hint only, which the user read
+            // as "tooltip is missing". One branch each, same shape as the rest.
+            if (id == "di")
+                return "DI - the instrument input's direct-injection stage in "
+                       "FRONT of the machine: a high-impedance buffer that keeps "
+                       "a guitar or synth pickup from loading down, plus the pad, "
+                       "load and transformer that follow it. Default 0 percent - "
+                       "the plain input path.";
+            if (id == "di_load")
+                return "DI LOAD - the input impedance the instrument sees in "
+                       "the DI stage. A pickup is a reactive source: 1 M keeps "
+                       "a guitar bright and open, 220 k tames a hot active bass, "
+                       "and lower still tightens a synth's output stage. Default "
+                       "0 percent.";
+            if (id == "di_transformer")
+                return "DI XFMR - the DI's output transformer. OFF is a clean "
+                       "electronic path; the transformer adds its iron colour, "
+                       "a gentle low cut and the slight phase smear a real direct "
+                       "box gives. Default 0 percent - off.";
+            if (id == "st_link")
+                return "ST LINK - gangs the stereo pair's shared controls so one "
+                       "knob sets both channels. Off splits the machine into two "
+                       "independent sides for separate left/right settings. "
+                       "Default linked.";
+            if (id == "delay_pingpong")
+                return "PING-PONG - bounces the second head's repeats between "
+                       "the left and right output instead of doubling them in "
+                       "both channels. Off, every repeat lands centred. Default "
+                       "0 percent - off.";
+            if (id == "in_eq_q")
+                return "IN Q - the input equaliser's corner resonance, shared "
+                       "by its bell and the shoulders of its shelves. 0.7 is the "
+                       "flat Butterworth corner; higher sharpens the bell's "
+                       "shoulder and rings slightly at the corner frequency. "
+                       "Default 0.7.";
+            if (id == "out_eq_q")
+                return "OUT Q - the output equaliser's corner resonance, shared "
+                       "by its bell and the shoulders of its shelves. Same curve "
+                       "as the input Q, applied AFTER the machine, where it shapes "
+                       "the result rather than the drive. Default 0.7.";
+            if (id == "in_hp_freq")
+                return "IN HP - the input equaliser's high-pass corner. "
+                       "Everything below it is removed BEFORE the machine, so a "
+                       "bass-heavy source can be kept from flapping the tape's "
+                       "low end. 20 Hz is effectively out of the way.";
+            if (id == "in_lp_freq")
+                return "IN LP - the input equaliser's low-pass corner. "
+                       "Everything above it is removed BEFORE the machine, the "
+                       "way a deck's record electronics roll the top off. "
+                       "20 kHz is effectively out of the way.";
+            if (id == "out_hp_freq")
+                return "OUT HP - the output equaliser's high-pass corner. "
+                       "Everything below it is removed AFTER the machine, on the "
+                       "finished sound, where nothing downstream responds to it. "
+                       "20 Hz is effectively out of the way.";
+            if (id == "out_lp_freq")
+                return "OUT LP - the output equaliser's low-pass corner. "
+                       "Everything above it is removed AFTER the machine, on the "
+                       "finished sound, where nothing downstream responds to it. "
+                       "20 kHz is effectively out of the way.";
             return {};
         };
         setTippedSentence (slider, parameterTooltip (controlIds[static_cast<int> (i)]),
@@ -3810,6 +3902,17 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // ---------------------------------------------------------------
     loadNeuralButton.setLookAndFeel (&inlineLookAndFeel);
     clearNeuralButton.setLookAndFeel (&inlineLookAndFeel);
+    // "Currently black" (the user's screenshot of the model picker): these two
+    // are TextButtons whose colours were never set, so the inline Look and
+    // Feel's unstyled defaults ran - a near-black slab on every theme. They get
+    // the SAME raised-face pill the workflow buttons carry, re-inked per theme
+    // in applyTheme().
+    loadNeuralButton.setColour (juce::TextButton::buttonColourId, paletteFor (false).raised);
+    loadNeuralButton.setColour (juce::TextButton::textColourOffId, paletteFor (false).text);
+    loadNeuralButton.setColour (juce::TextButton::buttonOnColourId, paletteFor (false).raised.darker (0.15f));
+    clearNeuralButton.setColour (juce::TextButton::buttonColourId, paletteFor (false).raised);
+    clearNeuralButton.setColour (juce::TextButton::textColourOffId, paletteFor (false).text);
+    clearNeuralButton.setColour (juce::TextButton::buttonOnColourId, paletteFor (false).raised.darker (0.15f));
     setTip (loadNeuralButton, "LOAD MODEL - reads an RTNeural model file (its JSON "
                                  "description) and installs it as the plugin's optional "
                                  "learned nonlinearity. The network is whatever the file "
@@ -4183,12 +4286,21 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     {
         // Whatever the user asked for wins: stop the startup retries, or they would
         // switch the accelerator back on seconds after the user turned it off.
+        // glUserDisabled records WHICH side dropped the context - only the user's
+        // own click sets it, so the timer's retries still recover a context the
+        // HOST lost (see the retry block in timerCallback).
         glAttachAttemptsLeft = 0;
 
         if (openGLContext.isAttached())
+        {
+            glUserDisabled = true;
             openGLContext.detach();
+        }
         else
+        {
+            glUserDisabled = false;
             openGLContext.attachTo (*this);
+        }
 
         // One place decides what the switch says, how it looks, and whether the
         // 3D transport gets a context, and all three read the context's state
@@ -4585,7 +4697,11 @@ void FirstAudioProcessorEditor::applyTheme()
     // The language selector is drawn by the deck Look and Feel (which overrides
     // captions, not combo backgrounds), so like the user-preset list it needs its
     // palette colours set here or it keeps the base Look and Feel's own grey -
-    // a box that matched nothing else on the panel.
+    // a box that matched nothing else on the panel. This styling block runs AFTER
+    // applyLanguage above, so the box's text colour set there is overwritten by
+    // this call with the palette's own text colour - the intended end state, and
+    // the reason applyLanguage re-inks textColourId itself is only to colour the
+    // window BETWEEN those two moments.
     styleCombo (languageBox);
 
     // The lists' popup menus paint through the LookAndFeel_V4 item drawing, which
@@ -4711,6 +4827,20 @@ void FirstAudioProcessorEditor::applyTheme()
 void FirstAudioProcessorEditor::paint (juce::Graphics& g)
 {
     const auto& palette = paletteFor (darkTheme);
+    // The neural card sits behind the CHARACTER page's picker cell, and its
+    // geometry MIRRORS resized()'s: the grid is the controls band reduced by
+    // 14, cut 62 from the top (controlsDividerOffset 68 - 14 + 8) and 8 from
+    // the bottom; the member band is a fixed 50 px strip at the grid's bottom;
+    // CHARACTER holds three knobs, so one knob row takes all the rest. The
+    // picker rides the fourth column of the member band - its cell x is
+    // grid.x + 3 * cellWidth, width cellWidth (cellWidth = gridW / 4).
+    constexpr int tabColumnsNow = 4;
+    constexpr int memberBandHeightNow = 50;
+    auto gridNow = layout.controls.reduced (14);
+    gridNow.removeFromTop (controlsDividerOffset - 14 + 8);
+    gridNow.removeFromBottom (8);
+    const auto memberBandY = gridNow.getBottom() - memberBandHeightNow;
+    const auto cellWidthNow = gridNow.getWidth() / tabColumnsNow;
 
     // The band this paint actually has to cover. The panel is repainted in bands
     // (see timerCallback) and most of what this function draws never changes, so
@@ -4893,6 +5023,23 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
                    lampPulse * 4.4f, lampPulse * 4.4f);
     g.setColour (palette.status);
     g.fillEllipse (lampCentre.x - 3.5f, lampCentre.y - 3.5f, 7.0f, 7.0f);
+
+    // The neural model picker's card: the moved picker reads as a device with a
+    // face, not as three unstyled widgets on the page - "it's black" was the
+    // unstyled defaults speaking. The card is drawn behind the fourth-column
+    // picker cell only when CHARACTER is the visible tab.
+    if (activeTabIsCharacter)
+    {
+        const auto card = juce::Rectangle<float> (
+            static_cast<float> (gridNow.getX() + 3 * cellWidthNow),
+            static_cast<float> (memberBandY),
+            static_cast<float> (cellWidthNow),
+            static_cast<float> (memberBandHeightNow));
+        g.setColour (palette.raised.brighter (0.06f));
+        g.fillRoundedRectangle (card, 4.0f);
+        g.setColour (palette.border.withAlpha (0.55f));
+        g.drawRoundedRectangle (card, 4.0f, 1.0f);
+    }
 
     // A hairline rule under the header strip separates the title block from the
     // controls; it runs the full width again - the badge it used to dodge lives
@@ -5090,7 +5237,18 @@ void FirstAudioProcessorEditor::timerCallback()
     {
         --glAttachAttemptsLeft;
 
-        if (openGLContext.isAttached())
+        // Attach retries run while the user has NOT turned GL off by hand. The
+        // old guard short-circuited on isAttached() alone, which on a host whose
+        // context is killed/recreated (resize, plugin scan, some sandboxed
+        // players) left the retry budget dead with GL detached forever - the
+        // user's "no shaders, no 3D, ever". glUserDisabled is the switch's own
+        // state: only the user's click on GL OFF sets it, so a context the HOST
+        // dropped is retried, one the USER dropped is not.
+        if (glUserDisabled)
+        {
+            glAttachAttemptsLeft = 0;
+        }
+        else if (openGLContext.isAttached())
         {
             glAttachAttemptsLeft = 0;
         }
@@ -5159,10 +5317,19 @@ void FirstAudioProcessorEditor::timerCallback()
     // glance without needing to compare the numbers.
     const auto harmonicPalette = paletteFor (darkTheme);
     const auto totalHarmonics = evenRatio + oddRatio;
+    // The readouts breathe with the machine: a gentle luminance oscillation on
+    // top of the state colour, so the numbers feel powered by the same signal
+    // they report rather than painted on. The breath is bounded (±20 %), so the
+    // colour coding stays readable at every phase.
+    const auto readoutBreath = 1.0f - 0.2f * (0.5f + 0.5f * std::sin (animationPhase));
+    const auto breathe = [&] (juce::Colour c)
+    {
+        return c.withMultipliedBrightness (readoutBreath);
+    };
     harmonicsReadout.setColour (juce::Label::textColourId,
-                                totalHarmonics < 0.001f ? harmonicPalette.secondary
-                                : evenRatio >= oddRatio ? harmonicPalette.status
-                                                        : harmonicPalette.needle);
+                                breathe (totalHarmonics < 0.001f ? harmonicPalette.secondary
+                                            : evenRatio >= oddRatio ? harmonicPalette.status
+                                                                    : harmonicPalette.needle));
 
     // The deck's tempo, as the host reports it. A host that offers no playhead
     // (an offline render, a bare player) leaves the readout at the machine's
@@ -5176,8 +5343,8 @@ void FirstAudioProcessorEditor::timerCallback()
                                   + xlat ("BPM") + " (" + xlat ("default") + ")",
                         juce::dontSendNotification);
     bpmReadout.setColour (juce::Label::textColourId,
-                          deckBpmValid ? paletteFor (darkTheme).status
-                                       : paletteFor (darkTheme).secondary);
+                          breathe (deckBpmValid ? paletteFor (darkTheme).status
+                                                : paletteFor (darkTheme).secondary));
 
     // ------------------------------------------------------------------
     //  Subharmonic tracking readout.
@@ -5210,8 +5377,8 @@ void FirstAudioProcessorEditor::timerCallback()
         // Green while the track is solid, amber while it is partial: the colour is
         // the readout's own confidence bar.
         subfundReadout.setColour (juce::Label::textColourId,
-                                  confidence > 0.75f ? harmonicPalette.status
-                                                     : harmonicPalette.needle);
+                                  breathe (confidence > 0.75f ? harmonicPalette.status
+                                                              : harmonicPalette.needle));
     }
 
     // ------------------------------------------------------------------
@@ -5234,8 +5401,8 @@ void FirstAudioProcessorEditor::timerCallback()
         lastShownAntiPhase = antiPhaseText;
         antiPhaseReadout.setText (antiPhaseText, juce::dontSendNotification);
         antiPhaseReadout.setColour (juce::Label::textColourId,
-                                    antiPhaseNow < 0.01f ? harmonicPalette.status
-                                                         : harmonicPalette.needle);
+                                    breathe (antiPhaseNow < 0.01f ? harmonicPalette.status
+                                                                  : harmonicPalette.needle));
     }
 
     // Animated presentation state. Everything here is derived from audio
@@ -5333,6 +5500,10 @@ void FirstAudioProcessorEditor::timerCallback()
     customLookAndFeel.setActivity (glowAmount);
     customLookAndFeel.setDrift (driftAmount);
     customLookAndFeel.advanceFrame();
+    // The toggle thumbs' glide is one per-frame ease for every tracked switch
+    // (see J37LookAndFeel::updateToggleAnimations); run it on the same tick as
+    // the panel's other animation so the whole surface shares one clock.
+    customLookAndFeel.updateToggleAnimations();
 
     // ------------------------------------------------------------------
     //  Interface sounds.
@@ -6284,8 +6455,18 @@ void FirstAudioProcessorEditor::resized()
         // live, so a resize between tab switches can never leave a stale one.
         label.setText (caption, juce::dontSendNotification);
         label.setBounds (cell.getX() + 5, cell.getY() + 1, cell.getWidth() - 10, 17);
-        box.setBounds (cell.getX() + 12, cell.getY() + 20,
-                       cell.getWidth() - 24, juce::jmin (30, cell.getHeight() - 22));
+        // The control band used to be pinned to the cell's TOP (y + 20) at full
+        // remaining height, so on tabs whose member band is taller than 30 px
+        // (DRIVE's member row inherits three knob rows' worth of height) the
+        // toggle stretched into a tall pill with the capsule's rounding reading
+        // as a bulge - the crooked switches on the DRIVE page. The band is now
+        // a 30 px control vertically CENTRED under its caption, the same height
+        // every other switch in the panel shows.
+        const auto bandHeight = juce::jmin (30, cell.getHeight() - 22);
+        const auto bandY = cell.getY() + 20
+                           + juce::jmax (0, (cell.getHeight() - 22 - bandHeight) / 2);
+        box.setBounds (cell.getX() + 12, bandY,
+                       cell.getWidth() - 24, bandHeight);
     };
 
     // Visibility for the deck switches is re-asserted here rather than only in
@@ -6326,11 +6507,11 @@ void FirstAudioProcessorEditor::resized()
     delaySyncLabel.setVisible (spaceTab);
     delaySyncButton.setVisible (spaceTab);
 
-    // The neural model picker belongs to the DYNAMICS page, beside the NEURAL
-    // knob it feeds, so it follows the same tab as that knob.
-    loadNeuralButton.setVisible (dynamicsTab);
-    clearNeuralButton.setVisible (dynamicsTab);
-    neuralStatusLabel.setVisible (dynamicsTab);
+    // The neural model picker moved to the CHARACTER page (a voicing choice,
+    // living with the other voicing selectors), so it follows that tab now.
+    loadNeuralButton.setVisible (characterTab);
+    clearNeuralButton.setVisible (characterTab);
+    neuralStatusLabel.setVisible (characterTab);
 
     // The three vinyl selectors moved to the CHARACTER page: they re-voice the
     // whole vinyl stage, so they live with the machine's other voicing rather
@@ -6381,28 +6562,40 @@ void FirstAudioProcessorEditor::resized()
     else if (characterTab)
     {
         // CHARACTER: three knobs in the first row, so the member row under them
-        // is where the three vinyl voicing selectors live - the order the
-        // record is made in: what was cut, what plays it, what reads it.
+        // is where the page's lists live. Left to right - the order the record
+        // is made in: what was cut, what plays it, what reads it. The NEURAL
+        // model picker moved here from DYNAMICS (the user's request): it is a
+        // VOICING choice - which machine shape bends the signal - and it sits
+        // beside the other voicing selectors, in a fourth cell, with its status
+        // readout above the row's own band so it cannot collide with them.
         placeDeckSwitch (vinylGenerationLabel, vinylGenerationBox, 0, 1, "GENERATION");
         placeDeckSwitch (vinylTurntableLabel, vinylTurntableBox, 1, 1, "TURNTABLE");
         placeDeckSwitch (vinylCartridgeLabel, vinylCartridgeBox, 2, 1, "CARTRIDGE");
-    }
-    else if (dynamicsTab)
-    {
-        // DYNAMICS: four knobs fill the first row, so the member row under them
-        // is where the neural model picker lives - LOAD and CLEAR side by side
-        // in the first two cells, with the status readout beside them. The
-        // picker is not a knob (it opens a file), so it is laid out here rather
-        // than by the grid.
+
         const auto buttonY = memberRowY + 20;
         const auto buttonH = juce::jmin (30, grid.getBottom() - memberRowY - 22);
 
-        loadNeuralButton.setBounds (grid.getX() + 12, buttonY,
+        // The picker rides the member band's FOURTH column, exactly under the
+        // page's fourth knob cell: LOAD MODEL on the band's control line, CLEAR
+        // beneath it, the model-status readout in the band's caption line above
+        // them. paint() draws the card behind precisely this column - the two
+        // geometries share the arithmetic (grid / 4 columns, 50 px band), so
+        // they cannot disagree.
+        loadNeuralButton.setBounds (grid.getX() + 3 * cellWidth + 12, buttonY,
                                     cellWidth - 24, buttonH);
-        clearNeuralButton.setBounds (grid.getX() + cellWidth + 12, buttonY,
-                                     cellWidth - 24, buttonH);
-        neuralStatusLabel.setBounds (grid.getX() + 2 * cellWidth + 6, buttonY - 2,
-                                     2 * cellWidth - 12, buttonH + 4);
+        clearNeuralButton.setBounds (grid.getX() + 3 * cellWidth + 18,
+                                     buttonY + buttonH + 6,
+                                     cellWidth - 36, buttonH);
+        neuralStatusLabel.setBounds (grid.getX() + 3 * cellWidth + 6,
+                                     memberRowY - 1, cellWidth - 12, 17);
+    }
+    else if (dynamicsTab)
+    {
+        // DYNAMICS: four knobs fill the first row and the picker moved to
+        // CHARACTER, so this page needs no member row - but the reserved band
+        // logic above sized this grid as if something might ride it. Nothing
+        // does: leave the band empty rather than stretching the knob rows into
+        // it, so the page's layout stays identical to before the move.
     }
     else if (inEqTab || outEqTab)
     {
