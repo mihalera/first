@@ -789,8 +789,19 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                                                  static_cast<float> (width),
                                                  static_cast<float> (height)).reduced (6.0f);
     const auto centre = bounds.getCentre();
-    const auto radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.34f;
-    const auto outerRadius = radius + 8.0f;
+    // The track ring and the tick marks live OUTSIDE the knob face (face at
+    // radius, ring at +8, ticks up to +9 more), and DRIVE's cells are WIDER
+    // than they are tall: the unconstrained ring was taller than the cell, so
+    // the rasteriser clipped its top and bottom and the surviving left/right
+    // fragments read as broken crescents - the "crooked toggles" on the DRIVE
+    // page. The ring now clamps to the half-extent the cell can actually show;
+    // the face takes what is left, so the whole assembly stays concentric and
+    // fully visible at every cell shape.
+    const auto faceRadius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.34f;
+    const auto outerRadius = juce::jmin (faceRadius + 8.0f,
+                                         bounds.getWidth() * 0.5f - 2.0f,
+                                         bounds.getHeight() * 0.5f - 2.0f);
+    const auto radius = juce::jmin (faceRadius, outerRadius - 4.0f);
     const auto angle = juce::jmap (sliderPos, 0.0f, 1.0f, rotaryStartAngle, rotaryEndAngle);
     // JUCE's Path::addCentredArc measures clockwise from 12 o'clock and places a
     // point at (sin(angle), -cos(angle)). Convert that same angle to ordinary screen
@@ -1012,9 +1023,17 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
 
     // Thumb sized to fully cover its half of the track (was a fixed 23 px on a track
     // whose half-width changed with the control, so it could overhang the right edge).
+    // The thumb GLIDES between its stops: noteToggle() recorded this switch's
+    // target and updateToggleAnimations() eases the position every timer
+    // frame, so a click sends the thumb sliding instead of teleporting - the
+    // one mechanical motion a real rocker has, and the animation the page was
+    // missing. A switch the L&F was never told about draws at its true state.
+    noteToggle (&button, isOn);
+    const auto glide = toggleGlide (&button, isOn);
     const auto thumbWidth = juce::jmax (12.0f, (track.getWidth() - 2.0f) * 0.5f);
     const auto thumbHeight = juce::jmax (8.0f, track.getHeight() - 2.0f);
-    const auto thumbX = isOn ? track.getRight() - thumbWidth - 1.0f : track.getX() + 1.0f;
+    const auto travel = track.getWidth() - thumbWidth - 2.0f;
+    const auto thumbX = track.getX() + 1.0f + glide * travel;
     const auto thumbY = track.getY() + 1.0f + (shouldDrawButtonAsDown ? 1.0f : 0.0f);
     const auto thumb = juce::Rectangle<float> (thumbX, thumbY, thumbWidth, thumbHeight);
     // The thumb is a small cylinder of its own riding the groove, pressed one
@@ -2110,6 +2129,8 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
                    "every knob must be listed by exactly one tab");
 
     currentTab = juce::jlimit (0, numTabs - 1, newTab);
+    // paint() gates the neural card on this: it is CHARACTER's page furniture.
+    activeTabIsCharacter = (currentTab == 2);
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -2174,6 +2195,21 @@ void FirstAudioProcessorEditor::setTip (juce::SettableTooltipClient& component, 
     component.setTooltip (xlat (english));
 }
 
+void FirstAudioProcessorEditor::setTippedSentence (juce::SettableTooltipClient& component,
+                                                   const juce::String& englishSentence,
+                                                   const juce::String& englishHints)
+{
+    // The knob tooltips are sentence + interaction hints in ONE string, but the
+    // lookup key is the sentence alone. Storing the concatenation was the bug:
+    // "INPUT - ... 0 dB. Hold Shift for..." is not in the table, so the language
+    // switch replayed the English every time no matter how complete the file was.
+    // Here the sentence is registered and shown separately, the hints are a
+    // constant that xlat()s on the spot, and updateTooltips() re-translates
+    // each half on its own key.
+    tooltipSources.push_back ({ &component, englishSentence });
+    component.setTooltip (xlat (englishSentence) + xlat (englishHints));
+}
+
 void FirstAudioProcessorEditor::updateTooltips()
 {
     // The English is replayed through the CURRENT table rather than the text
@@ -2219,8 +2255,15 @@ void FirstAudioProcessorEditor::applyLanguage (int languageIndex)
     // language names belong. Re-apply the rows through the table just installed:
     // the items exist on every path that reaches here (the constructor adds them
     // before its first call), and a later switch re-translates them the same way.
+    //
+    // applyLanguage runs BEFORE the constructor finishes its styling block
+    // (styleCombo below), so re-ink the box's text colour here as well: on a
+    // session that opens Ukrainian, the constructor's paletteFor(false) would
+    // otherwise repaint the box with the theme's text colour and wipe this -
+    // which is exactly the raw-key value the user screenshotted.
     languageBox.changeItemText (1, xlat ("LANGUAGE_ENGLISH"));
     languageBox.changeItemText (2, xlat ("LANGUAGE_UKRAINIAN"));
+    languageBox.setColour (juce::ComboBox::textColourId, paletteFor (darkTheme).text);
     languageBox.repaint();
 
     updateTooltips();
@@ -2283,7 +2326,10 @@ void FirstAudioProcessorEditor::refreshNeuralStatus()
         return;
 
     lastShownNeuralStatus = status;
-    neuralStatusLabel.setText (status, juce::dontSendNotification);
+    // The two state words go through the table so the picker reads in the
+    // panel's language; a model FILE NAME is data, not a sentence, and shows
+    // as loaded regardless of language.
+    neuralStatusLabel.setText (xlat (status), juce::dontSendNotification);
     neuralStatusLabel.setColour (juce::Label::textColourId,
                                  audioProcessor.hasNeuralModel()
                                      ? paletteFor (false).accent
@@ -2516,8 +2562,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 paletteFor (false).secondary, false, juce::Justification::right);
     styleLabel (bpmLabel, "BPM", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
-    styleLabel (bpmReadout, "-", 9.0f, paletteFor (false).secondary,
-                false, juce::Justification::left);
+    styleLabel (bpmReadout, xlat ("-"), 9.0f, paletteFor (false).secondary,
+                false, juce::Justification::centredLeft);
     styleLabel (metersHeadingLabel, "LEVELS", 10.0f, paletteFor (false).accent,
                 true, juce::Justification::left);
     styleLabel (metersHintLabel, "dBFS / PEAK + RMS", 8.0f, paletteFor (false).secondary,
@@ -2526,18 +2572,23 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 true, juce::Justification::right);
     styleLabel (compressorReadout, "one meter per stage", 8.0f, paletteFor (false).secondary,
                 false, juce::Justification::right);
+    // The three readout pairs share one alignment discipline: the caption is
+    // centred over its value, and every pair uses the SAME scheme. BPM read
+    // left while these three read right, so a caption sat over the right half
+    // of its number while BPM's sat over nothing - the four looked staggered
+    // against each other even though each pair was internally consistent.
     styleLabel (harmonicsLabel, "HARMONICS", 10.0f, paletteFor (false).accent,
-                true, juce::Justification::centredRight);
-    styleLabel (harmonicsReadout, "even / odd", 8.0f, paletteFor (false).secondary,
-                false, juce::Justification::centredRight);
+                true, juce::Justification::centredLeft);
+    styleLabel (harmonicsReadout, xlat ("even / odd"), 8.0f, paletteFor (false).secondary,
+                false, juce::Justification::centredLeft);
     styleLabel (subfundLabel, "SUBFUND TRACK", 10.0f, paletteFor (false).accent,
-                true, juce::Justification::centredRight);
-    styleLabel (subfundReadout, "idle", 8.0f, paletteFor (false).secondary,
-                false, juce::Justification::centredRight);
+                true, juce::Justification::centredLeft);
+    styleLabel (subfundReadout, xlat ("idle"), 8.0f, paletteFor (false).secondary,
+                false, juce::Justification::centredLeft);
     styleLabel (antiPhaseLabel, "ANTI-PHASE", 10.0f, paletteFor (false).accent,
-                true, juce::Justification::centredRight);
-    styleLabel (antiPhaseReadout, "clean", 8.0f, paletteFor (false).secondary,
-                false, juce::Justification::centredRight);
+                true, juce::Justification::centredLeft);
+    styleLabel (antiPhaseReadout, xlat ("clean"), 8.0f, paletteFor (false).secondary,
+                false, juce::Justification::centredLeft);
     addAndMakeVisible (antiPhaseLabel);
     addAndMakeVisible (antiPhaseReadout);
 
@@ -2756,55 +2807,59 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         // A tooltip for EVERY parameter - this is what shows when the user hovers.
         // The per-name text explains what the control does and its default, and the
         // generic interaction hints ride along on every knob.
+        //
+        // The lambda returns the ENGLISH sentence, untranslated on purpose:
+        // setTip stores this exact string for the language switch and shows the
+        // translation. It used to return xlat (...) + translated hints, so the
+        // stored English was already Ukrainian on a Ukrainian panel - and the
+        // replay's translate(already-translated) could never hit the table,
+        // which is why the knob tooltips stayed English (or half-switched) after
+        // a language change.
         const auto parameterTooltip = [&] (const juce::String& id) -> juce::String
         {
-            // juce::String, not a char pointer: the + below must concatenate strings,
-            // not pointers (which does not compile).
-            const juce::String hints = xlat (" Hold Shift for fine control, mouse wheel for small "
-                                           "steps, double-click to reset.");
             if (id == "input")
-                return xlat ("INPUT - output-stages the signal into the machine before the "
+                return "INPUT - output-stages the signal into the machine before the "
                        "tape. Positive pushes the tape harder for more saturation, "
-                       "negative cleans up. Range -32 to +32 dB, default 0 dB.") + hints;
+                       "negative cleans up. Range -32 to +32 dB, default 0 dB.";
             if (id == "drive")
-                return xlat ("DRIVE - the amount of magnetic saturation. At 0 percent the "
+                return "DRIVE - the amount of magnetic saturation. At 0 percent the "
                        "machine is clean; higher settings bend the signal like tape "
-                       "and add harmonics. Default 30 percent.") + hints;
+                       "and add harmonics. Default 30 percent.";
             if (id == "bias")
-                return xlat ("BIAS - the record head's ultra-sonic offset. It shapes the "
+                return "BIAS - the record head's ultra-sonic offset. It shapes the "
                        "even harmonics: low bias is edgy and thin, higher bias is "
-                       "warmer and fuller. Default 42 percent.") + hints;
+                       "warmer and fuller. Default 42 percent.";
             if (id == "tone")
-                return xlat ("BRIGHTNESS - a true tilt around the 1.6 kHz pivot: "
+                return "BRIGHTNESS - a true tilt around the 1.6 kHz pivot: "
                        "low settings darken the machine (highs dip, lows lift), high "
                        "settings open it up (highs lift, lows pull back), +/-12 dB at "
                        "the extremes. 50 percent is the neutral pivot, so the spectral "
-                       "balance passes through untouched. Default 50 percent.") + hints;
+                       "balance passes through untouched. Default 50 percent.";
             if (id == "character")
-                return xlat ("TONE - the machine-state macro. It crossfades the whole deck "
+                return "TONE - the machine-state macro. It crossfades the whole deck "
                        "between the classic slow machine (soft head gap, relaxed "
                        "flutter) and the fast hot machine (open top end, tight "
-                       "flutter). Default 50 percent.") + hints;
+                       "flutter). Default 50 percent.";
             if (id == "wow")
-                return xlat ("WOW - slow pitch wander of the transport, like a slightly "
+                return "WOW - slow pitch wander of the transport, like a slightly "
                        "loose capstan. 0 percent is a perfectly steady machine. "
-                       "Default 14 percent.") + hints;
+                       "Default 14 percent.";
             if (id == "flutter")
-                return xlat ("FLUTTER - fast shimmer of the transport, like the tape "
+                return "FLUTTER - fast shimmer of the transport, like the tape "
                        "brushing the heads. 0 percent is perfectly steady. "
-                       "Default 18 percent.") + hints;
+                       "Default 18 percent.";
             if (id == "mix")
-                return xlat ("MIX - dry/wet crossfade. 0 percent is the untouched signal, "
-                       "100 percent is fully through the tape. Default 50 percent.") + hints;
+                return "MIX - dry/wet crossfade. 0 percent is the untouched signal, "
+                       "100 percent is fully through the tape. Default 50 percent.";
             if (id == "output")
-                return xlat ("OUTPUT - calibrated output trim after the whole chain. "
-                       "Range -32 to +32 dB, default 0 dB.") + hints;
+                return "OUTPUT - calibrated output trim after the whole chain. "
+                       "Range -32 to +32 dB, default 0 dB.";
             if (id == "stereo_width")
-                return xlat ("WIDTH - stereo image after the tape. 0 percent is mono, "
+                return "WIDTH - stereo image after the tape. 0 percent is mono, "
                        "50 percent is the natural stereo width, 100 percent is extra "
-                       "wide. Default 50 percent.") + hints;
+                       "wide. Default 50 percent.";
             if (id == "subfund")
-                return xlat ("SUBFUND - subharmonics. "
+                return "SUBFUND - subharmonics. "
                        "Generates up to 8 undertones (1/2 through 1/9) "
                        "below the note when signal frequency permits, adding deep multi-layered "
                        "weight and warmth that regular saturation cannot reach. They fall away in a "
@@ -2815,31 +2870,31 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "sound under it. They are added to the signal after the tape's own "
                        "saturation, so they stay clean partials instead of feeding it and coming "
                        "back out as a harmonic series. Default 0 percent - "
-                       "it is a colour, not a correction.") + hints;
+                       "it is a colour, not a correction.";
             if (id == "delay_time")
-                return xlat ("DELAY - the spacing of a second playback head, in "
+                return "DELAY - the spacing of a second playback head, in "
                        "milliseconds. The tape takes time to travel between the record and "
                        "playback gaps, so the signal returns as a slap rather than a dub "
                        "echo: real head spacings give tens of milliseconds, and 250 ms is "
                        "already the far end of the travel. The repeat is taken AFTER the "
                        "tape, so it inherits the machine's own bandwidth and saturation. "
-                       "Default 0 ms - no second head engaged.") + hints;
+                       "Default 0 ms - no second head engaged.";
             if (id == "delay_feedback")
-                return xlat ("DLY LVL - how loud the second head's output is. At 0 "
+                return "DLY LVL - how loud the second head's output is. At 0 "
                        "percent the delay is inaudible even with a time set, so TIME says "
                        "where the head is and DLY LVL says how much of it you hear. Each "
                        "pass round the tape loses top end, the way a real repeat does. "
-                       "Default 0 percent.") + hints;
+                       "Default 0 percent.";
             if (id == "st_offset")
-                return xlat ("ST OFFSET - the time offset between the two channels, "
+                return "ST OFFSET - the time offset between the two channels, "
                        "in microseconds. On a real stereo deck the two tracks are recorded "
                        "by separate head gaps a fraction of a millimetre apart and the tape "
                        "skews slightly across them, so the channels are never perfectly "
                        "aligned. Positive lags the right channel, negative the left. This "
                        "is a large part of why a tape bounce sounds wide rather than "
-                       "merely equalised wide. Default 0 us.") + hints;
+                       "merely equalised wide. Default 0 us.";
             if (id == "noise")
-                return xlat ("NOISE MIX - how much of the noise SECTION is in the "
+                return "NOISE MIX - how much of the noise SECTION is in the "
                        "output, exactly as MIX is how much of the tape section is. The "
                        "section it governs is every noise source at once: the tape "
                        "hiss floor, the vinyl crackle, the rumble and the groove "
@@ -2847,18 +2902,18 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "untouched - the formula sets the floor's shape, this sets how "
                        "much of it you hear. It is gated by the transport, so a "
                        "machine at rest is silent. Default 50 percent - the neutral "
-                       "position, not a change.") + hints;
+                       "position, not a change.";
             if (id == "noise_lvl")
-                return xlat ("NOISE LVL - the level of the noise SOURCES "
+                return "NOISE LVL - the level of the noise SOURCES "
                        "themselves, tape and vinyl together. NOISE MIX is how much of "
                        "the noise section sits in the output; this is how loud what is "
                        "in that section actually runs, so it answers for every noise "
                        "source the machine makes, including the vinyl ones the old "
                        "NOISE control never reached. 100 percent is the calibrated "
                        "level the formulas and the record types were voiced at. "
-                       "Default 100 percent.") + hints;
+                       "Default 100 percent.";
             if (id == "blend")
-                return xlat ("BLEND - which saturation PRINCIPLE the machine bends "
+                return "BLEND - which saturation PRINCIPLE the machine bends "
                        "with. The shaper is not one curve: it is six, blended. Left is "
                        "magnetic TAPE (memory, gentle, warm), then VALVE (soft "
                        "asymmetric compression, even-harmonic warmth), then CASSETTE "
@@ -2872,126 +2927,126 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "with a held code: the sweep ends where the machines stop and "
                        "the conversion begins). Every curve is normalised so the "
                        "blend cannot change the level, only the character. Default 0 "
-                       "percent - pure tape, exactly what earlier builds did.") + hints;
+                       "percent - pure tape, exactly what earlier builds did.";
             if (id == "shape")
-                return xlat ("SHAPE - how concentrated the BLEND is. Low picks "
+                return "SHAPE - how concentrated the BLEND is. Low picks "
                        "one principle at a time, so the sweep snaps from tape to valve "
                        "to cassette to amp to transformer to digital and each is "
                        "obvious. High spreads the weighting so all six contribute at "
                        "every position and the result reads as one compound machine "
-                       "rather than six. Default 50 percent.") + hints;
+                       "rather than six. Default 50 percent.";
             if (id == "amp_bias")
-                return xlat ("AMP BIAS - the input valve's DC operating point, "
+                return "AMP BIAS - the input valve's DC operating point, "
                        "which is the single most effective control on a real amp's "
                        "character. Cold (low) is tight and slightly crossover-distorted; "
                        "hot (high) is fat, compressed and soft. 50 percent is the "
                        "neutral centre, so it is a character sweep rather than a "
                        "one-way effect. Only audible in proportion to how much AMP is "
-                       "in the blend.") + hints;
+                       "in the blend.";
             if (id == "sag")
-                return xlat ("SAG - how much the amplifier's power supply droops "
+                return "SAG - how much the amplifier's power supply droops "
                        "under sustained demand. This is why a real amp 'gives' under a "
                        "held chord and why the attack feels spongy: the supply sags, "
                        "the gain falls a little, and then it recovers. 0 percent is a "
                        "stiff, regulated supply with no give at all; high settings are "
                        "a small amp being leaned on hard. Short transients never move "
-                       "it - only sustained programme does. Default 0 percent.") + hints;
+                       "it - only sustained programme does. Default 0 percent.";
             if (id == "presence")
-                return xlat ("PRESENCE - the negative-feedback network's top-end "
+                return "PRESENCE - the negative-feedback network's top-end "
                        "lift, the upper-mid bite that makes an amp cut through. It sits "
                        "AFTER the clipping, so it sharpens harmonics already present "
                        "rather than generating new ones. 50 percent is the flat, "
                        "neutral position; above it sharpens, below it darkens the way "
-                       "a low presence setting does. Default 50 percent.") + hints;
+                       "a low presence setting does. Default 50 percent.";
             if (id == "cabinet")
-                return xlat ("CABINET - the speaker and its box. A resonant "
+                return "CABINET - the speaker and its box. A resonant "
                        "low-pass, not a plain one: a peak around 110 Hz from the "
                        "cabinet's tuning and a roll-off from the cone's mass. Without "
                        "it a clipped signal is fizzy; with it, it reads as a speaker "
                        "rather than a circuit. The voicing fades in with however much "
                        "AMP is in the blend, so a pure tape setting is untouched. "
-                       "Default 0 percent - a DI, the raw amp output.") + hints;
+                       "Default 0 percent - a DI, the raw amp output.";
             if (id == "preamp")
-                return xlat ("PREAMP - a valve input stage in FRONT of the "
+                return "PREAMP - a valve input stage in FRONT of the "
                        "machine, the way a real chain has a microphone preamp before "
                        "the recorder. It is a STAGE, not a gain: driving it adds a "
                        "gentle soft clip, a transformer's low-cut and a slight top-end "
                        "lift, so it changes the colour as much as the level. It is "
                        "level-matched internally, so INPUT remains the control that "
-                       "sets the operating level. Default 0 percent - no preamp.") + hints;
+                       "sets the operating level. Default 0 percent - no preamp.";
             if (id == "distortion")
-                return xlat ("DISTORT - a diode clipper in front of the tape. "
+                return "DISTORT - a diode clipper in front of the tape. "
                        "Where the saturation core BENDS, this BREAKS: a hard knee with "
                        "a pre-gain, deliberately abrupt. It sits ahead of the machine "
                        "on purpose - a distorted signal recorded to tape sounds like a "
                        "record rather than a pedal precisely because the tape smooths "
-                       "what the pedal produced. Default 0 percent - off.") + hints;
+                       "what the pedal produced. Default 0 percent - off.";
             if (id == "flux")
-                return xlat ("FLUX - how deep into the oxide the record head "
+                return "FLUX - how deep into the oxide the record head "
                        "magnetises. More flux is more low end, a stronger hysteresis "
                        "memory and a quieter floor; less is thin and bright. It is a "
                        "different axis from DRIVE: DRIVE is how hard the signal is "
                        "pushed into the curve, FLUX is how much of the medium's depth "
-                       "is used. 50 percent is the calibrated, neutral flux.") + hints;
+                       "is used. 50 percent is the calibrated, neutral flux.";
             if (id == "wear")
-                return xlat ("WEAR - the state of the heads and the tape. A "
+                return "WEAR - the state of the heads and the tape. A "
                        "used machine is not a broken one: the head gap has rounded "
                        "slightly and the oxide has lost some of its edge, so the top "
                        "end softens and the contact adds a little noise. It should "
                        "read as an old machine, not as a fault. Default 0 percent - "
-                       "a fresh head and new tape.") + hints;
+                       "a fresh head and new tape.";
             if (id == "mechanics")
-                return xlat ("MECHANICS - the state of the transport's moving "
+                return "MECHANICS - the state of the transport's moving "
                        "parts. WOW and FLUTTER set how much pitch modulation there is; "
                        "this sets how WELL the mechanism holds it. At 0 the capstan, "
                        "pinch roller and reel motors are in good order, so the "
                        "modulation is smooth and periodic. Higher settings are dry "
                        "bearings and a slack belt: irregular drift and the occasional "
-                       "slip. Default 0 percent.") + hints;
+                       "slip. Default 0 percent.";
             if (id == "reverb")
-                return xlat ("REVERB - the room the machine is in. Tape "
+                return "REVERB - the room the machine is in. Tape "
                        "machines lived in rooms, and the room is part of the sound of "
                        "a recording made on one. This is a plate/room hybrid placed "
                        "AFTER the machine, so the reverb is of the processed signal "
                        "rather than feeding back into the saturation - which keeps it "
-                       "clean and predictable. Default 0 percent - dry.") + hints;
+                       "clean and predictable. Default 0 percent - dry.";
             if (id == "reverb_size")
-                return xlat ("RVB SIZE - how long the reverb's tail runs, and "
+                return "RVB SIZE - how long the reverb's tail runs, and "
                        "how dark it is: a bigger room absorbs more top end per pass, "
                        "so a long tail is a darker one. That is what stops a large "
                        "setting from sounding like a metal tank. Decay and level are "
                        "separate decisions on a real reverb, which is why this is not "
-                       "folded into REVERB. Default 40 percent.") + hints;
+                       "folded into REVERB. Default 40 percent.";
             if (id == "vinyl")
-                return xlat ("VINYL - the record-playing end of the chain. A "
+                return "VINYL - the record-playing end of the chain. A "
                        "turntable adds three things nothing else here does: surface "
                        "crackle, bearing rumble and the RIAA playback curve's low-end "
                        "lift and top-end softness. This is the overall amount; at 0 "
-                       "the whole stage is bypassed. Default 0 percent.") + hints;
+                       "the whole stage is bypassed. Default 0 percent.";
             if (id == "vinyl_crackle")
-                return xlat ("CRACKLE - surface noise, and specifically "
+                return "CRACKLE - surface noise, and specifically "
                        "IMPULSES rather than hiss. A record surface is ticks, caused "
                        "by dust and by the stylus crossing the groove's "
                        "imperfections, so the generator produces sparse impulses with "
                        "a fast decay instead of continuous noise. That is the "
                        "difference between a record and a noisy tape. Default 50 "
-                       "percent.") + hints;
+                       "percent.";
             if (id == "vinyl_rumble")
-                return xlat ("RUMBLE - the turntable's low-frequency thump, "
+                return "RUMBLE - the turntable's low-frequency thump, "
                        "from the bearing and the motor. It is why vinyl has a "
                        "bottom-end floor that a CD does not. It is a different noise "
                        "from the crackle and is scaled separately, because a worn "
                        "bearing and a dusty record are independent faults. Default "
-                       "35 percent.") + hints;
+                       "35 percent.";
             if (id == "vinyl_speed")
-                return xlat ("VINYL SPEED - the speed of the turntable's motor, "
+                return "VINYL SPEED - the speed of the turntable's motor, "
                        "not of the record: the VINYL TYPE describes the disc, this "
                        "describes what drives it. Each speed carries its own wow rate "
                        "and depth, so the same record wanders differently at 33 and "
                        "45, and a 78's wind-up motor wobbles hardest. 33 RPM is the "
-                       "default.") + hints;
+                       "default.";
             if (id == "vinyl_dust")
-                return xlat ("DUST - fine particulate in the groove. Unlike "
+                return "DUST - fine particulate in the groove. Unlike "
                        "CRACKLE's random ticks, dust is a CONTINUOUS granular "
                        "texture, band-limited high so it sits on top of the "
                        "music as grit. It follows the programme: a loud passage "
@@ -2999,26 +3054,26 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "a sound when there is modulation in the groove to "
                        "disturb it. A little dust is a worn record; a lot is a "
                        "record that has been left out of its sleeve. "
-                       "Default 0 percent.") + hints;
+                       "Default 0 percent.";
             if (id == "vinyl_scratch")
-                return xlat ("SCRATCH - a deep groove wound, not dust. Where "
+                return "SCRATCH - a deep groove wound, not dust. Where "
                        "a dust tick is random, a scratch is PERIODIC: the stylus "
                        "crosses the same damage every turn, so it arrives at the "
                        "platter rate and is heard as a repeating thud rather "
                        "than as a hiss. The rate follows VINYL SPEED, so the same "
                        "scratch repeats faster on a 45 than on a 33. "
-                       "Default 0 percent.") + hints;
+                       "Default 0 percent.";
             if (id == "vinyl_warp")
-                return xlat ("WARP - the record is not flat. A warped disc "
+                return "WARP - the record is not flat. A warped disc "
                        "makes the stylus ride up and down once per revolution, "
                        "so the tracking force - and therefore the output level - "
                        "breathes at the platter rate. It is a slow, cyclic "
                        "throb, which is what makes a warped record sound like it "
                        "is struggling rather than merely noisy. It modulates "
                        "what the stage passes rather than what it adds, so at 0 "
-                       "percent it is exactly unity. Default 0 percent.") + hints;
+                       "percent it is exactly unity. Default 0 percent.";
             if (id == "vinyl_electrical")
-                return xlat ("ELECTRICAL - the cartridge, the cable and the "
+                return "ELECTRICAL - the cartridge, the cable and the "
                        "earth loop. Two faults at once: MAINS HUM at the supply "
                        "frequency plus its second harmonic, which is what an "
                        "unearthed cartridge picks up from the motor and the "
@@ -3026,41 +3081,41 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "a bad ground. The hum's two sides are deliberately not "
                        "identical - the second harmonic is in anti-phase across "
                        "the pair - which is exactly how a real earth loop "
-                       "behaves. Default 0 percent.") + hints;
+                       "behaves. Default 0 percent.";
             if (id == "in_low")
-                return xlat ("IN LO - the input equaliser's low shelf, a "
+                return "IN LO - the input equaliser's low shelf, a "
                        "low-pass split at 200 Hz with the bottom band gained. "
                        "Because it sits BEFORE the tape, lifting it drives the "
                        "saturation curve and the glue compressors harder, so it "
                        "changes what the machine DOES rather than merely the "
-                       "balance. Range -12 to +12 dB, flat at 0 dB.") + hints;
+                       "balance. Range -12 to +12 dB, flat at 0 dB.";
             if (id == "in_mid")
-                return xlat ("IN MID - the input equaliser's bell, centred at "
+                return "IN MID - the input equaliser's bell, centred at "
                        "1 kHz inside the 200 Hz - 4 kHz band. A bell rather than a "
                        "shelf, so it acts on its own pass band and leaves the two "
-                       "ends where they were. Range -12 to +12 dB, flat at 0 dB.") + hints;
+                       "ends where they were. Range -12 to +12 dB, flat at 0 dB.";
             if (id == "in_high")
-                return xlat ("IN HI - the input equaliser's high shelf, "
+                return "IN HI - the input equaliser's high shelf, "
                        "everything above 4 kHz. Feed the machine the top end you "
                        "want it to saturate on, rather than fixing it afterwards. "
-                       "Range -12 to +12 dB, flat at 0 dB.") + hints;
+                       "Range -12 to +12 dB, flat at 0 dB.";
             if (id == "out_low")
-                return xlat ("OUT LO - the output equaliser's low shelf at "
+                return "OUT LO - the output equaliser's low shelf at "
                        "200 Hz. It sits AFTER everything the machine does and "
                        "before the output trim, so nothing downstream responds to "
                        "it: this is the neutral EQ you use to place the finished "
-                       "sound. Range -12 to +12 dB, flat at 0 dB.") + hints;
+                       "sound. Range -12 to +12 dB, flat at 0 dB.";
             if (id == "out_mid")
-                return xlat ("OUT MID - the output equaliser's bell at "
+                return "OUT MID - the output equaliser's bell at "
                        "1 kHz. Presence or hollow, depending which way you go, "
                        "with both ends left alone. Range -12 to +12 dB, flat at "
-                       "0 dB.") + hints;
+                       "0 dB.";
             if (id == "out_high")
-                return xlat ("OUT HI - the output equaliser's high shelf "
+                return "OUT HI - the output equaliser's high shelf "
                        "above 4 kHz. Air, or the lack of it, applied to the "
-                       "finished machine. Range -12 to +12 dB, flat at 0 dB.") + hints;
+                       "finished machine. Range -12 to +12 dB, flat at 0 dB.";
             if (id == "vinyl_clicks")
-                return xlat ("CLICKS - the sharp, discrete groove faults. "
+                return "CLICKS - the sharp, discrete groove faults. "
                        "CRACKLE is fine surface texture and DUST is grit in the "
                        "groove; a CLICK is an actual ridge or pit that the stylus "
                        "hits as a single hard transient - a fast bipolar impact "
@@ -3068,40 +3123,103 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "rather than as more crackle. Above half the travel a "
                        "fraction of the clicks becomes PERIODIC, locked to the "
                        "platter, so a badly pressed record ticks in time rather "
-                       "than at random. Default 0 percent.") + hints;
+                       "than at random. Default 0 percent.";
             if (id == "transient_attack")
-                return xlat ("ATK - the leading edge of each event. The transient "
+                return "ATK - the leading edge of each event. The transient "
                        "shaper looks at the signal's ENVELOPE rather than its "
                        "waveform, so it can make a hit sharper without adding a "
                        "harmonic: positive sharpens the attack (punch, snap, "
                        "click), negative softens it (rounder, less percussive). "
-                       "Range -100 to +100 percent, neutral at 0.") + hints;
+                       "Range -100 to +100 percent, neutral at 0.";
             if (id == "transient_sustain")
-                return xlat ("SUS - what follows the attack: the body, the ring, "
+                return "SUS - what follows the attack: the body, the ring, "
                        "the room. Positive lengthens it (fuller, more sustain), "
                        "negative shortens it (tighter, more staccato). Like ATK "
                        "it moves the envelope's level rather than the waveform, "
                        "so the harmonics the machine produced are untouched. "
-                       "Range -100 to +100 percent, neutral at 0.") + hints;
+                       "Range -100 to +100 percent, neutral at 0.";
             if (id == "transient_mix")
-                return xlat ("TR MIX - how much of the transient-shaped signal "
+                return "TR MIX - how much of the transient-shaped signal "
                        "reaches the output. At 0 the stage is absent and the "
                        "signal passes untouched; at 100 it is the fully shaped "
                        "one. In between the two are crossfaded, so the amount of "
                        "shaping can be dialled in rather than switched. "
-                       "Default 0 percent.") + hints;
+                       "Default 0 percent.";
             if (id == "neural_mix")
-                return xlat ("NEURAL - the wet/dry position of the optional "
+                return "NEURAL - the wet/dry position of the optional "
                        "learned model. The model is not a knob: it is a file "
                        "loaded with LOAD MODEL on the DYN tab, and the network "
                        "itself (a Dense net, an LSTM, a GRU) is whatever the file "
                        "describes. This control blends the model's output with "
                        "the untouched signal, so it is always a crossfade. At 0, "
                        "or with no model loaded, the stage is transparent. "
-                       "Default 0 percent.") + hints;
-            return hints;
+                       "Default 0 percent.";
+            // The eleven knobs that were falling through to an empty sentence:
+            // they showed the shared interaction hint only, which the user read
+            // as "tooltip is missing". One branch each, same shape as the rest.
+            if (id == "di")
+                return "DI - the instrument input's direct-injection stage in "
+                       "FRONT of the machine: a high-impedance buffer that keeps "
+                       "a guitar or synth pickup from loading down, plus the pad, "
+                       "load and transformer that follow it. Default 0 percent - "
+                       "the plain input path.";
+            if (id == "di_load")
+                return "DI LOAD - the input impedance the instrument sees in "
+                       "the DI stage. A pickup is a reactive source: 1 M keeps "
+                       "a guitar bright and open, 220 k tames a hot active bass, "
+                       "and lower still tightens a synth's output stage. Default "
+                       "0 percent.";
+            if (id == "di_transformer")
+                return "DI XFMR - the DI's output transformer. OFF is a clean "
+                       "electronic path; the transformer adds its iron colour, "
+                       "a gentle low cut and the slight phase smear a real direct "
+                       "box gives. Default 0 percent - off.";
+            if (id == "st_link")
+                return "ST LINK - gangs the stereo pair's shared controls so one "
+                       "knob sets both channels. Off splits the machine into two "
+                       "independent sides for separate left/right settings. "
+                       "Default linked.";
+            if (id == "delay_pingpong")
+                return "PING-PONG - bounces the second head's repeats between "
+                       "the left and right output instead of doubling them in "
+                       "both channels. Off, every repeat lands centred. Default "
+                       "0 percent - off.";
+            if (id == "in_eq_q")
+                return "IN Q - the input equaliser's corner resonance, shared "
+                       "by its bell and the shoulders of its shelves. 0.7 is the "
+                       "flat Butterworth corner; higher sharpens the bell's "
+                       "shoulder and rings slightly at the corner frequency. "
+                       "Default 0.7.";
+            if (id == "out_eq_q")
+                return "OUT Q - the output equaliser's corner resonance, shared "
+                       "by its bell and the shoulders of its shelves. Same curve "
+                       "as the input Q, applied AFTER the machine, where it shapes "
+                       "the result rather than the drive. Default 0.7.";
+            if (id == "in_hp_freq")
+                return "IN HP - the input equaliser's high-pass corner. "
+                       "Everything below it is removed BEFORE the machine, so a "
+                       "bass-heavy source can be kept from flapping the tape's "
+                       "low end. 20 Hz is effectively out of the way.";
+            if (id == "in_lp_freq")
+                return "IN LP - the input equaliser's low-pass corner. "
+                       "Everything above it is removed BEFORE the machine, the "
+                       "way a deck's record electronics roll the top off. "
+                       "20 kHz is effectively out of the way.";
+            if (id == "out_hp_freq")
+                return "OUT HP - the output equaliser's high-pass corner. "
+                       "Everything below it is removed AFTER the machine, on the "
+                       "finished sound, where nothing downstream responds to it. "
+                       "20 Hz is effectively out of the way.";
+            if (id == "out_lp_freq")
+                return "OUT LP - the output equaliser's low-pass corner. "
+                       "Everything above it is removed AFTER the machine, on the "
+                       "finished sound, where nothing downstream responds to it. "
+                       "20 kHz is effectively out of the way.";
+            return {};
         };
-        setTip (slider, parameterTooltip (controlIds[static_cast<int> (i)]));
+        setTippedSentence (slider, parameterTooltip (controlIds[static_cast<int> (i)]),
+                           " Hold Shift for fine control, mouse wheel for small "
+                           "steps, double-click to reset.");
 
         // Index 8 is OUTPUT, not 7: the control order is INPUT, DRIVE, BIAS, BRIGHT,
         // TONE, WOW, FLUTTER, MIX, OUTPUT, WIDTH, SUBFUND, DELAY, DLY LVL, ST OFFSET,
@@ -3784,6 +3902,17 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // ---------------------------------------------------------------
     loadNeuralButton.setLookAndFeel (&inlineLookAndFeel);
     clearNeuralButton.setLookAndFeel (&inlineLookAndFeel);
+    // "Currently black" (the user's screenshot of the model picker): these two
+    // are TextButtons whose colours were never set, so the inline Look and
+    // Feel's unstyled defaults ran - a near-black slab on every theme. They get
+    // the SAME raised-face pill the workflow buttons carry, re-inked per theme
+    // in applyTheme().
+    loadNeuralButton.setColour (juce::TextButton::buttonColourId, paletteFor (false).raised);
+    loadNeuralButton.setColour (juce::TextButton::textColourOffId, paletteFor (false).text);
+    loadNeuralButton.setColour (juce::TextButton::buttonOnColourId, paletteFor (false).raised.darker (0.15f));
+    clearNeuralButton.setColour (juce::TextButton::buttonColourId, paletteFor (false).raised);
+    clearNeuralButton.setColour (juce::TextButton::textColourOffId, paletteFor (false).text);
+    clearNeuralButton.setColour (juce::TextButton::buttonOnColourId, paletteFor (false).raised.darker (0.15f));
     setTip (loadNeuralButton, "LOAD MODEL - reads an RTNeural model file (its JSON "
                                  "description) and installs it as the plugin's optional "
                                  "learned nonlinearity. The network is whatever the file "
@@ -4157,12 +4286,21 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     {
         // Whatever the user asked for wins: stop the startup retries, or they would
         // switch the accelerator back on seconds after the user turned it off.
+        // glUserDisabled records WHICH side dropped the context - only the user's
+        // own click sets it, so the timer's retries still recover a context the
+        // HOST lost (see the retry block in timerCallback).
         glAttachAttemptsLeft = 0;
 
         if (openGLContext.isAttached())
+        {
+            glUserDisabled = true;
             openGLContext.detach();
+        }
         else
+        {
+            glUserDisabled = false;
             openGLContext.attachTo (*this);
+        }
 
         // One place decides what the switch says, how it looks, and whether the
         // 3D transport gets a context, and all three read the context's state
@@ -4365,9 +4503,10 @@ FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayo
     EditorLayout layout;
 
     // Header and deck are fixed-height, so they keep their proportions at small panel
-    // sizes and on high-DPI displays. The header is 84 px - tall enough for the four
-    // engine switches the deck used to carry (BYPASS / DELTA / POLARITY / AUTO GAIN) on
-    // its first right-hand row, with THEME and the status readout on the second.
+    // sizes and on high-DPI displays. The header is 84 px - tall enough for three
+    // right-hand rows: the four engine switches (BYPASS / DELTA / POLARITY / AUTO GAIN),
+    // THEME with the language pair, and the machine-state readout on a full-width
+    // band of its own (see the header grid in resized()).
     //
     // The deck is 278 px and was 322. The forty-four came out of the machine readouts,
     // which were a three-high vertical stack pinned to the deck's right edge and are
@@ -4558,7 +4697,11 @@ void FirstAudioProcessorEditor::applyTheme()
     // The language selector is drawn by the deck Look and Feel (which overrides
     // captions, not combo backgrounds), so like the user-preset list it needs its
     // palette colours set here or it keeps the base Look and Feel's own grey -
-    // a box that matched nothing else on the panel.
+    // a box that matched nothing else on the panel. This styling block runs AFTER
+    // applyLanguage above, so the box's text colour set there is overwritten by
+    // this call with the palette's own text colour - the intended end state, and
+    // the reason applyLanguage re-inks textColourId itself is only to colour the
+    // window BETWEEN those two moments.
     styleCombo (languageBox);
 
     // The lists' popup menus paint through the LookAndFeel_V4 item drawing, which
@@ -4684,7 +4827,6 @@ void FirstAudioProcessorEditor::applyTheme()
 void FirstAudioProcessorEditor::paint (juce::Graphics& g)
 {
     const auto& palette = paletteFor (darkTheme);
-
     // The band this paint actually has to cover. The panel is repainted in bands
     // (see timerCallback) and most of what this function draws never changes, so
     // the clip is used to skip whole sections instead of drawing them and letting
@@ -4696,6 +4838,21 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     g.fillAll (palette.background);
 
     const auto layout = getEditorLayout();
+    // The neural card sits behind the CHARACTER page's picker cell, and its
+    // geometry MIRRORS resized()'s: the grid is the controls band reduced by
+    // 14, cut 62 from the top (controlsDividerOffset 68 - 14 + 8) and 8 from
+    // the bottom; the member band is a fixed 50 px strip at the grid's bottom;
+    // CHARACTER holds three knobs, so one knob row takes all the rest. The
+    // picker rides the fourth column of the member band - its cell x is
+    // grid.x + 3 * cellWidth, width cellWidth (cellWidth = gridW / 4).
+    constexpr int tabColumnsNow = 4;
+    constexpr int memberBandHeightNow = 50;
+    auto gridNow = layout.controls.reduced (14);
+    gridNow.removeFromTop (controlsDividerOffset - 14 + 8);
+    gridNow.removeFromBottom (8);
+    const auto memberBandY = gridNow.getBottom() - memberBandHeightNow;
+    const auto cellWidthNow = gridNow.getWidth() / tabColumnsNow;
+
     // ------------------------------------------------------------------
     //  Chassis grain.
     //
@@ -4842,31 +4999,55 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
                           static_cast<float> (layout.deck.getX() + 16),
                           static_cast<float> (layout.deck.getRight() - 16));
 
-    const auto statusBadge = juce::Rectangle<float> (
-        static_cast<float> (layout.header.getRight() - 205),
-        static_cast<float> (layout.header.getY() + 20), 184.0f, 30.0f);
+    // The machine-state badge: a raised pill across the header grid's THIRD row,
+    // wrapped around the statusLabel that lives there. The text moved to the
+    // deck in an earlier pass but the drawn pill stayed in the header, so the
+    // header switches printed over an empty badge plate - the user saw controls
+    // on a design that had lost its text. The design now lives with its text
+    // again, on a row nothing else occupies: the pill cannot be collided with.
+    const auto statusPill = juce::Rectangle<float> (
+        static_cast<float> (layout.header.getRight()
+                                - (4 * 92 + 3 * 6)),
+        static_cast<float> (layout.header.getY() + 62),
+        static_cast<float> (4 * 92 + 3 * 6 - 18), 18.0f);
     g.setColour (palette.raised.darker (0.16f));
-    g.fillRoundedRectangle (statusBadge, 4.0f);
+    g.fillRoundedRectangle (statusPill, 4.0f);
 
-    // A hairline rule under the header strip, inset from the badge, so the title
-    // block and the controls read as separate bands instead of one tall rectangle.
-    // It stops short of the status badge at both ends - running it beneath the badge
-    // would cut the badge's rounded bottom off.
-    g.setColour (palette.border.withAlpha (0.5f));
-    g.drawHorizontalLine (layout.header.getBottom() - 4,
-                          static_cast<float> (layout.header.getX() + 18),
-                          static_cast<float> (layout.header.getRight() - 222));
-
-    // Status lamp: pulses with the compressor, so the header shows that the
+    // Status lamp: pulses with the compressor, so the panel shows that the
     // plugin is alive and working even when no gain reduction is happening.
-    const auto lampCentre = juce::Point<float> (statusBadge.getX() + 16.0f,
-                                                statusBadge.getCentreY());
+    const auto lampCentre = juce::Point<float> (statusPill.getX() + 15.0f,
+                                                statusPill.getCentreY());
     const auto lampPulse = 4.5f + 2.5f * glowAmount;
     g.setColour (palette.status.withAlpha (0.12f + 0.30f * glowAmount));
     g.fillEllipse (lampCentre.x - lampPulse * 2.2f, lampCentre.y - lampPulse * 2.2f,
                    lampPulse * 4.4f, lampPulse * 4.4f);
     g.setColour (palette.status);
     g.fillEllipse (lampCentre.x - 3.5f, lampCentre.y - 3.5f, 7.0f, 7.0f);
+
+    // The neural model picker's card: the moved picker reads as a device with a
+    // face, not as three unstyled widgets on the page - "it's black" was the
+    // unstyled defaults speaking. The card is drawn behind the fourth-column
+    // picker cell only when CHARACTER is the visible tab.
+    if (activeTabIsCharacter)
+    {
+        const auto card = juce::Rectangle<float> (
+            static_cast<float> (gridNow.getX() + 3 * cellWidthNow),
+            static_cast<float> (memberBandY),
+            static_cast<float> (cellWidthNow),
+            static_cast<float> (memberBandHeightNow));
+        g.setColour (palette.raised.brighter (0.06f));
+        g.fillRoundedRectangle (card, 4.0f);
+        g.setColour (palette.border.withAlpha (0.55f));
+        g.drawRoundedRectangle (card, 4.0f, 1.0f);
+    }
+
+    // A hairline rule under the header strip separates the title block from the
+    // controls; it runs the full width again - the badge it used to dodge lives
+    // on the grid's third row now.
+    g.setColour (palette.border.withAlpha (0.5f));
+    g.drawHorizontalLine (layout.header.getBottom() - 4,
+                          static_cast<float> (layout.header.getX() + 18),
+                          static_cast<float> (layout.header.getRight() - 18));
 
     // getX()/getRight() return int, so the 9.0f insets are added *after* the cast.
     // `getX() + 9.0f` promotes the int to float implicitly, which is exactly what
@@ -5056,7 +5237,18 @@ void FirstAudioProcessorEditor::timerCallback()
     {
         --glAttachAttemptsLeft;
 
-        if (openGLContext.isAttached())
+        // Attach retries run while the user has NOT turned GL off by hand. The
+        // old guard short-circuited on isAttached() alone, which on a host whose
+        // context is killed/recreated (resize, plugin scan, some sandboxed
+        // players) left the retry budget dead with GL detached forever - the
+        // user's "no shaders, no 3D, ever". glUserDisabled is the switch's own
+        // state: only the user's click on GL OFF sets it, so a context the HOST
+        // dropped is retried, one the USER dropped is not.
+        if (glUserDisabled)
+        {
+            glAttachAttemptsLeft = 0;
+        }
+        else if (openGLContext.isAttached())
         {
             glAttachAttemptsLeft = 0;
         }
@@ -5125,10 +5317,20 @@ void FirstAudioProcessorEditor::timerCallback()
     // glance without needing to compare the numbers.
     const auto harmonicPalette = paletteFor (darkTheme);
     const auto totalHarmonics = evenRatio + oddRatio;
+    // The readouts breathe with the machine: a gentle luminance oscillation on
+    // top of the state colour, so the numbers feel powered by the same signal
+    // they report rather than painted on. The breath is bounded (±20 %), so the
+    // colour coding stays readable at every phase.
+    const auto readoutBreath = 1.0f - 0.2f
+                                  * (0.5f + 0.5f * std::sin (customLookAndFeel.phase()));
+    const auto breathe = [&] (juce::Colour c)
+    {
+        return c.withMultipliedBrightness (readoutBreath);
+    };
     harmonicsReadout.setColour (juce::Label::textColourId,
-                                totalHarmonics < 0.001f ? harmonicPalette.secondary
-                                : evenRatio >= oddRatio ? harmonicPalette.status
-                                                        : harmonicPalette.needle);
+                                breathe (totalHarmonics < 0.001f ? harmonicPalette.secondary
+                                            : evenRatio >= oddRatio ? harmonicPalette.status
+                                                                    : harmonicPalette.needle));
 
     // The deck's tempo, as the host reports it. A host that offers no playhead
     // (an offline render, a bare player) leaves the readout at the machine's
@@ -5137,12 +5339,13 @@ void FirstAudioProcessorEditor::timerCallback()
     const auto deckBpm = audioProcessor.getDeckTempoBpm();
     const auto deckBpmValid = audioProcessor.getDeckTempoValid();
     bpmReadout.setText (deckBpmValid
-                            ? juce::String (deckBpm, 1) + " BPM"
-                            : juce::String (juce::roundToInt (deckBpm)) + " BPM (default)",
+                            ? juce::String (deckBpm, 1) + " " + xlat ("BPM")
+                            : juce::String (juce::roundToInt (deckBpm)) + " "
+                                  + xlat ("BPM") + " (" + xlat ("default") + ")",
                         juce::dontSendNotification);
     bpmReadout.setColour (juce::Label::textColourId,
-                          deckBpmValid ? paletteFor (darkTheme).status
-                                       : paletteFor (darkTheme).secondary);
+                          breathe (deckBpmValid ? paletteFor (darkTheme).status
+                                                : paletteFor (darkTheme).secondary));
 
     // ------------------------------------------------------------------
     //  Subharmonic tracking readout.
@@ -5160,7 +5363,7 @@ void FirstAudioProcessorEditor::timerCallback()
 
     if (confidence < 0.05f || trackedHz <= 0.0f)
     {
-        subfundReadout.setText ("idle - no note tracked", juce::dontSendNotification);
+        subfundReadout.setText (xlat ("idle - no note tracked"), juce::dontSendNotification);
         subfundReadout.setColour (juce::Label::textColourId, harmonicPalette.secondary);
     }
     else
@@ -5175,8 +5378,8 @@ void FirstAudioProcessorEditor::timerCallback()
         // Green while the track is solid, amber while it is partial: the colour is
         // the readout's own confidence bar.
         subfundReadout.setColour (juce::Label::textColourId,
-                                  confidence > 0.75f ? harmonicPalette.status
-                                                     : harmonicPalette.needle);
+                                  breathe (confidence > 0.75f ? harmonicPalette.status
+                                                              : harmonicPalette.needle));
     }
 
     // ------------------------------------------------------------------
@@ -5191,16 +5394,16 @@ void FirstAudioProcessorEditor::timerCallback()
     // ------------------------------------------------------------------
     const auto antiPhaseNow = telemetry.antiPhaseAmount;
     const auto antiPhaseText = antiPhaseNow < 0.01f
-                                   ? juce::String ("clean")
+                                   ? xlat ("clean")
                                    : juce::String (juce::roundToInt (antiPhaseNow * 100.0f))
-                                         + " % corrected";
+                                         + " " + xlat ("% corrected");
     if (antiPhaseText != lastShownAntiPhase)
     {
         lastShownAntiPhase = antiPhaseText;
         antiPhaseReadout.setText (antiPhaseText, juce::dontSendNotification);
         antiPhaseReadout.setColour (juce::Label::textColourId,
-                                    antiPhaseNow < 0.01f ? harmonicPalette.status
-                                                         : harmonicPalette.needle);
+                                    breathe (antiPhaseNow < 0.01f ? harmonicPalette.status
+                                                                  : harmonicPalette.needle));
     }
 
     // Animated presentation state. Everything here is derived from audio
@@ -5217,16 +5420,17 @@ void FirstAudioProcessorEditor::timerCallback()
     driftAmount += (drift - driftAmount) * 0.25f;
 
     // The header status text follows the real bypass state of the processor.
+    // Set UNCONDITIONALLY rather than on change: Label::setText early-outs on an
+    // identical string, and the unconditional call is what makes a language
+    // switch re-translate the readout on the very next frame without waiting
+    // for a bypass toggle to change the state first.
     const auto bypassed = telemetry.bypassActive;
-    if (bypassed != currentBypassDisplay)
-    {
-        currentBypassDisplay = bypassed;
-        statusLabel.setText (bypassed ? "BYPASSED / DRY" : "STEREO / REAL TIME",
-                             juce::dontSendNotification);
-        statusLabel.setColour (juce::Label::textColourId,
-                               bypassed ? paletteFor (darkTheme).secondary
-                                        : paletteFor (darkTheme).status);
-    }
+    currentBypassDisplay = bypassed;
+    statusLabel.setText (bypassed ? xlat ("BYPASSED / DRY") : xlat ("STEREO / REAL TIME"),
+                         juce::dontSendNotification);
+    statusLabel.setColour (juce::Label::textColourId,
+                           bypassed ? paletteFor (darkTheme).secondary
+                                    : paletteFor (darkTheme).status);
 
     // The reels spin at the machine's ACTUAL platter speed, which is the transport
     // ramp multiplied by the spindown ramp - so a START makes them visibly come up
@@ -5297,6 +5501,10 @@ void FirstAudioProcessorEditor::timerCallback()
     customLookAndFeel.setActivity (glowAmount);
     customLookAndFeel.setDrift (driftAmount);
     customLookAndFeel.advanceFrame();
+    // The toggle thumbs' glide is one per-frame ease for every tracked switch
+    // (see J37LookAndFeel::updateToggleAnimations); run it on the same tick as
+    // the panel's other animation so the whole surface shares one clock.
+    customLookAndFeel.updateToggleAnimations();
 
     // ------------------------------------------------------------------
     //  Interface sounds.
@@ -5494,54 +5702,78 @@ void FirstAudioProcessorEditor::resized()
     //  widths (74 / 92 / 96 / 100 / 181), cursor-placed: no two buttons the
     //  same width, their columns never lining up, which is exactly the
     //  "arranged at random" look. The header is now ONE GRID - four equal
-    //  columns, two rows - and every switch is one cell. Rows read left to
+    //  columns, three rows - and every switch is one cell. Rows read left to
     //  right in the order a user scans them; nothing overlaps by construction
     //  (cells cannot intersect) and nothing drifts (no elastic gaps to grow).
+    //
+    //  Row three is the machine-state readout's own band. The first grid had
+    //  two rows and put them into the drawn badge's plate (right - 205, +20,
+    //  30 px tall) - switches ON the pill, which is what the user reported as
+    //  "overlapping the Real-Time/Stereo caption AND its design". The badge
+    //  lives on the grid's third row now: full grid width, 18 px, pill painted
+    //  under it in paint(), lamp at its left end, nothing else ever placed
+    //  there.
     //
     //  Clearance at the 780 px minimum: the grid is 386 px wide (4 x 92 + 3 x 6)
     //  and starts at header.right - 386 = x + 366 on a 780 panel, clearing the
     //  title block (ends x + 346) by 20 px at the tightest size and more above it.
-    //  The machine-state readout (BYPASSED/DRY, STEREO/REAL TIME) does NOT live
-    //  in the header at all - the user twice reported the header controls
-    //  printing over the "Real-Time/Stereo" caption, and the only layout that
-    //  can never overlap is one where they never share a band: the readout
-    //  belongs with the machine's other readouts on the deck's badge line
-    //  (see the badge band below). The grid now owns the header's right half
-    //  outright; nothing else is placed there.
     // ------------------------------------------------------------------------------
     const auto headerRight = layout.header.getRight();
     constexpr int headerGap = 6;
-    constexpr int headerSwitchHeight = 28;
+    constexpr int headerSwitchHeight = 22;
     constexpr int headerColumnWidth = 92;
     constexpr int headerColumns = 4;
     const auto headerRowOneY = layout.header.getY() + 10;
-    const auto headerRowTwoY = layout.header.getY() + 44;
+    const auto headerRowTwoY = layout.header.getY() + 36;
+    const auto headerRowThreeY = layout.header.getY() + 62;
+    constexpr int headerStatusHeight = 18;
     const auto headerGridLeft = headerRight
                               - (headerColumns * headerColumnWidth
                                  + (headerColumns - 1) * headerGap);
 
-    const auto headerCell = [&] (juce::Component& component, int column, int rowY)
+    // No default argument on height: a lambda's default argument may not name
+    // a local variable (the exact "local variable may not appear in this
+    // context" GCC hands back), so every call passes its row height in full.
+    const auto headerCell = [&] (juce::Component& component, int column, int rowY,
+                                 int height)
     {
         component.setBounds (headerGridLeft + column * (headerColumnWidth + headerGap),
-                             rowY, headerColumnWidth, headerSwitchHeight);
+                             rowY, headerColumnWidth, height);
     };
 
     // Row one: the four engine switches, equal cells, one grid.
-    headerCell (deltaButton,     0, headerRowOneY);
-    headerCell (bypassButton,    1, headerRowOneY);
-    headerCell (polarityButton,  2, headerRowOneY);
-    headerCell (autoGainButton,  3, headerRowOneY);
+    headerCell (deltaButton,     0, headerRowOneY, headerSwitchHeight);
+    headerCell (bypassButton,    1, headerRowOneY, headerSwitchHeight);
+    headerCell (polarityButton,  2, headerRowOneY, headerSwitchHeight);
+    headerCell (autoGainButton,  3, headerRowOneY, headerSwitchHeight);
 
     // Row two: THEME, then the language pair - caption cell + a box that spans
-    // the last two cells (a 108 px combo in a 190 px span, left-aligned, so the
-    // row still fills all four columns with no hole at its end).
-    headerCell (themeButton,     0, headerRowTwoY);
-    headerCell (languageLabel,   1, headerRowTwoY);
+    // the last two cells.
+    headerCell (themeButton,     0, headerRowTwoY, headerSwitchHeight);
+    headerCell (languageLabel,   1, headerRowTwoY, headerSwitchHeight);
     languageLabel.setJustificationType (juce::Justification::centredRight);
     languageBox.setBounds (headerGridLeft + 2 * (headerColumnWidth + headerGap),
                            headerRowTwoY,
                            2 * headerColumnWidth + headerGap,
                            headerSwitchHeight);
+
+    // Row three is the machine-state readout's OWN band, full grid width minus
+    // the header's corner screw. The
+    // first grid put row-two switches into the drawn badge's 30 px-tall plate
+    // (right - 205, y + 20) - switches ON the pill, the user's complaint. A
+    // two-row grid has no cell a 30 px badge fits in, so the header grew a
+    // third row: the pill returns to the header as a strip under the
+    // switches, painted in paint() exactly on these bounds, lamp at its left
+    // end, text after it. BYPASS ON swaps the text to BYPASSED / DRY from the
+    // telemetry timer; nothing else is ever placed on this row, so the pill
+    // cannot be collided with by construction.
+    statusLabel.setBounds (headerGridLeft, headerRowThreeY,
+                           headerColumns * headerColumnWidth
+                               + (headerColumns - 1) * headerGap - 18,
+                           headerStatusHeight);
+    statusLabel.setJustificationType (juce::Justification::centredLeft);
+    statusLabel.setFont (statusLabel.getFont().withHeight (9.0f));
+    statusLabel.setBorderSize (juce::BorderSize<int> (0, 26, 0, 0));
 
     // ------------------------------------------------------------------
     //  The deck.
@@ -6049,20 +6281,11 @@ void FirstAudioProcessorEditor::resized()
     // width, so a long preset name shrinks into what is left rather than
     // printing under the state text - the shrinking font below measures the
     // label's ACTUAL bounds, so narrowing it is the whole fix.
-    constexpr int statusCellWidth = 180;
-    constexpr int badgeLineInset = 14;
-    statusLabel.setBounds (layout.deck.getRight() - badgeLineInset - statusCellWidth,
-                           deckTop (6), statusCellWidth, 14);
-
-    // The state cell is RIGHT-anchored, so it only needs the badge to stop
-    // short of it - the badge's width was incorrectly written as the band
-    // minus the whole cell, shrinking the badge by ~190 px at every size to
-    // avoid a collision that only exists in the cell's own 180 px. The badge
-    // now spans to the cell's left edge; at the 780 px minimum that is 78 px
-    // MORE badge than before.
+    // The state readout is back in the header on its drawn pill (see the header
+    // grid above), so the badge line is the preset badge's alone again - full
+    // band width, the pill painted UNDER this line in paint() needs no cell.
     presetBadgeLabel.setBounds (layout.deck.getX() + 22, deckTop (6),
-                                layout.deck.getRight() - badgeLineInset - statusCellWidth
-                                    - (layout.deck.getX() + 22), 14);
+                                layout.deck.getWidth() - 44, 14);
     presetBadgeLabel.setFont (shrinkingFont (presetBadgeLabel.getText(), 8.0f,
                                              juce::Font::plain,
                                              static_cast<float> (presetBadgeLabel.getWidth()) - 4.0f));
@@ -6233,8 +6456,18 @@ void FirstAudioProcessorEditor::resized()
         // live, so a resize between tab switches can never leave a stale one.
         label.setText (caption, juce::dontSendNotification);
         label.setBounds (cell.getX() + 5, cell.getY() + 1, cell.getWidth() - 10, 17);
-        box.setBounds (cell.getX() + 12, cell.getY() + 20,
-                       cell.getWidth() - 24, juce::jmin (30, cell.getHeight() - 22));
+        // The control band used to be pinned to the cell's TOP (y + 20) at full
+        // remaining height, so on tabs whose member band is taller than 30 px
+        // (DRIVE's member row inherits three knob rows' worth of height) the
+        // toggle stretched into a tall pill with the capsule's rounding reading
+        // as a bulge - the crooked switches on the DRIVE page. The band is now
+        // a 30 px control vertically CENTRED under its caption, the same height
+        // every other switch in the panel shows.
+        const auto bandHeight = juce::jmin (30, cell.getHeight() - 22);
+        const auto bandY = cell.getY() + 20
+                           + juce::jmax (0, (cell.getHeight() - 22 - bandHeight) / 2);
+        box.setBounds (cell.getX() + 12, bandY,
+                       cell.getWidth() - 24, bandHeight);
     };
 
     // Visibility for the deck switches is re-asserted here rather than only in
@@ -6275,11 +6508,11 @@ void FirstAudioProcessorEditor::resized()
     delaySyncLabel.setVisible (spaceTab);
     delaySyncButton.setVisible (spaceTab);
 
-    // The neural model picker belongs to the DYNAMICS page, beside the NEURAL
-    // knob it feeds, so it follows the same tab as that knob.
-    loadNeuralButton.setVisible (dynamicsTab);
-    clearNeuralButton.setVisible (dynamicsTab);
-    neuralStatusLabel.setVisible (dynamicsTab);
+    // The neural model picker moved to the CHARACTER page (a voicing choice,
+    // living with the other voicing selectors), so it follows that tab now.
+    loadNeuralButton.setVisible (characterTab);
+    clearNeuralButton.setVisible (characterTab);
+    neuralStatusLabel.setVisible (characterTab);
 
     // The three vinyl selectors moved to the CHARACTER page: they re-voice the
     // whole vinyl stage, so they live with the machine's other voicing rather
@@ -6330,28 +6563,40 @@ void FirstAudioProcessorEditor::resized()
     else if (characterTab)
     {
         // CHARACTER: three knobs in the first row, so the member row under them
-        // is where the three vinyl voicing selectors live - the order the
-        // record is made in: what was cut, what plays it, what reads it.
+        // is where the page's lists live. Left to right - the order the record
+        // is made in: what was cut, what plays it, what reads it. The NEURAL
+        // model picker moved here from DYNAMICS (the user's request): it is a
+        // VOICING choice - which machine shape bends the signal - and it sits
+        // beside the other voicing selectors, in a fourth cell, with its status
+        // readout above the row's own band so it cannot collide with them.
         placeDeckSwitch (vinylGenerationLabel, vinylGenerationBox, 0, 1, "GENERATION");
         placeDeckSwitch (vinylTurntableLabel, vinylTurntableBox, 1, 1, "TURNTABLE");
         placeDeckSwitch (vinylCartridgeLabel, vinylCartridgeBox, 2, 1, "CARTRIDGE");
-    }
-    else if (dynamicsTab)
-    {
-        // DYNAMICS: four knobs fill the first row, so the member row under them
-        // is where the neural model picker lives - LOAD and CLEAR side by side
-        // in the first two cells, with the status readout beside them. The
-        // picker is not a knob (it opens a file), so it is laid out here rather
-        // than by the grid.
+
         const auto buttonY = memberRowY + 20;
         const auto buttonH = juce::jmin (30, grid.getBottom() - memberRowY - 22);
 
-        loadNeuralButton.setBounds (grid.getX() + 12, buttonY,
+        // The picker rides the member band's FOURTH column, exactly under the
+        // page's fourth knob cell: LOAD MODEL on the band's control line, CLEAR
+        // beneath it, the model-status readout in the band's caption line above
+        // them. paint() draws the card behind precisely this column - the two
+        // geometries share the arithmetic (grid / 4 columns, 50 px band), so
+        // they cannot disagree.
+        loadNeuralButton.setBounds (grid.getX() + 3 * cellWidth + 12, buttonY,
                                     cellWidth - 24, buttonH);
-        clearNeuralButton.setBounds (grid.getX() + cellWidth + 12, buttonY,
-                                     cellWidth - 24, buttonH);
-        neuralStatusLabel.setBounds (grid.getX() + 2 * cellWidth + 6, buttonY - 2,
-                                     2 * cellWidth - 12, buttonH + 4);
+        clearNeuralButton.setBounds (grid.getX() + 3 * cellWidth + 18,
+                                     buttonY + buttonH + 6,
+                                     cellWidth - 36, buttonH);
+        neuralStatusLabel.setBounds (grid.getX() + 3 * cellWidth + 6,
+                                     memberRowY - 1, cellWidth - 12, 17);
+    }
+    else if (dynamicsTab)
+    {
+        // DYNAMICS: four knobs fill the first row and the picker moved to
+        // CHARACTER, so this page needs no member row - but the reserved band
+        // logic above sized this grid as if something might ride it. Nothing
+        // does: leave the band empty rather than stretching the knob rows into
+        // it, so the page's layout stays identical to before the move.
     }
     else if (inEqTab || outEqTab)
     {

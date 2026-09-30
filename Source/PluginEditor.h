@@ -11,6 +11,8 @@
 #include "GUI/TapeScene.h"
 
 #include <array>
+#include <atomic>
+#include <map>
 #include <memory>
 #include <vector>
 
@@ -65,7 +67,49 @@ public:
 
     void setActivity (float newActivity) noexcept { activity = newActivity; }
     void setDrift (float newDrift) noexcept { drift = newDrift; }
-    void advanceFrame() noexcept { animationPhase += 0.11f; }
+    // The editor's timer breathes the deck readouts with the SAME clock the
+    // knob halos use; the phase itself stays private and advances only here.
+    float phase() const noexcept { return animationPhase; }
+    // 0.055 rather than 0.11: the phase drives the knob halos, specular sweep
+    // and tick tremble, and at 0.11 it completed a full breath every ~57 frames
+    // - a busy strobe the user read as "animations slightly broken". Halved, a
+    // breath takes about two seconds: still alive, no longer flickering.
+    void advanceFrame() noexcept { animationPhase += 0.055f; }
+
+    // Toggle thumbs GLIDE between their stops instead of teleporting: the
+    // editor's timer calls updateToggleAnimations() each frame, which eases
+    // every tracked switch's position toward its target (a fast-attack
+    // exponential glide, settled in about five frames). Toggles the L&F was
+    // never told about sit at their true position, so nothing regresses.
+    void noteToggle (void* key, bool isOn)
+    {
+        const float target = isOn ? 1.0f : 0.0f;
+        auto& state = toggleGlides[key];
+        if (! state.initialised || std::abs (target - state.position) > 0.5f)
+            state.position = target;      // first sight / programmatic jump: no spin
+        state.target = target;
+        state.initialised = true;
+    }
+
+    void updateToggleAnimations()
+    {
+        for (auto& entry : toggleGlides)
+        {
+            auto& state = entry.second;
+            const auto speed = 0.42f;   // per frame at 30 Hz: settled in ~5 frames
+            state.position += (state.target - state.position) * speed;
+            if (std::abs (state.target - state.position) < 0.005f)
+                state.position = state.target;
+        }
+    }
+
+    float toggleGlide (void* key, bool isOn) const
+    {
+        const auto it = toggleGlides.find (key);
+        if (it == toggleGlides.end())
+            return isOn ? 1.0f : 0.0f;    // never noted: draw the honest state
+        return it->second.position;
+    }
 
     void drawRotarySlider (juce::Graphics&,
                            int, int, int, int,
@@ -105,6 +149,15 @@ public:
 private:
     ThemeChoice theme = ThemeChoice::ivory;
     float activity = 0.0f;   ///< Compressor activity, drives the glow around the knobs.
+
+    // Per-toggle glide state for the sliding thumbs (see noteToggle above).
+    struct ToggleGlide
+    {
+        float position = 0.0f;
+        float target = 0.0f;
+        bool initialised = false;
+    };
+    std::map<void*, ToggleGlide> toggleGlides;
     float drift = 0.0f;      ///< Transport drift, drives the fine wobble in the ticks.
     float animationPhase = 0.0f;
 };
@@ -327,6 +380,13 @@ private:
     // setter.) Every component this panel gives a tooltip to derives from
     // SettableTooltipClient.
     void setTip (juce::SettableTooltipClient& component, const juce::String& english);
+
+    // The knob variant: registers the sentence alone (its translation key) and
+    // shows it with the shared interaction hints appended, each half translated
+    // independently so a language switch re-renders both.
+    void setTippedSentence (juce::SettableTooltipClient& component,
+                            const juce::String& englishSentence,
+                            const juce::String& englishHints);
     void updateTooltips();
 
     /** Loads the translation table for `languageIndex` (0 = English, 1 = Ukrainian)
@@ -661,6 +721,14 @@ private:
     float reelAngle = 0.0f;
     float reelSpeed = 0.0f;
     bool currentBypassDisplay = false;
+    // Who dropped the GL context last: only the user's own GL-switch click sets
+    // this. The timer's attach retries consult it, so a context the HOST lost
+    // is recovered automatically while one the USER turned off stays off.
+    bool glUserDisabled = false;
+    // True while the CHARACTER tab is the visible page: paint() draws the
+    // neural picker's card behind that page's fourth column and must not pay
+    // for it on any other tab.
+    bool activeTabIsCharacter = false;
 
     // -----------------------------------------------------------------------
     //  The front panel's theme.
