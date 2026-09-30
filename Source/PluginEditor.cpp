@@ -809,12 +809,20 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     // directly rotates every indicator by 90 degrees and makes the arc look crooked.
     const auto screenAngle = angle - juce::MathConstants<float>::halfPi;
 
+    // Hover feedback, NAM-style: a knob under the pointer lights its halo and
+    // its face rim BEFORE the compressor breathes - the panel answers the
+    // mouse first and the audio second, which is what makes hardware feel
+    // awake. The boost is small enough that the activity glow still dominates
+    // when the machine is working.
+    const auto hovered = slider.isMouseOver() || slider.isMouseButtonDown();
+
     //------------------------------------------------------------------
     //  Animation layer 1: a soft halo that breathes with the compressor
     //  activity, plus a slow pulse so the panel never looks frozen.
     //------------------------------------------------------------------
     const auto breath = 0.5f + 0.5f * std::sin (animationPhase);
-    const auto haloAlpha = 0.05f + activity * 0.20f * (0.6f + 0.4f * breath);
+    const auto haloAlpha = 0.05f + (hovered ? 0.06f : 0.0f)
+                               + activity * 0.20f * (0.6f + 0.4f * breath);
     if (haloAlpha > 0.01f)
     {
 #if J37_HAS_MELATONIN_BLUR
@@ -824,7 +832,7 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
         // changes and is reused on every frame after that.
         melatonin::DropShadow glow;
         glow.setColor (palette.accent.withAlpha (haloAlpha));
-        glow.setRadius (6.0 + activity * 6.0 * breath);
+        glow.setRadius (6.0 + (hovered ? 3.0 : 0.0) + activity * 6.0 * breath);
 
         juce::Path haloPath;
         haloPath.addEllipse (centre.x - radius, centre.y - radius,
@@ -898,9 +906,9 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                                palette.knobFace, centre.x + radius, centre.y + radius, false);
     g.setGradientFill (face);
     g.fillEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f);
-    g.setColour (palette.knobEdge.withAlpha (0.9f));
+    g.setColour (palette.knobEdge.withAlpha (hovered ? 1.0f : 0.9f));
     g.drawEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f, 1.0f);
-    g.setColour (palette.knobHighlight.withAlpha (0.48f));
+    g.setColour (palette.knobHighlight.withAlpha (hovered ? 0.66f : 0.48f));
     g.drawEllipse (centre.x - radius + 4.0f, centre.y - radius + 4.0f,
                    radius * 2.0f - 8.0f, radius * 2.0f - 8.0f, 0.8f);
 
@@ -5551,6 +5559,32 @@ void FirstAudioProcessorEditor::timerCallback()
     // work for a picture that never changed. The knobs look the same without
     // it, because they were never coming from here.
     repaint();
+
+    // The Arturia-style hint line: the controls band's right caption names the
+    // knob the pointer is over (the slider's own name - the same caption the
+    // grid draws under it), or falls back to the interaction hint when the
+    // pointer rests on nothing. A tooltip needs hover-and-wait; this bar
+    // answers in one frame, which is why the two coexist. The name is read
+    // from the component rather than from parameterTooltip: that lambda
+    // captures constructor locals by reference and must not outlive them.
+    {
+        juce::String hoveredControl;
+        const auto mouse = getMouseXYRelative();
+        for (int i = 0; i < static_cast<int> (controlCount); ++i)
+            if (controls[i].isVisible() && controls[i].getBounds().contains (mouse))
+            {
+                hoveredControl = controls[i].getName();
+                break;
+            }
+        if (hoveredControl != lastShownHoverHint)
+        {
+            lastShownHoverHint = hoveredControl;
+            controlsHintLabel.setText (hoveredControl.isNotEmpty()
+                                          ? hoveredControl
+                                          : juce::String ("Shift = fine tune"),
+                                       juce::dontSendNotification);
+        }
+    }
 
     // Workflow state is cheap to poll at 30 Hz and makes the panel self-healing:
     // if the host, a session load or a preset change moves anything, the buttons,

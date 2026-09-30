@@ -750,6 +750,9 @@ private:
     int lastShownTransport = -1;
     bool lastShownSpindown = false;
     juce::String lastShownMachineState;
+    // The hint bar's current text (empty when the pointer is over nothing), so
+    // the per-frame poll only touches the label on an actual change.
+    juce::String lastShownHoverHint;
     float smoothedMachineSpeed = 1.0f;
 
     // Which transport state is live, read from the parameter rather than tracked
