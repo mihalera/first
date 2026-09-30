@@ -1,4 +1,4 @@
-#include "PluginProcessor.h"
+﻿#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
@@ -337,6 +337,49 @@ namespace
     {
         juce::ignoreUnused (darkTheme);
         return paletteForTheme (liveThemeChoice);
+    }
+
+    // Shading for the cylindrical switch bodies (drawToggleButton, both look
+    // and feels). The switch is a cylinder lying along its own length, lit
+    // from above: a point on the projected face has its surface normal tilted
+    // by the cross-section angle a, so the light it catches is cos(a) - the
+    // brightness peaks just ABOVE the centreline (where the curvature faces
+    // the lamp), falls to the rim on top, and dies into shadow underneath.
+    // That profile is painted twice: once as the barrel's gradient, once as a
+    // thin specular line riding the same falloff - which is what turns a
+    // filled shape into something that reads as machined metal.
+    void fillCylinderBarrel (juce::Graphics& g, const juce::Rectangle<float>& barrel,
+                             juce::Colour face, juce::Colour edge)
+    {
+        if (barrel.getWidth() < 2.0f || barrel.getHeight() < 2.0f)
+            return;
+
+        // The barrel: cosine shading down the height, one-sided because the
+        // light sits above the machine. The silhouette is the full capsule
+        // (radius = half the height), which IS the cylinder's projection.
+        juce::ColourGradient shading (
+            edge, barrel.getCentreX(), barrel.getY(),
+            edge.darker (0.35f), barrel.getCentreX(), barrel.getBottom(), false);
+        shading.addColour (0.30, face.brighter (0.30f));
+        shading.addColour (0.62, face);
+        g.setGradientFill (shading);
+        g.fillRoundedRectangle (barrel, barrel.getHeight() * 0.5f);
+
+        // The specular: a thin bright line along the barrel's length, riding
+        // above the centreline. It is the single strongest cue that the
+        // surface is curved rather than flat.
+        const auto streak = juce::Rectangle<float> (
+            barrel.getX() + barrel.getWidth() * 0.06f,
+            barrel.getY() + barrel.getHeight() * 0.12f,
+            barrel.getWidth() * 0.88f,
+            juce::jmin (barrel.getHeight() * 0.16f, 3.5f));
+        juce::ColourGradient specular (
+            face.brighter (0.60f).withAlpha (0.65f),
+            streak.getX(), streak.getY(),
+            face.brighter (0.60f).withAlpha (0.0f),
+            streak.getX(), streak.getBottom(), false);
+        g.setGradientFill (specular);
+        g.fillRoundedRectangle (streak, streak.getHeight() * 0.5f);
     }
 
     // The three tabs the knob grid is split across. Each entry names a tab and lists the
@@ -880,11 +923,12 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
 
 //==============================================================================
 //  Toggle switches are drawn as small hardware rockers instead of the default
-//  text-button look: a recessed body with engraved OFF / ON captions, a thumb
-//  that physically slides between the two positions, and a status LED that
-//  lights when the switch is engaged. This is what the panel's BYPASS /
-//  POLARITY / AUTO GAIN controls were missing - they used to look like plain
-//  buttons that happened to hold state.
+//  text-button look: a cylindrical metal body shaded by the cosine of its own
+//  cross-section angle (see fillCylinderBarrel - the same profile the 3D scene
+//  uses), engraved captions, a thumb that physically slides between the two
+//  positions, and a status LED that lights when the switch is engaged. This is
+//  what the panel's BYPASS / POLARITY / AUTO GAIN controls were missing - they
+//  used to look like plain buttons that happened to hold state.
 //==============================================================================
 void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button,
                                        bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
@@ -893,17 +937,15 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     const auto bounds = button.getLocalBounds().toFloat().reduced (2.0f, 3.0f);
     const auto isOn = button.getToggleState();
 
-    // Recessed body: darker fill with a vertical sheen, bevel on the inside.
-    juce::ColourGradient body (palette.readout.darker (isOn ? 0.25f : 0.05f),
-                               bounds.getX(), bounds.getY(),
-                               palette.readout.darker (0.45f),
-                               bounds.getX(), bounds.getBottom(), false);
-    g.setGradientFill (body);
-    g.fillRoundedRectangle (bounds, 4.0f);
+    // The body is a cylinder lying along the switch - fillCylinderBarrel
+    // shades it by the cosine of its cross-section angle - not a flat slab.
+    // Engaging the switch darkens the barrel too, so the state reads through
+    // the shading itself and not only through the thumb.
+    fillCylinderBarrel (g, bounds,
+                        palette.readout.darker (isOn ? 0.22f : 0.02f),
+                        palette.readout.darker (0.42f));
     g.setColour (palette.border.withAlpha (0.9f));
-    g.drawRoundedRectangle (bounds, 4.0f, 1.0f);
-    g.setColour (palette.panel.brighter (0.15f).withAlpha (0.5f));
-    g.drawRoundedRectangle (bounds.reduced (2.0f), 3.0f, 0.7f);
+    g.drawRoundedRectangle (bounds, bounds.getHeight() * 0.5f, 1.0f);
 
     // Two bands sized from the switch itself, so nothing ever fights for width:
     //   top band    - the function name, engraved across the full switch width
@@ -915,8 +957,12 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     //                 the thumb caption).
     const auto labelHeight = juce::jlimit (10.0f, 14.0f, bounds.getHeight() * 0.44f);
     const auto labelBand = bounds.withHeight (labelHeight);
+    // The groove is inset deeper than before because the body is now a full
+    // capsule: at its rounded bottom the silhouette pulls in fast, and a
+    // groove that ran to the old 4 px inset would paint past the arc.
     const auto track = bounds.withTrimmedTop (labelHeight)
-                            .withTrimmedLeft (4.0f).withTrimmedRight (4.0f);
+                            .withTrimmedLeft (7.0f).withTrimmedRight (7.0f)
+                            .withTrimmedBottom (3.0f);
 
     // Status lamp: one explicit circular footprint, concentric at every scale. The
     // previous square slot made the lamp's visual centre depend on the band height,
@@ -971,12 +1017,12 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     const auto thumbX = isOn ? track.getRight() - thumbWidth - 1.0f : track.getX() + 1.0f;
     const auto thumbY = track.getY() + 1.0f + (shouldDrawButtonAsDown ? 1.0f : 0.0f);
     const auto thumb = juce::Rectangle<float> (thumbX, thumbY, thumbWidth, thumbHeight);
-    juce::ColourGradient thumbFill (palette.knobHighlight, thumb.getX(), thumb.getY(),
-                                    palette.knobFace, thumb.getX(), thumb.getBottom(), false);
-    g.setGradientFill (thumbFill);
-    g.fillRoundedRectangle (thumb, 3.0f);
+    // The thumb is a small cylinder of its own riding the groove, pressed one
+    // pixel into the body while the mouse is down (thumbY above already
+    // shifts it): shading, not colour, carries the mechanics.
+    fillCylinderBarrel (g, thumb, palette.knobFace, palette.knobEdge);
     g.setColour (palette.knobEdge.withAlpha (0.85f));
-    g.drawRoundedRectangle (thumb, 3.0f, 1.0f);
+    g.drawRoundedRectangle (thumb, thumb.getHeight() * 0.5f, 1.0f);
 
     // State text on the thumb, fitted to the thumb. The thumb is the authoritative
     // state readout, so its text must never be the thing that gets clipped.
@@ -1189,11 +1235,15 @@ void J37InlineLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButt
                                               bounds.getCentreY() - pillHeight * 0.5f,
                                               pillWidth, pillHeight);
 
-    // The track: filled with the accent when on, the recessed readout when off.
-    // A two-colour track is what makes the state readable at a glance without
-    // reading the word.
-    g.setColour (isOn ? palette.accent.withAlpha (0.85f) : palette.readout.darker (0.35f));
-    g.fillRoundedRectangle (pill, pillHeight * 0.5f);
+    // The track is a cylinder too (same shading helper), with the accent as
+    // its face when on: the two-colour fill keeps the state readable at a
+    // glance, and the curvature is what makes it read as hardware rather
+    // than as a settings-app pill.
+    fillCylinderBarrel (g, pill,
+                        isOn ? palette.accent.withAlpha (0.85f)
+                             : palette.readout.darker (0.35f),
+                        isOn ? palette.accent.darker (0.35f)
+                             : palette.readout.darker (0.55f));
     g.setColour (palette.border.withAlpha (0.85f));
     g.drawRoundedRectangle (pill, pillHeight * 0.5f, 1.0f);
 
@@ -1728,13 +1778,22 @@ void FirstAudioProcessorEditor::configureTextureWeights (float drive, float gain
     constexpr float shimmerDrive = 0.030f;
     constexpr float wearWeight   = 0.030f;
 
+    // The doses above were tuned on the dark panel, where a faint light ink
+    // reads against a near-black face. On the light panel the SAME alpha of a
+    // DARK ink sits on a bright face and mostly vanishes - the user's own
+    // report: the texture simply was not there. So light-theme doses are
+    // multiplied up: both renderers receive the boosted weights (this feeds
+    // the 2D image AND the scene's uTextureWeights), so GPU and software
+    // panels keep showing the same surface.
+    const auto doseBoost = darkTheme ? 1.0f : 2.2f;
+
     panelTextureDrive = juce::jlimit (0.0f, 1.0f, drive);
     panelTextureGainReduction = juce::jlimit (0.0f, 1.0f, gainReduction);
 
-    const auto shimmer = shimmerBase + shimmerDrive * panelTextureDrive;
-    panelTextureWeights = { grainWeight, shimmer, wearWeight };
+    const auto shimmer = (shimmerBase + shimmerDrive * panelTextureDrive) * doseBoost;
+    panelTextureWeights = { grainWeight * doseBoost, shimmer, wearWeight * doseBoost };
 
-    tapeScene.setTextureWeights (grainWeight, shimmer, wearWeight);
+    tapeScene.setTextureWeights (grainWeight * doseBoost, shimmer, wearWeight * doseBoost);
 }
 
 // One image per resize: the static grain (hash of screen pixels) and the wear
@@ -1752,6 +1811,15 @@ void FirstAudioProcessorEditor::rebuildPanelTextureLayers()
 
     constexpr float grainWeight = 0.040f;
     constexpr float wearWeight  = 0.030f;
+
+    // Light theme prints DARK ink on a bright face, where the same alpha
+    // nearly disappears - so the static layers are boosted by the same
+    // factor configureTextureWeights uses for the live ones. The two dose
+    // sets have to agree or the static grain and the shimmer read as two
+    // different materials.
+    const auto doseBoost = darkTheme ? 1.0f : 2.2f;
+    const auto grainDose = grainWeight * doseBoost;
+    const auto wearDose  = wearWeight * doseBoost;
 
     const auto w = juce::jmax (1, bounds.getWidth() / 2);
     const auto h = juce::jmax (1, bounds.getHeight() / 2);
@@ -1774,7 +1842,7 @@ void FirstAudioProcessorEditor::rebuildPanelTextureLayers()
                                    + static_cast<float> (x) * 1.7f
                                    + static_cast<float> (y) * 2.3f);
             const auto bright = n > 0.5f;
-            const auto alpha = grainWeight * std::abs (n - 0.5f) * 2.0f;
+            const auto alpha = grainDose * std::abs (n - 0.5f) * 2.0f;
             image.setPixelAt (x, y, (bright ? grainInk : grainEdge)
                                         .withAlpha (juce::jlimit (0.0f, 1.0f, alpha)));
         }
@@ -1793,7 +1861,7 @@ void FirstAudioProcessorEditor::rebuildPanelTextureLayers()
             const auto cx = (static_cast<float> (gx) + hashOf (fi * 1.61f)) / 9.0f;
             const auto cy = (static_cast<float> (gy) + hashOf (fi * 2.71f)) / 5.0f;
             const auto size = 30.0f + 40.0f * hashOf (fi * 3.37f);
-            const auto alpha = wearWeight * (n - 0.5f) * 2.0f;
+            const auto alpha = wearDose * (n - 0.5f) * 2.0f;
 
             imageGraphics.setColour (grainEdge.withAlpha (
                 juce::jlimit (0.0f, 1.0f, alpha)));
@@ -4384,6 +4452,12 @@ void FirstAudioProcessorEditor::applyTheme()
     titleLabel.setColour (juce::Label::textColourId, palette.text);
     subtitleLabel.setColour (juce::Label::textColourId, palette.secondary);
     statusLabel.setColour (juce::Label::textColourId, palette.status);
+
+    // The texture's doses are theme-dependent (light ink needs more), so a
+    // theme flip recomputes them for BOTH renderers before the static layers
+    // are rebuilt - otherwise a light panel would keep the dark theme's
+    // weights until the next timer tick pushed new ones in.
+    configureTextureWeights (panelTextureDrive, panelTextureGainReduction);
     deckHeadingLabel.setColour (juce::Label::textColourId, palette.accent);
     buildLabel.setColour (juce::Label::textColourId, palette.secondary);
     tapeTypeLabel.setColour (juce::Label::textColourId, palette.secondary);
@@ -5881,8 +5955,22 @@ void FirstAudioProcessorEditor::resized()
     // The badge band is inset further than the other deck text (22 px instead of 18)
     // and its caption is fitted to the width it actually has, so neither "FACTORY
     // STATE" nor a long user-preset name can run into the panel edges or be clipped.
+    //
+    // The machine state moved here from the header: it is a readout of what the
+    // engine is doing, and this is the band the deck's other readouts (the
+    // preset badge, the compare badge) already live on. It takes a fixed cell
+    // off the band's right end and the preset badge gives up exactly that
+    // width, so a long preset name shrinks into what is left rather than
+    // printing under the state text - the shrinking font below measures the
+    // label's ACTUAL bounds, so narrowing it is the whole fix.
+    constexpr int statusCellWidth = 180;
+    constexpr int badgeLineInset = 14;
+    statusLabel.setBounds (layout.deck.getRight() - badgeLineInset - statusCellWidth,
+                           deckTop (6), statusCellWidth, 14);
+
     presetBadgeLabel.setBounds (layout.deck.getX() + 22, deckTop (6),
-                                layout.deck.getWidth() - 44, 14);
+                                layout.deck.getWidth() - 44 - statusCellWidth
+                                    + badgeLineInset - 8, 14);
     presetBadgeLabel.setFont (shrinkingFont (presetBadgeLabel.getText(), 8.0f,
                                              juce::Font::plain,
                                              static_cast<float> (presetBadgeLabel.getWidth()) - 4.0f));

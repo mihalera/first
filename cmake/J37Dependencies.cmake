@@ -152,7 +152,12 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/RTNeural/RTNeural/RTNeural.h"
     # The vendored checkout is already pruned to the STL backend's needs: no
     # Eigen submodule, xsimd optional. Its include path is the checkout root;
     # its bundled modules/json serves the model loader's json parse.
-    j37_declare_header_only_library(RTNeural_headers
+    #
+    # The INTERFACE target is named exactly RTNeural - the name the top-level
+    # target_link_libraries links - so the vendored path and the CPM fallback
+    # satisfy the same reference, and neither branch of this file needs to
+    # know which one won.
+    j37_declare_header_only_library(RTNeural
         "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/RTNeural")
 endif()
 
@@ -580,9 +585,9 @@ CPMAddPackage(
 #  per-model decision for the day a model is actually adopted.
 #  Pinned to the current master head (upstream publishes no tags).
 # ==============================================================================
-#  Vendored copy wins (the vendored checkout is pruned to the STL backend and
-#  registered as RTNeural_headers at the top of this file); CPM is the fallback.
-if(NOT TARGET RTNeural AND NOT TARGET RTNeural_headers)
+#  Vendored copy wins (registered at the top of this file under its own name,
+#  RTNeural - the name target_link_libraries references); CPM is the fallback.
+if(NOT TARGET RTNeural)
 CPMAddPackage(
     NAME RTNeural
     GITHUB_REPOSITORY jatinchowdhury18/RTNeural
