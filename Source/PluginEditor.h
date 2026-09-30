@@ -67,6 +67,9 @@ public:
 
     void setActivity (float newActivity) noexcept { activity = newActivity; }
     void setDrift (float newDrift) noexcept { drift = newDrift; }
+    // The editor's timer breathes the deck readouts with the SAME clock the
+    // knob halos use; the phase itself stays private and advances only here.
+    float phase() const noexcept { return animationPhase; }
     // 0.055 rather than 0.11: the phase drives the knob halos, specular sweep
     // and tick tremble, and at 0.11 it completed a full breath every ~57 frames
     // - a busy strobe the user read as "animations slightly broken". Halved, a

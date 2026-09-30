@@ -4852,20 +4852,6 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     gridNow.removeFromBottom (8);
     const auto memberBandY = gridNow.getBottom() - memberBandHeightNow;
     const auto cellWidthNow = gridNow.getWidth() / tabColumnsNow;
-    // The neural card sits behind the CHARACTER page's picker cell, and its
-    // geometry MIRRORS resized()'s: the grid is the controls band reduced by
-    // 14, cut 62 from the top (controlsDividerOffset 68 - 14 + 8) and 8 from
-    // the bottom; the member band is a fixed 50 px strip at the grid's bottom;
-    // CHARACTER holds three knobs, so one knob row takes all the rest. The
-    // picker rides the fourth column of the member band - its cell x is
-    // grid.x + 3 * cellWidth, width cellWidth (cellWidth = gridW / 4).
-    constexpr int tabColumnsNow = 4;
-    constexpr int memberBandHeightNow = 50;
-    auto gridNow = layout.controls.reduced (14);
-    gridNow.removeFromTop (controlsDividerOffset - 14 + 8);
-    gridNow.removeFromBottom (8);
-    const auto memberBandY = gridNow.getBottom() - memberBandHeightNow;
-    const auto cellWidthNow = gridNow.getWidth() / tabColumnsNow;
 
     // ------------------------------------------------------------------
     //  Chassis grain.
@@ -5336,7 +5322,7 @@ void FirstAudioProcessorEditor::timerCallback()
     // they report rather than painted on. The breath is bounded (±20 %), so the
     // colour coding stays readable at every phase.
     const auto readoutBreath = 1.0f - 0.2f
-                                  * (0.5f + 0.5f * std::sin (customLookAndFeel.animationPhase));
+                                  * (0.5f + 0.5f * std::sin (customLookAndFeel.phase()));
     const auto breathe = [&] (juce::Colour c)
     {
         return c.withMultipliedBrightness (readoutBreath);
