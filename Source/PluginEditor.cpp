@@ -408,18 +408,13 @@ namespace
         const char* name;
         const char* hint;
         std::size_t count;
+        int family;                 // which of the three families hosts the page
         std::size_t controls[16];
     };
 
-    // Six pages, in signal order, because the panel now carries thirty-one knobs and
-    // one surface cannot hold them legibly. The split follows the CHAIN rather than an
-    // arbitrary grouping, so walking the tabs left to right walks the signal:
-    //
-    //   MACHINE   what goes in, how the machine colours it, what comes out
-    //   DRIVE     the gain stages in front of the tape, then everything that bends
-    //   TAPE      the head, the medium's condition and the transport's
-    //   SPACE     the two time-based stages, delay and reverb
-    //   VINYL     the record-playing end of the chain
+    // Eleven pages under three large families - TAPE, FX, SETUP - because the
+    // panel carries fifty-nine knobs and no single subject should own a crowded
+    // page. Walking the bar left to right inside a family still walks the signal:
     //
     // Index map, for reading the table below:
     //   0 input  1 drive  2 bias  3 tone  4 character  5 wow  6 flutter  7 mix
@@ -446,14 +441,33 @@ namespace
     // on SETTINGS, and the delay TYPE / RATE / SYNC trio shows on SPACE. They are
     // not knobs - the grid below cannot place them - so their visibility is
     // managed in setCurrentTab beside the knobs'.
-    constexpr std::array<TabSpec, 10> tabSpecs { {
+    //  The eleven pages are grouped into THREE FAMILIES - TAPE, FX, SETUP - so
+    //  no page has to carry more than one subject: the old DRIVE held twelve
+    //  knobs and the old NOISE eleven, which is exactly the crowding the tabs
+    //  exist to avoid. DRIVE is now two pages (the gain stages in front, the
+    //  curve-benders behind), the record's five FAULTS moved onto a RECORD page
+    //  beside the vinyl stage's own three knobs, and the families are the three
+    //  large buttons ABOVE this bar (see setTabFamily).
+    constexpr std::array<TabSpec, 11> tabSpecs { {
+        // ---- TAPE family: the machine and everything in front of it ---------
         //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
         { "MACHINE", "What goes in, how the machine colours it, and what comes out.",
-                     7, { 0, 3, 4, 7, 9, 8, 32 } },
-        //  preamp, distortion, drive, bias, blend, shape, amp_bias, sag, subfund
-        { "DRIVE", "The gain stages in front of the tape, then everything that bends "
-                   "the signal.",
-                     12, { 44, 45, 46, 21, 22, 1, 2, 10, 11, 12, 13, 20 } },
+                     7, 0, { 0, 3, 4, 7, 9, 8, 32 } },
+        //  distortion, preamp, di, di_load, di_transformer, drive, bias - the
+        //  gain stages IN FRONT of the tape. The DI pad/load combo follows this
+        //  page in resized(), beside the DI knob it belongs to.
+        { "DRIVE GAIN", "The gain stages in front of the tape: DISTORT and PREAMP "
+                        "push the front end, the DI loads, pads and colours the "
+                        "instrument, DRIVE and BIAS set the magnetic saturation "
+                        "the head applies.",
+                     7, 0, { 44, 45, 46, 21, 22, 1, 2 } },
+        //  blend, shape, amp_bias, sag, subfund - everything that BENDS the
+        //  curve once the gain stages have pushed it.
+        { "DRIVE SHAPE", "The curve-benders: BLEND shifts the shaper's operating "
+                         "point, SHAPE and AMP BIAS bend it, SAG lets it yield "
+                         "under load, SUBFUND generates the octave below what "
+                         "plays.",
+                     5, 0, { 10, 11, 12, 13, 20 } },
         //  flux, cabinet, presence, neural_mix, ir_mix. The vinyl stage's three
         //  voicing selectors - GENERATION / TURNTABLE / CARTRIDGE - are COMBO
         //  BOXES rather than knobs (the grid only places knobs), so like GL and
@@ -471,62 +485,51 @@ namespace
                        "faults. NEURAL blends in an optional learned model loaded "
                        "from a file, and IR MIX blends in an impulse response - a "
                        "cabinet or a room - loaded from a file.",
-                     5, { 23, 15, 14, 57, 58 } },
+                     5, 0, { 23, 15, 14, 57, 58 } },
         //  noise, noise_lvl, wow, flutter, wear, mechanics - the MACHINE's own
-        //  departures from a clean signal, which is what noise means in the
-        //  widest sense. Wow and flutter are the transport's noise, wear and
-        //  mechanics the medium's and the mechanism's, and they share the
-        //  transport gate with the hiss. The record's five FAULTS are here too
-        //  - DUST the surface's fine texture, SCRATCH a wound crossed once per
-        //  revolution, WARP the level breathing at the platter rate, ELECTRICAL
-        //  the cartridge's earthing, CLICKS the pressing's sharp faults - so
-        //  every knob on this page is a way of making the signal LESS clean.
-        { "NOISE", "Everything that departs from a clean signal. NOISE MIX sets how "
-                   "much of it is in the output and NOISE LVL how loud the sources "
-                   "run; WOW and FLUTTER are the transport's noise, WEAR and "
-                   "MECHANICS the medium's and the mechanism's, and the record's "
-                   "five FAULTS are here too - DUST the surface's fine texture, "
-                   "SCRATCH a wound crossed once per revolution, WARP the level "
-                   "breathing at the platter rate, ELECTRICAL the cartridge's "
-                   "earthing, CLICKS the pressing's sharp faults.",
-                     11, { 19, 31, 5, 6, 24, 25, 33, 34, 35, 36, 37 } },
-        //  delay_time, delay_feedback, st_offset, reverb, reverb_size
+        //  departures from a clean signal. The record's five FAULTS moved onto
+        //  the RECORD page: each is a mechanism of the RECORD's noise, not the
+        //  machine's, and twelve knobs on one page was the crowding the tabs
+        //  exist to avoid.
+        { "NOISE", "The machine's own departures from a clean signal. NOISE MIX "
+                   "sets how much of it is in the output and NOISE LVL how loud "
+                   "the sources run; WOW and FLUTTER are the transport's noise, "
+                   "WEAR and MECHANICS the medium's and the mechanism's. The "
+                   "record's five FAULTS are on the RECORD page.",
+                     6, 0, { 19, 31, 5, 6, 24, 25 } },
+        // ---- FX family: the record, the second head, the room, the envelope -
+        //  The record's five FAULTS sit here with the stage's mix and its two
+        //  continuous surfaces, because each fault IS a mechanism of the
+        //  record's own noise: surface texture, a repeating wound, the platter's
+        //  warp, the cartridge's earthing, the pressing's clicks. These three
+        //  vinyl knobs are here and NOT also on NOISE: they are the record's
+        //  CHARACTER, while the faults are its noise - listing them on both
+        //  pages would put the same knob on two tabs, and the grid can only
+        //  place one of them.
+        { "RECORD", "The record itself: DUST the surface's fine texture, SCRATCH "
+                    "a wound crossed once per revolution, WARP the level breathing "
+                    "at the platter rate, ELECTRICAL the cartridge's earthing, "
+                    "CLICKS the pressing's sharp faults - then VINYL MIX, CRACKLE "
+                    "and RUMBLE, how much of the stage is in the output and its "
+                    "two continuous surfaces. GENERATION / TURNTABLE / CARTRIDGE "
+                    "re-voice it all from CHARACTER.",
+                     8, 1, { 33, 34, 35, 36, 37, 28, 29, 30 } },
+        //  delay_time, delay_feedback, st_offset, ping_pong, reverb, reverb_size
         { "SPACE", "The two time-based stages: the second head, then the room. The "
                    "deck's TYPE / SYNC DELAY / RATE switches belong to the second "
                    "head, so they show on this tab.",
-                     6, { 16, 17, 18, 53, 26, 27 } },
+                     6, 1, { 16, 17, 18, 53, 26, 27 } },
         //  transient_attack (54), transient_sustain (55), transient_mix (56).
         //  The DYNAMICS page: the stage that acts on the finished signal's
         //  envelope rather than on the waveform - it changes how the sound
-        //  MOVES without adding a harmonic. The neural and IR stages moved to
-        //  CHARACTER (a voicing choice belongs with the other voicing), so
-        //  this page holds the shaper alone.
+        //  MOVES without adding a harmonic.
         { "DYN", "The stage that shapes the FINISHED signal's envelope. ATK "
                     "sharpens (positive) or softens (negative) the attack of "
                     "each event; SUS lengthens (positive) or shortens (negative) "
                     "what follows the attack, its body and ring; TR MIX is how "
                     "much of the shaped signal reaches the output.",
-                     3, { 54, 55, 56 } },
-        //  The record's five FAULTS moved onto NOISE (each is a mechanism of noise:
-        //  surface texture, a repeating wound, the platter's warp, the cartridge's
-        //  earthing, the pressing's clicks), so this page carries the stage's mix
-        //  and its two continuous surfaces. The three selectors at the top of the
-        //  old page - GENERATION / TURNTABLE / CARTRIDGE - moved to CHARACTER,
-        //  where the rest of the machine's voicing lives.
-        //
-        //  These three are here and NOT also on NOISE: they are the record's
-        //  CHARACTER (how much of the stage is in the output, and the two
-        //  continuous surfaces), while the faults are noise. Listing them on
-        //  both pages would put the same knob on two tabs, and the grid can only
-        //  place one of them.
-        { "VINYL", "The record-playing stage: VINYL MIX is how much of it is in the "
-                    "output, CRACKLE the surface's granular texture and RUMBLE the "
-                    "platter's own low thump. The record's five FAULTS - DUST, "
-                    "SCRATCH, WARP, ELECTRICAL, CLICKS - live on the NOISE tab, "
-                    "next to the rest of what departs from a clean signal; the "
-                    "GENERATION / TURNTABLE / CARTRIDGE selectors that change how "
-                    "all of them sound are on CHARACTER.",
-                     3, { 28, 29, 30 } },
+                     3, 1, { 54, 55, 56 } },
+        // ---- SETUP family: the equalisers and the engine switches -----------
         //  in_low, in_mid, in_high - the input equaliser. Its own page because
         //  it is a different DECISION from the output EQ: this one changes what
         //  the machine hears, so it changes what the machine does.
@@ -537,14 +540,14 @@ namespace
                     "is the EQ you use to feed the machine what it wants. LOW is a "
                     "shelf at 200 Hz, MID a bell at 1 kHz, HIGH a shelf above "
                     "4 kHz; all three are transparent at 0 dB.",
-                     6, { 38, 39, 40, 47, 48, 49 } },
+                     6, 2, { 38, 39, 40, 47, 48, 49 } },
         //  out_low, out_mid, out_high - the output equaliser.
         { "OUT EQ", "The output equaliser, after the machine and before the "
                      "output trim. Nothing downstream responds to what it does, so "
                      "it corrects the RESULT rather than the input - the neutral, "
                      "predictable EQ you use to place the finished sound. Same three "
                      "bands as the input EQ, same transparency at 0 dB.",
-                     6, { 41, 42, 43, 50, 51, 52 } },
+                     6, 2, { 41, 42, 43, 50, 51, 52 } },
         //  No knobs of its own: SETTINGS is where the three engine-level switches
         //  live - GL, OVERSAMPLING and the interface sounds - shown by
         //  setCurrentTab, not by the grid.
@@ -553,14 +556,14 @@ namespace
                       "panel rendering on and off, and UI SOUNDS turns the panel's "
                       "own interface clicks on and off - those never reach the "
                       "audio output, they play on a device of their own.",
-                     0, {} }
+                     0, 2, {} }
     } };
 
     // Where the divider under the knob-grid heading sits, in pixels from the top of the
     // panel. The tab bar lives between the heading and this line, so paint() and
     // resized() both read it from here: it used to be a literal 42 px in paint(), which
     // is precisely where the first tab button now is.
-    constexpr int controlsDividerOffset = 68;
+    constexpr int controlsDividerOffset = 92;
 
     // Does control `index` belong to `tab`?
     bool controlIsInTab (std::size_t index, int tab)
@@ -579,7 +582,7 @@ namespace
     // twice, and none of them is silently dropped.
     // The tab count is written once, here, and the static_assert that guards coverage
 // reads it from the same constant - so adding a page cannot leave this behind.
-constexpr std::size_t numTabPages = 10;
+constexpr std::size_t numTabPages = 11;
 
 // The control count is a TEMPLATE parameter, not an argument, and that is the
 // whole fix. It used to be a literal 54 inside the function - the current
@@ -2172,7 +2175,8 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
 
     currentTab = juce::jlimit (0, numTabs - 1, newTab);
     // paint() gates the neural card on this: it is CHARACTER's page furniture.
-    activeTabIsCharacter = (currentTab == 2);
+    activeTabIsCharacter = (std::strcmp (tabSpecs[static_cast<std::size_t> (currentTab)].name,
+                                         "CHARACTER") == 0);
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -2313,35 +2317,45 @@ void FirstAudioProcessorEditor::applyLanguage (int languageIndex)
 
 void FirstAudioProcessorEditor::setTabFamily (int newFamily)
 {
-    // A family change only filters the tab bar's visibility and jumps to the
-    // slice's first page: currentTab is set through setCurrentTab so the knobs'
-    // visibility, the static_asserts and the styling all run through the one
-    // authoritative path - the same path a click on any tab button takes.
-    static_assert (tabFamilyTabCount[0] + tabFamilyTabCount[1] + tabFamilyTabCount[2]
-                       == numTabs,
-                   "the three tab families must cover all tabs");
-    static_assert (tabFamilyTabCount[0] > 0 && tabFamilyTabCount[1] > 0
-                       && tabFamilyTabCount[2] > 0,
-                   "no tab family may be empty");
+    // The tab table's family column is the single source of truth: each page
+    // states which family hosts it, and this strip reads the column rather
+    // than a parallel count array that could drift from the table. The assert
+    // pins the intended layout - five TAPE pages, then three FX, then three
+    // SETUP, in table order - so a page moved between families without the
+    // order following is a build error, not a button that lights wrong.
+    static_assert (tabSpecs[0].family == 0 && tabSpecs[1].family == 0
+                       && tabSpecs[2].family == 0 && tabSpecs[3].family == 0
+                       && tabSpecs[4].family == 0 && tabSpecs[5].family == 1
+                       && tabSpecs[6].family == 1 && tabSpecs[7].family == 1
+                       && tabSpecs[8].family == 2 && tabSpecs[9].family == 2
+                       && tabSpecs[10].family == 2,
+                   "the tab table's family column must be five TAPE pages, "
+                   "then three FX, then three SETUP, in order");
 
+    // A family change only filters the tab bar's visibility and jumps to the
+    // family's first page: currentTab is set through setCurrentTab so the
+    // knobs' visibility, the static_asserts and the styling all run through
+    // the one authoritative path - the same path a click on any tab takes.
     const auto family = juce::jlimit (0, tabFamilyCount - 1, newFamily);
     currentTabFamily = family;
 
-    const auto visible = [&]
+    int firstOfFamily = numTabs;
+    int lastOfFamily = 0;
+    for (int tab = 0; tab < numTabs; ++tab)
     {
-        int first = 0;
-        for (int f = 0; f < family; ++f)
-            first += tabFamilyTabCount[static_cast<std::size_t> (f)];
-        return first;
-    }();
-    const auto last = visible + tabFamilyTabCount[static_cast<std::size_t> (family)];
+        if (tabSpecs[static_cast<std::size_t> (tab)].family == family)
+        {
+            firstOfFamily = juce::jmin (firstOfFamily, tab);
+            lastOfFamily = juce::jmax (lastOfFamily, tab + 1);
+        }
+    }
 
     for (int tab = 0; tab < numTabs; ++tab)
         tabButtons[static_cast<std::size_t> (tab)]
-            .setVisible (tab >= visible && tab < last);
+            .setVisible (tabSpecs[static_cast<std::size_t> (tab)].family == family);
 
-    if (currentTab < visible || currentTab >= last)
-        setCurrentTab (visible);
+    if (currentTab < firstOfFamily || currentTab >= lastOfFamily)
+        setCurrentTab (firstOfFamily);
     else
         resized();
 }
@@ -2826,43 +2840,43 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         { "mix",             "MIX",        0.5,   "MACHINE"  },
         { "output",          "OUTPUT",     0.0,   "MACHINE"  },
         { "stereo_width",    "WIDTH",      0.5,   "MACHINE"  },
-        { "blend",           "BLEND",      0.0,   "DRIVE"    },
-        { "shape",           "SHAPE",      0.5,   "DRIVE"    },
-        { "amp_bias",        "AMP BIAS",   0.50,  "DRIVE"    },
-        { "sag",             "SAG",        0.0,   "DRIVE"    },
+        { "blend",           "BLEND",      0.0,   "DRIVE SHAPE" },
+        { "shape",           "SHAPE",      0.5,   "DRIVE SHAPE" },
+        { "amp_bias",        "AMP BIAS",   0.50,  "DRIVE SHAPE" },
+        { "sag",             "SAG",        0.0,   "DRIVE SHAPE" },
         { "presence",        "PRESENCE",   0.50,  "CHARACTER"},
         { "cabinet",         "CABINET",    0.0,   "CHARACTER"},
         { "delay_time",      "DELAY",      0.0,   "SPACE"    },
         { "delay_feedback",  "DLY LVL",    0.0,   "SPACE"    },
         { "st_offset",       "ST OFFSET",  0.0,   "SPACE"    },
         { "noise",           "NOISE",      0.50,  "NOISE"    },
-        { "subfund",         "SUBFUND",    0.0,   "DRIVE"    },
-        { "preamp",          "PREAMP",     0.0,   "DRIVE"    },
-        { "distortion",      "DISTORT",    0.0,   "DRIVE"    },
+        { "subfund",         "SUBFUND",    0.0,   "DRIVE SHAPE" },
+        { "preamp",          "PREAMP",     0.0,   "DRIVE GAIN" },
+        { "distortion",      "DISTORT",    0.0,   "DRIVE GAIN" },
         { "flux",            "FLUX",       0.50,  "CHARACTER"},
         { "wear",            "WEAR",       0.0,   "NOISE"    },
         { "mechanics",       "MECHANICS",  0.0,   "NOISE"    },
         { "reverb",          "REVERB",     0.0,   "SPACE"    },
         { "reverb_size",     "RVB SIZE",   0.40,  "SPACE"    },
-        { "vinyl",           "VINYL",      0.0,   "VINYL"    },
-        { "vinyl_crackle",   "CRACKLE",    0.50,  "VINYL"    },
-        { "vinyl_rumble",    "RUMBLE",     0.35,  "VINYL"    },
+        { "vinyl",           "VINYL",      0.0,   "RECORD"   },
+        { "vinyl_crackle",   "CRACKLE",    0.50,  "RECORD"   },
+        { "vinyl_rumble",    "RUMBLE",     0.35,  "RECORD"   },
         { "noise_lvl",       "NOISE LVL",  1.0,   "NOISE"    },
         { "st_link",         "ST LINK",    1.0,   "MACHINE"  },
-        { "vinyl_dust",      "DUST",       0.0,   "NOISE"    },
-        { "vinyl_scratch",   "SCRATCH",    0.0,   "NOISE"    },
-        { "vinyl_warp",      "WARP",       0.0,   "NOISE"    },
-        { "vinyl_electrical","ELECTRICAL", 0.0,   "NOISE"    },
-        { "vinyl_clicks",    "CLICKS",     0.0,   "NOISE"    },
+        { "vinyl_dust",      "DUST",       0.0,   "RECORD"   },
+        { "vinyl_scratch",   "SCRATCH",    0.0,   "RECORD"   },
+        { "vinyl_warp",      "WARP",       0.0,   "RECORD"   },
+        { "vinyl_electrical","ELECTRICAL", 0.0,   "RECORD"   },
+        { "vinyl_clicks",    "CLICKS",     0.0,   "RECORD"   },
         { "in_low",          "IN LO",      0.0,   "IN EQ"    },
         { "in_mid",          "IN MID",     0.0,   "IN EQ"    },
         { "in_high",         "IN HI",      0.0,   "IN EQ"    },
         { "out_low",         "OUT LO",     0.0,   "OUT EQ"   },
         { "out_mid",         "OUT MID",    0.0,   "OUT EQ"   },
         { "out_high",        "OUT HI",     0.0,   "OUT EQ"   },
-        { "di",              "DI",         0.0,   "DRIVE"    },
-        { "di_load",         "DI LOAD",    0.0,   "DRIVE"    },
-        { "di_transformer",  "DI XFMR",    0.0,   "DRIVE"    },
+        { "di",              "DI",         0.0,   "DRIVE GAIN" },
+        { "di_load",         "DI LOAD",    0.0,   "DRIVE GAIN" },
+        { "di_transformer",  "DI XFMR",    0.0,   "DRIVE GAIN" },
         { "in_hp_freq",      "IN HP",      20.0,  "IN EQ"    },
         { "in_lp_freq",      "IN LP",      20000.0, "IN EQ"  },
         { "in_eq_q",         "IN Q",       0.7,   "IN EQ"    },
@@ -6572,21 +6586,54 @@ void FirstAudioProcessorEditor::resized()
     //  only the selected tab's controls are on screen at all.
     // ------------------------------------------------------------------
     const auto tabBarLeft = layout.controls.getX() + 14;
-    const auto tabBarTop = layout.controls.getY() + 34;
+    // The two rows of tabs-inside-tabs live between the heading and the divider:
+    // FAMILIES on top (the three large buttons), the active family's PAGES under
+    // them. The divider (controlsDividerOffset) sits below both, so the knob grid
+    // itself never pays a row for either strip.
+    constexpr int familyRowHeight = 22;
+    const auto familyRow = juce::Rectangle<int> (layout.controls.getX() + 14,
+                                                 layout.controls.getY() + 34,
+                                                 layout.controls.getWidth() - 28,
+                                                 familyRowHeight);
+    const auto familyButtonWidth = (familyRow.getWidth() - 2 * 6) / tabFamilyCount;
+    tabFamilyTapeButton.setBounds (familyRow.getX(), familyRow.getY(),
+                                   familyButtonWidth, familyRow.getHeight());
+    tabFamilyFxButton.setBounds (familyRow.getX() + familyButtonWidth + 6,
+                                 familyRow.getY(), familyButtonWidth,
+                                 familyRow.getHeight());
+    tabFamilySetupButton.setBounds (familyRow.getX() + 2 * (familyButtonWidth + 6),
+                                    familyRow.getY(), familyButtonWidth,
+                                    familyRow.getHeight());
+
+    const auto tabBarTop = layout.controls.getY() + 60;
     const auto tabBarHeight = 24;
 
-    // The gap shrinks as tabs are added so the buttons stay as wide as they can:
-    // ten pages at a fixed 6 px each spent 54 of the bar's ~700 px on nothing, and
-    // the caption is auto-sized to the button, so the width is what decides whether
-    // a name is legible. Six is kept while it fits and reduced past that.
-    const auto tabGap = numTabs <= 7 ? 6 : (numTabs <= 9 ? 4 : 3);
-    const auto tabButtonWidth = (layout.controls.getWidth() - 28
-                                 - tabGap * (numTabs - 1)) / numTabs;
-
+    // Pages of the CURRENT family only: the bar re-flows to the family's page
+    // count, so TAPE's five buttons get a fifth more width than the old ten-in-a-
+    // row bar ever could, and SETUP's three get three broad ones.
+    int visibleTabCount = 0;
     for (int tab = 0; tab < numTabs; ++tab)
+        if (tabSpecs[static_cast<std::size_t> (tab)].family == currentTabFamily)
+            ++visibleTabCount;
+    visibleTabCount = juce::jmax (1, visibleTabCount);
+    const auto tabGap = visibleTabCount <= 5 ? 6 : 4;
+    const auto tabButtonWidth = (layout.controls.getWidth() - 28
+                                 - tabGap * (visibleTabCount - 1)) / visibleTabCount;
+
+    int placedTabIndex = 0;
+    for (int tab = 0; tab < numTabs; ++tab)
+    {
+        if (tabSpecs[static_cast<std::size_t> (tab)].family != currentTabFamily)
+        {
+            tabButtons[static_cast<std::size_t> (tab)].setBounds (tabBarLeft,
+                                                                  tabBarTop, 0, 0);
+            continue;
+        }
         tabButtons[static_cast<std::size_t> (tab)]
-            .setBounds (tabBarLeft + tab * (tabButtonWidth + tabGap),
+            .setBounds (tabBarLeft + placedTabIndex * (tabButtonWidth + tabGap),
                         tabBarTop, tabButtonWidth, tabBarHeight);
+        ++placedTabIndex;
+    }
 
     // The family buttons are never hidden by a page change (only a repaint)
     // and there is nothing on the panel that flips their visibility, so this is
@@ -6609,24 +6656,6 @@ void FirstAudioProcessorEditor::resized()
     grid.removeFromTop (controlsDividerOffset - 14 + 8);
     grid.removeFromBottom (8);
 
-    // The family strip takes the grid's FIRST row for itself: one button per
-    // family, spanning the grid's full width, with the bar of tab pages sitting
-    // in a row of its own underneath - a group strip above a bar of its children,
-    // which is what tabs-inside-tabs are. removeFromTop both reserves the row and
-    // returns it, so the knob cells and the member band below never see the
-    // strip: no page loses height to it and none of the placement code moves.
-    constexpr int familyRowHeight = 22;
-    const auto familyRow = grid.removeFromTop (familyRowHeight);
-    const auto familyButtonWidth = (familyRow.getWidth() - 2 * 6) / tabFamilyCount;
-    tabFamilyTapeButton.setBounds (familyRow.getX(), familyRow.getY(),
-                                   familyButtonWidth, familyRow.getHeight());
-    tabFamilyFxButton.setBounds (familyRow.getX() + familyButtonWidth + 6,
-                                 familyRow.getY(), familyButtonWidth,
-                                 familyRow.getHeight());
-    tabFamilySetupButton.setBounds (familyRow.getX() + 2 * (familyButtonWidth + 6),
-                                    familyRow.getY(), familyButtonWidth,
-                                    familyRow.getHeight());
-
     // Only the ACTIVE tab is laid out, and its own control count decides the row
     // count, so a tab is never sized as if it still had to hold the whole panel's
     // knobs. Tabs hold between three and nine controls; NOISE, the fullest, comes
@@ -6642,7 +6671,7 @@ void FirstAudioProcessorEditor::resized()
     const auto settingsTab = index_of_tab_named ("SETTINGS") == currentTab;
     const auto spaceTab = index_of_tab_named ("SPACE") == currentTab;
     const auto characterTab = index_of_tab_named ("CHARACTER") == currentTab;
-    const auto driveTab = index_of_tab_named ("DRIVE") == currentTab;
+    const auto driveGainTab = index_of_tab_named ("DRIVE GAIN") == currentTab;
     const auto inEqTab = index_of_tab_named ("IN EQ") == currentTab;
     const auto outEqTab = index_of_tab_named ("OUT EQ") == currentTab;
     const auto machineTab = index_of_tab_named ("MACHINE") == currentTab;
@@ -6658,7 +6687,7 @@ void FirstAudioProcessorEditor::resized()
     const auto knobRows = (tabControlCount + tabColumns - 1) / tabColumns;
     const auto memberRows = (settingsTab || spaceTab || characterTab
                              || dynamicsTab || inEqTab || outEqTab
-                             || machineTab || driveTab) ? 1 : 0;
+                             || machineTab || driveGainTab) ? 1 : 0;
 
     // The member band is a FIXED strip - a caption band plus a control band -
     // reserved under the knob rows, and the knob rows share what is left. A
@@ -6669,8 +6698,14 @@ void FirstAudioProcessorEditor::resized()
     // count asks for. 50 px is the label band (17) plus the control's 30 at its
     // 20 px offset - the geometry placeDeckSwitch below already assumes.
     constexpr int memberBandHeight = 50;
+    // The DI pad/load combo lives on DRIVE GAIN beside the DI knob's row (it is
+    // the DI's own pad, not a member of the page's lower band), so DRIVE GAIN
+    // shares the two-row layout of the other two-row pages: the band pays for
+    // the DI member row even though the other pages' bands sit below the knobs.
+    const auto diMemberRow = driveGainTab;
     const auto knobAreaHeight = grid.getHeight()
-                              - (memberRows != 0 ? memberBandHeight : 0);
+                              - (memberRows != 0 ? memberBandHeight : 0)
+                              - (diMemberRow ? memberBandHeight : 0);
     const auto knobRowHeight = knobRows > 0 ? knobAreaHeight / knobRows : 0;
 
     for (int slot = 0; slot < tabControlCount; ++slot)
@@ -6711,7 +6746,8 @@ void FirstAudioProcessorEditor::resized()
     // the knob rows end (at the grid's top on SETTINGS, which holds no knobs)
     // and runs to the grid's bottom, so the division's remainder lands inside
     // the band rather than above it.
-    const auto memberRowY = grid.getY() + knobRows * knobRowHeight;
+    const auto memberRowY = grid.getY() + knobRows * knobRowHeight
+                          + (diMemberRow ? memberBandHeight : 0);
     const auto placeDeckSwitch = [&] (juce::Label& label, juce::Component& box,
                                       int column, int columnsWide,
                                       const juce::String& caption)
@@ -6750,10 +6786,26 @@ void FirstAudioProcessorEditor::resized()
     // flags themselves are read from the tabSpecs table at the top of the grid
     // section above, where the member-row arithmetic needs them too.
 
+    // The DI pad/load combo rides the row BESIDE the DI knob on DRIVE GAIN: the
+    // pad belongs to the input, so it sits with it - in the knob grid's last
+    // row, FOURTH cell, which the page's seven knobs leave empty. DRIVE GAIN's
+    // member band (below) is reserved but stays empty unless a future member
+    // joins the page, and the page's knobs keep the other pages' two-row height.
+    if (driveGainTab)
+    {
+        diPadLabel.setText ("DI PAD", juce::dontSendNotification);
+        diPadLabel.setBounds (grid.getX() + 3 * cellWidth + 5,
+                              grid.getY() + (knobRows - 1) * knobRowHeight + 1,
+                              cellWidth - 10, 17);
+        diPadBox.setBounds (grid.getX() + 3 * cellWidth + 12,
+                            grid.getY() + (knobRows - 1) * knobRowHeight + 20,
+                            cellWidth - 24, 30);
+    }
+
     // The four new lists follow the same rule as the deck switches: each is a
     // full member of exactly one tab, so it is visible only while that tab is.
-    diPadLabel.setVisible (driveTab);
-    diPadBox.setVisible (driveTab);
+    diPadLabel.setVisible (driveGainTab);
+    diPadBox.setVisible (driveGainTab);
     tracksLabel.setVisible (machineTab);
     tracksBox.setVisible (machineTab);
     inputEqOrderLabel.setVisible (inEqTab);
@@ -6806,12 +6858,6 @@ void FirstAudioProcessorEditor::resized()
         // MACHINE: seven knobs fill two rows (the second holds three), so the
         // member row under them is where the machine's TRACKS selector lives.
         placeDeckSwitch (tracksLabel, tracksBox, 0, 1, "TRACKS");
-    }
-    else if (driveTab)
-    {
-        // DRIVE: twelve knobs in three full rows, so the member row under them
-        // carries the DI pad - the front end's input switch.
-        placeDeckSwitch (diPadLabel, diPadBox, 0, 1, "DI PAD");
     }
     else if (settingsTab)
     {

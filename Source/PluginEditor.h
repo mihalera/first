@@ -347,7 +347,10 @@ private:
     // page, which is exactly the crowding the tabs exist to avoid. VINYL gets its
     // own page because the four are one subject - the state of the record itself -
     // rather than four unrelated controls.
-    static constexpr int numTabs = 10;
+    // Eleven pages under three large families (TAPE / FX / SETUP), so no page
+    // has to carry more than one subject: DRIVE was twelve knobs on one page and
+    // NOISE eleven, which is exactly the crowding the tabs exist to avoid.
+    static constexpr int numTabs = 11;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     void timerCallback() override;
@@ -710,7 +713,7 @@ private:
     // static_assert in setTabFamily so a page added later cannot go without
     // being placed in a family.
     static constexpr int tabFamilyCount = 3;
-    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount { 4, 3, 3 };
+    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount { 5, 3, 3 };
     juce::Label metersHeadingLabel;
     juce::Label metersHintLabel;
     juce::Label compressorLabel;
