@@ -2286,6 +2286,17 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // otherwise a rate switch would leave wow/flutter at a stale phase and click.
     resetSampleRateDependentState();
 
+    // The convolution stage is prepared at the ENGINE rate here, and re-prepared
+    // inside processTapeEngine whenever the oversampling factor changes the rate
+    // the stage actually sees: the convolver's FFT plans and its internal buffers
+    // are per-rate state, and running a 48 kHz plan against 96 kHz audio is the
+    // same stale-pipeline click the oversampler reset above exists to prevent.
+    // (The block-size argument is a maximum; passing the host's largest keeps
+    // every per-block call allocation-free.)
+    irStage.prepare ({ sampleRate,
+                       static_cast<juce::uint32> (juce::jmax (1, samplesPerBlock)),
+                       2 });
+
     // Per-channel DC-blocker state: AC coupling restarts from zero after a rate
     // change, exactly like the analogue coupling capacitors do on power-up.
     dcBlockXState.fill (0.0f);
@@ -2544,17 +2555,6 @@ void FirstAudioProcessor::resetSampleRateDependentState()
     irMixSmoothed.reset (sampleRate, controlRampSeconds);
     irMixSmoothed.setCurrentAndTargetValue (
         irMixParam != nullptr ? irMixParam->load() : 0.0f);
-
-    // The convolution stage is prepared at the ENGINE rate here, and re-prepared
-    // inside processTapeEngine whenever the oversampling factor changes the rate
-    // the stage actually sees: the convolver's FFT plans and its internal buffers
-    // are per-rate state, and running a 48 kHz plan against 96 kHz audio is the
-    // same stale-pipeline click the oversampler reset above exists to prevent.
-    // (The block-size argument is a maximum; passing the host's largest keeps
-    // every per-block call allocation-free.)
-    irStage.prepare ({ sampleRate,
-                       static_cast<juce::uint32> (juce::jmax (1, samplesPerBlock)),
-                       2 });
 
     // The oversampling filters hold per-rate state (their half-band coefficients are
     // tuned to the incoming rate), so they must be flushed on a rate change or the

@@ -1,4 +1,4 @@
-﻿#include "PluginProcessor.h"
+#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
@@ -454,17 +454,24 @@ namespace
         { "DRIVE", "The gain stages in front of the tape, then everything that bends "
                    "the signal.",
                      12, { 44, 45, 46, 21, 22, 1, 2, 10, 11, 12, 13, 20 } },
-        //  flux, cabinet, presence. The vinyl stage's three voicing selectors -
-        //  GENERATION / TURNTABLE / CARTRIDGE - moved here from the old VINYL
-        //  page as well; they are COMBO BOXES rather than knobs (the grid only
-        //  places knobs), so like GL and OVERSAMPLING they are tab members
-        //  whose visibility setCurrentTab asserts and resized() lays out.
+        //  flux, cabinet, presence, neural_mix, ir_mix. The vinyl stage's three
+        //  voicing selectors - GENERATION / TURNTABLE / CARTRIDGE - are COMBO
+        //  BOXES rather than knobs (the grid only places knobs), so like GL and
+        //  OVERSAMPLING they are tab members whose visibility setCurrentTab
+        //  asserts and resized() lays out. The two file-fed stages moved here
+        //  from DYNAMICS at the user's request: a learned model and a captured
+        //  impulse response are VOICING choices - which machine shape bends the
+        //  signal, and what room it is heard in - and they sit beside the other
+        //  voicing selectors, each with its own file picker in the member band
+        //  and on the row beside its knob.
         { "CHARACTER", "The head, the medium's tone, and how the record was made, "
                        "what plays it and what reads it: GENERATION, TURNTABLE and "
                        "CARTRIDGE re-voice the whole vinyl stage, so they live with "
                        "the rest of the machine's voicing rather than beside its "
-                       "faults.",
-                     3, { 23, 15, 14 } },
+                       "faults. NEURAL blends in an optional learned model loaded "
+                       "from a file, and IR MIX blends in an impulse response - a "
+                       "cabinet or a room - loaded from a file.",
+                     5, { 23, 15, 14, 57, 58 } },
         //  noise, noise_lvl, wow, flutter, wear, mechanics - the MACHINE's own
         //  departures from a clean signal, which is what noise means in the
         //  widest sense. Wow and flutter are the transport's noise, wear and
@@ -488,27 +495,18 @@ namespace
                    "deck's TYPE / SYNC DELAY / RATE switches belong to the second "
                    "head, so they show on this tab.",
                      6, { 16, 17, 18, 53, 26, 27 } },
-        //  transient_attack (54), transient_sustain (55), transient_mix (56),
-        //  neural_mix (57), ir_mix (58). The DYNAMICS page: the stages that act
-        //  on the finished signal's envelope and on learned or captured colour
-        //  rather than on the waveform. They are together because both sit AFTER
-        //  the machine and both are "how the sound moves" rather than "how the
-        //  sound is bent" - the transient shaper changes the envelope without
-        //  adding a harmonic, the neural stage adds a learned saturation on top
-        //  of the hand-written one, and the IR stage blends in a captured
-        //  cabinet or room. NEURAL and IR MIX are MIXes because their colour
-        //  itself is loaded from a file, not chosen with a knob.
-        { "DYN", "The stages that shape the FINISHED signal. ATK sharpens "
-                    "(positive) or softens (negative) the attack of each event; "
-                    "SUS lengthens (positive) or shortens (negative) what follows "
-                    "the attack, its body and ring; TR MIX is how much of the "
-                    "shaped signal reaches the output. NEURAL is the wet/dry "
-                    "position of an optional learned model loaded from a file - "
-                    "at 0, or with no model loaded, it is transparent. IR MIX is "
-                    "the same idea for an impulse response loaded from a file: "
-                    "how much of the convolved signal is blended into the "
-                    "finished one.",
-                     5, { 54, 55, 56, 57, 58 } },
+        //  transient_attack (54), transient_sustain (55), transient_mix (56).
+        //  The DYNAMICS page: the stage that acts on the finished signal's
+        //  envelope rather than on the waveform - it changes how the sound
+        //  MOVES without adding a harmonic. The neural and IR stages moved to
+        //  CHARACTER (a voicing choice belongs with the other voicing), so
+        //  this page holds the shaper alone.
+        { "DYN", "The stage that shapes the FINISHED signal's envelope. ATK "
+                    "sharpens (positive) or softens (negative) the attack of "
+                    "each event; SUS lengthens (positive) or shortens (negative) "
+                    "what follows the attack, its body and ring; TR MIX is how "
+                    "much of the shaped signal reaches the output.",
+                     3, { 54, 55, 56 } },
         //  The record's five FAULTS moved onto NOISE (each is a mechanism of noise:
         //  surface texture, a repeating wound, the platter's warp, the cartridge's
         //  earthing, the pressing's clicks), so this page carries the stage's mix
@@ -2808,8 +2806,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         { "transient_attack","ATK",        0.0,   "DYN"      },
         { "transient_sustain","SUS",       0.0,   "DYN"      },
         { "transient_mix",   "TR MIX",     0.0,   "DYN"      },
-        { "neural_mix",      "NEURAL",     0.0,   "DYN"      },
-        { "ir_mix",          "IR MIX",     0.0,   "DYN"      }
+        { "neural_mix",      "NEURAL",     0.0,   "CHARACTER"},
+        { "ir_mix",          "IR MIX",     0.0,   "CHARACTER"}
     } };
 
     // The three arrays the constructor below works from, DERIVED from the table
@@ -3231,19 +3229,19 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
             if (id == "neural_mix")
                 return "NEURAL - the wet/dry position of the optional "
                        "learned model. The model is not a knob: it is a file "
-                       "loaded with LOAD MODEL on the DYN tab, and the network "
-                       "itself (a Dense net, an LSTM, a GRU) is whatever the file "
-                       "describes. This control blends the model's output with "
-                       "the untouched signal, so it is always a crossfade. At 0, "
-                       "or with no model loaded, the stage is transparent. "
-                       "Default 0 percent.";
+                       "loaded with LOAD MODEL on the CHARACTER tab, and the "
+                       "network itself (a Dense net, an LSTM, a GRU) is whatever "
+                       "the file describes. This control blends the model's "
+                       "output with the untouched signal, so it is always a "
+                       "crossfade. At 0, or with no model loaded, the stage is "
+                       "transparent. Default 0 percent.";
             if (id == "ir_mix")
                 return "IR MIX - how much of the convolved signal is blended "
                        "into the finished one. The impulse response itself is "
-                       "not a knob: it is a file loaded with LOAD IR on the DYN "
-                       "tab, and it can be a cabinet, a room or any other space. "
-                       "At 0, or with no IR loaded, the stage is transparent. "
-                       "Default 0 percent.";
+                       "not a knob: it is a file loaded with LOAD IR on the "
+                       "CHARACTER tab, and it can be a cabinet, a room or any "
+                       "other space. At 0, or with no IR loaded, the stage is "
+                       "transparent. Default 0 percent.";
             // The eleven knobs that were falling through to an empty sentence:
             // they showed the shared interaction hint only, which the user read
             // as "tooltip is missing". One branch each, same shape as the rest.
@@ -4972,9 +4970,8 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     // The neural card sits behind the CHARACTER page's picker cell, and its
     // geometry MIRRORS resized()'s: the grid is the controls band reduced by
     // 14, cut 62 from the top (controlsDividerOffset 68 - 14 + 8) and 8 from
-    // the bottom; the member band is a fixed 50 px strip at the grid's bottom;
-    // CHARACTER holds three knobs, so one knob row takes all the rest. The
-    // picker rides the fourth column of the member band - its cell x is
+    // the bottom; the member band is a fixed 50 px strip at the grid's bottom.
+    // The picker rides the fourth column of the member band - its cell x is
     // grid.x + 3 * cellWidth, width cellWidth (cellWidth = gridW / 4).
     constexpr int tabColumnsNow = 4;
     constexpr int memberBandHeightNow = 50;
@@ -5158,10 +5155,9 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     // The neural model picker's card: the moved picker reads as a device with a
     // face, not as three unstyled widgets on the page - "it's black" was the
     // unstyled defaults speaking. The card is drawn behind the picker's member
-    // cell only when CHARACTER is the visible tab. DYNAMICS' member band hosts
-    // the IR loader on the same strip, but the two tabs are never on screen at
-    // once, so one gate serves both: the card is CHARACTER's page furniture,
-    // and DYN's buttons draw over their own painted panel face.
+    // cell only when CHARACTER is the visible tab; the IR loader lives on the
+    // page's second knob row, so the card behind the member band's fourth
+    // column never touches it.
     if (activeTabIsCharacter)
     {
         const auto card = juce::Rectangle<float> (
@@ -6672,16 +6668,16 @@ void FirstAudioProcessorEditor::resized()
     delaySyncLabel.setVisible (spaceTab);
     delaySyncButton.setVisible (spaceTab);
 
-    // The neural model picker moved to the CHARACTER page (a voicing choice,
-    // living with the other voicing selectors), so it follows that tab now.
+    // The neural model picker and the IR loader both follow the CHARACTER page:
+    // the picker stays in the member band's fourth column (under the NEURAL
+    // knob), and the IR trio rides the page's second knob row, in the free
+    // cells beside IR MIX's own knob.
     loadNeuralButton.setVisible (characterTab);
     clearNeuralButton.setVisible (characterTab);
     neuralStatusLabel.setVisible (characterTab);
-
-    // The IR loader lives on DYNAMICS, under the IR MIX knob it belongs to.
-    loadIrButton.setVisible (dynamicsTab);
-    clearIrButton.setVisible (dynamicsTab);
-    irStatusLabel.setVisible (dynamicsTab);
+    loadIrButton.setVisible (characterTab);
+    clearIrButton.setVisible (characterTab);
+    irStatusLabel.setVisible (characterTab);
 
     // The three vinyl selectors moved to the CHARACTER page: they re-voice the
     // whole vinyl stage, so they live with the machine's other voicing rather
@@ -6731,26 +6727,28 @@ void FirstAudioProcessorEditor::resized()
     }
     else if (characterTab)
     {
-        // CHARACTER: three knobs in the first row, so the member row under them
-        // is where the page's lists live. Left to right - the order the record
-        // is made in: what was cut, what plays it, what reads it. The NEURAL
-        // model picker moved here from DYNAMICS (the user's request): it is a
-        // VOICING choice - which machine shape bends the signal - and it sits
-        // beside the other voicing selectors, in a fourth cell, with its status
-        // readout above the row's own band so it cannot collide with them.
+        // CHARACTER: five knobs fill the first row (the two file-fed stages
+        // NEURAL and IR MIX included), so the member band under them carries
+        // the page's three lists, and the second knob row is where the IR
+        // loader lives - in the free cells directly under its own half of the
+        // knob row. Left to right - the order the record is made in: what was
+        // cut, what plays it, what reads it. The NEURAL model picker and the
+        // IR loader are VOICING choices - which machine shape bends the
+        // signal, and what room it is heard in - and they sit beside the
+        // other voicing selectors, each with its status readout and its
+        // buttons placed by the same cell arithmetic the knobs use.
         placeDeckSwitch (vinylGenerationLabel, vinylGenerationBox, 0, 1, "GENERATION");
         placeDeckSwitch (vinylTurntableLabel, vinylTurntableBox, 1, 1, "TURNTABLE");
         placeDeckSwitch (vinylCartridgeLabel, vinylCartridgeBox, 2, 1, "CARTRIDGE");
 
-        const auto buttonY = memberRowY + 20;
-        const auto buttonH = juce::jmin (30, grid.getBottom() - memberRowY - 22);
-
         // The picker rides the member band's FOURTH column, exactly under the
-        // page's fourth knob cell: LOAD MODEL on the band's control line, CLEAR
-        // beneath it, the model-status readout in the band's caption line above
-        // them. paint() draws the card behind precisely this column - the two
+        // NEURAL knob: LOAD MODEL on the band's control line, CLEAR beneath
+        // it, the model-status readout in the band's caption line above them.
+        // paint() draws the card behind precisely this column - the two
         // geometries share the arithmetic (grid / 4 columns, 50 px band), so
         // they cannot disagree.
+        const auto buttonY = memberRowY + 20;
+        const auto buttonH = juce::jmin (30, grid.getBottom() - memberRowY - 22);
         loadNeuralButton.setBounds (grid.getX() + 3 * cellWidth + 12, buttonY,
                                     cellWidth - 24, buttonH);
         clearNeuralButton.setBounds (grid.getX() + 3 * cellWidth + 18,
@@ -6758,26 +6756,35 @@ void FirstAudioProcessorEditor::resized()
                                      cellWidth - 36, buttonH);
         neuralStatusLabel.setBounds (grid.getX() + 3 * cellWidth + 6,
                                      memberRowY - 1, cellWidth - 12, 17);
+
+        // The IR loader rides the SECOND knob row's free cells: IR MIX's own
+        // knob is that row's first cell, so the status readout takes the
+        // SECOND cell's caption line (it is the caption of the button under
+        // it, the same label-above-control convention the knobs use), and
+        // LOAD IR / CLEAR IR sit in the second and third cells, VERTICALLY
+        // CENTRED on the knob beside them - a knob's circle floats centred in
+        // its cell, and a top-pinned button would ride high against it. Same
+        // cell arithmetic as the knobs either side, so the trio reads as part
+        // of the grid rather than as furniture glued on.
+        const auto irRowY = grid.getY() + knobRowHeight;
+        const auto irButtonH = juce::jmin (30, knobRowHeight - 22);
+        const auto irButtonY = irRowY + 18
+                             + juce::jmax (0, (knobRowHeight - 18 - irButtonH) / 2);
+        irStatusLabel.setBounds (grid.getX() + cellWidth + 5, irRowY + 1,
+                                 cellWidth - 10, 17);
+        loadIrButton.setBounds (grid.getX() + cellWidth + 12,
+                                irButtonY, cellWidth - 24, irButtonH);
+        clearIrButton.setBounds (grid.getX() + 2 * cellWidth + 12,
+                                 irButtonY, cellWidth - 24, irButtonH);
     }
     else if (dynamicsTab)
     {
-        // DYNAMICS: five knobs in two rows, and the member band under them now
-        // carries the IR loader - the stage whose own mix knob (IR MIX) sits in
-        // the grid above. LOAD IR rides the band's control line with CLEAR IR
-        // beside it, and the IR-status readout takes the band's caption line to
-        // their left, the same convention the neural picker's card uses: status
-        // above, controls below. The buttons are centred as a pair, so the
-        // group reads as one device rather than two strays.
-        const auto buttonY = memberRowY + 20;
-        const auto buttonH = juce::jmin (30, grid.getBottom() - memberRowY - 22);
-        const auto halfCell = cellWidth / 2;
-
-        irStatusLabel.setBounds (grid.getX() + 5,
-                                 memberRowY - 1, cellWidth * 2 - 10, 17);
-        loadIrButton.setBounds (grid.getX() + halfCell + halfCell / 2,
-                                buttonY, halfCell - 24, buttonH);
-        clearIrButton.setBounds (grid.getX() + 3 * halfCell + 6,
-                                 buttonY, halfCell - 24, buttonH);
+        // DYNAMICS: three knobs fill the first row and the neural and IR
+        // stages moved to CHARACTER, so this page needs no member row - but
+        // the reserved band logic above sized this grid as if something might
+        // ride it. Nothing does: leave the band empty rather than stretching
+        // the knob rows into it, so the page's layout stays identical to
+        // before the move.
     }
     else if (inEqTab || outEqTab)
     {
