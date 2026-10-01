@@ -1,4 +1,4 @@
-﻿#include "PluginProcessor.h"
+#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
@@ -454,17 +454,24 @@ namespace
         { "DRIVE", "The gain stages in front of the tape, then everything that bends "
                    "the signal.",
                      12, { 44, 45, 46, 21, 22, 1, 2, 10, 11, 12, 13, 20 } },
-        //  flux, cabinet, presence. The vinyl stage's three voicing selectors -
-        //  GENERATION / TURNTABLE / CARTRIDGE - moved here from the old VINYL
-        //  page as well; they are COMBO BOXES rather than knobs (the grid only
-        //  places knobs), so like GL and OVERSAMPLING they are tab members
-        //  whose visibility setCurrentTab asserts and resized() lays out.
+        //  flux, cabinet, presence, neural_mix, ir_mix. The vinyl stage's three
+        //  voicing selectors - GENERATION / TURNTABLE / CARTRIDGE - are COMBO
+        //  BOXES rather than knobs (the grid only places knobs), so like GL and
+        //  OVERSAMPLING they are tab members whose visibility setCurrentTab
+        //  asserts and resized() lays out. The two file-fed stages moved here
+        //  from DYNAMICS at the user's request: a learned model and a captured
+        //  impulse response are VOICING choices - which machine shape bends the
+        //  signal, and what room it is heard in - and they sit beside the other
+        //  voicing selectors, each with its own file picker in the member band
+        //  and on the row beside its knob.
         { "CHARACTER", "The head, the medium's tone, and how the record was made, "
                        "what plays it and what reads it: GENERATION, TURNTABLE and "
                        "CARTRIDGE re-voice the whole vinyl stage, so they live with "
                        "the rest of the machine's voicing rather than beside its "
-                       "faults.",
-                     3, { 23, 15, 14 } },
+                       "faults. NEURAL blends in an optional learned model loaded "
+                       "from a file, and IR MIX blends in an impulse response - a "
+                       "cabinet or a room - loaded from a file.",
+                     5, { 23, 15, 14, 57, 58 } },
         //  noise, noise_lvl, wow, flutter, wear, mechanics - the MACHINE's own
         //  departures from a clean signal, which is what noise means in the
         //  widest sense. Wow and flutter are the transport's noise, wear and
@@ -488,23 +495,18 @@ namespace
                    "deck's TYPE / SYNC DELAY / RATE switches belong to the second "
                    "head, so they show on this tab.",
                      6, { 16, 17, 18, 53, 26, 27 } },
-        //  transient_attack (54), transient_sustain (55), transient_mix (56),
-        //  neural_mix (57). The DYNAMICS page: the two stages that act on the
-        //  finished signal's envelope and on a learned model rather than on the
-        //  waveform. They are together because both sit AFTER the machine and both
-        //  are "how the sound moves" rather than "how the sound is bent" - the
-        //  transient shaper changes the envelope without adding a harmonic, and
-        //  the neural stage adds a learned saturation on top of the hand-written
-        //  one. NEURAL is a MIX because the model itself is loaded from a file,
-        //  not chosen with a knob.
-        { "DYN", "The two stages that shape the FINISHED signal. ATK sharpens "
-                    "(positive) or softens (negative) the attack of each event; "
-                    "SUS lengthens (positive) or shortens (negative) what follows "
-                    "the attack, its body and ring; TR MIX is how much of the "
-                    "shaped signal reaches the output. NEURAL is the wet/dry "
-                    "position of an optional learned model loaded from a file - "
-                    "at 0, or with no model loaded, it is transparent.",
-                     4, { 54, 55, 56, 57 } },
+        //  transient_attack (54), transient_sustain (55), transient_mix (56).
+        //  The DYNAMICS page: the stage that acts on the finished signal's
+        //  envelope rather than on the waveform - it changes how the sound
+        //  MOVES without adding a harmonic. The neural and IR stages moved to
+        //  CHARACTER (a voicing choice belongs with the other voicing), so
+        //  this page holds the shaper alone.
+        { "DYN", "The stage that shapes the FINISHED signal's envelope. ATK "
+                    "sharpens (positive) or softens (negative) the attack of "
+                    "each event; SUS lengthens (positive) or shortens (negative) "
+                    "what follows the attack, its body and ring; TR MIX is how "
+                    "much of the shaped signal reaches the output.",
+                     3, { 54, 55, 56 } },
         //  The record's five FAULTS moved onto NOISE (each is a mechanism of noise:
         //  surface texture, a repeating wound, the platter's warp, the cartridge's
         //  earthing, the pressing's clicks), so this page carries the stage's mix
@@ -809,12 +811,20 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     // directly rotates every indicator by 90 degrees and makes the arc look crooked.
     const auto screenAngle = angle - juce::MathConstants<float>::halfPi;
 
+    // Hover feedback, NAM-style: a knob under the pointer lights its halo and
+    // its face rim BEFORE the compressor breathes - the panel answers the
+    // mouse first and the audio second, which is what makes hardware feel
+    // awake. The boost is small enough that the activity glow still dominates
+    // when the machine is working.
+    const auto hovered = slider.isMouseOver() || slider.isMouseButtonDown();
+
     //------------------------------------------------------------------
     //  Animation layer 1: a soft halo that breathes with the compressor
     //  activity, plus a slow pulse so the panel never looks frozen.
     //------------------------------------------------------------------
     const auto breath = 0.5f + 0.5f * std::sin (animationPhase);
-    const auto haloAlpha = 0.05f + activity * 0.20f * (0.6f + 0.4f * breath);
+    const auto haloAlpha = 0.05f + (hovered ? 0.06f : 0.0f)
+                               + activity * 0.20f * (0.6f + 0.4f * breath);
     if (haloAlpha > 0.01f)
     {
 #if J37_HAS_MELATONIN_BLUR
@@ -824,7 +834,7 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
         // changes and is reused on every frame after that.
         melatonin::DropShadow glow;
         glow.setColor (palette.accent.withAlpha (haloAlpha));
-        glow.setRadius (6.0 + activity * 6.0 * breath);
+        glow.setRadius (6.0 + (hovered ? 3.0 : 0.0) + activity * 6.0 * breath);
 
         juce::Path haloPath;
         haloPath.addEllipse (centre.x - radius, centre.y - radius,
@@ -898,9 +908,9 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                                palette.knobFace, centre.x + radius, centre.y + radius, false);
     g.setGradientFill (face);
     g.fillEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f);
-    g.setColour (palette.knobEdge.withAlpha (0.9f));
+    g.setColour (palette.knobEdge.withAlpha (hovered ? 1.0f : 0.9f));
     g.drawEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f, 1.0f);
-    g.setColour (palette.knobHighlight.withAlpha (0.48f));
+    g.setColour (palette.knobHighlight.withAlpha (hovered ? 0.66f : 0.48f));
     g.drawEllipse (centre.x - radius + 4.0f, centre.y - radius + 4.0f,
                    radius * 2.0f - 8.0f, radius * 2.0f - 8.0f, 0.8f);
 
@@ -2275,10 +2285,15 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
     // whole dialogue. `chooser` is captured by the lambda so the chooser stays
     // alive for the duration of the callback, which is what makes the launch
     // safe to fire and forget.
+    //
+    // "*.nam" is NeuralAmpModeler's own extension - its files carry the SAME
+    // networks in a different wire format (one flat weight vector rather than
+    // a stack of named layers), and the picker reads both through the
+    // processor's own two entry points below.
     auto chooser = std::make_shared<juce::FileChooser> (
         "Load a neural model",
         juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
-        "*.json;*.rtn;*");
+        "*.json;*.rtn;*.nam;*");
 
     // browserFlags, not `flags`: a local name that shadows nothing is cheaper
     // than proving no future member will ever be called flags (C4458).
@@ -2291,8 +2306,15 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
         if (! file.existsAsFile())
             return;
 
-        const auto json = file.loadFileAsString();
-        if (audioProcessor.loadNeuralModel (json))
+        // A .nam file goes through its own converter; every other extension
+        // keeps the RTNeural JSON path. Both load the same kind of network -
+        // the wire format is the only thing that differs.
+        const auto isNam = file.hasFileExtension (".nam");
+        const auto text = file.loadFileAsString();
+        const bool loaded = isNam ? audioProcessor.loadNamModel (text)
+                                  : audioProcessor.loadNeuralModel (text);
+
+        if (loaded)
         {
             loadedNeuralName = file.getFileNameWithoutExtension();
         }
@@ -2334,6 +2356,64 @@ void FirstAudioProcessorEditor::refreshNeuralStatus()
                                  audioProcessor.hasNeuralModel()
                                      ? paletteFor (false).accent
                                      : paletteFor (false).secondary);
+}
+
+void FirstAudioProcessorEditor::loadIrFromFile()
+{
+    // Same asynchronous-chooser shape as the model picker: the chooser is kept
+    // alive by its own shared_ptr for the length of the callback. The filter
+    // names the two formats a DAW user actually meets; "*" keeps any other
+    // file JUCE's registered decoders can open selectable.
+    auto chooser = std::make_shared<juce::FileChooser> (
+        "Load an impulse response",
+        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+        "*.wav;*.aif*;*");
+
+    const auto browserFlags = juce::FileBrowserComponent::openMode
+                            | juce::FileBrowserComponent::canSelectFiles;
+
+    chooser->launchAsync (browserFlags, [this, chooser] (const juce::FileChooser& fc)
+    {
+        const auto file = fc.getResult();
+        if (! file.existsAsFile())
+            return;
+
+        if (audioProcessor.loadIrFile (file))
+        {
+            loadedIrName = file.getFileNameWithoutExtension();
+            lastShownIrStatus = {};      // force the next refresh to repaint
+            refreshIrStatus();
+        }
+        else
+        {
+            // A file that would not decode leaves the previous IR in place and
+            // says so - the same honesty the INVALID MODEL state gives the
+            // model picker, for the same reason.
+            loadedIrName = {};
+            irStatusLabel.setText ("INVALID IR", juce::dontSendNotification);
+            lastShownIrStatus = "INVALID IR";
+        }
+    });
+}
+
+void FirstAudioProcessorEditor::refreshIrStatus()
+{
+    // The processor is the source of truth, exactly as with the model status:
+    // the stage can be cleared from either button, so the readout follows
+    // whatever the convolvers actually hold.
+    const auto status = audioProcessor.hasIr() && loadedIrName.isNotEmpty()
+                            ? loadedIrName
+                            : juce::String ("NO IR");
+
+    if (status == lastShownIrStatus)
+        return;
+
+    lastShownIrStatus = status;
+    irStatusLabel.setText (xlat (status), juce::dontSendNotification);
+    irStatusLabel.setColour (juce::Label::textColourId,
+                             audioProcessor.hasIr()
+                                 ? paletteFor (false).accent
+                                 : paletteFor (false).secondary);
 }
 
 FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
@@ -2726,7 +2806,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         { "transient_attack","ATK",        0.0,   "DYN"      },
         { "transient_sustain","SUS",       0.0,   "DYN"      },
         { "transient_mix",   "TR MIX",     0.0,   "DYN"      },
-        { "neural_mix",      "NEURAL",     0.0,   "DYN"      }
+        { "neural_mix",      "NEURAL",     0.0,   "CHARACTER"},
+        { "ir_mix",          "IR MIX",     0.0,   "CHARACTER"}
     } };
 
     // The three arrays the constructor below works from, DERIVED from the table
@@ -3148,12 +3229,19 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
             if (id == "neural_mix")
                 return "NEURAL - the wet/dry position of the optional "
                        "learned model. The model is not a knob: it is a file "
-                       "loaded with LOAD MODEL on the DYN tab, and the network "
-                       "itself (a Dense net, an LSTM, a GRU) is whatever the file "
-                       "describes. This control blends the model's output with "
-                       "the untouched signal, so it is always a crossfade. At 0, "
-                       "or with no model loaded, the stage is transparent. "
-                       "Default 0 percent.";
+                       "loaded with LOAD MODEL on the CHARACTER tab, and the "
+                       "network itself (a Dense net, an LSTM, a GRU) is whatever "
+                       "the file describes. This control blends the model's "
+                       "output with the untouched signal, so it is always a "
+                       "crossfade. At 0, or with no model loaded, the stage is "
+                       "transparent. Default 0 percent.";
+            if (id == "ir_mix")
+                return "IR MIX - how much of the convolved signal is blended "
+                       "into the finished one. The impulse response itself is "
+                       "not a knob: it is a file loaded with LOAD IR on the "
+                       "CHARACTER tab, and it can be a cabinet, a room or any "
+                       "other space. At 0, or with no IR loaded, the stage is "
+                       "transparent. Default 0 percent.";
             // The eleven knobs that were falling through to an empty sentence:
             // they showed the shared interaction hint only, which the user read
             // as "tooltip is missing". One branch each, same shape as the rest.
@@ -3938,6 +4026,43 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (neuralStatusLabel);
 
     // ---------------------------------------------------------------
+    //  The IR picker rides the DYNAMICS page's member band, under the IR MIX
+    //  knob it belongs to: LOAD IR / CLEAR IR / status, styled and tipped
+    //  exactly like the model picker on CHARACTER. An IR is data read from a
+    //  file for the same reason a model is - no parameter, no attachment.
+    // ---------------------------------------------------------------
+    loadIrButton.setLookAndFeel (&inlineLookAndFeel);
+    clearIrButton.setLookAndFeel (&inlineLookAndFeel);
+    loadIrButton.setColour (juce::TextButton::buttonColourId, paletteFor (false).raised);
+    loadIrButton.setColour (juce::TextButton::textColourOffId, paletteFor (false).text);
+    loadIrButton.setColour (juce::TextButton::buttonOnColourId, paletteFor (false).raised.darker (0.15f));
+    clearIrButton.setColour (juce::TextButton::buttonColourId, paletteFor (false).raised);
+    clearIrButton.setColour (juce::TextButton::textColourOffId, paletteFor (false).text);
+    clearIrButton.setColour (juce::TextButton::buttonOnColourId, paletteFor (false).raised.darker (0.15f));
+    setTip (loadIrButton, "LOAD IR - reads an impulse response (a WAV or AIFF "
+                             "capture of a cabinet, a room or any other space) and "
+                             "convolves the finished signal with it. IR MIX sets how "
+                             "much of the convolved signal is blended in; at 0 the "
+                             "stage is silent. Loading an IR does not change any "
+                             "parameter and is not saved with the session.");
+    setTip (clearIrButton, "CLEAR IR - releases the loaded impulse response, "
+                              "returning the IR stage to its transparent "
+                              "pass-through.");
+    loadIrButton.onClick = [this] { loadIrFromFile(); };
+    clearIrButton.onClick = [this]
+    {
+        audioProcessor.clearIr();
+        loadedIrName = {};
+        refreshIrStatus();
+    };
+    addAndMakeVisible (loadIrButton);
+    addAndMakeVisible (clearIrButton);
+
+    styleLabel (irStatusLabel, "NO IR", 8.5f, paletteFor (false).secondary,
+                false, juce::Justification::centred);
+    addAndMakeVisible (irStatusLabel);
+
+    // ---------------------------------------------------------------
     //  The remaining choice lists: the DI pad, the track layout and the two
     //  EQ orders. All four are lists rather than knobs because their values are
     //  discrete settings, not points on a scale - and all four use the IN-TAB
@@ -4660,6 +4785,10 @@ void FirstAudioProcessorEditor::applyTheme()
     delaySyncLabel.setColour (juce::Label::textColourId, palette.secondary);
     glLabel.setColour (juce::Label::textColourId, palette.secondary);
     neuralStatusLabel.setColour (juce::Label::textColourId, palette.secondary);
+    // The IR readout re-inks itself in refreshIrStatus() on every change; this
+    // covers the theme switch, which repaints without a status change.
+    irStatusLabel.setColour (juce::Label::textColourId,
+                             audioProcessor.hasIr() ? palette.accent : palette.secondary);
 
     // The tab buttons carry the theme, and styleTabButtons() reads currentTab as well,
     // so the selected tab keeps its accent highlight across a theme switch.
@@ -4841,9 +4970,8 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     // The neural card sits behind the CHARACTER page's picker cell, and its
     // geometry MIRRORS resized()'s: the grid is the controls band reduced by
     // 14, cut 62 from the top (controlsDividerOffset 68 - 14 + 8) and 8 from
-    // the bottom; the member band is a fixed 50 px strip at the grid's bottom;
-    // CHARACTER holds three knobs, so one knob row takes all the rest. The
-    // picker rides the fourth column of the member band - its cell x is
+    // the bottom; the member band is a fixed 50 px strip at the grid's bottom.
+    // The picker rides the fourth column of the member band - its cell x is
     // grid.x + 3 * cellWidth, width cellWidth (cellWidth = gridW / 4).
     constexpr int tabColumnsNow = 4;
     constexpr int memberBandHeightNow = 50;
@@ -5026,8 +5154,10 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
 
     // The neural model picker's card: the moved picker reads as a device with a
     // face, not as three unstyled widgets on the page - "it's black" was the
-    // unstyled defaults speaking. The card is drawn behind the fourth-column
-    // picker cell only when CHARACTER is the visible tab.
+    // unstyled defaults speaking. The card is drawn behind the picker's member
+    // cell only when CHARACTER is the visible tab; the IR loader lives on the
+    // page's second knob row, so the card behind the member band's fourth
+    // column never touches it.
     if (activeTabIsCharacter)
     {
         const auto card = juce::Rectangle<float> (
@@ -5282,6 +5412,10 @@ void FirstAudioProcessorEditor::timerCallback()
     // only rewritten when its text would actually differ. That keeps a 30 Hz
     // timer from re-laying out a label sixty times a second for no reason.
     refreshNeuralStatus();
+    // The IR readout follows the same rule - and it is the one place a load
+    // that finished on the convolution's background thread still gets drawn,
+    // since the load hands its result to the stage asynchronously.
+    refreshIrStatus();
 
     inputMeter.setLoudness (telemetry.inputPeakDb,
                             telemetry.inputRmsDb,
@@ -5551,6 +5685,32 @@ void FirstAudioProcessorEditor::timerCallback()
     // work for a picture that never changed. The knobs look the same without
     // it, because they were never coming from here.
     repaint();
+
+    // The Arturia-style hint line: the controls band's right caption names the
+    // knob the pointer is over (the slider's own name - the same caption the
+    // grid draws under it), or falls back to the interaction hint when the
+    // pointer rests on nothing. A tooltip needs hover-and-wait; this bar
+    // answers in one frame, which is why the two coexist. The name is read
+    // from the component rather than from parameterTooltip: that lambda
+    // captures constructor locals by reference and must not outlive them.
+    {
+        juce::String hoveredControl;
+        const auto mouse = getMouseXYRelative();
+        for (int i = 0; i < static_cast<int> (controlCount); ++i)
+            if (controls[i].isVisible() && controls[i].getBounds().contains (mouse))
+            {
+                hoveredControl = controls[i].getName();
+                break;
+            }
+        if (hoveredControl != lastShownHoverHint)
+        {
+            lastShownHoverHint = hoveredControl;
+            controlsHintLabel.setText (hoveredControl.isNotEmpty()
+                                          ? hoveredControl
+                                          : juce::String ("Shift = fine tune"),
+                                       juce::dontSendNotification);
+        }
+    }
 
     // Workflow state is cheap to poll at 30 Hz and makes the panel self-healing:
     // if the host, a session load or a preset change moves anything, the buttons,
@@ -6508,11 +6668,16 @@ void FirstAudioProcessorEditor::resized()
     delaySyncLabel.setVisible (spaceTab);
     delaySyncButton.setVisible (spaceTab);
 
-    // The neural model picker moved to the CHARACTER page (a voicing choice,
-    // living with the other voicing selectors), so it follows that tab now.
+    // The neural model picker and the IR loader both follow the CHARACTER page:
+    // the picker stays in the member band's fourth column (under the NEURAL
+    // knob), and the IR trio rides the page's second knob row, in the free
+    // cells beside IR MIX's own knob.
     loadNeuralButton.setVisible (characterTab);
     clearNeuralButton.setVisible (characterTab);
     neuralStatusLabel.setVisible (characterTab);
+    loadIrButton.setVisible (characterTab);
+    clearIrButton.setVisible (characterTab);
+    irStatusLabel.setVisible (characterTab);
 
     // The three vinyl selectors moved to the CHARACTER page: they re-voice the
     // whole vinyl stage, so they live with the machine's other voicing rather
@@ -6562,26 +6727,28 @@ void FirstAudioProcessorEditor::resized()
     }
     else if (characterTab)
     {
-        // CHARACTER: three knobs in the first row, so the member row under them
-        // is where the page's lists live. Left to right - the order the record
-        // is made in: what was cut, what plays it, what reads it. The NEURAL
-        // model picker moved here from DYNAMICS (the user's request): it is a
-        // VOICING choice - which machine shape bends the signal - and it sits
-        // beside the other voicing selectors, in a fourth cell, with its status
-        // readout above the row's own band so it cannot collide with them.
+        // CHARACTER: five knobs fill the first row (the two file-fed stages
+        // NEURAL and IR MIX included), so the member band under them carries
+        // the page's three lists, and the second knob row is where the IR
+        // loader lives - in the free cells directly under its own half of the
+        // knob row. Left to right - the order the record is made in: what was
+        // cut, what plays it, what reads it. The NEURAL model picker and the
+        // IR loader are VOICING choices - which machine shape bends the
+        // signal, and what room it is heard in - and they sit beside the
+        // other voicing selectors, each with its status readout and its
+        // buttons placed by the same cell arithmetic the knobs use.
         placeDeckSwitch (vinylGenerationLabel, vinylGenerationBox, 0, 1, "GENERATION");
         placeDeckSwitch (vinylTurntableLabel, vinylTurntableBox, 1, 1, "TURNTABLE");
         placeDeckSwitch (vinylCartridgeLabel, vinylCartridgeBox, 2, 1, "CARTRIDGE");
 
-        const auto buttonY = memberRowY + 20;
-        const auto buttonH = juce::jmin (30, grid.getBottom() - memberRowY - 22);
-
         // The picker rides the member band's FOURTH column, exactly under the
-        // page's fourth knob cell: LOAD MODEL on the band's control line, CLEAR
-        // beneath it, the model-status readout in the band's caption line above
-        // them. paint() draws the card behind precisely this column - the two
+        // NEURAL knob: LOAD MODEL on the band's control line, CLEAR beneath
+        // it, the model-status readout in the band's caption line above them.
+        // paint() draws the card behind precisely this column - the two
         // geometries share the arithmetic (grid / 4 columns, 50 px band), so
         // they cannot disagree.
+        const auto buttonY = memberRowY + 20;
+        const auto buttonH = juce::jmin (30, grid.getBottom() - memberRowY - 22);
         loadNeuralButton.setBounds (grid.getX() + 3 * cellWidth + 12, buttonY,
                                     cellWidth - 24, buttonH);
         clearNeuralButton.setBounds (grid.getX() + 3 * cellWidth + 18,
@@ -6589,14 +6756,35 @@ void FirstAudioProcessorEditor::resized()
                                      cellWidth - 36, buttonH);
         neuralStatusLabel.setBounds (grid.getX() + 3 * cellWidth + 6,
                                      memberRowY - 1, cellWidth - 12, 17);
+
+        // The IR loader rides the SECOND knob row's free cells: IR MIX's own
+        // knob is that row's first cell, so the status readout takes the
+        // SECOND cell's caption line (it is the caption of the button under
+        // it, the same label-above-control convention the knobs use), and
+        // LOAD IR / CLEAR IR sit in the second and third cells, VERTICALLY
+        // CENTRED on the knob beside them - a knob's circle floats centred in
+        // its cell, and a top-pinned button would ride high against it. Same
+        // cell arithmetic as the knobs either side, so the trio reads as part
+        // of the grid rather than as furniture glued on.
+        const auto irRowY = grid.getY() + knobRowHeight;
+        const auto irButtonH = juce::jmin (30, knobRowHeight - 22);
+        const auto irButtonY = irRowY + 18
+                             + juce::jmax (0, (knobRowHeight - 18 - irButtonH) / 2);
+        irStatusLabel.setBounds (grid.getX() + cellWidth + 5, irRowY + 1,
+                                 cellWidth - 10, 17);
+        loadIrButton.setBounds (grid.getX() + cellWidth + 12,
+                                irButtonY, cellWidth - 24, irButtonH);
+        clearIrButton.setBounds (grid.getX() + 2 * cellWidth + 12,
+                                 irButtonY, cellWidth - 24, irButtonH);
     }
     else if (dynamicsTab)
     {
-        // DYNAMICS: four knobs fill the first row and the picker moved to
-        // CHARACTER, so this page needs no member row - but the reserved band
-        // logic above sized this grid as if something might ride it. Nothing
-        // does: leave the band empty rather than stretching the knob rows into
-        // it, so the page's layout stays identical to before the move.
+        // DYNAMICS: three knobs fill the first row and the neural and IR
+        // stages moved to CHARACTER, so this page needs no member row - but
+        // the reserved band logic above sized this grid as if something might
+        // ride it. Nothing does: leave the band empty rather than stretching
+        // the knob rows into it, so the page's layout stays identical to
+        // before the move.
     }
     else if (inEqTab || outEqTab)
     {
