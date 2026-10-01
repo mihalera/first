@@ -31,7 +31,7 @@
 
 "LANGUAGE_ENGLISH" = "English";
 "LANGUAGE_UKRAINIAN" = "Українська";
-"LANGUAGE_CAPTION" = "МОВА";
+"LANGUAGE_CAPTION" = "Language";
 "INPUT - output-stages the signal into the machine before the tape. Positive pushes the tape harder for more saturation, negative cleans up. Range -32 to +32 dB, default 0 dB." = "INPUT — підсилює сигнал на вході в машину перед стрічкою. Позитивне значення сильніше притискає стрічку й дає більше сатурації, негативне — очищає. Діапазон від -32 до +32 дБ, типове 0 дБ.";
 "DRIVE - the amount of magnetic saturation. At 0 percent the machine is clean; higher settings bend the signal like tape and add harmonics. Default 30 percent." = "DRIVE — кількість магнітного насичення. На 0 відсотках машина чиста; вищі значення згинають сигнал як стрічка й додають гармоніки. Типове 30 відсотків.";
 "BRIGHTNESS - a true tilt around the 1.6 kHz pivot: low settings darken the machine (highs dip, lows lift), high settings open it up (highs lift, lows pull back), +/-12 dB at the extremes. 50 percent is the neutral pivot, so the spectral balance passes through untouched. Default 50 percent." = "BRIGHTNESS — справжній нахил навколо опори 1,6 кГц: низькі значення затемнюють машину (верхи западають, низькі піднімаються), високі розкривають її (верхи піднімаються, низькі відступають), до ±12 дБ на краях. 50 відсотків — нейтральна опора, тож спектральний баланс проходить недоторканим. Типове 50 відсотків.";

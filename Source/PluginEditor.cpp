@@ -1,4 +1,4 @@
-#include "PluginProcessor.h"
+﻿#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
@@ -976,14 +976,24 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     //                 (was a hardcoded 11 px, which on a 32 px switch left a crowded
     //                 15 px track carrying THREE overlapping text pieces: OFF, ON and
     //                 the thumb caption).
-    const auto labelHeight = juce::jlimit (10.0f, 14.0f, bounds.getHeight() * 0.44f);
+    //
+    //  The proportion itself was the remaining crookedness at the header's 22 px
+    //  switch: 0.44 asked a 9.7 px caption to sit over a 3 px groove whose thumb
+    //  (band minus 2 px, floored at 8 px) stood 10 px tall in a 16 px capsule and
+    //  shot past the rounded ends. Height that three stacked pieces must share is
+    //  given out as three shares - caption 45 % of the body, the groove whatever
+    //  is left under a rim of 14 % of the body - so the bands always SUM to the
+    //  control: the header's 22 px switch reads a 10 px caption over a 6 px
+    //  groove, the deck's 30 px switch a 12 px caption over an 11 px groove, and
+    //  no band is ever asked to draw taller than the body holds.
+    const auto labelHeight = juce::jlimit (9.0f, 12.0f, bounds.getHeight() * 0.45f);
     const auto labelBand = bounds.withHeight (labelHeight);
     // The groove is inset deeper than before because the body is now a full
     // capsule: at its rounded bottom the silhouette pulls in fast, and a
     // groove that ran to the old 4 px inset would paint past the arc.
     const auto track = bounds.withTrimmedTop (labelHeight)
                             .withTrimmedLeft (7.0f).withTrimmedRight (7.0f)
-                            .withTrimmedBottom (3.0f);
+                            .withTrimmedBottom (juce::jmax (2.0f, bounds.getHeight() * 0.14f));
 
     // Status lamp: one explicit circular footprint, concentric at every scale. The
     // previous square slot made the lamp's visual centre depend on the band height,
@@ -1040,15 +1050,17 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     // missing. A switch the L&F was never told about draws at its true state.
     noteToggle (&button, isOn);
     const auto glide = toggleGlide (&button, isOn);
-    const auto thumbWidth = juce::jmax (12.0f, (track.getWidth() - 2.0f) * 0.5f);
-    const auto thumbHeight = juce::jmax (8.0f, track.getHeight() - 2.0f);
+    const auto thumbWidth = juce::jmax (9.0f, (track.getWidth() - 2.0f) * 0.5f);
+    const auto thumbHeight = juce::jmax (5.0f, track.getHeight() - 2.0f);
     const auto travel = track.getWidth() - thumbWidth - 2.0f;
     const auto thumbX = track.getX() + 1.0f + glide * travel;
     const auto thumbY = track.getY() + 1.0f + (shouldDrawButtonAsDown ? 1.0f : 0.0f);
     const auto thumb = juce::Rectangle<float> (thumbX, thumbY, thumbWidth, thumbHeight);
     // The thumb is a small cylinder of its own riding the groove, pressed one
     // pixel into the body while the mouse is down (thumbY above already
-    // shifts it): shading, not colour, carries the mechanics.
+    // shifts it): shading, not colour, carries the mechanics. The floors used
+    // to be 12/8 px - taller than the header switch's whole groove, which is
+    // how the thumb escaped the track there - and now scale down with it.
     fillCylinderBarrel (g, thumb, palette.knobFace, palette.knobEdge);
     g.setColour (palette.knobEdge.withAlpha (0.85f));
     g.drawRoundedRectangle (thumb, thumb.getHeight() * 0.5f, 1.0f);
@@ -1056,7 +1068,7 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     // State text on the thumb, fitted to the thumb. The thumb is the authoritative
     // state readout, so its text must never be the thing that gets clipped.
     g.setColour (isOn ? palette.gaugeInk.withAlpha (0.95f) : palette.secondary);
-    g.setFont (shrinkingFont (isOn ? "ON" : "OFF", 7.5f, juce::Font::bold, thumb.getWidth()));
+    g.setFont (shrinkingFont (isOn ? "ON" : "OFF", 7.0f, juce::Font::bold, thumb.getWidth()));
     g.drawText (isOn ? "ON" : "OFF", thumb, juce::Justification::centred, true);
 
     // Hover ring for mouse/keyboard focus feedback.
@@ -2125,6 +2137,26 @@ void FirstAudioProcessorEditor::styleTabButtons()
         button.setColour (juce::TextButton::textColourOnId, isOn ? palette.readout : palette.secondary);
         button.repaint();
     }
+
+    // The family buttons style themselves like the tab buttons do - pressed when
+    // their slice of the bar is on screen - so the two levels read as one system.
+    // Called from styleTabButtons rather than from setTabFamily, so a THEME cycle
+    // repaints them too.
+    const std::array<juce::TextButton*, tabFamilyCount> familyButtons
+        { &tabFamilyTapeButton, &tabFamilyFxButton, &tabFamilySetupButton };
+    for (std::size_t f = 0; f < familyButtons.size(); ++f)
+    {
+        const auto isOn = static_cast<int> (f) == currentTabFamily;
+        familyButtons[f]->setColour (juce::TextButton::buttonColourId,
+                                     isOn ? palette.accent : palette.raised);
+        familyButtons[f]->setColour (juce::TextButton::buttonOnColourId,
+                                     isOn ? palette.accent : palette.raised);
+        familyButtons[f]->setColour (juce::TextButton::textColourOffId,
+                                     isOn ? palette.readout : palette.secondary);
+        familyButtons[f]->setColour (juce::TextButton::textColourOnId,
+                                     isOn ? palette.readout : palette.secondary);
+        familyButtons[f]->repaint();
+    }
 }
 
 void FirstAudioProcessorEditor::setCurrentTab (int newTab)
@@ -2277,6 +2309,41 @@ void FirstAudioProcessorEditor::applyLanguage (int languageIndex)
     languageBox.repaint();
 
     updateTooltips();
+}
+
+void FirstAudioProcessorEditor::setTabFamily (int newFamily)
+{
+    // A family change only filters the tab bar's visibility and jumps to the
+    // slice's first page: currentTab is set through setCurrentTab so the knobs'
+    // visibility, the static_asserts and the styling all run through the one
+    // authoritative path - the same path a click on any tab button takes.
+    static_assert (tabFamilyTabCount[0] + tabFamilyTabCount[1] + tabFamilyTabCount[2]
+                       == numTabs,
+                   "the three tab families must cover all tabs");
+    static_assert (tabFamilyTabCount[0] > 0 && tabFamilyTabCount[1] > 0
+                       && tabFamilyTabCount[2] > 0,
+                   "no tab family may be empty");
+
+    const auto family = juce::jlimit (0, tabFamilyCount - 1, newFamily);
+    currentTabFamily = family;
+
+    const auto visible = [&]
+    {
+        int first = 0;
+        for (int f = 0; f < family; ++f)
+            first += tabFamilyTabCount[static_cast<std::size_t> (f)];
+        return first;
+    }();
+    const auto last = visible + tabFamilyTabCount[static_cast<std::size_t> (family)];
+
+    for (int tab = 0; tab < numTabs; ++tab)
+        tabButtons[static_cast<std::size_t> (tab)]
+            .setVisible (tab >= visible && tab < last);
+
+    if (currentTab < visible || currentTab >= last)
+        setCurrentTab (visible);
+    else
+        resized();
 }
 
 void FirstAudioProcessorEditor::loadNeuralModelFromFile()
@@ -3469,7 +3536,25 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         addAndMakeVisible (button);
     }
 
-    setCurrentTab (currentTab);
+    // The three tab families ride ONE row of the 4-wide knob grid: one button per
+    // family, always visible, pages beside each. There is no free header row to
+    // put them in (its three rows hold the switches, the language pair and the
+    // machine-state pill), so the Control strip's own grid hosts them - the grid
+    // below is empty while the row is visible and just reflows when it is not.
+    const std::array<juce::TextButton*, tabFamilyCount> familyButtons
+        { &tabFamilyTapeButton, &tabFamilyFxButton, &tabFamilySetupButton };
+    for (std::size_t f = 0; f < familyButtons.size(); ++f)
+    {
+        auto& button = *familyButtons[f];
+        button.setLookAndFeel (&customLookAndFeel);
+        button.onClick = [this, f] { setTabFamily (static_cast<int> (f)); };
+        addAndMakeVisible (button);
+    }
+
+    // Every other path - applyLanguage's applyTheme, a knob drag, a preset load -
+    // only ever touches styling; the single setTabFamily here is what initially
+    // filters the bar and resolves the restored currentTab's family.
+    setTabFamily (currentTab);
 
     // The same tapeStockNameList() the choice parameter is built from, so the panel
     // cannot offer a stock the parameter would refuse to select. It did once: the
@@ -6472,22 +6557,24 @@ void FirstAudioProcessorEditor::resized()
     // ------------------------------------------------------------------
     //  The tab bar.
     //
-    //  The three groups used to be one five-row block of all twenty-one knobs, with a
-    //  small caption floating in the row gap above each group. Those were the panel's
-    //  worst-placed furniture: the gap above row 3 lies INSIDE row 2 and the gap above
-    //  row 4 lies inside row 3, so SATURATION CORE was painted on top of the row of
-    //  knobs above it and HEAD / TRANSPORT on top of the next one, and at 13 px tall
-    //  the text ran into the knob captions behind it. Nothing about that placement
-    //  could have been right - there is no row of its own for a caption to sit in when
-    //  the rows are full.
+    //  The ten pages are grouped into three FAMILIES, so the bar never has to fit
+    //  ten names into one row: TAPE carries the machine and its colouring, FX the
+    //  time and dynamics stages, SETUP the two equalisers and the engine switches.
+    //  A family only filters WHICH tab buttons are visible - no tab is re-indexed,
+    //  the spec table, setCurrentTab and every knob's membership stay as they were.
     //
-    //  The captions are gone and the groups are real tabs, so each is named on a
-    //  button tall enough to read, the knobs underneath get a whole grid to
-    //  themselves, and only the selected tab's controls are on screen at all.
+    //  The caption block that used to float in the row gaps was the panel's
+    //  worst-placed furniture: the gap above row 3 lies INSIDE row 2 and the gap
+    //  above row 4 lies inside row 3, so SATURATION CORE was painted on top of the
+    //  row of knobs above it and HEAD / TRANSPORT on top of the next one. The
+    //  captions are gone and the groups are real tabs, each named on a button tall
+    //  enough to read, the knobs underneath get a whole grid to themselves, and
+    //  only the selected tab's controls are on screen at all.
     // ------------------------------------------------------------------
     const auto tabBarLeft = layout.controls.getX() + 14;
     const auto tabBarTop = layout.controls.getY() + 34;
     const auto tabBarHeight = 24;
+
     // The gap shrinks as tabs are added so the buttons stay as wide as they can:
     // ten pages at a fixed 6 px each spent 54 of the bar's ~700 px on nothing, and
     // the caption is auto-sized to the button, so the width is what decides whether
@@ -6500,6 +6587,13 @@ void FirstAudioProcessorEditor::resized()
         tabButtons[static_cast<std::size_t> (tab)]
             .setBounds (tabBarLeft + tab * (tabButtonWidth + tabGap),
                         tabBarTop, tabButtonWidth, tabBarHeight);
+
+    // The family buttons are never hidden by a page change (only a repaint)
+    // and there is nothing on the panel that flips their visibility, so this is
+    // a plain always-on strip.
+    tabFamilyTapeButton.setVisible (true);
+    tabFamilyFxButton.setVisible (true);
+    tabFamilySetupButton.setVisible (true);
     metersHeadingLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 8, 130, 18);
     metersHintLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 27, 150, 14);
     const auto compressorLabelWidth = 120;
@@ -6514,6 +6608,23 @@ void FirstAudioProcessorEditor::resized()
     auto grid = layout.controls.reduced (14);
     grid.removeFromTop (controlsDividerOffset - 14 + 8);
     grid.removeFromBottom (8);
+
+    // The family strip takes the grid's FIRST row for itself: one button per
+    // family, spanning the grid's full width, with the bar of tab pages sitting
+    // in a row of its own underneath - a group strip above a bar of its children,
+    // which is what tabs-inside-tabs are. removeFromTop both reserves the row and
+    // returns it, so the knob cells and the member band below never see the
+    // strip: no page loses height to it and none of the placement code moves.
+    const auto familyRow = grid.removeFromTop (familyRowHeight);
+    const auto familyButtonWidth = (familyRow.getWidth() - 2 * 6) / tabFamilyCount;
+    tabFamilyTapeButton.setBounds (familyRow.getX(), familyRow.getY(),
+                                   familyButtonWidth, familyRow.getHeight());
+    tabFamilyFxButton.setBounds (familyRow.getX() + familyButtonWidth + 6,
+                                 familyRow.getY(), familyButtonWidth,
+                                 familyRow.getHeight());
+    tabFamilySetupButton.setBounds (familyRow.getX() + 2 * (familyButtonWidth + 6),
+                                    familyRow.getY(), familyButtonWidth,
+                                    familyRow.getHeight());
 
     // Only the ACTIVE tab is laid out, and its own control count decides the row
     // count, so a tab is never sized as if it still had to hold the whole panel's

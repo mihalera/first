@@ -1,4 +1,4 @@
-/*
+﻿/*
   ==============================================================================
 
     This file contains the basic framework code for a JUCE plugin processor.
@@ -5350,12 +5350,25 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             if (channel == 1)
                 stOffsetBuffer[static_cast<std::size_t> (stOffsetWritePosition)] = withDelay;
 
-            // Raised-cosine crossfade between the dry input and the fully processed
+            // Raised-cosine crossfade between the DRY INPUT and the fully processed
             // tape signal, driven by the smoothed MIX. 0 % is a transparent dry signal
             // and 100 % is all tape, both at unity, with the level held across the
             // middle of the travel.
+            //
+            // The dry leg is `machineDryInput` - the sample captured right after the
+            // input trim and glue compressor, BEFORE the DI, DISTORT, PREAMP and the
+            // IN EQ - and not `x`, which by this point has been through every one of
+            // those stages. The dry leg used to ride `x`, so MIX 0 was never the
+            // untouched input: with a DI engaged the dry side carried the box's
+            // colouring, and the whole output then multiplied by stageGain (the
+            // compressors' gain, both makeups and the static calibration) left MIX 0
+            // both coloured AND several dB off the input. `machineDryInput` is the
+            // same capture DELTA subtracts its reference from, so both controls now
+            // agree on what "dry" means - and because the dry leg no longer rides
+            // the processed signal, MIX 0 IS the input, whatever the front-end
+            // stages are doing.
             const float wetMix = aligned * wetGain * platterSpeed;
-            const float dryMix = x * dryGain;
+            const float dryMix = machineDryInput[static_cast<std::size_t> (channel)] * dryGain;
             tapeOutput[static_cast<std::size_t> (channel)] = dryMix + wetMix;
         }
 

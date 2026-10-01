@@ -1,4 +1,4 @@
-/*
+﻿/*
   ==============================================================================
     Nonlin Analog Saturator processor editor.
   ==============================================================================
@@ -355,6 +355,10 @@ private:
     void applyTheme();
     EditorLayout getEditorLayout() const;
 
+    // Cycles the header's theme button: DARK -> IVORY -> LIGHT -> DARK. The tab
+    // families resolve the reverse way - one Control-strip button per family and
+    // pages beside it - so the 4 x 92 px grid's four free columns stay free.
+
     // Shared by the constructor and by resized(): the knob-grid section captions
     // are created while laying out, so a constructor-local helper was out of scope
     // there and the build failed to compile (C2065 on `styleLabel`).
@@ -412,6 +416,11 @@ private:
     // three groups are real tabs, so only the active tab's controls are on screen
     // and each group has a whole grid to itself.
     void setCurrentTab (int newTab);
+
+    // The three tab families: selects which slice of the tab bar is visible and
+    // jumps to that slice's first page, then lays out and styles the bar. currentTab
+    // and every knob's tab membership are untouched - no tab is re-indexed.
+    void setTabFamily (int newFamily);
     void styleTabButtons();
 
     void refreshPresetList();
@@ -687,10 +696,21 @@ private:
     juce::Label deckHintLabel;
     juce::Label controlsHeadingLabel;
     juce::Label controlsHintLabel;
-    // The three knob-grid tabs, in the order tabSpecs lists them. Clicking one shows
-    // that group's controls and hides every other knob.
+    // The ten knob-grid tabs, in the order tabSpecs lists them. Clicking one shows
+    // that page's controls and hides every other knob. Only the active family's
+    // buttons are on screen: the families themselves are the three buttons below,
+    // so ten pages of tabs never fight for one row's width.
     std::array<juce::TextButton, numTabs> tabButtons;
     int currentTab = 0;
+    int currentTabFamily = 0;
+    juce::TextButton tabFamilyTapeButton { "TAPE" };
+    juce::TextButton tabFamilyFxButton { "FX" };
+    juce::TextButton tabFamilySetupButton { "SETUP" };
+    // The three families and their per-family page counts, summed by a
+    // static_assert in setTabFamily so a page added later cannot go without
+    // being placed in a family.
+    static constexpr int tabFamilyCount = 3;
+    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount { 4, 3, 3 };
     juce::Label metersHeadingLabel;
     juce::Label metersHintLabel;
     juce::Label compressorLabel;
