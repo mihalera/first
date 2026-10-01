@@ -341,16 +341,10 @@ private:
     // that silently disappears from the panel.
     static constexpr std::size_t controlCount = 59;
     static constexpr int tabColumns = 4;
-    // Seven tabs: MACHINE, DRIVE, CHARACTER, NOISE, VINYL, SPACE, SETTINGS. The
-    // seventh arrived with the four record faults (DUST / SCRATCH / WARP /
-    // ELECTRICAL): cramming them onto NOISE would have put thirteen knobs on one
-    // page, which is exactly the crowding the tabs exist to avoid. VINYL gets its
-    // own page because the four are one subject - the state of the record itself -
-    // rather than four unrelated controls.
     // Eleven pages under three large families (TAPE / FX / SETUP), so no page
     // has to carry more than one subject: DRIVE was twelve knobs on one page and
     // NOISE eleven, which is exactly the crowding the tabs exist to avoid.
-    static constexpr int numTabs = 11;
+    static constexpr int numTabs = 15;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     void timerCallback() override;
@@ -709,11 +703,12 @@ private:
     juce::TextButton tabFamilyTapeButton { "TAPE" };
     juce::TextButton tabFamilyFxButton { "FX" };
     juce::TextButton tabFamilySetupButton { "SETUP" };
-    // The three families and their per-family page counts, summed by a
-    // static_assert in setTabFamily so a page added later cannot go without
-    // being placed in a family.
+    // Fifteen pages under three large families (TAPE / FX / SETUP) - the page
+    // is one subject and at most one row of seven knobs: IN EQ alone carried
+    // six band knobs and three corner controls, DRIVE GAIN seven plus the DI
+    // pad, and a page that scrolls is a page nobody dials.
     static constexpr int tabFamilyCount = 3;
-    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount { 5, 3, 3 };
+    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount { 8, 4, 3 };
     juce::Label metersHeadingLabel;
     juce::Label metersHintLabel;
     juce::Label compressorLabel;
@@ -764,6 +759,9 @@ private:
     // neural picker's card behind that page's fourth column and must not pay
     // for it on any other tab.
     bool activeTabIsCharacter = false;
+    // paint() draws the neural picker's card behind the SHAPERS page's member
+    // band's first column - the page whose NEURAL knob the picker belongs to.
+    bool activeTabIsShapers = false;;
 
     // -----------------------------------------------------------------------
     //  The front panel's theme.
