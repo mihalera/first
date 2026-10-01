@@ -6615,6 +6615,7 @@ void FirstAudioProcessorEditor::resized()
     // which is what tabs-inside-tabs are. removeFromTop both reserves the row and
     // returns it, so the knob cells and the member band below never see the
     // strip: no page loses height to it and none of the placement code moves.
+    constexpr int familyRowHeight = 22;
     const auto familyRow = grid.removeFromTop (familyRowHeight);
     const auto familyButtonWidth = (familyRow.getWidth() - 2 * 6) / tabFamilyCount;
     tabFamilyTapeButton.setBounds (familyRow.getX(), familyRow.getY(),
