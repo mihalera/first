@@ -1,4 +1,4 @@
-#include "PluginProcessor.h"
+﻿#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
@@ -408,18 +408,13 @@ namespace
         const char* name;
         const char* hint;
         std::size_t count;
+        int family;                 // which of the three families hosts the page
         std::size_t controls[16];
     };
 
-    // Six pages, in signal order, because the panel now carries thirty-one knobs and
-    // one surface cannot hold them legibly. The split follows the CHAIN rather than an
-    // arbitrary grouping, so walking the tabs left to right walks the signal:
-    //
-    //   MACHINE   what goes in, how the machine colours it, what comes out
-    //   DRIVE     the gain stages in front of the tape, then everything that bends
-    //   TAPE      the head, the medium's condition and the transport's
-    //   SPACE     the two time-based stages, delay and reverb
-    //   VINYL     the record-playing end of the chain
+    // Eleven pages under three large families - TAPE, FX, SETUP - because the
+    // panel carries fifty-nine knobs and no single subject should own a crowded
+    // page. Walking the bar left to right inside a family still walks the signal:
     //
     // Index map, for reading the table below:
     //   0 input  1 drive  2 bias  3 tone  4 character  5 wow  6 flutter  7 mix
@@ -446,105 +441,134 @@ namespace
     // on SETTINGS, and the delay TYPE / RATE / SYNC trio shows on SPACE. They are
     // not knobs - the grid below cannot place them - so their visibility is
     // managed in setCurrentTab beside the knobs'.
-    constexpr std::array<TabSpec, 10> tabSpecs { {
+    //  The eleven pages are grouped into THREE FAMILIES - TAPE, FX, SETUP - so
+    //  no page has to carry more than one subject: the old DRIVE held twelve
+    //  knobs and the old NOISE eleven, which is exactly the crowding the tabs
+    //  exist to avoid. DRIVE is now two pages (the gain stages in front, the
+    //  curve-benders behind), the record's five FAULTS moved onto a RECORD page
+    //  beside the vinyl stage's own three knobs, and the families are the three
+    //  large buttons ABOVE this bar (see setTabFamily).
+    //  The fifteen pages are grouped into THREE FAMILIES - TAPE, FX, SETUP - and
+    //  no page carries more than one subject, or more than one row of seven
+    //  knobs: DRIVE once held twelve and NOISE eleven, which is exactly the
+    //  crowding the tabs exist to avoid. The families are the three large
+    //  buttons ABOVE this bar (see setTabFamily); the column in each row below
+    //  is the page's family, and it is the single source the strip reads.
+    constexpr std::array<TabSpec, 15> tabSpecs { {
+        // ---- TAPE family (8 pages): the machine and everything feeding it ---
         //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
         { "MACHINE", "What goes in, how the machine colours it, and what comes out.",
-                     7, { 0, 3, 4, 7, 9, 8, 32 } },
-        //  preamp, distortion, drive, bias, blend, shape, amp_bias, sag, subfund
-        { "DRIVE", "The gain stages in front of the tape, then everything that bends "
-                   "the signal.",
-                     12, { 44, 45, 46, 21, 22, 1, 2, 10, 11, 12, 13, 20 } },
-        //  flux, cabinet, presence, neural_mix, ir_mix. The vinyl stage's three
-        //  voicing selectors - GENERATION / TURNTABLE / CARTRIDGE - are COMBO
-        //  BOXES rather than knobs (the grid only places knobs), so like GL and
-        //  OVERSAMPLING they are tab members whose visibility setCurrentTab
-        //  asserts and resized() lays out. The two file-fed stages moved here
-        //  from DYNAMICS at the user's request: a learned model and a captured
-        //  impulse response are VOICING choices - which machine shape bends the
-        //  signal, and what room it is heard in - and they sit beside the other
-        //  voicing selectors, each with its own file picker in the member band
-        //  and on the row beside its knob.
-        { "CHARACTER", "The head, the medium's tone, and how the record was made, "
-                       "what plays it and what reads it: GENERATION, TURNTABLE and "
-                       "CARTRIDGE re-voice the whole vinyl stage, so they live with "
-                       "the rest of the machine's voicing rather than beside its "
-                       "faults. NEURAL blends in an optional learned model loaded "
-                       "from a file, and IR MIX blends in an impulse response - a "
-                       "cabinet or a room - loaded from a file.",
-                     5, { 23, 15, 14, 57, 58 } },
+                     7, 0, { 0, 3, 4, 7, 9, 8, 32 } },
+        //  di, di_load, di_transformer, preamp, distortion - the gain stages
+        //  IN FRONT of the tape. The DI pad/load combo rides this page beside
+        //  the knob row in resized(), with the DI it belongs to.
+        { "FRONT END", "The gain stages in front of the tape: DISTORT and PREAMP "
+                       "push the front end, and the DI loads, pads and colours "
+                       "the instrument before any of it - with its PAD and LOAD "
+                       "selector beside the row.",
+                     5, 0, { 44, 45, 46, 21, 22 } },
+        //  drive, bias - the head's magnetic saturation itself.
+        { "SATURATION", "The magnetic saturation the head applies: DRIVE sets how "
+                        "hard the tape is pushed and BIAS where its operating "
+                        "point sits - the two classic recorder controls, on a "
+                        "page of their own.",
+                     2, 0, { 1, 2 } },
+        //  flux, cabinet, presence. The vinyl stage's three voicing selectors
+        //  - GENERATION / TURNTABLE / CARTRIDGE - are COMBO BOXES rather than
+        //  knobs (the grid only places knobs), so like GL and OVERSAMPLING they
+        //  are tab members whose visibility setCurrentTab asserts and resized()
+        //  lays out, under the knobs here; the NEURAL model picker takes the
+        //  band's fourth column.
+        { "CHARACTER", "The head and the medium's tone: FLUX drives the head, "
+                       "CABINET and PRESENCE place the machine's voice. The "
+                       "record's GENERATION / TURNTABLE / CARTRIDGE re-voice the "
+                       "whole vinyl stage from under this row, and the NEURAL "
+                       "model picker takes the band's last column.",
+                     3, 0, { 23, 15, 14 } },
         //  noise, noise_lvl, wow, flutter, wear, mechanics - the MACHINE's own
-        //  departures from a clean signal, which is what noise means in the
-        //  widest sense. Wow and flutter are the transport's noise, wear and
-        //  mechanics the medium's and the mechanism's, and they share the
-        //  transport gate with the hiss. The record's five FAULTS are here too
-        //  - DUST the surface's fine texture, SCRATCH a wound crossed once per
-        //  revolution, WARP the level breathing at the platter rate, ELECTRICAL
-        //  the cartridge's earthing, CLICKS the pressing's sharp faults - so
-        //  every knob on this page is a way of making the signal LESS clean.
-        { "NOISE", "Everything that departs from a clean signal. NOISE MIX sets how "
-                   "much of it is in the output and NOISE LVL how loud the sources "
-                   "run; WOW and FLUTTER are the transport's noise, WEAR and "
-                   "MECHANICS the medium's and the mechanism's, and the record's "
-                   "five FAULTS are here too - DUST the surface's fine texture, "
-                   "SCRATCH a wound crossed once per revolution, WARP the level "
-                   "breathing at the platter rate, ELECTRICAL the cartridge's "
-                   "earthing, CLICKS the pressing's sharp faults.",
-                     11, { 19, 31, 5, 6, 24, 25, 33, 34, 35, 36, 37 } },
-        //  delay_time, delay_feedback, st_offset, reverb, reverb_size
-        { "SPACE", "The two time-based stages: the second head, then the room. The "
-                   "deck's TYPE / SYNC DELAY / RATE switches belong to the second "
-                   "head, so they show on this tab.",
-                     6, { 16, 17, 18, 53, 26, 27 } },
+        //  departures from a clean signal. The record's five FAULTS are on the
+        //  RECORD page: each is a mechanism of the RECORD's noise, not the
+        //  machine's.
+        { "NOISE", "The machine's own departures from a clean signal. NOISE MIX "
+                   "sets how much of it is in the output and NOISE LVL how loud "
+                   "the sources run; WOW and FLUTTER are the transport's noise, "
+                   "WEAR and MECHANICS the medium's and the mechanism's. The "
+                   "record's five FAULTS are on the RECORD page.",
+                     6, 0, { 19, 31, 5, 6, 24, 25 } },
+        //  The record's five FAULTS, on a page of their own because each IS a
+        //  mechanism of the record's own noise: surface texture, a repeating
+        //  wound, the platter's warp, the cartridge's earthing, the pressing's
+        //  clicks.
+        { "RECORD", "The record's five FAULTS: DUST the surface's fine texture, "
+                    "SCRATCH a wound crossed once per revolution, WARP the level "
+                    "breathing at the platter rate, ELECTRICAL the cartridge's "
+                    "earthing, CLICKS the pressing's sharp faults.",
+                     5, 0, { 33, 34, 35, 36, 37 } },
+        //  The vinyl stage's own three knobs. These are here and NOT also on
+        //  NOISE: they are the record's CHARACTER, while the faults are its
+        //  noise - listing them on both pages would put the same knob on two
+        //  tabs, and the grid can only place one of them.
+        { "VINYL", "The record-playing stage: VINYL MIX is how much of it is in "
+                   "the output, CRACKLE the surface's granular texture and RUMBLE "
+                   "the platter's own low thump. GENERATION / TURNTABLE / "
+                   "CARTRIDGE re-voice it all from CHARACTER; the FAULTS are on "
+                   "RECORD.",
+                     3, 0, { 28, 29, 30 } },
+        //  blend, shape, amp_bias, sag, subfund - everything that BENDS the
+        //  curve once the gain stages have pushed it.
+        { "SUBFUND", "The curve-benders: BLEND shifts the shaper's operating "
+                     "point, SHAPE and AMP BIAS bend it, SAG lets it yield under "
+                     "load, and SUBFUND generates the octave below what plays.",
+                     5, 0, { 10, 11, 12, 13, 20 } },
+        // ---- FX family (4 pages): the second head, the room, the envelope,
+        //  the output equaliser ------------------------------------------------
+        //  delay_time, delay_feedback, st_offset, ping_pong. The deck's TYPE /
+        //  SYNC DELAY / RATE switches belong to this page and ride the band
+        //  under the knobs.
+        { "DELAY", "The second head: DELAY and DLY LVL set the echo, ST OFFSET "
+                   "skews the sides against each other, PING-PONG bounces it "
+                   "between them. The deck's TYPE / SYNC DELAY / RATE switches "
+                   "sit under the row.",
+                     4, 1, { 16, 17, 18, 53 } },
+        { "REVERB", "The room: REVERB is how much of it is in the output and RVB "
+                    "SIZE how large the space the reflections build.",
+                     2, 1, { 26, 27 } },
         //  transient_attack (54), transient_sustain (55), transient_mix (56).
-        //  The DYNAMICS page: the stage that acts on the finished signal's
-        //  envelope rather than on the waveform - it changes how the sound
-        //  MOVES without adding a harmonic. The neural and IR stages moved to
-        //  CHARACTER (a voicing choice belongs with the other voicing), so
-        //  this page holds the shaper alone.
+        //  The stage that acts on the finished signal's envelope rather than on
+        //  the waveform - it changes how the sound MOVES without adding a
+        //  harmonic.
         { "DYN", "The stage that shapes the FINISHED signal's envelope. ATK "
-                    "sharpens (positive) or softens (negative) the attack of "
-                    "each event; SUS lengthens (positive) or shortens (negative) "
-                    "what follows the attack, its body and ring; TR MIX is how "
-                    "much of the shaped signal reaches the output.",
-                     3, { 54, 55, 56 } },
-        //  The record's five FAULTS moved onto NOISE (each is a mechanism of noise:
-        //  surface texture, a repeating wound, the platter's warp, the cartridge's
-        //  earthing, the pressing's clicks), so this page carries the stage's mix
-        //  and its two continuous surfaces. The three selectors at the top of the
-        //  old page - GENERATION / TURNTABLE / CARTRIDGE - moved to CHARACTER,
-        //  where the rest of the machine's voicing lives.
-        //
-        //  These three are here and NOT also on NOISE: they are the record's
-        //  CHARACTER (how much of the stage is in the output, and the two
-        //  continuous surfaces), while the faults are noise. Listing them on
-        //  both pages would put the same knob on two tabs, and the grid can only
-        //  place one of them.
-        { "VINYL", "The record-playing stage: VINYL MIX is how much of it is in the "
-                    "output, CRACKLE the surface's granular texture and RUMBLE the "
-                    "platter's own low thump. The record's five FAULTS - DUST, "
-                    "SCRATCH, WARP, ELECTRICAL, CLICKS - live on the NOISE tab, "
-                    "next to the rest of what departs from a clean signal; the "
-                    "GENERATION / TURNTABLE / CARTRIDGE selectors that change how "
-                    "all of them sound are on CHARACTER.",
-                     3, { 28, 29, 30 } },
-        //  in_low, in_mid, in_high - the input equaliser. Its own page because
-        //  it is a different DECISION from the output EQ: this one changes what
-        //  the machine hears, so it changes what the machine does.
+                 "sharpens (positive) or softens (negative) the attack of each "
+                 "event; SUS lengthens (positive) or shortens (negative) what "
+                 "follows the attack, its body and ring; TR MIX is how much of "
+                 "the shaped signal reaches the output.",
+                     3, 1, { 54, 55, 56 } },
+        //  out_low, out_mid, out_high and their three corners.
+        { "OUT EQ", "The output equaliser, after the machine and before the output "
+                    "trim. Nothing downstream responds to what it does, so it "
+                    "corrects the RESULT rather than the input - the neutral, "
+                    "predictable EQ you use to place the finished sound. Same "
+                    "three bands as the input EQ, same transparency at 0 dB; the "
+                    "ORDER and corner switches ride the row below.",
+                     6, 1, { 41, 42, 43, 50, 51, 52 } },
+        // ---- SETUP family (3 pages): what the machine hears, the file-fed
+        //  shapers, the engine switches ----------------------------------------
+        //  in_low, in_mid, in_high and their three corners.
         { "IN EQ", "The input equaliser, in front of the machine. What it shapes "
-                    "is what the tape HEARS, so lifting the low end here drives the "
-                    "saturation curve and the glue compressors harder - it changes "
-                    "the character of the processing, not merely the balance. This "
-                    "is the EQ you use to feed the machine what it wants. LOW is a "
-                    "shelf at 200 Hz, MID a bell at 1 kHz, HIGH a shelf above "
-                    "4 kHz; all three are transparent at 0 dB.",
-                     6, { 38, 39, 40, 47, 48, 49 } },
-        //  out_low, out_mid, out_high - the output equaliser.
-        { "OUT EQ", "The output equaliser, after the machine and before the "
-                     "output trim. Nothing downstream responds to what it does, so "
-                     "it corrects the RESULT rather than the input - the neutral, "
-                     "predictable EQ you use to place the finished sound. Same three "
-                     "bands as the input EQ, same transparency at 0 dB.",
-                     6, { 41, 42, 43, 50, 51, 52 } },
+                   "is what the tape HEARS, so lifting the low end here drives "
+                   "the saturation curve and the glue compressors harder - it "
+                   "changes the character of the processing, not merely the "
+                   "balance. LOW is a shelf at 200 Hz, MID a bell at 1 kHz, HIGH "
+                   "a shelf above 4 kHz; all three are transparent at 0 dB, and "
+                   "the ORDER and corner switches ride the row below.",
+                     6, 2, { 38, 39, 40, 47, 48, 49 } },
+        //  neural_mix, ir_mix - the two file-fed stages, each with its own
+        //  loader in the band under the row.
+        { "SHAPERS", "The two file-fed stages: NEURAL blends in a learned model "
+                     "and IR MIX an impulse response - a cabinet or a room - "
+                     "each loaded from a file through the loader under its own "
+                     "knob.",
+                     2, 2, { 57, 58 } },
         //  No knobs of its own: SETTINGS is where the three engine-level switches
         //  live - GL, OVERSAMPLING and the interface sounds - shown by
         //  setCurrentTab, not by the grid.
@@ -553,14 +577,14 @@ namespace
                       "panel rendering on and off, and UI SOUNDS turns the panel's "
                       "own interface clicks on and off - those never reach the "
                       "audio output, they play on a device of their own.",
-                     0, {} }
+                     0, 2, {} }
     } };
 
     // Where the divider under the knob-grid heading sits, in pixels from the top of the
     // panel. The tab bar lives between the heading and this line, so paint() and
     // resized() both read it from here: it used to be a literal 42 px in paint(), which
     // is precisely where the first tab button now is.
-    constexpr int controlsDividerOffset = 68;
+    constexpr int controlsDividerOffset = 92;
 
     // Does control `index` belong to `tab`?
     bool controlIsInTab (std::size_t index, int tab)
@@ -579,7 +603,7 @@ namespace
     // twice, and none of them is silently dropped.
     // The tab count is written once, here, and the static_assert that guards coverage
 // reads it from the same constant - so adding a page cannot leave this behind.
-constexpr std::size_t numTabPages = 10;
+constexpr std::size_t numTabPages = 15;
 
 // The control count is a TEMPLATE parameter, not an argument, and that is the
 // whole fix. It used to be a literal 54 inside the function - the current
@@ -976,14 +1000,24 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     //                 (was a hardcoded 11 px, which on a 32 px switch left a crowded
     //                 15 px track carrying THREE overlapping text pieces: OFF, ON and
     //                 the thumb caption).
-    const auto labelHeight = juce::jlimit (10.0f, 14.0f, bounds.getHeight() * 0.44f);
+    //
+    //  The proportion itself was the remaining crookedness at the header's 22 px
+    //  switch: 0.44 asked a 9.7 px caption to sit over a 3 px groove whose thumb
+    //  (band minus 2 px, floored at 8 px) stood 10 px tall in a 16 px capsule and
+    //  shot past the rounded ends. Height that three stacked pieces must share is
+    //  given out as three shares - caption 45 % of the body, the groove whatever
+    //  is left under a rim of 14 % of the body - so the bands always SUM to the
+    //  control: the header's 22 px switch reads a 10 px caption over a 6 px
+    //  groove, the deck's 30 px switch a 12 px caption over an 11 px groove, and
+    //  no band is ever asked to draw taller than the body holds.
+    const auto labelHeight = juce::jlimit (9.0f, 12.0f, bounds.getHeight() * 0.45f);
     const auto labelBand = bounds.withHeight (labelHeight);
     // The groove is inset deeper than before because the body is now a full
     // capsule: at its rounded bottom the silhouette pulls in fast, and a
     // groove that ran to the old 4 px inset would paint past the arc.
     const auto track = bounds.withTrimmedTop (labelHeight)
                             .withTrimmedLeft (7.0f).withTrimmedRight (7.0f)
-                            .withTrimmedBottom (3.0f);
+                            .withTrimmedBottom (juce::jmax (2.0f, bounds.getHeight() * 0.14f));
 
     // Status lamp: one explicit circular footprint, concentric at every scale. The
     // previous square slot made the lamp's visual centre depend on the band height,
@@ -1040,15 +1074,17 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     // missing. A switch the L&F was never told about draws at its true state.
     noteToggle (&button, isOn);
     const auto glide = toggleGlide (&button, isOn);
-    const auto thumbWidth = juce::jmax (12.0f, (track.getWidth() - 2.0f) * 0.5f);
-    const auto thumbHeight = juce::jmax (8.0f, track.getHeight() - 2.0f);
+    const auto thumbWidth = juce::jmax (9.0f, (track.getWidth() - 2.0f) * 0.5f);
+    const auto thumbHeight = juce::jmax (5.0f, track.getHeight() - 2.0f);
     const auto travel = track.getWidth() - thumbWidth - 2.0f;
     const auto thumbX = track.getX() + 1.0f + glide * travel;
     const auto thumbY = track.getY() + 1.0f + (shouldDrawButtonAsDown ? 1.0f : 0.0f);
     const auto thumb = juce::Rectangle<float> (thumbX, thumbY, thumbWidth, thumbHeight);
     // The thumb is a small cylinder of its own riding the groove, pressed one
     // pixel into the body while the mouse is down (thumbY above already
-    // shifts it): shading, not colour, carries the mechanics.
+    // shifts it): shading, not colour, carries the mechanics. The floors used
+    // to be 12/8 px - taller than the header switch's whole groove, which is
+    // how the thumb escaped the track there - and now scale down with it.
     fillCylinderBarrel (g, thumb, palette.knobFace, palette.knobEdge);
     g.setColour (palette.knobEdge.withAlpha (0.85f));
     g.drawRoundedRectangle (thumb, thumb.getHeight() * 0.5f, 1.0f);
@@ -1056,7 +1092,7 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     // State text on the thumb, fitted to the thumb. The thumb is the authoritative
     // state readout, so its text must never be the thing that gets clipped.
     g.setColour (isOn ? palette.gaugeInk.withAlpha (0.95f) : palette.secondary);
-    g.setFont (shrinkingFont (isOn ? "ON" : "OFF", 7.5f, juce::Font::bold, thumb.getWidth()));
+    g.setFont (shrinkingFont (isOn ? "ON" : "OFF", 7.0f, juce::Font::bold, thumb.getWidth()));
     g.drawText (isOn ? "ON" : "OFF", thumb, juce::Justification::centred, true);
 
     // Hover ring for mouse/keyboard focus feedback.
@@ -2125,6 +2161,26 @@ void FirstAudioProcessorEditor::styleTabButtons()
         button.setColour (juce::TextButton::textColourOnId, isOn ? palette.readout : palette.secondary);
         button.repaint();
     }
+
+    // The family buttons style themselves like the tab buttons do - pressed when
+    // their slice of the bar is on screen - so the two levels read as one system.
+    // Called from styleTabButtons rather than from setTabFamily, so a THEME cycle
+    // repaints them too.
+    const std::array<juce::TextButton*, tabFamilyCount> familyButtons
+        { &tabFamilyTapeButton, &tabFamilyFxButton, &tabFamilySetupButton };
+    for (std::size_t f = 0; f < familyButtons.size(); ++f)
+    {
+        const auto isOn = static_cast<int> (f) == currentTabFamily;
+        familyButtons[f]->setColour (juce::TextButton::buttonColourId,
+                                     isOn ? palette.accent : palette.raised);
+        familyButtons[f]->setColour (juce::TextButton::buttonOnColourId,
+                                     isOn ? palette.accent : palette.raised);
+        familyButtons[f]->setColour (juce::TextButton::textColourOffId,
+                                     isOn ? palette.readout : palette.secondary);
+        familyButtons[f]->setColour (juce::TextButton::textColourOnId,
+                                     isOn ? palette.readout : palette.secondary);
+        familyButtons[f]->repaint();
+    }
 }
 
 void FirstAudioProcessorEditor::setCurrentTab (int newTab)
@@ -2139,8 +2195,13 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
                    "every knob must be listed by exactly one tab");
 
     currentTab = juce::jlimit (0, numTabs - 1, newTab);
-    // paint() gates the neural card on this: it is CHARACTER's page furniture.
-    activeTabIsCharacter = (currentTab == 2);
+    // paint() gates page furniture on these. Both looked up by NAME, not by
+    // index: a name cannot drift the way a hard-coded page number did when the
+    // pages were reordered.
+    activeTabIsCharacter = (std::strcmp (tabSpecs[static_cast<std::size_t> (currentTab)].name,
+                                         "CHARACTER") == 0);
+    activeTabIsShapers = (std::strcmp (tabSpecs[static_cast<std::size_t> (currentTab)].name,
+                                       "SHAPERS") == 0);
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -2277,6 +2338,53 @@ void FirstAudioProcessorEditor::applyLanguage (int languageIndex)
     languageBox.repaint();
 
     updateTooltips();
+}
+
+void FirstAudioProcessorEditor::setTabFamily (int newFamily)
+{
+    // The tab table's family column is the single source of truth: each page
+    // states which family hosts it, and this strip reads the column rather
+    // than a parallel count array that could drift from the table. The assert
+    // pins the intended layout - five TAPE pages, then three FX, then three
+    // SETUP, in table order - so a page moved between families without the
+    // order following is a build error, not a button that lights wrong.
+    static_assert (tabSpecs[0].family == 0 && tabSpecs[1].family == 0
+                       && tabSpecs[2].family == 0 && tabSpecs[3].family == 0
+                       && tabSpecs[4].family == 0 && tabSpecs[5].family == 0
+                       && tabSpecs[6].family == 0 && tabSpecs[7].family == 0
+                       && tabSpecs[8].family == 1 && tabSpecs[9].family == 1
+                       && tabSpecs[10].family == 1 && tabSpecs[11].family == 1
+                       && tabSpecs[12].family == 2 && tabSpecs[13].family == 2
+                       && tabSpecs[14].family == 2,
+                   "the tab table's family column must be eight TAPE pages, "
+                   "then four FX, then three SETUP, in order");
+
+    // A family change only filters the tab bar's visibility and jumps to the
+    // family's first page: currentTab is set through setCurrentTab so the
+    // knobs' visibility, the static_asserts and the styling all run through
+    // the one authoritative path - the same path a click on any tab takes.
+    const auto family = juce::jlimit (0, tabFamilyCount - 1, newFamily);
+    currentTabFamily = family;
+
+    int firstOfFamily = numTabs;
+    int lastOfFamily = 0;
+    for (int tab = 0; tab < numTabs; ++tab)
+    {
+        if (tabSpecs[static_cast<std::size_t> (tab)].family == family)
+        {
+            firstOfFamily = juce::jmin (firstOfFamily, tab);
+            lastOfFamily = juce::jmax (lastOfFamily, tab + 1);
+        }
+    }
+
+    for (int tab = 0; tab < numTabs; ++tab)
+        tabButtons[static_cast<std::size_t> (tab)]
+            .setVisible (tabSpecs[static_cast<std::size_t> (tab)].family == family);
+
+    if (currentTab < firstOfFamily || currentTab >= lastOfFamily)
+        setCurrentTab (firstOfFamily);
+    else
+        resized();
 }
 
 void FirstAudioProcessorEditor::loadNeuralModelFromFile()
@@ -2750,8 +2858,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // agree with is the parameter defaults, which each row states directly.
     const std::array<ControlSpec, controlCount> controlSpecs { {
         { "input",           "INPUT",      0.0,   "MACHINE"  },
-        { "drive",           "DRIVE",      0.30,  "DRIVE"    },
-        { "bias",            "BIAS",       0.42,  "DRIVE"    },
+        { "drive",           "DRIVE",      0.30,  "SATURATION" },
+        { "bias",            "BIAS",       0.42,  "SATURATION" },
         { "tone",            "BRIGHT",     0.50,  "MACHINE"  },
         { "character",       "TONE",       0.5,   "MACHINE"  },
         { "wow",             "WOW",        0.14,  "NOISE"    },
@@ -2759,55 +2867,55 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         { "mix",             "MIX",        0.5,   "MACHINE"  },
         { "output",          "OUTPUT",     0.0,   "MACHINE"  },
         { "stereo_width",    "WIDTH",      0.5,   "MACHINE"  },
-        { "blend",           "BLEND",      0.0,   "DRIVE"    },
-        { "shape",           "SHAPE",      0.5,   "DRIVE"    },
-        { "amp_bias",        "AMP BIAS",   0.50,  "DRIVE"    },
-        { "sag",             "SAG",        0.0,   "DRIVE"    },
+        { "blend",           "BLEND",      0.0,   "SUBFUND"   },
+        { "shape",           "SHAPE",      0.5,   "SUBFUND"   },
+        { "amp_bias",        "AMP BIAS",   0.50,  "SUBFUND"   },
+        { "sag",             "SAG",        0.0,   "SUBFUND"   },
         { "presence",        "PRESENCE",   0.50,  "CHARACTER"},
         { "cabinet",         "CABINET",    0.0,   "CHARACTER"},
-        { "delay_time",      "DELAY",      0.0,   "SPACE"    },
-        { "delay_feedback",  "DLY LVL",    0.0,   "SPACE"    },
-        { "st_offset",       "ST OFFSET",  0.0,   "SPACE"    },
+        { "delay_time",      "DELAY",      0.0,   "DELAY"     },
+        { "delay_feedback",  "DLY LVL",    0.0,   "DELAY"     },
+        { "st_offset",       "ST OFFSET",  0.0,   "DELAY"     },
         { "noise",           "NOISE",      0.50,  "NOISE"    },
-        { "subfund",         "SUBFUND",    0.0,   "DRIVE"    },
-        { "preamp",          "PREAMP",     0.0,   "DRIVE"    },
-        { "distortion",      "DISTORT",    0.0,   "DRIVE"    },
+        { "subfund",         "SUBFUND",    0.0,   "SUBFUND"   },
+        { "preamp",          "PREAMP",     0.0,   "FRONT END" },
+        { "distortion",      "DISTORT",    0.0,   "FRONT END" },
         { "flux",            "FLUX",       0.50,  "CHARACTER"},
         { "wear",            "WEAR",       0.0,   "NOISE"    },
         { "mechanics",       "MECHANICS",  0.0,   "NOISE"    },
-        { "reverb",          "REVERB",     0.0,   "SPACE"    },
-        { "reverb_size",     "RVB SIZE",   0.40,  "SPACE"    },
-        { "vinyl",           "VINYL",      0.0,   "VINYL"    },
-        { "vinyl_crackle",   "CRACKLE",    0.50,  "VINYL"    },
-        { "vinyl_rumble",    "RUMBLE",     0.35,  "VINYL"    },
+        { "reverb",          "REVERB",     0.0,   "REVERB"    },
+        { "reverb_size",     "RVB SIZE",   0.40,  "REVERB"    },
+        { "vinyl",           "VINYL",      0.0,   "VINYL"     },
+        { "vinyl_crackle",   "CRACKLE",    0.50,  "VINYL"     },
+        { "vinyl_rumble",    "RUMBLE",     0.35,  "VINYL"     },
         { "noise_lvl",       "NOISE LVL",  1.0,   "NOISE"    },
         { "st_link",         "ST LINK",    1.0,   "MACHINE"  },
-        { "vinyl_dust",      "DUST",       0.0,   "NOISE"    },
-        { "vinyl_scratch",   "SCRATCH",    0.0,   "NOISE"    },
-        { "vinyl_warp",      "WARP",       0.0,   "NOISE"    },
-        { "vinyl_electrical","ELECTRICAL", 0.0,   "NOISE"    },
-        { "vinyl_clicks",    "CLICKS",     0.0,   "NOISE"    },
+        { "vinyl_dust",      "DUST",       0.0,   "RECORD"   },
+        { "vinyl_scratch",   "SCRATCH",    0.0,   "RECORD"   },
+        { "vinyl_warp",      "WARP",       0.0,   "RECORD"   },
+        { "vinyl_electrical","ELECTRICAL", 0.0,   "RECORD"   },
+        { "vinyl_clicks",    "CLICKS",     0.0,   "RECORD"   },
         { "in_low",          "IN LO",      0.0,   "IN EQ"    },
         { "in_mid",          "IN MID",     0.0,   "IN EQ"    },
         { "in_high",         "IN HI",      0.0,   "IN EQ"    },
         { "out_low",         "OUT LO",     0.0,   "OUT EQ"   },
         { "out_mid",         "OUT MID",    0.0,   "OUT EQ"   },
         { "out_high",        "OUT HI",     0.0,   "OUT EQ"   },
-        { "di",              "DI",         0.0,   "DRIVE"    },
-        { "di_load",         "DI LOAD",    0.0,   "DRIVE"    },
-        { "di_transformer",  "DI XFMR",    0.0,   "DRIVE"    },
+        { "di",              "DI",         0.0,   "FRONT END" },
+        { "di_load",         "DI LOAD",    0.0,   "FRONT END" },
+        { "di_transformer",  "DI XFMR",    0.0,   "FRONT END" },
         { "in_hp_freq",      "IN HP",      20.0,  "IN EQ"    },
         { "in_lp_freq",      "IN LP",      20000.0, "IN EQ"  },
         { "in_eq_q",         "IN Q",       0.7,   "IN EQ"    },
         { "out_hp_freq",     "OUT HP",     20.0,  "OUT EQ"   },
         { "out_lp_freq",     "OUT LP",     20000.0, "OUT EQ"  },
         { "out_eq_q",        "OUT Q",      0.7,   "OUT EQ"   },
-        { "delay_pingpong",  "PING-PONG",  0.0,   "SPACE"    },
+        { "delay_pingpong",  "PING-PONG",  0.0,   "DELAY"     },
         { "transient_attack","ATK",        0.0,   "DYN"      },
         { "transient_sustain","SUS",       0.0,   "DYN"      },
         { "transient_mix",   "TR MIX",     0.0,   "DYN"      },
-        { "neural_mix",      "NEURAL",     0.0,   "CHARACTER"},
-        { "ir_mix",          "IR MIX",     0.0,   "CHARACTER"}
+        { "neural_mix",      "NEURAL",     0.0,   "SHAPERS"   },
+        { "ir_mix",          "IR MIX",     0.0,   "SHAPERS"   }
     } };
 
     // The three arrays the constructor below works from, DERIVED from the table
@@ -3469,7 +3577,25 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         addAndMakeVisible (button);
     }
 
-    setCurrentTab (currentTab);
+    // The three tab families ride ONE row of the 4-wide knob grid: one button per
+    // family, always visible, pages beside each. There is no free header row to
+    // put them in (its three rows hold the switches, the language pair and the
+    // machine-state pill), so the Control strip's own grid hosts them - the grid
+    // below is empty while the row is visible and just reflows when it is not.
+    const std::array<juce::TextButton*, tabFamilyCount> familyButtons
+        { &tabFamilyTapeButton, &tabFamilyFxButton, &tabFamilySetupButton };
+    for (std::size_t f = 0; f < familyButtons.size(); ++f)
+    {
+        auto& button = *familyButtons[f];
+        button.setLookAndFeel (&customLookAndFeel);
+        button.onClick = [this, f] { setTabFamily (static_cast<int> (f)); };
+        addAndMakeVisible (button);
+    }
+
+    // Every other path - applyLanguage's applyTheme, a knob drag, a preset load -
+    // only ever touches styling; the single setTabFamily here is what initially
+    // filters the bar and resolves the restored currentTab's family.
+    setTabFamily (currentTab);
 
     // The same tapeStockNameList() the choice parameter is built from, so the panel
     // cannot offer a stock the parameter would refuse to select. It did once: the
@@ -4967,12 +5093,12 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     g.fillAll (palette.background);
 
     const auto layout = getEditorLayout();
-    // The neural card sits behind the CHARACTER page's picker cell, and its
+    // The neural card sits behind the SHAPERS page's picker cell, and its
     // geometry MIRRORS resized()'s: the grid is the controls band reduced by
-    // 14, cut 62 from the top (controlsDividerOffset 68 - 14 + 8) and 8 from
+    // 14, cut 78 from the top (controlsDividerOffset 92 - 14 + 8) and 8 from
     // the bottom; the member band is a fixed 50 px strip at the grid's bottom.
-    // The picker rides the fourth column of the member band - its cell x is
-    // grid.x + 3 * cellWidth, width cellWidth (cellWidth = gridW / 4).
+    // The picker rides the member band's FIRST column - its cell x is grid.x,
+    // width cellWidth (cellWidth = gridW / 4).
     constexpr int tabColumnsNow = 4;
     constexpr int memberBandHeightNow = 50;
     auto gridNow = layout.controls.reduced (14);
@@ -5155,13 +5281,12 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     // The neural model picker's card: the moved picker reads as a device with a
     // face, not as three unstyled widgets on the page - "it's black" was the
     // unstyled defaults speaking. The card is drawn behind the picker's member
-    // cell only when CHARACTER is the visible tab; the IR loader lives on the
-    // page's second knob row, so the card behind the member band's fourth
-    // column never touches it.
-    if (activeTabIsCharacter)
+    // cell only when SHAPERS is the visible tab - the page whose NEURAL knob it
+    // belongs to.
+    if (activeTabIsShapers)
     {
         const auto card = juce::Rectangle<float> (
-            static_cast<float> (gridNow.getX() + 3 * cellWidthNow),
+            static_cast<float> (gridNow.getX()),
             static_cast<float> (memberBandY),
             static_cast<float> (cellWidthNow),
             static_cast<float> (memberBandHeightNow));
@@ -6472,34 +6597,76 @@ void FirstAudioProcessorEditor::resized()
     // ------------------------------------------------------------------
     //  The tab bar.
     //
-    //  The three groups used to be one five-row block of all twenty-one knobs, with a
-    //  small caption floating in the row gap above each group. Those were the panel's
-    //  worst-placed furniture: the gap above row 3 lies INSIDE row 2 and the gap above
-    //  row 4 lies inside row 3, so SATURATION CORE was painted on top of the row of
-    //  knobs above it and HEAD / TRANSPORT on top of the next one, and at 13 px tall
-    //  the text ran into the knob captions behind it. Nothing about that placement
-    //  could have been right - there is no row of its own for a caption to sit in when
-    //  the rows are full.
+    //  The ten pages are grouped into three FAMILIES, so the bar never has to fit
+    //  ten names into one row: TAPE carries the machine and its colouring, FX the
+    //  time and dynamics stages, SETUP the two equalisers and the engine switches.
+    //  A family only filters WHICH tab buttons are visible - no tab is re-indexed,
+    //  the spec table, setCurrentTab and every knob's membership stay as they were.
     //
-    //  The captions are gone and the groups are real tabs, so each is named on a
-    //  button tall enough to read, the knobs underneath get a whole grid to
-    //  themselves, and only the selected tab's controls are on screen at all.
+    //  The caption block that used to float in the row gaps was the panel's
+    //  worst-placed furniture: the gap above row 3 lies INSIDE row 2 and the gap
+    //  above row 4 lies inside row 3, so SATURATION CORE was painted on top of the
+    //  row of knobs above it and HEAD / TRANSPORT on top of the next one. The
+    //  captions are gone and the groups are real tabs, each named on a button tall
+    //  enough to read, the knobs underneath get a whole grid to themselves, and
+    //  only the selected tab's controls are on screen at all.
     // ------------------------------------------------------------------
     const auto tabBarLeft = layout.controls.getX() + 14;
-    const auto tabBarTop = layout.controls.getY() + 34;
-    const auto tabBarHeight = 24;
-    // The gap shrinks as tabs are added so the buttons stay as wide as they can:
-    // ten pages at a fixed 6 px each spent 54 of the bar's ~700 px on nothing, and
-    // the caption is auto-sized to the button, so the width is what decides whether
-    // a name is legible. Six is kept while it fits and reduced past that.
-    const auto tabGap = numTabs <= 7 ? 6 : (numTabs <= 9 ? 4 : 3);
-    const auto tabButtonWidth = (layout.controls.getWidth() - 28
-                                 - tabGap * (numTabs - 1)) / numTabs;
+    // The two rows of tabs-inside-tabs live between the heading and the divider:
+    // FAMILIES on top (the three large buttons), the active family's PAGES under
+    // them. The divider (controlsDividerOffset) sits below both, so the knob grid
+    // itself never pays a row for either strip.
+    constexpr int familyRowHeight = 22;
+    const auto familyRow = juce::Rectangle<int> (layout.controls.getX() + 14,
+                                                 layout.controls.getY() + 34,
+                                                 layout.controls.getWidth() - 28,
+                                                 familyRowHeight);
+    const auto familyButtonWidth = (familyRow.getWidth() - 2 * 6) / tabFamilyCount;
+    tabFamilyTapeButton.setBounds (familyRow.getX(), familyRow.getY(),
+                                   familyButtonWidth, familyRow.getHeight());
+    tabFamilyFxButton.setBounds (familyRow.getX() + familyButtonWidth + 6,
+                                 familyRow.getY(), familyButtonWidth,
+                                 familyRow.getHeight());
+    tabFamilySetupButton.setBounds (familyRow.getX() + 2 * (familyButtonWidth + 6),
+                                    familyRow.getY(), familyButtonWidth,
+                                    familyRow.getHeight());
 
+    const auto tabBarTop = layout.controls.getY() + 60;
+    const auto tabBarHeight = 24;
+
+    // Pages of the CURRENT family only: the bar re-flows to the family's page
+    // count, so TAPE's five buttons get a fifth more width than the old ten-in-a-
+    // row bar ever could, and SETUP's three get three broad ones.
+    int visibleTabCount = 0;
     for (int tab = 0; tab < numTabs; ++tab)
+        if (tabSpecs[static_cast<std::size_t> (tab)].family == currentTabFamily)
+            ++visibleTabCount;
+    visibleTabCount = juce::jmax (1, visibleTabCount);
+    const auto tabGap = visibleTabCount <= 5 ? 6 : 4;
+    const auto tabButtonWidth = (layout.controls.getWidth() - 28
+                                 - tabGap * (visibleTabCount - 1)) / visibleTabCount;
+
+    int placedTabIndex = 0;
+    for (int tab = 0; tab < numTabs; ++tab)
+    {
+        if (tabSpecs[static_cast<std::size_t> (tab)].family != currentTabFamily)
+        {
+            tabButtons[static_cast<std::size_t> (tab)].setBounds (tabBarLeft,
+                                                                  tabBarTop, 0, 0);
+            continue;
+        }
         tabButtons[static_cast<std::size_t> (tab)]
-            .setBounds (tabBarLeft + tab * (tabButtonWidth + tabGap),
+            .setBounds (tabBarLeft + placedTabIndex * (tabButtonWidth + tabGap),
                         tabBarTop, tabButtonWidth, tabBarHeight);
+        ++placedTabIndex;
+    }
+
+    // The family buttons are never hidden by a page change (only a repaint)
+    // and there is nothing on the panel that flips their visibility, so this is
+    // a plain always-on strip.
+    tabFamilyTapeButton.setVisible (true);
+    tabFamilyFxButton.setVisible (true);
+    tabFamilySetupButton.setVisible (true);
     metersHeadingLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 8, 130, 18);
     metersHintLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 27, 150, 14);
     const auto compressorLabelWidth = 120;
@@ -6528,9 +6695,10 @@ void FirstAudioProcessorEditor::resized()
     // added or reordered. Hoisted ABOVE the row arithmetic because the member row
     // is decided by the same flags the layout chain below reads.
     const auto settingsTab = index_of_tab_named ("SETTINGS") == currentTab;
-    const auto spaceTab = index_of_tab_named ("SPACE") == currentTab;
+    const auto delayTab = index_of_tab_named ("DELAY") == currentTab;
     const auto characterTab = index_of_tab_named ("CHARACTER") == currentTab;
-    const auto driveTab = index_of_tab_named ("DRIVE") == currentTab;
+    const auto frontEndTab = index_of_tab_named ("FRONT END") == currentTab;
+    const auto shapersTab = index_of_tab_named ("SHAPERS") == currentTab;
     const auto inEqTab = index_of_tab_named ("IN EQ") == currentTab;
     const auto outEqTab = index_of_tab_named ("OUT EQ") == currentTab;
     const auto machineTab = index_of_tab_named ("MACHINE") == currentTab;
@@ -6544,9 +6712,9 @@ void FirstAudioProcessorEditor::resized()
     // then appended BELOW the grid, off the panel - GL and OVERSAMPLING were
     // clipped by the window's bottom edge on the very tab that holds nothing else.
     const auto knobRows = (tabControlCount + tabColumns - 1) / tabColumns;
-    const auto memberRows = (settingsTab || spaceTab || characterTab
-                             || dynamicsTab || inEqTab || outEqTab
-                             || machineTab || driveTab) ? 1 : 0;
+    const auto memberRows = (settingsTab || delayTab || characterTab
+                             || shapersTab || inEqTab || outEqTab
+                             || machineTab) ? 1 : 0;
 
     // The member band is a FIXED strip - a caption band plus a control band -
     // reserved under the knob rows, and the knob rows share what is left. A
@@ -6638,10 +6806,25 @@ void FirstAudioProcessorEditor::resized()
     // flags themselves are read from the tabSpecs table at the top of the grid
     // section above, where the member-row arithmetic needs them too.
 
+    // The DI pad/load combo rides FRONT END in the knob grid's FOURTH cell of
+    // the second row - the page's five knobs leave it empty, and the pad is the
+    // DI's own input switch, so it sits with the row it feeds. No extra band is
+    // reserved for it: five knobs in two rows is exactly what this cell was.
+    if (frontEndTab)
+    {
+        diPadLabel.setText ("DI PAD", juce::dontSendNotification);
+        diPadLabel.setBounds (grid.getX() + 3 * cellWidth + 5,
+                              grid.getY() + (knobRows - 1) * knobRowHeight + 1,
+                              cellWidth - 10, 17);
+        diPadBox.setBounds (grid.getX() + 3 * cellWidth + 12,
+                            grid.getY() + (knobRows - 1) * knobRowHeight + 20,
+                            cellWidth - 24, 30);
+    }
+
     // The four new lists follow the same rule as the deck switches: each is a
     // full member of exactly one tab, so it is visible only while that tab is.
-    diPadLabel.setVisible (driveTab);
-    diPadBox.setVisible (driveTab);
+    diPadLabel.setVisible (frontEndTab);
+    diPadBox.setVisible (frontEndTab);
     tracksLabel.setVisible (machineTab);
     tracksBox.setVisible (machineTab);
     inputEqOrderLabel.setVisible (inEqTab);
@@ -6661,27 +6844,26 @@ void FirstAudioProcessorEditor::resized()
     // The UI-sounds switch is on the same page as GL and OVERSAMPLING - it is the
     // same kind of engine-level preference - so it follows the same tab.
     uiSoundsButton.setVisible (settingsTab);
-    delayTypeLabel.setVisible (spaceTab);
-    delayTypeBox.setVisible (spaceTab);
-    delayRateLabel.setVisible (spaceTab);
-    delayRateBox.setVisible (spaceTab);
-    delaySyncLabel.setVisible (spaceTab);
-    delaySyncButton.setVisible (spaceTab);
+    delayTypeLabel.setVisible (delayTab);
+    delayTypeBox.setVisible (delayTab);
+    delayRateLabel.setVisible (delayTab);
+    delayRateBox.setVisible (delayTab);
+    delaySyncLabel.setVisible (delayTab);
+    delaySyncButton.setVisible (delayTab);
 
-    // The neural model picker and the IR loader both follow the CHARACTER page:
-    // the picker stays in the member band's fourth column (under the NEURAL
-    // knob), and the IR trio rides the page's second knob row, in the free
-    // cells beside IR MIX's own knob.
-    loadNeuralButton.setVisible (characterTab);
-    clearNeuralButton.setVisible (characterTab);
-    neuralStatusLabel.setVisible (characterTab);
-    loadIrButton.setVisible (characterTab);
-    clearIrButton.setVisible (characterTab);
-    irStatusLabel.setVisible (characterTab);
+    // The neural model picker follows SHAPERS - under its own NEURAL knob - and
+    // the IR loader follows it for the same reason, beside IR MIX. Each file-fed
+    // stage keeps its loader and its status readout on the page its knob lives on.
+    loadNeuralButton.setVisible (shapersTab);
+    clearNeuralButton.setVisible (shapersTab);
+    neuralStatusLabel.setVisible (shapersTab);
+    loadIrButton.setVisible (shapersTab);
+    clearIrButton.setVisible (shapersTab);
+    irStatusLabel.setVisible (shapersTab);
 
-    // The three vinyl selectors moved to the CHARACTER page: they re-voice the
-    // whole vinyl stage, so they live with the machine's other voicing rather
-    // than beside the record's faults (which are on NOISE now).
+    // The three vinyl selectors stayed on CHARACTER: they re-voice the whole
+    // vinyl stage, so they live with the machine's other voicing rather than
+    // beside the record's faults (which are on RECORD).
     vinylGenerationLabel.setVisible (characterTab);
     vinylGenerationBox.setVisible (characterTab);
     vinylTurntableLabel.setVisible (characterTab);
@@ -6694,12 +6876,6 @@ void FirstAudioProcessorEditor::resized()
         // MACHINE: seven knobs fill two rows (the second holds three), so the
         // member row under them is where the machine's TRACKS selector lives.
         placeDeckSwitch (tracksLabel, tracksBox, 0, 1, "TRACKS");
-    }
-    else if (driveTab)
-    {
-        // DRIVE: twelve knobs in three full rows, so the member row under them
-        // carries the DI pad - the front end's input switch.
-        placeDeckSwitch (diPadLabel, diPadBox, 0, 1, "DI PAD");
     }
     else if (settingsTab)
     {
@@ -6718,7 +6894,7 @@ void FirstAudioProcessorEditor::resized()
                                   cellWidth - 24,
                                   juce::jmin (30, grid.getBottom() - memberRowY - 22));
     }
-    else if (spaceTab)
+    else if (delayTab)
     {
         // SPACE: the delay trio rides the member row under the delay knobs.
         placeDeckSwitch (delayTypeLabel, delayTypeBox, 0, 1, "TYPE");
@@ -6727,55 +6903,38 @@ void FirstAudioProcessorEditor::resized()
     }
     else if (characterTab)
     {
-        // CHARACTER: five knobs fill the first row (the two file-fed stages
-        // NEURAL and IR MIX included), so the member band under them carries
-        // the page's three lists, and the second knob row is where the IR
-        // loader lives - in the free cells directly under its own half of the
-        // knob row. Left to right - the order the record is made in: what was
-        // cut, what plays it, what reads it. The NEURAL model picker and the
-        // IR loader are VOICING choices - which machine shape bends the
-        // signal, and what room it is heard in - and they sit beside the
-        // other voicing selectors, each with its status readout and its
-        // buttons placed by the same cell arithmetic the knobs use.
+        // CHARACTER: three knobs in one row, so the member band under them
+        // carries the page's three voicing lists - left to right, the order
+        // the record is made in: what was cut, what plays it, what reads it.
         placeDeckSwitch (vinylGenerationLabel, vinylGenerationBox, 0, 1, "GENERATION");
         placeDeckSwitch (vinylTurntableLabel, vinylTurntableBox, 1, 1, "TURNTABLE");
         placeDeckSwitch (vinylCartridgeLabel, vinylCartridgeBox, 2, 1, "CARTRIDGE");
-
-        // The picker rides the member band's FOURTH column, exactly under the
-        // NEURAL knob: LOAD MODEL on the band's control line, CLEAR beneath
-        // it, the model-status readout in the band's caption line above them.
-        // paint() draws the card behind precisely this column - the two
-        // geometries share the arithmetic (grid / 4 columns, 50 px band), so
-        // they cannot disagree.
+    }
+    else if (shapersTab)
+    {
+        // SHAPERS: the two file-fed stages on one page, each with its loader
+        // under its own knob. The NEURAL picker takes the band's FIRST column
+        // - LOAD MODEL on the control line, CLEAR beneath it, the model-status
+        // readout in the caption line above them - and the IR loader takes the
+        // second and third: the status readout as the second column's caption
+        // (the same label-above-control convention the knobs use), the two
+        // buttons on the control line. paint() draws the picker's card behind
+        // this band's first column - the two geometries share the arithmetic
+        // (grid / 4 columns, 50 px band), so they cannot disagree.
         const auto buttonY = memberRowY + 20;
         const auto buttonH = juce::jmin (30, grid.getBottom() - memberRowY - 22);
-        loadNeuralButton.setBounds (grid.getX() + 3 * cellWidth + 12, buttonY,
+        loadNeuralButton.setBounds (grid.getX() + 12, buttonY,
                                     cellWidth - 24, buttonH);
-        clearNeuralButton.setBounds (grid.getX() + 3 * cellWidth + 18,
-                                     buttonY + buttonH + 6,
+        clearNeuralButton.setBounds (grid.getX() + 18, buttonY + buttonH + 6,
                                      cellWidth - 36, buttonH);
-        neuralStatusLabel.setBounds (grid.getX() + 3 * cellWidth + 6,
-                                     memberRowY - 1, cellWidth - 12, 17);
-
-        // The IR loader rides the SECOND knob row's free cells: IR MIX's own
-        // knob is that row's first cell, so the status readout takes the
-        // SECOND cell's caption line (it is the caption of the button under
-        // it, the same label-above-control convention the knobs use), and
-        // LOAD IR / CLEAR IR sit in the second and third cells, VERTICALLY
-        // CENTRED on the knob beside them - a knob's circle floats centred in
-        // its cell, and a top-pinned button would ride high against it. Same
-        // cell arithmetic as the knobs either side, so the trio reads as part
-        // of the grid rather than as furniture glued on.
-        const auto irRowY = grid.getY() + knobRowHeight;
-        const auto irButtonH = juce::jmin (30, knobRowHeight - 22);
-        const auto irButtonY = irRowY + 18
-                             + juce::jmax (0, (knobRowHeight - 18 - irButtonH) / 2);
-        irStatusLabel.setBounds (grid.getX() + cellWidth + 5, irRowY + 1,
+        neuralStatusLabel.setBounds (grid.getX() + 6, memberRowY - 1,
+                                     cellWidth - 12, 17);
+        irStatusLabel.setBounds (grid.getX() + cellWidth + 5, memberRowY - 1,
                                  cellWidth - 10, 17);
         loadIrButton.setBounds (grid.getX() + cellWidth + 12,
-                                irButtonY, cellWidth - 24, irButtonH);
+                                buttonY, cellWidth - 24, buttonH);
         clearIrButton.setBounds (grid.getX() + 2 * cellWidth + 12,
-                                 irButtonY, cellWidth - 24, irButtonH);
+                                 buttonY, cellWidth - 24, buttonH);
     }
     else if (dynamicsTab)
     {

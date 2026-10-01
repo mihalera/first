@@ -1,4 +1,4 @@
-/*
+﻿/*
   ==============================================================================
     Nonlin Analog Saturator processor editor.
   ==============================================================================
@@ -341,19 +341,20 @@ private:
     // that silently disappears from the panel.
     static constexpr std::size_t controlCount = 59;
     static constexpr int tabColumns = 4;
-    // Seven tabs: MACHINE, DRIVE, CHARACTER, NOISE, VINYL, SPACE, SETTINGS. The
-    // seventh arrived with the four record faults (DUST / SCRATCH / WARP /
-    // ELECTRICAL): cramming them onto NOISE would have put thirteen knobs on one
-    // page, which is exactly the crowding the tabs exist to avoid. VINYL gets its
-    // own page because the four are one subject - the state of the record itself -
-    // rather than four unrelated controls.
-    static constexpr int numTabs = 10;
+    // Eleven pages under three large families (TAPE / FX / SETUP), so no page
+    // has to carry more than one subject: DRIVE was twelve knobs on one page and
+    // NOISE eleven, which is exactly the crowding the tabs exist to avoid.
+    static constexpr int numTabs = 15;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     void timerCallback() override;
     void createDecorativePhysics();
     void applyTheme();
     EditorLayout getEditorLayout() const;
+
+    // Cycles the header's theme button: DARK -> IVORY -> LIGHT -> DARK. The tab
+    // families resolve the reverse way - one Control-strip button per family and
+    // pages beside it - so the 4 x 92 px grid's four free columns stay free.
 
     // Shared by the constructor and by resized(): the knob-grid section captions
     // are created while laying out, so a constructor-local helper was out of scope
@@ -412,6 +413,11 @@ private:
     // three groups are real tabs, so only the active tab's controls are on screen
     // and each group has a whole grid to itself.
     void setCurrentTab (int newTab);
+
+    // The three tab families: selects which slice of the tab bar is visible and
+    // jumps to that slice's first page, then lays out and styles the bar. currentTab
+    // and every knob's tab membership are untouched - no tab is re-indexed.
+    void setTabFamily (int newFamily);
     void styleTabButtons();
 
     void refreshPresetList();
@@ -687,10 +693,22 @@ private:
     juce::Label deckHintLabel;
     juce::Label controlsHeadingLabel;
     juce::Label controlsHintLabel;
-    // The three knob-grid tabs, in the order tabSpecs lists them. Clicking one shows
-    // that group's controls and hides every other knob.
+    // The ten knob-grid tabs, in the order tabSpecs lists them. Clicking one shows
+    // that page's controls and hides every other knob. Only the active family's
+    // buttons are on screen: the families themselves are the three buttons below,
+    // so ten pages of tabs never fight for one row's width.
     std::array<juce::TextButton, numTabs> tabButtons;
     int currentTab = 0;
+    int currentTabFamily = 0;
+    juce::TextButton tabFamilyTapeButton { "TAPE" };
+    juce::TextButton tabFamilyFxButton { "FX" };
+    juce::TextButton tabFamilySetupButton { "SETUP" };
+    // Fifteen pages under three large families (TAPE / FX / SETUP) - the page
+    // is one subject and at most one row of seven knobs: IN EQ alone carried
+    // six band knobs and three corner controls, DRIVE GAIN seven plus the DI
+    // pad, and a page that scrolls is a page nobody dials.
+    static constexpr int tabFamilyCount = 3;
+    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount { 8, 4, 3 };
     juce::Label metersHeadingLabel;
     juce::Label metersHintLabel;
     juce::Label compressorLabel;
@@ -741,6 +759,9 @@ private:
     // neural picker's card behind that page's fourth column and must not pay
     // for it on any other tab.
     bool activeTabIsCharacter = false;
+    // paint() draws the neural picker's card behind the SHAPERS page's member
+    // band's first column - the page whose NEURAL knob the picker belongs to.
+    bool activeTabIsShapers = false;;
 
     // -----------------------------------------------------------------------
     //  The front panel's theme.
