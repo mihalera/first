@@ -1559,6 +1559,181 @@ struct NeuralStage
 #endif
     }
 
+#if J37_HAS_RTNEURAL
+    /**
+        Builds the stage from a NeuralAmpModeler (.nam) file's text.
+
+        A .nam file is a JSON document the NAM core describes in terms of
+        PyTorch's LSTM layout: one flat `weights` vector holding the input
+        kernel, the recurrent kernel and the bias of every layer back to back
+        (each row-major, each in the i / f / c / o gate order PyTorch trains
+        in), then the layer's initial hidden and cell states, and - for the
+        top layer - a linear output head and its bias. RTNeural's JSON
+        describes the SAME network as a stack of named layers, and its LSTMLayer
+        consumes the gates in PyTorch's own order (its setters shuffle them
+        into TensorFlow's layout internally), so the conversion is a re-shape:
+        slice the flat vector by the config's sizes and hand the slices to the
+        loader as "lstm" and "dense" layers.
+
+        One real transposition is involved: NAM puts the four gate blocks on
+        the ROWS of each kernel (PyTorch's row-major [4H x (I+H)]) while
+        RTNeural's loader indexes the same coefficients with the taps on the
+        rows ([in][4H]), so the x- and h-parts of every kernel are read back
+        column-wise. The gate order inside each block is untouched, and the
+        hidden/cell seeds RTNeural's layers start at zero rather than the
+        file's, which differs from the reference player only during the model's
+        own prewarm window and nowhere after it. Any unexpected shape throws,
+        and the caller turns a throw into the same "no model" outcome a bad
+        RTNeural file already produces.
+    */
+    bool buildFromNam (const nlohmann::json& namJson)
+    {
+        // Only the LSTM architecture is converted. NAM's WaveNet and the
+        // convolutional "Feather" nets have their own weight layouts that no
+        // single re-shape covers, and pretending otherwise would produce a
+        // model that loads and sounds wrong rather than one that fails loudly.
+        if (! namJson.contains ("architecture")
+            || ! namJson["architecture"].is_string()
+            || namJson["architecture"].get<std::string>() != "LSTM")
+            return false;
+
+        const auto& config = namJson.at ("config");
+        const auto numLayers = config.at ("num_layers").get<int>();
+        const auto inputSize = config.at ("input_size").get<int>();
+        const auto hiddenSize = config.at ("hidden_size").get<int>();
+
+        // A .nam file's weights array is 1-D JSON. Anything else is not a
+        // shape this converter understands.
+        if (! namJson.contains ("weights") || ! namJson["weights"].is_array())
+            return false;
+
+        const auto& weights = namJson["weights"];
+
+        // Slice offsets, counted exactly as nam::lstm::LSTM consumes the flat
+        // vector: every layer's block is its kernel stored row-major (4H rows
+        // in PyTorch's i/f/g/o gate order by I+H columns of input taps then
+        // recurrent taps), then the flat bias (4H), then the hidden and cell
+        // seeds (H each). Only the first layer has I input taps; deeper ones
+        // take the previous layer's H hidden outputs, so their stride is H+H.
+        // The topmost block additionally carries the output head (out x H,
+        // row-major) and its bias (out), which become the "dense" layer.
+        const auto biasElements = 4 * hiddenSize;
+        auto kernelElementsFor = [hiddenSize] (int layerIn)
+        {
+            return 4 * hiddenSize * (layerIn + hiddenSize);
+        };
+        auto blockElementsFor = [kernelElementsFor, biasElements, hiddenSize] (int layerIn)
+        {
+            return kernelElementsFor (layerIn) + biasElements + 2 * hiddenSize;
+        };
+        auto expectedElements = hiddenSize + 1;
+        for (int layer = 0; layer < numLayers; ++layer)
+            expectedElements += blockElementsFor (layer == 0 ? inputSize : hiddenSize);
+
+        if (numLayers < 1 || inputSize < 1 || hiddenSize < 1
+            || static_cast<int> (weights.size()) != expectedElements)
+            return false;
+
+        auto readFlat = [&weights] (int offset, int count)
+        {
+            std::vector<float> slice;
+            slice.reserve (static_cast<std::size_t> (count));
+            for (int i = 0; i < count; ++i)
+                slice.push_back (weights.at (static_cast<std::size_t> (offset + i)).get<float>());
+            return slice;
+        };
+
+        // The head, kept for the [rows][columns] reads the head needs.
+        auto kernel2D = [&readFlat] (int offset, int rows, int columns)
+        {
+            std::vector<std::vector<float>> rowsOut;
+            rowsOut.reserve (static_cast<std::size_t> (rows));
+            for (int r = 0; r < rows; ++r)
+                rowsOut.push_back (readFlat (offset + r * columns, columns));
+            return rowsOut;
+        };
+
+        // One layer's kernel block reshaped into the two matrices RTNeural's
+        // loader indexes by: an [inputRows][4H] kernel for the input taps and
+        // an [H][4H] one for the recurrent taps. NAM stores the whole matrix
+        // row-major with the gates on the rows (PyTorch's i/f/g/o order), so
+        // reading it back column-wise moves the taps onto the rows and the
+        // gates into the columns without touching the gate order - exactly
+        // the mapping RTNeural's own setters then regroup per gate.
+        auto splitKernel = [&weights, hiddenSize, biasElements] (int offset, int inputRows)
+        {
+            const auto stride = inputRows + hiddenSize;
+            std::vector<std::vector<float>> kernel, recurrent;
+            kernel.reserve (static_cast<std::size_t> (inputRows));
+            recurrent.reserve (static_cast<std::size_t> (hiddenSize));
+            for (int i = 0; i < inputRows; ++i)
+            {
+                std::vector<float> row;
+                row.reserve (static_cast<std::size_t> (biasElements));
+                for (int k = 0; k < biasElements; ++k)
+                    row.push_back (weights.at (static_cast<std::size_t> (offset + k * stride + i)).get<float>());
+                kernel.push_back (std::move (row));
+            }
+            for (int j = 0; j < hiddenSize; ++j)
+            {
+                std::vector<float> row;
+                row.reserve (static_cast<std::size_t> (biasElements));
+                for (int k = 0; k < biasElements; ++k)
+                    row.push_back (weights.at (static_cast<std::size_t> (offset + k * stride + inputRows + j)).get<float>());
+                recurrent.push_back (std::move (row));
+            }
+            return std::make_pair (std::move (kernel), std::move (recurrent));
+        };
+
+        // The RTNeural document this re-shape produces: `inputSize` inputs,
+        // one "lstm" layer per NAM layer, then the head as a "dense" layer.
+        // The gate order inside each 4H column block stays exactly as
+        // PyTorch trained it - RTNeural's own setters do that regrouping, so
+        // a second permutation here would be a second bug.
+        nlohmann::json layerList = nlohmann::json::array();
+        int cursor = 0;
+
+        for (int layer = 0; layer < numLayers; ++layer)
+        {
+            const auto layerIn = layer == 0 ? inputSize : hiddenSize;
+            auto kernelPair = splitKernel (cursor, layerIn);
+            const auto bias = readFlat (cursor + kernelElementsFor (layerIn), biasElements);
+            cursor += blockElementsFor (layerIn);
+
+            layerList.push_back ({ { "type", "lstm" },
+                                   { "shape", nlohmann::json::array ({ hiddenSize }) },
+                                   { "weights", nlohmann::json::array (
+                                       { kernelPair.first, kernelPair.second, bias }) } });
+        }
+
+        // The head is stored row-major [out x H]; RTNeural's dense loader
+        // expects [in][out] and transposes on the way in, so each hidden tap
+        // becomes one single-element row.
+        const auto headWeight = kernel2D (cursor, hiddenSize, 1);
+        const auto headBias = readFlat (cursor + hiddenSize, 1);
+        layerList.push_back ({ { "type", "dense" },
+                               { "shape", nlohmann::json::array ({ 1 }) },
+                               { "weights", nlohmann::json::array ({ headWeight, headBias }) } });
+
+        nlohmann::json rtJson { { "in_shape", nlohmann::json::array ({ inputSize }) },
+                                { "layers", layerList } };
+
+        try
+        {
+            auto parsedModel = RTNeural::json_parser::parseJson<float> (rtJson, false);
+            if (parsedModel == nullptr)
+                return false;
+
+            model = std::move (parsedModel);
+            return true;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+#endif
+
     /** The model's own recurrent state, let go of on a rate change or a model
         swap so neither can resume from a stale hidden state. */
     void reset() noexcept
@@ -1597,6 +1772,145 @@ struct NeuralStage
         juce::ignoreUnused (amount);
         return x;
 #endif
+    }
+};
+
+//==============================================================================
+/**
+    The IR cabinet stage: a per-channel convolution against a user-loaded
+    impulse response, blended by IR MIX exactly the way the neural stage is
+    blended by NEURAL.
+
+    One juce::dsp::Convolution per channel rather than one shared stereo one
+    for the same reason the neural stage is two instances: the file the user
+    picks is often a MONO cab or room capture, and loading it as stereo would
+    correlate the two sides' reverberation tails. A mono IR is loaded once and
+    both channels convolve against it independently, which is the reading a
+    single-miked cabinet actually deserves. A stereo IR loads both sides and
+    each channel keeps its own.
+
+    The convolver is JUCE's zero-latency uniform FFT engine, so the stage adds
+    NO latency of its own and never has to report any: the oversamplers' report
+    stays the plugin's whole truth, and the stage never has to race the
+    oversampling switch for the one latency number.
+
+    The convolution runs OUTSIDE the per-sample loop, on the finished block,
+    for the same reason the reverb does: it is a STEREO-tailed effect whose
+    input must stay continuous with what the model and the machine produced,
+    and it cannot live inside a loop that advances shared smoother state per
+    frame.
+*/
+struct IrStage
+{
+    /** One convolver per channel, prepared in prepareToPlay. */
+    juce::dsp::Convolution convolverL;
+    juce::dsp::Convolution convolverR;
+
+    /** True from the moment a file has been HANDED to the loader. The load
+        itself finishes on JUCE's background thread; until it does the
+        convolvers pass audio through untouched, which is the correct reading
+        of "still loading" rather than a drop to dry. */
+    bool hasIr = false;
+
+    /** Stereo flag of the last load, so the scratch buffer is only resized
+        when it has to be. */
+    bool lastLoadWasStereo = false;
+
+    /** The rate and block maximum the convolvers were last prepared for. The
+        engine re-prepares them whenever the rate they actually see changes
+        (the oversampling factor multiplies it), because the FFT plans and the
+        internal buffers are per-rate state. */
+    double preparedSampleRate = 0.0;
+    int preparedMaxBlock = 0;
+
+    void clear() noexcept { hasIr = false; }
+
+    /** Reads a WAV/AIFF (anything JUCE's basic formats decode) and hands it
+        to the channel convolvers. Returns false without touching the previous
+        IR when the file has no readable audio. Called on the MESSAGE thread:
+        loadImpulseResponse is documented as wait-free and does the decoding on
+        its own background thread. */
+    bool loadFromFile (const juce::File& file)
+    {
+        if (! file.existsAsFile())
+            return false;
+
+        // A first probe read decides mono vs stereo handling (and rejects
+        // undecodable files) without allocating the audio.
+        juce::AudioFormatManager manager;
+        manager.registerBasicFormats();
+        std::unique_ptr<juce::AudioFormatReader> probe (manager.createReaderFor (file));
+        if (probe == nullptr || probe->lengthInSamples <= 0)
+            return false;
+
+        const bool stereo = probe->numChannels >= 2;
+
+        // Stereo::no would MIX a stereo file down; a stereo IR must stay a
+        // stereo IR, so the flag follows the file and the TRIM/normalise
+        // defaults are the ones a cab/room capture wants.
+        convolverL.loadImpulseResponse (file,
+                                        stereo ? juce::dsp::Convolution::Stereo::yes
+                                               : juce::dsp::Convolution::Stereo::no,
+                                        juce::dsp::Convolution::Trim::yes, 0,
+                                        juce::dsp::Convolution::Normalise::yes);
+        convolverR.loadImpulseResponse (file,
+                                        stereo ? juce::dsp::Convolution::Stereo::yes
+                                               : juce::dsp::Convolution::Stereo::no,
+                                        juce::dsp::Convolution::Trim::yes, 0,
+                                        juce::dsp::Convolution::Normalise::yes);
+
+        lastLoadWasStereo = stereo;
+        hasIr = true;
+        return true;
+    }
+
+    /** Prepares both convolvers for a rate/block change. Safe before any IR
+        exists: the convolver treats a pre-prepare load as the initial state. */
+    void prepare (const juce::dsp::ProcessSpec& spec)
+    {
+        convolverL.prepare (spec);
+        convolverR.prepare (spec);
+        preparedSampleRate = spec.sampleRate;
+        preparedMaxBlock = static_cast<int> (spec.maximumBlockSize);
+    }
+
+    void reset() noexcept
+    {
+        convolverL.reset();
+        convolverR.reset();
+    }
+
+    /** Convolves one in-place block of `numChannels` channels. Dry/wet is the
+        CALLER's business (the IR MIX control crossfades against the un-IR'd
+        signal, which the stage does not hold), so this is all-or-nothing and
+        the pass-through case is decided before any processing is paid for. */
+    void process (juce::AudioBuffer<float>& buffer, int numChannels, bool wet)
+    {
+        if (! hasIr || ! wet || numChannels <= 0)
+            return;
+
+        juce::dsp::AudioBlock<float> block (buffer);
+        auto left = block.getSingleChannelBlock (0);
+
+        if (numChannels == 1 || ! lastLoadWasStereo)
+        {
+            // Mono IR: each channel convolves against the SAME response, which
+            // is one cabinet heard by two microphones rather than two
+            // different rooms.
+            convolverL.process (juce::dsp::ProcessContextReplacing<float> (left));
+            if (numChannels == 2)
+            {
+                auto right = block.getSingleChannelBlock (1);
+                convolverR.process (juce::dsp::ProcessContextReplacing<float> (right));
+            }
+        }
+        else
+        {
+            // Stereo IR: the file's own two sides belong to the two channels,
+            // so they are processed as the stereo pair they were captured as.
+            auto pair = block.getSubsetChannelBlock (0, 2);
+            convolverL.process (juce::dsp::ProcessContextReplacing<float> (pair));
+        }
     }
 };
 
@@ -4459,6 +4773,24 @@ public:
         library is not in the build. */
     bool loadNeuralModel (const juce::String& modelJson);
 
+    /** Loads a NeuralAmpModeler (.nam) model from its raw JSON text. A .nam
+        file is a DIFFERENT wire format from RTNeural's (one flat weight vector
+        shaped by "config" rather than a stack of named layers), so it goes
+        through its own converter in NeuralStage. Returns false - leaving any
+        previously loaded model untouched - when the text does not parse as a
+        .nam file this build can play. */
+    bool loadNamModel (const juce::String& namJson);
+
+    /** Installs the impulse response `file` into the IR cabinet stage.
+        Returns false when the file is not audio JUCE can decode. */
+    bool loadIrFile (const juce::File& irFile);
+
+    /** Releases the loaded impulse response. */
+    void clearIr();
+
+    /** True while an impulse response is loaded. */
+    bool hasIr() const noexcept { return irStage.hasIr; }
+
     /** Releases any installed model, returning the stage to the pass-through. */
     void clearNeuralModel();
 
@@ -4707,6 +5039,8 @@ private:
     std::atomic<float>* transientSustainParam = nullptr;
     std::atomic<float>* transientMixParam = nullptr;
     std::atomic<float>* neuralMixParam = nullptr;
+    // The IR stage's wet/dry. Read once per block like every other control.
+    std::atomic<float>* irMixParam = nullptr;
 
     float sampleRate = 44100.0f;
     // Every smoother below is advanced exactly once at the top of each sample frame.
@@ -5510,6 +5844,14 @@ private:
     NeuralStage neuralL;
     NeuralStage neuralR;
     SampleSmoother neuralMixSmoothed { sampleClock, false, false, 0.0f };
+
+    //  The IR cabinet stage: one convolution per channel against a user-loaded
+    //  impulse response, blended by IR MIX (ir_mix) exactly the way NEURAL
+    //  blends the model. The convolutions run on the FINISHED block after the
+    //  per-sample loop, beside the reverb and the vinyl - the engine's own
+    //  note there explains why a stage with a tail cannot live in that loop.
+    IrStage irStage;
+    SampleSmoother irMixSmoothed { sampleClock, false, false, 0.0f };
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessor)

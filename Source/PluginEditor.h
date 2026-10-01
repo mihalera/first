@@ -339,7 +339,7 @@ private:
     // read at run time. The tab table is checked against controlCount by a
     // static_assert too, so a knob that no tab lists is a build error, not a knob
     // that silently disappears from the panel.
-    static constexpr std::size_t controlCount = 58;
+    static constexpr std::size_t controlCount = 59;
     static constexpr int tabColumns = 4;
     // Seven tabs: MACHINE, DRIVE, CHARACTER, NOISE, VINYL, SPACE, SETTINGS. The
     // seventh arrived with the four record faults (DUST / SCRATCH / WARP /
@@ -494,9 +494,21 @@ private:
     void loadNeuralModelFromFile();
     void refreshNeuralStatus();
     juce::String lastShownNeuralStatus;
+
+    // The IR cabinet's picker: LOAD IR reads a WAV/AIFF impulse response into
+    // the processor's convolvers, CLEAR IR releases it, and the status label
+    // reports what the stage holds - the same three-widget shape as the
+    // model picker beside it.
+    juce::TextButton loadIrButton { "LOAD IR" };
+    juce::TextButton clearIrButton { "CLEAR IR" };
+    juce::Label irStatusLabel;
+    void loadIrFromFile();
+    void refreshIrStatus();
+    juce::String lastShownIrStatus;
     // The loaded model's filename, kept so the readout can name it after a
     // reload or a refresh. Empty when the stage holds no model.
     juce::String loadedNeuralName;
+    juce::String loadedIrName;
 
     // The remaining choice parameters: the DI pad, the machine's track layout,
     // and the two EQ orders. Each is a list rather than a knob because its
