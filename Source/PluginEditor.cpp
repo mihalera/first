@@ -437,6 +437,86 @@ namespace
         g.fillRoundedRectangle (streak, streak.getHeight() * 0.5f);
     }
 
+    // -----------------------------------------------------------------------
+    //  A cap lit by the panel's one lamp.
+    //
+    //  Radial shading on its own is what makes a knob read as a PRINTED DISC.
+    //  The falloff says "round", but the TERMINATOR - the band where the surface
+    //  turns away from the light and stops catching it - is missing, and without
+    //  that band the eye has no second edge to read and the form goes flat. So
+    //  this fills the same ellipse in four terms a photograph of a machined part
+    //  would show, each doing something a radial gradient cannot:
+    //
+    //    body       radial, centred ABOVE AND LEFT of the cap's middle, because
+    //               that is where the lamp is; a gradient centred on the cap
+    //               itself lights it evenly and reads as paint
+    //    terminator LINEAR across the cap, falling into shadow down and right.
+    //               A linear gradient filled into an ellipse is clipped BY the
+    //               ellipse, so the two models combine with no mask and no
+    //               second path - the whole trick is one fill call
+    //    specular   a hard bright core inside a soft one, where the dome faces
+    //               the lamp square on. The soft blob alone is a smudge; the
+    //               core inside it is the reflection of the light source
+    //    bounce     the light the panel throws back up into the cap's underside.
+    //               This is the term that sells a part as SOLID rather than as
+    //               a circle: a shadow side that dies to pure black is the
+    //               single most common reason a rendered knob looks drawn
+    //
+    //  `gloss` scales the three lighting terms and nothing else, so a hovered
+    //  knob gets the same shading brighter rather than a second drawing path.
+    // -----------------------------------------------------------------------
+    void fillLitDome (juce::Graphics& g, juce::Point<float> centre, float radius,
+                      juce::Colour body, juce::Colour highlight, juce::Colour shadow,
+                      float gloss = 1.0f)
+    {
+        if (radius < 0.75f)
+            return;
+
+        juce::ColourGradient dome (highlight, centre.x - radius * 0.32f, centre.y - radius * 0.38f,
+                                   shadow, centre.x + radius * 0.86f, centre.y + radius * 0.86f, true);
+        dome.addColour (0.34f, body.brighter (0.10f));
+        dome.addColour (0.70f, body);
+        dome.addColour (0.94f, body.darker (0.20f));
+        g.setGradientFill (dome);
+        g.fillEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f);
+
+        // The terminator: transparent across the lit half, then two darkening
+        // stops down the shadow half. Two rather than one, because a single
+        // ramp reads as a vignette painted on the cap and a two-stage ramp
+        // reads as the curve of a surface.
+        juce::ColourGradient turn (juce::Colours::transparentBlack,
+                                   centre.x - radius * 0.85f, centre.y - radius * 0.85f,
+                                   shadow.withAlpha (0.46f * gloss),
+                                   centre.x + radius * 0.95f, centre.y + radius * 0.95f, false);
+        turn.addColour (0.48f, juce::Colours::transparentBlack);
+        turn.addColour (0.74f, shadow.withAlpha (0.14f * gloss));
+        g.setGradientFill (turn);
+        g.fillEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f);
+
+        // The specular core.
+        const auto hotRadius = juce::jmax (0.6f, radius * 0.28f);
+        const auto hotX = centre.x - radius * 0.38f;
+        const auto hotY = centre.y - radius * 0.44f;
+        juce::ColourGradient spec (highlight.withAlpha (0.50f * gloss), hotX, hotY,
+                                   highlight.withAlpha (0.0f),
+                                   hotX + hotRadius, hotY + hotRadius, true);
+        g.setGradientFill (spec);
+        g.fillEllipse (hotX - hotRadius, hotY - hotRadius, hotRadius * 2.0f, hotRadius * 2.0f);
+
+        // The bounce, low and to the right - the one term that must NOT sit
+        // where the light does, or it stops reading as reflected light and
+        // starts reading as a second highlight.
+        const auto bounceRadius = juce::jmax (0.6f, radius * 0.54f);
+        const auto bounceX = centre.x + radius * 0.34f;
+        const auto bounceY = centre.y + radius * 0.44f;
+        juce::ColourGradient bounce (highlight.withAlpha (0.20f * gloss), bounceX, bounceY,
+                                     highlight.withAlpha (0.0f),
+                                     bounceX - bounceRadius, bounceY - bounceRadius, true);
+        g.setGradientFill (bounce);
+        g.fillEllipse (bounceX - bounceRadius, bounceY - bounceRadius,
+                       bounceRadius * 2.0f, bounceRadius * 2.0f);
+    }
+
     // The three tabs the knob grid is split across. Each entry names a tab and lists the
     // controlIds indices it holds, in the order they are drawn: left to right, then down.
     //
@@ -811,12 +891,37 @@ constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tab
         return font;
     }
 
+    // A screw head, countersunk into the plate. It used to be a dot with a
+    // diagonal through it, and a dot with a line through it reads as a HOLE -
+    // which is the opposite of what a screw is. This is four terms: the dark
+    // countersink the head sits down in, the head lit from the same up-and-left
+    // as every other surface here, the rim pair that closes it into a cylinder,
+    // and a cross whose flutes each carry a lit lip, because a groove with a lit
+    // lip has depth and a groove painted flat does not.
     void drawScrew (juce::Graphics& g, float x, float y, const UiPalette& palette)
     {
-        g.setColour (palette.border.withAlpha (0.65f));
-        g.fillEllipse (x - 3.0f, y - 3.0f, 6.0f, 6.0f);
-        g.setColour (palette.panel.brighter (0.22f));
-        g.drawLine (x - 1.5f, y + 1.5f, x + 1.5f, y - 1.5f, 0.8f);
+        const auto r = 3.2f;
+        const auto reach = r * 0.66f;
+
+        g.setColour (juce::Colours::black.withAlpha (0.26f));
+        g.fillEllipse (x - r - 1.1f, y - r - 1.1f, (r + 1.1f) * 2.0f, (r + 1.1f) * 2.0f);
+
+        juce::ColourGradient head (palette.panel.brighter (0.32f), x, y - r,
+                                   palette.panel.darker (0.48f), x, y + r, false);
+        head.addColour (0.42f, palette.panel);
+        g.setGradientFill (head);
+        g.fillEllipse (x - r, y - r, r * 2.0f, r * 2.0f);
+
+        g.setColour (palette.border.withAlpha (0.50f));
+        g.drawLine (x - reach, y - r + 0.5f, x + reach, y - r + 0.5f, 0.8f);
+        g.setColour (palette.panel.darker (0.55f).withAlpha (0.70f));
+        g.drawLine (x - reach, y + r - 0.5f, x + reach, y + r - 0.5f, 0.8f);
+
+        g.setColour (palette.panel.darker (0.62f).withAlpha (0.90f));
+        g.drawLine (x - reach, y - reach, x + reach, y + reach, 1.2f);
+        g.drawLine (x - reach, y + reach, x + reach, y - reach, 1.2f);
+        g.setColour (palette.panel.brighter (0.40f).withAlpha (0.45f));
+        g.drawLine (x - reach, y - reach - 0.9f, x + reach, y + reach - 0.9f, 0.7f);
     }
 
     void drawPanel (juce::Graphics& g, juce::Rectangle<int> area,
@@ -1018,23 +1123,55 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
 #endif
     }
 
-    g.setColour (palette.knobEdge.withAlpha (0.22f));
-    g.fillEllipse (centre.x - radius - 3.0f, centre.y - radius + 2.0f,
-                   (radius + 3.0f) * 2.0f, (radius + 3.0f) * 2.0f);
+    // The knob is let INTO the panel rather than sitting on it, so the plate
+    // around it is milled down a step. A dark seat ring with a lit upper-left
+    // lip is what says "recessed"; before this the cap stood on a flat disc and
+    // looked stuck there rather than fitted into anything.
+    const auto seatRadius = outerRadius + 2.5f;
+    g.setColour (juce::Colours::black.withAlpha (0.22f));
+    g.fillEllipse (centre.x - seatRadius, centre.y - seatRadius,
+                   seatRadius * 2.0f, seatRadius * 2.0f);
+    juce::Path seatLip;
+    seatLip.addCentredArc (centre.x, centre.y, seatRadius - 0.7f, seatRadius - 0.7f, 0.0f,
+                           5.30f, 2.05f, true);
+    g.setColour (palette.panel.brighter (0.22f).withAlpha (0.30f));
+    g.strokePath (seatLip, juce::PathStrokeType (1.0f, juce::PathStrokeType::curved,
+                                                 juce::PathStrokeType::rounded));
 
-    juce::Path scaleTrack;
+    // The scale is a GROOVE cut into that seat, not a line printed on it: a
+    // dark channel with a lit floor along its upper lip, so the arc sits down
+    // inside the metal instead of floating over it.
+    juce::Path scaleTrack, scaleFloor;
     scaleTrack.addCentredArc (centre.x, centre.y, outerRadius, outerRadius, 0.0f,
                               rotaryStartAngle, rotaryEndAngle, true);
-    g.setColour (palette.knobEdge.withAlpha (0.70f));
-    g.strokePath (scaleTrack, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved,
+    scaleFloor.addCentredArc (centre.x, centre.y, outerRadius - 0.9f, outerRadius - 0.9f, 0.0f,
+                              rotaryStartAngle, rotaryEndAngle, true);
+    g.setColour (juce::Colours::black.withAlpha (0.34f));
+    g.strokePath (scaleTrack, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved,
                                                     juce::PathStrokeType::rounded));
+    g.setColour (palette.knobEdge.withAlpha (0.85f));
+    g.strokePath (scaleFloor, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved,
+                                                   juce::PathStrokeType::rounded));
 
-    juce::Path activeTrack;
+    // The live arc is a lit bar IN that groove, so it takes the same two terms
+    // plus a bright core: a wide saturated shoulder for the bar's own shadowed
+    // side, a narrower saturated core, and a near-white filament riding it -
+    // three lines rather than one because one line is a highlighter and three
+    // is an indicator lamp behind a diffuser.
+    juce::Path activeTrack, activeCore;
     activeTrack.addCentredArc (centre.x, centre.y, outerRadius, outerRadius, 0.0f,
                                rotaryStartAngle, angle, true);
-    g.setColour (accent);
-    g.strokePath (activeTrack, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved,
+    activeCore.addCentredArc (centre.x, centre.y - 0.6f, outerRadius, outerRadius, 0.0f,
+                              rotaryStartAngle, angle, true);
+    g.setColour (accent.darker (0.50f).withAlpha (0.90f));
+    g.strokePath (activeTrack, juce::PathStrokeType (4.2f, juce::PathStrokeType::curved,
                                                      juce::PathStrokeType::rounded));
+    g.setColour (accent);
+    g.strokePath (activeTrack, juce::PathStrokeType (2.6f, juce::PathStrokeType::curved,
+                                                     juce::PathStrokeType::rounded));
+    g.setColour (accent.brighter (0.45f).withAlpha (0.80f));
+    g.strokePath (activeCore, juce::PathStrokeType (1.0f, juce::PathStrokeType::curved,
+                                                    juce::PathStrokeType::rounded));
 
     // Bright tracer dot riding the end of the active arc - the clearest "live" cue.
     const auto tracer = centre + juce::Point<float> (std::cos (screenAngle) * outerRadius,
@@ -1111,6 +1248,22 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     }
 #endif
 
+    // The knob's own THICKNESS. Seen from above and a little to the front, a
+    // real cap shows a sliver of its side wall below the top face, and that
+    // sliver is most of what tells the eye the part has depth - without it the
+    // cap and its shadow describe a disc floating over the panel. One ellipse
+    // pushed down and shaded top-to-bottom, drawn BEFORE the collar so the
+    // collar's rim overlaps its upper edge and only the lower crescent shows.
+    const auto skirt = juce::jmax (1.2f, radius * 0.15f);
+    juce::ColourGradient skirtShade (palette.knobEdge.darker (0.16f), centre.x,
+                                     centre.y + collarRadius - skirt,
+                                     palette.knobEdge.darker (0.62f), centre.x,
+                                     centre.y + collarRadius + skirt * 2.4f, false);
+    skirtShade.addColour (0.50f, palette.knobEdge.darker (0.38f));
+    g.setGradientFill (skirtShade);
+    g.fillEllipse (centre.x - collarRadius, centre.y - collarRadius + skirt,
+                   collarRadius * 2.0f, collarRadius * 2.0f);
+
     // The collar: a ring of metal, shaded top-to-bottom like the switch barrels
     // (fillCylinderBarrel's profile) so the two families of hardware on this
     // panel are lit by the same lamp.
@@ -1146,18 +1299,28 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                     0.9f);
     }
 
-    // The dome. Radial, centred ABOVE AND LEFT of the cap's middle, because that
-    // is where the lamp is: a gradient centred on the cap would light it evenly
-    // and the whole thing would read as a flat sticker.
-    juce::ColourGradient dome (palette.knobHighlight.brighter (0.06f),
-                               centre.x - radius * 0.34f, centre.y - radius * 0.40f,
-                               palette.knobEdge.darker (0.22f),
-                               centre.x + radius, centre.y, true);
-    dome.addColour (0.32f, palette.knobHighlight);
-    dome.addColour (0.64f, palette.knobFace);
-    dome.addColour (0.90f, palette.knobFace.darker (0.24f));
-    g.setGradientFill (dome);
-    g.fillEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f);
+    // The dome: body, terminator, specular and bounce in one call - see
+    // fillLitDome for why all four, and why a radial gradient alone leaves the
+    // cap looking like a sticker.
+    fillLitDome (g, centre, radius, palette.knobFace, palette.knobHighlight,
+                 palette.knobEdge.darker (0.26f), hovered ? 1.15f : 1.0f);
+
+    // The turning grooves. A real cap is faced off on a lathe and the tool
+    // leaves concentric ridges on it; they catch the lamp on the side facing
+    // it and vanish on the other, which is most of the difference between
+    // "metal" and "grey disc". Six rings, alternating light and dark, thinning
+    // toward the rim where the face has turned away from the tool - a ring that
+    // keeps its full strength all the way out flattens the dome again.
+    for (int ring = 1; ring <= 6; ++ring)
+    {
+        const auto t = static_cast<float> (ring) / 7.0f;
+        const auto ringRadius = radius * (0.22f + t * 0.76f);
+        const auto fade = 1.0f - t * 0.55f;
+        g.setColour ((ring % 2 == 0 ? palette.knobHighlight : palette.knobEdge)
+                         .withAlpha ((ring % 2 == 0 ? 0.10f : 0.17f) * fade));
+        g.drawEllipse (centre.x - ringRadius, centre.y - ringRadius,
+                       ringRadius * 2.0f, ringRadius * 2.0f, 0.7f);
+    }
 
     // The bevel: the dome's own rim, one pixel in, bright where it turns up into
     // the light and dark where it turns away. Two arcs rather than an outline,
@@ -1174,18 +1337,29 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     g.strokePath (bevelShade, juce::PathStrokeType (1.1f, juce::PathStrokeType::curved,
                                                     juce::PathStrokeType::rounded));
 
-    // The inner cap: a second, smaller dome standing proud of the first. It is
+    // The bounce along the shadow-side rim. The shade the bevel draws is not the
+    // last word on that arc: without a faint lit line at the very edge under it,
+    // the rim dies to black and the cap loses the thickness the skirt gave it.
+    juce::Path rimBounce;
+    rimBounce.addCentredArc (centre.x, centre.y, radius - 0.9f, radius - 0.9f, 0.0f,
+                             2.05f, 4.30f, true);
+    g.setColour (palette.knobHighlight.withAlpha (0.18f));
+    g.strokePath (rimBounce, juce::PathStrokeType (1.0f, juce::PathStrokeType::curved,
+                                                   juce::PathStrokeType::rounded));
+
+    // The inner step: a second, smaller dome standing proud of the first. It is
     // what makes the cap read as turned from a blank with a step in it rather
-    // than as one disc with a gradient on it.
+    // than as one disc with a gradient on it - and it gets the same four
+    // lighting terms as the face, because a step is a step, not a flat disc
+    // pasted inside a flat one. The dark ring under it is the occlusion where
+    // it rises out of the face, which is where its height comes from.
     const auto innerRadius = radius * 0.56f;
-    juce::ColourGradient inner (palette.knobHighlight.brighter (0.04f),
-                                centre.x - innerRadius * 0.36f, centre.y - innerRadius * 0.42f,
-                                palette.knobFace.darker (0.30f),
-                                centre.x + innerRadius, centre.y, true);
-    inner.addColour (0.55f, palette.knobFace);
-    g.setGradientFill (inner);
-    g.fillEllipse (centre.x - innerRadius, centre.y - innerRadius,
-                   innerRadius * 2.0f, innerRadius * 2.0f);
+    g.setColour (juce::Colours::black.withAlpha (0.30f));
+    g.drawEllipse (centre.x - innerRadius - 0.7f, centre.y - innerRadius - 0.5f,
+                   (innerRadius + 0.7f) * 2.0f, (innerRadius + 0.7f) * 2.0f, 1.1f);
+    fillLitDome (g, centre, innerRadius, palette.knobFace.brighter (0.05f),
+                 palette.knobHighlight.brighter (0.06f),
+                 palette.knobFace.darker (0.32f), hovered ? 1.15f : 1.0f);
     g.setColour (palette.knobEdge.withAlpha (0.55f));
     g.drawEllipse (centre.x - innerRadius, centre.y - innerRadius,
                    innerRadius * 2.0f, innerRadius * 2.0f, 0.9f);
@@ -1230,18 +1404,36 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     g.fillPath (pointerShadow);
     g.setColour (accent.darker (0.12f));
     g.fillPath (pointer);
+
+    // The rib's own two edges: a bright one along the side the lamp reaches and
+    // a dark one along the side it does not. Without them the pointer is a
+    // flat triangle of colour lying ON the dome, and with them it is a raised
+    // moulding standing OFF it - the same trick as the drop shadow above, run
+    // along its length instead of under it.
+    const auto edgeAlpha = juce::jlimit (0.0f, 1.0f, 0.5f + 0.5f * (-cosA * 0.55f - sinA * 0.83f));
+    g.setColour (accent.brighter (0.42f).withAlpha (0.30f + 0.45f * edgeAlpha));
+    g.drawLine (centre.x - sinA * pointerHalfWidth, centre.y + cosA * pointerHalfWidth,
+                tipX, tipY, 0.8f);
+    g.setColour (juce::Colours::black.withAlpha (0.30f * (1.0f - edgeAlpha) + 0.10f));
+    g.drawLine (centre.x + sinA * pointerHalfWidth, centre.y - cosA * pointerHalfWidth,
+                tipX, tipY, 0.8f);
+
     g.setColour (accent.brighter (0.30f).withAlpha (0.75f));
     g.drawLine (centre.x, centre.y, centre.x + cosA * pointerLength * 0.86f,
                 centre.y + sinA * pointerLength * 0.86f, 0.9f);
 
-    // The hub: the screw the rib is set into.
+    // The hub: the screw the rib is set into - the same lit dome as the face,
+    // small enough that only its specular and its terminator survive, which is
+    // exactly what a real screw head is: a bright crescent and a dark one.
     const auto hubRadius = juce::jmax (2.2f, radius * 0.15f);
-    g.setColour (palette.knobEdge.darker (0.30f));
-    g.fillEllipse (centre.x - hubRadius, centre.y - hubRadius,
-                   hubRadius * 2.0f, hubRadius * 2.0f);
-    g.setColour (palette.knobHighlight.withAlpha (0.55f));
+    fillLitDome (g, centre, hubRadius, palette.knobEdge.darker (0.08f),
+                 palette.knobHighlight, palette.knobEdge.darker (0.55f));
+    g.setColour (juce::Colours::black.withAlpha (0.32f));
     g.drawEllipse (centre.x - hubRadius, centre.y - hubRadius,
                    hubRadius * 2.0f, hubRadius * 2.0f, 0.8f);
+    g.setColour (palette.knobHighlight.withAlpha (0.45f));
+    g.drawEllipse (centre.x - hubRadius, centre.y - hubRadius,
+                   hubRadius * 2.0f, hubRadius * 2.0f, 0.7f);
 
     if (slider.hasKeyboardFocus (false))
     {
@@ -1412,16 +1604,37 @@ void J37LookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& lab
 //==============================================================================
 void J37LookAndFeel::drawLabel (juce::Graphics& g, juce::Label& label)
 {
-    g.setColour (label.findColour (juce::Label::textColourId));
+    const auto& palette = paletteForTheme (theme);
+    const auto ink = label.findColour (juce::Label::textColourId);
+
     g.setFont (label.getFont());
 
     auto area = label.getLocalBounds().toFloat();
+    const auto maxLines = juce::jmax (1,
+                                       static_cast<int> (area.getHeight() / g.getCurrentFont().getHeight()));
+
+    // ENGRAVED, not printed. A caption milled into a plate has its upper-left
+    // wall in shadow and its lower-right wall catching the lamp, so the text
+    // carries a lit copy of itself one pixel down and right and the ink sits on
+    // top of it. Printed text is a flat silhouette on a flat ground and is one
+    // of the reasons a drawn panel still reads as a picture of a panel: nothing
+    // on a real front plate is printed flat except the silkscreen on the parts
+    // nobody looks at. The lit copy is a fraction of the palette's own face
+    // rather than white, so it stays metal on all three themes.
+    if (area.getHeight() >= 8.0f && area.getWidth() >= 8.0f)
+    {
+        g.setColour (palette.panel.brighter (0.55f).withAlpha (ink.getAlpha() * 0.45f));
+        g.drawFittedText (label.getText(), (area.translated (0.9f, 0.9f)).toNearestInt(),
+                          label.getJustificationType(), maxLines,
+                          label.getMinimumHorizontalScale());
+    }
+
+    g.setColour (ink);
     if (! label.isEnabled())
         g.setOpacity (0.45f);
 
     g.drawFittedText (label.getText(), area.toNearestInt(),
-                      label.getJustificationType(),
-                      juce::jmax (1, static_cast<int> (area.getHeight() / g.getCurrentFont().getHeight())),
+                      label.getJustificationType(), maxLines,
                       label.getMinimumHorizontalScale());
 }
 
@@ -2117,6 +2330,28 @@ void FirstAudioProcessorEditor::MixBar::paint (juce::Graphics& g)
         g.setColour (palette.readout.withAlpha (darkTheme ? 0.55f : 0.42f));
         g.fillRoundedRectangle (cell, corner);
 
+        // The lip's shadow, thrown INTO the well along its top and left edges -
+        // three lines down the top, darkest at the lip where the wall it falls
+        // from is nearest, and two down the left at half the strength because
+        // the lamp stands off to the left and so misses the wall on that side.
+        // Drawn before the fill so the fill sits down inside the shadow.
+        for (int line = 0; line < 3; ++line)
+        {
+            const auto step = static_cast<float> (line);
+            g.setColour (juce::Colours::black.withAlpha (0.17f - 0.048f * step));
+            g.drawLine (cell.getX() + corner - step * 0.5f, cell.getY() + 1.0f + step * 1.2f,
+                        cell.getRight() - corner + step * 0.5f, cell.getY() + 1.0f + step * 1.2f,
+                        1.0f);
+        }
+        for (int line = 0; line < 2; ++line)
+        {
+            const auto step = static_cast<float> (line);
+            g.setColour (juce::Colours::black.withAlpha (0.12f - 0.045f * step));
+            g.drawLine (cell.getX() + 1.0f + step * 1.2f, cell.getY() + corner - step * 0.5f,
+                        cell.getX() + 1.0f + step * 1.2f, cell.getBottom() - corner + step * 0.5f,
+                        1.0f);
+        }
+
         // The fill: from the floor up, in the machine's colour, with a bright
         // meniscus on its surface so a full cell and a nearly-full one are told
         // apart at a glance rather than only by the printed percentage.
@@ -2125,25 +2360,34 @@ void FirstAudioProcessorEditor::MixBar::paint (juce::Graphics& g)
             const auto fillHeight = juce::jmax (2.0f, share * cell.getHeight());
             const auto fill = juce::Rectangle<float> (cell.getX(), cell.getBottom() - fillHeight,
                                                       cell.getWidth(), fillHeight);
-            juce::ColourGradient fluid (ink.brighter (0.18f), fill.getX(), fill.getY(),
-                                        ink.darker (0.30f), fill.getX(), fill.getBottom(), false);
-            fluid.addColour (0.45f, ink);
+            juce::ColourGradient fluid (ink.brighter (0.30f), fill.getX(), fill.getY(),
+                                        ink.darker (0.34f), fill.getX(), fill.getBottom(), false);
+            fluid.addColour (0.28f, ink.brighter (0.10f));
+            fluid.addColour (0.62f, ink);
             g.setGradientFill (fluid);
             g.fillRoundedRectangle (fill, corner);
 
-            g.setColour (ink.brighter (0.45f).withAlpha (0.85f));
+            // The meniscus catches the lamp along its top edge, and casts its
+            // own short shadow down into the fluid below it - two lines, because
+            // one reads as a border and the pair reads as a surface.
+            g.setColour (ink.brighter (0.55f).withAlpha (0.90f));
             g.drawLine (cell.getX() + 2.0f, fill.getY() + 0.5f,
                         cell.getRight() - 2.0f, fill.getY() + 0.5f, 1.2f);
+            g.setColour (juce::Colours::black.withAlpha (0.20f));
+            g.drawLine (cell.getX() + 2.0f, fill.getY() + 1.8f,
+                        cell.getRight() - 2.0f, fill.getY() + 1.8f, 1.0f);
         }
 
-        // The recess terms, drawn AFTER the fill so the lip reads as being in
-        // front of whatever is in the slot rather than behind it.
-        g.setColour (palette.readout.withAlpha (0.55f));
-        g.drawLine (cell.getX() + 2.0f, cell.getY() + 0.5f,
-                    cell.getRight() - 2.0f, cell.getY() + 0.5f, 1.0f);
-        g.setColour (palette.knobEdge.withAlpha (0.30f));
+        // The far wall, lit on its INNER face - the only bright edge on a
+        // carved shape, and the term that gives the cell depth rather than a
+        // border. The same line down the right edge, dimmer, for the same
+        // reason the knob's rim bounce is dimmer than its lit bevel.
+        g.setColour (palette.knobEdge.withAlpha (darkTheme ? 0.45f : 0.32f));
         g.drawLine (cell.getX() + 2.0f, cell.getBottom() - 0.5f,
                     cell.getRight() - 2.0f, cell.getBottom() - 0.5f, 1.0f);
+        g.setColour (palette.knobEdge.withAlpha (darkTheme ? 0.26f : 0.18f));
+        g.drawLine (cell.getRight() - 0.5f, cell.getY() + 2.0f,
+                    cell.getRight() - 0.5f, cell.getBottom() - 2.0f, 1.0f);
 
         // The name, in the machine's own colour, and the share underneath it.
         // Both shrink to the cell rather than clipping: at the minimum panel
