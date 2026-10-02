@@ -11,8 +11,6 @@
   "mix": 65.0,
   "output": -4.0,
   "stereo_width": 0.35,
-  "blend": 0.0,
-  "shape": 0.5,
   "amp_bias": 0.5,
   "sag": 0.0,
   "presence": 0.5,
@@ -85,5 +83,12 @@
   "transient_mix": 0,
   "neural_mix": 0.0,
   "polarity": 0,
-  "auto_gain": 0
+  "auto_gain": 0,
+  "tape_source": 1.0,
+  "vinyl_source": 0.0,
+  "cassette_source": 0.0,
+  "digital_source": 0.0,
+  "amp_source": 0.0,
+  "valve_source": 0.0,
+  "transformer_source": 0.0
 }
