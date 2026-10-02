@@ -53,7 +53,9 @@ namespace
             "delay_pingpong",
             "st_offset", "noise", "noise_lvl", "transport", "spindown",
             "ui_sounds", "language",
-            "blend", "shape", "sag", "presence", "cabinet", "amp_bias",
+            "tape_source", "vinyl_source", "cassette_source", "digital_source",
+            "amp_source", "valve_source", "transformer_source",
+            "sag", "presence", "cabinet", "amp_bias",
             "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
             "di", "di_load", "di_transformer", "di_pad",
             "delay_type", "distortion", "modern_mode", "lofi_mode",
@@ -370,8 +372,13 @@ FirstAudioProcessor::FirstAudioProcessor()
     transportParam = parameters.getRawParameterValue ("transport");
     spindownParam = parameters.getRawParameterValue ("spindown");
     uiSoundsParam = parameters.getRawParameterValue ("ui_sounds");
-    blendParam = parameters.getRawParameterValue ("blend");
-    shapeParam = parameters.getRawParameterValue ("shape");
+    tapeSourceParam = parameters.getRawParameterValue ("tape_source");
+    vinylSourceParam = parameters.getRawParameterValue ("vinyl_source");
+    cassetteSourceParam = parameters.getRawParameterValue ("cassette_source");
+    digitalSourceParam = parameters.getRawParameterValue ("digital_source");
+    ampSourceParam = parameters.getRawParameterValue ("amp_source");
+    valveSourceParam = parameters.getRawParameterValue ("valve_source");
+    transformerSourceParam = parameters.getRawParameterValue ("transformer_source");
     sagParam = parameters.getRawParameterValue ("sag");
     presenceParam = parameters.getRawParameterValue ("presence");
     cabinetParam = parameters.getRawParameterValue ("cabinet");
@@ -1585,22 +1592,36 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     //  through a box instead of a machine. See SaturationCore for what each one is
     //  and why they are genuinely different shapes.
     //
-    //  BLEND sweeps the weighting across the six in a fixed order, tape -> valve
-    //  -> cassette -> amp -> transformer -> digital, so the control has one
-    //  direction: the order is the signal path, and the right end is where the
-    //  machines stop and the conversion begins. Default 0 - pure tape, which is
-    //  exactly what every earlier build did, so an existing session or preset
-    //  loads the machine it was saved with.
+    //  The seven SOURCE knobs. Each is its own principle's share of the
+    //  saturation mix - TAPE, VALVE, CASSETTE, AMP, TRANSFORMER, DIGITAL - so a
+    //  user dials the machines they want BY NAME instead of steering one sweep
+    //  and one spread (the old BLEND/SHAPE pair, removed at the user's
+    //  request). Shares are normalised to sum to 1, so the mix stays a true
+    //  crossfade and level-stable; a machine whose own TYPE list is OFF has its
+    //  share redistributed among the rest. Tape default 100, the rest 0 - the
+    //  machine the plugin was calibrated as, exactly what every earlier build
+    //  and every preset saved before this change meant.
     // -------------------------------------------------------------------------
-    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "blend", 1 }, "Blend",
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "tape_source", 1 }, "Tape",
+                                                            percentageRange (0.50f), 1.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vinyl_source", 1 }, "Vinyl",
                                                             percentageRange (0.50f), 0.0f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
-    // SHAPE decides how concentrated the blend is: low picks one principle at a
-    // time (an obvious, focused character), high spreads the weighting so all six
-    // contribute and the result reads as one compound machine. Default 50 - an
-    // even spread, which is the useful starting point once BLEND is moved.
-    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "shape", 1 }, "Shape",
-                                                            percentageRange (0.50f), 0.50f,
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "cassette_source", 1 }, "Cassette",
+                                                            percentageRange (0.50f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "digital_source", 1 }, "Digital",
+                                                            percentageRange (0.50f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "amp_source", 1 }, "Amp",
+                                                            percentageRange (0.50f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "valve_source", 1 }, "Valve",
+                                                            percentageRange (0.50f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "transformer_source", 1 }, "Transformer",
+                                                            percentageRange (0.50f), 0.0f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
 
     // -------------------------------------------------------------------------
@@ -3068,22 +3089,32 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const bool offsetRightChannel = stOffsetUs >= 0.0f;
 
     // -----------------------------------------------------------------------
-    //  Saturation blend and the amp voicing.
+    //  The saturation mix and the amp voicing.
     //
-    //  All six are read once per block and fed to smoothers, so none of them can
-    //  step the curve. The blend weights themselves are applied inside the core
-    //  from the SMOOTHED values, per sample, so sweeping BLEND morphs the
-    //  harmonics continuously rather than switching between six curves.
+    //  All seven SOURCE amounts are read once per block and fed to smoothers,
+    //  so none of them can step the curve. The weights themselves are applied
+    //  inside the core from the SMOOTHED values, so moving a SOURCE knob morphs
+    //  the harmonics continuously rather than switching between seven curves.
     // -----------------------------------------------------------------------
-    const auto blendAmount = blendParam != nullptr ? blendParam->load() : 0.0f;
-    const auto shapeAmount = shapeParam != nullptr ? shapeParam->load() : 0.5f;
+    const auto vinylAmountSrc = vinylSourceParam != nullptr ? vinylSourceParam->load() : 0.0f;
+    const auto tapeAmount = tapeSourceParam != nullptr ? tapeSourceParam->load() : 1.0f;
+    const auto valveAmount = valveSourceParam != nullptr ? valveSourceParam->load() : 0.0f;
+    const auto cassetteAmount = cassetteSourceParam != nullptr ? cassetteSourceParam->load() : 0.0f;
+    const auto ampAmount = ampSourceParam != nullptr ? ampSourceParam->load() : 0.0f;
+    const auto transformerAmount = transformerSourceParam != nullptr ? transformerSourceParam->load() : 0.0f;
+    const auto digitalAmount = digitalSourceParam != nullptr ? digitalSourceParam->load() : 0.0f;
     const auto sagAmount = sagParam != nullptr ? sagParam->load() : 0.0f;
     const auto presenceAmount = presenceParam != nullptr ? presenceParam->load() : 0.5f;
     const auto cabinetAmount = cabinetParam != nullptr ? cabinetParam->load() : 0.0f;
     const auto ampBiasAmount = ampBiasParam != nullptr ? ampBiasParam->load() : 0.5f;
 
-    blendSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, blendAmount));
-    shapeSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, shapeAmount));
+    tapeSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, tapeAmount));
+    vinylSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, vinylAmountSrc));
+    valveSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, valveAmount));
+    cassetteSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, cassetteAmount));
+    ampSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, ampAmount));
+    transformerSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, transformerAmount));
+    digitalSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, digitalAmount));
     sagSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, sagAmount));
     presenceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, presenceAmount));
     cabinetSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, cabinetAmount));
@@ -4861,15 +4892,15 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             //
             //  This replaces the single magneticHysteresis call. It runs the same
             //  DRIVE and BIAS arguments the old shaper took - so both controls keep
-            //  their meaning and their existing calibration - but weights six
-            //  distinct curve shapes together: tape, valve, cassette, amp,
+            //  their meaning and their existing calibration - but weights seven
+            //  distinct curve shapes together: tape, valve, cassette, vinyl, amp,
             //  transformer and digital. See SaturationCore for what each one is
-            //  and why they are genuinely different mechanisms rather than six
+            //  and why they are genuinely different mechanisms rather than seven
             //  settings of one.
             //
-            //  The weights come from the SMOOTHED blend controls and are applied
-            //  per sample, so sweeping BLEND morphs the harmonics continuously
-            //  instead of stepping between six curves on a block boundary.
+            //  The weights come from the SMOOTHED SOURCE controls, so moving a
+            //  SOURCE knob morphs the harmonics continuously instead of stepping
+            //  between seven curves on a block boundary.
             //
             //  SAG acts on the DRIVE, not on the output, because that is what the
             //  supply does: it is the gain that droops under sustained demand. The
@@ -4880,8 +4911,13 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             auto& saturation = channel == 0 ? saturationL : saturationR;
             auto& amp = channel == 0 ? ampL : ampR;
 
-            saturation.setBlend (blendSmoothed.getCurrentValue(),
-                                 shapeSmoothed.getCurrentValue());
+            saturation.setWeights (tapeSourceSmoothed.getCurrentValue(),
+                                   valveSourceSmoothed.getCurrentValue(),
+                                   cassetteSourceSmoothed.getCurrentValue(),
+                                   vinylSourceSmoothed.getCurrentValue(),
+                                   ampSourceSmoothed.getCurrentValue(),
+                                   transformerSourceSmoothed.getCurrentValue(),
+                                   digitalSourceSmoothed.getCurrentValue());
 
             // The type switches re-voice their own curve. Four of the five live
             // here, because four of the five are voices on SaturationCore's

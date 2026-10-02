@@ -451,51 +451,118 @@ inline juce::StringArray vinylTypeNameList()
 
 //==============================================================================
 /**
-    The four saturation principles, and the blend that combines them.
+    The seven saturation principles, and the mix that combines them.
 
     A tape machine is ONE of the ways analogue electronics bend a signal, and the
-    plugin was built around that one curve. The four below are the distinct
+    plugin was built around that one curve. The seven below are the distinct
     mechanisms a real signal chain uses, and they are genuinely different shapes
-    rather than four settings of one:
+    rather than seven settings of one:
 
-      TAPE     - magnetic hysteresis: a MEMORY term, because the medium's state
-                 depends on where it has been. Gentle at low level, and the
-                 asymmetry is what makes the even harmonics.
-      VALVE    - thermionic: a soft, strongly ASYMMETRIC knee with a wide
-                 transition. Even-dominant, and it compresses rather than clips,
-                 so it thickens before it distorts.
-      CASSETTE - narrow-gauge, low-bias ferric: a HARD, early knee with a very
-                 limited headroom and a pronounced low-frequency bump. The
-                 "everything is louder and smaller" character.
-      AMP      - a guitar amplifier's input stage: a high-gain, nearly symmetric
-                 cascade that clips HARD and generates strong odd harmonics. It
-                 is the one that bites.
+      TAPE       - magnetic hysteresis: a MEMORY term, because the medium's state
+                   depends on where it has been. Gentle at low level, and the
+                   asymmetry is what makes the even harmonics.
+      VALVE      - thermionic: a soft, strongly ASYMMETRIC knee with a wide
+                   transition. Even-dominant, and it compresses rather than clips,
+                   so it thickens before it distorts.
+      CASSETTE   - narrow-gauge, low-bias ferric: a HARD, early knee with a very
+                   limited headroom and a pronounced low-frequency bump. The
+                   "everything is louder and smaller" character.
+      VINYL      - a cutting lathe's tracing distortion: a soft, second-order
+                   power-law knee plus a small drift of the groove's own
+                   operating point. The gentlest of the seven.
+      AMP        - a guitar amplifier's input stage: a high-gain, nearly symmetric
+                   cascade that clips HARD and generates strong odd harmonics. It
+                   is the one that bites.
+      TRANSFORMER - core saturation with a flux memory: the core lags whatever
+                   drives it, and its asymmetry arrives only once the core is
+                   properly loaded.
+      DIGITAL    - the converter's stop: transparent and bit-exact below full
+                   scale, hard above it, with no memory and no bias to drift.
 
-    Blending them is not a gimmick: a real chain is exactly this. A guitar goes
+    Mixing them is not a gimmick: a real chain is exactly this. A guitar goes
     into an amp (AMP), the amp into a desk and a tape machine (TAPE), a valve
     compressor or a valve preamp somewhere in the path (VALVE), and the whole
-    thing may end up on a cassette (CASSETTE). The BLEND control moves the
-    weighting across those four, and the default sits on tape because that is
-    what the plugin is calibrated around.
+    thing may end up on a cassette (CASSETTE) or a cut record (VINYL). The
+    seven SOURCE knobs set each mechanism's share of the mix, and the default
+    sits on tape because that is what the plugin is calibrated around.
 
     Every curve is normalised to unity slope at the origin, exactly like
-    magneticHysteresis, so the blend cannot change the level - only the shape.
-    That property is what makes the control usable: moving it changes the
+    magneticHysteresis, so the mix cannot change the level - only the shape.
+    That property is what makes the controls usable: moving them changes the
     harmonics, not the gain, and the DRIVE control keeps its own meaning.
 */
 struct SaturationCore
 {
     // -----------------------------------------------------------------------
-    //  Weights. These are set once per block from the BLEND and SHAPE controls;
-    //  they are kept normalised so the six always sum to 1 and the blend is a
-    //  true crossfade rather than a stack.
+    //  Weights. These are set once per block from the seven SOURCE controls:
+    //  each is its own amount knob, so a user dials the machines they want by
+    //  name rather than steering a sweep. They are kept normalised so the seven
+    //  always sum to 1 and the mix is a true crossfade rather than a stack.
     // -----------------------------------------------------------------------
     float tapeWeight = 1.0f;
     float valveWeight = 0.0f;
     float cassetteWeight = 0.0f;
+    float vinylWeight = 0.0f;
     float ampWeight = 0.0f;
     float transformerWeight = 0.0f;
     float digitalWeight = 0.0f;
+
+    /** Sets all seven weights DIRECTLY from the seven SOURCE knobs: a knob is
+        its principle's share, so TAPE 60 / VALVE 40 reads on the panel exactly
+        as it sounds. Shares are normalised to sum to 1; a principle whose own
+        model list is OFF has its share redistributed by the normalisation
+        rather than dropped, so switching a machine off re-weights the rest
+        instead of leaving a hole. (The old blend/shape pair hid all of this
+        behind one sweep position and one spread; the user asked for names.)
+        The amounts arrive already smoothed - every SOURCE knob is read once
+        per block and fed to its own smoother - so the SET is what makes all
+        seven live at once, and the normalisation below is what keeps the mix
+        level-stable while amounts move.
+    */
+    void setWeights (float tapeAmount, float valveAmount, float cassetteAmount,
+                     float vinylAmount, float ampAmount, float transformerAmount,
+                     float digitalAmount) noexcept
+    {
+        tapeWeight        = juce::jlimit (0.0f, 1.0f, tapeAmount);
+        valveWeight       = juce::jlimit (0.0f, 1.0f, valveAmount);
+        cassetteWeight    = juce::jlimit (0.0f, 1.0f, cassetteAmount);
+        vinylWeight       = juce::jlimit (0.0f, 1.0f, vinylAmount);
+        ampWeight         = juce::jlimit (0.0f, 1.0f, ampAmount);
+        transformerWeight = juce::jlimit (0.0f, 1.0f, transformerAmount);
+        digitalWeight     = juce::jlimit (0.0f, 1.0f, digitalAmount);
+
+        // A principle whose own model list is OFF contributes nothing, and its
+        // share is REDISTRIBUTED by the normalisation below rather than dropped:
+        // switching a machine off re-weights the rest to cover it, so the mix
+        // holds its degree of saturation and only the character changes.
+        if (valveOff)       valveWeight = 0.0f;
+        if (ampOff)         ampWeight = 0.0f;
+        if (transformerOff) transformerWeight = 0.0f;
+        if (digitalOff)     digitalWeight = 0.0f;
+        if (tapeOff)        tapeWeight = 0.0f;
+
+        const auto sum = tapeWeight + valveWeight + cassetteWeight + vinylWeight
+                               + ampWeight + transformerWeight + digitalWeight;
+        if (sum > 1.0e-6f)
+        {
+            tapeWeight /= sum;
+            valveWeight /= sum;
+            cassetteWeight /= sum;
+            vinylWeight /= sum;
+            ampWeight /= sum;
+            transformerWeight /= sum;
+            digitalWeight /= sum;
+        }
+        else
+        {
+            // All sources at zero: the engine still needs a curve. Pure tape is
+            // what the machine was calibrated as, so that is what an empty mix
+            // resolves to - the same answer the old sweep's left end gave.
+            tapeWeight = 1.0f;
+            valveWeight = cassetteWeight = ampWeight = transformerWeight
+                        = digitalWeight = 0.0f;
+        }
+    }
 
     // -----------------------------------------------------------------------
     //  Per-principle state.
@@ -512,6 +579,7 @@ struct SaturationCore
     float valveBiasState = 0.0f;
     float ampBiasState = 0.0f;
     float cassetteBiasState = 0.0f;
+    float vinylBiasState = 0.0f;
     float transformerFlux = 0.0f;
     float digitalHold = 0.0f;
 
@@ -521,114 +589,19 @@ struct SaturationCore
         valveBiasState = 0.0f;
         ampBiasState = 0.0f;
         cassetteBiasState = 0.0f;
+        vinylBiasState = 0.0f;
         transformerFlux = 0.0f;
         digitalHold = 0.0f;
     }
 
-    /** Sets the six weights from two controls. Both are 0..1. */
-    void setBlend (float blend, float shape) noexcept
-    {
-        // BLEND sweeps the weighting across the six principles in a fixed order,
-        // tape -> valve -> cassette -> amp -> transformer -> digital, so the
-        // control has one direction and the ear can learn it. The order is the
-        // signal path rather than a ranking: five machines you overload by pushing
-        // level into them, and then the converter that replaces all of them.
-        // SHAPE skews the distribution: low concentrates on a single principle
-        // (a focused, obvious character), high spreads it evenly (a blend that
-        // reads as one compound machine).
-        const auto b = juce::jlimit (0.0f, 1.0f, blend);
-        const auto s = juce::jlimit (0.0f, 1.0f, shape);
-
-        // Each principle gets a triangular response centred on its own position
-        // along the sweep, so neighbouring ones overlap and the blend is smooth.
-        const auto triangle = [] (float x, float centre, float width)
-        {
-            return juce::jmax (0.0f, 1.0f - std::abs (x - centre) / width);
-        };
-
-        // Six centres, so five intervals. Derived rather than typed in, because
-        // the spacing is what the narrow end of the width below is measured
-        // against, and a literal list of centres would let the two drift apart
-        // the moment a principle was added.
-        const auto step = 1.0f / 5.0f;
-
-        // Width grows with SHAPE: at 0 the triangles are exactly disjoint - each
-        // reaches half way to its neighbours - so the sweep snaps from one
-        // principle to the next; at 1 they are wide enough that all six
-        // contribute at every position. The narrow end is HALF THE SPACING rather
-        // than a fixed number, so tightening the spacing cannot quietly turn the
-        // "focused" end of the sweep into an overlapping one.
-        const auto width = step * 0.5f + (1.0f - step * 0.5f) * s;
-
-        tapeWeight        = triangle (b, 0 * step, width);
-        valveWeight       = triangle (b, 1 * step, width);
-        cassetteWeight    = triangle (b, 2 * step, width);
-        ampWeight         = triangle (b, 3 * step, width);
-        transformerWeight = triangle (b, 4 * step, width);
-        digitalWeight     = triangle (b, 5 * step, width);
-
-        // The ends of the sweep must not fall off the edge. At b = 0 only tape is
-        // centred on the sweep, but SHAPE widens the triangles, so at the default
-        // SHAPE the next principle is in range too - and leaving it in put roughly
-        // a third of the valve curve into a setting documented as pure tape, so an
-        // existing session did not load the machine it was saved with. Seeding an
-        // end therefore claims its own principle AND clears the others, rather
-        // than only overwriting its own. The sum is then exactly 1 at both ends
-        // and the normalisation below has nothing to do.
-        if (b < 0.02f) { tapeWeight = 1.0f; valveWeight = cassetteWeight = ampWeight
-                                                   = transformerWeight = digitalWeight = 0.0f; }
-        if (b > 0.98f) { digitalWeight = 1.0f; tapeWeight = valveWeight = cassetteWeight
-                                                    = ampWeight   = transformerWeight = 0.0f; }
-
-        // ------------------------------------------------------------------
-        //  OFF principles.
-        //
-        //  A principle whose own model list is set to OFF contributes nothing,
-        //  and its share is REDISTRIBUTED among the principles that are still
-        //  present by the normalisation below - not simply dropped, which would
-        //  make the machine quieter whenever a model was switched off.
-        //
-        //  The redistribution is the whole point of the feature: turning the
-        //  TRANSFORMER off does not leave a hole in the blend, it re-weights the
-        //  tape, the valve and the rest to cover it, so the machine still
-        //  saturates to the same degree and only the CHARACTER changes. A user
-        //  who wants a pure solid-state machine turns off the tape and gets
-        //  whatever else is in the blend carrying the whole signal.
-        //
-        //  This runs after the two end-seeds above deliberately: an end-seed
-        //  claims its principle outright, and if that principle is OFF the
-        //  normalisation that follows is what keeps the output from vanishing.
-        // ------------------------------------------------------------------
-        if (valveOff)       valveWeight = 0.0f;
-        if (ampOff)         ampWeight = 0.0f;
-        if (transformerOff) transformerWeight = 0.0f;
-        if (digitalOff)     digitalWeight = 0.0f;
-        if (tapeOff)        tapeWeight = 0.0f;
-
-        const auto sum = tapeWeight + valveWeight + cassetteWeight + ampWeight
-                               + transformerWeight + digitalWeight;
-        if (sum > 1.0e-6f)
-        {
-            tapeWeight /= sum;
-            valveWeight /= sum;
-            cassetteWeight /= sum;
-            ampWeight /= sum;
-            transformerWeight /= sum;
-            digitalWeight /= sum;
-        }
-        else
-        {
-            tapeWeight = 1.0f;
-            valveWeight = cassetteWeight = ampWeight = transformerWeight
-                        = digitalWeight = 0.0f;
-        }
-    }
+    // (The old blend/shape sweep body was removed with the controls that drove
+    //  it: the seven SOURCE knobs now speak to setWeights above directly.)
 
     /** True when nothing is contributing, so the caller can skip the whole core. */
     bool isIdle() const noexcept
     {
-        return tapeWeight + valveWeight + cassetteWeight + ampWeight
-                                    + transformerWeight + digitalWeight <= 1.0e-6f;
+        return tapeWeight + valveWeight + cassetteWeight + vinylWeight
+                            + ampWeight + transformerWeight + digitalWeight <= 1.0e-6f;
     }
 
     // -----------------------------------------------------------------------
@@ -840,6 +813,67 @@ struct SaturationCore
                                              * (1.0f - juce::jmin (1.0f, std::abs (atZero))));
 
         return out - atZeroBumped;
+    }
+
+    /**
+        VINYL - a cutting lathe's tracing distortion.
+
+        The seventh SOURCE. A lathe does not cut what it is fed: the stylus has
+        a finite radius, so on tight curvature (high frequencies at high level)
+        the groove's radius is larger than the signal asks and the replay stylus
+        traces a rounded-off path - second-order, level-dependent, the gentlest
+        of the seven. That is why vinyl at moderate levels reads as smooth
+        rather than bent. The curve: a soft power-law knee (softer than the
+        cassette's corner, gentler than the amp's clip) plus a small bias drift
+        - the groove's own operating point moves with the programme, like the
+        valve's but faster.
+    */
+    float shapeVinyl (float x, float drive, float asymmetry) noexcept
+    {
+        // The groove's operating point drifts with the programme - between the
+        // valve's slow thermal drift and the cassette's fast one, which is the
+        // order a real cutter head's feedback loop settles in.
+        vinylBiasState += (x - vinylBiasState) * 0.0015f;
+        const float biased = x + asymmetry * 0.35f + vinylBiasState * 0.12f;
+
+        // The tracing knee: at drive 0 it sits at 1.05 (above full scale - the
+        // lathe passes the programme untouched) and closes as drive rises, but
+        // never as far as the cassette's 0.12 floor: a cutter is a precision
+        // device, and its knee is soft.
+        const float knee = juce::jlimit (0.25f, 1.05f, 1.05f - drive * 0.55f);
+
+        const float magnitude = std::abs (biased);
+        const float sign = biased < 0.0f ? -1.0f : 1.0f;
+
+        float shaped;
+        if (magnitude <= knee)
+        {
+            shaped = biased;   // linear region, unity slope: y = x.
+        }
+        else
+        {
+            // Above the knee the curve walks to its asymptote on a POWER law
+            // (n = 2.5) rather than the cassette's smoothstep: a tracing radius
+            // rounds an overshoot progressively, not on a polynomial schedule.
+            const float overshoot = juce::jmin (1.0f,
+                                                (magnitude - knee) / juce::jmax (0.08f, knee));
+            const float eased = std::pow (overshoot, 2.5f);
+            shaped = sign * (knee + eased * (1.0f - knee));
+        }
+
+        // Zero-point correction, the same rule every curve here follows: the
+        // signal path walked again at zero input, so zero in means zero out.
+        const float atZero = [&]
+        {
+            const float z = asymmetry * 0.35f;
+            const float m = std::abs (z);
+            if (m <= knee) return z;
+            const float o = juce::jmin (1.0f, (m - knee) / juce::jmax (0.08f, knee));
+            const float e = std::pow (o, 2.5f);
+            return (z < 0.0f ? -1.0f : 1.0f) * (knee + e * (1.0f - knee));
+        }();
+
+        return shaped - atZero;
     }
 
     /**
@@ -1161,9 +1195,9 @@ struct SaturationCore
     }
 
     /**
-        Runs the blend. `drive` and `asymmetry` are the same arguments the tape
-        shaper has always taken, so the existing controls keep their meaning; the
-        weighting is the only thing BLEND and SHAPE change.
+        Runs the mix. `drive` and `asymmetry` are the same arguments the tape
+        shaper has always taken, so the existing controls keep their meaning;
+        the weighting is only what the seven SOURCE knobs set.
     */
     float process (float x, float drive, float asymmetry) noexcept
     {
@@ -1180,6 +1214,9 @@ struct SaturationCore
 
         if (cassetteWeight > 1.0e-4f)
             out += shapeCassette (x, drive, asymmetry) * cassetteWeight;
+
+        if (vinylWeight > 1.0e-4f)
+            out += shapeVinyl (x, drive, asymmetry) * vinylWeight;
 
         if (ampWeight > 1.0e-4f)
             out += shapeAmp (x, drive, asymmetry) * ampWeight;
@@ -4949,8 +4986,16 @@ private:
     // editor, but a parameter like every other setting so it survives in a
     // session and can be automated.
     std::atomic<float>* uiSoundsParam = nullptr;
-    std::atomic<float>* blendParam = nullptr;
-    std::atomic<float>* shapeParam = nullptr;
+    // The seven SOURCE knobs - the shares of the six saturation principles.
+    // (The old blend/shape sweep pair was removed: the user asked for the
+    // machines to be dialled by name.)
+    std::atomic<float>* tapeSourceParam = nullptr;
+    std::atomic<float>* vinylSourceParam = nullptr;
+    std::atomic<float>* cassetteSourceParam = nullptr;
+    std::atomic<float>* digitalSourceParam = nullptr;
+    std::atomic<float>* ampSourceParam = nullptr;
+    std::atomic<float>* valveSourceParam = nullptr;
+    std::atomic<float>* transformerSourceParam = nullptr;
     std::atomic<float>* sagParam = nullptr;
     std::atomic<float>* presenceParam = nullptr;
     std::atomic<float>* cabinetParam = nullptr;
@@ -5585,8 +5630,16 @@ private:
 
     // The two blend controls, ramped so moving either one morphs the harmonics
     // continuously instead of stepping the curve on a block boundary.
-    SampleSmoother blendSmoothed { sampleClock };
-    SampleSmoother shapeSmoothed { sampleClock };
+    // The SOURCE shares ride the same kind of smoother every other control
+    // does, so a mix change cannot step the weights either. Two are paired on
+    // one smoother only in the sense that setWeights consumes them together.
+    SampleSmoother tapeSourceSmoothed { sampleClock, false, false, 1.0f };
+    SampleSmoother vinylSourceSmoothed { sampleClock };
+    SampleSmoother valveSourceSmoothed { sampleClock };
+    SampleSmoother cassetteSourceSmoothed { sampleClock };
+    SampleSmoother ampSourceSmoothed { sampleClock };
+    SampleSmoother transformerSourceSmoothed { sampleClock };
+    SampleSmoother digitalSourceSmoothed { sampleClock };
 
     // ST LINK, ramped like every other control-derived coefficient: it scales the
     // gain difference between the linked and unlinked paths, and a step there is a

@@ -320,17 +320,14 @@ private:
         juce::Rectangle<int> meters;
     };
 
-    // Twenty-one controls, split across three tabs of at most nine, in signal-flow
-    // order: consecutive slices of one chain, read left to right.
+    // Sixty-four controls, split across fifteen tab pages of at most one row
+    // of seven, in signal-flow order: consecutive slices of one chain, read
+    // left to right. The page map lives in tabSpecs in the .cpp, and the three
+    // large family buttons above the bar (TAPE / FX / SETUP) group those
+    // pages.
     //
-    //   tab 1  MACHINE           INPUT  BRIGHT TONE   MIX   WIDTH OUTPUT
-    //   tab 2  SATURATION CORE   DRIVE  BIAS   SUBFUND BLEND  SHAPE  AMP BIAS SAG
-    //   tab 3  HEAD / TRANSPORT  CABINET PRESENCE WOW   FLUTTER ST OFFSET
-    //                            DELAY DLY LVL NOISE
-    //
-    // Tabs hold between three and nine controls, so at tabColumns wide most come to
-    // two rows and NOISE to three: the grid sizes its own row count from the active
-    // tab, so neither grows nor jumps when the user switches tabs.
+    // The grid sizes its own row count from the active tab, so it neither grows
+    // nor jumps when the user switches tabs.
     //
     // The count here, the controlIds / controlNames lists, the defaultValues array
     // and the tabSpecs table in the .cpp are all views of ONE list and must agree.
@@ -339,7 +336,9 @@ private:
     // read at run time. The tab table is checked against controlCount by a
     // static_assert too, so a knob that no tab lists is a build error, not a knob
     // that silently disappears from the panel.
-    static constexpr std::size_t controlCount = 59;
+    // 64: the fifty-nine the panel carried, minus the BLEND/SHAPE pair the
+    // user asked to remove, plus the seven SOURCE knobs that replaced them.
+    static constexpr std::size_t controlCount = 64;
     static constexpr int tabColumns = 4;
     // Eleven pages under three large families (TAPE / FX / SETUP), so no page
     // has to carry more than one subject: DRIVE was twelve knobs on one page and
@@ -755,13 +754,9 @@ private:
     // this. The timer's attach retries consult it, so a context the HOST lost
     // is recovered automatically while one the USER turned off stays off.
     bool glUserDisabled = false;
-    // True while the CHARACTER tab is the visible page: paint() draws the
-    // neural picker's card behind that page's fourth column and must not pay
-    // for it on any other tab.
-    bool activeTabIsCharacter = false;
     // paint() draws the neural picker's card behind the SHAPERS page's member
     // band's first column - the page whose NEURAL knob the picker belongs to.
-    bool activeTabIsShapers = false;;
+    bool activeTabIsShapers = false;
 
     // -----------------------------------------------------------------------
     //  The front panel's theme.

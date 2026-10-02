@@ -438,16 +438,9 @@ namespace
     // controls. The indices are now all listed.
     //
     // The deck's non-knob switches follow the tabs too: GL and OVERSAMPLING show
-    // on SETTINGS, and the delay TYPE / RATE / SYNC trio shows on SPACE. They are
+    // on SETTINGS, and the delay TYPE / RATE / SYNC trio shows on DELAY. They are
     // not knobs - the grid below cannot place them - so their visibility is
     // managed in setCurrentTab beside the knobs'.
-    //  The eleven pages are grouped into THREE FAMILIES - TAPE, FX, SETUP - so
-    //  no page has to carry more than one subject: the old DRIVE held twelve
-    //  knobs and the old NOISE eleven, which is exactly the crowding the tabs
-    //  exist to avoid. DRIVE is now two pages (the gain stages in front, the
-    //  curve-benders behind), the record's five FAULTS moved onto a RECORD page
-    //  beside the vinyl stage's own three knobs, and the families are the three
-    //  large buttons ABOVE this bar (see setTabFamily).
     //  The fifteen pages are grouped into THREE FAMILIES - TAPE, FX, SETUP - and
     //  no page carries more than one subject, or more than one row of seven
     //  knobs: DRIVE once held twelve and NOISE eleven, which is exactly the
@@ -458,7 +451,7 @@ namespace
         // ---- TAPE family (8 pages): the machine and everything feeding it ---
         //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
         { "MACHINE", "What goes in, how the machine colours it, and what comes out.",
-                     7, 0, { 0, 3, 4, 7, 9, 8, 32 } },
+                     7, 0, { 0, 3, 4, 7, 9, 8, 37 } },
         //  di, di_load, di_transformer, preamp, distortion - the gain stages
         //  IN FRONT of the tape. The DI pad/load combo rides this page beside
         //  the knob row in resized(), with the DI it belongs to.
@@ -466,7 +459,7 @@ namespace
                        "push the front end, and the DI loads, pads and colours "
                        "the instrument before any of it - with its PAD and LOAD "
                        "selector beside the row.",
-                     5, 0, { 44, 45, 46, 21, 22 } },
+                     5, 0, { 49, 50, 51, 26, 27 } },
         //  drive, bias - the head's magnetic saturation itself.
         { "SATURATION", "The magnetic saturation the head applies: DRIVE sets how "
                         "hard the tape is pushed and BIAS where its operating "
@@ -484,7 +477,7 @@ namespace
                        "record's GENERATION / TURNTABLE / CARTRIDGE re-voice the "
                        "whole vinyl stage from under this row, and the NEURAL "
                        "model picker takes the band's last column.",
-                     3, 0, { 23, 15, 14 } },
+                     3, 0, { 28, 19, 20 } },
         //  noise, noise_lvl, wow, flutter, wear, mechanics - the MACHINE's own
         //  departures from a clean signal. The record's five FAULTS are on the
         //  RECORD page: each is a mechanism of the RECORD's noise, not the
@@ -494,7 +487,7 @@ namespace
                    "the sources run; WOW and FLUTTER are the transport's noise, "
                    "WEAR and MECHANICS the medium's and the mechanism's. The "
                    "record's five FAULTS are on the RECORD page.",
-                     6, 0, { 19, 31, 5, 6, 24, 25 } },
+                     6, 0, { 24, 36, 5, 6, 29, 30 } },
         //  The record's five FAULTS, on a page of their own because each IS a
         //  mechanism of the record's own noise: surface texture, a repeating
         //  wound, the platter's warp, the cartridge's earthing, the pressing's
@@ -503,7 +496,7 @@ namespace
                     "SCRATCH a wound crossed once per revolution, WARP the level "
                     "breathing at the platter rate, ELECTRICAL the cartridge's "
                     "earthing, CLICKS the pressing's sharp faults.",
-                     5, 0, { 33, 34, 35, 36, 37 } },
+                     5, 0, { 38, 39, 40, 41, 42 } },
         //  The vinyl stage's own three knobs. These are here and NOT also on
         //  NOISE: they are the record's CHARACTER, while the faults are its
         //  noise - listing them on both pages would put the same knob on two
@@ -513,13 +506,17 @@ namespace
                    "the platter's own low thump. GENERATION / TURNTABLE / "
                    "CARTRIDGE re-voice it all from CHARACTER; the FAULTS are on "
                    "RECORD.",
-                     3, 0, { 28, 29, 30 } },
-        //  blend, shape, amp_bias, sag, subfund - everything that BENDS the
-        //  curve once the gain stages have pushed it.
-        { "SUBFUND", "The curve-benders: BLEND shifts the shaper's operating "
-                     "point, SHAPE and AMP BIAS bend it, SAG lets it yield under "
-                     "load, and SUBFUND generates the octave below what plays.",
-                     5, 0, { 10, 11, 12, 13, 20 } },
+                     3, 0, { 33, 34, 35 } },
+        //  The seven SOURCE knobs, then amp_bias, sag, subfund - the saturation
+        //  mix and everything that BENDS the curve once the gain stages have
+        //  pushed it.
+        { "SUBFUND", "The saturation mix and the curve-benders: the seven "
+                     "SOURCE knobs - TAPE, VALVE, CASSETTE, VINYL, AMP, "
+                     "TRANSFORMER, DIGITAL - set each machine's share of the "
+                     "character, AMP BIAS moves its operating point, SAG lets "
+                     "it yield under load, and SUBFUND generates the octave "
+                     "below what plays.",
+                     10, 0, { 10, 11, 12, 13, 14, 15, 16, 17, 18, 25 } },
         // ---- FX family (4 pages): the second head, the room, the envelope,
         //  the output equaliser ------------------------------------------------
         //  delay_time, delay_feedback, st_offset, ping_pong. The deck's TYPE /
@@ -529,10 +526,10 @@ namespace
                    "skews the sides against each other, PING-PONG bounces it "
                    "between them. The deck's TYPE / SYNC DELAY / RATE switches "
                    "sit under the row.",
-                     4, 1, { 16, 17, 18, 53 } },
+                     4, 1, { 21, 22, 23, 58 } },
         { "REVERB", "The room: REVERB is how much of it is in the output and RVB "
                     "SIZE how large the space the reflections build.",
-                     2, 1, { 26, 27 } },
+                     2, 1, { 31, 32 } },
         //  transient_attack (54), transient_sustain (55), transient_mix (56).
         //  The stage that acts on the finished signal's envelope rather than on
         //  the waveform - it changes how the sound MOVES without adding a
@@ -542,7 +539,7 @@ namespace
                  "event; SUS lengthens (positive) or shortens (negative) what "
                  "follows the attack, its body and ring; TR MIX is how much of "
                  "the shaped signal reaches the output.",
-                     3, 1, { 54, 55, 56 } },
+                     3, 1, { 59, 60, 61 } },
         //  out_low, out_mid, out_high and their three corners.
         { "OUT EQ", "The output equaliser, after the machine and before the output "
                     "trim. Nothing downstream responds to what it does, so it "
@@ -550,7 +547,7 @@ namespace
                     "predictable EQ you use to place the finished sound. Same "
                     "three bands as the input EQ, same transparency at 0 dB; the "
                     "ORDER and corner switches ride the row below.",
-                     6, 1, { 41, 42, 43, 50, 51, 52 } },
+                     6, 1, { 46, 47, 48, 55, 56, 57 } },
         // ---- SETUP family (3 pages): what the machine hears, the file-fed
         //  shapers, the engine switches ----------------------------------------
         //  in_low, in_mid, in_high and their three corners.
@@ -561,14 +558,14 @@ namespace
                    "balance. LOW is a shelf at 200 Hz, MID a bell at 1 kHz, HIGH "
                    "a shelf above 4 kHz; all three are transparent at 0 dB, and "
                    "the ORDER and corner switches ride the row below.",
-                     6, 2, { 38, 39, 40, 47, 48, 49 } },
+                     6, 2, { 43, 44, 45, 52, 53, 54 } },
         //  neural_mix, ir_mix - the two file-fed stages, each with its own
         //  loader in the band under the row.
         { "SHAPERS", "The two file-fed stages: NEURAL blends in a learned model "
                      "and IR MIX an impulse response - a cabinet or a room - "
                      "each loaded from a file through the loader under its own "
                      "knob.",
-                     2, 2, { 57, 58 } },
+                     2, 2, { 62, 63 } },
         //  No knobs of its own: SETTINGS is where the three engine-level switches
         //  live - GL, OVERSAMPLING and the interface sounds - shown by
         //  setCurrentTab, not by the grid.
@@ -2195,11 +2192,9 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
                    "every knob must be listed by exactly one tab");
 
     currentTab = juce::jlimit (0, numTabs - 1, newTab);
-    // paint() gates page furniture on these. Both looked up by NAME, not by
-    // index: a name cannot drift the way a hard-coded page number did when the
-    // pages were reordered.
-    activeTabIsCharacter = (std::strcmp (tabSpecs[static_cast<std::size_t> (currentTab)].name,
-                                         "CHARACTER") == 0);
+    // paint() gates page furniture on this, looked up by NAME, not by index: a
+    // name cannot drift the way a hard-coded page number did when the pages
+    // were reordered.
     activeTabIsShapers = (std::strcmp (tabSpecs[static_cast<std::size_t> (currentTab)].name,
                                        "SHAPERS") == 0);
 
@@ -2867,8 +2862,15 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         { "mix",             "MIX",        0.5,   "MACHINE"  },
         { "output",          "OUTPUT",     0.0,   "MACHINE"  },
         { "stereo_width",    "WIDTH",      0.5,   "MACHINE"  },
-        { "blend",           "BLEND",      0.0,   "SUBFUND"   },
-        { "shape",           "SHAPE",      0.5,   "SUBFUND"   },
+        // The seven SOURCE knobs, where the old BLEND/SHAPE pair sat: each is
+        // its own machine's share of the saturation mix, dialled by name.
+        { "tape_source",     "TAPE",       1.0,   "SUBFUND"   },
+        { "valve_source",    "VALVE",      0.0,   "SUBFUND"   },
+        { "cassette_source", "CASSETTE",   0.0,   "SUBFUND"   },
+        { "vinyl_source",    "VINYL",      0.0,   "SUBFUND"   },
+        { "amp_source",      "AMP",        0.0,   "SUBFUND"   },
+        { "transformer_source","TRANSFORMER",0.0,  "SUBFUND"   },
+        { "digital_source",  "DIGITAL",    0.0,   "SUBFUND"   },
         { "amp_bias",        "AMP BIAS",   0.50,  "SUBFUND"   },
         { "sag",             "SAG",        0.0,   "SUBFUND"   },
         { "presence",        "PRESENCE",   0.50,  "CHARACTER"},
@@ -3101,29 +3103,39 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "NOISE control never reached. 100 percent is the calibrated "
                        "level the formulas and the record types were voiced at. "
                        "Default 100 percent.";
-            if (id == "blend")
-                return "BLEND - which saturation PRINCIPLE the machine bends "
-                       "with. The shaper is not one curve: it is six, blended. Left is "
-                       "magnetic TAPE (memory, gentle, warm), then VALVE (soft "
-                       "asymmetric compression, even-harmonic warmth), then CASSETTE "
-                       "(a hard early knee on narrow tape, small and loud), then AMP "
-                       "(a high-gain guitar input, hard and odd-harmonic - the one "
-                       "that bites), then TRANSFORMER (a passive input transformer: "
-                       "pure analogue but no machine, and the only principle that "
-                       "bends the low end first, because a saturating primary is a "
-                       "series impedance and a series impedance bites the bottom of "
-                       "the band) and right is DIGITAL (a converter's hard ceiling "
-                       "with a held code: the sweep ends where the machines stop and "
-                       "the conversion begins). Every curve is normalised so the "
-                       "blend cannot change the level, only the character. Default 0 "
-                       "percent - pure tape, exactly what earlier builds did.";
-            if (id == "shape")
-                return "SHAPE - how concentrated the BLEND is. Low picks "
-                       "one principle at a time, so the sweep snaps from tape to valve "
-                       "to cassette to amp to transformer to digital and each is "
-                       "obvious. High spreads the weighting so all six contribute at "
-                       "every position and the result reads as one compound machine "
-                       "rather than six. Default 50 percent.";
+            if (id == "tape_source")
+                return "TAPE - how much of the mix is the magnetic tape "
+                       "machine: hysteresis with memory, gentle and warm, the "
+                       "principle this plugin was calibrated as. Default 100 "
+                       "percent.";
+            if (id == "valve_source")
+                return "VALVE - how much of the mix is the thermionic stage: "
+                       "soft asymmetric compression, even-harmonic warmth. Shares "
+                       "the mix with the other sources - the shares are "
+                       "normalised, so the character changes without the level "
+                       "moving. Default 0 percent.";
+            if (id == "cassette_source")
+                return "CASSETTE - how much of the mix is the compact cassette: "
+                       "a hard early knee on narrow tape, small and loud. Default "
+                       "0 percent.";
+            if (id == "vinyl_source")
+                return "VINYL - how much of the mix is the cutting lathe: the "
+                       "gentlest tracing distortion of the seven, a soft "
+                       "level-dependent knee like the groove rounding under the "
+                       "stylus. Default 0 percent.";
+            if (id == "amp_source")
+                return "AMP - how much of the mix is the guitar amplifier's "
+                       "input stage: hard, odd-harmonic, the one that bites. "
+                       "Default 0 percent.";
+            if (id == "transformer_source")
+                return "TRANSFORMER - how much of the mix is the passive input "
+                       "transformer: pure analogue but no machine, the only "
+                       "principle that bends the low end first. Default 0 "
+                       "percent.";
+            if (id == "digital_source")
+                return "DIGITAL - how much of the mix is the converter: a hard "
+                       "ceiling with a held code, where the machines stop and the "
+                       "conversion begins. Default 0 percent.";
             if (id == "amp_bias")
                 return "AMP BIAS - the input valve's DC operating point, "
                        "which is the single most effective control on a real amp's "
@@ -5792,24 +5804,16 @@ void FirstAudioProcessorEditor::timerCallback()
 
     uiSounds.setBrightness (juce::jlimit (0.0f, 1.0f, glowAmount * 0.7f + activity * 0.3f));
 
-    // The WHOLE panel repaints on every tick now, and the reason is the
-    // texture: the grain + wear layer spans the entire editor, and repainting
-    // only the header + deck made the controls and meters sit on a texture
-    // that was there on the frames their band happened to redraw and frozen on
-    // the ones it did not - the user's "now it is normal, now it is squares,
-    // now it is gone". A full-editor repaint at 30 Hz is the one schedule
-    // under which the surface is uniform and its cost stays bounded.
-    //
-    // The control band used to be excluded on purpose: repaint() on a parent
-    // never repaints its children in JUCE - the sliders are child components
-    // and repaint themselves when their own value changes - so the old call
-    // never reached a knob anyway. What it did redraw, thirty times a second,
-    // was this component's own static content in that band: the panel gradient,
-    // the grain and the divider. With a context attached, each of those is a
-    // separate render of the panel, so it was roughly a third of the per-frame
-    // work for a picture that never changed. The knobs look the same without
-    // it, because they were never coming from here.
-    repaint();
+    // The texture layer is rebuilt (and the whole panel repainted) only when
+    // something STRUCTURAL changes - a theme switch, a resize - through
+    // rebuildPanelTextureLayers(); the timer used to repaint the whole editor
+    // every tick besides, and that was the lists' lag: with a popup menu open
+    // (presets, vinyl types, oversampling - every combo), each 30 Hz tick
+    // buried the popup's window under a full-panel invalidation and the menu
+    // repainted itself behind it, which the eye read as the list dragging.
+    // The knobs need none of it - they repaint themselves when their own value
+    // changes - and the animated furniture (lamp, needles, hint bar) rides the
+    // look-and-feel's own frame advance plus its components' own repaints.
 
     // The Arturia-style hint line: the controls band's right caption names the
     // knob the pointer is over (the slider's own name - the same caption the
@@ -6923,10 +6927,16 @@ void FirstAudioProcessorEditor::resized()
         // (grid / 4 columns, 50 px band), so they cannot disagree.
         const auto buttonY = memberRowY + 20;
         const auto buttonH = juce::jmin (30, grid.getBottom() - memberRowY - 22);
+        // LOAD and CLEAR share the band's ONE control line, side by side. CLEAR
+        // used to sit UNDER LOAD (buttonY + buttonH + 6), which is exactly six
+        // pixels past the band's bottom edge on every panel size - the user's
+        // "Clear falls out of the window". Two buttons across the cell fit with
+        // room to spare: the cell is ~170 px wide, the pair needs ~160.
+        const auto halfButtonWidth = (cellWidth - 30) / 2;
         loadNeuralButton.setBounds (grid.getX() + 12, buttonY,
-                                    cellWidth - 24, buttonH);
-        clearNeuralButton.setBounds (grid.getX() + 18, buttonY + buttonH + 6,
-                                     cellWidth - 36, buttonH);
+                                    halfButtonWidth, buttonH);
+        clearNeuralButton.setBounds (grid.getX() + 18 + halfButtonWidth, buttonY,
+                                     halfButtonWidth, buttonH);
         neuralStatusLabel.setBounds (grid.getX() + 6, memberRowY - 1,
                                      cellWidth - 12, 17);
         irStatusLabel.setBounds (grid.getX() + cellWidth + 5, memberRowY - 1,

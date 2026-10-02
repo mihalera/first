@@ -1,4 +1,4 @@
-// =============================================================================
+﻿// =============================================================================
 //  Regression harness for the SUBFUND (subharmonic) stage.
 //
 //  Three defects were reported against the subharmonic generator, and all three
@@ -318,7 +318,8 @@ struct ChainReplica
         //  BLEND is left at its default (tape only), so the curve this produces is
         //  the one the plugin produces at a default setting.
         const float preDrive = x * (1.0f + driveAmount * 1.2f * speedBias * preDriveGain);
-        saturation.setBlend (0.0f, 0.5f);
+        // Pure tape: the seven SOURCE knobs at their defaults (tape 100, rest 0).
+        saturation.setWeights (1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
         const float shapedCore = saturation.process (preDrive, shaperDrive, shaperAsymmetry);
         hysteresisMemory = shapedCore;
 
@@ -486,7 +487,7 @@ std::vector<float> renderGenerator (ChainSettings settings, double frequency, do
         const double time = static_cast<double> (i) / kSampleRate;
         const float input = static_cast<float> (amplitude * std::sin (kTwoPi * frequency * time));
         const float preDrive = input * (1.0f + chain.driveAmount * 1.2f * chain.speedBias * chain.preDriveGain);
-        chain.saturation.setBlend (0.0f, 0.5f);
+        chain.saturation.setWeights (1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f);
         const float shaped = chain.saturation.process (preDrive, chain.shaperDrive, chain.shaperAsymmetry);
         out.push_back (chain.generator.process (shaped, chain.driveAmount, settings.subfund,
                                                 static_cast<float> (kSampleRate)));
