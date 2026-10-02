@@ -234,6 +234,14 @@ private:
     J37LookAndFeel::ThemeChoice theme = J37LookAndFeel::ThemeChoice::ivory;
 };
 
+// The seven saturation principles, in the order the SOURCE knobs, the colours
+// and the MIX page's bar all use them: tape, valve, cassette, vinyl, amp,
+// transformer, digital - the same order SaturationCore::setWeights takes them
+// in. Declared once here rather than privately to the editor because the
+// editor's MixBar stores a fixed seven-cell strip and the paint routines that
+// colour a knob need the same count; one number, so the three cannot drift.
+inline constexpr int principleCount = 7;
+
 class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor,
                                         private juce::Timer
 {
@@ -298,6 +306,34 @@ private:
         float activity = 0.0f;
     };
 
+    /** The saturation mix, read as a strip: one recessed cell per principle,
+        each filled from the bottom by that machine's share of the NORMALISED
+        mix. Seven knobs show what was dialled; this shows what the core is
+        actually running, which after normalisation is a different thing - and
+        it shows it in the panel's own material rather than as a number to
+        read. Lives in the member band under the MIX page's two rows. */
+    class MixBar final : public juce::Component
+    {
+    public:
+        MixBar() = default;
+
+        /** The seven shares, already normalised by the caller to the same sum
+            the core normalises to, in principleColour's order. */
+        void setShares (const std::array<float, principleCount>& newShares);
+
+        void setDarkTheme (bool shouldUseDarkTheme) noexcept
+        {
+            darkTheme = shouldUseDarkTheme;
+            repaint();
+        }
+
+        void paint (juce::Graphics&) override;
+
+    private:
+        std::array<float, principleCount> shares { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+        bool darkTheme = false;
+    };
+
     struct PhysicsOrb
     {
         b2Body* body = nullptr;
@@ -320,7 +356,7 @@ private:
         juce::Rectangle<int> meters;
     };
 
-    // Sixty-four controls, split across fifteen tab pages of at most one row
+    // Sixty-four controls, split across sixteen tab pages of at most one row
     // of seven, in signal-flow order: consecutive slices of one chain, read
     // left to right. The page map lives in tabSpecs in the .cpp, and the three
     // large family buttons above the bar (TAPE / FX / SETUP) group those
@@ -340,10 +376,10 @@ private:
     // user asked to remove, plus the seven SOURCE knobs that replaced them.
     static constexpr std::size_t controlCount = 64;
     static constexpr int tabColumns = 4;
-    // Eleven pages under three large families (TAPE / FX / SETUP), so no page
+    // Sixteen pages under three large families (TAPE / FX / SETUP), so no page
     // has to carry more than one subject: DRIVE was twelve knobs on one page and
     // NOISE eleven, which is exactly the crowding the tabs exist to avoid.
-    static constexpr int numTabs = 15;
+    static constexpr int numTabs = 16;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     void timerCallback() override;
@@ -692,22 +728,27 @@ private:
     juce::Label deckHintLabel;
     juce::Label controlsHeadingLabel;
     juce::Label controlsHintLabel;
-    // The ten knob-grid tabs, in the order tabSpecs lists them. Clicking one shows
+    /** The active page's own subject, set from the page's subtitle in tabSubtitles
+        every time the page changes. It is the section heading the knob row has
+        always been missing: fifteen pages of bare knobs all look the same, and
+        one line of text under the bar says what this page is FOR. */
+    juce::Label sectionCaptionLabel;
+    // The knob-grid tab pages, in the order tabSpecs lists them. Clicking one shows
     // that page's controls and hides every other knob. Only the active family's
     // buttons are on screen: the families themselves are the three buttons below,
-    // so ten pages of tabs never fight for one row's width.
+    // so nine pages of tabs never fight for one row's width.
     std::array<juce::TextButton, numTabs> tabButtons;
     int currentTab = 0;
     int currentTabFamily = 0;
     juce::TextButton tabFamilyTapeButton { "TAPE" };
     juce::TextButton tabFamilyFxButton { "FX" };
     juce::TextButton tabFamilySetupButton { "SETUP" };
-    // Fifteen pages under three large families (TAPE / FX / SETUP) - the page
+    // Sixteen pages under three large families (TAPE / FX / SETUP) - the page
     // is one subject and at most one row of seven knobs: IN EQ alone carried
     // six band knobs and three corner controls, DRIVE GAIN seven plus the DI
     // pad, and a page that scrolls is a page nobody dials.
     static constexpr int tabFamilyCount = 3;
-    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount { 8, 4, 3 };
+    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount { 9, 4, 3 };
     juce::Label metersHeadingLabel;
     juce::Label metersHintLabel;
     juce::Label compressorLabel;
@@ -742,6 +783,10 @@ private:
     LevelMeter outputMeter { "OUTPUT", "LEVEL / dBFS" };
     CompressorMeter compressorMeterIn { "COMP IN", "after input trim" };
     CompressorMeter compressorMeterOut { "COMP OUT", "before output trim" };
+    /** The MIX page's mix bar. A member rather than something paint() draws: it
+        changes when a knob moves, so it repaints itself from the timer without
+        touching the panel behind it. */
+    MixBar mixBar;
 
     // Animated presentation state, advanced one step per editor frame.
     float glowPhase = 0.0f;
