@@ -43,6 +43,17 @@
  #define J37_HAS_FOLEYS 0
 #endif
 
+// The seven saturation principles, in the order the SOURCE knobs, the colours
+// and the MIX page's bar all use them: tape, valve, cassette, vinyl, amp,
+// transformer, digital - the same order SaturationCore::setWeights takes them
+// in. Declared once here, ABOVE everything that needs it, because three
+// separate pieces of the panel count the same seven: the LookAndFeel, which
+// paints a knob in its machine's colour and has to hold one pointer per
+// principle; the editor's MixBar, whose strip is a fixed seven cells; and the
+// seven SOURCE registrations themselves. One number, so none of the three can
+// drift from the others.
+inline constexpr int principleCount = 7;
+
 class J37LookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
@@ -89,6 +100,33 @@ public:
             state.position = target;      // first sight / programmatic jump: no spin
         state.target = target;
         state.initialised = true;
+    }
+
+    /** Registers which of the seven SOURCE knobs a slider IS, so drawRotarySlider
+        can paint that machine's arc, its tracer and its indicator in that
+        machine's own colour instead of the panel's single accent.
+
+        The registration has to live HERE rather than in the control list, because
+        this class draws every control on the panel and is handed nothing but the
+        slider it is drawing - the paint routine has no access to the editor's
+        array, and JUCE 9's Component carries no property bag to hang an index on.
+        Seven pointers and a seven-step walk: no allocation at paint time, and the
+        same answer whether the knob is drawn from the mixer or from a repaint
+        nobody asked for. */
+    void registerPrincipleKnob (juce::Slider& slider, int principle) noexcept
+    {
+        if (juce::isPositiveAndBelow (principle, principleCount))
+            principleKnobs[static_cast<std::size_t> (principle)] = &slider;
+    }
+
+    /** The principle this slider IS, or -1 when it is not one of the seven. */
+    int principleOf (juce::Slider& slider) const noexcept
+    {
+        for (int p = 0; p < principleCount; ++p)
+            if (principleKnobs[static_cast<std::size_t> (p)] == &slider)
+                return p;
+
+        return -1;
     }
 
     void updateToggleAnimations()
@@ -158,6 +196,7 @@ private:
         bool initialised = false;
     };
     std::map<void*, ToggleGlide> toggleGlides;
+    std::array<juce::Slider*, principleCount> principleKnobs {};
     float drift = 0.0f;      ///< Transport drift, drives the fine wobble in the ticks.
     float animationPhase = 0.0f;
 };
@@ -233,14 +272,6 @@ public:
 private:
     J37LookAndFeel::ThemeChoice theme = J37LookAndFeel::ThemeChoice::ivory;
 };
-
-// The seven saturation principles, in the order the SOURCE knobs, the colours
-// and the MIX page's bar all use them: tape, valve, cassette, vinyl, amp,
-// transformer, digital - the same order SaturationCore::setWeights takes them
-// in. Declared once here rather than privately to the editor because the
-// editor's MixBar stores a fixed seven-cell strip and the paint routines that
-// colour a knob need the same count; one number, so the three cannot drift.
-inline constexpr int principleCount = 7;
 
 class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor,
                                         private juce::Timer

@@ -496,7 +496,7 @@ namespace
     // on SETTINGS, and the delay TYPE / RATE / SYNC trio shows on DELAY. They are
     // not knobs - the grid below cannot place them - so their visibility is
     // managed in setCurrentTab beside the knobs'.
-    //  The fifteen pages are grouped into THREE FAMILIES - TAPE, FX, SETUP - and
+    //  The sixteen pages are grouped into THREE FAMILIES - TAPE, FX, SETUP - and
     //  no page carries more than one subject, or more than one row of seven
     //  knobs: DRIVE once held twelve and NOISE eleven, which is exactly the
     //  crowding the tabs exist to avoid. The families are the three large
@@ -504,8 +504,14 @@ namespace
     //  is the page's family, and it is the single source the strip reads.
     //  Sixteen now: MIX is a page of its own, split from SUBFUND because ten
     //  knobs on one page is the crowding this table exists to prevent.
-    constexpr std::array<TabSpec, 16> tabSpecs { {
-        // ---- TAPE family (8 pages): the machine and everything feeding it ---
+    //
+    //  The page count is written ONCE, here, ABOVE the first array that needs
+    //  it: the table below, the subtitle list and the coverage check further
+    //  down all size themselves from this constant, so adding a page cannot
+    //  leave one of them behind.
+    constexpr std::size_t numTabPages = 16;
+    constexpr std::array<TabSpec, numTabPages> tabSpecs { {
+        // ---- TAPE family (9 pages): the machine and everything feeding it ---
         //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
         { "MACHINE", "What goes in, how the machine colours it, and what comes out.",
                      7, 0, { 0, 3, 4, 7, 9, 8, 37 } },
@@ -694,10 +700,8 @@ namespace
 
     // Compile-time proof that the tabs partition the grid: every control index appears
     // in exactly one tab, so no knob is orphaned (invisible and unreachable) or shown
-    // twice, and none of them is silently dropped.
-    // The tab count is written once, here, and the static_assert that guards coverage
-// reads it from the same constant - so adding a page cannot leave this behind.
-constexpr std::size_t numTabPages = 16;
+    // twice, and none of them is silently dropped. The page count this is sized from
+    // is declared above the tab table, where the first array that needs it lives.
 
 // The control count is a TEMPLATE parameter, not an argument, and that is the
 // whole fix. It used to be a literal 54 inside the function - the current
@@ -971,11 +975,12 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     const auto hovered = slider.isMouseOver() || slider.isMouseButtonDown();
 
     // Which principle this knob IS, if it is one of the seven SOURCE controls.
-    // The index is stamped onto the component where the slider is built (see
-    // principleOf), so the knob carries its own identity rather than the paint
-    // routine carrying a second table of which control is which - one place to
-    // change when a knob moves, and none to change when a paint routine does.
-    const auto principle = static_cast<int> (slider.getProperty ("principle", -1));
+    // The editor registers each SOURCE slider against its machine where the
+    // knobs are built (see J37LookAndFeel::registerPrincipleKnob), so the knob
+    // carries its own identity rather than this paint routine holding a second
+    // table of which control is which: one place to change when a knob moves,
+    // and none to change when a paint routine does.
+    const auto principle = principleOf (slider);
     const auto accent = principle >= 0 ? principleColour (principle, isDarkTheme())
                                        : palette.accent;
 
@@ -2744,18 +2749,18 @@ void FirstAudioProcessorEditor::setTabFamily (int newFamily)
     // The tab table's family column is the single source of truth: each page
     // states which family hosts it, and this strip reads the column rather
     // than a parallel count array that could drift from the table. The assert
-    // pins the intended layout - five TAPE pages, then three FX, then three
+    // pins the intended layout - nine TAPE pages, then four FX, then three
     // SETUP, in table order - so a page moved between families without the
     // order following is a build error, not a button that lights wrong.
     static_assert (tabSpecs[0].family == 0 && tabSpecs[1].family == 0
                        && tabSpecs[2].family == 0 && tabSpecs[3].family == 0
                        && tabSpecs[4].family == 0 && tabSpecs[5].family == 0
                        && tabSpecs[6].family == 0 && tabSpecs[7].family == 0
-                       && tabSpecs[8].family == 1 && tabSpecs[9].family == 1
+                       && tabSpecs[8].family == 0 && tabSpecs[9].family == 1
                        && tabSpecs[10].family == 1 && tabSpecs[11].family == 1
-                       && tabSpecs[12].family == 2 && tabSpecs[13].family == 2
-                       && tabSpecs[14].family == 2,
-                   "the tab table's family column must be eight TAPE pages, "
+                       && tabSpecs[12].family == 1 && tabSpecs[13].family == 2
+                       && tabSpecs[14].family == 2 && tabSpecs[15].family == 2,
+                   "the tab table's family column must be nine TAPE pages, "
                    "then four FX, then three SETUP, in order");
 
     // A family change only filters the tab bar's visibility and jumps to the
@@ -3409,13 +3414,14 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         slider.setLookAndFeel (&customLookAndFeel);
         slider.setColour (juce::Slider::textBoxOutlineColourId, paletteFor (false).border);
 
-        // A SOURCE knob carries its principle's index as a component property, so
-        // drawRotarySlider can paint that machine's arc in that machine's colour
-        // without knowing anything about the control list. Every other knob simply
-        // has no such property and keeps the panel's accent.
+        // A SOURCE knob is registered with the LookAndFeel as that machine's own
+        // control, so drawRotarySlider can paint its arc, its tracer and its
+        // indicator in that machine's colour without knowing anything about the
+        // control list. Every other knob is simply never registered and keeps
+        // the panel's accent.
         const auto principle = principleOf (controlIds[static_cast<int> (i)]);
         if (principle >= 0)
-            slider.setProperty ("principle", principle, nullptr);
+            customLookAndFeel.registerPrincipleKnob (slider, principle);
 
         // A tooltip for EVERY parameter - this is what shows when the user hovers.
         // The per-name text explains what the control does and its default, and the
