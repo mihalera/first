@@ -404,7 +404,7 @@ namespace
     // thin specular line riding the same falloff - which is what turns a
     // filled shape into something that reads as machined metal.
     void fillCylinderBarrel (juce::Graphics& g, const juce::Rectangle<float>& barrel,
-                             juce::Colour face, juce::Colour edge)
+                             juce::Colour face, juce::Colour edge, float lean = 0.0f)
     {
         if (barrel.getWidth() < 2.0f || barrel.getHeight() < 2.0f)
             return;
@@ -422,11 +422,14 @@ namespace
 
         // The specular: a thin bright line along the barrel's length, riding
         // above the centreline. It is the single strongest cue that the
-        // surface is curved rather than flat.
+        // surface is curved rather than flat. `lean` slides it along the
+        // barrel's length, which is what the camera's angle asks for: a
+        // control the viewer is looking at from its left catches its lamp
+        // nearer the middle, and one seen from its right nearer the far end.
         const auto streak = juce::Rectangle<float> (
-            barrel.getX() + barrel.getWidth() * 0.06f,
+            barrel.getX() + barrel.getWidth() * (0.06f + 0.10f * lean),
             barrel.getY() + barrel.getHeight() * 0.12f,
-            barrel.getWidth() * 0.88f,
+            barrel.getWidth() * (0.88f - 0.20f * std::abs (lean)),
             juce::jmin (barrel.getHeight() * 0.16f, 3.5f));
         juce::ColourGradient specular (
             face.brighter (0.60f).withAlpha (0.65f),
@@ -1051,7 +1054,23 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                                                  static_cast<float> (y),
                                                  static_cast<float> (width),
                                                  static_cast<float> (height)).reduced (6.0f);
-    const auto centre = bounds.getCentre();
+
+    // The camera. A knob's top face is a disc, and a disc seen from anywhere
+    // other than directly overhead is an ELLIPSE - flatter the nearer the near
+    // edge of the panel it sits. Every term below is drawn as a circle about
+    // the knob's own centre and the whole assembly is then squashed by one
+    // transform, so the cap, its collar, its grooves, its rings and its ticks
+    // all foreshorten TOGETHER, at this knob's angle, instead of the cap alone
+    // being scaled while the ring around it stayed round. That single fact is
+    // the difference between a row of hardware and a row of discs.
+    const auto view = perspectiveFor (bounds);
+    const auto centre = view.centre;
+    g.saveState();
+    g.addTransform (juce::AffineTransform (
+                        view.squashX, 0.0f,
+                        centre.x * (1.0f - view.squashX),
+                        0.0f, view.squashY,
+                        centre.y * (1.0f - view.squashY)));
     // The track ring and the tick marks live OUTSIDE the knob face (face at
     // radius, ring at +8, ticks up to +9 more), and DRIVE's cells are WIDER
     // than they are tall: the unconstrained ring was taller than the cell, so
@@ -1060,11 +1079,27 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     // page. The ring now clamps to the half-extent the cell can actually show;
     // the face takes what is left, so the whole assembly stays concentric and
     // fully visible at every cell shape.
-    const auto faceRadius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.34f;
-    const auto outerRadius = juce::jmin (faceRadius + 8.0f,
+    const auto faceCeiling = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.34f;
+    const auto outerCeiling = juce::jmin (faceCeiling + 8.0f,
+                                          bounds.getWidth() * 0.5f - 2.0f,
+                                          bounds.getHeight() * 0.5f - 2.0f);
+
+    // The side wall is taken out of the SAME budget as the face, not added to
+    // it. The ring and the ticks already use everything the cell has vertically,
+    // so a wall drawn on top of them would bury the bottom of the scale; and a
+    // knob that simply grew would collide with the row below. What perspective
+    // actually does is the opposite of growing: a knob nearer the viewer shows
+    // more of its own SIDE and a SMALLER top face. So the face radius is the
+    // one that gives way - solve it from the ring inward, leaving room for the
+    // collar and then for the wall - and every knob row recedes into the panel
+    // instead of marching out of its cells.
+    const auto wallFraction = 0.12f + 0.40f * view.wall;
+    const auto collarAllowance = juce::jmax (2.2f, faceCeiling * 0.10f);
+    const auto radius = juce::jmin (faceCeiling,
+        juce::jmax (2.0f, (outerCeiling - 1.5f - collarAllowance) / (1.0f + 1.15f * wallFraction)));
+    const auto outerRadius = juce::jmin (radius + 8.0f,
                                          bounds.getWidth() * 0.5f - 2.0f,
                                          bounds.getHeight() * 0.5f - 2.0f);
-    const auto radius = juce::jmin (faceRadius, outerRadius - 4.0f);
     const auto angle = juce::jmap (sliderPos, 0.0f, 1.0f, rotaryStartAngle, rotaryEndAngle);
     // JUCE's Path::addCentredArc measures clockwise from 12 o'clock and places a
     // point at (sin(angle), -cos(angle)). Convert that same angle to ordinary screen
@@ -1254,7 +1289,7 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     // cap and its shadow describe a disc floating over the panel. One ellipse
     // pushed down and shaded top-to-bottom, drawn BEFORE the collar so the
     // collar's rim overlaps its upper edge and only the lower crescent shows.
-    const auto skirt = juce::jmax (1.2f, radius * 0.15f);
+    const auto skirt = radius * wallFraction * 1.15f;
     juce::ColourGradient skirtShade (palette.knobEdge.darker (0.16f), centre.x,
                                      centre.y + collarRadius - skirt,
                                      palette.knobEdge.darker (0.62f), centre.x,
@@ -1435,11 +1470,82 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     g.drawEllipse (centre.x - hubRadius, centre.y - hubRadius,
                    hubRadius * 2.0f, hubRadius * 2.0f, 0.7f);
 
+    // Out of the camera transform before the focus ring: a focus ring is the one
+    // thing on the panel that belongs to the SCREEN rather than to the object,
+    // so it must not foreshorten with the knob it is around.
+    g.restoreState();
+
     if (slider.hasKeyboardFocus (false))
     {
         g.setColour (palette.accent.withAlpha (0.85f));
         g.drawEllipse (bounds.reduced (1.5f), 1.1f);
     }
+}
+
+//==============================================================================
+//  THE CAMERA. See J37LookAndFeel::Perspective for why the panel has one.
+//
+//  The viewer stands above the panel's CENTRE and a little way BACK from its
+//  near edge - which is where a person sitting at a desk is, and the only place
+//  from which a control's top face and its side wall are visible at the same
+//  time. Three numbers fall out of that position for any control on the panel:
+//
+//    tilt     how far off the viewer's own axis it sits, 0 at the centre of
+//             the panel and 1 at the corners. This is what makes two knobs on
+//             the SAME row read as two objects rather than one repeated symbol.
+//
+//    squashY  how much its top face is foreshortened down the panel. Everything
+//             is seen from in front, so every top face is an ellipse rather
+//             than a circle - but a control near the near edge is much closer
+//             to the viewer than one near the far edge and is seen far more
+//             edge-on, so ITS ellipse is far flatter. Flattening them all by
+//             the same amount is what a faked perspective does, and the eye
+//             reads the repetition as a graphic instead of as a surface.
+//
+//    wall     how much of the side wall that angle exposes. Seen straight down
+//             there is none at all; seen edge-on the whole height of the part
+//             shows below its top face. This is the term that makes a switch a
+//             solid object standing on the panel rather than a shape painted on
+//             it.
+//==============================================================================
+void J37LookAndFeel::setPanelCamera (juce::Rectangle<float> panelBounds) noexcept
+{
+    cameraPanel = panelBounds;
+}
+
+J37LookAndFeel::Perspective J37LookAndFeel::perspectiveFor (juce::Rectangle<float> bounds) const noexcept
+{
+    Perspective view;
+    view.centre = bounds.getCentre();
+
+    if (cameraPanel.isEmpty() || bounds.isEmpty())
+        return view;
+
+    const auto panelCentre = cameraPanel.getCentre();
+    const auto halfWidth  = juce::jmax (1.0f, cameraPanel.getWidth()  * 0.5f);
+    const auto halfHeight = juce::jmax (1.0f, cameraPanel.getHeight() * 0.5f);
+
+    const auto dx = juce::jlimit (-1.0f, 1.0f, (view.centre.x - panelCentre.x) / halfWidth);
+    const auto dy = juce::jlimit (-1.0f, 1.0f, (view.centre.y - panelCentre.y) / halfHeight);
+
+    view.tilt = juce::jlimit (0.0f, 1.0f,
+                              std::sqrt (dx * dx + dy * dy) * 0.70710678f);
+
+    // 0.86 rather than 1.0: the whole panel is seen from in front, so no top
+    // face anywhere on it is ever a true circle. The two clamps are what keep
+    // the far corners of the largest window from collapsing into slits.
+    view.squashY = juce::jlimit (0.62f, 1.0f, 0.86f - 0.24f * juce::jmax (0.0f, dy));
+    view.squashX = juce::jlimit (0.78f, 1.0f, 0.86f - 0.10f * std::abs (dx)
+                                            - 0.04f * juce::jmax (0.0f, dy));
+
+    // The side wall: none at the viewer's own axis, the full height of the part
+    // at the near edge. 0.34 rather than more because the viewer is seated, not
+    // kneeling on the panel.
+    view.wall = juce::jlimit (0.0f, 1.0f, 0.10f + 0.30f * juce::jmax (0.0f, dy)
+                                              + 0.10f * std::abs (dx));
+    view.lean = dx;
+
+    return view;
 }
 
 //==============================================================================
@@ -1455,16 +1561,44 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
                                        bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
 {
     const auto& palette = paletteForTheme (theme);
+    const auto view = perspectiveFor (button.getLocalBounds().toFloat());
     const auto bounds = button.getLocalBounds().toFloat().reduced (2.0f, 3.0f);
     const auto isOn = button.getToggleState();
 
+    // The FRONT WALL: the part of the switch's side that the camera's angle
+    // exposes below its top face. A switch drawn as one flat capsule lying on
+    // the panel has no wall, and a row of those is what made the panel look
+    // printed rather than built - and worse, every one of them was showing the
+    // SAME absence, which is the eye's cue that they were all drawn at once
+    // from straight above. Drawing the wall in the cell's own bottom inset
+    // means the switch gains real depth while the groove, the thumb and the
+    // caption keep every pixel they had - which matters here, because those
+    // three already share the body's height three ways.
+    const auto wallHeight = juce::jmin (3.0f, bounds.getHeight() * 0.34f * view.wall);
+    if (wallHeight > 0.75f)
+    {
+        const auto wall = juce::Rectangle<float> (bounds.getX(), bounds.getBottom() - 0.6f,
+                                                   bounds.getWidth(), wallHeight);
+        juce::ColourGradient wallShade (palette.readout.darker (0.58f), wall.getX(), wall.getY(),
+                                        palette.readout.darker (0.26f), wall.getX(), wall.getBottom(), false);
+        wallShade.addColour (0.42f, palette.readout.darker (0.46f));
+        g.setGradientFill (wallShade);
+        g.fillRoundedRectangle (wall, juce::jmin (wall.getHeight() * 0.5f,
+                                                  bounds.getHeight() * 0.45f));
+        g.setColour (palette.readout.darker (0.66f).withAlpha (0.75f));
+        g.drawLine (wall.getX() + wall.getWidth() * 0.18f, wall.getBottom() - 0.5f,
+                    wall.getRight() - wall.getWidth() * 0.18f, wall.getBottom() - 0.5f, 0.8f);
+    }
+
     // The body is a cylinder lying along the switch - fillCylinderBarrel
-    // shades it by the cosine of its cross-section angle - not a flat slab.
-    // Engaging the switch darkens the barrel too, so the state reads through
-    // the shading itself and not only through the thumb.
+    // shades it by the cosine of its cross-section angle - not a flat slab, and
+    // its specular slides along its own length by however far this switch sits
+    // from the camera's axis. Engaging the switch darkens the barrel too, so the
+    // state reads through the shading itself and not only through the thumb.
     fillCylinderBarrel (g, bounds,
                         palette.readout.darker (isOn ? 0.22f : 0.02f),
-                        palette.readout.darker (0.42f));
+                        palette.readout.darker (0.42f),
+                        view.lean * view.tilt);
     g.setColour (palette.border.withAlpha (0.9f));
     g.drawRoundedRectangle (bounds, bounds.getHeight() * 0.5f, 1.0f);
 
@@ -2276,9 +2410,11 @@ void FirstAudioProcessorEditor::CompressorMeter::paint (juce::Graphics& g)
 // The empty mix is drawn as pure tape, the same answer SaturationCore gives -
 // so the bar and the sound can never disagree about what the engine is doing.
 //==============================================================================
-void FirstAudioProcessorEditor::MixBar::setShares (const std::array<float, principleCount>& newShares)
+void FirstAudioProcessorEditor::MixBar::setShares (const std::array<float, principleCount>& newShares,
+                                                     float newTotal)
 {
     shares = newShares;
+    total = juce::jlimit (0.0f, 1.0f, newTotal);
     repaint();
 }
 
@@ -2294,14 +2430,24 @@ void FirstAudioProcessorEditor::MixBar::paint (juce::Graphics& g)
     // the right. Both are the panel's own two voices - the accent for the name
     // of the thing, the secondary for the note about it - so the strip reads as
     // part of the panel rather than as an overlay somebody dropped on it.
+    //
+    // The right-hand note carries the AMOUNT as well as the share, because the
+    // seven cells always add up to 100 % and a bar that always reads full is a
+    // bar that cannot report that every SOURCE knob is at zero. The total is
+    // the number that says how hard the stage is running; the shares are the
+    // number that says which machines are doing it.
     auto heading = area.removeFromTop (13.0f);
     g.setColour (palette.accent);
     g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
     g.drawText ("SATURATION MIX", heading.reduced (1.0f, 0.0f),
                 juce::Justification::centredLeft, false);
+    g.setColour (total > 0.005f ? palette.readout.withAlpha (0.85f) : palette.accent);
+    g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
+    g.drawText ("AMOUNT " + juce::String (juce::roundToInt (total * 100.0f)) + " %",
+                heading.reduced (1.0f, 0.0f), juce::Justification::centredRight, false);
     g.setColour (palette.secondary);
     g.setFont (juce::Font (juce::FontOptions (8.0f)));
-    g.drawText ("each machine's share, normalised to 100 %", heading.reduced (1.0f, 0.0f),
+    g.drawText ("seven machines' shares", heading.reduced (1.0f, 0.0f).reduced (96.0f, 0.0f),
                 juce::Justification::centredRight, false);
 
     // The cells. A 3 px gap reads as the milled groove between two plates, and
@@ -5840,6 +5986,12 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
 
 
     drawPanel (g, getLocalBounds().reduced (8), palette, 7.0f);
+
+    // The camera is set here rather than in the constructor because it depends
+    // on the panel's own size: the viewer stands over the CENTRE of whatever
+    // the panel currently is, so the same drawing code answers "how edge-on is
+    // this knob" correctly at the minimum window size and at four times it.
+    customLookAndFeel.setPanelCamera (getLocalBounds().toFloat());
     drawPanel (g, layout.header, palette, 5.0f);
     drawPanel (g, layout.deck, palette, 5.0f);
     drawPanel (g, layout.controls, palette, 5.0f);
@@ -6281,7 +6433,7 @@ void FirstAudioProcessorEditor::timerCallback()
             shares = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
         }
 
-        mixBar.setShares (shares);
+        mixBar.setShares (shares, juce::jlimit (0.0f, 1.0f, shareSum));
     }
 
     const auto reduction = telemetry.inputGainReductionDb + telemetry.outputGainReductionDb;
@@ -6722,7 +6874,15 @@ void FirstAudioProcessorEditor::resized()
     const auto headerRight = layout.header.getRight();
     constexpr int headerGap = 6;
     constexpr int headerSwitchHeight = 22;
-    constexpr int headerColumnWidth = 92;
+    // 74 rather than 92. The grid's cells are sized by the widest caption in
+    // them (POLARITY, AUTO GAIN) plus room for the lamp, and 92 was sizing every
+    // cell by the WIDEST one - so BYPASS and DELTA, which need half as much,
+    // carried twenty pixels of empty metal each and the row read as four large
+    // slabs rather than four switches. The height stays at 22 because the
+    // rocker draws three stacked things inside it (caption, groove, thumb) and
+    // they are already sharing that height three ways; the WIDTH was the one
+    // dimension with slack in it.
+    constexpr int headerColumnWidth = 74;
     constexpr int headerColumns = 4;
     const auto headerRowOneY = layout.header.getY() + 10;
     const auto headerRowTwoY = layout.header.getY() + 36;

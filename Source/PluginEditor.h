@@ -184,9 +184,39 @@ public:
         face - the flat card that made the workflow lists unreadable. */
     void drawLabel (juce::Graphics&, juce::Label&) override;
 
+    // -----------------------------------------------------------------------
+    //  THE CAMERA.
+    //
+    //  Every control on this panel was drawn as if the viewer were hovering
+    //  exactly above it, looking straight down. That view does not exist: nobody
+    //  ever looks at a console from directly overhead, because they are sitting
+    //  in front of it. So the panel has a camera - one, placed above the
+    //  panel's CENTRE and set back from its near edge - and each control asks
+    //  where it falls in it. Two knobs on the same page are then seen at
+    //  different angles, which is the only reason a row of hardware reads as
+    //  hardware rather than as a row of discs printed on a board.
+    // -----------------------------------------------------------------------
+
+    /** What one control looks like from the camera. */
+    struct Perspective
+    {
+        juce::Point<float> centre;   ///< the control's own centre, in its own coordinates
+        float squashX = 1.0f;       ///< across the panel: < 1 seen off to one side
+        float squashY = 1.0f;       ///< down the panel: < 1 the nearer the near edge
+        float tilt = 0.0f;          ///< 0 dead centre, 1 at a far corner: how edge-on
+        float wall = 0.0f;          ///< the side wall this angle makes visible, as a fraction of the radius
+        float lean = 0.0f;          ///< -1 left of centre, +1 right: which way this control is turned to the light
+    };
+
+    /** Where the viewer is standing. Called from resized() with the whole editor. */
+    void setPanelCamera (juce::Rectangle<float> panelBounds) noexcept;
+
+    Perspective perspectiveFor (juce::Rectangle<float> bounds) const noexcept;
+
 private:
     ThemeChoice theme = ThemeChoice::ivory;
     float activity = 0.0f;   ///< Compressor activity, drives the glow around the knobs.
+    juce::Rectangle<float> cameraPanel;
 
     // Per-toggle glide state for the sliding thumbs (see noteToggle above).
     struct ToggleGlide
@@ -349,8 +379,12 @@ private:
         MixBar() = default;
 
         /** The seven shares, already normalised by the caller to the same sum
-            the core normalises to, in principleColour's order. */
-        void setShares (const std::array<float, principleCount>& newShares);
+            the core normalises to, in principleColour's order - plus the TOTAL
+            those shares were normalised FROM, which is how hard the saturation
+            is actually running. The seven cells always read 100 % between them,
+            so without the total the strip would claim the mix is full even with
+            every SOURCE knob at zero. */
+        void setShares (const std::array<float, principleCount>& newShares, float newTotal);
 
         void setDarkTheme (bool shouldUseDarkTheme) noexcept
         {
@@ -362,6 +396,7 @@ private:
 
     private:
         std::array<float, principleCount> shares { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+        float total = 1.0f;   ///< the sum the shares were normalised FROM: the saturation amount
         bool darkTheme = false;
     };
 
