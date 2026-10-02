@@ -507,6 +507,12 @@ struct SaturationCore
     float transformerWeight = 0.0f;
     float digitalWeight = 0.0f;
 
+    //  ...and the AMOUNT they asked for before they were normalised. The seven
+    //  above answer WHICH machines; this answers HOW MUCH, and it is the
+    //  crossfade depth process() applies to the whole blend. See setWeights for
+    //  why it cannot be recovered from the shares.
+    float saturationAmount = 1.0f;
+
     /** Sets all seven weights DIRECTLY from the seven SOURCE knobs: a knob is
         its principle's share, so TAPE 60 / VALVE 40 reads on the panel exactly
         as it sounds. Shares are normalised to sum to 1; a principle whose own
@@ -543,6 +549,33 @@ struct SaturationCore
 
         const auto sum = tapeWeight + valveWeight + cassetteWeight + vinylWeight
                                + ampWeight + transformerWeight + digitalWeight;
+
+        // HOW MUCH saturation, kept separate from WHICH machines.
+        //
+        // The normalisation below answers the second question - the seven
+        // numbers always become shares that sum to one, so the MIX page's bar
+        // always reads 100 % whatever the knobs say. That was the whole point
+        // of shares, and it had a consequence nobody intended: the seven SOURCE
+        // knobs said NOTHING about how hard the stage worked. Turn all seven
+        // down to nothing and the shares still summed to one, so the core ran
+        // at full strength on whichever machine was nominally leading - the
+        // panel's own minimum setting saturated exactly as hard as its maximum,
+        // and the smallest move of any one knob re-weighted all seven at once.
+        // That is what "the sound changes far too much, even at the smallest
+        // settings" was measuring.
+        //
+        // So the sum is kept, and it drives the drive: one machine at half is
+        // now half the saturation with a pure-tape character, rather than a
+        // full-strength stage wearing a tape label. Saturation reaches its
+        // ceiling once the seven together add up to one, which is where the
+        // Default preset already lives (TAPE alone at 1.0), so every existing
+        // session and every factory preset that uses one machine sounds exactly
+        // as it did - only the region BELOW full strength, which nothing
+        // produced before, now means what it says. process() applies it as a
+        // crossfade against the input rather than as a scale on the drive,
+        // because the curves are tanh and tanh saturates at any drive.
+        saturationAmount = juce::jlimit (0.0f, 1.0f, sum);
+
         if (sum > 1.0e-6f)
         {
             tapeWeight /= sum;
@@ -555,11 +588,13 @@ struct SaturationCore
         }
         else
         {
-            // All sources at zero: the engine still needs a curve. Pure tape is
-            // what the machine was calibrated as, so that is what an empty mix
-            // resolves to - the same answer the old sweep's left end gave.
+            // All sources at zero. The character still has to resolve to
+            // something, and pure tape is what the machine was calibrated as -
+            // but saturationAmount above is zero, so process() hands every
+            // curve a drive of nothing and the core returns its input
+            // bit-for-bit. The shares here describe a mix that is not playing.
             tapeWeight = 1.0f;
-            valveWeight = cassetteWeight = ampWeight = transformerWeight
+            valveWeight = cassetteWeight = vinylWeight = ampWeight = transformerWeight
                         = digitalWeight = 0.0f;
         }
     }
@@ -597,11 +632,16 @@ struct SaturationCore
     // (The old blend/shape sweep body was removed with the controls that drove
     //  it: the seven SOURCE knobs now speak to setWeights above directly.)
 
-    /** True when nothing is contributing, so the caller can skip the whole core. */
+    /** True when nothing is contributing, so the caller can skip the whole core.
+
+        The weights alone can no longer answer this. They are shares - they
+        always sum to one, even for a mix that was asked for at zero - so the
+        test is the AMOUNT as well: a blend with nothing in it is idle, and a
+        blend at a quarter is not idle, it is quiet, which is a different thing
+        and belongs to process(), not here. */
     bool isIdle() const noexcept
     {
-        return tapeWeight + valveWeight + cassetteWeight + vinylWeight
-                            + ampWeight + transformerWeight + digitalWeight <= 1.0e-6f;
+        return saturationAmount <= 1.0e-6f;
     }
 
     // -----------------------------------------------------------------------
@@ -1248,7 +1288,25 @@ struct SaturationCore
             digitalHold = 0.0f;
         }
 
-        return out;
+        // The AMOUNT, as a crossfade from the input to the shaped blend.
+        //
+        // Not as a scale on the drive, which was the first thing tried and is
+        // wrong for a specific reason: every curve below is a tanh of some
+        // kind, and tanh saturates at any drive at all - the DRIVE argument
+        // controls how HARD the knee is, not whether there is one. Multiplying
+        // it down cannot reach "straight", so a part at a twentieth of the
+        // amount would still be a saturator, just a gentle one, and the bottom
+        // of the seven SOURCE knobs would keep colouring the signal no matter
+        // how far down it was turned.
+        //
+        // Fading the blend against the input does reach it: at zero it is the
+        // input sample-for-sample, and every value between is that stage's own
+        // curve heard at that depth - which is what turning a saturation knob
+        // down does on the machine. The per-principle states above still run
+        // the full curve while the amount is low, so the hysteresis, the bias
+        // drift and the converter's held code stay warm and come back at the
+        // right phase instead of starting cold.
+        return x + (out - x) * saturationAmount;
     }
 };
 
