@@ -1289,7 +1289,7 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     // cap and its shadow describe a disc floating over the panel. One ellipse
     // pushed down and shaded top-to-bottom, drawn BEFORE the collar so the
     // collar's rim overlaps its upper edge and only the lower crescent shows.
-    const auto skirt = radius * wallFraction * 1.15f;
+const auto skirt = radius * wallFraction * 1.15f;
     juce::ColourGradient skirtShade (palette.knobEdge.darker (0.16f), centre.x,
                                      centre.y + collarRadius - skirt,
                                      palette.knobEdge.darker (0.62f), centre.x,
@@ -2430,7 +2430,7 @@ void FirstAudioProcessorEditor::MixBar::paint (juce::Graphics& g)
     // the right. Both are the panel's own two voices - the accent for the name
     // of the thing, the secondary for the note about it - so the strip reads as
     // part of the panel rather than as an overlay somebody dropped on it.
-    //
+//
     // The right-hand note carries the AMOUNT as well as the share, because the
     // seven cells always add up to 100 % and a bar that always reads full is a
     // bar that cannot report that every SOURCE knob is at zero. The total is
@@ -2441,7 +2441,7 @@ void FirstAudioProcessorEditor::MixBar::paint (juce::Graphics& g)
     g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
     g.drawText ("SATURATION MIX", heading.reduced (1.0f, 0.0f),
                 juce::Justification::centredLeft, false);
-    g.setColour (total > 0.005f ? palette.readout.withAlpha (0.85f) : palette.accent);
+g.setColour (total > 0.005f ? palette.readout.withAlpha (0.85f) : palette.accent);
     g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
     g.drawText ("AMOUNT " + juce::String (juce::roundToInt (total * 100.0f)) + " %",
                 heading.reduced (1.0f, 0.0f), juce::Justification::centredRight, false);
@@ -6433,7 +6433,7 @@ void FirstAudioProcessorEditor::timerCallback()
             shares = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
         }
 
-        mixBar.setShares (shares, juce::jlimit (0.0f, 1.0f, shareSum));
+mixBar.setShares (shares, juce::jlimit (0.0f, 1.0f, shareSum));
     }
 
     const auto reduction = telemetry.inputGainReductionDb + telemetry.outputGainReductionDb;
