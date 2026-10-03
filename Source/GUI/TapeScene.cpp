@@ -1837,7 +1837,6 @@ void TapeScene::renderOpenGL()
     // -------------------------------------------------------------------------
     const auto level = outputLevel.load (std::memory_order_relaxed);
     const auto peak = outputPeak.load (std::memory_order_relaxed);
-    const auto driveAmount = drive.load (std::memory_order_relaxed);
     const auto reduction = gainReduction.load (std::memory_order_relaxed);
     const auto flutter = wowFlutter.load (std::memory_order_relaxed);
     const auto speed = transportSpeed.load (std::memory_order_relaxed);
@@ -2305,7 +2304,6 @@ void TapeScene::renderOpenGL()
     // with a z of its own, and drawing it last costs nothing because the depth
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
-}   const auto driveAmount = drive.load (std::memory_order_relaxed);
     const auto reduction = gainReduction.load (std::memory_order_relaxed);
     const auto flutter = wowFlutter.load (std::memory_order_relaxed);
     const auto speed = transportSpeed.load (std::memory_order_relaxed);
