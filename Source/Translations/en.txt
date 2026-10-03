@@ -19,4 +19,5 @@
 
 "LANGUAGE_ENGLISH" = "English";
 "LANGUAGE_UKRAINIAN" = "Українська";
-"LANGUAGE_CAPTION" = "LANGUAGE";
+"LANGUAGE_CAPTION" = "Language";
+"LANGUAGE" = "Language";

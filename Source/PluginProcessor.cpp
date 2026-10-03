@@ -1,4 +1,4 @@
-/*
+﻿/*
   ==============================================================================
 
     This file contains the basic framework code for a JUCE plugin processor.
@@ -53,7 +53,9 @@ namespace
             "delay_pingpong",
             "st_offset", "noise", "noise_lvl", "transport", "spindown",
             "ui_sounds", "language",
-            "blend", "shape", "sag", "presence", "cabinet", "amp_bias",
+            "tape_source", "vinyl_source", "cassette_source", "digital_source",
+            "amp_source", "valve_source", "transformer_source",
+            "sag", "presence", "cabinet", "amp_bias",
             "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
             "di", "di_load", "di_transformer", "di_pad",
             "delay_type", "distortion", "modern_mode", "lofi_mode",
@@ -370,8 +372,13 @@ FirstAudioProcessor::FirstAudioProcessor()
     transportParam = parameters.getRawParameterValue ("transport");
     spindownParam = parameters.getRawParameterValue ("spindown");
     uiSoundsParam = parameters.getRawParameterValue ("ui_sounds");
-    blendParam = parameters.getRawParameterValue ("blend");
-    shapeParam = parameters.getRawParameterValue ("shape");
+    tapeSourceParam = parameters.getRawParameterValue ("tape_source");
+    vinylSourceParam = parameters.getRawParameterValue ("vinyl_source");
+    cassetteSourceParam = parameters.getRawParameterValue ("cassette_source");
+    digitalSourceParam = parameters.getRawParameterValue ("digital_source");
+    ampSourceParam = parameters.getRawParameterValue ("amp_source");
+    valveSourceParam = parameters.getRawParameterValue ("valve_source");
+    transformerSourceParam = parameters.getRawParameterValue ("transformer_source");
     sagParam = parameters.getRawParameterValue ("sag");
     presenceParam = parameters.getRawParameterValue ("presence");
     cabinetParam = parameters.getRawParameterValue ("cabinet");
@@ -432,6 +439,7 @@ FirstAudioProcessor::FirstAudioProcessor()
     transientSustainParam = parameters.getRawParameterValue ("transient_sustain");
     transientMixParam = parameters.getRawParameterValue ("transient_mix");
     neuralMixParam = parameters.getRawParameterValue ("neural_mix");
+    irMixParam = parameters.getRawParameterValue ("ir_mix");
 
     // Four fixed oversampling engines (off / 2x / 4x / 8x). Each owns its own filter
     // state, so switching between them is glitch-free even mid-render, and the
@@ -576,7 +584,8 @@ FirstAudioProcessor::FirstAudioProcessor()
         // says which id by name rather than just failing.
         const std::set<juce::String> intentionallyNotPresettable {
             "bypass", "delta", "ui_sounds", "language", "transport", "spindown",
-            "transient_attack", "transient_sustain", "transient_mix", "neural_mix"
+            "transient_attack", "transient_sustain", "transient_mix", "neural_mix",
+            "ir_mix"
         };
 
         for (const auto& id : registered)
@@ -1583,22 +1592,36 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     //  through a box instead of a machine. See SaturationCore for what each one is
     //  and why they are genuinely different shapes.
     //
-    //  BLEND sweeps the weighting across the six in a fixed order, tape -> valve
-    //  -> cassette -> amp -> transformer -> digital, so the control has one
-    //  direction: the order is the signal path, and the right end is where the
-    //  machines stop and the conversion begins. Default 0 - pure tape, which is
-    //  exactly what every earlier build did, so an existing session or preset
-    //  loads the machine it was saved with.
+    //  The seven SOURCE knobs. Each is its own principle's share of the
+    //  saturation mix - TAPE, VALVE, CASSETTE, AMP, TRANSFORMER, DIGITAL - so a
+    //  user dials the machines they want BY NAME instead of steering one sweep
+    //  and one spread (the old BLEND/SHAPE pair, removed at the user's
+    //  request). Shares are normalised to sum to 1, so the mix stays a true
+    //  crossfade and level-stable; a machine whose own TYPE list is OFF has its
+    //  share redistributed among the rest. Tape default 100, the rest 0 - the
+    //  machine the plugin was calibrated as, exactly what every earlier build
+    //  and every preset saved before this change meant.
     // -------------------------------------------------------------------------
-    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "blend", 1 }, "Blend",
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "tape_source", 1 }, "Tape",
+                                                            percentageRange (0.50f), 1.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vinyl_source", 1 }, "Vinyl",
                                                             percentageRange (0.50f), 0.0f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
-    // SHAPE decides how concentrated the blend is: low picks one principle at a
-    // time (an obvious, focused character), high spreads the weighting so all six
-    // contribute and the result reads as one compound machine. Default 50 - an
-    // even spread, which is the useful starting point once BLEND is moved.
-    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "shape", 1 }, "Shape",
-                                                            percentageRange (0.50f), 0.50f,
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "cassette_source", 1 }, "Cassette",
+                                                            percentageRange (0.50f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "digital_source", 1 }, "Digital",
+                                                            percentageRange (0.50f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "amp_source", 1 }, "Amp",
+                                                            percentageRange (0.50f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "valve_source", 1 }, "Valve",
+                                                            percentageRange (0.50f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "transformer_source", 1 }, "Transformer",
+                                                            percentageRange (0.50f), 0.0f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
 
     // -------------------------------------------------------------------------
@@ -2109,6 +2132,17 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             percentageRange (0.50f), 0.0f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
 
+    // IR MIX: the wet/dry position of the impulse-response stage, for the same
+    // reasons NEURAL is one: the stage is installed from a file rather than
+    // voiced by a knob, it defaults to ABSENT, and a preset that does not
+    // state it must load to the stage being out of the path rather than to
+    // whatever the session had blended in. Registered beside NEURAL; the
+    // load-from-file bits (the IR itself) are editor business, not parameters.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "ir_mix", 1 },
+                                                            "IR Mix",
+                                                            percentageRange (0.50f), 0.0f,
+                                                            juce::AudioParameterFloatAttributes().withLabel ("%")));
+
     return layout;
 }
 
@@ -2272,6 +2306,17 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // allowed to own them: this method. Phase accumulators are reset as well,
     // otherwise a rate switch would leave wow/flutter at a stale phase and click.
     resetSampleRateDependentState();
+
+    // The convolution stage is prepared at the ENGINE rate here, and re-prepared
+    // inside processTapeEngine whenever the oversampling factor changes the rate
+    // the stage actually sees: the convolver's FFT plans and its internal buffers
+    // are per-rate state, and running a 48 kHz plan against 96 kHz audio is the
+    // same stale-pipeline click the oversampler reset above exists to prevent.
+    // (The block-size argument is a maximum; passing the host's largest keeps
+    // every per-block call allocation-free.)
+    irStage.prepare ({ sampleRate,
+                       static_cast<juce::uint32> (juce::jmax (1, samplesPerBlock)),
+                       2 });
 
     // Per-channel DC-blocker state: AC coupling restarts from zero after a rate
     // change, exactly like the analogue coupling capacitors do on power-up.
@@ -2522,11 +2567,15 @@ void FirstAudioProcessor::resetSampleRateDependentState()
     // The neural stage's recurrent state is let go of on a rate change for the same
     // reason the shaper's is: resuming a hidden state from a different rate would
     // produce a step. The model itself is untouched.
+    // The model's wet/dry ramp. IR MIX rides its own smoother beside it.
     neuralL.reset();
     neuralR.reset();
     neuralMixSmoothed.reset (sampleRate, controlRampSeconds);
     neuralMixSmoothed.setCurrentAndTargetValue (
         neuralMixParam != nullptr ? neuralMixParam->load() : 0.0f);
+    irMixSmoothed.reset (sampleRate, controlRampSeconds);
+    irMixSmoothed.setCurrentAndTargetValue (
+        irMixParam != nullptr ? irMixParam->load() : 0.0f);
 
     // The oversampling filters hold per-rate state (their half-band coefficients are
     // tuned to the incoming rate), so they must be flushed on a rate change or the
@@ -3040,22 +3089,32 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const bool offsetRightChannel = stOffsetUs >= 0.0f;
 
     // -----------------------------------------------------------------------
-    //  Saturation blend and the amp voicing.
+    //  The saturation mix and the amp voicing.
     //
-    //  All six are read once per block and fed to smoothers, so none of them can
-    //  step the curve. The blend weights themselves are applied inside the core
-    //  from the SMOOTHED values, per sample, so sweeping BLEND morphs the
-    //  harmonics continuously rather than switching between six curves.
+    //  All seven SOURCE amounts are read once per block and fed to smoothers,
+    //  so none of them can step the curve. The weights themselves are applied
+    //  inside the core from the SMOOTHED values, so moving a SOURCE knob morphs
+    //  the harmonics continuously rather than switching between seven curves.
     // -----------------------------------------------------------------------
-    const auto blendAmount = blendParam != nullptr ? blendParam->load() : 0.0f;
-    const auto shapeAmount = shapeParam != nullptr ? shapeParam->load() : 0.5f;
+    const auto vinylAmountSrc = vinylSourceParam != nullptr ? vinylSourceParam->load() : 0.0f;
+    const auto tapeAmount = tapeSourceParam != nullptr ? tapeSourceParam->load() : 1.0f;
+    const auto valveAmount = valveSourceParam != nullptr ? valveSourceParam->load() : 0.0f;
+    const auto cassetteAmount = cassetteSourceParam != nullptr ? cassetteSourceParam->load() : 0.0f;
+    const auto ampAmount = ampSourceParam != nullptr ? ampSourceParam->load() : 0.0f;
+    const auto transformerAmount = transformerSourceParam != nullptr ? transformerSourceParam->load() : 0.0f;
+    const auto digitalAmount = digitalSourceParam != nullptr ? digitalSourceParam->load() : 0.0f;
     const auto sagAmount = sagParam != nullptr ? sagParam->load() : 0.0f;
     const auto presenceAmount = presenceParam != nullptr ? presenceParam->load() : 0.5f;
     const auto cabinetAmount = cabinetParam != nullptr ? cabinetParam->load() : 0.0f;
     const auto ampBiasAmount = ampBiasParam != nullptr ? ampBiasParam->load() : 0.5f;
 
-    blendSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, blendAmount));
-    shapeSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, shapeAmount));
+    tapeSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, tapeAmount));
+    vinylSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, vinylAmountSrc));
+    valveSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, valveAmount));
+    cassetteSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, cassetteAmount));
+    ampSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, ampAmount));
+    transformerSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, transformerAmount));
+    digitalSourceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, digitalAmount));
     sagSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, sagAmount));
     presenceSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, presenceAmount));
     cabinetSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, cabinetAmount));
@@ -3077,11 +3136,13 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto transientMixAmount = transientMixParam != nullptr
                                         ? transientMixParam->load() : 0.0f;
     const auto neuralMixAmount = neuralMixParam != nullptr ? neuralMixParam->load() : 0.0f;
+    const auto irMixAmount = irMixParam != nullptr ? irMixParam->load() : 0.0f;
 
     transientAttackSmoothed.setTargetValue (juce::jlimit (-1.0f, 1.0f, transientAttackAmount));
     transientSustainSmoothed.setTargetValue (juce::jlimit (-1.0f, 1.0f, transientSustainAmount));
     transientMixSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, transientMixAmount));
     neuralMixSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, neuralMixAmount));
+    irMixSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, irMixAmount));
 
     // ~2 ms transient window against a ~120 ms programme reference: the ratio of
     // the two is what the detector reads as an edge, so the gap between them is
@@ -4287,6 +4348,23 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
     const int activeChannels = activeInputChannels;
 
+    // Scratch storage for the IR stage's wet capture: one copy of the block's
+    // finished signal, convolved in place, then crossfaded back by IR MIX. It
+    // lives at block scope because juce::dsp::Convolution::process is NOT
+    // documented as allocation-free - by contrast with the oversamplers, whose
+    // in-place processUp/processDown is why they can work on the host's own
+    // buffer - so the working copy is reserved at the block's worst-case size
+    // once and reused, and the per-block path never allocates (the reserve
+    // below can only ever grow to a size the host already announced).
+    //
+    // The stage processes the WET signal only: in DELTA listen the difference
+    // is taken against the dry reference further down, so an IR blended in at
+    // MIX 100 still shows as "what the machine adds" rather than as the room
+    // the dry signal never passed through.
+    static thread_local juce::AudioBuffer<float> scratch;
+    if (scratch.getNumSamples() < numSamples || scratch.getNumChannels() < 2)
+        scratch.setSize (2, juce::jmax (numSamples, 256), false, false, true);
+
     // Working pointers into the block's own storage. In the plain path these are
     // the host buffer's channels; in the oversampled path they are the oversampler's
     // internal buffer. The engine is written against these pointers only.
@@ -4814,15 +4892,15 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             //
             //  This replaces the single magneticHysteresis call. It runs the same
             //  DRIVE and BIAS arguments the old shaper took - so both controls keep
-            //  their meaning and their existing calibration - but weights six
-            //  distinct curve shapes together: tape, valve, cassette, amp,
+            //  their meaning and their existing calibration - but weights seven
+            //  distinct curve shapes together: tape, valve, cassette, vinyl, amp,
             //  transformer and digital. See SaturationCore for what each one is
-            //  and why they are genuinely different mechanisms rather than six
+            //  and why they are genuinely different mechanisms rather than seven
             //  settings of one.
             //
-            //  The weights come from the SMOOTHED blend controls and are applied
-            //  per sample, so sweeping BLEND morphs the harmonics continuously
-            //  instead of stepping between six curves on a block boundary.
+            //  The weights come from the SMOOTHED SOURCE controls, so moving a
+            //  SOURCE knob morphs the harmonics continuously instead of stepping
+            //  between seven curves on a block boundary.
             //
             //  SAG acts on the DRIVE, not on the output, because that is what the
             //  supply does: it is the gain that droops under sustained demand. The
@@ -4833,8 +4911,13 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             auto& saturation = channel == 0 ? saturationL : saturationR;
             auto& amp = channel == 0 ? ampL : ampR;
 
-            saturation.setBlend (blendSmoothed.getCurrentValue(),
-                                 shapeSmoothed.getCurrentValue());
+            saturation.setWeights (tapeSourceSmoothed.getCurrentValue(),
+                                   valveSourceSmoothed.getCurrentValue(),
+                                   cassetteSourceSmoothed.getCurrentValue(),
+                                   vinylSourceSmoothed.getCurrentValue(),
+                                   ampSourceSmoothed.getCurrentValue(),
+                                   transformerSourceSmoothed.getCurrentValue(),
+                                   digitalSourceSmoothed.getCurrentValue());
 
             // The type switches re-voice their own curve. Four of the five live
             // here, because four of the five are voices on SaturationCore's
@@ -5303,12 +5386,25 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             if (channel == 1)
                 stOffsetBuffer[static_cast<std::size_t> (stOffsetWritePosition)] = withDelay;
 
-            // Raised-cosine crossfade between the dry input and the fully processed
+            // Raised-cosine crossfade between the DRY INPUT and the fully processed
             // tape signal, driven by the smoothed MIX. 0 % is a transparent dry signal
             // and 100 % is all tape, both at unity, with the level held across the
             // middle of the travel.
+            //
+            // The dry leg is `machineDryInput` - the sample captured right after the
+            // input trim and glue compressor, BEFORE the DI, DISTORT, PREAMP and the
+            // IN EQ - and not `x`, which by this point has been through every one of
+            // those stages. The dry leg used to ride `x`, so MIX 0 was never the
+            // untouched input: with a DI engaged the dry side carried the box's
+            // colouring, and the whole output then multiplied by stageGain (the
+            // compressors' gain, both makeups and the static calibration) left MIX 0
+            // both coloured AND several dB off the input. `machineDryInput` is the
+            // same capture DELTA subtracts its reference from, so both controls now
+            // agree on what "dry" means - and because the dry leg no longer rides
+            // the processed signal, MIX 0 IS the input, whatever the front-end
+            // stages are doing.
             const float wetMix = aligned * wetGain * platterSpeed;
-            const float dryMix = x * dryGain;
+            const float dryMix = machineDryInput[static_cast<std::size_t> (channel)] * dryGain;
             tapeOutput[static_cast<std::size_t> (channel)] = dryMix + wetMix;
         }
 
@@ -5946,23 +6042,68 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     }
 
     // -------------------------------------------------------------------------
-    //  Post-machine stages: reverb, then vinyl.
+    //  Post-machine stages: IR cabinet, then reverb, then vinyl.
     //
-    //  Both run AFTER the per-sample loop, on the finished block, for one reason:
-    //  neither belongs inside the tape nonlinearity. A reverb inside the wow
-    //  modulation would be pitch-shifted with it and would smear the harmonics
-    //  the plugin exists to produce; a turntable is the last thing in the signal
-    //  path, so its surface noise must not be recorded onto the tape.
+    //  All three run AFTER the per-sample loop, on the finished block, for one
+    //  reason: none of them belongs inside the tape nonlinearity. A reverb
+    //  inside the wow modulation would be pitch-shifted with it and would smear
+    //  the harmonics the plugin exists to produce; a turntable is the last
+    //  thing in the signal path, so its surface noise must not be recorded onto
+    //  the tape; and a cabinet or a room is heard from the LISTENER's side, so
+    //  it colours the finished record rather than the performance.
     //
     //  They are a second pass over the block rather than part of the main loop
     //  because the reverb is a STEREO processor - its two comb banks have to see
-    //  both channels to produce the width - and the main loop is per-channel.
+    //  both channels to produce the width - and because the IR convolver is a
+    //  BLOCK processor (see the note at the scratch buffer): neither can sit in
+    //  a per-sample loop.
     // -------------------------------------------------------------------------
     const float reverbMixNow = reverbMixSmoothed.getCurrentValue();
     const float vinylNow = vinylSmoothed.getCurrentValue();
 
+    // -- IR CABINET stage -------------------------------------------------------
+    //
+    //  Convolves the finished wet signal against a user-loaded impulse
+    //  response, before the reverb and the vinyl. It runs here rather than
+    //  inside the level stages because an IR is the room around the finished
+    //  record: normalising the file (which loadFromFile does) keeps its blend
+    //  level-safe, and running it after the limiter means the limiter never
+    //  rides the room. DELTA is unaffected either way - the difference signal
+    //  was already formed inside the loop, so it stays "what the machine adds"
+    //  without the room.
+    //
+    //  One convolver per channel - the stage's own note explains why - and the
+    //  wet copy is convolved in the scratch buffer, then crossfaded back
+    //  sample by sample in the pass below by the smoothed IR MIX.
+    // ---------------------------------------------------------------------------
+    const float irMixNow = irMixSmoothed.getCurrentValue();
+    const bool irActive = irStage.hasIr && irMixNow > 1.0e-5f
+                          && scratch.getNumSamples() >= numSamples;
+
+    if (irActive)
+    {
+        // The stage re-prepares itself when the rate it sees has changed,
+        // which keeps the convolvers' plans from running against the wrong
+        // rate after an oversampling switch.
+        if (irStage.preparedSampleRate != engineSampleRate
+            || irStage.preparedMaxBlock < numSamples)
+        {
+            irStage.prepare ({ engineSampleRate,
+                               static_cast<juce::uint32> (juce::jmax (numSamples, 256)),
+                               2 });
+        }
+
+        scratch.clear();
+        for (int channel = 0; channel < activeChannels; ++channel)
+            scratch.copyFrom (channel, 0,
+                              channelData[static_cast<std::size_t> (channel)],
+                              numSamples);
+
+        irStage.process (scratch, activeChannels, true);
+    }
+
     if (activeChannels > 0
-        && (reverbMixNow > 1.0e-5f || vinylNow > 1.0e-5f))
+        && (reverbMixNow > 1.0e-5f || vinylNow > 1.0e-5f || irActive))
     {
         const float reverbSizeNow = reverbSizeSmoothed.getCurrentValue();
         const float crackleNow = vinylCrackleSmoothed.getCurrentValue() * vinylNow;
@@ -5973,6 +6114,16 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             for (int channel = 0; channel < activeChannels; ++channel)
             {
                 float value = channelData[static_cast<std::size_t> (channel)][sample];
+
+                // -- IR cabinet: the room around the finished record ----------
+                // The convolved copy sits in the scratch buffer; this is the
+                // linear IR MIX crossfade over it, applied first so the reverb
+                // and the vinyl colour the ROOM and the record it sits on.
+                if (irActive)
+                {
+                    const auto wet = scratch.getSample (channel, sample);
+                    value += (wet - value) * irMixNow;
+                }
 
                 // -- Reverb: the room the machine is in --------------------------
                 // It is applied to the finished signal, so what reverberates is
@@ -6272,6 +6423,62 @@ bool FirstAudioProcessor::loadNeuralModel (const juce::String& modelJson)
         neuralR.clear();
 
     return loaded;
+}
+
+bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
+{
+    // Same two-stages-at-once discipline as loadNeuralModel above, through the
+    // .nam converter: the shared model pointer must not end up describing two
+    // different networks on the two sides of the image.
+#if J37_HAS_RTNEURAL
+    bool loaded = false;
+
+    try
+    {
+        const auto parsed = nlohmann::json::parse (namJson.toStdString());
+        loaded = neuralL.buildFromNam (parsed);
+    }
+    catch (...)
+    {
+        loaded = false;
+    }
+
+    if (loaded)
+    {
+        // The RIGHT stage re-runs the converter rather than sharing the left's
+        // model object. NeuralStage is documented as sharing its model between
+        // the channels, but buildFromNam installs through the same unique_ptr
+        // path a JSON load uses, so the honest guarantee is "two identical
+        // models" - which sounds exactly the same and cannot mismatch.
+        try
+        {
+            const auto parsed = nlohmann::json::parse (namJson.toStdString());
+            loaded = neuralR.buildFromNam (parsed);
+        }
+        catch (...)
+        {
+            loaded = false;
+        }
+    }
+
+    if (! loaded)
+        neuralR.clear();
+
+    return loaded;
+#else
+    juce::ignoreUnused (namJson);
+    return false;
+#endif
+}
+
+bool FirstAudioProcessor::loadIrFile (const juce::File& irFile)
+{
+    return irStage.loadFromFile (irFile);
+}
+
+void FirstAudioProcessor::clearIr()
+{
+    irStage.clear();
 }
 
 void FirstAudioProcessor::clearNeuralModel()

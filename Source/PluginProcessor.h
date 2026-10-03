@@ -451,51 +451,153 @@ inline juce::StringArray vinylTypeNameList()
 
 //==============================================================================
 /**
-    The four saturation principles, and the blend that combines them.
+    The seven saturation principles, and the mix that combines them.
 
     A tape machine is ONE of the ways analogue electronics bend a signal, and the
-    plugin was built around that one curve. The four below are the distinct
+    plugin was built around that one curve. The seven below are the distinct
     mechanisms a real signal chain uses, and they are genuinely different shapes
-    rather than four settings of one:
+    rather than seven settings of one:
 
-      TAPE     - magnetic hysteresis: a MEMORY term, because the medium's state
-                 depends on where it has been. Gentle at low level, and the
-                 asymmetry is what makes the even harmonics.
-      VALVE    - thermionic: a soft, strongly ASYMMETRIC knee with a wide
-                 transition. Even-dominant, and it compresses rather than clips,
-                 so it thickens before it distorts.
-      CASSETTE - narrow-gauge, low-bias ferric: a HARD, early knee with a very
-                 limited headroom and a pronounced low-frequency bump. The
-                 "everything is louder and smaller" character.
-      AMP      - a guitar amplifier's input stage: a high-gain, nearly symmetric
-                 cascade that clips HARD and generates strong odd harmonics. It
-                 is the one that bites.
+      TAPE       - magnetic hysteresis: a MEMORY term, because the medium's state
+                   depends on where it has been. Gentle at low level, and the
+                   asymmetry is what makes the even harmonics.
+      VALVE      - thermionic: a soft, strongly ASYMMETRIC knee with a wide
+                   transition. Even-dominant, and it compresses rather than clips,
+                   so it thickens before it distorts.
+      CASSETTE   - narrow-gauge, low-bias ferric: a HARD, early knee with a very
+                   limited headroom and a pronounced low-frequency bump. The
+                   "everything is louder and smaller" character.
+      VINYL      - a cutting lathe's tracing distortion: a soft, second-order
+                   power-law knee plus a small drift of the groove's own
+                   operating point. The gentlest of the seven.
+      AMP        - a guitar amplifier's input stage: a high-gain, nearly symmetric
+                   cascade that clips HARD and generates strong odd harmonics. It
+                   is the one that bites.
+      TRANSFORMER - core saturation with a flux memory: the core lags whatever
+                   drives it, and its asymmetry arrives only once the core is
+                   properly loaded.
+      DIGITAL    - the converter's stop: transparent and bit-exact below full
+                   scale, hard above it, with no memory and no bias to drift.
 
-    Blending them is not a gimmick: a real chain is exactly this. A guitar goes
+    Mixing them is not a gimmick: a real chain is exactly this. A guitar goes
     into an amp (AMP), the amp into a desk and a tape machine (TAPE), a valve
     compressor or a valve preamp somewhere in the path (VALVE), and the whole
-    thing may end up on a cassette (CASSETTE). The BLEND control moves the
-    weighting across those four, and the default sits on tape because that is
-    what the plugin is calibrated around.
+    thing may end up on a cassette (CASSETTE) or a cut record (VINYL). The
+    seven SOURCE knobs set each mechanism's share of the mix, and the default
+    sits on tape because that is what the plugin is calibrated around.
 
     Every curve is normalised to unity slope at the origin, exactly like
-    magneticHysteresis, so the blend cannot change the level - only the shape.
-    That property is what makes the control usable: moving it changes the
+    magneticHysteresis, so the mix cannot change the level - only the shape.
+    That property is what makes the controls usable: moving them changes the
     harmonics, not the gain, and the DRIVE control keeps its own meaning.
 */
 struct SaturationCore
 {
     // -----------------------------------------------------------------------
-    //  Weights. These are set once per block from the BLEND and SHAPE controls;
-    //  they are kept normalised so the six always sum to 1 and the blend is a
-    //  true crossfade rather than a stack.
+    //  Weights. These are set once per block from the seven SOURCE controls:
+    //  each is its own amount knob, so a user dials the machines they want by
+    //  name rather than steering a sweep. They are kept normalised so the seven
+    //  always sum to 1 and the mix is a true crossfade rather than a stack.
     // -----------------------------------------------------------------------
     float tapeWeight = 1.0f;
     float valveWeight = 0.0f;
     float cassetteWeight = 0.0f;
+    float vinylWeight = 0.0f;
     float ampWeight = 0.0f;
     float transformerWeight = 0.0f;
     float digitalWeight = 0.0f;
+
+    //  ...and the AMOUNT they asked for before they were normalised. The seven
+    //  above answer WHICH machines; this answers HOW MUCH, and it is the
+    //  crossfade depth process() applies to the whole blend. See setWeights for
+    //  why it cannot be recovered from the shares.
+    float saturationAmount = 1.0f;
+
+    /** Sets all seven weights DIRECTLY from the seven SOURCE knobs: a knob is
+        its principle's share, so TAPE 60 / VALVE 40 reads on the panel exactly
+        as it sounds. Shares are normalised to sum to 1; a principle whose own
+        model list is OFF has its share redistributed by the normalisation
+        rather than dropped, so switching a machine off re-weights the rest
+        instead of leaving a hole. (The old blend/shape pair hid all of this
+        behind one sweep position and one spread; the user asked for names.)
+        The amounts arrive already smoothed - every SOURCE knob is read once
+        per block and fed to its own smoother - so the SET is what makes all
+        seven live at once, and the normalisation below is what keeps the mix
+        level-stable while amounts move.
+    */
+    void setWeights (float tapeAmount, float valveAmount, float cassetteAmount,
+                     float vinylAmount, float ampAmount, float transformerAmount,
+                     float digitalAmount) noexcept
+    {
+        tapeWeight        = juce::jlimit (0.0f, 1.0f, tapeAmount);
+        valveWeight       = juce::jlimit (0.0f, 1.0f, valveAmount);
+        cassetteWeight    = juce::jlimit (0.0f, 1.0f, cassetteAmount);
+        vinylWeight       = juce::jlimit (0.0f, 1.0f, vinylAmount);
+        ampWeight         = juce::jlimit (0.0f, 1.0f, ampAmount);
+        transformerWeight = juce::jlimit (0.0f, 1.0f, transformerAmount);
+        digitalWeight     = juce::jlimit (0.0f, 1.0f, digitalAmount);
+
+        // A principle whose own model list is OFF contributes nothing, and its
+        // share is REDISTRIBUTED by the normalisation below rather than dropped:
+        // switching a machine off re-weights the rest to cover it, so the mix
+        // holds its degree of saturation and only the character changes.
+        if (valveOff)       valveWeight = 0.0f;
+        if (ampOff)         ampWeight = 0.0f;
+        if (transformerOff) transformerWeight = 0.0f;
+        if (digitalOff)     digitalWeight = 0.0f;
+        if (tapeOff)        tapeWeight = 0.0f;
+
+        const auto sum = tapeWeight + valveWeight + cassetteWeight + vinylWeight
+                               + ampWeight + transformerWeight + digitalWeight;
+
+        // HOW MUCH saturation, kept separate from WHICH machines.
+        //
+        // The normalisation below answers the second question - the seven
+        // numbers always become shares that sum to one, so the MIX page's bar
+        // always reads 100 % whatever the knobs say. That was the whole point
+        // of shares, and it had a consequence nobody intended: the seven SOURCE
+        // knobs said NOTHING about how hard the stage worked. Turn all seven
+        // down to nothing and the shares still summed to one, so the core ran
+        // at full strength on whichever machine was nominally leading - the
+        // panel's own minimum setting saturated exactly as hard as its maximum,
+        // and the smallest move of any one knob re-weighted all seven at once.
+        // That is what "the sound changes far too much, even at the smallest
+        // settings" was measuring.
+        //
+        // So the sum is kept, and it drives the drive: one machine at half is
+        // now half the saturation with a pure-tape character, rather than a
+        // full-strength stage wearing a tape label. Saturation reaches its
+        // ceiling once the seven together add up to one, which is where the
+        // Default preset already lives (TAPE alone at 1.0), so every existing
+        // session and every factory preset that uses one machine sounds exactly
+        // as it did - only the region BELOW full strength, which nothing
+        // produced before, now means what it says. process() applies it as a
+        // crossfade against the input rather than as a scale on the drive,
+        // because the curves are tanh and tanh saturates at any drive.
+        saturationAmount = juce::jlimit (0.0f, 1.0f, sum);
+
+        if (sum > 1.0e-6f)
+        {
+            tapeWeight /= sum;
+            valveWeight /= sum;
+            cassetteWeight /= sum;
+            vinylWeight /= sum;
+            ampWeight /= sum;
+            transformerWeight /= sum;
+            digitalWeight /= sum;
+        }
+        else
+        {
+            // All sources at zero. The character still has to resolve to
+            // something, and pure tape is what the machine was calibrated as -
+            // but saturationAmount above is zero, so process() hands every
+            // curve a drive of nothing and the core returns its input
+            // bit-for-bit. The shares here describe a mix that is not playing.
+            tapeWeight = 1.0f;
+            valveWeight = cassetteWeight = vinylWeight = ampWeight = transformerWeight
+                        = digitalWeight = 0.0f;
+        }
+    }
 
     // -----------------------------------------------------------------------
     //  Per-principle state.
@@ -512,6 +614,7 @@ struct SaturationCore
     float valveBiasState = 0.0f;
     float ampBiasState = 0.0f;
     float cassetteBiasState = 0.0f;
+    float vinylBiasState = 0.0f;
     float transformerFlux = 0.0f;
     float digitalHold = 0.0f;
 
@@ -521,114 +624,24 @@ struct SaturationCore
         valveBiasState = 0.0f;
         ampBiasState = 0.0f;
         cassetteBiasState = 0.0f;
+        vinylBiasState = 0.0f;
         transformerFlux = 0.0f;
         digitalHold = 0.0f;
     }
 
-    /** Sets the six weights from two controls. Both are 0..1. */
-    void setBlend (float blend, float shape) noexcept
-    {
-        // BLEND sweeps the weighting across the six principles in a fixed order,
-        // tape -> valve -> cassette -> amp -> transformer -> digital, so the
-        // control has one direction and the ear can learn it. The order is the
-        // signal path rather than a ranking: five machines you overload by pushing
-        // level into them, and then the converter that replaces all of them.
-        // SHAPE skews the distribution: low concentrates on a single principle
-        // (a focused, obvious character), high spreads it evenly (a blend that
-        // reads as one compound machine).
-        const auto b = juce::jlimit (0.0f, 1.0f, blend);
-        const auto s = juce::jlimit (0.0f, 1.0f, shape);
+    // (The old blend/shape sweep body was removed with the controls that drove
+    //  it: the seven SOURCE knobs now speak to setWeights above directly.)
 
-        // Each principle gets a triangular response centred on its own position
-        // along the sweep, so neighbouring ones overlap and the blend is smooth.
-        const auto triangle = [] (float x, float centre, float width)
-        {
-            return juce::jmax (0.0f, 1.0f - std::abs (x - centre) / width);
-        };
+    /** True when nothing is contributing, so the caller can skip the whole core.
 
-        // Six centres, so five intervals. Derived rather than typed in, because
-        // the spacing is what the narrow end of the width below is measured
-        // against, and a literal list of centres would let the two drift apart
-        // the moment a principle was added.
-        const auto step = 1.0f / 5.0f;
-
-        // Width grows with SHAPE: at 0 the triangles are exactly disjoint - each
-        // reaches half way to its neighbours - so the sweep snaps from one
-        // principle to the next; at 1 they are wide enough that all six
-        // contribute at every position. The narrow end is HALF THE SPACING rather
-        // than a fixed number, so tightening the spacing cannot quietly turn the
-        // "focused" end of the sweep into an overlapping one.
-        const auto width = step * 0.5f + (1.0f - step * 0.5f) * s;
-
-        tapeWeight        = triangle (b, 0 * step, width);
-        valveWeight       = triangle (b, 1 * step, width);
-        cassetteWeight    = triangle (b, 2 * step, width);
-        ampWeight         = triangle (b, 3 * step, width);
-        transformerWeight = triangle (b, 4 * step, width);
-        digitalWeight     = triangle (b, 5 * step, width);
-
-        // The ends of the sweep must not fall off the edge. At b = 0 only tape is
-        // centred on the sweep, but SHAPE widens the triangles, so at the default
-        // SHAPE the next principle is in range too - and leaving it in put roughly
-        // a third of the valve curve into a setting documented as pure tape, so an
-        // existing session did not load the machine it was saved with. Seeding an
-        // end therefore claims its own principle AND clears the others, rather
-        // than only overwriting its own. The sum is then exactly 1 at both ends
-        // and the normalisation below has nothing to do.
-        if (b < 0.02f) { tapeWeight = 1.0f; valveWeight = cassetteWeight = ampWeight
-                                                   = transformerWeight = digitalWeight = 0.0f; }
-        if (b > 0.98f) { digitalWeight = 1.0f; tapeWeight = valveWeight = cassetteWeight
-                                                    = ampWeight   = transformerWeight = 0.0f; }
-
-        // ------------------------------------------------------------------
-        //  OFF principles.
-        //
-        //  A principle whose own model list is set to OFF contributes nothing,
-        //  and its share is REDISTRIBUTED among the principles that are still
-        //  present by the normalisation below - not simply dropped, which would
-        //  make the machine quieter whenever a model was switched off.
-        //
-        //  The redistribution is the whole point of the feature: turning the
-        //  TRANSFORMER off does not leave a hole in the blend, it re-weights the
-        //  tape, the valve and the rest to cover it, so the machine still
-        //  saturates to the same degree and only the CHARACTER changes. A user
-        //  who wants a pure solid-state machine turns off the tape and gets
-        //  whatever else is in the blend carrying the whole signal.
-        //
-        //  This runs after the two end-seeds above deliberately: an end-seed
-        //  claims its principle outright, and if that principle is OFF the
-        //  normalisation that follows is what keeps the output from vanishing.
-        // ------------------------------------------------------------------
-        if (valveOff)       valveWeight = 0.0f;
-        if (ampOff)         ampWeight = 0.0f;
-        if (transformerOff) transformerWeight = 0.0f;
-        if (digitalOff)     digitalWeight = 0.0f;
-        if (tapeOff)        tapeWeight = 0.0f;
-
-        const auto sum = tapeWeight + valveWeight + cassetteWeight + ampWeight
-                               + transformerWeight + digitalWeight;
-        if (sum > 1.0e-6f)
-        {
-            tapeWeight /= sum;
-            valveWeight /= sum;
-            cassetteWeight /= sum;
-            ampWeight /= sum;
-            transformerWeight /= sum;
-            digitalWeight /= sum;
-        }
-        else
-        {
-            tapeWeight = 1.0f;
-            valveWeight = cassetteWeight = ampWeight = transformerWeight
-                        = digitalWeight = 0.0f;
-        }
-    }
-
-    /** True when nothing is contributing, so the caller can skip the whole core. */
+        The weights alone can no longer answer this. They are shares - they
+        always sum to one, even for a mix that was asked for at zero - so the
+        test is the AMOUNT as well: a blend with nothing in it is idle, and a
+        blend at a quarter is not idle, it is quiet, which is a different thing
+        and belongs to process(), not here. */
     bool isIdle() const noexcept
     {
-        return tapeWeight + valveWeight + cassetteWeight + ampWeight
-                                    + transformerWeight + digitalWeight <= 1.0e-6f;
+        return saturationAmount <= 1.0e-6f;
     }
 
     // -----------------------------------------------------------------------
@@ -840,6 +853,67 @@ struct SaturationCore
                                              * (1.0f - juce::jmin (1.0f, std::abs (atZero))));
 
         return out - atZeroBumped;
+    }
+
+    /**
+        VINYL - a cutting lathe's tracing distortion.
+
+        The seventh SOURCE. A lathe does not cut what it is fed: the stylus has
+        a finite radius, so on tight curvature (high frequencies at high level)
+        the groove's radius is larger than the signal asks and the replay stylus
+        traces a rounded-off path - second-order, level-dependent, the gentlest
+        of the seven. That is why vinyl at moderate levels reads as smooth
+        rather than bent. The curve: a soft power-law knee (softer than the
+        cassette's corner, gentler than the amp's clip) plus a small bias drift
+        - the groove's own operating point moves with the programme, like the
+        valve's but faster.
+    */
+    float shapeVinyl (float x, float drive, float asymmetry) noexcept
+    {
+        // The groove's operating point drifts with the programme - between the
+        // valve's slow thermal drift and the cassette's fast one, which is the
+        // order a real cutter head's feedback loop settles in.
+        vinylBiasState += (x - vinylBiasState) * 0.0015f;
+        const float biased = x + asymmetry * 0.35f + vinylBiasState * 0.12f;
+
+        // The tracing knee: at drive 0 it sits at 1.05 (above full scale - the
+        // lathe passes the programme untouched) and closes as drive rises, but
+        // never as far as the cassette's 0.12 floor: a cutter is a precision
+        // device, and its knee is soft.
+        const float knee = juce::jlimit (0.25f, 1.05f, 1.05f - drive * 0.55f);
+
+        const float magnitude = std::abs (biased);
+        const float sign = biased < 0.0f ? -1.0f : 1.0f;
+
+        float shaped;
+        if (magnitude <= knee)
+        {
+            shaped = biased;   // linear region, unity slope: y = x.
+        }
+        else
+        {
+            // Above the knee the curve walks to its asymptote on a POWER law
+            // (n = 2.5) rather than the cassette's smoothstep: a tracing radius
+            // rounds an overshoot progressively, not on a polynomial schedule.
+            const float overshoot = juce::jmin (1.0f,
+                                                (magnitude - knee) / juce::jmax (0.08f, knee));
+            const float eased = std::pow (overshoot, 2.5f);
+            shaped = sign * (knee + eased * (1.0f - knee));
+        }
+
+        // Zero-point correction, the same rule every curve here follows: the
+        // signal path walked again at zero input, so zero in means zero out.
+        const float atZero = [&]
+        {
+            const float z = asymmetry * 0.35f;
+            const float m = std::abs (z);
+            if (m <= knee) return z;
+            const float o = juce::jmin (1.0f, (m - knee) / juce::jmax (0.08f, knee));
+            const float e = std::pow (o, 2.5f);
+            return (z < 0.0f ? -1.0f : 1.0f) * (knee + e * (1.0f - knee));
+        }();
+
+        return shaped - atZero;
     }
 
     /**
@@ -1161,9 +1235,9 @@ struct SaturationCore
     }
 
     /**
-        Runs the blend. `drive` and `asymmetry` are the same arguments the tape
-        shaper has always taken, so the existing controls keep their meaning; the
-        weighting is the only thing BLEND and SHAPE change.
+        Runs the mix. `drive` and `asymmetry` are the same arguments the tape
+        shaper has always taken, so the existing controls keep their meaning;
+        the weighting is only what the seven SOURCE knobs set.
     */
     float process (float x, float drive, float asymmetry) noexcept
     {
@@ -1180,6 +1254,9 @@ struct SaturationCore
 
         if (cassetteWeight > 1.0e-4f)
             out += shapeCassette (x, drive, asymmetry) * cassetteWeight;
+
+        if (vinylWeight > 1.0e-4f)
+            out += shapeVinyl (x, drive, asymmetry) * vinylWeight;
 
         if (ampWeight > 1.0e-4f)
             out += shapeAmp (x, drive, asymmetry) * ampWeight;
@@ -1211,7 +1288,25 @@ struct SaturationCore
             digitalHold = 0.0f;
         }
 
-        return out;
+        // The AMOUNT, as a crossfade from the input to the shaped blend.
+        //
+        // Not as a scale on the drive, which was the first thing tried and is
+        // wrong for a specific reason: every curve below is a tanh of some
+        // kind, and tanh saturates at any drive at all - the DRIVE argument
+        // controls how HARD the knee is, not whether there is one. Multiplying
+        // it down cannot reach "straight", so a part at a twentieth of the
+        // amount would still be a saturator, just a gentle one, and the bottom
+        // of the seven SOURCE knobs would keep colouring the signal no matter
+        // how far down it was turned.
+        //
+        // Fading the blend against the input does reach it: at zero it is the
+        // input sample-for-sample, and every value between is that stage's own
+        // curve heard at that depth - which is what turning a saturation knob
+        // down does on the machine. The per-principle states above still run
+        // the full curve while the amount is low, so the hysteresis, the bias
+        // drift and the converter's held code stay warm and come back at the
+        // right phase instead of starting cold.
+        return x + (out - x) * saturationAmount;
     }
 };
 
@@ -1559,6 +1654,181 @@ struct NeuralStage
 #endif
     }
 
+#if J37_HAS_RTNEURAL
+    /**
+        Builds the stage from a NeuralAmpModeler (.nam) file's text.
+
+        A .nam file is a JSON document the NAM core describes in terms of
+        PyTorch's LSTM layout: one flat `weights` vector holding the input
+        kernel, the recurrent kernel and the bias of every layer back to back
+        (each row-major, each in the i / f / c / o gate order PyTorch trains
+        in), then the layer's initial hidden and cell states, and - for the
+        top layer - a linear output head and its bias. RTNeural's JSON
+        describes the SAME network as a stack of named layers, and its LSTMLayer
+        consumes the gates in PyTorch's own order (its setters shuffle them
+        into TensorFlow's layout internally), so the conversion is a re-shape:
+        slice the flat vector by the config's sizes and hand the slices to the
+        loader as "lstm" and "dense" layers.
+
+        One real transposition is involved: NAM puts the four gate blocks on
+        the ROWS of each kernel (PyTorch's row-major [4H x (I+H)]) while
+        RTNeural's loader indexes the same coefficients with the taps on the
+        rows ([in][4H]), so the x- and h-parts of every kernel are read back
+        column-wise. The gate order inside each block is untouched, and the
+        hidden/cell seeds RTNeural's layers start at zero rather than the
+        file's, which differs from the reference player only during the model's
+        own prewarm window and nowhere after it. Any unexpected shape throws,
+        and the caller turns a throw into the same "no model" outcome a bad
+        RTNeural file already produces.
+    */
+    bool buildFromNam (const nlohmann::json& namJson)
+    {
+        // Only the LSTM architecture is converted. NAM's WaveNet and the
+        // convolutional "Feather" nets have their own weight layouts that no
+        // single re-shape covers, and pretending otherwise would produce a
+        // model that loads and sounds wrong rather than one that fails loudly.
+        if (! namJson.contains ("architecture")
+            || ! namJson["architecture"].is_string()
+            || namJson["architecture"].get<std::string>() != "LSTM")
+            return false;
+
+        const auto& config = namJson.at ("config");
+        const auto numLayers = config.at ("num_layers").get<int>();
+        const auto inputSize = config.at ("input_size").get<int>();
+        const auto hiddenSize = config.at ("hidden_size").get<int>();
+
+        // A .nam file's weights array is 1-D JSON. Anything else is not a
+        // shape this converter understands.
+        if (! namJson.contains ("weights") || ! namJson["weights"].is_array())
+            return false;
+
+        const auto& weights = namJson["weights"];
+
+        // Slice offsets, counted exactly as nam::lstm::LSTM consumes the flat
+        // vector: every layer's block is its kernel stored row-major (4H rows
+        // in PyTorch's i/f/g/o gate order by I+H columns of input taps then
+        // recurrent taps), then the flat bias (4H), then the hidden and cell
+        // seeds (H each). Only the first layer has I input taps; deeper ones
+        // take the previous layer's H hidden outputs, so their stride is H+H.
+        // The topmost block additionally carries the output head (out x H,
+        // row-major) and its bias (out), which become the "dense" layer.
+        const auto biasElements = 4 * hiddenSize;
+        auto kernelElementsFor = [hiddenSize] (int layerIn)
+        {
+            return 4 * hiddenSize * (layerIn + hiddenSize);
+        };
+        auto blockElementsFor = [kernelElementsFor, biasElements, hiddenSize] (int layerIn)
+        {
+            return kernelElementsFor (layerIn) + biasElements + 2 * hiddenSize;
+        };
+        auto expectedElements = hiddenSize + 1;
+        for (int layer = 0; layer < numLayers; ++layer)
+            expectedElements += blockElementsFor (layer == 0 ? inputSize : hiddenSize);
+
+        if (numLayers < 1 || inputSize < 1 || hiddenSize < 1
+            || static_cast<int> (weights.size()) != expectedElements)
+            return false;
+
+        auto readFlat = [&weights] (int offset, int count)
+        {
+            std::vector<float> slice;
+            slice.reserve (static_cast<std::size_t> (count));
+            for (int i = 0; i < count; ++i)
+                slice.push_back (weights.at (static_cast<std::size_t> (offset + i)).get<float>());
+            return slice;
+        };
+
+        // The head, kept for the [rows][columns] reads the head needs.
+        auto kernel2D = [&readFlat] (int offset, int rows, int columns)
+        {
+            std::vector<std::vector<float>> rowsOut;
+            rowsOut.reserve (static_cast<std::size_t> (rows));
+            for (int r = 0; r < rows; ++r)
+                rowsOut.push_back (readFlat (offset + r * columns, columns));
+            return rowsOut;
+        };
+
+        // One layer's kernel block reshaped into the two matrices RTNeural's
+        // loader indexes by: an [inputRows][4H] kernel for the input taps and
+        // an [H][4H] one for the recurrent taps. NAM stores the whole matrix
+        // row-major with the gates on the rows (PyTorch's i/f/g/o order), so
+        // reading it back column-wise moves the taps onto the rows and the
+        // gates into the columns without touching the gate order - exactly
+        // the mapping RTNeural's own setters then regroup per gate.
+        auto splitKernel = [&weights, hiddenSize, biasElements] (int offset, int inputRows)
+        {
+            const auto stride = inputRows + hiddenSize;
+            std::vector<std::vector<float>> kernel, recurrent;
+            kernel.reserve (static_cast<std::size_t> (inputRows));
+            recurrent.reserve (static_cast<std::size_t> (hiddenSize));
+            for (int i = 0; i < inputRows; ++i)
+            {
+                std::vector<float> row;
+                row.reserve (static_cast<std::size_t> (biasElements));
+                for (int k = 0; k < biasElements; ++k)
+                    row.push_back (weights.at (static_cast<std::size_t> (offset + k * stride + i)).get<float>());
+                kernel.push_back (std::move (row));
+            }
+            for (int j = 0; j < hiddenSize; ++j)
+            {
+                std::vector<float> row;
+                row.reserve (static_cast<std::size_t> (biasElements));
+                for (int k = 0; k < biasElements; ++k)
+                    row.push_back (weights.at (static_cast<std::size_t> (offset + k * stride + inputRows + j)).get<float>());
+                recurrent.push_back (std::move (row));
+            }
+            return std::make_pair (std::move (kernel), std::move (recurrent));
+        };
+
+        // The RTNeural document this re-shape produces: `inputSize` inputs,
+        // one "lstm" layer per NAM layer, then the head as a "dense" layer.
+        // The gate order inside each 4H column block stays exactly as
+        // PyTorch trained it - RTNeural's own setters do that regrouping, so
+        // a second permutation here would be a second bug.
+        nlohmann::json layerList = nlohmann::json::array();
+        int cursor = 0;
+
+        for (int layer = 0; layer < numLayers; ++layer)
+        {
+            const auto layerIn = layer == 0 ? inputSize : hiddenSize;
+            auto kernelPair = splitKernel (cursor, layerIn);
+            const auto bias = readFlat (cursor + kernelElementsFor (layerIn), biasElements);
+            cursor += blockElementsFor (layerIn);
+
+            layerList.push_back ({ { "type", "lstm" },
+                                   { "shape", nlohmann::json::array ({ hiddenSize }) },
+                                   { "weights", nlohmann::json::array (
+                                       { kernelPair.first, kernelPair.second, bias }) } });
+        }
+
+        // The head is stored row-major [out x H]; RTNeural's dense loader
+        // expects [in][out] and transposes on the way in, so each hidden tap
+        // becomes one single-element row.
+        const auto headWeight = kernel2D (cursor, hiddenSize, 1);
+        const auto headBias = readFlat (cursor + hiddenSize, 1);
+        layerList.push_back ({ { "type", "dense" },
+                               { "shape", nlohmann::json::array ({ 1 }) },
+                               { "weights", nlohmann::json::array ({ headWeight, headBias }) } });
+
+        nlohmann::json rtJson { { "in_shape", nlohmann::json::array ({ inputSize }) },
+                                { "layers", layerList } };
+
+        try
+        {
+            auto parsedModel = RTNeural::json_parser::parseJson<float> (rtJson, false);
+            if (parsedModel == nullptr)
+                return false;
+
+            model = std::move (parsedModel);
+            return true;
+        }
+        catch (...)
+        {
+            return false;
+        }
+    }
+#endif
+
     /** The model's own recurrent state, let go of on a rate change or a model
         swap so neither can resume from a stale hidden state. */
     void reset() noexcept
@@ -1597,6 +1867,145 @@ struct NeuralStage
         juce::ignoreUnused (amount);
         return x;
 #endif
+    }
+};
+
+//==============================================================================
+/**
+    The IR cabinet stage: a per-channel convolution against a user-loaded
+    impulse response, blended by IR MIX exactly the way the neural stage is
+    blended by NEURAL.
+
+    One juce::dsp::Convolution per channel rather than one shared stereo one
+    for the same reason the neural stage is two instances: the file the user
+    picks is often a MONO cab or room capture, and loading it as stereo would
+    correlate the two sides' reverberation tails. A mono IR is loaded once and
+    both channels convolve against it independently, which is the reading a
+    single-miked cabinet actually deserves. A stereo IR loads both sides and
+    each channel keeps its own.
+
+    The convolver is JUCE's zero-latency uniform FFT engine, so the stage adds
+    NO latency of its own and never has to report any: the oversamplers' report
+    stays the plugin's whole truth, and the stage never has to race the
+    oversampling switch for the one latency number.
+
+    The convolution runs OUTSIDE the per-sample loop, on the finished block,
+    for the same reason the reverb does: it is a STEREO-tailed effect whose
+    input must stay continuous with what the model and the machine produced,
+    and it cannot live inside a loop that advances shared smoother state per
+    frame.
+*/
+struct IrStage
+{
+    /** One convolver per channel, prepared in prepareToPlay. */
+    juce::dsp::Convolution convolverL;
+    juce::dsp::Convolution convolverR;
+
+    /** True from the moment a file has been HANDED to the loader. The load
+        itself finishes on JUCE's background thread; until it does the
+        convolvers pass audio through untouched, which is the correct reading
+        of "still loading" rather than a drop to dry. */
+    bool hasIr = false;
+
+    /** Stereo flag of the last load, so the scratch buffer is only resized
+        when it has to be. */
+    bool lastLoadWasStereo = false;
+
+    /** The rate and block maximum the convolvers were last prepared for. The
+        engine re-prepares them whenever the rate they actually see changes
+        (the oversampling factor multiplies it), because the FFT plans and the
+        internal buffers are per-rate state. */
+    double preparedSampleRate = 0.0;
+    int preparedMaxBlock = 0;
+
+    void clear() noexcept { hasIr = false; }
+
+    /** Reads a WAV/AIFF (anything JUCE's basic formats decode) and hands it
+        to the channel convolvers. Returns false without touching the previous
+        IR when the file has no readable audio. Called on the MESSAGE thread:
+        loadImpulseResponse is documented as wait-free and does the decoding on
+        its own background thread. */
+    bool loadFromFile (const juce::File& file)
+    {
+        if (! file.existsAsFile())
+            return false;
+
+        // A first probe read decides mono vs stereo handling (and rejects
+        // undecodable files) without allocating the audio.
+        juce::AudioFormatManager manager;
+        manager.registerBasicFormats();
+        std::unique_ptr<juce::AudioFormatReader> probe (manager.createReaderFor (file));
+        if (probe == nullptr || probe->lengthInSamples <= 0)
+            return false;
+
+        const bool stereo = probe->numChannels >= 2;
+
+        // Stereo::no would MIX a stereo file down; a stereo IR must stay a
+        // stereo IR, so the flag follows the file and the TRIM/normalise
+        // defaults are the ones a cab/room capture wants.
+        convolverL.loadImpulseResponse (file,
+                                        stereo ? juce::dsp::Convolution::Stereo::yes
+                                               : juce::dsp::Convolution::Stereo::no,
+                                        juce::dsp::Convolution::Trim::yes, 0,
+                                        juce::dsp::Convolution::Normalise::yes);
+        convolverR.loadImpulseResponse (file,
+                                        stereo ? juce::dsp::Convolution::Stereo::yes
+                                               : juce::dsp::Convolution::Stereo::no,
+                                        juce::dsp::Convolution::Trim::yes, 0,
+                                        juce::dsp::Convolution::Normalise::yes);
+
+        lastLoadWasStereo = stereo;
+        hasIr = true;
+        return true;
+    }
+
+    /** Prepares both convolvers for a rate/block change. Safe before any IR
+        exists: the convolver treats a pre-prepare load as the initial state. */
+    void prepare (const juce::dsp::ProcessSpec& spec)
+    {
+        convolverL.prepare (spec);
+        convolverR.prepare (spec);
+        preparedSampleRate = spec.sampleRate;
+        preparedMaxBlock = static_cast<int> (spec.maximumBlockSize);
+    }
+
+    void reset() noexcept
+    {
+        convolverL.reset();
+        convolverR.reset();
+    }
+
+    /** Convolves one in-place block of `numChannels` channels. Dry/wet is the
+        CALLER's business (the IR MIX control crossfades against the un-IR'd
+        signal, which the stage does not hold), so this is all-or-nothing and
+        the pass-through case is decided before any processing is paid for. */
+    void process (juce::AudioBuffer<float>& buffer, int numChannels, bool wet)
+    {
+        if (! hasIr || ! wet || numChannels <= 0)
+            return;
+
+        juce::dsp::AudioBlock<float> block (buffer);
+        auto left = block.getSingleChannelBlock (0);
+
+        if (numChannels == 1 || ! lastLoadWasStereo)
+        {
+            // Mono IR: each channel convolves against the SAME response, which
+            // is one cabinet heard by two microphones rather than two
+            // different rooms.
+            convolverL.process (juce::dsp::ProcessContextReplacing<float> (left));
+            if (numChannels == 2)
+            {
+                auto right = block.getSingleChannelBlock (1);
+                convolverR.process (juce::dsp::ProcessContextReplacing<float> (right));
+            }
+        }
+        else
+        {
+            // Stereo IR: the file's own two sides belong to the two channels,
+            // so they are processed as the stereo pair they were captured as.
+            auto pair = block.getSubsetChannelBlock (0, 2);
+            convolverL.process (juce::dsp::ProcessContextReplacing<float> (pair));
+        }
     }
 };
 
@@ -4459,6 +4868,24 @@ public:
         library is not in the build. */
     bool loadNeuralModel (const juce::String& modelJson);
 
+    /** Loads a NeuralAmpModeler (.nam) model from its raw JSON text. A .nam
+        file is a DIFFERENT wire format from RTNeural's (one flat weight vector
+        shaped by "config" rather than a stack of named layers), so it goes
+        through its own converter in NeuralStage. Returns false - leaving any
+        previously loaded model untouched - when the text does not parse as a
+        .nam file this build can play. */
+    bool loadNamModel (const juce::String& namJson);
+
+    /** Installs the impulse response `file` into the IR cabinet stage.
+        Returns false when the file is not audio JUCE can decode. */
+    bool loadIrFile (const juce::File& irFile);
+
+    /** Releases the loaded impulse response. */
+    void clearIr();
+
+    /** True while an impulse response is loaded. */
+    bool hasIr() const noexcept { return irStage.hasIr; }
+
     /** Releases any installed model, returning the stage to the pass-through. */
     void clearNeuralModel();
 
@@ -4617,8 +5044,16 @@ private:
     // editor, but a parameter like every other setting so it survives in a
     // session and can be automated.
     std::atomic<float>* uiSoundsParam = nullptr;
-    std::atomic<float>* blendParam = nullptr;
-    std::atomic<float>* shapeParam = nullptr;
+    // The seven SOURCE knobs - the shares of the six saturation principles.
+    // (The old blend/shape sweep pair was removed: the user asked for the
+    // machines to be dialled by name.)
+    std::atomic<float>* tapeSourceParam = nullptr;
+    std::atomic<float>* vinylSourceParam = nullptr;
+    std::atomic<float>* cassetteSourceParam = nullptr;
+    std::atomic<float>* digitalSourceParam = nullptr;
+    std::atomic<float>* ampSourceParam = nullptr;
+    std::atomic<float>* valveSourceParam = nullptr;
+    std::atomic<float>* transformerSourceParam = nullptr;
     std::atomic<float>* sagParam = nullptr;
     std::atomic<float>* presenceParam = nullptr;
     std::atomic<float>* cabinetParam = nullptr;
@@ -4707,6 +5142,8 @@ private:
     std::atomic<float>* transientSustainParam = nullptr;
     std::atomic<float>* transientMixParam = nullptr;
     std::atomic<float>* neuralMixParam = nullptr;
+    // The IR stage's wet/dry. Read once per block like every other control.
+    std::atomic<float>* irMixParam = nullptr;
 
     float sampleRate = 44100.0f;
     // Every smoother below is advanced exactly once at the top of each sample frame.
@@ -5251,8 +5688,16 @@ private:
 
     // The two blend controls, ramped so moving either one morphs the harmonics
     // continuously instead of stepping the curve on a block boundary.
-    SampleSmoother blendSmoothed { sampleClock };
-    SampleSmoother shapeSmoothed { sampleClock };
+    // The SOURCE shares ride the same kind of smoother every other control
+    // does, so a mix change cannot step the weights either. Two are paired on
+    // one smoother only in the sense that setWeights consumes them together.
+    SampleSmoother tapeSourceSmoothed { sampleClock, false, false, 1.0f };
+    SampleSmoother vinylSourceSmoothed { sampleClock };
+    SampleSmoother valveSourceSmoothed { sampleClock };
+    SampleSmoother cassetteSourceSmoothed { sampleClock };
+    SampleSmoother ampSourceSmoothed { sampleClock };
+    SampleSmoother transformerSourceSmoothed { sampleClock };
+    SampleSmoother digitalSourceSmoothed { sampleClock };
 
     // ST LINK, ramped like every other control-derived coefficient: it scales the
     // gain difference between the linked and unlinked paths, and a step there is a
@@ -5510,6 +5955,14 @@ private:
     NeuralStage neuralL;
     NeuralStage neuralR;
     SampleSmoother neuralMixSmoothed { sampleClock, false, false, 0.0f };
+
+    //  The IR cabinet stage: one convolution per channel against a user-loaded
+    //  impulse response, blended by IR MIX (ir_mix) exactly the way NEURAL
+    //  blends the model. The convolutions run on the FINISHED block after the
+    //  per-sample loop, beside the reverb and the vinyl - the engine's own
+    //  note there explains why a stage with a tail cannot live in that loop.
+    IrStage irStage;
+    SampleSmoother irMixSmoothed { sampleClock, false, false, 0.0f };
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessor)

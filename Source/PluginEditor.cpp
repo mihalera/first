@@ -339,6 +339,61 @@ namespace
         return paletteForTheme (liveThemeChoice);
     }
 
+    // -----------------------------------------------------------------------
+    //  The seven principles, each with its own colour.
+    //
+    //  The SOURCE knobs replaced one sweep and one spread with seven NAMED
+    //  machines, and a row of seven identical knobs reads as seven copies of
+    //  one control. A hue per principle fixes that for the price of a table: the
+    //  arc, the tracer and the MIX page's bar all speak it, so the colour IS
+    //  the name - the user learns "coral is the valve" once, and the seven
+    //  knobs stop being seven strangers.
+    //
+    //  The hues are spread around the wheel but held to one family: warm brass
+    //  and coral for the two machines that are mostly about heat, cool teal and
+    //  violet for the two that are about a surface and a groove, the rest as the
+    //  mid-tones between them. Each is desaturated enough to sit on charcoal or
+    //  metal without glowing and dark enough to read on ivory, so the same
+    //  seven colours work on all three themes - the dark ones get a small lift
+    //  and the light one a small sink, because one pigment needs opposite
+    //  treatment on opposite grounds.
+    // -----------------------------------------------------------------------
+    juce::Colour principleColour (int principle, bool darkTheme) noexcept
+    {
+        static constexpr juce::uint32 hues[principleCount] {
+            0xffe0a53c,   // TAPE        - brass
+            0xffe0603f,   // VALVE       - hot coral
+            0xff3fae9e,   // CASSETTE    - teal
+            0xff8a74e0,   // VINYL       - violet
+            0xffd9527f,   // AMP         - rose
+            0xffa8b84a,   // TRANSFORMER - olive
+            0xff3f9fe0    // DIGITAL     - blue
+        };
+
+        const auto base = juce::Colour (hues[juce::jlimit (0, principleCount - 1, principle)]);
+        return darkTheme ? base.brighter (0.16f) : base.darker (0.08f);
+    }
+
+    // The parameter ids the seven SOURCE knobs bind to, in principleColour's
+    // order. The MIX page's bar reads them in this order too, so a re-order
+    // here moves a colour with its machine rather than orphaning one.
+    constexpr std::array<const char*, principleCount> principleParameterIds {
+        "tape_source", "valve_source", "cassette_source", "vinyl_source",
+        "amp_source", "transformer_source", "digital_source"
+    };
+
+    /** The principle index of a parameter id, or -1 if it is not one of the
+        seven SOURCE knobs. Used once, where the sliders are built, to stamp the
+        index onto each of them as a component property. */
+    int principleOf (const juce::String& id) noexcept
+    {
+        for (int p = 0; p < principleCount; ++p)
+            if (id == principleParameterIds[static_cast<std::size_t> (p)])
+                return p;
+
+        return -1;
+    }
+
     // Shading for the cylindrical switch bodies (drawToggleButton, both look
     // and feels). The switch is a cylinder lying along its own length, lit
     // from above: a point on the projected face has its surface normal tilted
@@ -349,7 +404,7 @@ namespace
     // thin specular line riding the same falloff - which is what turns a
     // filled shape into something that reads as machined metal.
     void fillCylinderBarrel (juce::Graphics& g, const juce::Rectangle<float>& barrel,
-                             juce::Colour face, juce::Colour edge)
+                             juce::Colour face, juce::Colour edge, float lean = 0.0f)
     {
         if (barrel.getWidth() < 2.0f || barrel.getHeight() < 2.0f)
             return;
@@ -367,11 +422,14 @@ namespace
 
         // The specular: a thin bright line along the barrel's length, riding
         // above the centreline. It is the single strongest cue that the
-        // surface is curved rather than flat.
+        // surface is curved rather than flat. `lean` slides it along the
+        // barrel's length, which is what the camera's angle asks for: a
+        // control the viewer is looking at from its left catches its lamp
+        // nearer the middle, and one seen from its right nearer the far end.
         const auto streak = juce::Rectangle<float> (
-            barrel.getX() + barrel.getWidth() * 0.06f,
+            barrel.getX() + barrel.getWidth() * (0.06f + 0.10f * lean),
             barrel.getY() + barrel.getHeight() * 0.12f,
-            barrel.getWidth() * 0.88f,
+            barrel.getWidth() * (0.88f - 0.20f * std::abs (lean)),
             juce::jmin (barrel.getHeight() * 0.16f, 3.5f));
         juce::ColourGradient specular (
             face.brighter (0.60f).withAlpha (0.65f),
@@ -380,6 +438,86 @@ namespace
             streak.getX(), streak.getBottom(), false);
         g.setGradientFill (specular);
         g.fillRoundedRectangle (streak, streak.getHeight() * 0.5f);
+    }
+
+    // -----------------------------------------------------------------------
+    //  A cap lit by the panel's one lamp.
+    //
+    //  Radial shading on its own is what makes a knob read as a PRINTED DISC.
+    //  The falloff says "round", but the TERMINATOR - the band where the surface
+    //  turns away from the light and stops catching it - is missing, and without
+    //  that band the eye has no second edge to read and the form goes flat. So
+    //  this fills the same ellipse in four terms a photograph of a machined part
+    //  would show, each doing something a radial gradient cannot:
+    //
+    //    body       radial, centred ABOVE AND LEFT of the cap's middle, because
+    //               that is where the lamp is; a gradient centred on the cap
+    //               itself lights it evenly and reads as paint
+    //    terminator LINEAR across the cap, falling into shadow down and right.
+    //               A linear gradient filled into an ellipse is clipped BY the
+    //               ellipse, so the two models combine with no mask and no
+    //               second path - the whole trick is one fill call
+    //    specular   a hard bright core inside a soft one, where the dome faces
+    //               the lamp square on. The soft blob alone is a smudge; the
+    //               core inside it is the reflection of the light source
+    //    bounce     the light the panel throws back up into the cap's underside.
+    //               This is the term that sells a part as SOLID rather than as
+    //               a circle: a shadow side that dies to pure black is the
+    //               single most common reason a rendered knob looks drawn
+    //
+    //  `gloss` scales the three lighting terms and nothing else, so a hovered
+    //  knob gets the same shading brighter rather than a second drawing path.
+    // -----------------------------------------------------------------------
+    void fillLitDome (juce::Graphics& g, juce::Point<float> centre, float radius,
+                      juce::Colour body, juce::Colour highlight, juce::Colour shadow,
+                      float gloss = 1.0f)
+    {
+        if (radius < 0.75f)
+            return;
+
+        juce::ColourGradient dome (highlight, centre.x - radius * 0.32f, centre.y - radius * 0.38f,
+                                   shadow, centre.x + radius * 0.86f, centre.y + radius * 0.86f, true);
+        dome.addColour (0.34f, body.brighter (0.10f));
+        dome.addColour (0.70f, body);
+        dome.addColour (0.94f, body.darker (0.20f));
+        g.setGradientFill (dome);
+        g.fillEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f);
+
+        // The terminator: transparent across the lit half, then two darkening
+        // stops down the shadow half. Two rather than one, because a single
+        // ramp reads as a vignette painted on the cap and a two-stage ramp
+        // reads as the curve of a surface.
+        juce::ColourGradient turn (juce::Colours::transparentBlack,
+                                   centre.x - radius * 0.85f, centre.y - radius * 0.85f,
+                                   shadow.withAlpha (0.46f * gloss),
+                                   centre.x + radius * 0.95f, centre.y + radius * 0.95f, false);
+        turn.addColour (0.48f, juce::Colours::transparentBlack);
+        turn.addColour (0.74f, shadow.withAlpha (0.14f * gloss));
+        g.setGradientFill (turn);
+        g.fillEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f);
+
+        // The specular core.
+        const auto hotRadius = juce::jmax (0.6f, radius * 0.28f);
+        const auto hotX = centre.x - radius * 0.38f;
+        const auto hotY = centre.y - radius * 0.44f;
+        juce::ColourGradient spec (highlight.withAlpha (0.50f * gloss), hotX, hotY,
+                                   highlight.withAlpha (0.0f),
+                                   hotX + hotRadius, hotY + hotRadius, true);
+        g.setGradientFill (spec);
+        g.fillEllipse (hotX - hotRadius, hotY - hotRadius, hotRadius * 2.0f, hotRadius * 2.0f);
+
+        // The bounce, low and to the right - the one term that must NOT sit
+        // where the light does, or it stops reading as reflected light and
+        // starts reading as a second highlight.
+        const auto bounceRadius = juce::jmax (0.6f, radius * 0.54f);
+        const auto bounceX = centre.x + radius * 0.34f;
+        const auto bounceY = centre.y + radius * 0.44f;
+        juce::ColourGradient bounce (highlight.withAlpha (0.20f * gloss), bounceX, bounceY,
+                                     highlight.withAlpha (0.0f),
+                                     bounceX - bounceRadius, bounceY - bounceRadius, true);
+        g.setGradientFill (bounce);
+        g.fillEllipse (bounceX - bounceRadius, bounceY - bounceRadius,
+                       bounceRadius * 2.0f, bounceRadius * 2.0f);
     }
 
     // The three tabs the knob grid is split across. Each entry names a tab and lists the
@@ -408,18 +546,13 @@ namespace
         const char* name;
         const char* hint;
         std::size_t count;
+        int family;                 // which of the three families hosts the page
         std::size_t controls[16];
     };
 
-    // Six pages, in signal order, because the panel now carries thirty-one knobs and
-    // one surface cannot hold them legibly. The split follows the CHAIN rather than an
-    // arbitrary grouping, so walking the tabs left to right walks the signal:
-    //
-    //   MACHINE   what goes in, how the machine colours it, what comes out
-    //   DRIVE     the gain stages in front of the tape, then everything that bends
-    //   TAPE      the head, the medium's condition and the transport's
-    //   SPACE     the two time-based stages, delay and reverb
-    //   VINYL     the record-playing end of the chain
+    // Eleven pages under three large families - TAPE, FX, SETUP - because the
+    // panel carries fifty-nine knobs and no single subject should own a crowded
+    // page. Walking the bar left to right inside a family still walks the signal:
     //
     // Index map, for reading the table below:
     //   0 input  1 drive  2 bias  3 tone  4 character  5 wow  6 flutter  7 mix
@@ -443,106 +576,152 @@ namespace
     // controls. The indices are now all listed.
     //
     // The deck's non-knob switches follow the tabs too: GL and OVERSAMPLING show
-    // on SETTINGS, and the delay TYPE / RATE / SYNC trio shows on SPACE. They are
+    // on SETTINGS, and the delay TYPE / RATE / SYNC trio shows on DELAY. They are
     // not knobs - the grid below cannot place them - so their visibility is
     // managed in setCurrentTab beside the knobs'.
-    constexpr std::array<TabSpec, 10> tabSpecs { {
+    //  The sixteen pages are grouped into THREE FAMILIES - TAPE, FX, SETUP - and
+    //  no page carries more than one subject, or more than one row of seven
+    //  knobs: DRIVE once held twelve and NOISE eleven, which is exactly the
+    //  crowding the tabs exist to avoid. The families are the three large
+    //  buttons ABOVE this bar (see setTabFamily); the column in each row below
+    //  is the page's family, and it is the single source the strip reads.
+    //  Sixteen now: MIX is a page of its own, split from SUBFUND because ten
+    //  knobs on one page is the crowding this table exists to prevent.
+    //
+    //  The page count is written ONCE, here, ABOVE the first array that needs
+    //  it: the table below, the subtitle list and the coverage check further
+    //  down all size themselves from this constant, so adding a page cannot
+    //  leave one of them behind.
+    constexpr std::size_t numTabPages = 16;
+    constexpr std::array<TabSpec, numTabPages> tabSpecs { {
+        // ---- TAPE family (9 pages): the machine and everything feeding it ---
         //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
         { "MACHINE", "What goes in, how the machine colours it, and what comes out.",
-                     7, { 0, 3, 4, 7, 9, 8, 32 } },
-        //  preamp, distortion, drive, bias, blend, shape, amp_bias, sag, subfund
-        { "DRIVE", "The gain stages in front of the tape, then everything that bends "
-                   "the signal.",
-                     12, { 44, 45, 46, 21, 22, 1, 2, 10, 11, 12, 13, 20 } },
-        //  flux, cabinet, presence. The vinyl stage's three voicing selectors -
-        //  GENERATION / TURNTABLE / CARTRIDGE - moved here from the old VINYL
-        //  page as well; they are COMBO BOXES rather than knobs (the grid only
-        //  places knobs), so like GL and OVERSAMPLING they are tab members
-        //  whose visibility setCurrentTab asserts and resized() lays out.
-        { "CHARACTER", "The head, the medium's tone, and how the record was made, "
-                       "what plays it and what reads it: GENERATION, TURNTABLE and "
-                       "CARTRIDGE re-voice the whole vinyl stage, so they live with "
-                       "the rest of the machine's voicing rather than beside its "
-                       "faults.",
-                     3, { 23, 15, 14 } },
+                     7, 0, { 0, 3, 4, 7, 9, 8, 37 } },
+        //  di, di_load, di_transformer, preamp, distortion - the gain stages
+        //  IN FRONT of the tape. The DI pad/load combo rides this page beside
+        //  the knob row in resized(), with the DI it belongs to.
+        { "FRONT END", "The gain stages in front of the tape: DISTORT and PREAMP "
+                       "push the front end, and the DI loads, pads and colours "
+                       "the instrument before any of it - with its PAD and LOAD "
+                       "selector beside the row.",
+                     5, 0, { 49, 50, 51, 26, 27 } },
+        //  drive, bias - the head's magnetic saturation itself.
+        { "SATURATION", "The magnetic saturation the head applies: DRIVE sets how "
+                        "hard the tape is pushed and BIAS where its operating "
+                        "point sits - the two classic recorder controls, on a "
+                        "page of their own.",
+                     2, 0, { 1, 2 } },
+        //  flux, cabinet, presence. The vinyl stage's three voicing selectors
+        //  - GENERATION / TURNTABLE / CARTRIDGE - are COMBO BOXES rather than
+        //  knobs (the grid only places knobs), so like GL and OVERSAMPLING they
+        //  are tab members whose visibility setCurrentTab asserts and resized()
+        //  lays out, under the knobs here; the NEURAL model picker takes the
+        //  band's fourth column.
+        { "CHARACTER", "The head and the medium's tone: FLUX drives the head, "
+                       "CABINET and PRESENCE place the machine's voice. The "
+                       "record's GENERATION / TURNTABLE / CARTRIDGE re-voice the "
+                       "whole vinyl stage from under this row, and the NEURAL "
+                       "model picker takes the band's last column.",
+                     3, 0, { 28, 19, 20 } },
         //  noise, noise_lvl, wow, flutter, wear, mechanics - the MACHINE's own
-        //  departures from a clean signal, which is what noise means in the
-        //  widest sense. Wow and flutter are the transport's noise, wear and
-        //  mechanics the medium's and the mechanism's, and they share the
-        //  transport gate with the hiss. The record's five FAULTS are here too
-        //  - DUST the surface's fine texture, SCRATCH a wound crossed once per
-        //  revolution, WARP the level breathing at the platter rate, ELECTRICAL
-        //  the cartridge's earthing, CLICKS the pressing's sharp faults - so
-        //  every knob on this page is a way of making the signal LESS clean.
-        { "NOISE", "Everything that departs from a clean signal. NOISE MIX sets how "
-                   "much of it is in the output and NOISE LVL how loud the sources "
-                   "run; WOW and FLUTTER are the transport's noise, WEAR and "
-                   "MECHANICS the medium's and the mechanism's, and the record's "
-                   "five FAULTS are here too - DUST the surface's fine texture, "
-                   "SCRATCH a wound crossed once per revolution, WARP the level "
-                   "breathing at the platter rate, ELECTRICAL the cartridge's "
-                   "earthing, CLICKS the pressing's sharp faults.",
-                     11, { 19, 31, 5, 6, 24, 25, 33, 34, 35, 36, 37 } },
-        //  delay_time, delay_feedback, st_offset, reverb, reverb_size
-        { "SPACE", "The two time-based stages: the second head, then the room. The "
-                   "deck's TYPE / SYNC DELAY / RATE switches belong to the second "
-                   "head, so they show on this tab.",
-                     6, { 16, 17, 18, 53, 26, 27 } },
-        //  transient_attack (54), transient_sustain (55), transient_mix (56),
-        //  neural_mix (57). The DYNAMICS page: the two stages that act on the
-        //  finished signal's envelope and on a learned model rather than on the
-        //  waveform. They are together because both sit AFTER the machine and both
-        //  are "how the sound moves" rather than "how the sound is bent" - the
-        //  transient shaper changes the envelope without adding a harmonic, and
-        //  the neural stage adds a learned saturation on top of the hand-written
-        //  one. NEURAL is a MIX because the model itself is loaded from a file,
-        //  not chosen with a knob.
-        { "DYN", "The two stages that shape the FINISHED signal. ATK sharpens "
-                    "(positive) or softens (negative) the attack of each event; "
-                    "SUS lengthens (positive) or shortens (negative) what follows "
-                    "the attack, its body and ring; TR MIX is how much of the "
-                    "shaped signal reaches the output. NEURAL is the wet/dry "
-                    "position of an optional learned model loaded from a file - "
-                    "at 0, or with no model loaded, it is transparent.",
-                     4, { 54, 55, 56, 57 } },
-        //  The record's five FAULTS moved onto NOISE (each is a mechanism of noise:
-        //  surface texture, a repeating wound, the platter's warp, the cartridge's
-        //  earthing, the pressing's clicks), so this page carries the stage's mix
-        //  and its two continuous surfaces. The three selectors at the top of the
-        //  old page - GENERATION / TURNTABLE / CARTRIDGE - moved to CHARACTER,
-        //  where the rest of the machine's voicing lives.
-        //
-        //  These three are here and NOT also on NOISE: they are the record's
-        //  CHARACTER (how much of the stage is in the output, and the two
-        //  continuous surfaces), while the faults are noise. Listing them on
-        //  both pages would put the same knob on two tabs, and the grid can only
-        //  place one of them.
-        { "VINYL", "The record-playing stage: VINYL MIX is how much of it is in the "
-                    "output, CRACKLE the surface's granular texture and RUMBLE the "
-                    "platter's own low thump. The record's five FAULTS - DUST, "
-                    "SCRATCH, WARP, ELECTRICAL, CLICKS - live on the NOISE tab, "
-                    "next to the rest of what departs from a clean signal; the "
-                    "GENERATION / TURNTABLE / CARTRIDGE selectors that change how "
-                    "all of them sound are on CHARACTER.",
-                     3, { 28, 29, 30 } },
-        //  in_low, in_mid, in_high - the input equaliser. Its own page because
-        //  it is a different DECISION from the output EQ: this one changes what
-        //  the machine hears, so it changes what the machine does.
+        //  departures from a clean signal. The record's five FAULTS are on the
+        //  RECORD page: each is a mechanism of the RECORD's noise, not the
+        //  machine's.
+        { "NOISE", "The machine's own departures from a clean signal. NOISE MIX "
+                   "sets how much of it is in the output and NOISE LVL how loud "
+                   "the sources run; WOW and FLUTTER are the transport's noise, "
+                   "WEAR and MECHANICS the medium's and the mechanism's. The "
+                   "record's five FAULTS are on the RECORD page.",
+                     6, 0, { 24, 36, 5, 6, 29, 30 } },
+        //  The record's five FAULTS, on a page of their own because each IS a
+        //  mechanism of the record's own noise: surface texture, a repeating
+        //  wound, the platter's warp, the cartridge's earthing, the pressing's
+        //  clicks.
+        { "RECORD", "The record's five FAULTS: DUST the surface's fine texture, "
+                    "SCRATCH a wound crossed once per revolution, WARP the level "
+                    "breathing at the platter rate, ELECTRICAL the cartridge's "
+                    "earthing, CLICKS the pressing's sharp faults.",
+                     5, 0, { 38, 39, 40, 41, 42 } },
+        //  The vinyl stage's own three knobs. These are here and NOT also on
+        //  NOISE: they are the record's CHARACTER, while the faults are its
+        //  noise - listing them on both pages would put the same knob on two
+        //  tabs, and the grid can only place one of them.
+        { "VINYL", "The record-playing stage: VINYL MIX is how much of it is in "
+                   "the output, CRACKLE the surface's granular texture and RUMBLE "
+                   "the platter's own low thump. GENERATION / TURNTABLE / "
+                   "CARTRIDGE re-voice it all from CHARACTER; the FAULTS are on "
+                   "RECORD.",
+                     3, 0, { 33, 34, 35 } },
+        //  The seven SOURCE knobs alone: the saturation mix IS the page, so the
+        //  user dialling TAPE up against VALVE is looking at the whole mix and
+        //  nothing else. The mix bar in the band under the row shows the same
+        //  seven shares the core is actually running.
+        { "MIX", "The saturation mix: seven SOURCE knobs, one per machine. TAPE, "
+                 "VALVE, CASSETTE, VINYL, AMP, TRANSFORMER and DIGITAL each set "
+                 "that machine's share of the character, and the shares are "
+                 "normalised to sum to 100 percent - so what is dialled is what "
+                 "is heard, and the bar under the row shows the running mix. A "
+                 "machine whose own TYPE is OFF contributes nothing and its "
+                 "share is redistributed among the rest.",
+                     7, 0, { 10, 11, 12, 13, 14, 15, 16 } },
+        //  amp_bias, sag, subfund - everything that BENDS the curve once the
+        //  gain stages have pushed it. Three knobs that share one idea (the
+        //  curve after the mix), so they are a page of three rather than three
+        //  more rows on the mix's.
+        { "SUBFUND", "The curve-benders: AMP BIAS moves the amp stage's operating "
+                     "point, SAG lets its supply yield under load, and SUBFUND "
+                     "generates the octave below what plays.",
+                     3, 0, { 17, 18, 25 } },
+        // ---- FX family (4 pages): the second head, the room, the envelope,
+        //  the output equaliser ------------------------------------------------
+        //  delay_time, delay_feedback, st_offset, ping_pong. The deck's TYPE /
+        //  SYNC DELAY / RATE switches belong to this page and ride the band
+        //  under the knobs.
+        { "DELAY", "The second head: DELAY and DLY LVL set the echo, ST OFFSET "
+                   "skews the sides against each other, PING-PONG bounces it "
+                   "between them. The deck's TYPE / SYNC DELAY / RATE switches "
+                   "sit under the row.",
+                     4, 1, { 21, 22, 23, 58 } },
+        { "REVERB", "The room: REVERB is how much of it is in the output and RVB "
+                    "SIZE how large the space the reflections build.",
+                     2, 1, { 31, 32 } },
+        //  transient_attack (54), transient_sustain (55), transient_mix (56).
+        //  The stage that acts on the finished signal's envelope rather than on
+        //  the waveform - it changes how the sound MOVES without adding a
+        //  harmonic.
+        { "DYN", "The stage that shapes the FINISHED signal's envelope. ATK "
+                 "sharpens (positive) or softens (negative) the attack of each "
+                 "event; SUS lengthens (positive) or shortens (negative) what "
+                 "follows the attack, its body and ring; TR MIX is how much of "
+                 "the shaped signal reaches the output.",
+                     3, 1, { 59, 60, 61 } },
+        //  out_low, out_mid, out_high and their three corners.
+        { "OUT EQ", "The output equaliser, after the machine and before the output "
+                    "trim. Nothing downstream responds to what it does, so it "
+                    "corrects the RESULT rather than the input - the neutral, "
+                    "predictable EQ you use to place the finished sound. Same "
+                    "three bands as the input EQ, same transparency at 0 dB; the "
+                    "ORDER and corner switches ride the row below.",
+                     6, 1, { 46, 47, 48, 55, 56, 57 } },
+        // ---- SETUP family (3 pages): what the machine hears, the file-fed
+        //  shapers, the engine switches ----------------------------------------
+        //  in_low, in_mid, in_high and their three corners.
         { "IN EQ", "The input equaliser, in front of the machine. What it shapes "
-                    "is what the tape HEARS, so lifting the low end here drives the "
-                    "saturation curve and the glue compressors harder - it changes "
-                    "the character of the processing, not merely the balance. This "
-                    "is the EQ you use to feed the machine what it wants. LOW is a "
-                    "shelf at 200 Hz, MID a bell at 1 kHz, HIGH a shelf above "
-                    "4 kHz; all three are transparent at 0 dB.",
-                     6, { 38, 39, 40, 47, 48, 49 } },
-        //  out_low, out_mid, out_high - the output equaliser.
-        { "OUT EQ", "The output equaliser, after the machine and before the "
-                     "output trim. Nothing downstream responds to what it does, so "
-                     "it corrects the RESULT rather than the input - the neutral, "
-                     "predictable EQ you use to place the finished sound. Same three "
-                     "bands as the input EQ, same transparency at 0 dB.",
-                     6, { 41, 42, 43, 50, 51, 52 } },
+                   "is what the tape HEARS, so lifting the low end here drives "
+                   "the saturation curve and the glue compressors harder - it "
+                   "changes the character of the processing, not merely the "
+                   "balance. LOW is a shelf at 200 Hz, MID a bell at 1 kHz, HIGH "
+                   "a shelf above 4 kHz; all three are transparent at 0 dB, and "
+                   "the ORDER and corner switches ride the row below.",
+                     6, 2, { 43, 44, 45, 52, 53, 54 } },
+        //  neural_mix, ir_mix - the two file-fed stages, each with its own
+        //  loader in the band under the row.
+        { "SHAPERS", "The two file-fed stages: NEURAL blends in a learned model "
+                     "and IR MIX an impulse response - a cabinet or a room - "
+                     "each loaded from a file through the loader under its own "
+                     "knob.",
+                     2, 2, { 62, 63 } },
         //  No knobs of its own: SETTINGS is where the three engine-level switches
         //  live - GL, OVERSAMPLING and the interface sounds - shown by
         //  setCurrentTab, not by the grid.
@@ -551,14 +730,44 @@ namespace
                       "panel rendering on and off, and UI SOUNDS turns the panel's "
                       "own interface clicks on and off - those never reach the "
                       "audio output, they play on a device of their own.",
-                     0, {} }
+                     0, 2, {} }
+    } };
+
+    // One SHORT subtitle per page, in tabSpecs' order: the sentence the section
+    // caption under the tab bar shows. tabSpecs' own description is the long form
+    // for the tooltip, and a paragraph of it above a row of knobs is a paragraph
+    // nobody reads; this is the one line that says what the page is FOR, which is
+    // what fifteen pages of bare knobs were missing.
+    //
+    // A second array rather than a seventh field on TabSpec, because TabSpec is
+    // brace-initialised sixteen times and a field that has to be retyped on every
+    // edit is a field that will be forgotten. The static_assert beside
+    // tabsCoverAllControls in setCurrentTab keeps the two the same length, so
+    // adding a page without a caption is a build error rather than a blank line.
+    constexpr std::array<const char*, numTabPages> tabSubtitles { {
+        "in, out and the stereo field of the whole machine",
+        "the gain stages in front of the tape: DI, preamp, distortion",
+        "the head's own saturation: DRIVE and where BIAS sits",
+        "the head's drive and the machine's two voicing controls",
+        "the machine's own departures from a clean signal",
+        "the record's five faults, one page each of its own",
+        "the record-playing stage: how much, how rough, how low",
+        "seven machines, seven shares, one character",
+        "the curve-benders: bias, supply sag, and the octave below",
+        "the second head: time, repeats, offset and where they land",
+        "the room: how much of it is in the output, and how big",
+        "the finished signal's envelope, not its waveform",
+        "the equaliser after the machine: it corrects the RESULT",
+        "the equaliser before the machine: it changes the CHARACTER",
+        "the two file-fed stages, each with its loader beside it",
+        "the engine-level switches: rate, GL and the panel's own sounds"
     } };
 
     // Where the divider under the knob-grid heading sits, in pixels from the top of the
     // panel. The tab bar lives between the heading and this line, so paint() and
     // resized() both read it from here: it used to be a literal 42 px in paint(), which
     // is precisely where the first tab button now is.
-    constexpr int controlsDividerOffset = 68;
+    constexpr int controlsDividerOffset = 92;
 
     // Does control `index` belong to `tab`?
     bool controlIsInTab (std::size_t index, int tab)
@@ -574,10 +783,8 @@ namespace
 
     // Compile-time proof that the tabs partition the grid: every control index appears
     // in exactly one tab, so no knob is orphaned (invisible and unreachable) or shown
-    // twice, and none of them is silently dropped.
-    // The tab count is written once, here, and the static_assert that guards coverage
-// reads it from the same constant - so adding a page cannot leave this behind.
-constexpr std::size_t numTabPages = 10;
+    // twice, and none of them is silently dropped. The page count this is sized from
+    // is declared above the tab table, where the first array that needs it lives.
 
 // The control count is a TEMPLATE parameter, not an argument, and that is the
 // whole fix. It used to be a literal 54 inside the function - the current
@@ -687,12 +894,37 @@ constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tab
         return font;
     }
 
+    // A screw head, countersunk into the plate. It used to be a dot with a
+    // diagonal through it, and a dot with a line through it reads as a HOLE -
+    // which is the opposite of what a screw is. This is four terms: the dark
+    // countersink the head sits down in, the head lit from the same up-and-left
+    // as every other surface here, the rim pair that closes it into a cylinder,
+    // and a cross whose flutes each carry a lit lip, because a groove with a lit
+    // lip has depth and a groove painted flat does not.
     void drawScrew (juce::Graphics& g, float x, float y, const UiPalette& palette)
     {
-        g.setColour (palette.border.withAlpha (0.65f));
-        g.fillEllipse (x - 3.0f, y - 3.0f, 6.0f, 6.0f);
-        g.setColour (palette.panel.brighter (0.22f));
-        g.drawLine (x - 1.5f, y + 1.5f, x + 1.5f, y - 1.5f, 0.8f);
+        const auto r = 3.2f;
+        const auto reach = r * 0.66f;
+
+        g.setColour (juce::Colours::black.withAlpha (0.26f));
+        g.fillEllipse (x - r - 1.1f, y - r - 1.1f, (r + 1.1f) * 2.0f, (r + 1.1f) * 2.0f);
+
+        juce::ColourGradient head (palette.panel.brighter (0.32f), x, y - r,
+                                   palette.panel.darker (0.48f), x, y + r, false);
+        head.addColour (0.42f, palette.panel);
+        g.setGradientFill (head);
+        g.fillEllipse (x - r, y - r, r * 2.0f, r * 2.0f);
+
+        g.setColour (palette.border.withAlpha (0.50f));
+        g.drawLine (x - reach, y - r + 0.5f, x + reach, y - r + 0.5f, 0.8f);
+        g.setColour (palette.panel.darker (0.55f).withAlpha (0.70f));
+        g.drawLine (x - reach, y + r - 0.5f, x + reach, y + r - 0.5f, 0.8f);
+
+        g.setColour (palette.panel.darker (0.62f).withAlpha (0.90f));
+        g.drawLine (x - reach, y - reach, x + reach, y + reach, 1.2f);
+        g.drawLine (x - reach, y + reach, x + reach, y - reach, 1.2f);
+        g.setColour (palette.panel.brighter (0.40f).withAlpha (0.45f));
+        g.drawLine (x - reach, y - reach - 0.9f, x + reach, y + reach - 0.9f, 0.7f);
     }
 
     void drawPanel (juce::Graphics& g, juce::Rectangle<int> area,
@@ -760,11 +992,45 @@ constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tab
         g.setGradientFill (fill);
         g.fillRoundedRectangle (rect, cornerSize);
 
+        // The corner sheen. The lamp is up and LEFT, so the face is brightest at
+        // its top-left corner and falls away to the bottom-right; the vertical
+        // gradient above only says "top", so this one term is what stops a panel
+        // reading as a flat sheet of colour. It is one translucent ellipse clipped
+        // to the panel's own rounded shape, drawn after the fill and before the
+        // edges, so the sheen sits UNDER the lip rather than on it. (saveState /
+        // restoreState are the pair JUCE 9's removed GraphicsStateSaver wrapped.)
+        g.saveState();
+        g.reduceClipRegion (rect.toNearestInt());
+        g.setColour (palette.panel.brighter (0.18f).withAlpha (0.16f));
+        g.fillEllipse (rect.getX() - rect.getWidth() * 0.35f,
+                       rect.getY() - rect.getHeight() * 0.85f,
+                       rect.getWidth() * 1.7f, rect.getHeight() * 1.5f);
+        g.restoreState();
+
         // The top-edge highlight: one pixel, inset past the corners so it does not
         // fight the rounded edge. This is what makes the panel read as RAISED.
         g.setColour (palette.panel.brighter (0.30f).withAlpha (0.55f));
         g.drawLine (rect.getX() + cornerSize, rect.getY() + 0.5f,
                     rect.getRight() - cornerSize, rect.getY() + 0.5f, 1.0f);
+
+        // ...and its partner on the LEFT edge, dimmer and running only the upper
+        // two thirds: the same lamp catches both, and a panel lit only from above
+        // looks like a printed card rather than a milled plate.
+        g.setColour (palette.panel.brighter (0.26f).withAlpha (0.34f));
+        g.drawLine (rect.getX() + 0.5f, rect.getY() + cornerSize,
+                    rect.getX() + 0.5f, rect.getY() + rect.getHeight() * 0.68f, 1.0f);
+
+        // The occlusion along the bottom inside edge: the panel is proud of the
+        // chassis, so its own lower lip casts a short shadow onto its own face.
+        // Three one-pixel lines at falling alpha, because a single hard line at
+        // this weight reads as a border rather than as shade.
+        for (int line = 0; line < 3; ++line)
+        {
+            g.setColour (juce::Colours::black.withAlpha (0.05f - 0.014f * static_cast<float> (line)));
+            g.drawLine (rect.getX() + cornerSize, rect.getBottom() - 1.5f - static_cast<float> (line) * 1.2f,
+                        rect.getRight() - cornerSize, rect.getBottom() - 1.5f - static_cast<float> (line) * 1.2f,
+                        1.0f);
+        }
 
         // The outline, and an inner seam. The seam is darker than the face rather
         // than lighter - it is the shadow the panel casts on the chassis, so it
@@ -788,7 +1054,23 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                                                  static_cast<float> (y),
                                                  static_cast<float> (width),
                                                  static_cast<float> (height)).reduced (6.0f);
-    const auto centre = bounds.getCentre();
+
+    // The camera. A knob's top face is a disc, and a disc seen from anywhere
+    // other than directly overhead is an ELLIPSE - flatter the nearer the near
+    // edge of the panel it sits. Every term below is drawn as a circle about
+    // the knob's own centre and the whole assembly is then squashed by one
+    // transform, so the cap, its collar, its grooves, its rings and its ticks
+    // all foreshorten TOGETHER, at this knob's angle, instead of the cap alone
+    // being scaled while the ring around it stayed round. That single fact is
+    // the difference between a row of hardware and a row of discs.
+    const auto view = perspectiveFor (bounds);
+    const auto centre = view.centre;
+    g.saveState();
+    g.addTransform (juce::AffineTransform (
+                        view.squashX, 0.0f,
+                        centre.x * (1.0f - view.squashX),
+                        0.0f, view.squashY,
+                        centre.y * (1.0f - view.squashY)));
     // The track ring and the tick marks live OUTSIDE the knob face (face at
     // radius, ring at +8, ticks up to +9 more), and DRIVE's cells are WIDER
     // than they are tall: the unconstrained ring was taller than the cell, so
@@ -797,11 +1079,27 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     // page. The ring now clamps to the half-extent the cell can actually show;
     // the face takes what is left, so the whole assembly stays concentric and
     // fully visible at every cell shape.
-    const auto faceRadius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.34f;
-    const auto outerRadius = juce::jmin (faceRadius + 8.0f,
+    const auto faceCeiling = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.34f;
+    const auto outerCeiling = juce::jmin (faceCeiling + 8.0f,
+                                          bounds.getWidth() * 0.5f - 2.0f,
+                                          bounds.getHeight() * 0.5f - 2.0f);
+
+    // The side wall is taken out of the SAME budget as the face, not added to
+    // it. The ring and the ticks already use everything the cell has vertically,
+    // so a wall drawn on top of them would bury the bottom of the scale; and a
+    // knob that simply grew would collide with the row below. What perspective
+    // actually does is the opposite of growing: a knob nearer the viewer shows
+    // more of its own SIDE and a SMALLER top face. So the face radius is the
+    // one that gives way - solve it from the ring inward, leaving room for the
+    // collar and then for the wall - and every knob row recedes into the panel
+    // instead of marching out of its cells.
+    const auto wallFraction = 0.12f + 0.40f * view.wall;
+    const auto collarAllowance = juce::jmax (2.2f, faceCeiling * 0.10f);
+    const auto radius = juce::jmin (faceCeiling,
+        juce::jmax (2.0f, (outerCeiling - 1.5f - collarAllowance) / (1.0f + 1.15f * wallFraction)));
+    const auto outerRadius = juce::jmin (radius + 8.0f,
                                          bounds.getWidth() * 0.5f - 2.0f,
                                          bounds.getHeight() * 0.5f - 2.0f);
-    const auto radius = juce::jmin (faceRadius, outerRadius - 4.0f);
     const auto angle = juce::jmap (sliderPos, 0.0f, 1.0f, rotaryStartAngle, rotaryEndAngle);
     // JUCE's Path::addCentredArc measures clockwise from 12 o'clock and places a
     // point at (sin(angle), -cos(angle)). Convert that same angle to ordinary screen
@@ -809,12 +1107,30 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     // directly rotates every indicator by 90 degrees and makes the arc look crooked.
     const auto screenAngle = angle - juce::MathConstants<float>::halfPi;
 
+    // Hover feedback, NAM-style: a knob under the pointer lights its halo and
+    // its face rim BEFORE the compressor breathes - the panel answers the
+    // mouse first and the audio second, which is what makes hardware feel
+    // awake. The boost is small enough that the activity glow still dominates
+    // when the machine is working.
+    const auto hovered = slider.isMouseOver() || slider.isMouseButtonDown();
+
+    // Which principle this knob IS, if it is one of the seven SOURCE controls.
+    // The editor registers each SOURCE slider against its machine where the
+    // knobs are built (see J37LookAndFeel::registerPrincipleKnob), so the knob
+    // carries its own identity rather than this paint routine holding a second
+    // table of which control is which: one place to change when a knob moves,
+    // and none to change when a paint routine does.
+    const auto principle = principleOf (slider);
+    const auto accent = principle >= 0 ? principleColour (principle, isDarkTheme())
+                                       : palette.accent;
+
     //------------------------------------------------------------------
     //  Animation layer 1: a soft halo that breathes with the compressor
     //  activity, plus a slow pulse so the panel never looks frozen.
     //------------------------------------------------------------------
     const auto breath = 0.5f + 0.5f * std::sin (animationPhase);
-    const auto haloAlpha = 0.05f + activity * 0.20f * (0.6f + 0.4f * breath);
+    const auto haloAlpha = 0.05f + (hovered ? 0.06f : 0.0f)
+                               + activity * 0.20f * (0.6f + 0.4f * breath);
     if (haloAlpha > 0.01f)
     {
 #if J37_HAS_MELATONIN_BLUR
@@ -823,8 +1139,8 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
         // against that path, so the glow costs one blur the first time the radius
         // changes and is reused on every frame after that.
         melatonin::DropShadow glow;
-        glow.setColor (palette.accent.withAlpha (haloAlpha));
-        glow.setRadius (6.0 + activity * 6.0 * breath);
+        glow.setColor (accent.withAlpha (haloAlpha));
+        glow.setRadius (6.0 + (hovered ? 3.0 : 0.0) + activity * 6.0 * breath);
 
         juce::Path haloPath;
         haloPath.addEllipse (centre.x - radius, centre.y - radius,
@@ -835,36 +1151,68 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
         {
             const auto haloRadius = outerRadius + static_cast<float> (ring) * 5.0f
                                     + activity * 4.0f * breath;
-            g.setColour (palette.accent.withAlpha (haloAlpha / static_cast<float> (ring)));
+            g.setColour (accent.withAlpha (haloAlpha / static_cast<float> (ring)));
             g.drawEllipse (centre.x - haloRadius, centre.y - haloRadius,
                            haloRadius * 2.0f, haloRadius * 2.0f, 1.6f);
         }
 #endif
     }
 
-    g.setColour (palette.knobEdge.withAlpha (0.22f));
-    g.fillEllipse (centre.x - radius - 3.0f, centre.y - radius + 2.0f,
-                   (radius + 3.0f) * 2.0f, (radius + 3.0f) * 2.0f);
+    // The knob is let INTO the panel rather than sitting on it, so the plate
+    // around it is milled down a step. A dark seat ring with a lit upper-left
+    // lip is what says "recessed"; before this the cap stood on a flat disc and
+    // looked stuck there rather than fitted into anything.
+    const auto seatRadius = outerRadius + 2.5f;
+    g.setColour (juce::Colours::black.withAlpha (0.22f));
+    g.fillEllipse (centre.x - seatRadius, centre.y - seatRadius,
+                   seatRadius * 2.0f, seatRadius * 2.0f);
+    juce::Path seatLip;
+    seatLip.addCentredArc (centre.x, centre.y, seatRadius - 0.7f, seatRadius - 0.7f, 0.0f,
+                           5.30f, 2.05f, true);
+    g.setColour (palette.panel.brighter (0.22f).withAlpha (0.30f));
+    g.strokePath (seatLip, juce::PathStrokeType (1.0f, juce::PathStrokeType::curved,
+                                                 juce::PathStrokeType::rounded));
 
-    juce::Path scaleTrack;
+    // The scale is a GROOVE cut into that seat, not a line printed on it: a
+    // dark channel with a lit floor along its upper lip, so the arc sits down
+    // inside the metal instead of floating over it.
+    juce::Path scaleTrack, scaleFloor;
     scaleTrack.addCentredArc (centre.x, centre.y, outerRadius, outerRadius, 0.0f,
                               rotaryStartAngle, rotaryEndAngle, true);
-    g.setColour (palette.knobEdge.withAlpha (0.70f));
-    g.strokePath (scaleTrack, juce::PathStrokeType (2.2f, juce::PathStrokeType::curved,
+    scaleFloor.addCentredArc (centre.x, centre.y, outerRadius - 0.9f, outerRadius - 0.9f, 0.0f,
+                              rotaryStartAngle, rotaryEndAngle, true);
+    g.setColour (juce::Colours::black.withAlpha (0.34f));
+    g.strokePath (scaleTrack, juce::PathStrokeType (4.0f, juce::PathStrokeType::curved,
                                                     juce::PathStrokeType::rounded));
+    g.setColour (palette.knobEdge.withAlpha (0.85f));
+    g.strokePath (scaleFloor, juce::PathStrokeType (1.6f, juce::PathStrokeType::curved,
+                                                   juce::PathStrokeType::rounded));
 
-    juce::Path activeTrack;
+    // The live arc is a lit bar IN that groove, so it takes the same two terms
+    // plus a bright core: a wide saturated shoulder for the bar's own shadowed
+    // side, a narrower saturated core, and a near-white filament riding it -
+    // three lines rather than one because one line is a highlighter and three
+    // is an indicator lamp behind a diffuser.
+    juce::Path activeTrack, activeCore;
     activeTrack.addCentredArc (centre.x, centre.y, outerRadius, outerRadius, 0.0f,
                                rotaryStartAngle, angle, true);
-    g.setColour (palette.accent);
-    g.strokePath (activeTrack, juce::PathStrokeType (2.5f, juce::PathStrokeType::curved,
+    activeCore.addCentredArc (centre.x, centre.y - 0.6f, outerRadius, outerRadius, 0.0f,
+                              rotaryStartAngle, angle, true);
+    g.setColour (accent.darker (0.50f).withAlpha (0.90f));
+    g.strokePath (activeTrack, juce::PathStrokeType (4.2f, juce::PathStrokeType::curved,
                                                      juce::PathStrokeType::rounded));
+    g.setColour (accent);
+    g.strokePath (activeTrack, juce::PathStrokeType (2.6f, juce::PathStrokeType::curved,
+                                                     juce::PathStrokeType::rounded));
+    g.setColour (accent.brighter (0.45f).withAlpha (0.80f));
+    g.strokePath (activeCore, juce::PathStrokeType (1.0f, juce::PathStrokeType::curved,
+                                                    juce::PathStrokeType::rounded));
 
     // Bright tracer dot riding the end of the active arc - the clearest "live" cue.
     const auto tracer = centre + juce::Point<float> (std::cos (screenAngle) * outerRadius,
                                                      std::sin (screenAngle) * outerRadius);
     const auto tracerPulse = 2.6f + 1.4f * breath + activity * 2.0f;
-    g.setColour (palette.accent.withAlpha (0.35f));
+    g.setColour (accent.withAlpha (0.35f));
     g.fillEllipse (tracer.x - tracerPulse * 1.9f, tracer.y - tracerPulse * 1.9f,
                    tracerPulse * 3.8f, tracerPulse * 3.8f);
     g.setColour (palette.readout);
@@ -894,42 +1242,310 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
         g.drawLine (inner.x, inner.y, outer.x, outer.y, major ? 1.2f : 0.8f);
     }
 
-    juce::ColourGradient face (palette.knobHighlight, centre.x - radius, centre.y - radius,
-                               palette.knobFace, centre.x + radius, centre.y + radius, false);
-    g.setGradientFill (face);
-    g.fillEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f);
-    g.setColour (palette.knobEdge.withAlpha (0.9f));
-    g.drawEllipse (centre.x - radius, centre.y - radius, radius * 2.0f, radius * 2.0f, 1.0f);
-    g.setColour (palette.knobHighlight.withAlpha (0.48f));
-    g.drawEllipse (centre.x - radius + 4.0f, centre.y - radius + 4.0f,
-                   radius * 2.0f - 8.0f, radius * 2.0f - 8.0f, 0.8f);
+    //----------------------------------------------------------------------
+    //  The cap. This is the piece the panel is judged on, so it is built as a
+    //  piece of hardware rather than as a shaded disc: a shadow it casts on the
+    //  panel, a KNURLED collar - the fine teeth a machined knob is gripped by -
+    //  a domed top lit from the same up-and-left source as the panels and the
+    //  screws, a bright bevel arc where that dome turns into the light and a
+    //  dark one where it turns away, and a tapered indicator that casts its own
+    //  one-pixel shadow onto the dome.
+    //
+    //  Every term is drawn from the palette, so metal reads as steel, charcoal
+    //  as bakelite and ivory as brass without a second drawing path - the only
+    //  thing that is not palette-driven is the accent, and that is the one thing
+    //  that is SUPPOSED to differ between knobs (the seven principles).
+    //----------------------------------------------------------------------
+    const auto collarRadius = radius + juce::jmax (2.2f, radius * 0.10f);
 
-    // Moving specular sweep across the knob face.
+    // The shadow first, so everything else sits on top of it. The light is up
+    // and left (as everywhere else on this panel), so the shadow falls down and
+    // to the right - a shadow that fell the other way read as a glow.
+#if J37_HAS_MELATONIN_BLUR
+    {
+        melatonin::DropShadow capShadow;
+        capShadow.setColor (juce::Colours::black.withAlpha (0.34f));
+        capShadow.setRadius (radius * 0.5f + 2.0f);
+
+        juce::Path capPath;
+        capPath.addEllipse (centre.x - collarRadius + 1.5f, centre.y - collarRadius + 2.0f,
+                            collarRadius * 2.0f, collarRadius * 2.0f);
+        capShadow.render (g, capPath);
+    }
+#else
+    for (int layer = 3; layer >= 1; --layer)
+    {
+        const auto spread = static_cast<float> (layer) * 1.1f;
+        g.setColour (juce::Colours::black.withAlpha (0.040f));
+        g.fillEllipse (centre.x - collarRadius + spread * 0.5f,
+                       centre.y - collarRadius + spread,
+                       collarRadius * 2.0f, collarRadius * 2.0f);
+    }
+#endif
+
+    // The knob's own THICKNESS. Seen from above and a little to the front, a
+    // real cap shows a sliver of its side wall below the top face, and that
+    // sliver is most of what tells the eye the part has depth - without it the
+    // cap and its shadow describe a disc floating over the panel. One ellipse
+    // pushed down and shaded top-to-bottom, drawn BEFORE the collar so the
+    // collar's rim overlaps its upper edge and only the lower crescent shows.
+const auto skirt = radius * wallFraction * 1.15f;
+    juce::ColourGradient skirtShade (palette.knobEdge.darker (0.16f), centre.x,
+                                     centre.y + collarRadius - skirt,
+                                     palette.knobEdge.darker (0.62f), centre.x,
+                                     centre.y + collarRadius + skirt * 2.4f, false);
+    skirtShade.addColour (0.50f, palette.knobEdge.darker (0.38f));
+    g.setGradientFill (skirtShade);
+    g.fillEllipse (centre.x - collarRadius, centre.y - collarRadius + skirt,
+                   collarRadius * 2.0f, collarRadius * 2.0f);
+
+    // The collar: a ring of metal, shaded top-to-bottom like the switch barrels
+    // (fillCylinderBarrel's profile) so the two families of hardware on this
+    // panel are lit by the same lamp.
+    juce::ColourGradient collar (palette.knobEdge.brighter (0.12f), centre.x,
+                                 centre.y - collarRadius,
+                                 palette.knobEdge.darker (0.38f), centre.x,
+                                 centre.y + collarRadius, false);
+    collar.addColour (0.40f, palette.knobEdge);
+    g.setGradientFill (collar);
+    g.fillEllipse (centre.x - collarRadius, centre.y - collarRadius,
+                   collarRadius * 2.0f, collarRadius * 2.0f);
+
+    // The knurl. Each tooth is one short radial line whose brightness comes from
+    // the cosine between its own surface normal and the panel's light, so the
+    // teeth catch the light on one side and fall into shadow on the other - the
+    // same arithmetic the barrel shading uses, applied per tooth. Teeth scale
+    // with the knob, because a fixed count on a 14 px knob is a solid ring and
+    // on a 40 px knob is a comb.
+    const auto teeth = juce::jlimit (16, 44, juce::roundToInt (collarRadius * 1.15f));
+    for (int tooth = 0; tooth < teeth; ++tooth)
+    {
+        const auto a = static_cast<float> (tooth) / static_cast<float> (teeth)
+                       * juce::MathConstants<float>::twoPi;
+        const auto ca = std::cos (a), sa = std::sin (a);
+        const auto facing = -0.55f * ca - 0.83f * sa;   // light from up and left
+        const auto shade = juce::jlimit (0.0f, 1.0f, 0.5f + 0.5f * facing);
+
+        g.setColour (palette.knobEdge.darker (0.55f)
+                         .interpolatedWith (palette.knobHighlight.brighter (0.08f), shade)
+                         .withAlpha (0.5f));
+        g.drawLine (centre.x + ca * (radius + 0.5f), centre.y + sa * (radius + 0.5f),
+                    centre.x + ca * (collarRadius + 0.5f), centre.y + sa * (collarRadius + 0.5f),
+                    0.9f);
+    }
+
+    // The dome: body, terminator, specular and bounce in one call - see
+    // fillLitDome for why all four, and why a radial gradient alone leaves the
+    // cap looking like a sticker.
+    fillLitDome (g, centre, radius, palette.knobFace, palette.knobHighlight,
+                 palette.knobEdge.darker (0.26f), hovered ? 1.15f : 1.0f);
+
+    // The turning grooves. A real cap is faced off on a lathe and the tool
+    // leaves concentric ridges on it; they catch the lamp on the side facing
+    // it and vanish on the other, which is most of the difference between
+    // "metal" and "grey disc". Six rings, alternating light and dark, thinning
+    // toward the rim where the face has turned away from the tool - a ring that
+    // keeps its full strength all the way out flattens the dome again.
+    for (int ring = 1; ring <= 6; ++ring)
+    {
+        const auto t = static_cast<float> (ring) / 7.0f;
+        const auto ringRadius = radius * (0.22f + t * 0.76f);
+        const auto fade = 1.0f - t * 0.55f;
+        g.setColour ((ring % 2 == 0 ? palette.knobHighlight : palette.knobEdge)
+                         .withAlpha ((ring % 2 == 0 ? 0.10f : 0.17f) * fade));
+        g.drawEllipse (centre.x - ringRadius, centre.y - ringRadius,
+                       ringRadius * 2.0f, ringRadius * 2.0f, 0.7f);
+    }
+
+    // The bevel: the dome's own rim, one pixel in, bright where it turns up into
+    // the light and dark where it turns away. Two arcs rather than an outline,
+    // because an outline would say "circle" where this says "turned edge".
+    juce::Path bevelLit, bevelShade;
+    bevelLit.addCentredArc (centre.x, centre.y, radius - 0.8f, radius - 0.8f, 0.0f,
+                            5.25f, 1.05f, true);
+    bevelShade.addCentredArc (centre.x, centre.y, radius - 0.8f, radius - 0.8f, 0.0f,
+                              2.10f, 4.19f, true);
+    g.setColour (palette.knobHighlight.withAlpha (hovered ? 0.80f : 0.58f));
+    g.strokePath (bevelLit, juce::PathStrokeType (1.1f, juce::PathStrokeType::curved,
+                                                  juce::PathStrokeType::rounded));
+    g.setColour (palette.readout.withAlpha (0.42f));
+    g.strokePath (bevelShade, juce::PathStrokeType (1.1f, juce::PathStrokeType::curved,
+                                                    juce::PathStrokeType::rounded));
+
+    // The bounce along the shadow-side rim. The shade the bevel draws is not the
+    // last word on that arc: without a faint lit line at the very edge under it,
+    // the rim dies to black and the cap loses the thickness the skirt gave it.
+    juce::Path rimBounce;
+    rimBounce.addCentredArc (centre.x, centre.y, radius - 0.9f, radius - 0.9f, 0.0f,
+                             2.05f, 4.30f, true);
+    g.setColour (palette.knobHighlight.withAlpha (0.18f));
+    g.strokePath (rimBounce, juce::PathStrokeType (1.0f, juce::PathStrokeType::curved,
+                                                   juce::PathStrokeType::rounded));
+
+    // The inner step: a second, smaller dome standing proud of the first. It is
+    // what makes the cap read as turned from a blank with a step in it rather
+    // than as one disc with a gradient on it - and it gets the same four
+    // lighting terms as the face, because a step is a step, not a flat disc
+    // pasted inside a flat one. The dark ring under it is the occlusion where
+    // it rises out of the face, which is where its height comes from.
+    const auto innerRadius = radius * 0.56f;
+    g.setColour (juce::Colours::black.withAlpha (0.30f));
+    g.drawEllipse (centre.x - innerRadius - 0.7f, centre.y - innerRadius - 0.5f,
+                   (innerRadius + 0.7f) * 2.0f, (innerRadius + 0.7f) * 2.0f, 1.1f);
+    fillLitDome (g, centre, innerRadius, palette.knobFace.brighter (0.05f),
+                 palette.knobHighlight.brighter (0.06f),
+                 palette.knobFace.darker (0.32f), hovered ? 1.15f : 1.0f);
+    g.setColour (palette.knobEdge.withAlpha (0.55f));
+    g.drawEllipse (centre.x - innerRadius, centre.y - innerRadius,
+                   innerRadius * 2.0f, innerRadius * 2.0f, 0.9f);
+
+    // The glint: a small bright lozenge on the dome's lit shoulder, and the slow
+    // specular sweep that keeps the cap alive under the pointer. Both are low
+    // alpha - a real highlight is a FEW percent of the surface, and the old 10-16
+    // percent sweep was the panel's only thing that ever looked wet.
+    g.setColour (palette.knobHighlight.withAlpha (0.26f + (hovered ? 0.10f : 0.0f)));
+    g.fillEllipse (centre.x - radius * 0.62f, centre.y - radius * 0.70f,
+                   radius * 0.42f, radius * 0.26f);
+
     const auto sweepAngle = animationPhase * 0.6f;
-    const auto sweepCentre = centre + juce::Point<float> (std::cos (sweepAngle) * radius * 0.42f,
-                                                          std::sin (sweepAngle) * radius * 0.42f);
-    g.setColour (palette.knobHighlight.withAlpha (0.10f + 0.06f * breath));
-    g.fillEllipse (sweepCentre.x - radius * 0.42f, sweepCentre.y - radius * 0.42f,
-                   radius * 0.84f, radius * 0.84f);
+    const auto sweepCentre = centre + juce::Point<float> (std::cos (sweepAngle) * radius * 0.40f,
+                                                          std::sin (sweepAngle) * radius * 0.40f);
+    g.setColour (palette.knobHighlight.withAlpha (0.05f + 0.04f * breath));
+    g.fillEllipse (sweepCentre.x - radius * 0.36f, sweepCentre.y - radius * 0.36f,
+                   radius * 0.72f, radius * 0.72f);
 
-    const auto pointerLength = radius * 0.62f;
-    // The pointer uses the same converted screen angle as the active arc, tracer and
-    // ticks, so its tip is exactly radial rather than 90 degrees away from the arc.
-    const auto pointerEnd = centre + juce::Point<float> (
-        std::cos (screenAngle) * pointerLength,
-        std::sin (screenAngle) * pointerLength);
-    g.setColour (palette.accent.darker (0.15f));
-    g.drawLine (centre.x + 1.0f, centre.y + 1.0f, pointerEnd.x + 1.0f, pointerEnd.y + 1.0f, 3.0f);
-    g.setColour (palette.needle);
-    g.drawLine (centre.x, centre.y, pointerEnd.x, pointerEnd.y, 2.2f);
-    g.setColour (palette.accent);
-    g.fillEllipse (centre.x - 3.5f, centre.y - 3.5f, 7.0f, 7.0f);
+    // The indicator: a tapered rib from the hub to near the rim, in the knob's
+    // own accent, with a dark copy of itself one pixel down and right. The
+    // offset copy is what turns a line into something that stands up off the
+    // dome - it is the same trick the panel's drop shadows use, at 3 px.
+    const auto pointerLength = radius * 0.86f;
+    const auto pointerHalfWidth = juce::jmax (1.5f, radius * 0.085f);
+    const auto cosA = std::cos (screenAngle), sinA = std::sin (screenAngle);
+    const auto tipX = centre.x + cosA * pointerLength;
+    const auto tipY = centre.y + sinA * pointerLength;
+
+    juce::Path pointer, pointerShadow;
+    pointer.addTriangle (centre.x - sinA * pointerHalfWidth,
+                         centre.y + cosA * pointerHalfWidth,
+                         centre.x + sinA * pointerHalfWidth,
+                         centre.y - cosA * pointerHalfWidth,
+                         tipX, tipY);
+    pointerShadow.addTriangle (centre.x - sinA * pointerHalfWidth + 1.0f,
+                               centre.y + cosA * pointerHalfWidth + 1.2f,
+                               centre.x + sinA * pointerHalfWidth + 1.0f,
+                               centre.y - cosA * pointerHalfWidth + 1.2f,
+                               tipX + 1.0f, tipY + 1.2f);
+    g.setColour (palette.readout.withAlpha (0.40f));
+    g.fillPath (pointerShadow);
+    g.setColour (accent.darker (0.12f));
+    g.fillPath (pointer);
+
+    // The rib's own two edges: a bright one along the side the lamp reaches and
+    // a dark one along the side it does not. Without them the pointer is a
+    // flat triangle of colour lying ON the dome, and with them it is a raised
+    // moulding standing OFF it - the same trick as the drop shadow above, run
+    // along its length instead of under it.
+    const auto edgeAlpha = juce::jlimit (0.0f, 1.0f, 0.5f + 0.5f * (-cosA * 0.55f - sinA * 0.83f));
+    g.setColour (accent.brighter (0.42f).withAlpha (0.30f + 0.45f * edgeAlpha));
+    g.drawLine (centre.x - sinA * pointerHalfWidth, centre.y + cosA * pointerHalfWidth,
+                tipX, tipY, 0.8f);
+    g.setColour (juce::Colours::black.withAlpha (0.30f * (1.0f - edgeAlpha) + 0.10f));
+    g.drawLine (centre.x + sinA * pointerHalfWidth, centre.y - cosA * pointerHalfWidth,
+                tipX, tipY, 0.8f);
+
+    g.setColour (accent.brighter (0.30f).withAlpha (0.75f));
+    g.drawLine (centre.x, centre.y, centre.x + cosA * pointerLength * 0.86f,
+                centre.y + sinA * pointerLength * 0.86f, 0.9f);
+
+    // The hub: the screw the rib is set into - the same lit dome as the face,
+    // small enough that only its specular and its terminator survive, which is
+    // exactly what a real screw head is: a bright crescent and a dark one.
+    const auto hubRadius = juce::jmax (2.2f, radius * 0.15f);
+    fillLitDome (g, centre, hubRadius, palette.knobEdge.darker (0.08f),
+                 palette.knobHighlight, palette.knobEdge.darker (0.55f));
+    g.setColour (juce::Colours::black.withAlpha (0.32f));
+    g.drawEllipse (centre.x - hubRadius, centre.y - hubRadius,
+                   hubRadius * 2.0f, hubRadius * 2.0f, 0.8f);
+    g.setColour (palette.knobHighlight.withAlpha (0.45f));
+    g.drawEllipse (centre.x - hubRadius, centre.y - hubRadius,
+                   hubRadius * 2.0f, hubRadius * 2.0f, 0.7f);
+
+    // Out of the camera transform before the focus ring: a focus ring is the one
+    // thing on the panel that belongs to the SCREEN rather than to the object,
+    // so it must not foreshorten with the knob it is around.
+    g.restoreState();
 
     if (slider.hasKeyboardFocus (false))
     {
         g.setColour (palette.accent.withAlpha (0.85f));
         g.drawEllipse (bounds.reduced (1.5f), 1.1f);
     }
+}
+
+//==============================================================================
+//  THE CAMERA. See J37LookAndFeel::Perspective for why the panel has one.
+//
+//  The viewer stands above the panel's CENTRE and a little way BACK from its
+//  near edge - which is where a person sitting at a desk is, and the only place
+//  from which a control's top face and its side wall are visible at the same
+//  time. Three numbers fall out of that position for any control on the panel:
+//
+//    tilt     how far off the viewer's own axis it sits, 0 at the centre of
+//             the panel and 1 at the corners. This is what makes two knobs on
+//             the SAME row read as two objects rather than one repeated symbol.
+//
+//    squashY  how much its top face is foreshortened down the panel. Everything
+//             is seen from in front, so every top face is an ellipse rather
+//             than a circle - but a control near the near edge is much closer
+//             to the viewer than one near the far edge and is seen far more
+//             edge-on, so ITS ellipse is far flatter. Flattening them all by
+//             the same amount is what a faked perspective does, and the eye
+//             reads the repetition as a graphic instead of as a surface.
+//
+//    wall     how much of the side wall that angle exposes. Seen straight down
+//             there is none at all; seen edge-on the whole height of the part
+//             shows below its top face. This is the term that makes a switch a
+//             solid object standing on the panel rather than a shape painted on
+//             it.
+//==============================================================================
+void J37LookAndFeel::setPanelCamera (juce::Rectangle<float> panelBounds) noexcept
+{
+    cameraPanel = panelBounds;
+}
+
+J37LookAndFeel::Perspective J37LookAndFeel::perspectiveFor (juce::Rectangle<float> bounds) const noexcept
+{
+    Perspective view;
+    view.centre = bounds.getCentre();
+
+    if (cameraPanel.isEmpty() || bounds.isEmpty())
+        return view;
+
+    const auto panelCentre = cameraPanel.getCentre();
+    const auto halfWidth  = juce::jmax (1.0f, cameraPanel.getWidth()  * 0.5f);
+    const auto halfHeight = juce::jmax (1.0f, cameraPanel.getHeight() * 0.5f);
+
+    const auto dx = juce::jlimit (-1.0f, 1.0f, (view.centre.x - panelCentre.x) / halfWidth);
+    const auto dy = juce::jlimit (-1.0f, 1.0f, (view.centre.y - panelCentre.y) / halfHeight);
+
+    view.tilt = juce::jlimit (0.0f, 1.0f,
+                              std::sqrt (dx * dx + dy * dy) * 0.70710678f);
+
+    // 0.86 rather than 1.0: the whole panel is seen from in front, so no top
+    // face anywhere on it is ever a true circle. The two clamps are what keep
+    // the far corners of the largest window from collapsing into slits.
+    view.squashY = juce::jlimit (0.62f, 1.0f, 0.86f - 0.24f * juce::jmax (0.0f, dy));
+    view.squashX = juce::jlimit (0.78f, 1.0f, 0.86f - 0.10f * std::abs (dx)
+                                            - 0.04f * juce::jmax (0.0f, dy));
+
+    // The side wall: none at the viewer's own axis, the full height of the part
+    // at the near edge. 0.34 rather than more because the viewer is seated, not
+    // kneeling on the panel.
+    view.wall = juce::jlimit (0.0f, 1.0f, 0.10f + 0.30f * juce::jmax (0.0f, dy)
+                                              + 0.10f * std::abs (dx));
+    view.lean = dx;
+
+    return view;
 }
 
 //==============================================================================
@@ -945,16 +1561,44 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
                                        bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
 {
     const auto& palette = paletteForTheme (theme);
+    const auto view = perspectiveFor (button.getLocalBounds().toFloat());
     const auto bounds = button.getLocalBounds().toFloat().reduced (2.0f, 3.0f);
     const auto isOn = button.getToggleState();
 
+    // The FRONT WALL: the part of the switch's side that the camera's angle
+    // exposes below its top face. A switch drawn as one flat capsule lying on
+    // the panel has no wall, and a row of those is what made the panel look
+    // printed rather than built - and worse, every one of them was showing the
+    // SAME absence, which is the eye's cue that they were all drawn at once
+    // from straight above. Drawing the wall in the cell's own bottom inset
+    // means the switch gains real depth while the groove, the thumb and the
+    // caption keep every pixel they had - which matters here, because those
+    // three already share the body's height three ways.
+    const auto wallHeight = juce::jmin (3.0f, bounds.getHeight() * 0.34f * view.wall);
+    if (wallHeight > 0.75f)
+    {
+        const auto wall = juce::Rectangle<float> (bounds.getX(), bounds.getBottom() - 0.6f,
+                                                   bounds.getWidth(), wallHeight);
+        juce::ColourGradient wallShade (palette.readout.darker (0.58f), wall.getX(), wall.getY(),
+                                        palette.readout.darker (0.26f), wall.getX(), wall.getBottom(), false);
+        wallShade.addColour (0.42f, palette.readout.darker (0.46f));
+        g.setGradientFill (wallShade);
+        g.fillRoundedRectangle (wall, juce::jmin (wall.getHeight() * 0.5f,
+                                                  bounds.getHeight() * 0.45f));
+        g.setColour (palette.readout.darker (0.66f).withAlpha (0.75f));
+        g.drawLine (wall.getX() + wall.getWidth() * 0.18f, wall.getBottom() - 0.5f,
+                    wall.getRight() - wall.getWidth() * 0.18f, wall.getBottom() - 0.5f, 0.8f);
+    }
+
     // The body is a cylinder lying along the switch - fillCylinderBarrel
-    // shades it by the cosine of its cross-section angle - not a flat slab.
-    // Engaging the switch darkens the barrel too, so the state reads through
-    // the shading itself and not only through the thumb.
+    // shades it by the cosine of its cross-section angle - not a flat slab, and
+    // its specular slides along its own length by however far this switch sits
+    // from the camera's axis. Engaging the switch darkens the barrel too, so the
+    // state reads through the shading itself and not only through the thumb.
     fillCylinderBarrel (g, bounds,
                         palette.readout.darker (isOn ? 0.22f : 0.02f),
-                        palette.readout.darker (0.42f));
+                        palette.readout.darker (0.42f),
+                        view.lean * view.tilt);
     g.setColour (palette.border.withAlpha (0.9f));
     g.drawRoundedRectangle (bounds, bounds.getHeight() * 0.5f, 1.0f);
 
@@ -966,14 +1610,24 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     //                 (was a hardcoded 11 px, which on a 32 px switch left a crowded
     //                 15 px track carrying THREE overlapping text pieces: OFF, ON and
     //                 the thumb caption).
-    const auto labelHeight = juce::jlimit (10.0f, 14.0f, bounds.getHeight() * 0.44f);
+    //
+    //  The proportion itself was the remaining crookedness at the header's 22 px
+    //  switch: 0.44 asked a 9.7 px caption to sit over a 3 px groove whose thumb
+    //  (band minus 2 px, floored at 8 px) stood 10 px tall in a 16 px capsule and
+    //  shot past the rounded ends. Height that three stacked pieces must share is
+    //  given out as three shares - caption 45 % of the body, the groove whatever
+    //  is left under a rim of 14 % of the body - so the bands always SUM to the
+    //  control: the header's 22 px switch reads a 10 px caption over a 6 px
+    //  groove, the deck's 30 px switch a 12 px caption over an 11 px groove, and
+    //  no band is ever asked to draw taller than the body holds.
+    const auto labelHeight = juce::jlimit (9.0f, 12.0f, bounds.getHeight() * 0.45f);
     const auto labelBand = bounds.withHeight (labelHeight);
     // The groove is inset deeper than before because the body is now a full
     // capsule: at its rounded bottom the silhouette pulls in fast, and a
     // groove that ran to the old 4 px inset would paint past the arc.
     const auto track = bounds.withTrimmedTop (labelHeight)
                             .withTrimmedLeft (7.0f).withTrimmedRight (7.0f)
-                            .withTrimmedBottom (3.0f);
+                            .withTrimmedBottom (juce::jmax (2.0f, bounds.getHeight() * 0.14f));
 
     // Status lamp: one explicit circular footprint, concentric at every scale. The
     // previous square slot made the lamp's visual centre depend on the band height,
@@ -1030,15 +1684,17 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     // missing. A switch the L&F was never told about draws at its true state.
     noteToggle (&button, isOn);
     const auto glide = toggleGlide (&button, isOn);
-    const auto thumbWidth = juce::jmax (12.0f, (track.getWidth() - 2.0f) * 0.5f);
-    const auto thumbHeight = juce::jmax (8.0f, track.getHeight() - 2.0f);
+    const auto thumbWidth = juce::jmax (9.0f, (track.getWidth() - 2.0f) * 0.5f);
+    const auto thumbHeight = juce::jmax (5.0f, track.getHeight() - 2.0f);
     const auto travel = track.getWidth() - thumbWidth - 2.0f;
     const auto thumbX = track.getX() + 1.0f + glide * travel;
     const auto thumbY = track.getY() + 1.0f + (shouldDrawButtonAsDown ? 1.0f : 0.0f);
     const auto thumb = juce::Rectangle<float> (thumbX, thumbY, thumbWidth, thumbHeight);
     // The thumb is a small cylinder of its own riding the groove, pressed one
     // pixel into the body while the mouse is down (thumbY above already
-    // shifts it): shading, not colour, carries the mechanics.
+    // shifts it): shading, not colour, carries the mechanics. The floors used
+    // to be 12/8 px - taller than the header switch's whole groove, which is
+    // how the thumb escaped the track there - and now scale down with it.
     fillCylinderBarrel (g, thumb, palette.knobFace, palette.knobEdge);
     g.setColour (palette.knobEdge.withAlpha (0.85f));
     g.drawRoundedRectangle (thumb, thumb.getHeight() * 0.5f, 1.0f);
@@ -1046,7 +1702,7 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     // State text on the thumb, fitted to the thumb. The thumb is the authoritative
     // state readout, so its text must never be the thing that gets clipped.
     g.setColour (isOn ? palette.gaugeInk.withAlpha (0.95f) : palette.secondary);
-    g.setFont (shrinkingFont (isOn ? "ON" : "OFF", 7.5f, juce::Font::bold, thumb.getWidth()));
+    g.setFont (shrinkingFont (isOn ? "ON" : "OFF", 7.0f, juce::Font::bold, thumb.getWidth()));
     g.drawText (isOn ? "ON" : "OFF", thumb, juce::Justification::centred, true);
 
     // Hover ring for mouse/keyboard focus feedback.
@@ -1082,16 +1738,37 @@ void J37LookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& lab
 //==============================================================================
 void J37LookAndFeel::drawLabel (juce::Graphics& g, juce::Label& label)
 {
-    g.setColour (label.findColour (juce::Label::textColourId));
+    const auto& palette = paletteForTheme (theme);
+    const auto ink = label.findColour (juce::Label::textColourId);
+
     g.setFont (label.getFont());
 
     auto area = label.getLocalBounds().toFloat();
+    const auto maxLines = juce::jmax (1,
+                                       static_cast<int> (area.getHeight() / g.getCurrentFont().getHeight()));
+
+    // ENGRAVED, not printed. A caption milled into a plate has its upper-left
+    // wall in shadow and its lower-right wall catching the lamp, so the text
+    // carries a lit copy of itself one pixel down and right and the ink sits on
+    // top of it. Printed text is a flat silhouette on a flat ground and is one
+    // of the reasons a drawn panel still reads as a picture of a panel: nothing
+    // on a real front plate is printed flat except the silkscreen on the parts
+    // nobody looks at. The lit copy is a fraction of the palette's own face
+    // rather than white, so it stays metal on all three themes.
+    if (area.getHeight() >= 8.0f && area.getWidth() >= 8.0f)
+    {
+        g.setColour (palette.panel.brighter (0.55f).withAlpha (ink.getAlpha() * 0.45f));
+        g.drawFittedText (label.getText(), (area.translated (0.9f, 0.9f)).toNearestInt(),
+                          label.getJustificationType(), maxLines,
+                          label.getMinimumHorizontalScale());
+    }
+
+    g.setColour (ink);
     if (! label.isEnabled())
         g.setOpacity (0.45f);
 
     g.drawFittedText (label.getText(), area.toNearestInt(),
-                      label.getJustificationType(),
-                      juce::jmax (1, static_cast<int> (area.getHeight() / g.getCurrentFont().getHeight())),
+                      label.getJustificationType(), maxLines,
                       label.getMinimumHorizontalScale());
 }
 
@@ -1720,6 +2397,165 @@ void FirstAudioProcessorEditor::CompressorMeter::paint (juce::Graphics& g)
 }
 
 //==============================================================================
+// The MIX page's saturation mix, as hardware rather than as a number.
+//
+// Seven knobs answer "how much did I ask for"; this answers "how much did the
+// core get", and after normalisation those are different questions - turning
+// TAPE up from 60 with nothing else up changes nothing audible, because the
+// other shares are scaled to fit around it. So the bar reads the SHARES, not
+// the knob positions, and it reads them the way the panel reads everything else:
+// seven recessed cells, each filled from the bottom in that machine's colour,
+// each still visible at zero so the row always shows all seven.
+//
+// The empty mix is drawn as pure tape, the same answer SaturationCore gives -
+// so the bar and the sound can never disagree about what the engine is doing.
+//==============================================================================
+void FirstAudioProcessorEditor::MixBar::setShares (const std::array<float, principleCount>& newShares,
+                                                     float newTotal)
+{
+    shares = newShares;
+    total = juce::jlimit (0.0f, 1.0f, newTotal);
+    repaint();
+}
+
+void FirstAudioProcessorEditor::MixBar::paint (juce::Graphics& g)
+{
+    const auto& palette = paletteFor (darkTheme);
+
+    auto area = getLocalBounds().toFloat();
+    if (area.getWidth() < 60.0f || area.getHeight() < 24.0f)
+        return;
+
+    // The heading row: what this strip IS on the left, what the numbers mean on
+    // the right. Both are the panel's own two voices - the accent for the name
+    // of the thing, the secondary for the note about it - so the strip reads as
+    // part of the panel rather than as an overlay somebody dropped on it.
+//
+    // The right-hand note carries the AMOUNT as well as the share, because the
+    // seven cells always add up to 100 % and a bar that always reads full is a
+    // bar that cannot report that every SOURCE knob is at zero. The total is
+    // the number that says how hard the stage is running; the shares are the
+    // number that says which machines are doing it.
+    auto heading = area.removeFromTop (13.0f);
+    g.setColour (palette.accent);
+    g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
+    g.drawText ("SATURATION MIX", heading.reduced (1.0f, 0.0f),
+                juce::Justification::centredLeft, false);
+g.setColour (total > 0.005f ? palette.readout.withAlpha (0.85f) : palette.accent);
+    g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
+    g.drawText ("AMOUNT " + juce::String (juce::roundToInt (total * 100.0f)) + " %",
+                heading.reduced (1.0f, 0.0f), juce::Justification::centredRight, false);
+    g.setColour (palette.secondary);
+    g.setFont (juce::Font (juce::FontOptions (8.0f)));
+    g.drawText ("seven machines' shares", heading.reduced (1.0f, 0.0f).reduced (96.0f, 0.0f),
+                juce::Justification::centredRight, false);
+
+    // The cells. A 3 px gap reads as the milled groove between two plates, and
+    // the recess is drawn with the same three terms every other recess on this
+    // panel uses: a dark floor, a darker seam at the top (the shadow the lip
+    // casts INTO the slot) and a lit line at the bottom (the far wall catching
+    // the lamp).
+    static constexpr const char* principleNames[principleCount] {
+        "TAPE", "VALVE", "CASSETTE", "VINYL", "AMP", "TRANSFORMER", "DIGITAL"
+    };
+
+    const auto strip = area.reduced (0.0f, 3.0f);
+    constexpr float gap = 3.0f;
+    const auto cellWidth = (strip.getWidth() - gap * static_cast<float> (principleCount - 1))
+                           / static_cast<float> (principleCount);
+
+    for (int p = 0; p < principleCount; ++p)
+    {
+        const auto share = juce::jlimit (0.0f, 1.0f, shares[static_cast<std::size_t> (p)]);
+        const auto ink = principleColour (p, darkTheme);
+        const auto cell = juce::Rectangle<float> (strip.getX()
+                                                      + static_cast<float> (p) * (cellWidth + gap),
+                                                  strip.getY(), cellWidth, strip.getHeight());
+        const auto corner = juce::jmin (4.0f, cell.getWidth() * 0.12f);
+
+        g.setColour (palette.readout.withAlpha (darkTheme ? 0.55f : 0.42f));
+        g.fillRoundedRectangle (cell, corner);
+
+        // The lip's shadow, thrown INTO the well along its top and left edges -
+        // three lines down the top, darkest at the lip where the wall it falls
+        // from is nearest, and two down the left at half the strength because
+        // the lamp stands off to the left and so misses the wall on that side.
+        // Drawn before the fill so the fill sits down inside the shadow.
+        for (int line = 0; line < 3; ++line)
+        {
+            const auto step = static_cast<float> (line);
+            g.setColour (juce::Colours::black.withAlpha (0.17f - 0.048f * step));
+            g.drawLine (cell.getX() + corner - step * 0.5f, cell.getY() + 1.0f + step * 1.2f,
+                        cell.getRight() - corner + step * 0.5f, cell.getY() + 1.0f + step * 1.2f,
+                        1.0f);
+        }
+        for (int line = 0; line < 2; ++line)
+        {
+            const auto step = static_cast<float> (line);
+            g.setColour (juce::Colours::black.withAlpha (0.12f - 0.045f * step));
+            g.drawLine (cell.getX() + 1.0f + step * 1.2f, cell.getY() + corner - step * 0.5f,
+                        cell.getX() + 1.0f + step * 1.2f, cell.getBottom() - corner + step * 0.5f,
+                        1.0f);
+        }
+
+        // The fill: from the floor up, in the machine's colour, with a bright
+        // meniscus on its surface so a full cell and a nearly-full one are told
+        // apart at a glance rather than only by the printed percentage.
+        if (share > 0.0005f)
+        {
+            const auto fillHeight = juce::jmax (2.0f, share * cell.getHeight());
+            const auto fill = juce::Rectangle<float> (cell.getX(), cell.getBottom() - fillHeight,
+                                                      cell.getWidth(), fillHeight);
+            juce::ColourGradient fluid (ink.brighter (0.30f), fill.getX(), fill.getY(),
+                                        ink.darker (0.34f), fill.getX(), fill.getBottom(), false);
+            fluid.addColour (0.28f, ink.brighter (0.10f));
+            fluid.addColour (0.62f, ink);
+            g.setGradientFill (fluid);
+            g.fillRoundedRectangle (fill, corner);
+
+            // The meniscus catches the lamp along its top edge, and casts its
+            // own short shadow down into the fluid below it - two lines, because
+            // one reads as a border and the pair reads as a surface.
+            g.setColour (ink.brighter (0.55f).withAlpha (0.90f));
+            g.drawLine (cell.getX() + 2.0f, fill.getY() + 0.5f,
+                        cell.getRight() - 2.0f, fill.getY() + 0.5f, 1.2f);
+            g.setColour (juce::Colours::black.withAlpha (0.20f));
+            g.drawLine (cell.getX() + 2.0f, fill.getY() + 1.8f,
+                        cell.getRight() - 2.0f, fill.getY() + 1.8f, 1.0f);
+        }
+
+        // The far wall, lit on its INNER face - the only bright edge on a
+        // carved shape, and the term that gives the cell depth rather than a
+        // border. The same line down the right edge, dimmer, for the same
+        // reason the knob's rim bounce is dimmer than its lit bevel.
+        g.setColour (palette.knobEdge.withAlpha (darkTheme ? 0.45f : 0.32f));
+        g.drawLine (cell.getX() + 2.0f, cell.getBottom() - 0.5f,
+                    cell.getRight() - 2.0f, cell.getBottom() - 0.5f, 1.0f);
+        g.setColour (palette.knobEdge.withAlpha (darkTheme ? 0.26f : 0.18f));
+        g.drawLine (cell.getRight() - 0.5f, cell.getY() + 2.0f,
+                    cell.getRight() - 0.5f, cell.getBottom() - 2.0f, 1.0f);
+
+        // The name, in the machine's own colour, and the share underneath it.
+        // Both shrink to the cell rather than clipping: at the minimum panel
+        // width a cell is about 100 px, which TRANSFORMER at 9 px just fits,
+        // and on a narrower host it has to fit anyway.
+        auto nameRow = cell.reduced (3.0f, 2.0f).removeFromTop (cell.getHeight() * 0.42f);
+        g.setColour (share > 0.0005f ? ink.brighter (0.30f)
+                                     : palette.secondary.withAlpha (0.65f));
+        g.setFont (shrinkingFont (principleNames[p], 8.5f, juce::Font::bold, nameRow.getWidth()));
+        g.drawText (principleNames[p], nameRow, juce::Justification::centred, false);
+
+        auto valueRow = cell.reduced (3.0f, 2.0f).removeFromBottom (cell.getHeight() * 0.40f);
+        g.setColour (share > 0.0005f ? palette.readout.withAlpha (0.92f)
+                                     : palette.secondary.withAlpha (0.45f));
+        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                                  8.0f, juce::Font::bold)));
+        g.drawText (juce::String (juce::roundToInt (share * 100.0f)) + " %",
+                    valueRow, juce::Justification::centred, false);
+    }
+}
+
+//==============================================================================
 // The shared label look: text, font size and weight, colour, alignment, and no
 // mouse interception so a caption never steals a click from the control under it.
 // This is a member function, not a constructor-local lambda, because resized()
@@ -2115,6 +2951,26 @@ void FirstAudioProcessorEditor::styleTabButtons()
         button.setColour (juce::TextButton::textColourOnId, isOn ? palette.readout : palette.secondary);
         button.repaint();
     }
+
+    // The family buttons style themselves like the tab buttons do - pressed when
+    // their slice of the bar is on screen - so the two levels read as one system.
+    // Called from styleTabButtons rather than from setTabFamily, so a THEME cycle
+    // repaints them too.
+    const std::array<juce::TextButton*, tabFamilyCount> familyButtons
+        { &tabFamilyTapeButton, &tabFamilyFxButton, &tabFamilySetupButton };
+    for (std::size_t f = 0; f < familyButtons.size(); ++f)
+    {
+        const auto isOn = static_cast<int> (f) == currentTabFamily;
+        familyButtons[f]->setColour (juce::TextButton::buttonColourId,
+                                     isOn ? palette.accent : palette.raised);
+        familyButtons[f]->setColour (juce::TextButton::buttonOnColourId,
+                                     isOn ? palette.accent : palette.raised);
+        familyButtons[f]->setColour (juce::TextButton::textColourOffId,
+                                     isOn ? palette.readout : palette.secondary);
+        familyButtons[f]->setColour (juce::TextButton::textColourOnId,
+                                     isOn ? palette.readout : palette.secondary);
+        familyButtons[f]->repaint();
+    }
 }
 
 void FirstAudioProcessorEditor::setCurrentTab (int newTab)
@@ -2127,10 +2983,19 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
                    "numTabs and tabSpecs must describe the same number of tabs");
     static_assert (tabsCoverAllControls<controlCount> (tabSpecs),
                    "every knob must be listed by exactly one tab");
+    static_assert (tabSubtitles.size() == tabSpecs.size(),
+                   "every tab page needs its own section caption");
 
     currentTab = juce::jlimit (0, numTabs - 1, newTab);
-    // paint() gates the neural card on this: it is CHARACTER's page furniture.
-    activeTabIsCharacter = (currentTab == 2);
+    // The section caption: the active page's own one-line subject, from the same
+    // index the page itself came from, so the two can never name different pages.
+    sectionCaptionLabel.setText (tabSubtitles[static_cast<std::size_t> (currentTab)],
+                                 juce::dontSendNotification);
+    // paint() gates page furniture on this, looked up by NAME, not by index: a
+    // name cannot drift the way a hard-coded page number did when the pages
+    // were reordered.
+    activeTabIsShapers = (std::strcmp (tabSpecs[static_cast<std::size_t> (currentTab)].name,
+                                       "SHAPERS") == 0);
 
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -2269,16 +3134,68 @@ void FirstAudioProcessorEditor::applyLanguage (int languageIndex)
     updateTooltips();
 }
 
+void FirstAudioProcessorEditor::setTabFamily (int newFamily)
+{
+    // The tab table's family column is the single source of truth: each page
+    // states which family hosts it, and this strip reads the column rather
+    // than a parallel count array that could drift from the table. The assert
+    // pins the intended layout - nine TAPE pages, then four FX, then three
+    // SETUP, in table order - so a page moved between families without the
+    // order following is a build error, not a button that lights wrong.
+    static_assert (tabSpecs[0].family == 0 && tabSpecs[1].family == 0
+                       && tabSpecs[2].family == 0 && tabSpecs[3].family == 0
+                       && tabSpecs[4].family == 0 && tabSpecs[5].family == 0
+                       && tabSpecs[6].family == 0 && tabSpecs[7].family == 0
+                       && tabSpecs[8].family == 0 && tabSpecs[9].family == 1
+                       && tabSpecs[10].family == 1 && tabSpecs[11].family == 1
+                       && tabSpecs[12].family == 1 && tabSpecs[13].family == 2
+                       && tabSpecs[14].family == 2 && tabSpecs[15].family == 2,
+                   "the tab table's family column must be nine TAPE pages, "
+                   "then four FX, then three SETUP, in order");
+
+    // A family change only filters the tab bar's visibility and jumps to the
+    // family's first page: currentTab is set through setCurrentTab so the
+    // knobs' visibility, the static_asserts and the styling all run through
+    // the one authoritative path - the same path a click on any tab takes.
+    const auto family = juce::jlimit (0, tabFamilyCount - 1, newFamily);
+    currentTabFamily = family;
+
+    int firstOfFamily = numTabs;
+    int lastOfFamily = 0;
+    for (int tab = 0; tab < numTabs; ++tab)
+    {
+        if (tabSpecs[static_cast<std::size_t> (tab)].family == family)
+        {
+            firstOfFamily = juce::jmin (firstOfFamily, tab);
+            lastOfFamily = juce::jmax (lastOfFamily, tab + 1);
+        }
+    }
+
+    for (int tab = 0; tab < numTabs; ++tab)
+        tabButtons[static_cast<std::size_t> (tab)]
+            .setVisible (tabSpecs[static_cast<std::size_t> (tab)].family == family);
+
+    if (currentTab < firstOfFamily || currentTab >= lastOfFamily)
+        setCurrentTab (firstOfFamily);
+    else
+        resized();
+}
+
 void FirstAudioProcessorEditor::loadNeuralModelFromFile()
 {
     // A model is chosen from a file, so a plain asynchronous file chooser is the
     // whole dialogue. `chooser` is captured by the lambda so the chooser stays
     // alive for the duration of the callback, which is what makes the launch
     // safe to fire and forget.
+    //
+    // "*.nam" is NeuralAmpModeler's own extension - its files carry the SAME
+    // networks in a different wire format (one flat weight vector rather than
+    // a stack of named layers), and the picker reads both through the
+    // processor's own two entry points below.
     auto chooser = std::make_shared<juce::FileChooser> (
         "Load a neural model",
         juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
-        "*.json;*.rtn;*");
+        "*.json;*.rtn;*.nam;*");
 
     // browserFlags, not `flags`: a local name that shadows nothing is cheaper
     // than proving no future member will ever be called flags (C4458).
@@ -2291,8 +3208,15 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
         if (! file.existsAsFile())
             return;
 
-        const auto json = file.loadFileAsString();
-        if (audioProcessor.loadNeuralModel (json))
+        // A .nam file goes through its own converter; every other extension
+        // keeps the RTNeural JSON path. Both load the same kind of network -
+        // the wire format is the only thing that differs.
+        const auto isNam = file.hasFileExtension (".nam");
+        const auto text = file.loadFileAsString();
+        const bool loaded = isNam ? audioProcessor.loadNamModel (text)
+                                  : audioProcessor.loadNeuralModel (text);
+
+        if (loaded)
         {
             loadedNeuralName = file.getFileNameWithoutExtension();
         }
@@ -2334,6 +3258,64 @@ void FirstAudioProcessorEditor::refreshNeuralStatus()
                                  audioProcessor.hasNeuralModel()
                                      ? paletteFor (false).accent
                                      : paletteFor (false).secondary);
+}
+
+void FirstAudioProcessorEditor::loadIrFromFile()
+{
+    // Same asynchronous-chooser shape as the model picker: the chooser is kept
+    // alive by its own shared_ptr for the length of the callback. The filter
+    // names the two formats a DAW user actually meets; "*" keeps any other
+    // file JUCE's registered decoders can open selectable.
+    auto chooser = std::make_shared<juce::FileChooser> (
+        "Load an impulse response",
+        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+        "*.wav;*.aif*;*");
+
+    const auto browserFlags = juce::FileBrowserComponent::openMode
+                            | juce::FileBrowserComponent::canSelectFiles;
+
+    chooser->launchAsync (browserFlags, [this, chooser] (const juce::FileChooser& fc)
+    {
+        const auto file = fc.getResult();
+        if (! file.existsAsFile())
+            return;
+
+        if (audioProcessor.loadIrFile (file))
+        {
+            loadedIrName = file.getFileNameWithoutExtension();
+            lastShownIrStatus = {};      // force the next refresh to repaint
+            refreshIrStatus();
+        }
+        else
+        {
+            // A file that would not decode leaves the previous IR in place and
+            // says so - the same honesty the INVALID MODEL state gives the
+            // model picker, for the same reason.
+            loadedIrName = {};
+            irStatusLabel.setText ("INVALID IR", juce::dontSendNotification);
+            lastShownIrStatus = "INVALID IR";
+        }
+    });
+}
+
+void FirstAudioProcessorEditor::refreshIrStatus()
+{
+    // The processor is the source of truth, exactly as with the model status:
+    // the stage can be cleared from either button, so the readout follows
+    // whatever the convolvers actually hold.
+    const auto status = audioProcessor.hasIr() && loadedIrName.isNotEmpty()
+                            ? loadedIrName
+                            : juce::String ("NO IR");
+
+    if (status == lastShownIrStatus)
+        return;
+
+    lastShownIrStatus = status;
+    irStatusLabel.setText (xlat (status), juce::dontSendNotification);
+    irStatusLabel.setColour (juce::Label::textColourId,
+                             audioProcessor.hasIr()
+                                 ? paletteFor (false).accent
+                                 : paletteFor (false).secondary);
 }
 
 FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
@@ -2558,6 +3540,12 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 paletteFor (false).secondary, false, juce::Justification::centredLeft);
     styleLabel (controlsHeadingLabel, "TABS", 10.0f, paletteFor (false).accent,
                 true, juce::Justification::left);
+    // The section caption. Its text is not set here: setCurrentTab writes the
+    // active page's own subject into it on every page change, and the constructor
+    // calls setCurrentTab before the first paint, so anything set now would be
+    // overwritten a few lines later. It is styled here only.
+    styleLabel (sectionCaptionLabel, "-", 9.0f, paletteFor (false).secondary,
+                false, juce::Justification::left);
     styleLabel (controlsHintLabel, "Shift = fine tune", 9.0f,
                 paletteFor (false).secondary, false, juce::Justification::right);
     styleLabel (bpmLabel, "BPM", 9.0f, paletteFor (false).secondary,
@@ -2608,7 +3596,11 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (speedLabel);
     addAndMakeVisible (deckHintLabel);
     addAndMakeVisible (controlsHeadingLabel);
+    addAndMakeVisible (sectionCaptionLabel);
     addAndMakeVisible (controlsHintLabel);
+    // The MIX page's bar rides the member band, which resized() sizes and
+    // positions; adding it visible here is what lets the first paint see it.
+    addAndMakeVisible (mixBar);
     addAndMakeVisible (metersHeadingLabel);
     addAndMakeVisible (metersHintLabel);
     addAndMakeVisible (compressorLabel);
@@ -2670,8 +3662,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // agree with is the parameter defaults, which each row states directly.
     const std::array<ControlSpec, controlCount> controlSpecs { {
         { "input",           "INPUT",      0.0,   "MACHINE"  },
-        { "drive",           "DRIVE",      0.30,  "DRIVE"    },
-        { "bias",            "BIAS",       0.42,  "DRIVE"    },
+        { "drive",           "DRIVE",      0.30,  "SATURATION" },
+        { "bias",            "BIAS",       0.42,  "SATURATION" },
         { "tone",            "BRIGHT",     0.50,  "MACHINE"  },
         { "character",       "TONE",       0.5,   "MACHINE"  },
         { "wow",             "WOW",        0.14,  "NOISE"    },
@@ -2679,54 +3671,62 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         { "mix",             "MIX",        0.5,   "MACHINE"  },
         { "output",          "OUTPUT",     0.0,   "MACHINE"  },
         { "stereo_width",    "WIDTH",      0.5,   "MACHINE"  },
-        { "blend",           "BLEND",      0.0,   "DRIVE"    },
-        { "shape",           "SHAPE",      0.5,   "DRIVE"    },
-        { "amp_bias",        "AMP BIAS",   0.50,  "DRIVE"    },
-        { "sag",             "SAG",        0.0,   "DRIVE"    },
+        // The seven SOURCE knobs, where the old BLEND/SHAPE pair sat: each is
+        // its own machine's share of the saturation mix, dialled by name.
+        { "tape_source",     "TAPE",       1.0,   "SUBFUND"   },
+        { "valve_source",    "VALVE",      0.0,   "SUBFUND"   },
+        { "cassette_source", "CASSETTE",   0.0,   "SUBFUND"   },
+        { "vinyl_source",    "VINYL",      0.0,   "SUBFUND"   },
+        { "amp_source",      "AMP",        0.0,   "SUBFUND"   },
+        { "transformer_source","TRANSFORMER",0.0,  "SUBFUND"   },
+        { "digital_source",  "DIGITAL",    0.0,   "SUBFUND"   },
+        { "amp_bias",        "AMP BIAS",   0.50,  "SUBFUND"   },
+        { "sag",             "SAG",        0.0,   "SUBFUND"   },
         { "presence",        "PRESENCE",   0.50,  "CHARACTER"},
         { "cabinet",         "CABINET",    0.0,   "CHARACTER"},
-        { "delay_time",      "DELAY",      0.0,   "SPACE"    },
-        { "delay_feedback",  "DLY LVL",    0.0,   "SPACE"    },
-        { "st_offset",       "ST OFFSET",  0.0,   "SPACE"    },
+        { "delay_time",      "DELAY",      0.0,   "DELAY"     },
+        { "delay_feedback",  "DLY LVL",    0.0,   "DELAY"     },
+        { "st_offset",       "ST OFFSET",  0.0,   "DELAY"     },
         { "noise",           "NOISE",      0.50,  "NOISE"    },
-        { "subfund",         "SUBFUND",    0.0,   "DRIVE"    },
-        { "preamp",          "PREAMP",     0.0,   "DRIVE"    },
-        { "distortion",      "DISTORT",    0.0,   "DRIVE"    },
+        { "subfund",         "SUBFUND",    0.0,   "SUBFUND"   },
+        { "preamp",          "PREAMP",     0.0,   "FRONT END" },
+        { "distortion",      "DISTORT",    0.0,   "FRONT END" },
         { "flux",            "FLUX",       0.50,  "CHARACTER"},
         { "wear",            "WEAR",       0.0,   "NOISE"    },
         { "mechanics",       "MECHANICS",  0.0,   "NOISE"    },
-        { "reverb",          "REVERB",     0.0,   "SPACE"    },
-        { "reverb_size",     "RVB SIZE",   0.40,  "SPACE"    },
-        { "vinyl",           "VINYL",      0.0,   "VINYL"    },
-        { "vinyl_crackle",   "CRACKLE",    0.50,  "VINYL"    },
-        { "vinyl_rumble",    "RUMBLE",     0.35,  "VINYL"    },
+        { "reverb",          "REVERB",     0.0,   "REVERB"    },
+        { "reverb_size",     "RVB SIZE",   0.40,  "REVERB"    },
+        { "vinyl",           "VINYL",      0.0,   "VINYL"     },
+        { "vinyl_crackle",   "CRACKLE",    0.50,  "VINYL"     },
+        { "vinyl_rumble",    "RUMBLE",     0.35,  "VINYL"     },
         { "noise_lvl",       "NOISE LVL",  1.0,   "NOISE"    },
         { "st_link",         "ST LINK",    1.0,   "MACHINE"  },
-        { "vinyl_dust",      "DUST",       0.0,   "NOISE"    },
-        { "vinyl_scratch",   "SCRATCH",    0.0,   "NOISE"    },
-        { "vinyl_warp",      "WARP",       0.0,   "NOISE"    },
-        { "vinyl_electrical","ELECTRICAL", 0.0,   "NOISE"    },
-        { "vinyl_clicks",    "CLICKS",     0.0,   "NOISE"    },
+        { "vinyl_dust",      "DUST",       0.0,   "RECORD"   },
+        { "vinyl_scratch",   "SCRATCH",    0.0,   "RECORD"   },
+        { "vinyl_warp",      "WARP",       0.0,   "RECORD"   },
+        { "vinyl_electrical","ELECTRICAL", 0.0,   "RECORD"   },
+        { "vinyl_clicks",    "CLICKS",     0.0,   "RECORD"   },
         { "in_low",          "IN LO",      0.0,   "IN EQ"    },
         { "in_mid",          "IN MID",     0.0,   "IN EQ"    },
         { "in_high",         "IN HI",      0.0,   "IN EQ"    },
         { "out_low",         "OUT LO",     0.0,   "OUT EQ"   },
         { "out_mid",         "OUT MID",    0.0,   "OUT EQ"   },
         { "out_high",        "OUT HI",     0.0,   "OUT EQ"   },
-        { "di",              "DI",         0.0,   "DRIVE"    },
-        { "di_load",         "DI LOAD",    0.0,   "DRIVE"    },
-        { "di_transformer",  "DI XFMR",    0.0,   "DRIVE"    },
+        { "di",              "DI",         0.0,   "FRONT END" },
+        { "di_load",         "DI LOAD",    0.0,   "FRONT END" },
+        { "di_transformer",  "DI XFMR",    0.0,   "FRONT END" },
         { "in_hp_freq",      "IN HP",      20.0,  "IN EQ"    },
         { "in_lp_freq",      "IN LP",      20000.0, "IN EQ"  },
         { "in_eq_q",         "IN Q",       0.7,   "IN EQ"    },
         { "out_hp_freq",     "OUT HP",     20.0,  "OUT EQ"   },
         { "out_lp_freq",     "OUT LP",     20000.0, "OUT EQ"  },
         { "out_eq_q",        "OUT Q",      0.7,   "OUT EQ"   },
-        { "delay_pingpong",  "PING-PONG",  0.0,   "SPACE"    },
+        { "delay_pingpong",  "PING-PONG",  0.0,   "DELAY"     },
         { "transient_attack","ATK",        0.0,   "DYN"      },
         { "transient_sustain","SUS",       0.0,   "DYN"      },
         { "transient_mix",   "TR MIX",     0.0,   "DYN"      },
-        { "neural_mix",      "NEURAL",     0.0,   "DYN"      }
+        { "neural_mix",      "NEURAL",     0.0,   "SHAPERS"   },
+        { "ir_mix",          "IR MIX",     0.0,   "SHAPERS"   }
     } };
 
     // The three arrays the constructor below works from, DERIVED from the table
@@ -2803,6 +3803,15 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         slider.setDoubleClickReturnValue (true, defaultValues[i]);
         slider.setLookAndFeel (&customLookAndFeel);
         slider.setColour (juce::Slider::textBoxOutlineColourId, paletteFor (false).border);
+
+        // A SOURCE knob is registered with the LookAndFeel as that machine's own
+        // control, so drawRotarySlider can paint its arc, its tracer and its
+        // indicator in that machine's colour without knowing anything about the
+        // control list. Every other knob is simply never registered and keeps
+        // the panel's accent.
+        const auto principle = principleOf (controlIds[static_cast<int> (i)]);
+        if (principle >= 0)
+            customLookAndFeel.registerPrincipleKnob (slider, principle);
 
         // A tooltip for EVERY parameter - this is what shows when the user hovers.
         // The per-name text explains what the control does and its default, and the
@@ -2912,29 +3921,39 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                        "NOISE control never reached. 100 percent is the calibrated "
                        "level the formulas and the record types were voiced at. "
                        "Default 100 percent.";
-            if (id == "blend")
-                return "BLEND - which saturation PRINCIPLE the machine bends "
-                       "with. The shaper is not one curve: it is six, blended. Left is "
-                       "magnetic TAPE (memory, gentle, warm), then VALVE (soft "
-                       "asymmetric compression, even-harmonic warmth), then CASSETTE "
-                       "(a hard early knee on narrow tape, small and loud), then AMP "
-                       "(a high-gain guitar input, hard and odd-harmonic - the one "
-                       "that bites), then TRANSFORMER (a passive input transformer: "
-                       "pure analogue but no machine, and the only principle that "
-                       "bends the low end first, because a saturating primary is a "
-                       "series impedance and a series impedance bites the bottom of "
-                       "the band) and right is DIGITAL (a converter's hard ceiling "
-                       "with a held code: the sweep ends where the machines stop and "
-                       "the conversion begins). Every curve is normalised so the "
-                       "blend cannot change the level, only the character. Default 0 "
-                       "percent - pure tape, exactly what earlier builds did.";
-            if (id == "shape")
-                return "SHAPE - how concentrated the BLEND is. Low picks "
-                       "one principle at a time, so the sweep snaps from tape to valve "
-                       "to cassette to amp to transformer to digital and each is "
-                       "obvious. High spreads the weighting so all six contribute at "
-                       "every position and the result reads as one compound machine "
-                       "rather than six. Default 50 percent.";
+            if (id == "tape_source")
+                return "TAPE - how much of the mix is the magnetic tape "
+                       "machine: hysteresis with memory, gentle and warm, the "
+                       "principle this plugin was calibrated as. Default 100 "
+                       "percent.";
+            if (id == "valve_source")
+                return "VALVE - how much of the mix is the thermionic stage: "
+                       "soft asymmetric compression, even-harmonic warmth. Shares "
+                       "the mix with the other sources - the shares are "
+                       "normalised, so the character changes without the level "
+                       "moving. Default 0 percent.";
+            if (id == "cassette_source")
+                return "CASSETTE - how much of the mix is the compact cassette: "
+                       "a hard early knee on narrow tape, small and loud. Default "
+                       "0 percent.";
+            if (id == "vinyl_source")
+                return "VINYL - how much of the mix is the cutting lathe: the "
+                       "gentlest tracing distortion of the seven, a soft "
+                       "level-dependent knee like the groove rounding under the "
+                       "stylus. Default 0 percent.";
+            if (id == "amp_source")
+                return "AMP - how much of the mix is the guitar amplifier's "
+                       "input stage: hard, odd-harmonic, the one that bites. "
+                       "Default 0 percent.";
+            if (id == "transformer_source")
+                return "TRANSFORMER - how much of the mix is the passive input "
+                       "transformer: pure analogue but no machine, the only "
+                       "principle that bends the low end first. Default 0 "
+                       "percent.";
+            if (id == "digital_source")
+                return "DIGITAL - how much of the mix is the converter: a hard "
+                       "ceiling with a held code, where the machines stop and the "
+                       "conversion begins. Default 0 percent.";
             if (id == "amp_bias")
                 return "AMP BIAS - the input valve's DC operating point, "
                        "which is the single most effective control on a real amp's "
@@ -3148,12 +4167,19 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
             if (id == "neural_mix")
                 return "NEURAL - the wet/dry position of the optional "
                        "learned model. The model is not a knob: it is a file "
-                       "loaded with LOAD MODEL on the DYN tab, and the network "
-                       "itself (a Dense net, an LSTM, a GRU) is whatever the file "
-                       "describes. This control blends the model's output with "
-                       "the untouched signal, so it is always a crossfade. At 0, "
-                       "or with no model loaded, the stage is transparent. "
-                       "Default 0 percent.";
+                       "loaded with LOAD MODEL on the CHARACTER tab, and the "
+                       "network itself (a Dense net, an LSTM, a GRU) is whatever "
+                       "the file describes. This control blends the model's "
+                       "output with the untouched signal, so it is always a "
+                       "crossfade. At 0, or with no model loaded, the stage is "
+                       "transparent. Default 0 percent.";
+            if (id == "ir_mix")
+                return "IR MIX - how much of the convolved signal is blended "
+                       "into the finished one. The impulse response itself is "
+                       "not a knob: it is a file loaded with LOAD IR on the "
+                       "CHARACTER tab, and it can be a cabinet, a room or any "
+                       "other space. At 0, or with no IR loaded, the stage is "
+                       "transparent. Default 0 percent.";
             // The eleven knobs that were falling through to an empty sentence:
             // they showed the shared interaction hint only, which the user read
             // as "tooltip is missing". One branch each, same shape as the rest.
@@ -3381,7 +4407,25 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         addAndMakeVisible (button);
     }
 
-    setCurrentTab (currentTab);
+    // The three tab families ride ONE row of the 4-wide knob grid: one button per
+    // family, always visible, pages beside each. There is no free header row to
+    // put them in (its three rows hold the switches, the language pair and the
+    // machine-state pill), so the Control strip's own grid hosts them - the grid
+    // below is empty while the row is visible and just reflows when it is not.
+    const std::array<juce::TextButton*, tabFamilyCount> familyButtons
+        { &tabFamilyTapeButton, &tabFamilyFxButton, &tabFamilySetupButton };
+    for (std::size_t f = 0; f < familyButtons.size(); ++f)
+    {
+        auto& button = *familyButtons[f];
+        button.setLookAndFeel (&customLookAndFeel);
+        button.onClick = [this, f] { setTabFamily (static_cast<int> (f)); };
+        addAndMakeVisible (button);
+    }
+
+    // Every other path - applyLanguage's applyTheme, a knob drag, a preset load -
+    // only ever touches styling; the single setTabFamily here is what initially
+    // filters the bar and resolves the restored currentTab's family.
+    setTabFamily (currentTab);
 
     // The same tapeStockNameList() the choice parameter is built from, so the panel
     // cannot offer a stock the parameter would refuse to select. It did once: the
@@ -3936,6 +4980,43 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     styleLabel (neuralStatusLabel, "NO MODEL", 8.5f, paletteFor (false).secondary,
                 false, juce::Justification::centred);
     addAndMakeVisible (neuralStatusLabel);
+
+    // ---------------------------------------------------------------
+    //  The IR picker rides the DYNAMICS page's member band, under the IR MIX
+    //  knob it belongs to: LOAD IR / CLEAR IR / status, styled and tipped
+    //  exactly like the model picker on CHARACTER. An IR is data read from a
+    //  file for the same reason a model is - no parameter, no attachment.
+    // ---------------------------------------------------------------
+    loadIrButton.setLookAndFeel (&inlineLookAndFeel);
+    clearIrButton.setLookAndFeel (&inlineLookAndFeel);
+    loadIrButton.setColour (juce::TextButton::buttonColourId, paletteFor (false).raised);
+    loadIrButton.setColour (juce::TextButton::textColourOffId, paletteFor (false).text);
+    loadIrButton.setColour (juce::TextButton::buttonOnColourId, paletteFor (false).raised.darker (0.15f));
+    clearIrButton.setColour (juce::TextButton::buttonColourId, paletteFor (false).raised);
+    clearIrButton.setColour (juce::TextButton::textColourOffId, paletteFor (false).text);
+    clearIrButton.setColour (juce::TextButton::buttonOnColourId, paletteFor (false).raised.darker (0.15f));
+    setTip (loadIrButton, "LOAD IR - reads an impulse response (a WAV or AIFF "
+                             "capture of a cabinet, a room or any other space) and "
+                             "convolves the finished signal with it. IR MIX sets how "
+                             "much of the convolved signal is blended in; at 0 the "
+                             "stage is silent. Loading an IR does not change any "
+                             "parameter and is not saved with the session.");
+    setTip (clearIrButton, "CLEAR IR - releases the loaded impulse response, "
+                              "returning the IR stage to its transparent "
+                              "pass-through.");
+    loadIrButton.onClick = [this] { loadIrFromFile(); };
+    clearIrButton.onClick = [this]
+    {
+        audioProcessor.clearIr();
+        loadedIrName = {};
+        refreshIrStatus();
+    };
+    addAndMakeVisible (loadIrButton);
+    addAndMakeVisible (clearIrButton);
+
+    styleLabel (irStatusLabel, "NO IR", 8.5f, paletteFor (false).secondary,
+                false, juce::Justification::centred);
+    addAndMakeVisible (irStatusLabel);
 
     // ---------------------------------------------------------------
     //  The remaining choice lists: the DI pad, the track layout and the two
@@ -4630,6 +5711,12 @@ void FirstAudioProcessorEditor::applyTheme()
     deckHintLabel.setColour (juce::Label::textColourId, palette.secondary);
     controlsHeadingLabel.setColour (juce::Label::textColourId, palette.accent);
     controlsHintLabel.setColour (juce::Label::textColourId, palette.secondary);
+    sectionCaptionLabel.setColour (juce::Label::textColourId, palette.secondary);
+    // The mix bar keeps its OWN dark flag rather than reading one: it is painted
+    // from a child component, and a child cannot ask which theme the editor is on
+    // without being told. Three lines of state instead of a wrong colour on a
+    // theme the user just cycled.
+    mixBar.setDarkTheme (darkTheme);
     metersHeadingLabel.setColour (juce::Label::textColourId, palette.accent);
     metersHintLabel.setColour (juce::Label::textColourId, palette.secondary);
 
@@ -4660,6 +5747,10 @@ void FirstAudioProcessorEditor::applyTheme()
     delaySyncLabel.setColour (juce::Label::textColourId, palette.secondary);
     glLabel.setColour (juce::Label::textColourId, palette.secondary);
     neuralStatusLabel.setColour (juce::Label::textColourId, palette.secondary);
+    // The IR readout re-inks itself in refreshIrStatus() on every change; this
+    // covers the theme switch, which repaints without a status change.
+    irStatusLabel.setColour (juce::Label::textColourId,
+                             audioProcessor.hasIr() ? palette.accent : palette.secondary);
 
     // The tab buttons carry the theme, and styleTabButtons() reads currentTab as well,
     // so the selected tab keeps its accent highlight across a theme switch.
@@ -4838,13 +5929,12 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     g.fillAll (palette.background);
 
     const auto layout = getEditorLayout();
-    // The neural card sits behind the CHARACTER page's picker cell, and its
+    // The neural card sits behind the SHAPERS page's picker cell, and its
     // geometry MIRRORS resized()'s: the grid is the controls band reduced by
-    // 14, cut 62 from the top (controlsDividerOffset 68 - 14 + 8) and 8 from
-    // the bottom; the member band is a fixed 50 px strip at the grid's bottom;
-    // CHARACTER holds three knobs, so one knob row takes all the rest. The
-    // picker rides the fourth column of the member band - its cell x is
-    // grid.x + 3 * cellWidth, width cellWidth (cellWidth = gridW / 4).
+    // 14, cut 78 from the top (controlsDividerOffset 92 - 14 + 8) and 8 from
+    // the bottom; the member band is a fixed 50 px strip at the grid's bottom.
+    // The picker rides the member band's FIRST column - its cell x is grid.x,
+    // width cellWidth (cellWidth = gridW / 4).
     constexpr int tabColumnsNow = 4;
     constexpr int memberBandHeightNow = 50;
     auto gridNow = layout.controls.reduced (14);
@@ -4896,6 +5986,12 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
 
 
     drawPanel (g, getLocalBounds().reduced (8), palette, 7.0f);
+
+    // The camera is set here rather than in the constructor because it depends
+    // on the panel's own size: the viewer stands over the CENTRE of whatever
+    // the panel currently is, so the same drawing code answers "how edge-on is
+    // this knob" correctly at the minimum window size and at four times it.
+    customLookAndFeel.setPanelCamera (getLocalBounds().toFloat());
     drawPanel (g, layout.header, palette, 5.0f);
     drawPanel (g, layout.deck, palette, 5.0f);
     drawPanel (g, layout.controls, palette, 5.0f);
@@ -5026,12 +6122,13 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
 
     // The neural model picker's card: the moved picker reads as a device with a
     // face, not as three unstyled widgets on the page - "it's black" was the
-    // unstyled defaults speaking. The card is drawn behind the fourth-column
-    // picker cell only when CHARACTER is the visible tab.
-    if (activeTabIsCharacter)
+    // unstyled defaults speaking. The card is drawn behind the picker's member
+    // cell only when SHAPERS is the visible tab - the page whose NEURAL knob it
+    // belongs to.
+    if (activeTabIsShapers)
     {
         const auto card = juce::Rectangle<float> (
-            static_cast<float> (gridNow.getX() + 3 * cellWidthNow),
+            static_cast<float> (gridNow.getX()),
             static_cast<float> (memberBandY),
             static_cast<float> (cellWidthNow),
             static_cast<float> (memberBandHeightNow));
@@ -5282,6 +6379,10 @@ void FirstAudioProcessorEditor::timerCallback()
     // only rewritten when its text would actually differ. That keeps a 30 Hz
     // timer from re-laying out a label sixty times a second for no reason.
     refreshNeuralStatus();
+    // The IR readout follows the same rule - and it is the one place a load
+    // that finished on the convolution's background thread still gets drawn,
+    // since the load hands its result to the stage asynchronously.
+    refreshIrStatus();
 
     inputMeter.setLoudness (telemetry.inputPeakDb,
                             telemetry.inputRmsDb,
@@ -5300,6 +6401,40 @@ void FirstAudioProcessorEditor::timerCallback()
                                     telemetry.inputCompressorActivity);
     compressorMeterOut.setReduction (telemetry.outputGainReductionDb,
                                      telemetry.outputCompressorActivity);
+
+    // The MIX page's bar. Read from the seven SOURCE parameters and normalised
+    // exactly the way SaturationCore::setWeights normalises them - including its
+    // all-zero fallback, so a bar that shows pure tape really is pure tape. It is
+    // read only while the page that shows it is on screen: seven parameter reads
+    // and a divide per frame is nothing, but nothing is cheaper than nothing.
+    if (mixBar.isVisible())
+    {
+        std::array<float, principleCount> shares {};
+        float shareSum = 0.0f;
+
+        for (int p = 0; p < principleCount; ++p)
+        {
+            if (const auto* parameter = audioProcessor.parameters.getParameter (
+                                          juce::String (principleParameterIds[static_cast<std::size_t> (p)])))
+                shares[static_cast<std::size_t> (p)] =
+                    juce::jlimit (0.0f, 1.0f, static_cast<float> (parameter->getValue()));
+
+            shareSum += shares[static_cast<std::size_t> (p)];
+        }
+
+        if (shareSum > 1.0e-6f)
+            for (auto& share : shares)
+                share /= shareSum;
+        else
+        {
+            // The same answer the core gives an empty mix: pure tape, the machine
+            // the plugin is calibrated as. Painting anything else here would put
+            // the bar and the sound in front of different stories.
+            shares = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+        }
+
+mixBar.setShares (shares, juce::jlimit (0.0f, 1.0f, shareSum));
+    }
 
     const auto reduction = telemetry.inputGainReductionDb + telemetry.outputGainReductionDb;
     const auto activity = telemetry.compressorActivity;
@@ -5533,24 +6668,42 @@ void FirstAudioProcessorEditor::timerCallback()
 
     uiSounds.setBrightness (juce::jlimit (0.0f, 1.0f, glowAmount * 0.7f + activity * 0.3f));
 
-    // The WHOLE panel repaints on every tick now, and the reason is the
-    // texture: the grain + wear layer spans the entire editor, and repainting
-    // only the header + deck made the controls and meters sit on a texture
-    // that was there on the frames their band happened to redraw and frozen on
-    // the ones it did not - the user's "now it is normal, now it is squares,
-    // now it is gone". A full-editor repaint at 30 Hz is the one schedule
-    // under which the surface is uniform and its cost stays bounded.
-    //
-    // The control band used to be excluded on purpose: repaint() on a parent
-    // never repaints its children in JUCE - the sliders are child components
-    // and repaint themselves when their own value changes - so the old call
-    // never reached a knob anyway. What it did redraw, thirty times a second,
-    // was this component's own static content in that band: the panel gradient,
-    // the grain and the divider. With a context attached, each of those is a
-    // separate render of the panel, so it was roughly a third of the per-frame
-    // work for a picture that never changed. The knobs look the same without
-    // it, because they were never coming from here.
-    repaint();
+    // The texture layer is rebuilt (and the whole panel repainted) only when
+    // something STRUCTURAL changes - a theme switch, a resize - through
+    // rebuildPanelTextureLayers(); the timer used to repaint the whole editor
+    // every tick besides, and that was the lists' lag: with a popup menu open
+    // (presets, vinyl types, oversampling - every combo), each 30 Hz tick
+    // buried the popup's window under a full-panel invalidation and the menu
+    // repainted itself behind it, which the eye read as the list dragging.
+    // The knobs need none of it - they repaint themselves when their own value
+    // changes - and the animated furniture (lamp, needles, hint bar) rides the
+    // look-and-feel's own frame advance plus its components' own repaints.
+
+    // The Arturia-style hint line: the controls band's right caption names the
+    // knob the pointer is over (the slider's own name - the same caption the
+    // grid draws under it), or falls back to the interaction hint when the
+    // pointer rests on nothing. A tooltip needs hover-and-wait; this bar
+    // answers in one frame, which is why the two coexist. The name is read
+    // from the component rather than from parameterTooltip: that lambda
+    // captures constructor locals by reference and must not outlive them.
+    {
+        juce::String hoveredControl;
+        const auto mouse = getMouseXYRelative();
+        for (int i = 0; i < static_cast<int> (controlCount); ++i)
+            if (controls[i].isVisible() && controls[i].getBounds().contains (mouse))
+            {
+                hoveredControl = controls[i].getName();
+                break;
+            }
+        if (hoveredControl != lastShownHoverHint)
+        {
+            lastShownHoverHint = hoveredControl;
+            controlsHintLabel.setText (hoveredControl.isNotEmpty()
+                                          ? hoveredControl
+                                          : juce::String ("Shift = fine tune"),
+                                       juce::dontSendNotification);
+        }
+    }
 
     // Workflow state is cheap to poll at 30 Hz and makes the panel self-healing:
     // if the host, a session load or a preset change moves anything, the buttons,
@@ -5721,7 +6874,15 @@ void FirstAudioProcessorEditor::resized()
     const auto headerRight = layout.header.getRight();
     constexpr int headerGap = 6;
     constexpr int headerSwitchHeight = 22;
-    constexpr int headerColumnWidth = 92;
+    // 74 rather than 92. The grid's cells are sized by the widest caption in
+    // them (POLARITY, AUTO GAIN) plus room for the lamp, and 92 was sizing every
+    // cell by the WIDEST one - so BYPASS and DELTA, which need half as much,
+    // carried twenty pixels of empty metal each and the row read as four large
+    // slabs rather than four switches. The height stays at 22 because the
+    // rocker draws three stacked things inside it (caption, groove, thumb) and
+    // they are already sharing that height three ways; the WIDTH was the one
+    // dimension with slack in it.
+    constexpr int headerColumnWidth = 74;
     constexpr int headerColumns = 4;
     const auto headerRowOneY = layout.header.getY() + 10;
     const auto headerRowTwoY = layout.header.getY() + 36;
@@ -6292,11 +7453,20 @@ void FirstAudioProcessorEditor::resized()
 
 
     controlsHeadingLabel.setBounds (layout.controls.getX() + 18, layout.controls.getY() + 10, 210, 19);
+    // The section caption takes the gap between the heading and the hint, which is
+    // where the panel has always had a wide empty stretch: the hint is drawn
+    // RIGHT-aligned, so its own left half is free space this caption can live in
+    // without moving anything. It stops short of the hint's own left edge, so the
+    // two cannot collide however long the caption or the hint grows.
     const auto controlsHintRight = layout.controls.getRight() - 12;
     const auto controlsHintLeft = juce::jmax (layout.controls.getX() + 240,
                                               controlsHeadingLabel.getRight() + 24);
     controlsHintLabel.setBounds (controlsHintLeft, layout.controls.getY() + 10,
                                  juce::jmax (0, controlsHintRight - controlsHintLeft), 19);
+    sectionCaptionLabel.setBounds (controlsHeadingLabel.getRight() + 14,
+                                   layout.controls.getY() + 11,
+                                   juce::jmax (0, controlsHintLeft - controlsHeadingLabel.getRight() - 24),
+                                   17);
 
     // The 3D transport's window: the deck's top-right block, which is the one
     // region resized() keeps free of controls. reelCorridor is 70 px wide and the
@@ -6312,34 +7482,76 @@ void FirstAudioProcessorEditor::resized()
     // ------------------------------------------------------------------
     //  The tab bar.
     //
-    //  The three groups used to be one five-row block of all twenty-one knobs, with a
-    //  small caption floating in the row gap above each group. Those were the panel's
-    //  worst-placed furniture: the gap above row 3 lies INSIDE row 2 and the gap above
-    //  row 4 lies inside row 3, so SATURATION CORE was painted on top of the row of
-    //  knobs above it and HEAD / TRANSPORT on top of the next one, and at 13 px tall
-    //  the text ran into the knob captions behind it. Nothing about that placement
-    //  could have been right - there is no row of its own for a caption to sit in when
-    //  the rows are full.
+    //  The ten pages are grouped into three FAMILIES, so the bar never has to fit
+    //  ten names into one row: TAPE carries the machine and its colouring, FX the
+    //  time and dynamics stages, SETUP the two equalisers and the engine switches.
+    //  A family only filters WHICH tab buttons are visible - no tab is re-indexed,
+    //  the spec table, setCurrentTab and every knob's membership stay as they were.
     //
-    //  The captions are gone and the groups are real tabs, so each is named on a
-    //  button tall enough to read, the knobs underneath get a whole grid to
-    //  themselves, and only the selected tab's controls are on screen at all.
+    //  The caption block that used to float in the row gaps was the panel's
+    //  worst-placed furniture: the gap above row 3 lies INSIDE row 2 and the gap
+    //  above row 4 lies inside row 3, so SATURATION CORE was painted on top of the
+    //  row of knobs above it and HEAD / TRANSPORT on top of the next one. The
+    //  captions are gone and the groups are real tabs, each named on a button tall
+    //  enough to read, the knobs underneath get a whole grid to themselves, and
+    //  only the selected tab's controls are on screen at all.
     // ------------------------------------------------------------------
     const auto tabBarLeft = layout.controls.getX() + 14;
-    const auto tabBarTop = layout.controls.getY() + 34;
-    const auto tabBarHeight = 24;
-    // The gap shrinks as tabs are added so the buttons stay as wide as they can:
-    // ten pages at a fixed 6 px each spent 54 of the bar's ~700 px on nothing, and
-    // the caption is auto-sized to the button, so the width is what decides whether
-    // a name is legible. Six is kept while it fits and reduced past that.
-    const auto tabGap = numTabs <= 7 ? 6 : (numTabs <= 9 ? 4 : 3);
-    const auto tabButtonWidth = (layout.controls.getWidth() - 28
-                                 - tabGap * (numTabs - 1)) / numTabs;
+    // The two rows of tabs-inside-tabs live between the heading and the divider:
+    // FAMILIES on top (the three large buttons), the active family's PAGES under
+    // them. The divider (controlsDividerOffset) sits below both, so the knob grid
+    // itself never pays a row for either strip.
+    constexpr int familyRowHeight = 22;
+    const auto familyRow = juce::Rectangle<int> (layout.controls.getX() + 14,
+                                                 layout.controls.getY() + 34,
+                                                 layout.controls.getWidth() - 28,
+                                                 familyRowHeight);
+    const auto familyButtonWidth = (familyRow.getWidth() - 2 * 6) / tabFamilyCount;
+    tabFamilyTapeButton.setBounds (familyRow.getX(), familyRow.getY(),
+                                   familyButtonWidth, familyRow.getHeight());
+    tabFamilyFxButton.setBounds (familyRow.getX() + familyButtonWidth + 6,
+                                 familyRow.getY(), familyButtonWidth,
+                                 familyRow.getHeight());
+    tabFamilySetupButton.setBounds (familyRow.getX() + 2 * (familyButtonWidth + 6),
+                                    familyRow.getY(), familyButtonWidth,
+                                    familyRow.getHeight());
 
+    const auto tabBarTop = layout.controls.getY() + 60;
+    const auto tabBarHeight = 24;
+
+    // Pages of the CURRENT family only: the bar re-flows to the family's page
+    // count, so TAPE's five buttons get a fifth more width than the old ten-in-a-
+    // row bar ever could, and SETUP's three get three broad ones.
+    int visibleTabCount = 0;
     for (int tab = 0; tab < numTabs; ++tab)
+        if (tabSpecs[static_cast<std::size_t> (tab)].family == currentTabFamily)
+            ++visibleTabCount;
+    visibleTabCount = juce::jmax (1, visibleTabCount);
+    const auto tabGap = visibleTabCount <= 5 ? 6 : 4;
+    const auto tabButtonWidth = (layout.controls.getWidth() - 28
+                                 - tabGap * (visibleTabCount - 1)) / visibleTabCount;
+
+    int placedTabIndex = 0;
+    for (int tab = 0; tab < numTabs; ++tab)
+    {
+        if (tabSpecs[static_cast<std::size_t> (tab)].family != currentTabFamily)
+        {
+            tabButtons[static_cast<std::size_t> (tab)].setBounds (tabBarLeft,
+                                                                  tabBarTop, 0, 0);
+            continue;
+        }
         tabButtons[static_cast<std::size_t> (tab)]
-            .setBounds (tabBarLeft + tab * (tabButtonWidth + tabGap),
+            .setBounds (tabBarLeft + placedTabIndex * (tabButtonWidth + tabGap),
                         tabBarTop, tabButtonWidth, tabBarHeight);
+        ++placedTabIndex;
+    }
+
+    // The family buttons are never hidden by a page change (only a repaint)
+    // and there is nothing on the panel that flips their visibility, so this is
+    // a plain always-on strip.
+    tabFamilyTapeButton.setVisible (true);
+    tabFamilyFxButton.setVisible (true);
+    tabFamilySetupButton.setVisible (true);
     metersHeadingLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 8, 130, 18);
     metersHintLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 27, 150, 14);
     const auto compressorLabelWidth = 120;
@@ -6368,13 +7580,15 @@ void FirstAudioProcessorEditor::resized()
     // added or reordered. Hoisted ABOVE the row arithmetic because the member row
     // is decided by the same flags the layout chain below reads.
     const auto settingsTab = index_of_tab_named ("SETTINGS") == currentTab;
-    const auto spaceTab = index_of_tab_named ("SPACE") == currentTab;
+    const auto delayTab = index_of_tab_named ("DELAY") == currentTab;
     const auto characterTab = index_of_tab_named ("CHARACTER") == currentTab;
-    const auto driveTab = index_of_tab_named ("DRIVE") == currentTab;
+    const auto frontEndTab = index_of_tab_named ("FRONT END") == currentTab;
+    const auto shapersTab = index_of_tab_named ("SHAPERS") == currentTab;
     const auto inEqTab = index_of_tab_named ("IN EQ") == currentTab;
     const auto outEqTab = index_of_tab_named ("OUT EQ") == currentTab;
     const auto machineTab = index_of_tab_named ("MACHINE") == currentTab;
     const auto dynamicsTab = index_of_tab_named ("DYN") == currentTab;
+    const auto mixTab = index_of_tab_named ("MIX") == currentTab;
 
     // The knob rows the active tab needs (zero on SETTINGS, which holds no knobs),
     // and one row more when the tab owns member switches - the non-knob combos and
@@ -6384,9 +7598,12 @@ void FirstAudioProcessorEditor::resized()
     // then appended BELOW the grid, off the panel - GL and OVERSAMPLING were
     // clipped by the window's bottom edge on the very tab that holds nothing else.
     const auto knobRows = (tabControlCount + tabColumns - 1) / tabColumns;
-    const auto memberRows = (settingsTab || spaceTab || characterTab
-                             || dynamicsTab || inEqTab || outEqTab
-                             || machineTab || driveTab) ? 1 : 0;
+    // The MIX page counts as a member-row page even though it owns no switch: the
+    // band it reserves is where the saturation mix bar lives, which is the whole
+    // reason the page is worth its own strip.
+    const auto memberRows = (settingsTab || delayTab || characterTab
+                             || shapersTab || inEqTab || outEqTab
+                             || machineTab || mixTab) ? 1 : 0;
 
     // The member band is a FIXED strip - a caption band plus a control band -
     // reserved under the knob rows, and the knob rows share what is left. A
@@ -6478,10 +7695,25 @@ void FirstAudioProcessorEditor::resized()
     // flags themselves are read from the tabSpecs table at the top of the grid
     // section above, where the member-row arithmetic needs them too.
 
+    // The DI pad/load combo rides FRONT END in the knob grid's FOURTH cell of
+    // the second row - the page's five knobs leave it empty, and the pad is the
+    // DI's own input switch, so it sits with the row it feeds. No extra band is
+    // reserved for it: five knobs in two rows is exactly what this cell was.
+    if (frontEndTab)
+    {
+        diPadLabel.setText ("DI PAD", juce::dontSendNotification);
+        diPadLabel.setBounds (grid.getX() + 3 * cellWidth + 5,
+                              grid.getY() + (knobRows - 1) * knobRowHeight + 1,
+                              cellWidth - 10, 17);
+        diPadBox.setBounds (grid.getX() + 3 * cellWidth + 12,
+                            grid.getY() + (knobRows - 1) * knobRowHeight + 20,
+                            cellWidth - 24, 30);
+    }
+
     // The four new lists follow the same rule as the deck switches: each is a
     // full member of exactly one tab, so it is visible only while that tab is.
-    diPadLabel.setVisible (driveTab);
-    diPadBox.setVisible (driveTab);
+    diPadLabel.setVisible (frontEndTab);
+    diPadBox.setVisible (frontEndTab);
     tracksLabel.setVisible (machineTab);
     tracksBox.setVisible (machineTab);
     inputEqOrderLabel.setVisible (inEqTab);
@@ -6501,22 +7733,26 @@ void FirstAudioProcessorEditor::resized()
     // The UI-sounds switch is on the same page as GL and OVERSAMPLING - it is the
     // same kind of engine-level preference - so it follows the same tab.
     uiSoundsButton.setVisible (settingsTab);
-    delayTypeLabel.setVisible (spaceTab);
-    delayTypeBox.setVisible (spaceTab);
-    delayRateLabel.setVisible (spaceTab);
-    delayRateBox.setVisible (spaceTab);
-    delaySyncLabel.setVisible (spaceTab);
-    delaySyncButton.setVisible (spaceTab);
+    delayTypeLabel.setVisible (delayTab);
+    delayTypeBox.setVisible (delayTab);
+    delayRateLabel.setVisible (delayTab);
+    delayRateBox.setVisible (delayTab);
+    delaySyncLabel.setVisible (delayTab);
+    delaySyncButton.setVisible (delayTab);
 
-    // The neural model picker moved to the CHARACTER page (a voicing choice,
-    // living with the other voicing selectors), so it follows that tab now.
-    loadNeuralButton.setVisible (characterTab);
-    clearNeuralButton.setVisible (characterTab);
-    neuralStatusLabel.setVisible (characterTab);
+    // The neural model picker follows SHAPERS - under its own NEURAL knob - and
+    // the IR loader follows it for the same reason, beside IR MIX. Each file-fed
+    // stage keeps its loader and its status readout on the page its knob lives on.
+    loadNeuralButton.setVisible (shapersTab);
+    clearNeuralButton.setVisible (shapersTab);
+    neuralStatusLabel.setVisible (shapersTab);
+    loadIrButton.setVisible (shapersTab);
+    clearIrButton.setVisible (shapersTab);
+    irStatusLabel.setVisible (shapersTab);
 
-    // The three vinyl selectors moved to the CHARACTER page: they re-voice the
-    // whole vinyl stage, so they live with the machine's other voicing rather
-    // than beside the record's faults (which are on NOISE now).
+    // The three vinyl selectors stayed on CHARACTER: they re-voice the whole
+    // vinyl stage, so they live with the machine's other voicing rather than
+    // beside the record's faults (which are on RECORD).
     vinylGenerationLabel.setVisible (characterTab);
     vinylGenerationBox.setVisible (characterTab);
     vinylTurntableLabel.setVisible (characterTab);
@@ -6524,17 +7760,24 @@ void FirstAudioProcessorEditor::resized()
     vinylCartridgeLabel.setVisible (characterTab);
     vinylCartridgeBox.setVisible (characterTab);
 
+    // The mix bar takes the MIX page's whole member band: seven cells across the
+    // full width is the only size at which each machine's name and percentage
+    // both fit, and the band is exactly the strip the geometry above already
+    // reserved for it.
+    mixBar.setVisible (mixTab);
+    if (mixTab)
+    {
+        const auto mixBandTop = grid.getY() + knobRows * knobRowHeight;
+        mixBar.setBounds (grid.getX() + 4, mixBandTop + 3, grid.getWidth() - 8,
+                          juce::jmax (20, grid.getBottom() - mixBandTop - 6));
+        mixBar.repaint();
+    }
+
     if (machineTab)
     {
         // MACHINE: seven knobs fill two rows (the second holds three), so the
         // member row under them is where the machine's TRACKS selector lives.
         placeDeckSwitch (tracksLabel, tracksBox, 0, 1, "TRACKS");
-    }
-    else if (driveTab)
-    {
-        // DRIVE: twelve knobs in three full rows, so the member row under them
-        // carries the DI pad - the front end's input switch.
-        placeDeckSwitch (diPadLabel, diPadBox, 0, 1, "DI PAD");
     }
     else if (settingsTab)
     {
@@ -6553,7 +7796,7 @@ void FirstAudioProcessorEditor::resized()
                                   cellWidth - 24,
                                   juce::jmin (30, grid.getBottom() - memberRowY - 22));
     }
-    else if (spaceTab)
+    else if (delayTab)
     {
         // SPACE: the delay trio rides the member row under the delay knobs.
         placeDeckSwitch (delayTypeLabel, delayTypeBox, 0, 1, "TYPE");
@@ -6562,41 +7805,53 @@ void FirstAudioProcessorEditor::resized()
     }
     else if (characterTab)
     {
-        // CHARACTER: three knobs in the first row, so the member row under them
-        // is where the page's lists live. Left to right - the order the record
-        // is made in: what was cut, what plays it, what reads it. The NEURAL
-        // model picker moved here from DYNAMICS (the user's request): it is a
-        // VOICING choice - which machine shape bends the signal - and it sits
-        // beside the other voicing selectors, in a fourth cell, with its status
-        // readout above the row's own band so it cannot collide with them.
+        // CHARACTER: three knobs in one row, so the member band under them
+        // carries the page's three voicing lists - left to right, the order
+        // the record is made in: what was cut, what plays it, what reads it.
         placeDeckSwitch (vinylGenerationLabel, vinylGenerationBox, 0, 1, "GENERATION");
         placeDeckSwitch (vinylTurntableLabel, vinylTurntableBox, 1, 1, "TURNTABLE");
         placeDeckSwitch (vinylCartridgeLabel, vinylCartridgeBox, 2, 1, "CARTRIDGE");
-
+    }
+    else if (shapersTab)
+    {
+        // SHAPERS: the two file-fed stages on one page, each with its loader
+        // under its own knob. The NEURAL picker takes the band's FIRST column
+        // - LOAD MODEL on the control line, CLEAR beneath it, the model-status
+        // readout in the caption line above them - and the IR loader takes the
+        // second and third: the status readout as the second column's caption
+        // (the same label-above-control convention the knobs use), the two
+        // buttons on the control line. paint() draws the picker's card behind
+        // this band's first column - the two geometries share the arithmetic
+        // (grid / 4 columns, 50 px band), so they cannot disagree.
         const auto buttonY = memberRowY + 20;
         const auto buttonH = juce::jmin (30, grid.getBottom() - memberRowY - 22);
-
-        // The picker rides the member band's FOURTH column, exactly under the
-        // page's fourth knob cell: LOAD MODEL on the band's control line, CLEAR
-        // beneath it, the model-status readout in the band's caption line above
-        // them. paint() draws the card behind precisely this column - the two
-        // geometries share the arithmetic (grid / 4 columns, 50 px band), so
-        // they cannot disagree.
-        loadNeuralButton.setBounds (grid.getX() + 3 * cellWidth + 12, buttonY,
-                                    cellWidth - 24, buttonH);
-        clearNeuralButton.setBounds (grid.getX() + 3 * cellWidth + 18,
-                                     buttonY + buttonH + 6,
-                                     cellWidth - 36, buttonH);
-        neuralStatusLabel.setBounds (grid.getX() + 3 * cellWidth + 6,
-                                     memberRowY - 1, cellWidth - 12, 17);
+        // LOAD and CLEAR share the band's ONE control line, side by side. CLEAR
+        // used to sit UNDER LOAD (buttonY + buttonH + 6), which is exactly six
+        // pixels past the band's bottom edge on every panel size - the user's
+        // "Clear falls out of the window". Two buttons across the cell fit with
+        // room to spare: the cell is ~170 px wide, the pair needs ~160.
+        const auto halfButtonWidth = (cellWidth - 30) / 2;
+        loadNeuralButton.setBounds (grid.getX() + 12, buttonY,
+                                    halfButtonWidth, buttonH);
+        clearNeuralButton.setBounds (grid.getX() + 18 + halfButtonWidth, buttonY,
+                                     halfButtonWidth, buttonH);
+        neuralStatusLabel.setBounds (grid.getX() + 6, memberRowY - 1,
+                                     cellWidth - 12, 17);
+        irStatusLabel.setBounds (grid.getX() + cellWidth + 5, memberRowY - 1,
+                                 cellWidth - 10, 17);
+        loadIrButton.setBounds (grid.getX() + cellWidth + 12,
+                                buttonY, cellWidth - 24, buttonH);
+        clearIrButton.setBounds (grid.getX() + 2 * cellWidth + 12,
+                                 buttonY, cellWidth - 24, buttonH);
     }
     else if (dynamicsTab)
     {
-        // DYNAMICS: four knobs fill the first row and the picker moved to
-        // CHARACTER, so this page needs no member row - but the reserved band
-        // logic above sized this grid as if something might ride it. Nothing
-        // does: leave the band empty rather than stretching the knob rows into
-        // it, so the page's layout stays identical to before the move.
+        // DYNAMICS: three knobs fill the first row and the neural and IR
+        // stages moved to CHARACTER, so this page needs no member row - but
+        // the reserved band logic above sized this grid as if something might
+        // ride it. Nothing does: leave the band empty rather than stretching
+        // the knob rows into it, so the page's layout stays identical to
+        // before the move.
     }
     else if (inEqTab || outEqTab)
     {

@@ -1,4 +1,4 @@
-/*
+﻿/*
   ==============================================================================
     Nonlin Analog Saturator processor editor.
   ==============================================================================
@@ -42,6 +42,17 @@
 #else
  #define J37_HAS_FOLEYS 0
 #endif
+
+// The seven saturation principles, in the order the SOURCE knobs, the colours
+// and the MIX page's bar all use them: tape, valve, cassette, vinyl, amp,
+// transformer, digital - the same order SaturationCore::setWeights takes them
+// in. Declared once here, ABOVE everything that needs it, because three
+// separate pieces of the panel count the same seven: the LookAndFeel, which
+// paints a knob in its machine's colour and has to hold one pointer per
+// principle; the editor's MixBar, whose strip is a fixed seven cells; and the
+// seven SOURCE registrations themselves. One number, so none of the three can
+// drift from the others.
+inline constexpr int principleCount = 7;
 
 class J37LookAndFeel final : public juce::LookAndFeel_V4
 {
@@ -89,6 +100,33 @@ public:
             state.position = target;      // first sight / programmatic jump: no spin
         state.target = target;
         state.initialised = true;
+    }
+
+    /** Registers which of the seven SOURCE knobs a slider IS, so drawRotarySlider
+        can paint that machine's arc, its tracer and its indicator in that
+        machine's own colour instead of the panel's single accent.
+
+        The registration has to live HERE rather than in the control list, because
+        this class draws every control on the panel and is handed nothing but the
+        slider it is drawing - the paint routine has no access to the editor's
+        array, and JUCE 9's Component carries no property bag to hang an index on.
+        Seven pointers and a seven-step walk: no allocation at paint time, and the
+        same answer whether the knob is drawn from the mixer or from a repaint
+        nobody asked for. */
+    void registerPrincipleKnob (juce::Slider& slider, int principle) noexcept
+    {
+        if (juce::isPositiveAndBelow (principle, principleCount))
+            principleKnobs[static_cast<std::size_t> (principle)] = &slider;
+    }
+
+    /** The principle this slider IS, or -1 when it is not one of the seven. */
+    int principleOf (juce::Slider& slider) const noexcept
+    {
+        for (int p = 0; p < principleCount; ++p)
+            if (principleKnobs[static_cast<std::size_t> (p)] == &slider)
+                return p;
+
+        return -1;
     }
 
     void updateToggleAnimations()
@@ -146,9 +184,39 @@ public:
         face - the flat card that made the workflow lists unreadable. */
     void drawLabel (juce::Graphics&, juce::Label&) override;
 
+    // -----------------------------------------------------------------------
+    //  THE CAMERA.
+    //
+    //  Every control on this panel was drawn as if the viewer were hovering
+    //  exactly above it, looking straight down. That view does not exist: nobody
+    //  ever looks at a console from directly overhead, because they are sitting
+    //  in front of it. So the panel has a camera - one, placed above the
+    //  panel's CENTRE and set back from its near edge - and each control asks
+    //  where it falls in it. Two knobs on the same page are then seen at
+    //  different angles, which is the only reason a row of hardware reads as
+    //  hardware rather than as a row of discs printed on a board.
+    // -----------------------------------------------------------------------
+
+    /** What one control looks like from the camera. */
+    struct Perspective
+    {
+        juce::Point<float> centre;   ///< the control's own centre, in its own coordinates
+        float squashX = 1.0f;       ///< across the panel: < 1 seen off to one side
+        float squashY = 1.0f;       ///< down the panel: < 1 the nearer the near edge
+        float tilt = 0.0f;          ///< 0 dead centre, 1 at a far corner: how edge-on
+        float wall = 0.0f;          ///< the side wall this angle makes visible, as a fraction of the radius
+        float lean = 0.0f;          ///< -1 left of centre, +1 right: which way this control is turned to the light
+    };
+
+    /** Where the viewer is standing. Called from resized() with the whole editor. */
+    void setPanelCamera (juce::Rectangle<float> panelBounds) noexcept;
+
+    Perspective perspectiveFor (juce::Rectangle<float> bounds) const noexcept;
+
 private:
     ThemeChoice theme = ThemeChoice::ivory;
     float activity = 0.0f;   ///< Compressor activity, drives the glow around the knobs.
+    juce::Rectangle<float> cameraPanel;
 
     // Per-toggle glide state for the sliding thumbs (see noteToggle above).
     struct ToggleGlide
@@ -158,6 +226,7 @@ private:
         bool initialised = false;
     };
     std::map<void*, ToggleGlide> toggleGlides;
+    std::array<juce::Slider*, principleCount> principleKnobs {};
     float drift = 0.0f;      ///< Transport drift, drives the fine wobble in the ticks.
     float animationPhase = 0.0f;
 };
@@ -298,6 +367,39 @@ private:
         float activity = 0.0f;
     };
 
+    /** The saturation mix, read as a strip: one recessed cell per principle,
+        each filled from the bottom by that machine's share of the NORMALISED
+        mix. Seven knobs show what was dialled; this shows what the core is
+        actually running, which after normalisation is a different thing - and
+        it shows it in the panel's own material rather than as a number to
+        read. Lives in the member band under the MIX page's two rows. */
+    class MixBar final : public juce::Component
+    {
+    public:
+        MixBar() = default;
+
+        /** The seven shares, already normalised by the caller to the same sum
+            the core normalises to, in principleColour's order - plus the TOTAL
+            those shares were normalised FROM, which is how hard the saturation
+            is actually running. The seven cells always read 100 % between them,
+            so without the total the strip would claim the mix is full even with
+            every SOURCE knob at zero. */
+        void setShares (const std::array<float, principleCount>& newShares, float newTotal);
+
+        void setDarkTheme (bool shouldUseDarkTheme) noexcept
+        {
+            darkTheme = shouldUseDarkTheme;
+            repaint();
+        }
+
+        void paint (juce::Graphics&) override;
+
+    private:
+        std::array<float, principleCount> shares { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+        float total = 1.0f;   ///< the sum the shares were normalised FROM: the saturation amount
+        bool darkTheme = false;
+    };
+
     struct PhysicsOrb
     {
         b2Body* body = nullptr;
@@ -320,17 +422,14 @@ private:
         juce::Rectangle<int> meters;
     };
 
-    // Twenty-one controls, split across three tabs of at most nine, in signal-flow
-    // order: consecutive slices of one chain, read left to right.
+    // Sixty-four controls, split across sixteen tab pages of at most one row
+    // of seven, in signal-flow order: consecutive slices of one chain, read
+    // left to right. The page map lives in tabSpecs in the .cpp, and the three
+    // large family buttons above the bar (TAPE / FX / SETUP) group those
+    // pages.
     //
-    //   tab 1  MACHINE           INPUT  BRIGHT TONE   MIX   WIDTH OUTPUT
-    //   tab 2  SATURATION CORE   DRIVE  BIAS   SUBFUND BLEND  SHAPE  AMP BIAS SAG
-    //   tab 3  HEAD / TRANSPORT  CABINET PRESENCE WOW   FLUTTER ST OFFSET
-    //                            DELAY DLY LVL NOISE
-    //
-    // Tabs hold between three and nine controls, so at tabColumns wide most come to
-    // two rows and NOISE to three: the grid sizes its own row count from the active
-    // tab, so neither grows nor jumps when the user switches tabs.
+    // The grid sizes its own row count from the active tab, so it neither grows
+    // nor jumps when the user switches tabs.
     //
     // The count here, the controlIds / controlNames lists, the defaultValues array
     // and the tabSpecs table in the .cpp are all views of ONE list and must agree.
@@ -339,21 +438,24 @@ private:
     // read at run time. The tab table is checked against controlCount by a
     // static_assert too, so a knob that no tab lists is a build error, not a knob
     // that silently disappears from the panel.
-    static constexpr std::size_t controlCount = 58;
+    // 64: the fifty-nine the panel carried, minus the BLEND/SHAPE pair the
+    // user asked to remove, plus the seven SOURCE knobs that replaced them.
+    static constexpr std::size_t controlCount = 64;
     static constexpr int tabColumns = 4;
-    // Seven tabs: MACHINE, DRIVE, CHARACTER, NOISE, VINYL, SPACE, SETTINGS. The
-    // seventh arrived with the four record faults (DUST / SCRATCH / WARP /
-    // ELECTRICAL): cramming them onto NOISE would have put thirteen knobs on one
-    // page, which is exactly the crowding the tabs exist to avoid. VINYL gets its
-    // own page because the four are one subject - the state of the record itself -
-    // rather than four unrelated controls.
-    static constexpr int numTabs = 10;
+    // Sixteen pages under three large families (TAPE / FX / SETUP), so no page
+    // has to carry more than one subject: DRIVE was twelve knobs on one page and
+    // NOISE eleven, which is exactly the crowding the tabs exist to avoid.
+    static constexpr int numTabs = 16;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     void timerCallback() override;
     void createDecorativePhysics();
     void applyTheme();
     EditorLayout getEditorLayout() const;
+
+    // Cycles the header's theme button: DARK -> IVORY -> LIGHT -> DARK. The tab
+    // families resolve the reverse way - one Control-strip button per family and
+    // pages beside it - so the 4 x 92 px grid's four free columns stay free.
 
     // Shared by the constructor and by resized(): the knob-grid section captions
     // are created while laying out, so a constructor-local helper was out of scope
@@ -412,6 +514,11 @@ private:
     // three groups are real tabs, so only the active tab's controls are on screen
     // and each group has a whole grid to itself.
     void setCurrentTab (int newTab);
+
+    // The three tab families: selects which slice of the tab bar is visible and
+    // jumps to that slice's first page, then lays out and styles the bar. currentTab
+    // and every knob's tab membership are untouched - no tab is re-indexed.
+    void setTabFamily (int newFamily);
     void styleTabButtons();
 
     void refreshPresetList();
@@ -494,9 +601,21 @@ private:
     void loadNeuralModelFromFile();
     void refreshNeuralStatus();
     juce::String lastShownNeuralStatus;
+
+    // The IR cabinet's picker: LOAD IR reads a WAV/AIFF impulse response into
+    // the processor's convolvers, CLEAR IR releases it, and the status label
+    // reports what the stage holds - the same three-widget shape as the
+    // model picker beside it.
+    juce::TextButton loadIrButton { "LOAD IR" };
+    juce::TextButton clearIrButton { "CLEAR IR" };
+    juce::Label irStatusLabel;
+    void loadIrFromFile();
+    void refreshIrStatus();
+    juce::String lastShownIrStatus;
     // The loaded model's filename, kept so the readout can name it after a
     // reload or a refresh. Empty when the stage holds no model.
     juce::String loadedNeuralName;
+    juce::String loadedIrName;
 
     // The remaining choice parameters: the DI pad, the machine's track layout,
     // and the two EQ orders. Each is a list rather than a knob because its
@@ -675,10 +794,27 @@ private:
     juce::Label deckHintLabel;
     juce::Label controlsHeadingLabel;
     juce::Label controlsHintLabel;
-    // The three knob-grid tabs, in the order tabSpecs lists them. Clicking one shows
-    // that group's controls and hides every other knob.
+    /** The active page's own subject, set from the page's subtitle in tabSubtitles
+        every time the page changes. It is the section heading the knob row has
+        always been missing: fifteen pages of bare knobs all look the same, and
+        one line of text under the bar says what this page is FOR. */
+    juce::Label sectionCaptionLabel;
+    // The knob-grid tab pages, in the order tabSpecs lists them. Clicking one shows
+    // that page's controls and hides every other knob. Only the active family's
+    // buttons are on screen: the families themselves are the three buttons below,
+    // so nine pages of tabs never fight for one row's width.
     std::array<juce::TextButton, numTabs> tabButtons;
     int currentTab = 0;
+    int currentTabFamily = 0;
+    juce::TextButton tabFamilyTapeButton { "TAPE" };
+    juce::TextButton tabFamilyFxButton { "FX" };
+    juce::TextButton tabFamilySetupButton { "SETUP" };
+    // Sixteen pages under three large families (TAPE / FX / SETUP) - the page
+    // is one subject and at most one row of seven knobs: IN EQ alone carried
+    // six band knobs and three corner controls, DRIVE GAIN seven plus the DI
+    // pad, and a page that scrolls is a page nobody dials.
+    static constexpr int tabFamilyCount = 3;
+    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount { 9, 4, 3 };
     juce::Label metersHeadingLabel;
     juce::Label metersHintLabel;
     juce::Label compressorLabel;
@@ -713,6 +849,10 @@ private:
     LevelMeter outputMeter { "OUTPUT", "LEVEL / dBFS" };
     CompressorMeter compressorMeterIn { "COMP IN", "after input trim" };
     CompressorMeter compressorMeterOut { "COMP OUT", "before output trim" };
+    /** The MIX page's mix bar. A member rather than something paint() draws: it
+        changes when a knob moves, so it repaints itself from the timer without
+        touching the panel behind it. */
+    MixBar mixBar;
 
     // Animated presentation state, advanced one step per editor frame.
     float glowPhase = 0.0f;
@@ -725,10 +865,9 @@ private:
     // this. The timer's attach retries consult it, so a context the HOST lost
     // is recovered automatically while one the USER turned off stays off.
     bool glUserDisabled = false;
-    // True while the CHARACTER tab is the visible page: paint() draws the
-    // neural picker's card behind that page's fourth column and must not pay
-    // for it on any other tab.
-    bool activeTabIsCharacter = false;
+    // paint() draws the neural picker's card behind the SHAPERS page's member
+    // band's first column - the page whose NEURAL knob the picker belongs to.
+    bool activeTabIsShapers = false;
 
     // -----------------------------------------------------------------------
     //  The front panel's theme.
@@ -750,6 +889,9 @@ private:
     int lastShownTransport = -1;
     bool lastShownSpindown = false;
     juce::String lastShownMachineState;
+    // The hint bar's current text (empty when the pointer is over nothing), so
+    // the per-frame poll only touches the label on an actual change.
+    juce::String lastShownHoverHint;
     float smoothedMachineSpeed = 1.0f;
 
     // Which transport state is live, read from the parameter rather than tracked
