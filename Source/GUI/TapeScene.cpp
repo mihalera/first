@@ -2113,7 +2113,6 @@ void TapeScene::renderOpenGL()
     // with a z of its own, and drawing it last costs nothing because the depth
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
-}                                                  { headCentreX, headCentreY, headCentreZ });
     shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
     shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
     shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
@@ -2206,7 +2205,6 @@ void TapeScene::renderOpenGL()
     // with a z of its own, and drawing it last costs nothing because the depth
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
-}                                                  { headCentreX, headCentreY, headCentreZ });
     shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
     shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
     shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
@@ -2284,7 +2282,6 @@ void TapeScene::renderOpenGL()
     // with a z of its own, and drawing it last costs nothing because the depth
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
-}                                                  { headCentreX, headCentreY, headCentreZ });
     shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
     shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
     shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
@@ -2494,7 +2491,6 @@ void TapeScene::renderOpenGL()
     // with a z of its own, and drawing it last costs nothing because the depth
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
-}                                                  { headCentreX, headCentreY, headCentreZ });
     shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
     shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
     shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
@@ -2572,7 +2568,6 @@ void TapeScene::renderOpenGL()
     // with a z of its own, and drawing it last costs nothing because the depth
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
-}                                                  { headCentreX, headCentreY, headCentreZ });
     shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
     shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
     shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
@@ -2665,7 +2660,6 @@ void TapeScene::renderOpenGL()
     // with a z of its own, and drawing it last costs nothing because the depth
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
-}                                                  { headCentreX, headCentreY, headCentreZ });
     shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
     shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
     shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
@@ -2743,7 +2737,6 @@ void TapeScene::renderOpenGL()
     // with a z of its own, and drawing it last costs nothing because the depth
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
-}                                                  { headCentreX, headCentreY, headCentreZ });
     shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
     shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
     shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
