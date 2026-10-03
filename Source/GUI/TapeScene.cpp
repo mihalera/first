@@ -1,4 +1,4 @@
-﻿﻿/*
+/*
   ==============================================================================
     TapeScene - the deck's transport, rendered as geometry and lit on the GPU.
   ==============================================================================
@@ -1837,6 +1837,7 @@ void TapeScene::renderOpenGL()
     // -------------------------------------------------------------------------
     const auto level = outputLevel.load (std::memory_order_relaxed);
     const auto peak = outputPeak.load (std::memory_order_relaxed);
+    const auto driveAmount = drive.load (std::memory_order_relaxed);
     const auto reduction = gainReduction.load (std::memory_order_relaxed);
     const auto flutter = wowFlutter.load (std::memory_order_relaxed);
     const auto speed = transportSpeed.load (std::memory_order_relaxed);
