@@ -1,4 +1,4 @@
-﻿﻿/*
+/*
   ==============================================================================
     TapeScene - the deck's transport, rendered as geometry and lit on the GPU.
   ==============================================================================
@@ -2114,7 +2114,6 @@ void TapeScene::renderOpenGL()
     // with a z of its own, and drawing it last costs nothing because the depth
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
-}                                                  { headCentreX, headCentreY, headCentreZ });
     shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
     shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
     shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
@@ -2207,7 +2206,6 @@ void TapeScene::renderOpenGL()
     // with a z of its own, and drawing it last costs nothing because the depth
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
-}                                                  { headCentreX, headCentreY, headCentreZ });
     shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
     shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
     shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
@@ -2285,7 +2283,6 @@ void TapeScene::renderOpenGL()
     // with a z of its own, and drawing it last costs nothing because the depth
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
-}                                                  { headCentreX, headCentreY, headCentreZ });
     shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
     shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
     shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
@@ -2305,7 +2302,6 @@ void TapeScene::renderOpenGL()
     // with a z of its own, and drawing it last costs nothing because the depth
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
-}   const auto driveAmount = drive.load (std::memory_order_relaxed);
     const auto reduction = gainReduction.load (std::memory_order_relaxed);
     const auto flutter = wowFlutter.load (std::memory_order_relaxed);
     const auto speed = transportSpeed.load (std::memory_order_relaxed);
@@ -2496,7 +2492,6 @@ void TapeScene::renderOpenGL()
     // with a z of its own, and drawing it last costs nothing because the depth
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
-}                                                  { headCentreX, headCentreY, headCentreZ });
     shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
     shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
     shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
@@ -2574,7 +2569,6 @@ void TapeScene::renderOpenGL()
     // with a z of its own, and drawing it last costs nothing because the depth
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
-}                                                  { headCentreX, headCentreY, headCentreZ });
     shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
     shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
     shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
@@ -2667,7 +2661,6 @@ void TapeScene::renderOpenGL()
     // with a z of its own, and drawing it last costs nothing because the depth
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
-}                                                  { headCentreX, headCentreY, headCentreZ });
     shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
     shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
     shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
@@ -2745,7 +2738,6 @@ void TapeScene::renderOpenGL()
     // with a z of its own, and drawing it last costs nothing because the depth
     // buffer is what decides, not the order.
     drawControlBank (viewProjection, scene, body, highlight);
-}                                                  { headCentreX, headCentreY, headCentreZ });
     shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
     shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
     shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
