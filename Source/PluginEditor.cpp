@@ -1,4 +1,4 @@
-﻿#include "PluginProcessor.h"
+﻿﻿#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
@@ -2605,6 +2605,19 @@ void FirstAudioProcessorEditor::styleGlButton (bool isOn)
 
 void FirstAudioProcessorEditor::syncGlSwitchState()
 {
+    // A non-OpenGL backend is currently represented by the CPU fallback. Keep
+    // the existing control for compatibility, but do not claim that an
+    // unsupported native API has been initialised.
+    if (! j37::render::usesOpenGL())
+    {
+        glButton.setButtonText (juce::String ("CPU / ") + TapeScene::effectiveRenderBackendName());
+        glButton.setTooltip (TapeScene::renderBackendStatus());
+        styleGlButton (false);
+        tapeScene.setSceneEnabled (false);
+        rebuildPanelTextureLayers();
+        return;
+    }
+
     // Read the context, never a cached flag: attachTo() returns void, so the only
     // honest answer to "did it work" is to ask afterwards. The 3D transport takes
     // the same answer, which is what stops the panel from showing a lit button
@@ -2613,6 +2626,7 @@ void FirstAudioProcessorEditor::syncGlSwitchState()
     const auto isOn = openGLContext.isAttached();
 
     glButton.setButtonText (isOn ? "GL ON" : "GL OFF");
+    glButton.setTooltip ("OpenGL accelerated scene");
     styleGlButton (isOn);
     tapeScene.setSceneEnabled (isOn);
 
@@ -5333,25 +5347,37 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (compressorMeterOut);
     applyTheme();
 
-    // OpenGL is only an optimisation for the animated panel, and it is the least
-    // portable part of the UI: some Windows drivers, remote sessions, virtual machines
-    // and headless hosts cannot create a context at all. Attaching unconditionally
+    // The selected backend is compile-time. OpenGL is only an optimisation for
+    // the animated panel, and it is the least portable part of the UI: some
+    // Windows drivers, remote sessions, virtual machines and headless hosts
+    // cannot create a context at all. Attaching unconditionally
     // means those setups get a broken or blank editor, so the context is treated as a
     // best-effort accelerator. If it cannot attach, the component renderer draws the
     // same panel through the software path with no visual difference.
     openGLContext.setComponentPaintingEnabled (true);
     openGLContext.setContinuousRepainting (false);
+    // V-sync prevents the component-painting context from spinning at the
+    // monitor/driver maximum when the editor has no invalidated regions.
+    // Explicit repaint() calls still wake it when the panel actually changes.
+    openGLContext.setSwapInterval (1);
 
-    // attachTo() returns void, so it cannot be tested directly - it would read as
+    if (! j37::render::usesOpenGL())
+    {
+        syncGlSwitchState();
+    }
+    else
+    {
+        // attachTo() returns void, so it cannot be tested directly - it would read as
     // `if (!void)`, which is not a valid expression. The documented way to find out whether
     // the context came up is to ask afterwards, and detach if it did not so the component
     // renderer draws the panel instead.
-    openGLContext.attachTo (*this);
+        openGLContext.attachTo (*this);
 
-    if (! openGLContext.isAttached())
-        openGLContext.detach();
+        if (! openGLContext.isAttached())
+            openGLContext.detach();
+    }
 
-    // The GL switch mirrors the context's real state rather than a wish: on
+    // The renderer switch mirrors the context's real state rather than a wish: on
     // machines where the context never came up the button reads OFF and the
     // software renderer is what the user sees. The 3D transport follows the same
     // switch, because it is an accelerator rather than a feature.
@@ -5362,9 +5388,15 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // is no context to attach to without one. The timer keeps trying for a few
     // seconds and then gives up, because a driver, a remote session or a VM that
     // cannot create a context will not manage on the last attempt either.
-    glAttachAttemptsLeft = openGLContext.isAttached() ? 0 : 90;
+    glAttachAttemptsLeft = (! j37::render::usesOpenGL() || openGLContext.isAttached()) ? 0 : 90;
     glButton.onClick = [this]
     {
+        if (! j37::render::usesOpenGL())
+        {
+            syncGlSwitchState();
+            return;
+        }
+
         // Whatever the user asked for wins: stop the startup retries, or they would
         // switch the accelerator back on seconds after the user turned it off.
         // glUserDisabled records WHICH side dropped the context - only the user's
@@ -6328,6 +6360,12 @@ void FirstAudioProcessorEditor::createDecorativePhysics()
 
 void FirstAudioProcessorEditor::timerCallback()
 {
+    // Hosts can keep an editor alive while its window is hidden. Do not poll
+    // telemetry, advance physics, or issue repaint work in that state; the next
+    // visible timer tick reconstructs all display-only state from the processor.
+    if (! isShowing())
+        return;
+
     // The startup retry for the OpenGL context, bounded and then forgotten. It runs
     // first so a context that comes up is live before the meters ask for a repaint.
     if (glAttachAttemptsLeft > 0)
@@ -6758,7 +6796,7 @@ mixBar.setShares (shares, juce::jlimit (0.0f, 1.0f, shareSum));
         audioProcessor.updateActiveCompareSlot();
     }
 
-    if (! isShowing() || physicsWorld == nullptr)
+    if (physicsWorld == nullptr)
         return;
 
     physicsWorld->Step (1.0f / 30.0f, 6, 2);

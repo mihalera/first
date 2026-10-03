@@ -1,4 +1,4 @@
-/*
+﻿﻿/*
   ==============================================================================
     TapeScene - the deck's transport, rendered as geometry and lit on the GPU.
   ==============================================================================
@@ -910,7 +910,8 @@ void TapeScene::setAudioState (float newOutputLevel,
     // The repaint is the whole animation loop, and it is the editor's 30 Hz
     // timer asking for it rather than a timer of this component's own: the panel
     // already has one, and a second one would be a second thing to stop when the
-    // editor goes away.
+    // editor goes away. The GPU path also needs this invalidation because its
+    // context is intentionally not continuously repainting.
     repaint();
 }
 
@@ -989,6 +990,16 @@ void TapeScene::setPalette (juce::Colour background,
 
 void TapeScene::setSceneEnabled (bool shouldBeEnabled)
 {
+    // A non-OpenGL selection is a deliberate CPU fallback for now. Do not
+    // create an OpenGL context behind the user's back in that configuration.
+    if (! j37::render::usesOpenGL())
+    {
+        sceneEnabled = false;
+        openGLContext.detach();
+        programLinked.store (0);
+        return;
+    }
+
     if (sceneEnabled == shouldBeEnabled)
         return;
 
@@ -1011,7 +1022,7 @@ void TapeScene::setSceneEnabled (bool shouldBeEnabled)
 
 void TapeScene::serviceContextAttachment()
 {
-    if (! sceneEnabled)
+    if (! j37::render::usesOpenGL() || ! sceneEnabled)
         return;
 
     if (openGLContext.isAttached())
@@ -1027,17 +1038,93 @@ void TapeScene::serviceContextAttachment()
     openGLContext.attachTo (*this);
 }
 
+void TapeScene::paint (juce::Graphics& g)
+{
+    if (! j37::render::usesCpuFallback())
+        return;
+
+    const auto width = static_cast<float> (getWidth());
+    const auto height = static_cast<float> (getHeight());
+    if (width <= 0.0f || height <= 0.0f)
+        return;
+
+    const auto background = juce::Colour (backgroundColour.load (std::memory_order_relaxed));
+    const auto body = juce::Colour (bodyColour.load (std::memory_order_relaxed));
+    const auto highlight = juce::Colour (highlightColour.load (std::memory_order_relaxed));
+    const auto tape = juce::Colour (tapeColour.load (std::memory_order_relaxed));
+    const auto speed = transportSpeed.load (std::memory_order_relaxed);
+    const auto level = outputLevel.load (std::memory_order_relaxed);
+    const auto peak = outputPeak.load (std::memory_order_relaxed);
+    const auto flutter = std::abs (wowFlutter.load (std::memory_order_relaxed));
+
+    // CPU paint runs on JUCE's message thread. Do not read supplyAngle here:
+    // that value belongs to the OpenGL thread. A wall-clock phase gives the CPU
+    // backend the same visible motion without introducing a cross-thread race.
+    const auto angle = static_cast<float> (juce::Time::getMillisecondCounterHiRes()
+                                           * 0.0026 * speed);
+
+    g.fillAll (background);
+
+    const auto centre = juce::Point<float> (width * 0.5f, height * 0.50f);
+    const auto reelRadius = juce::jmin (width, height) * 0.25f;
+    const auto hubRadius = reelRadius * 0.28f;
+    const auto alpha = 0.22f + 0.68f * juce::jlimit (0.0f, 1.0f, speed);
+
+    g.setColour (body.withAlpha (0.90f));
+    g.fillEllipse (centre.x - reelRadius, centre.y - reelRadius,
+                   reelRadius * 2.0f, reelRadius * 2.0f);
+    g.setColour (highlight.withAlpha (0.24f + 0.24f * level));
+    g.drawEllipse (centre.x - reelRadius, centre.y - reelRadius,
+                   reelRadius * 2.0f, reelRadius * 2.0f, 1.4f);
+    g.setColour (tape.withAlpha (0.65f));
+    g.fillEllipse (centre.x - reelRadius * (0.62f - 0.10f * level),
+                   centre.y - reelRadius * (0.62f - 0.10f * level),
+                   reelRadius * (1.24f - 0.20f * level),
+                   reelRadius * (1.24f - 0.20f * level));
+
+    for (int spoke = 0; spoke < 6; ++spoke)
+    {
+        const auto spokeAngle = angle + static_cast<float> (spoke)
+                                      * juce::MathConstants<float>::twoPi / 6.0f;
+        const auto inner = centre + juce::Point<float> (std::cos (spokeAngle),
+                                                         std::sin (spokeAngle)) * hubRadius;
+        const auto outer = centre + juce::Point<float> (std::cos (spokeAngle),
+                                                         std::sin (spokeAngle)) * reelRadius * 0.88f;
+        g.setColour (highlight.withAlpha (alpha));
+        g.drawLine (inner.x, inner.y, outer.x, outer.y, 1.5f);
+    }
+
+    g.setColour (highlight.withAlpha (0.35f + 0.35f * peak));
+    g.fillEllipse (centre.x - hubRadius, centre.y - hubRadius,
+                   hubRadius * 2.0f, hubRadius * 2.0f);
+    g.setColour (background.withAlpha (0.90f));
+    g.fillEllipse (centre.x - hubRadius * 0.42f, centre.y - hubRadius * 0.42f,
+                   hubRadius * 0.84f, hubRadius * 0.84f);
+
+    // A small moving tape path keeps CPU mode visibly alive without requiring
+    // a second rendering API or allocations on the timer thread.
+    juce::Path ribbon;
+    ribbon.startNewSubPath (centre.x - reelRadius * 0.82f, centre.y + reelRadius * 0.72f);
+    ribbon.quadraticTo (centre.x + reelRadius * (0.25f + flutter * 0.20f),
+                        centre.y + reelRadius * (0.92f + flutter * 0.12f),
+                        centre.x + reelRadius * 0.92f, centre.y + reelRadius * 0.52f);
+    g.setColour (tape.brighter (0.25f).withAlpha (0.75f));
+    g.strokePath (ribbon, juce::PathStrokeType (juce::jmax (1.0f, width * 0.018f)));
+}
+
 void TapeScene::resized()
 {
     // Nothing to place: the projection is derived from the current size in
-    // renderOpenGL(), and JUCE sets the viewport to this component's bounds
-    // before every frame. Asking for one is enough to redraw at the new size.
+    // renderOpenGL(), and CPU paint uses the same component bounds.
     repaint();
 }
 
 bool TapeScene::isSceneLive() const noexcept
 {
-    return sceneEnabled && programLinked.load() != 0 && openGLContext.isAttached();
+    return j37::render::usesOpenGL()
+        && sceneEnabled
+        && programLinked.load() != 0
+        && openGLContext.isAttached();
 }
 
 int TapeScene::controlIndexAt (juce::Point<int> position) const

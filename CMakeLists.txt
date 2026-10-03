@@ -1,4 +1,4 @@
-﻿# ==============================================================================
+﻿﻿# ==============================================================================
 #
 #   Nonlin Analog Saturator - tape machine emulation (J37, Ampex 456, Studer A800,
 #   Chrome, Type 111, GP9, Quantegy 499, RTM SM911)
@@ -122,6 +122,47 @@ include(J37Tests)
 # plugin directories.
 option(COPY_PLUGIN_AFTER_BUILD "Copy plugins to the user plugin folders after building" OFF)
 
+# Renderer selection is compile-time because a plugin editor must create its
+# graphics device on the host's UI thread. OpenGL is the complete backend today;
+# the other values select an honest CPU fallback until their native integrations
+# are enabled. This keeps the build matrix ready without pretending that a
+# Vulkan/Metal/D3D device can be created by JUCE's OpenGL module.
+set(J37_RENDER_BACKEND "AUTO" CACHE STRING
+    "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12 or CPU")
+set_property(CACHE J37_RENDER_BACKEND PROPERTY STRINGS
+    AUTO OPENGL VULKAN METAL D3D11 D3D12 CPU)
+string(TOUPPER "${J37_RENDER_BACKEND}" J37_RENDER_BACKEND)
+set(J37_RENDER_DEFINITIONS)
+if(J37_RENDER_BACKEND STREQUAL "OPENGL")
+    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_OPENGL=1)
+elseif(J37_RENDER_BACKEND STREQUAL "VULKAN")
+    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_VULKAN=1)
+elseif(J37_RENDER_BACKEND STREQUAL "METAL")
+    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_METAL=1)
+elseif(J37_RENDER_BACKEND STREQUAL "D3D11")
+    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_D3D11=1)
+elseif(J37_RENDER_BACKEND STREQUAL "D3D12")
+    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_D3D12=1)
+elseif(J37_RENDER_BACKEND STREQUAL "CPU")
+    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_CPU=1)
+elseif(NOT J37_RENDER_BACKEND STREQUAL "AUTO")
+    message(FATAL_ERROR "Unknown J37_RENDER_BACKEND='${J37_RENDER_BACKEND}'")
+endif()
+
+# Keep platform mistakes visible at configure time. These checks do not claim
+# that the native backend is implemented; they only prevent a Metal build on
+# Windows or a D3D build on macOS from looking like a supported configuration.
+if(J37_RENDER_BACKEND STREQUAL "METAL" AND NOT APPLE)
+    message(WARNING "J37_RENDER_BACKEND=METAL requested on a non-Apple platform; CPU fallback will be used")
+elseif((J37_RENDER_BACKEND STREQUAL "D3D11" OR J37_RENDER_BACKEND STREQUAL "D3D12") AND NOT WIN32)
+    message(WARNING "${J37_RENDER_BACKEND} requested on a non-Windows platform; CPU fallback will be used")
+elseif(J37_RENDER_BACKEND STREQUAL "VULKAN")
+    find_package(Vulkan QUIET)
+    if(NOT Vulkan_FOUND)
+        message(WARNING "Vulkan SDK not found; CPU fallback will be used")
+    endif()
+endif()
+
 # The bundle id lives in a variable rather than inline in the juce_add_plugin call
 # because the AUv3 app extension needs it a second time, with ".internal" appended (see
 # the Apple block below). Written twice, the two copies drift and Xcode starts warning
@@ -209,7 +250,8 @@ juce_generate_juce_header(first)
 target_sources(first PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
-    Source/GUI/TapeScene.cpp)
+    Source/GUI/TapeScene.cpp
+    Source/GUI/RenderBackend.h)
 
 target_include_directories(first PRIVATE Source)
 
@@ -423,6 +465,7 @@ j37_apply_vendor_libraries(first)
 #  nothing.
 # ------------------------------------------------------------------------------
 target_compile_definitions(first PUBLIC
+    ${J37_RENDER_DEFINITIONS}
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_STRICT_REFCOUNTEDPOINTER=1
     JUCE_WEB_BROWSER=0
@@ -459,6 +502,7 @@ message(STATUS "  JUCE        : ${CMAKE_CURRENT_SOURCE_DIR}/JUCE")
 message(STATUS "  System      : ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Generator   : ${CMAKE_GENERATOR}")
 message(STATUS "  Build type  : ${CMAKE_BUILD_TYPE}")
+message(STATUS "  Renderer    : requested ${J37_RENDER_BACKEND}; OpenGL native, CPU fallback for pending APIs")
 message(STATUS "  Build commit: ${J37_BUILD_COMMIT}")
 if(APPLE)
     message(STATUS "  Archs       : ${CMAKE_OSX_ARCHITECTURES}")

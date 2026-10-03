@@ -718,8 +718,42 @@ their work.
 This is why the plugin keeps a steady output level as DRIVE, TAPE TYPE, SPEED and MIX are
 changed, instead of drifting louder or quieter with every edit.
 
-## Platform notes
+## Rendering backends
+The editor has a renderer-selection boundary in `Source/GUI/RenderBackend.h` and
+CMake exposes the following option:
 
+```text
+-DJ37_RENDER_BACKEND=AUTO|OPENGL|VULKAN|METAL|D3D11|D3D12|CPU
+```
+
+`AUTO` and `OPENGL` use the existing JUCE/OpenGL scene. `CPU` uses a dedicated
+JUCE `Graphics` renderer for the animated transport, while the rest of the panel
+continues through its normal software path. `VULKAN`, `METAL`,
+`D3D11` and `D3D12` are explicit pending backend selections: until their native
+device implementations are added, they intentionally resolve to the CPU fallback
+rather than silently creating an OpenGL context or showing a blank editor. The
+SETTINGS control reports this as `CPU / Vulkan`, `CPU / Metal`, or `CPU / DirectX
+11`, and its tooltip explains the fallback. This makes backend capability explicit
+and keeps unsupported configurations safe in a DAW.
+
+At configure time, CMake also validates the requested platform: Metal warns on
+non-Apple systems, DirectX warns on non-Windows systems, and Vulkan checks for a
+Vulkan SDK. Those checks are prerequisites for the native integrations, not a claim
+that the native renderer is already linked.
+
+The next native integrations should implement the same scene contract (state,
+geometry, palette, and hit-testing) behind this boundary. The audio processor and
+plugin format do not need to change; renderer choice is an editor-only concern.
+
+The editor also avoids unnecessary GPU/CPU work: the OpenGL contexts use vsync
+and explicit invalidation rather than an unrestricted repaint loop, while hidden
+editors stop telemetry, physics and repaint polling. The DSP remains on the CPU
+by design: DAW audio callbacks are small, real-time blocks, and moving the tape
+model to a GPU would add transfer/synchronisation latency and make plugin hosts
+less reliable. GPU rendering is appropriate for the visual panel, not for the
+sample-accurate audio path.
+
+## Platform notes
 The plugin is written to behave the same at any sample rate and on any display.
 Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
 
