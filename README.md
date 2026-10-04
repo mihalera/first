@@ -723,23 +723,33 @@ The editor has a renderer-selection boundary in `Source/GUI/RenderBackend.h` and
 CMake exposes the following option:
 
 ```text
--DJ37_RENDER_BACKEND=AUTO|OPENGL|VULKAN|METAL|D3D11|D3D12|CPU
+-DJ37_RENDER_BACKEND=AUTO|OPENGL|VULKAN|METAL|D3D11|D3D12|BGFX|WGPU|DAWN|CPU
 ```
 
 `AUTO` and `OPENGL` use the existing JUCE/OpenGL scene. `CPU` uses a dedicated
 JUCE `Graphics` renderer for the animated transport, while the rest of the panel
-continues through its normal software path. `VULKAN`, `METAL`,
-`D3D11` and `D3D12` are explicit pending backend selections: until their native
-device implementations are added, they intentionally resolve to the CPU fallback
-rather than silently creating an OpenGL context or showing a blank editor. The
-SETTINGS control reports this as `CPU / Vulkan`, `CPU / Metal`, or `CPU / DirectX
-11`, and its tooltip explains the fallback. This makes backend capability explicit
-and keeps unsupported configurations safe in a DAW.
+continues through its normal software path. `VULKAN`, `METAL`, `D3D11`, `D3D12`,
+`BGFX`, `WGPU` and `DAWN` are explicit pending backend selections: until their
+native device implementations are added, they intentionally resolve to the CPU
+fallback rather than silently creating an OpenGL context or showing a blank editor.
+The SETTINGS control reports the active fallback and explains it in its tooltip.
+This makes backend capability explicit and keeps unsupported configurations safe
+in a DAW.
 
-At configure time, CMake also validates the requested platform: Metal warns on
-non-Apple systems, DirectX warns on non-Windows systems, and Vulkan checks for a
-Vulkan SDK. Those checks are prerequisites for the native integrations, not a claim
-that the native renderer is already linked.
+At configure time, CMake validates platform-specific native requirements. Metal
+warns on non-Apple systems, DirectX warns on non-Windows systems, and Vulkan checks
+for a Vulkan SDK. These checks are prerequisites for the native integrations, not a
+claim that the native renderer is already linked.
+
+Selecting `BGFX` downloads and links bgfx.cmake. `WGPU` builds and links
+wgpu-native with Cargo, while `DAWN` downloads Dawn and its build dependencies;
+they are alternative implementations of the WebGPU API and cannot be selected
+together. `WGPU` requires Rust 1.87+/Cargo and a native single-architecture build.
+These selections wire the dependency only: their renderer adapters are still
+pending and the editor continues to use its CPU fallback. JUCE 9 has no separate
+`juce::MetalContext` CMake target; its Metal support comes from the JUCE GUI
+modules and Apple Metal frameworks. `J37_OFFLINE=ON` also disables Dawn's and
+Cargo's dependency downloads; the required sources must already be cached.
 
 The next native integrations should implement the same scene contract (state,
 geometry, palette, and hit-testing) behind this boundary. The audio processor and

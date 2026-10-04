@@ -127,9 +127,9 @@ option(COPY_PLUGIN_AFTER_BUILD "Copy plugins to the user plugin folders after bu
 # create their device, command resources and presentation surface; unsupported
 # platform/API combinations use the CPU fallback.
 set(J37_RENDER_BACKEND "AUTO" CACHE STRING
-    "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12 or CPU")
+    "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12, BGFX, WGPU, DAWN or CPU")
 set_property(CACHE J37_RENDER_BACKEND PROPERTY STRINGS
-    AUTO OPENGL VULKAN METAL D3D11 D3D12 CPU)
+    AUTO OPENGL VULKAN METAL D3D11 D3D12 BGFX WGPU DAWN CPU)
 string(TOUPPER "${J37_RENDER_BACKEND}" J37_RENDER_BACKEND)
 set(J37_RENDER_DEFINITIONS)
 set(J37_NATIVE_RENDER_DEFINITIONS)
@@ -156,6 +156,15 @@ elseif(J37_RENDER_BACKEND STREQUAL "D3D12")
     if(WIN32)
         list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_D3D12=1)
     endif()
+elseif(J37_RENDER_BACKEND STREQUAL "BGFX")
+    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_BGFX=1)
+    list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_BGFX=1)
+elseif(J37_RENDER_BACKEND STREQUAL "WGPU")
+    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_WEBGPU=1)
+    list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_WGPU=1)
+elseif(J37_RENDER_BACKEND STREQUAL "DAWN")
+    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_WEBGPU=1)
+    list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_DAWN=1)
 elseif(J37_RENDER_BACKEND STREQUAL "CPU")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_CPU=1)
 elseif(NOT J37_RENDER_BACKEND STREQUAL "AUTO")
@@ -285,8 +294,15 @@ endif()
 if(WIN32 AND J37_RENDER_BACKEND STREQUAL "D3D12")
     target_link_libraries(first PRIVATE d3d12)
 elseif(APPLE AND J37_RENDER_BACKEND STREQUAL "METAL")
+    # JUCE 9 exposes no separate juce::MetalContext CMake target; its native
+    # Metal support is provided by JUCE's GUI modules plus these frameworks.
     target_link_libraries(first PRIVATE "-framework Metal" "-framework QuartzCore")
 endif()
+
+# Fetch and link the selected optional graphics backend. WGPU and Dawn both
+# implement the WebGPU API, so they are alternative implementations rather than
+# libraries to link into the same target.
+j37_setup_graphics_backend(first)
 
 # ------------------------------------------------------------------------------
 #  Embedded resources - the factory presets and the translation tables.
@@ -537,7 +553,7 @@ message(STATUS "  JUCE        : ${CMAKE_CURRENT_SOURCE_DIR}/JUCE")
 message(STATUS "  System      : ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Generator   : ${CMAKE_GENERATOR}")
 message(STATUS "  Build type  : ${CMAKE_BUILD_TYPE}")
-message(STATUS "  Renderer    : requested ${J37_RENDER_BACKEND}; native device/surface adapters enabled per platform")
+message(STATUS "  Renderer    : requested ${J37_RENDER_BACKEND}")
 message(STATUS "  Build commit: ${J37_BUILD_COMMIT}")
 if(APPLE)
     message(STATUS "  Archs       : ${CMAKE_OSX_ARCHITECTURES}")
@@ -554,6 +570,7 @@ message(STATUS "                RTNeural (neural inference, used by the DYNAMICS
 message(STATUS "                yin_pitch, pitch_detector (MPM), dattorro_verb, sndfile")
 message(STATUS "                nlohmann_json (header only)")
 message(STATUS "                q_dsp, sokol_gfx, glm (header only)")
+message(STATUS "                Optional graphics: BGFX, wgpu-native or Dawn (selected by J37_RENDER_BACKEND)")
 message(STATUS "                transdes, whetstone, multiband-transient-shaper (source only)")
 message(STATUS "                juce_opengl_3d: no such JUCE module, see cmake/J37Dependencies.cmake")
 if(J37_HAVE_VDSP)
