@@ -421,6 +421,7 @@ target_link_libraries(first
         foleys::foleys_gui_magic
         xsimd
         signalsmith-stretch
+        SoundTouch
         fftconvolver
         imgui
         farbot
@@ -511,7 +512,8 @@ else()
     message(STATUS "  Formats     : VST3")
 endif()
 message(STATUS "  Libraries   : chowdsp_utils, melatonin_inspector, melatonin_blur, foleys_gui_magic, xsimd")
-message(STATUS "                signalsmith-stretch, fftconvolver, imgui, iPlug2 (source only)")
+message(STATUS "                signalsmith-stretch, SoundTouch (LGPL-2.1), fftconvolver,")
+message(STATUS "                imgui, iPlug2 (source only)")
 message(STATUS "                chowcentaur, vcv_prototype, rack, soundpipe, aubio (source only)")
 message(STATUS "                farbot, readerwriterqueue, kissfft, pocketfft, yasio, dywapitchtrack, pffft")
 message(STATUS "                RTNeural (neural inference, used by the DYNAMICS tab), dr_libs,")

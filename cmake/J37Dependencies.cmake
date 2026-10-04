@@ -115,8 +115,13 @@ endfunction()
 #    ThirdParty/xsimd/               xtensor-stack/xsimd @ 14.3.0 (include/)
 #    ThirdParty/glm/                 g-truc/glm @ 1.0.3 (repo root)
 #    ThirdParty/RTNeural/            jatinchowdhury18/RTNeural @ 95c3c0f9 (STL backend)
+#    ThirdParty/soundtouch/          soundtouch/soundtouch @ 2.4.1 (include/ +
+#                                    source/SoundTouch/, compiled below)
 #
-#  All licences are permissive and ship inside their folders.
+#  Every licence ships inside its own folder and THIRD_PARTY_NOTICES.md carries
+#  the attribution notices. One entry is the exception to the permissive rule
+#  this list used to state: SoundTouch is LGPL-2.1
+#  (ThirdParty/soundtouch/COPYING.TXT).
 # ------------------------------------------------------------------------------
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/farbot/include")
     j37_declare_header_only_library(farbot
@@ -159,6 +164,78 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/RTNeural/RTNeural/RTNeural.h"
     # know which one won.
     j37_declare_header_only_library(RTNeural
         "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/RTNeural")
+endif()
+
+# ==============================================================================
+#  SoundTouch - Olli Parviainen's SoundTouch Audio Processing Library: the
+#  WSOLA time-stretch and pitch-shift engine (SoundTouch, RateTransposer,
+#  TDStretch, the interpolators, the BPM detector).
+#
+#  A COMPILED library, not a header-only one, so it cannot be registered by
+#  include directory alone the way the blocks above are. The pattern is
+#  fftconvolver's below: the SOURCES are what is vendored or fetched, and the
+#  static library is declared here - upstream's own CMakeLists.txt is never
+#  configured at all. That is deliberate twice over:
+#
+#    * upstream's file is a STANDALONE project: it owns its own minimum-
+#      version floor and its own options (SOUNDSTRETCH builds a command-line
+#      tool this plugin has no use for, SOUNDTOUCH_DLL a C wrapper, and its
+#      install() rules would run against this project's tree), none of which
+#      a plugin build should inherit from a dependency;
+#    * declaring the sources HERE means the vendored tree and the CPM
+#      fallback compile the identical translation units with the identical
+#      definitions, so the two paths cannot quietly drift apart.
+#
+#  SOUNDTOUCH_FLOAT_SAMPLES is what the plugin's audio path speaks and is
+#  upstream's own default; the NEON kernels are switched on for the ARM
+#  builds the way upstream's CMake does, minus the -mfpu=neon flag on aarch64
+#  (where NEON is not optional and the flag is meaningless).
+#
+#  Licensed LGPL-2.1 - see THIRD_PARTY_NOTICES.md and the text vendored at
+#  ThirdParty/soundtouch/COPYING.TXT.
+#
+#  Vendored copy wins; CPM is the fallback.
+# ==============================================================================
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/soundtouch/include/SoundTouch.h")
+    set(J37_SOUNDTOUCH_ROOT "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/soundtouch")
+else()
+    CPMAddPackage(
+        NAME soundtouch
+        GIT_REPOSITORY https://codeberg.org/soundtouch/soundtouch.git
+        GIT_TAG 0047e0b1ecfceb041348579119bf79b73a322a3a   # the 2.4.1 tag
+        DOWNLOAD_ONLY YES)
+    set(J37_SOUNDTOUCH_ROOT "${soundtouch_SOURCE_DIR}")
+endif()
+
+# The target is named exactly SoundTouch - the name the top-level
+# target_link_libraries links - so neither branch above needs to know which one
+# won, and the include directory is PUBLIC because PluginProcessor.h probes for
+# <SoundTouch.h>.
+if(NOT TARGET SoundTouch)
+    add_library(SoundTouch STATIC EXCLUDE_FROM_ALL
+        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/AAFilter.cpp"
+        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/BPMDetect.cpp"
+        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/cpu_detect_x86.cpp"
+        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/FIFOSampleBuffer.cpp"
+        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/FIRFilter.cpp"
+        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/InterpolateCubic.cpp"
+        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/InterpolateLinear.cpp"
+        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/InterpolateShannon.cpp"
+        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/mmx_optimized.cpp"
+        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/PeakFinder.cpp"
+        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/RateTransposer.cpp"
+        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/SoundTouch.cpp"
+        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/sse_optimized.cpp"
+        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/TDStretch.cpp")
+    target_include_directories(SoundTouch SYSTEM PUBLIC
+        "${J37_SOUNDTOUCH_ROOT}/include")
+    target_compile_definitions(SoundTouch PRIVATE SOUNDTOUCH_FLOAT_SAMPLES)
+    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(armv7.*|armv8.*|aarch64.*)$")
+        target_compile_definitions(SoundTouch PRIVATE SOUNDTOUCH_USE_NEON)
+        if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^aarch64.*$")
+            target_compile_options(SoundTouch PRIVATE -mfpu=neon)
+        endif()
+    endif()
 endif()
 
 # ==============================================================================
