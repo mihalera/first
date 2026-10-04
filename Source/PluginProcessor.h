@@ -166,6 +166,12 @@
  #define J37_HAS_SIGNALSMITH 0
  #define J37_HAS_SOUNDTOUCH 0
 #endif
+#if ! defined (J37_DSP_HARNESS) && __has_include (<signalsmith-stretch/signalsmith-stretch.h>)
+ #include <signalsmith-stretch/signalsmith-stretch.h>
+ #define J37_HAS_SIGNALSYNTH_STRETCH 1
+#else
+ #define J37_HAS_SIGNALSYNTH_STRETCH 0
+#endif
 
 #include <array>
 #include <atomic>
@@ -4610,6 +4616,59 @@ private:
 };
 
 //==============================================================================
+/** Realtime granular pitch shifter used by the optional autotune stage. */
+struct RealtimePitchShifter
+{
+    static constexpr int bufferSize = 16384;
+    static constexpr int grainSize = 1024;
+    static_assert (bufferSize > grainSize * 4);
+    std::array<float, bufferSize> buffer {};
+    int writePosition = 0;
+    float readPositionA = 0.0f;
+    float readPositionB = static_cast<float> (grainSize / 2);
+    float phase = 0.0f;
+    float ratio = 1.0f;
+
+    void reset() noexcept
+    {
+        buffer.fill (0.0f); writePosition = 0;
+        readPositionA = 0.0f; readPositionB = static_cast<float> (grainSize / 2);
+        phase = 0.0f; ratio = 1.0f;
+    }
+
+    float process (float input, float targetRatio, float amount) noexcept
+    {
+        buffer[static_cast<std::size_t> (writePosition)] = input;
+        writePosition = (writePosition + 1) % bufferSize;
+        const auto safeAmount = juce::jlimit (0.0f, 1.0f, amount);
+        ratio += (juce::jlimit (0.5f, 2.0f, targetRatio) - ratio) * 0.0025f * safeAmount;
+        const auto read = [&] (float position)
+        {
+            while (position < 0.0f) position += static_cast<float> (bufferSize);
+            while (position >= bufferSize) position -= static_cast<float> (bufferSize);
+            const auto index = static_cast<int> (position);
+            const auto next = (index + 1) % bufferSize;
+            const auto fraction = position - static_cast<float> (index);
+            return buffer[static_cast<std::size_t> (index)]
+                 + (buffer[static_cast<std::size_t> (next)] - buffer[static_cast<std::size_t> (index)]) * fraction;
+        };
+        const auto window = [] (float x) noexcept
+        { return 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * x); };
+        const auto output = read (readPositionA) * window (phase)
+                          + read (readPositionB) * window (std::fmod (phase + 0.5f, 1.0f));
+        readPositionA += ratio; readPositionB += ratio;
+        phase += 1.0f / static_cast<float> (grainSize / 2);
+        if (phase >= 1.0f)
+        {
+            phase -= 1.0f;
+            readPositionA += static_cast<float> (grainSize / 2) * (1.0f - ratio);
+            readPositionB += static_cast<float> (grainSize / 2) * (1.0f - ratio);
+        }
+        return safeAmount > 1.0e-5f ? output : input;
+    }
+};
+
+//==============================================================================
 /**
     The tape machine. Signal flow, in order:
 
@@ -4644,6 +4703,7 @@ public:
 
     /** The tape engine proper; processBlock routes into this, oversampled or not. */
     void processTapeEngine (juce::dsp::AudioBlock<float>, juce::MidiBuffer&);
+    void processAutoTuneBlock (juce::AudioBuffer<float>&) noexcept;
 
     //==============================================================================
     juce::AudioProcessorEditor* createEditor() override;
@@ -5109,7 +5169,8 @@ private:
     // editor, but a parameter like every other setting so it survives in a
     // session and can be automated.
     std::atomic<float>* uiSoundsParam = nullptr;
-    std::atomic<float>* tuningKeyParam = nullptr;
+    std::atomic<float>* tuningTonicParam = nullptr;
+    std::atomic<float>* tuningModeParam = nullptr;
     std::atomic<float>* autoTuneParam = nullptr;
     std::atomic<float>* autoTuneAmountParam = nullptr;
     std::atomic<float>* compressorThresholdParam = nullptr;
@@ -5497,8 +5558,17 @@ private:
     std::array<GlueCompressor, 2> inputCompressorChannels;
     std::array<GlueCompressor, 2> outputCompressorChannels;
     std::array<StandardCompressor, 2> standardCompressors;
+    std::array<RealtimePitchShifter, 2> autoTuneShifters;
+#if J37_HAS_SIGNALSYNTH_STRETCH
+    signalsmith::stretch::SignalsmithStretch<float> autoTunePhaseVocoder;
+#endif
     std::array<float, 2> autoTunePhase { 0.0f, 0.0f };
     std::array<float, 2> autoTuneFrequency { 440.0f, 440.0f };
+    std::array<float, 2> autoTuneEnvelope {};
+    std::array<float, 2> autoTunePreviousSample {};
+    std::array<float, 2> autoTuneSampleCounter {};
+    std::array<float, 2> autoTuneZeroCrossings {};
+    int autoTuneProcessStride = 1;
 
     // Measures the harmonics the tape shaper is actually producing, separating even from
     // odd. This is the observable signature of the analogue character and drives the

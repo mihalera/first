@@ -466,7 +466,7 @@ private:
     // Sixteen pages under three large families (TAPE / FX / SETUP), so no page
     // has to carry more than one subject: DRIVE was twelve knobs on one page and
     // NOISE eleven, which is exactly the crowding the tabs exist to avoid.
-    static constexpr int numTabs = 16;
+    static constexpr int numTabs = 17;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     // The header's switch grid: four equal columns, three rows, one switch per
@@ -585,12 +585,18 @@ private:
     juce::Label languageLabel { {}, "LANGUAGE" };
     juce::ComboBox languageBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> languageAttachment;
-    juce::ComboBox tuningKeyBox;
+    juce::ComboBox tuningTonicBox;
+    juce::ComboBox tuningModeBox;
     juce::ToggleButton autoTuneButton { "AUTO TUNE" };
     juce::Slider autoTuneAmountSlider;
-    juce::Label tuningKeyLabel;
+    std::array<juce::Slider, 6> compressorControls;
+    std::array<juce::Label, 6> compressorControlLabels;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 6> compressorAttachments;
+    juce::Label tuningTonicLabel;
+    juce::Label tuningModeLabel;
     juce::Label autoTuneAmountLabel;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tuningKeyAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tuningTonicAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tuningModeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoTuneAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> autoTuneAmountAttachment;
 
@@ -854,7 +860,7 @@ private:
     // six band knobs and three corner controls, DRIVE GAIN seven plus the DI
     // pad, and a page that scrolls is a page nobody dials.
     static constexpr int tabFamilyCount = 3;
-    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount { 9, 4, 3 };
+    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount { 9, 5, 3 };
     juce::Label metersHeadingLabel;
     juce::Label metersHintLabel;
     juce::Label compressorLabel;

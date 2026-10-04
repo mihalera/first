@@ -592,7 +592,7 @@ namespace
     //  it: the table below, the subtitle list and the coverage check further
     //  down all size themselves from this constant, so adding a page cannot
     //  leave one of them behind.
-    constexpr std::size_t numTabPages = 16;
+    constexpr std::size_t numTabPages = 17;
     constexpr std::array<TabSpec, numTabPages> tabSpecs { {
         // ---- TAPE family (9 pages): the machine and everything feeding it ---
         //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
@@ -725,13 +725,11 @@ namespace
         //  No knobs of its own: SETTINGS is where the three engine-level switches
         //  live - GL, OVERSAMPLING and the interface sounds - shown by
         //  setCurrentTab, not by the grid.
-        { "SETTINGS", "The engine-level switches. OVERSAMPLING sets the internal "
-                      "rate the tape engine runs at, GL turns the GPU-accelerated "
-                      "panel rendering on and off, and UI SOUNDS turns the panel's "
-                      "own interface clicks on and off - those never reach the "
-                      "audio output, they play on a device of their own.",
-                     0, 2, {} }
-    } };
+             { "SETTINGS", "The engine-level switches and musical setup: rate, language, tonic, mode and autotune.",
+                          0, 2, {} },
+             { "COMP", "The conventional compressor: threshold, ratio, attack, release, makeup and mix. Independent of both glue stages.",
+                          0, 1, {} }
+        } };
 
     // One SHORT subtitle per page, in tabSpecs' order: the sentence the section
     // caption under the tab bar shows. tabSpecs' own description is the long form
@@ -760,7 +758,8 @@ namespace
         "the equaliser after the machine: it corrects the RESULT",
         "the equaliser before the machine: it changes the CHARACTER",
         "the two file-fed stages, each with its loader beside it",
-        "the engine-level switches: rate, GL and the panel's own sounds"
+        "the engine-level switches and musical tuning"
+        , "the conventional compressor, independent of glue"
     } };
 
     // Where the divider under the knob-grid heading sits, in pixels from the top of the
@@ -3548,10 +3547,14 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 
     // SETUP musical controls: key selection is independent of the UI language,
     // while autotune remains opt-in and its amount is continuously automatable.
-    tuningKeyBox.addItemList (juce::StringArray { "Chromatic", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 1);
-    tuningKeyBox.setLookAndFeel (&inlineLookAndFeel);
-    tuningKeyAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
-        (audioProcessor.parameters, "tuning_key", tuningKeyBox);
+    tuningTonicBox.addItemList (juce::StringArray { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 1);
+    tuningModeBox.addItemList (juce::StringArray { "Chromatic", "Major", "Minor", "Dorian", "Pentatonic Major", "Pentatonic Minor" }, 1);
+    tuningTonicBox.setLookAndFeel (&inlineLookAndFeel);
+    tuningModeBox.setLookAndFeel (&inlineLookAndFeel);
+    tuningTonicAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "tuning_tonic", tuningTonicBox);
+    tuningModeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "tuning_mode", tuningModeBox);
     autoTuneButton.setLookAndFeel (&inlineLookAndFeel);
     autoTuneAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
         (audioProcessor.parameters, "autotune", autoTuneButton);
@@ -3561,10 +3564,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     autoTuneAmountSlider.setLookAndFeel (&customLookAndFeel);
     autoTuneAmountAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>
         (audioProcessor.parameters, "autotune_amount", autoTuneAmountSlider);
-    styleLabel (tuningKeyLabel, "KEY", 9.0f, paletteFor (false).secondary, true, juce::Justification::left);
+    styleLabel (tuningTonicLabel, "TONIC", 9.0f, paletteFor (false).secondary, true, juce::Justification::left);
+    styleLabel (tuningModeLabel, "MODE", 9.0f, paletteFor (false).secondary, true, juce::Justification::left);
     styleLabel (autoTuneAmountLabel, "TUNE AMOUNT", 9.0f, paletteFor (false).secondary, true, juce::Justification::left);
-    addAndMakeVisible (tuningKeyLabel);
-    addAndMakeVisible (tuningKeyBox);
+    addAndMakeVisible (tuningTonicLabel);
+    addAndMakeVisible (tuningModeLabel);
+    addAndMakeVisible (tuningTonicBox);
+    addAndMakeVisible (tuningModeBox);
     addAndMakeVisible (autoTuneButton);
     addAndMakeVisible (autoTuneAmountLabel);
     addAndMakeVisible (autoTuneAmountSlider);
@@ -5167,6 +5173,29 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                      "equalisers make different decisions: the input one shapes "
                      "what the machine hears, the output one corrects what it "
                      "produced.");
+
+    const std::array<const char*, 6> compressorIds { "comp_threshold", "comp_ratio", "comp_attack", "comp_release", "comp_makeup", "comp_mix" };
+    const std::array<const char*, 6> compressorNames { "THRESH", "RATIO", "ATTACK", "RELEASE", "MAKEUP", "MIX" };
+    for (std::size_t i = 0; i < compressorControls.size(); ++i)
+    {
+        auto& slider = compressorControls[i];
+        slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 78, 18);
+        if (i == 0) slider.setRange (-60.0, 0.0, 0.1);
+        else if (i == 1) slider.setRange (1.0, 20.0, 0.1);
+        else if (i == 2) slider.setRange (0.1, 100.0, 0.1);
+        else if (i == 3) slider.setRange (10.0, 1000.0, 1.0);
+        else if (i == 4) slider.setRange (0.0, 24.0, 0.1);
+        else slider.setRange (0.0, 1.0, 0.001);
+        slider.setLookAndFeel (&customLookAndFeel);
+        slider.setName (compressorNames[i]);
+        compressorControlLabels[i].setText (compressorNames[i], juce::dontSendNotification);
+        compressorControlLabels[i].setJustificationType (juce::Justification::centred);
+        addAndMakeVisible (compressorControls[i]);
+        addAndMakeVisible (compressorControlLabels[i]);
+        compressorAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>
+            (audioProcessor.parameters, compressorIds[i], compressorControls[i]);
+    }
 
     diPadAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "di_pad", diPadBox);
@@ -7854,11 +7883,19 @@ void FirstAudioProcessorEditor::resized()
     oversamplingBox.setVisible (settingsTab);
     languageLabel.setVisible (settingsTab);
     languageBox.setVisible (settingsTab);
-    tuningKeyLabel.setVisible (settingsTab);
-    tuningKeyBox.setVisible (settingsTab);
+    tuningTonicLabel.setVisible (settingsTab);
+    tuningModeLabel.setVisible (settingsTab);
+    tuningTonicBox.setVisible (settingsTab);
+    tuningModeBox.setVisible (settingsTab);
     autoTuneButton.setVisible (settingsTab);
     autoTuneAmountLabel.setVisible (settingsTab);
     autoTuneAmountSlider.setVisible (settingsTab);
+    const auto compressorTab = currentTab == index_of_tab_named ("COMP");
+    for (std::size_t i = 0; i < compressorControls.size(); ++i)
+    {
+        compressorControls[i].setVisible (compressorTab);
+        compressorControlLabels[i].setVisible (compressorTab);
+    }
     glButton.setVisible (settingsTab);
     glLabel.setVisible (settingsTab);
     // The UI-sounds switch is on the same page as GL and OVERSAMPLING - it is the
@@ -7915,7 +7952,9 @@ void FirstAudioProcessorEditor::resized()
         // SETTINGS: GL and OVERSAMPLING, two cells on one row.
         placeDeckSwitch (glLabel, glButton, 0, 1, "GL");
         placeDeckSwitch (oversamplingLabel, oversamplingBox, 1, 1, "OVER");
-        placeDeckSwitch (tuningKeyLabel, tuningKeyBox, 2, 1, "KEY");
+        placeDeckSwitch (tuningTonicLabel, tuningTonicBox, 2, 1, "TONIC");
+        tuningModeLabel.setBounds (grid.getX() + 3 * cellWidth + 5, memberRowY + 1, cellWidth - 10, 17);
+        tuningModeBox.setBounds (grid.getX() + 3 * cellWidth + 12, memberRowY + 20, cellWidth - 24, 30);
         languageLabel.setBounds (grid.getX() + 5, memberRowY + 56, cellWidth - 10, 17);
         languageBox.setBounds (grid.getX() + 12, memberRowY + 76, cellWidth - 24, 30);
         autoTuneButton.setBounds (grid.getX() + 12, memberRowY + 112, cellWidth - 24, 30);
@@ -7932,6 +7971,19 @@ void FirstAudioProcessorEditor::resized()
                                   memberRowY + 20,
                                   cellWidth - 24,
                                   juce::jmin (30, grid.getBottom() - memberRowY - 22));
+    }
+    else if (compressorTab)
+    {
+        sectionCaptionLabel.setText ("CONVENTIONAL COMPRESSOR", juce::dontSendNotification);
+        const auto compressorTop = grid.getY() + 8;
+        const auto compressorCellWidth = grid.getWidth() / static_cast<int> (compressorControls.size());
+        for (std::size_t i = 0; i < compressorControls.size(); ++i)
+        {
+            const auto x = grid.getX() + static_cast<int> (i) * compressorCellWidth;
+            compressorControlLabels[i].setBounds (x + 4, compressorTop, compressorCellWidth - 8, 18);
+            compressorControls[i].setBounds (x + 4, compressorTop + 18,
+                                              compressorCellWidth - 8, grid.getHeight() - 22);
+        }
     }
     else if (delayTab)
     {
