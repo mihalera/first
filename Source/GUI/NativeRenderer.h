@@ -27,6 +27,8 @@ class NativeRenderer {
 
     virtual ~NativeRenderer() = default;
     virtual bool initialise(juce::Component &, Config) = 0;
+    virtual void resize(Config) = 0;
+    virtual bool isPresentable() const noexcept = 0;
     virtual void shutdown() noexcept = 0;
     virtual bool beginFrame() = 0;
     virtual void clear(juce::Colour) = 0;

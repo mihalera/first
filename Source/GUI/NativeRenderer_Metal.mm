@@ -2,6 +2,7 @@
 
 #if defined (J37_NATIVE_METAL) && JUCE_MAC
  #import <Metal/Metal.h>
+ #import <QuartzCore/CAMetalLayer.h>
 
 namespace j37::render
 {
@@ -10,7 +11,7 @@ namespace
 class MetalRenderer final : public NativeRenderer
 {
 public:
-    bool initialise (juce::Component&, Config config) override
+    bool initialise (juce::Component& component, Config config) override
     {
         width = juce::jmax (1, config.width);
         height = juce::jmax (1, config.height);
@@ -21,6 +22,21 @@ public:
             failure = "Metal: no system device";
             return false;
         }
+
+        auto* peer = component.getPeer();
+        auto* view = peer != nullptr ? (__bridge NSView*) peer->getNativeHandle() : nil;
+        if (view == nil)
+        {
+            failure = "Metal: native view is not available";
+            shutdown();
+            return false;
+        }
+        layer = [CAMetalLayer layer];
+        layer.device = device;
+        layer.pixelFormat = MTLPixelFormatBGRA8Unorm;
+        layer.drawableSize = CGSizeMake (width, height);
+        view.wantsLayer = YES;
+        [view.layer addSublayer:layer];
 
         queue = [device newCommandQueue];
         if (queue == nil)
@@ -35,6 +51,15 @@ public:
         return true;
     }
 
+    void resize (Config config) override
+    {
+        width = juce::jmax (1, config.width);
+        height = juce::jmax (1, config.height);
+        if (layer != nil) layer.drawableSize = CGSizeMake (width, height);
+    }
+
+    bool isPresentable() const noexcept override { return layer != nil; }
+
     void shutdown() noexcept override
     {
         queue = nil;
@@ -42,9 +67,38 @@ public:
         initialised = false;
     }
 
-    bool beginFrame() override { return initialised; }
-    void clear (juce::Colour colour) override { clearColour = colour; }
-    void endFrame() override {}
+    bool beginFrame() override
+    {
+        if (! initialised || layer == nil) return false;
+        drawable = [layer nextDrawable];
+        commandBuffer = [queue commandBuffer];
+        return drawable != nil && commandBuffer != nil;
+    }
+    void clear (juce::Colour colour) override
+    {
+        clearColour = colour;
+        if (commandBuffer != nil)
+        {
+            auto pass = [MTLRenderPassDescriptor renderPassDescriptor];
+            pass.colorAttachments[0].texture = drawable.texture;
+            pass.colorAttachments[0].loadAction = MTLLoadActionClear;
+            pass.colorAttachments[0].storeAction = MTLStoreActionStore;
+            pass.colorAttachments[0].clearColor = MTLClearColorMake (colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue(), colour.getFloatAlpha());
+            encoder = [commandBuffer renderCommandEncoderWithDescriptor:pass];
+            [encoder endEncoding];
+            encoder = nil;
+        }
+    }
+    void endFrame() override
+    {
+        if (commandBuffer != nil)
+        {
+            [commandBuffer presentDrawable:drawable];
+            [commandBuffer commit];
+            commandBuffer = nil;
+            drawable = nil;
+        }
+    }
     bool isInitialised() const noexcept override { return initialised; }
     juce::String status() const override
     {
@@ -54,6 +108,10 @@ public:
 private:
     id<MTLDevice> device = nil;
     id<MTLCommandQueue> queue = nil;
+    id<MTLCommandBuffer> commandBuffer = nil;
+    id<CAMetalDrawable> drawable = nil;
+    id<MTLRenderCommandEncoder> encoder = nil;
+    CAMetalLayer* layer = nil;
     juce::Colour clearColour;
     juce::String failure;
     int width = 1;

@@ -1061,7 +1061,29 @@ void TapeScene::serviceContextAttachment()
 
 void TapeScene::paint (juce::Graphics& g)
 {
-    if (! j37::render::usesCpuFallback())
+    if (j37::render::usesNativeCommandRenderer() && nativeRenderer != nullptr)
+    {
+        if (! nativeRenderer->isInitialised())
+        {
+            j37::render::NativeRenderer::Config config;
+            config.width = getWidth();
+            config.height = getHeight();
+            nativeRenderer->initialise (*this, config);
+        }
+
+        if (nativeRenderer->beginFrame())
+        {
+            nativeRenderer->clear (juce::Colour (backgroundColour.load (std::memory_order_relaxed)));
+            nativeRenderer->endFrame();
+        }
+
+        // Native surfaces are child windows/layers owned by this component.
+        // JUCE's CPU path remains the fallback if surface creation fails.
+        if (nativeRenderer->isPresentable())
+            return;
+    }
+
+    if (j37::render::usesOpenGL())
         return;
 
     const auto width = static_cast<float> (getWidth());
@@ -1135,6 +1157,17 @@ void TapeScene::paint (juce::Graphics& g)
 
 void TapeScene::resized()
 {
+    // Native swapchains/render targets are resized on the message thread, never
+    // lazily from the render callback. The adapters defer GPU object recreation
+    // until their next beginFrame().
+    if (nativeRenderer != nullptr)
+    {
+        j37::render::NativeRenderer::Config config;
+        config.width = getWidth();
+        config.height = getHeight();
+        nativeRenderer->resize (config);
+    }
+
     // Nothing to place: the projection is derived from the current size in
     // renderOpenGL(), and CPU paint uses the same component bounds.
     repaint();

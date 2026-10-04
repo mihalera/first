@@ -1,5 +1,8 @@
 #include "NativeRenderer.h"
 
+#if defined(J37_NATIVE_D3D11)
+#include "NativeRenderer_D3D11.h"
+#endif
 #if defined(J37_NATIVE_D3D12)
 #include "NativeRenderer_D3D12.h"
 #endif
@@ -14,10 +17,17 @@ namespace {
 class CpuRenderer final : public NativeRenderer {
   public:
     bool initialise(juce::Component &, Config config) override {
-        size = {juce::jmax(1, config.width), juce::jmax(1, config.height)};
+        size = { juce::jmax (1, config.width), juce::jmax (1, config.height) };
+        initialised = true;
         return true;
     }
 
+    void resize (Config config) override
+    {
+        size = { juce::jmax (1, config.width), juce::jmax (1, config.height) };
+    }
+
+    bool isPresentable() const noexcept override { return false; }
     void shutdown() noexcept override { initialised = false; }
     bool beginFrame() override { return initialised; }
     void clear(juce::Colour) override {}
@@ -32,6 +42,10 @@ class CpuRenderer final : public NativeRenderer {
 } // namespace
 
 std::unique_ptr<NativeRenderer> createNativeRenderer(Backend backend) {
+#if defined(J37_NATIVE_D3D11)
+    if (backend == Backend::directX11)
+        return createD3D11Renderer();
+#endif
 #if defined(J37_NATIVE_D3D12)
     if (backend == Backend::directX12)
         return createD3D12Renderer();

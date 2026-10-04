@@ -66,6 +66,9 @@ constexpr bool hasNativeImplementation(Backend backend) noexcept {
 #if defined (J37_NATIVE_METAL)
     if (backend == Backend::metal) return true;
 #endif
+#if defined (J37_NATIVE_D3D11)
+    if (backend == Backend::directX11) return true;
+#endif
 #if defined (J37_NATIVE_D3D12)
     if (backend == Backend::directX12) return true;
 #endif
@@ -91,6 +94,14 @@ constexpr Backend effectiveBackend() noexcept {
 constexpr bool usesOpenGL() noexcept { return effectiveBackend() == Backend::openGL; }
 
 constexpr bool usesCpuFallback() noexcept { return effectiveBackend() == Backend::cpu; }
+
+constexpr bool usesNativeCommandRenderer() noexcept
+{
+    return effectiveBackend() == Backend::vulkan
+        || effectiveBackend() == Backend::metal
+        || effectiveBackend() == Backend::directX11
+        || effectiveBackend() == Backend::directX12;
+}
 
 constexpr bool isFallbackActive() noexcept {
     return isNativeBackendPending (configuredBackend())

@@ -123,10 +123,9 @@ include(J37Tests)
 option(COPY_PLUGIN_AFTER_BUILD "Copy plugins to the user plugin folders after building" OFF)
 
 # Renderer selection is compile-time because a plugin editor must create its
-# graphics device on the host's UI thread. OpenGL is the complete backend today;
-# the other values select an honest CPU fallback until their native integrations
-# are enabled. This keeps the build matrix ready without pretending that a
-# Vulkan/Metal/D3D device can be created by JUCE's OpenGL module.
+# graphics device and host-owned child surface on the UI thread. Native adapters
+# create their device, command resources and presentation surface; unsupported
+# platform/API combinations use the CPU fallback.
 set(J37_RENDER_BACKEND "AUTO" CACHE STRING
     "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12 or CPU")
 set_property(CACHE J37_RENDER_BACKEND PROPERTY STRINGS
@@ -149,6 +148,9 @@ elseif(J37_RENDER_BACKEND STREQUAL "METAL")
     endif()
 elseif(J37_RENDER_BACKEND STREQUAL "D3D11")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_D3D11=1)
+    if(WIN32)
+        list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_D3D11=1)
+    endif()
 elseif(J37_RENDER_BACKEND STREQUAL "D3D12")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_D3D12=1)
     if(WIN32)
@@ -263,6 +265,7 @@ target_sources(first PRIVATE
     Source/PluginEditor.cpp
     Source/GUI/TapeScene.cpp
     Source/GUI/NativeRenderer.cpp
+    Source/GUI/NativeRenderer_D3D11.cpp
     Source/GUI/NativeRenderer_D3D12.cpp
     Source/GUI/NativeRenderer_Vulkan.cpp
     Source/GUI/RenderBackend.h)
@@ -276,8 +279,11 @@ endif()
 if(TARGET Vulkan::Vulkan)
     target_link_libraries(first PRIVATE Vulkan::Vulkan)
 endif()
+if(WIN32 AND (J37_RENDER_BACKEND STREQUAL "D3D11" OR J37_RENDER_BACKEND STREQUAL "D3D12"))
+    target_link_libraries(first PRIVATE d3d11 dxgi dxguid)
+endif()
 if(WIN32 AND J37_RENDER_BACKEND STREQUAL "D3D12")
-    target_link_libraries(first PRIVATE d3d12 dxgi dxguid)
+    target_link_libraries(first PRIVATE d3d12)
 elseif(APPLE AND J37_RENDER_BACKEND STREQUAL "METAL")
     target_link_libraries(first PRIVATE "-framework Metal" "-framework QuartzCore")
 endif()
@@ -531,7 +537,7 @@ message(STATUS "  JUCE        : ${CMAKE_CURRENT_SOURCE_DIR}/JUCE")
 message(STATUS "  System      : ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Generator   : ${CMAKE_GENERATOR}")
 message(STATUS "  Build type  : ${CMAKE_BUILD_TYPE}")
-message(STATUS "  Renderer    : requested ${J37_RENDER_BACKEND}; native command resources enabled per platform")
+message(STATUS "  Renderer    : requested ${J37_RENDER_BACKEND}; native device/surface adapters enabled per platform")
 message(STATUS "  Build commit: ${J37_BUILD_COMMIT}")
 if(APPLE)
     message(STATUS "  Archs       : ${CMAKE_OSX_ARCHITECTURES}")
