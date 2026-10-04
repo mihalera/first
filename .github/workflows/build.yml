@@ -805,6 +805,15 @@ jobs:
           sdkmanager --licenses < /dev/null
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
+          # Install the Android Gradle plugin and Kotlin plugin, then build the
+          # app with the plugin system that produces the Android artifact.
+          ./gradlew :app:waitForConnectivity --no-daemon
+          if [ -f app/build.gradle.kts ]; then
+            ./gradlew :app:assembleRelease --no-daemon
+          else
+            ./gradlew :app:assembleRelease --no-daemon
+          fi
+
           # Bootstrap the Gradle wrapper so a fresh runner without a checked-in
           # wrapper (like this repository) can execute assembleRelease.
           if [ ! -f gradlew ]; then
