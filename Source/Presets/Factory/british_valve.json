@@ -89,5 +89,15 @@
   "cassette_source": 0.1148,
   "amp_source": 0.0,
   "transformer_source": 0.0,
-  "digital_source": 0.0
+  "digital_source": 0.0,
+  "tuning_tonic": 0,
+  "tuning_mode": 0,
+  "autotune": 0,
+  "autotune_amount": 0.0,
+  "comp_threshold": -18.0,
+  "comp_ratio": 2.0,
+  "comp_attack": 10.0,
+  "comp_release": 120.0,
+  "comp_makeup": 0.0,
+  "comp_mix": 0.0
 }
