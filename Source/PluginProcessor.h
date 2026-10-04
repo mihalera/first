@@ -102,6 +102,16 @@
 //                               change is a genuine TIME change (the tape slows
 //                               down and the music slows with it) rather than a
 //                               resample that also drops the pitch of everything.
+//
+//    SoundTouch                 Olli Parviainen's SoundTouch Audio Processing
+//                               Library - the WSOLA time-stretch and pitch-shift
+//                               engine. Vendored under ThirdParty/soundtouch and
+//                               compiled into the plugin by
+//                               cmake/J37Dependencies.cmake. The one dependency
+//                               in this list that is NOT permissively licensed:
+//                               LGPL-2.1, with the licence text distributed at
+//                               ThirdParty/soundtouch/COPYING.TXT and the
+//                               attribution in THIRD_PARTY_NOTICES.md.
 // ------------------------------------------------------------------------------
 #if ! defined (J37_DSP_HARNESS)
 
@@ -139,10 +149,22 @@
   #define J37_HAS_SIGNALSMITH 0
  #endif
 
+ // SoundTouch: its public headers sit flat in include/, and that one directory
+ // is what the CMake target exposes, so the spelling is the bare
+ // <SoundTouch.h>. Probed like the rest, so a checkout with ThirdParty/ pruned
+ // reports 0 instead of failing the compile.
+ #if __has_include (<SoundTouch.h>)
+  #include <SoundTouch.h>
+  #define J37_HAS_SOUNDTOUCH 1
+ #else
+  #define J37_HAS_SOUNDTOUCH 0
+ #endif
+
 #else
  #define J37_HAS_RWQ 0
  #define J37_HAS_FARBOT 0
  #define J37_HAS_SIGNALSMITH 0
+ #define J37_HAS_SOUNDTOUCH 0
 #endif
 
 #include <array>
