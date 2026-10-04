@@ -67,7 +67,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 # ------------------------------------------------------------------------------
 #  JUCE
 #
-#  JUCE is a git submodule pinned at 9.0.2, checked out at JUCE/ next to this
+#  JUCE is a git submodule pinned at 9.0.3, checked out at JUCE/ next to this
 #  file. Adding it as a subdirectory is all that is needed: there are no module
 #  paths to configure and therefore none to get wrong per-platform, which was
 #  the source of the absolute-path problems the Projucer setup had.
