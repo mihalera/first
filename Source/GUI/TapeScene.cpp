@@ -875,6 +875,7 @@ namespace
 //==============================================================================
 TapeScene::TapeScene()
 {
+    nativeRenderer = j37::render::createNativeRenderer (j37::render::effectiveBackend());
     setOpaque (true);
     setInterceptsMouseClicks (false, false);
     setWantsKeyboardFocus (false);
@@ -891,6 +892,8 @@ TapeScene::~TapeScene()
     // openGLContextClosing() called on the GL thread - which is the only thread
     // allowed to delete a buffer or a program.
     openGLContext.detach();
+    if (nativeRenderer != nullptr)
+        nativeRenderer->shutdown();
 }
 
 void TapeScene::setAudioState (float newOutputLevel,
@@ -997,6 +1000,15 @@ void TapeScene::setSceneEnabled (bool shouldBeEnabled)
         sceneEnabled = false;
         openGLContext.detach();
         programLinked.store (0);
+
+        if (nativeRenderer != nullptr && ! nativeRenderer->isInitialised())
+        {
+            j37::render::NativeRenderer::Config config;
+            config.width = getWidth();
+            config.height = getHeight();
+            nativeRenderer->initialise (*this, config);
+        }
+
         return;
     }
 
@@ -1023,7 +1035,16 @@ void TapeScene::setSceneEnabled (bool shouldBeEnabled)
 void TapeScene::serviceContextAttachment()
 {
     if (! j37::render::usesOpenGL() || ! sceneEnabled)
+    {
+        if (nativeRenderer != nullptr && ! nativeRenderer->isInitialised())
+        {
+            j37::render::NativeRenderer::Config config;
+            config.width = getWidth();
+            config.height = getHeight();
+            nativeRenderer->initialise (*this, config);
+        }
         return;
+    }
 
     if (openGLContext.isAttached())
     {

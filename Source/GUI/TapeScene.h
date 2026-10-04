@@ -8,6 +8,7 @@
 
 #include <JuceHeader.h>
 #include "RenderBackend.h"
+#include "NativeRenderer.h"
 
 // The GL typedefs (GLuint, GLint, GLsizei) and the GL commands this component
 // calls live in the module's own header, which the generated JuceHeader also
@@ -291,6 +292,7 @@ private:
 
     juce::OpenGLContext openGLContext;
     std::unique_ptr<juce::OpenGLShaderProgram> shaderProgram;
+    std::unique_ptr<j37::render::NativeRenderer> nativeRenderer;
 
     Mesh reel {};
     Mesh tapePack {};

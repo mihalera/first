@@ -133,16 +133,27 @@ set_property(CACHE J37_RENDER_BACKEND PROPERTY STRINGS
     AUTO OPENGL VULKAN METAL D3D11 D3D12 CPU)
 string(TOUPPER "${J37_RENDER_BACKEND}" J37_RENDER_BACKEND)
 set(J37_RENDER_DEFINITIONS)
+set(J37_NATIVE_RENDER_DEFINITIONS)
 if(J37_RENDER_BACKEND STREQUAL "OPENGL")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_OPENGL=1)
 elseif(J37_RENDER_BACKEND STREQUAL "VULKAN")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_VULKAN=1)
+    find_package(Vulkan QUIET)
+    if(Vulkan_FOUND)
+        list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_VULKAN=1)
+    endif()
 elseif(J37_RENDER_BACKEND STREQUAL "METAL")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_METAL=1)
+    if(APPLE)
+        list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_METAL=1)
+    endif()
 elseif(J37_RENDER_BACKEND STREQUAL "D3D11")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_D3D11=1)
 elseif(J37_RENDER_BACKEND STREQUAL "D3D12")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_D3D12=1)
+    if(WIN32)
+        list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_D3D12=1)
+    endif()
 elseif(J37_RENDER_BACKEND STREQUAL "CPU")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_CPU=1)
 elseif(NOT J37_RENDER_BACKEND STREQUAL "AUTO")
@@ -251,9 +262,25 @@ target_sources(first PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
     Source/GUI/TapeScene.cpp
+    Source/GUI/NativeRenderer.cpp
+    Source/GUI/NativeRenderer_D3D12.cpp
+    Source/GUI/NativeRenderer_Vulkan.cpp
     Source/GUI/RenderBackend.h)
 
 target_include_directories(first PRIVATE Source)
+
+if(APPLE)
+    target_sources(first PRIVATE Source/GUI/NativeRenderer_Metal.mm)
+endif()
+
+if(TARGET Vulkan::Vulkan)
+    target_link_libraries(first PRIVATE Vulkan::Vulkan)
+endif()
+if(WIN32 AND J37_RENDER_BACKEND STREQUAL "D3D12")
+    target_link_libraries(first PRIVATE d3d12 dxgi dxguid)
+elseif(APPLE AND J37_RENDER_BACKEND STREQUAL "METAL")
+    target_link_libraries(first PRIVATE "-framework Metal" "-framework QuartzCore")
+endif()
 
 # ------------------------------------------------------------------------------
 #  Embedded resources - the factory presets and the translation tables.
@@ -467,6 +494,7 @@ j37_apply_vendor_libraries(first)
 # ------------------------------------------------------------------------------
 target_compile_definitions(first PUBLIC
     ${J37_RENDER_DEFINITIONS}
+    ${J37_NATIVE_RENDER_DEFINITIONS}
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_STRICT_REFCOUNTEDPOINTER=1
     JUCE_WEB_BROWSER=0
@@ -503,7 +531,7 @@ message(STATUS "  JUCE        : ${CMAKE_CURRENT_SOURCE_DIR}/JUCE")
 message(STATUS "  System      : ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Generator   : ${CMAKE_GENERATOR}")
 message(STATUS "  Build type  : ${CMAKE_BUILD_TYPE}")
-message(STATUS "  Renderer    : requested ${J37_RENDER_BACKEND}; OpenGL native, CPU fallback for pending APIs")
+message(STATUS "  Renderer    : requested ${J37_RENDER_BACKEND}; native command resources enabled per platform")
 message(STATUS "  Build commit: ${J37_BUILD_COMMIT}")
 if(APPLE)
     message(STATUS "  Archs       : ${CMAKE_OSX_ARCHITECTURES}")

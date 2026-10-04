@@ -55,10 +55,20 @@ constexpr const char *name(Backend backend) noexcept {
     return "Unknown";
 }
 
-// Only OpenGL and CPU are implemented in this first migration step.  This
-// is intentionally a separate function: adding a native backend becomes a
-// capability change, not a silent change to the selected configuration.
+// Native device adapters are compiled per-platform. OpenGL remains the
+// established renderer, while Vulkan, Metal and D3D12 now have command
+// resource initialization paths; unsupported platform/API combinations still
+// fall back to CPU at runtime.
 constexpr bool hasNativeImplementation(Backend backend) noexcept {
+#if defined (J37_NATIVE_VULKAN)
+    if (backend == Backend::vulkan) return true;
+#endif
+#if defined (J37_NATIVE_METAL)
+    if (backend == Backend::metal) return true;
+#endif
+#if defined (J37_NATIVE_D3D12)
+    if (backend == Backend::directX12) return true;
+#endif
     return backend == Backend::openGL || backend == Backend::cpu;
 }
 
@@ -93,7 +103,7 @@ constexpr const char* effectiveName() noexcept {
 
 constexpr const char* statusText() noexcept {
     if (isFallbackActive())
-        return "CPU fallback (requested backend is not implemented yet)";
+        return "CPU fallback (native renderer unavailable)";
 
     if (usesOpenGL())
         return "OpenGL";
