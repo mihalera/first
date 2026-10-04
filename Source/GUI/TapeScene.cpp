@@ -991,6 +991,26 @@ void TapeScene::setPalette (juce::Colour background,
     repaint();
 }
 
+j37::render::NativeRenderer::Config TapeScene::nativeRendererConfig() const
+{
+    j37::render::NativeRenderer::Config config;
+    config.width = juce::jmax (1, getWidth());
+    config.height = juce::jmax (1, getHeight());
+
+    // Native surfaces belong to this component, not to the editor peer. The
+    // renderer therefore receives the component's position in its peer's
+    // coordinate system, which is what child HWNDs and Metal layers expect.
+    if (auto* peer = getPeer())
+    {
+        const auto globalOrigin = localPointToGlobal ({ 0, 0 });
+        const auto peerOrigin = peer->getComponent().localPointToGlobal ({ 0, 0 });
+        config.positionX = globalOrigin.x - peerOrigin.x;
+        config.positionY = globalOrigin.y - peerOrigin.y;
+    }
+
+    return config;
+}
+
 void TapeScene::setSceneEnabled (bool shouldBeEnabled)
 {
     // A non-OpenGL selection is a deliberate CPU fallback for now. Do not
@@ -1003,10 +1023,7 @@ void TapeScene::setSceneEnabled (bool shouldBeEnabled)
 
         if (nativeRenderer != nullptr && ! nativeRenderer->isInitialised())
         {
-            j37::render::NativeRenderer::Config config;
-            config.width = getWidth();
-            config.height = getHeight();
-            nativeRenderer->initialise (*this, config);
+            nativeRenderer->initialise (*this, nativeRendererConfig());
         }
 
         return;
@@ -1036,13 +1053,10 @@ void TapeScene::serviceContextAttachment()
 {
     if (! j37::render::usesOpenGL() || ! sceneEnabled)
     {
-        if (nativeRenderer != nullptr && ! nativeRenderer->isInitialised())
-        {
-            j37::render::NativeRenderer::Config config;
-            config.width = getWidth();
-            config.height = getHeight();
-            nativeRenderer->initialise (*this, config);
-        }
+        if (j37::render::usesNativeCommandRenderer()
+            && nativeRenderer != nullptr
+            && ! nativeRenderer->isInitialised())
+            nativeRenderer->initialise (*this, nativeRendererConfig());
         return;
     }
 
@@ -1064,12 +1078,7 @@ void TapeScene::paint (juce::Graphics& g)
     if (j37::render::usesNativeCommandRenderer() && nativeRenderer != nullptr)
     {
         if (! nativeRenderer->isInitialised())
-        {
-            j37::render::NativeRenderer::Config config;
-            config.width = getWidth();
-            config.height = getHeight();
-            nativeRenderer->initialise (*this, config);
-        }
+            nativeRenderer->initialise (*this, nativeRendererConfig());
 
         if (nativeRenderer->beginFrame())
         {
@@ -1162,10 +1171,7 @@ void TapeScene::resized()
     // until their next beginFrame().
     if (nativeRenderer != nullptr)
     {
-        j37::render::NativeRenderer::Config config;
-        config.width = getWidth();
-        config.height = getHeight();
-        nativeRenderer->resize (config);
+        nativeRenderer->resize (nativeRendererConfig());
     }
 
     // Nothing to place: the projection is derived from the current size in

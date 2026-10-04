@@ -14,17 +14,21 @@
 #endif
 namespace j37::render {
 namespace {
+/** The path taken when no native adapter is compiled in, or when the selected
+    backend has no adapter for this platform. It initialises, reports a usable
+    status and never claims to be presentable, so the caller keeps painting with
+    JUCE instead of leaving the component blank. */
 class CpuRenderer final : public NativeRenderer {
   public:
-    bool initialise(juce::Component &, Config config) override {
-        size = { juce::jmax (1, config.width), juce::jmax (1, config.height) };
+    bool initialise (juce::Component&, Config config) override {
+        bounds = { juce::jmax (1, config.width), juce::jmax (1, config.height) };
         initialised = true;
         return true;
     }
 
     void resize (Config config) override
     {
-        size = { juce::jmax (1, config.width), juce::jmax (1, config.height) };
+        bounds = { juce::jmax (1, config.width), juce::jmax (1, config.height) };
     }
 
     bool isPresentable() const noexcept override { return false; }
@@ -36,7 +40,7 @@ class CpuRenderer final : public NativeRenderer {
     juce::String status() const override { return "CPU compatibility renderer"; }
 
   private:
-    juce::Point<int> size;
+    juce::Point<int> bounds;
     bool initialised = false;
 };
 } // namespace
@@ -44,19 +48,23 @@ class CpuRenderer final : public NativeRenderer {
 std::unique_ptr<NativeRenderer> createNativeRenderer(Backend backend) {
 #if defined(J37_NATIVE_D3D11)
     if (backend == Backend::directX11)
-        return createD3D11Renderer();
+        if (auto renderer = createD3D11Renderer())
+            return renderer;
 #endif
 #if defined(J37_NATIVE_D3D12)
     if (backend == Backend::directX12)
-        return createD3D12Renderer();
+        if (auto renderer = createD3D12Renderer())
+            return renderer;
 #endif
 #if defined(J37_NATIVE_VULKAN)
     if (backend == Backend::vulkan)
-        return createVulkanRenderer();
+        if (auto renderer = createVulkanRenderer())
+            return renderer;
 #endif
 #if defined(J37_NATIVE_METAL)
     if (backend == Backend::metal)
-        return createMetalRenderer();
+        if (auto renderer = createMetalRenderer())
+            return renderer;
 #endif
     return std::make_unique<CpuRenderer>();
 }

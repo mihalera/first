@@ -184,6 +184,7 @@ public:
         33 ms for a picture that is never going to arrive.
     */
     void serviceContextAttachment();
+    [[nodiscard]] j37::render::NativeRenderer::Config nativeRendererConfig() const;
 
     /** CPU renderer used when the selected native backend is unavailable or
         explicitly set to CPU. It intentionally uses the same telemetry and
