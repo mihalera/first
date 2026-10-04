@@ -208,15 +208,36 @@ public:
         float lean = 0.0f;          ///< -1 left of centre, +1 right: which way this control is turned to the light
     };
 
-    /** Where the viewer is standing. Called from resized() with the whole editor. */
-    void setPanelCamera (juce::Rectangle<float> panelBounds) noexcept;
+    /** Where the viewer is standing. Called from paint() with the whole editor.
 
-    Perspective perspectiveFor (juce::Rectangle<float> bounds) const noexcept;
+        The panel's rectangle is stored in the space of its TOP-LEVEL component,
+        which is the one space every control can be measured in: a control's own
+        bounds always start at (0, 0), so they cannot say where it stands on the
+        panel. See perspectiveFor().
+    */
+    void setPanelCamera (const juce::Component& panel) noexcept;
+
+    /** What one control looks like from the camera.
+
+        @param bounds   the control's rectangle, in the CONTROL's own coordinates
+        @param control  the control being drawn - its place in the component tree
+                        is what locates it on the panel, never its own size
+    */
+    Perspective perspectiveFor (juce::Rectangle<float> bounds,
+                                const juce::Component& control) const noexcept;
 
 private:
+    /** A component's top-left corner in its top-level component's space.
+
+        The panel and every control go through this, so a control nested inside a
+        tab page lands at the same position on the panel as one that is a direct
+        child of the editor. */
+    static juce::Point<float> offsetToTopLevel (const juce::Component& component) noexcept;
+
     ThemeChoice theme = ThemeChoice::ivory;
     float activity = 0.0f;   ///< Compressor activity, drives the glow around the knobs.
-    juce::Rectangle<float> cameraPanel;
+    juce::Rectangle<float> cameraPanel;   ///< The panel, in its top-level component's space.
+    const juce::Component* cameraRoot = nullptr;   ///< The top-level component the camera was measured in.
 
     // Per-toggle glide state for the sliding thumbs (see noteToggle above).
     struct ToggleGlide
@@ -448,6 +469,16 @@ private:
     static constexpr int numTabs = 16;
     static constexpr std::size_t decorativeOrbCount = 6;
 
+    // The header's switch grid: four equal columns, three rows, one switch per
+    // cell. resized() places the cells with these and paint() draws the
+    // machine-state pill ON the grid's third row with them, so the pill and the
+    // switches it wraps can never be sized by two different arithmetics again -
+    // the first pass kept a second copy of the old 92 px cell in paint(), and
+    // the pill overhung its own band by 72 px.
+    static constexpr int headerColumnCount = 4;
+    static constexpr int headerColumnWidth = 74;
+    static constexpr int headerColumnGap = 6;
+
     void timerCallback() override;
     void createDecorativePhysics();
     void applyTheme();
@@ -455,7 +486,8 @@ private:
 
     // Cycles the header's theme button: DARK -> IVORY -> LIGHT -> DARK. The tab
     // families resolve the reverse way - one Control-strip button per family and
-    // pages beside it - so the 4 x 92 px grid's four free columns stay free.
+    // pages beside it - so the header grid's four free columns stay free (see
+    // headerColumnCount / headerColumnWidth below).
 
     // Shared by the constructor and by resized(): the knob-grid section captions
     // are created while laying out, so a constructor-local helper was out of scope

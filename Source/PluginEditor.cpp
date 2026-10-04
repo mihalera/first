@@ -1063,7 +1063,9 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     // all foreshorten TOGETHER, at this knob's angle, instead of the cap alone
     // being scaled while the ring around it stayed round. That single fact is
     // the difference between a row of hardware and a row of discs.
-    const auto view = perspectiveFor (bounds);
+    // The knob's bounds place its ring and its cap, but only its POSITION on the
+    // panel decides the angle they are seen from - so the slider comes with them.
+    const auto view = perspectiveFor (bounds, slider);
     const auto centre = view.centre;
     g.saveState();
     g.addTransform (juce::AffineTransform (
@@ -1289,7 +1291,7 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     // cap and its shadow describe a disc floating over the panel. One ellipse
     // pushed down and shaded top-to-bottom, drawn BEFORE the collar so the
     // collar's rim overlaps its upper edge and only the lower crescent shows.
-const auto skirt = radius * wallFraction * 1.15f;
+    const auto skirt = radius * wallFraction * 1.15f;
     juce::ColourGradient skirtShade (palette.knobEdge.darker (0.16f), centre.x,
                                      centre.y + collarRadius - skirt,
                                      palette.knobEdge.darker (0.62f), centre.x,
@@ -1508,41 +1510,72 @@ const auto skirt = radius * wallFraction * 1.15f;
 //             solid object standing on the panel rather than a shape painted on
 //             it.
 //==============================================================================
-void J37LookAndFeel::setPanelCamera (juce::Rectangle<float> panelBounds) noexcept
+juce::Point<float> J37LookAndFeel::offsetToTopLevel (const juce::Component& component) noexcept
 {
-    cameraPanel = panelBounds;
+    juce::Point<int> offset;
+    for (auto* c = &component; c != nullptr; c = c->getParentComponent())
+        offset += c->getPosition();
+    return offset.toFloat();
 }
 
-J37LookAndFeel::Perspective J37LookAndFeel::perspectiveFor (juce::Rectangle<float> bounds) const noexcept
+void J37LookAndFeel::setPanelCamera (const juce::Component& panel) noexcept
+{
+    // The camera is stored in TOP-LEVEL space, because that is the one space
+    // every control can be measured in: a control's own bounds start at (0, 0),
+    // so without this a knob in the tab grid and a switch in the header would
+    // both be told they sit in the same corner of the world.
+    const auto origin = offsetToTopLevel (panel);
+    cameraPanel = panel.getLocalBounds().toFloat().translated (origin.x, origin.y);
+    cameraRoot = panel.getTopLevelComponent();
+}
+
+J37LookAndFeel::Perspective J37LookAndFeel::perspectiveFor (juce::Rectangle<float> bounds,
+                                                            const juce::Component& control) const noexcept
 {
     Perspective view;
     view.centre = bounds.getCentre();
 
-    if (cameraPanel.isEmpty() || bounds.isEmpty())
+    if (cameraPanel.isEmpty() || bounds.isEmpty()
+        || cameraRoot == nullptr || control.getTopLevelComponent() != cameraRoot)
         return view;
 
+    // This is the one thing the first camera got wrong, and it is why the whole
+    // update read as no update at all. A control's bounds say where its own
+    // corner is, never where it stands on the panel: measured from the top left
+    // of a 30 px switch, EVERY control sits at the same far corner of the room,
+    // so every dx and dy clamps to the same value and the panel comes out as
+    // flat as it went in. The control's own centre is added to its place in the
+    // component tree, and the panel's centre is in that same space, so the
+    // subtraction below means what it says.
+    const auto controlCentre = view.centre + offsetToTopLevel (control);
     const auto panelCentre = cameraPanel.getCentre();
     const auto halfWidth  = juce::jmax (1.0f, cameraPanel.getWidth()  * 0.5f);
     const auto halfHeight = juce::jmax (1.0f, cameraPanel.getHeight() * 0.5f);
 
-    const auto dx = juce::jlimit (-1.0f, 1.0f, (view.centre.x - panelCentre.x) / halfWidth);
-    const auto dy = juce::jlimit (-1.0f, 1.0f, (view.centre.y - panelCentre.y) / halfHeight);
+    const auto dx = juce::jlimit (-1.0f, 1.0f, (controlCentre.x - panelCentre.x) / halfWidth);
+    const auto dy = juce::jlimit (-1.0f, 1.0f, (controlCentre.y - panelCentre.y) / halfHeight);
 
     view.tilt = juce::jlimit (0.0f, 1.0f,
                               std::sqrt (dx * dx + dy * dy) * 0.70710678f);
 
-    // 0.86 rather than 1.0: the whole panel is seen from in front, so no top
-    // face anywhere on it is ever a true circle. The two clamps are what keep
-    // the far corners of the largest window from collapsing into slits.
-    view.squashY = juce::jlimit (0.62f, 1.0f, 0.86f - 0.24f * juce::jmax (0.0f, dy));
-    view.squashX = juce::jlimit (0.78f, 1.0f, 0.86f - 0.10f * std::abs (dx)
-                                            - 0.04f * juce::jmax (0.0f, dy));
+    // 0.88 rather than 1.0: the whole panel is seen from in front, so no top
+    // face anywhere on it is ever a true circle. The near half of the panel
+    // falls away much faster than the far half - a control by the near edge is
+    // seen nearly edge-on - and the floors are what stop the largest window's
+    // front corners from collapsing into slits. The coefficients are the
+    // difference between a camera and a decoration: at 0.24 the spread between a
+    // knob's top row and its bottom row was under a tenth of the knob, which the
+    // eye reads as no depth at all.
+    view.squashY = juce::jlimit (0.58f, 1.0f, 0.88f - 0.30f * juce::jmax (0.0f, dy));
+    view.squashX = juce::jlimit (0.74f, 1.0f, 0.90f - 0.12f * std::abs (dx)
+                                            - 0.06f * juce::jmax (0.0f, dy));
 
     // The side wall: none at the viewer's own axis, the full height of the part
     // at the near edge. 0.34 rather than more because the viewer is seated, not
-    // kneeling on the panel.
-    view.wall = juce::jlimit (0.0f, 1.0f, 0.10f + 0.30f * juce::jmax (0.0f, dy)
-                                              + 0.10f * std::abs (dx));
+    // kneeling on the panel - but 0.34 of a part's height IS visible on a 26 px
+    // rocker, which is where the depth has to show.
+    view.wall = juce::jlimit (0.0f, 1.0f, 0.08f + 0.34f * juce::jmax (0.0f, dy)
+                                              + 0.12f * std::abs (dx));
     view.lean = dx;
 
     return view;
@@ -1561,7 +1594,7 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
                                        bool shouldDrawButtonAsHighlighted, bool shouldDrawButtonAsDown)
 {
     const auto& palette = paletteForTheme (theme);
-    const auto view = perspectiveFor (button.getLocalBounds().toFloat());
+    const auto view = perspectiveFor (button.getLocalBounds().toFloat(), button);
     const auto bounds = button.getLocalBounds().toFloat().reduced (2.0f, 3.0f);
     const auto isOn = button.getToggleState();
 
@@ -1570,25 +1603,8 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     // the panel has no wall, and a row of those is what made the panel look
     // printed rather than built - and worse, every one of them was showing the
     // SAME absence, which is the eye's cue that they were all drawn at once
-    // from straight above. Drawing the wall in the cell's own bottom inset
-    // means the switch gains real depth while the groove, the thumb and the
-    // caption keep every pixel they had - which matters here, because those
-    // three already share the body's height three ways.
+    // from straight above.
     const auto wallHeight = juce::jmin (3.0f, bounds.getHeight() * 0.34f * view.wall);
-    if (wallHeight > 0.75f)
-    {
-        const auto wall = juce::Rectangle<float> (bounds.getX(), bounds.getBottom() - 0.6f,
-                                                   bounds.getWidth(), wallHeight);
-        juce::ColourGradient wallShade (palette.readout.darker (0.58f), wall.getX(), wall.getY(),
-                                        palette.readout.darker (0.26f), wall.getX(), wall.getBottom(), false);
-        wallShade.addColour (0.42f, palette.readout.darker (0.46f));
-        g.setGradientFill (wallShade);
-        g.fillRoundedRectangle (wall, juce::jmin (wall.getHeight() * 0.5f,
-                                                  bounds.getHeight() * 0.45f));
-        g.setColour (palette.readout.darker (0.66f).withAlpha (0.75f));
-        g.drawLine (wall.getX() + wall.getWidth() * 0.18f, wall.getBottom() - 0.5f,
-                    wall.getRight() - wall.getWidth() * 0.18f, wall.getBottom() - 0.5f, 0.8f);
-    }
 
     // The body is a cylinder lying along the switch - fillCylinderBarrel
     // shades it by the cosine of its cross-section angle - not a flat slab, and
@@ -1599,6 +1615,36 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
                         palette.readout.darker (isOn ? 0.22f : 0.02f),
                         palette.readout.darker (0.42f),
                         view.lean * view.tilt);
+
+    // The wall is drawn INSIDE the capsule rather than under it, so a switch is
+    // never any taller than the rectangle the layout gave it. The first pass put
+    // it BELOW the body, and every rocker in the panel stood two or three pixels
+    // taller than the switch it had been - which is exactly what the user
+    // reported as "the toggles got even bigger". A nearer rocker still shows
+    // more of its side: that side is the bottom of its own body now, and the
+    // clip keeps it inside the capsule's curve where the body narrows.
+    if (wallHeight > 0.75f)
+    {
+        juce::Path capsule;
+        capsule.addRoundedRectangle (bounds.getX(), bounds.getY(),
+                                     bounds.getWidth(), bounds.getHeight(),
+                                     bounds.getHeight() * 0.5f);
+
+        g.saveState();
+        g.reduceClipRegion (capsule, juce::AffineTransform());
+        const auto wall = juce::Rectangle<float> (bounds.getX(), bounds.getBottom() - wallHeight,
+                                                  bounds.getWidth(), wallHeight);
+        juce::ColourGradient wallShade (palette.readout.darker (0.58f), wall.getX(), wall.getY(),
+                                        palette.readout.darker (0.26f), wall.getX(), wall.getBottom(), false);
+        wallShade.addColour (0.42f, palette.readout.darker (0.46f));
+        g.setGradientFill (wallShade);
+        g.fillRect (wall);
+        g.setColour (palette.readout.darker (0.66f).withAlpha (0.75f));
+        g.drawLine (wall.getX() + wall.getWidth() * 0.18f, wall.getBottom() - 0.5f,
+                    wall.getRight() - wall.getWidth() * 0.18f, wall.getBottom() - 0.5f, 0.8f);
+        g.restoreState();
+    }
+
     g.setColour (palette.border.withAlpha (0.9f));
     g.drawRoundedRectangle (bounds, bounds.getHeight() * 0.5f, 1.0f);
 
@@ -1624,7 +1670,9 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     const auto labelBand = bounds.withHeight (labelHeight);
     // The groove is inset deeper than before because the body is now a full
     // capsule: at its rounded bottom the silhouette pulls in fast, and a
-    // groove that ran to the old 4 px inset would paint past the arc.
+    // groove that ran to the old 4 px inset would paint past the arc. Its own
+    // inset is deeper than the wall's, so the front wall drawn along the bottom
+    // of the body can never cover it.
     const auto track = bounds.withTrimmedTop (labelHeight)
                             .withTrimmedLeft (7.0f).withTrimmedRight (7.0f)
                             .withTrimmedBottom (juce::jmax (2.0f, bounds.getHeight() * 0.14f));
@@ -2441,7 +2489,7 @@ void FirstAudioProcessorEditor::MixBar::paint (juce::Graphics& g)
     g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
     g.drawText ("SATURATION MIX", heading.reduced (1.0f, 0.0f),
                 juce::Justification::centredLeft, false);
-g.setColour (total > 0.005f ? palette.readout.withAlpha (0.85f) : palette.accent);
+    g.setColour (total > 0.005f ? palette.readout.withAlpha (0.85f) : palette.accent);
     g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
     g.drawText ("AMOUNT " + juce::String (juce::roundToInt (total * 100.0f)) + " %",
                 heading.reduced (1.0f, 0.0f), juce::Justification::centredRight, false);
@@ -5991,7 +6039,10 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     // on the panel's own size: the viewer stands over the CENTRE of whatever
     // the panel currently is, so the same drawing code answers "how edge-on is
     // this knob" correctly at the minimum window size and at four times it.
-    customLookAndFeel.setPanelCamera (getLocalBounds().toFloat());
+    // The panel ITSELF, not a rectangle: the L&F converts it into the same
+    // top-level space every control is measured in, which is what it needs to
+    // know where each control stands relative to the viewer.
+    customLookAndFeel.setPanelCamera (*this);
     drawPanel (g, layout.header, palette, 5.0f);
     drawPanel (g, layout.deck, palette, 5.0f);
     drawPanel (g, layout.controls, palette, 5.0f);
@@ -6101,11 +6152,17 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     // header switches printed over an empty badge plate - the user saw controls
     // on a design that had lost its text. The design now lives with its text
     // again, on a row nothing else occupies: the pill cannot be collided with.
+    // The pill is the header grid's own width - four columns and three gaps,
+    // less the 18 px the lamp takes - read from the SAME constants resized()
+    // places the cells with (see PluginEditor.h). The first pass left a second
+    // copy of the arithmetic here with the old 92 px cell in it, so the pill ran
+    // 72 px wide of its band and sat off to the left of the statusLabel it wraps.
+    constexpr int headerGridWidth = headerColumnCount * headerColumnWidth
+                                  + (headerColumnCount - 1) * headerColumnGap;
     const auto statusPill = juce::Rectangle<float> (
-        static_cast<float> (layout.header.getRight()
-                                - (4 * 92 + 3 * 6)),
+        static_cast<float> (layout.header.getRight() - headerGridWidth),
         static_cast<float> (layout.header.getY() + 62),
-        static_cast<float> (4 * 92 + 3 * 6 - 18), 18.0f);
+        static_cast<float> (headerGridWidth - 18), 18.0f);
     g.setColour (palette.raised.darker (0.16f));
     g.fillRoundedRectangle (statusPill, 4.0f);
 
@@ -6433,7 +6490,7 @@ void FirstAudioProcessorEditor::timerCallback()
             shares = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
         }
 
-mixBar.setShares (shares, juce::jlimit (0.0f, 1.0f, shareSum));
+        mixBar.setShares (shares, juce::jlimit (0.0f, 1.0f, shareSum));
     }
 
     const auto reduction = telemetry.inputGainReductionDb + telemetry.outputGainReductionDb;
@@ -6867,12 +6924,17 @@ void FirstAudioProcessorEditor::resized()
     //  under it in paint(), lamp at its left end, nothing else ever placed
     //  there.
     //
-    //  Clearance at the 780 px minimum: the grid is 386 px wide (4 x 92 + 3 x 6)
-    //  and starts at header.right - 386 = x + 366 on a 780 panel, clearing the
-    //  title block (ends x + 346) by 20 px at the tightest size and more above it.
+    //  Clearance at the 780 px minimum: the grid is 314 px wide (4 x 74 + 3 x 6)
+    //  and starts at header.right - 314 = x + 438 on a 780 panel, clearing the
+    //  title block (ends x + 346) by 92 px at the tightest size and more above it.
     // ------------------------------------------------------------------------------
     const auto headerRight = layout.header.getRight();
-    constexpr int headerGap = 6;
+    // The grid's own geometry - the column count, the cell width and the gap -
+    // is declared ON THE CLASS (see PluginEditor.h), because paint() draws the
+    // status pill on the same arithmetic and a second copy of it is exactly how
+    // the pill kept the old 92 px cell and overhung its own band by 72 px.
+    constexpr int headerGap = headerColumnGap;
+    constexpr int headerColumns = headerColumnCount;
     constexpr int headerSwitchHeight = 22;
     // 74 rather than 92. The grid's cells are sized by the widest caption in
     // them (POLARITY, AUTO GAIN) plus room for the lamp, and 92 was sizing every
@@ -6882,8 +6944,7 @@ void FirstAudioProcessorEditor::resized()
     // rocker draws three stacked things inside it (caption, groove, thumb) and
     // they are already sharing that height three ways; the WIDTH was the one
     // dimension with slack in it.
-    constexpr int headerColumnWidth = 74;
-    constexpr int headerColumns = 4;
+    // (The width itself lives on the class now: see headerColumnWidth.)
     const auto headerRowOneY = layout.header.getY() + 10;
     const auto headerRowTwoY = layout.header.getY() + 36;
     const auto headerRowThreeY = layout.header.getY() + 62;
