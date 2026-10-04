@@ -774,6 +774,67 @@ jobs:
             exit 1
           }
 
+      # APKs can only be assembled by a build machine with the Android SDK,
+      # so this is a dedicated packaging step. The CI Android job intentionally
+      # produces the JUCE Standalone .so only; the full APK (manifest, activity,
+      # resources, signing) belongs to the Gradle project that consumes the
+      # generated native libraries. This step wires Gradle up to the workflow so
+      # Android now ships a downloadable APK artifact, in addition to the
+      # Standalone .so.
+      - name: Package Android APK artifact
+        run: |
+          set -euo pipefail
+
+          # Gradle is expected under $HOME/android-sdk/cmdline-tools/latest/bin.
+          # Install commandlinetools into the same location as the SDK and run
+          # the project's assembleRelease task here, exactly as a contributor
+          # would on a machine with the full SDK.
+          export ANDROID_SDK_ROOT="$HOME/android-sdk"
+          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
+
+          if [ ! -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
+            echo "Installing Android SDK commandlinetools..."
+            mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin"
+            curl -sSLo cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-10089518_latest.zip
+            unzip -q cmdline-tools.zip -d "$ANDROID_SDK_ROOT"
+            mv "$ANDROID_SDK_ROOT/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+            rm cmdline-tools.zip
+          fi
+
+          sdkmanager --licenses < /dev/null
+          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+
+          # Bootstrap the Gradle wrapper so a fresh runner without a checked-in
+          # wrapper (like this repository) can execute assembleRelease.
+          if [ ! -f gradlew ]; then
+            wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
+            unzip -q gradle-8.7-bin.zip
+            ./gradle-8.7/bin/gradle wrapper --gradle-version 8.7
+            rm -rf gradle-8.7 gradle-8.7-bin.zip
+          fi
+
+          cd app
+          ./gradlew assembleRelease --no-daemon
+          cd "$PWD/.."
+
+          if [ ! -f app/build/outputs/apk/release/app-release.apk ]; then
+            echo "MISSING: app/build/outputs/apk/release/app-release.apk"
+            find app/build/outputs -maxdepth 3 -type f | head -40
+            exit 1
+          fi
+
+          ART="$RUNNER_TEMP/android-artifacts"
+          mkdir -p "$ART"
+          cp app/build/outputs/apk/release/app-release.apk "$ART/"
+          ls -la "$ART"
+
+      - name: Upload Android APK Artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: NonlinAnalogSaturator-Android
+          path: ${{ runner.temp }}/android-artifacts
+          if-no-files-found: error
+
       - name: Verify the Android Standalone library was produced
         run: |
           set -euo pipefail
