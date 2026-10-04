@@ -3701,6 +3701,49 @@ struct GlueCompressor
 };
 
 //==============================================================================
+/** A conventional feed-forward compressor for the finished signal. It is
+    deliberately separate from GlueCompressor, including its detector state. */
+struct StandardCompressor
+{
+    float envelope = 0.0f;
+    float gain = 1.0f;
+
+    void reset() noexcept { envelope = 0.0f; gain = 1.0f; }
+
+    float process (float input, float sampleRate, float thresholdDb, float ratio,
+                   float attackMs, float releaseMs, float kneeDb, float makeupDb) noexcept
+    {
+        const auto detector = input * input;
+        const auto coefficientForMs = [sampleRate] (float milliseconds)
+        {
+            const auto seconds = juce::jmax (0.001f, milliseconds * 0.001f);
+            return 1.0f - std::exp (-1.0f / (juce::jmax (1.0f, sampleRate) * seconds));
+        };
+        const auto detectorCoefficient = detector > envelope
+            ? coefficientForMs (attackMs) : coefficientForMs (releaseMs);
+        envelope += (detector - envelope) * detectorCoefficient;
+        const auto envelopeDb = juce::Decibels::gainToDecibels (std::sqrt (juce::jmax (0.0f, envelope)), -100.0f);
+        const auto safeRatio = juce::jmax (1.0f, ratio);
+        const auto halfKnee = juce::jmax (0.01f, kneeDb * 0.5f);
+        const auto over = envelopeDb - thresholdDb;
+        float reductionDb = 0.0f;
+        if (over > halfKnee)
+            reductionDb = -(1.0f - 1.0f / safeRatio) * over;
+        else if (over > -halfKnee)
+        {
+            const auto progress = over + halfKnee;
+            reductionDb = -(1.0f - 1.0f / safeRatio) * progress * progress
+                        / (4.0f * halfKnee);
+        }
+        const auto targetGain = juce::Decibels::decibelsToGain (reductionDb + makeupDb);
+        const auto gainCoefficient = targetGain < gain
+            ? coefficientForMs (attackMs) : coefficientForMs (releaseMs);
+        gain += (targetGain - gain) * gainCoefficient;
+        return input * gain;
+    }
+};
+
+//==============================================================================
 /**
     Together-loudness (LUFS) measurement, following the ITU-R BS.1770 / EBU R128
     weightings: a high-shelf and a high-pass, then mean-square over the measurement
@@ -5066,6 +5109,15 @@ private:
     // editor, but a parameter like every other setting so it survives in a
     // session and can be automated.
     std::atomic<float>* uiSoundsParam = nullptr;
+    std::atomic<float>* tuningKeyParam = nullptr;
+    std::atomic<float>* autoTuneParam = nullptr;
+    std::atomic<float>* autoTuneAmountParam = nullptr;
+    std::atomic<float>* compressorThresholdParam = nullptr;
+    std::atomic<float>* compressorRatioParam = nullptr;
+    std::atomic<float>* compressorAttackParam = nullptr;
+    std::atomic<float>* compressorReleaseParam = nullptr;
+    std::atomic<float>* compressorMakeupParam = nullptr;
+    std::atomic<float>* compressorMixParam = nullptr;
     // The seven SOURCE knobs - the shares of the six saturation principles.
     // (The old blend/shape sweep pair was removed: the user asked for the
     // machines to be dialled by name.)
@@ -5444,6 +5496,9 @@ private:
     GlueCompressor outputCompressor;
     std::array<GlueCompressor, 2> inputCompressorChannels;
     std::array<GlueCompressor, 2> outputCompressorChannels;
+    std::array<StandardCompressor, 2> standardCompressors;
+    std::array<float, 2> autoTunePhase { 0.0f, 0.0f };
+    std::array<float, 2> autoTuneFrequency { 440.0f, 440.0f };
 
     // Measures the harmonics the tape shaper is actually producing, separating even from
     // odd. This is the observable signature of the analogue character and drives the

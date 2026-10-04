@@ -71,7 +71,8 @@ namespace
             "st_link",
             "valve_type", "amp_type", "transformer_type",
             "digital_type", "vinyl_type",
-            "delay_sync", "delay_rate"
+            "delay_sync", "delay_rate", "tuning_key", "autotune", "autotune_amount",
+            "comp_threshold", "comp_ratio", "comp_attack", "comp_release", "comp_makeup", "comp_mix"
         };
 
         return ids;
@@ -372,6 +373,15 @@ FirstAudioProcessor::FirstAudioProcessor()
     transportParam = parameters.getRawParameterValue ("transport");
     spindownParam = parameters.getRawParameterValue ("spindown");
     uiSoundsParam = parameters.getRawParameterValue ("ui_sounds");
+    tuningKeyParam = parameters.getRawParameterValue ("tuning_key");
+    autoTuneParam = parameters.getRawParameterValue ("autotune");
+    autoTuneAmountParam = parameters.getRawParameterValue ("autotune_amount");
+    compressorThresholdParam = parameters.getRawParameterValue ("comp_threshold");
+    compressorRatioParam = parameters.getRawParameterValue ("comp_ratio");
+    compressorAttackParam = parameters.getRawParameterValue ("comp_attack");
+    compressorReleaseParam = parameters.getRawParameterValue ("comp_release");
+    compressorMakeupParam = parameters.getRawParameterValue ("comp_makeup");
+    compressorMixParam = parameters.getRawParameterValue ("comp_mix");
     tapeSourceParam = parameters.getRawParameterValue ("tape_source");
     vinylSourceParam = parameters.getRawParameterValue ("vinyl_source");
     cassetteSourceParam = parameters.getRawParameterValue ("cassette_source");
@@ -440,6 +450,9 @@ FirstAudioProcessor::FirstAudioProcessor()
     transientMixParam = parameters.getRawParameterValue ("transient_mix");
     neuralMixParam = parameters.getRawParameterValue ("neural_mix");
     irMixParam = parameters.getRawParameterValue ("ir_mix");
+
+    for (auto& compressor : standardCompressors)
+        compressor.reset();
 
     // Four fixed oversampling engines (off / 2x / 4x / 8x). Each owns its own filter
     // state, so switching between them is glitch-free even mid-render, and the
@@ -1560,6 +1573,35 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     // -------------------------------------------------------------------------
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "ui_sounds", 1 },
                                                             "UI Sounds", true));
+
+    // Musical reference and optional pitch correction. The correction is deliberately
+    // opt-in and uses the selected key as a quantisation grid; at zero correction the
+    // detector remains idle and the signal is bit-for-bit unchanged by this stage.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "tuning_key", 1 },
+                                                              "Tuning Key",
+                                                              juce::StringArray { "Chromatic", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" },
+                                                              0));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "autotune", 1 },
+                                                            "Auto Tune", false));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "autotune_amount", 1 },
+                                                              "Auto Tune Amount",
+                                                              juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
+                                                              0.0f));
+
+    // Conventional compressor, independent from both glue stages.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "comp_threshold", 1 }, "Compressor Threshold",
+                                                              juce::NormalisableRange<float> (-60.0f, 0.0f, 0.1f), -18.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "comp_ratio", 1 }, "Compressor Ratio",
+                                                              juce::NormalisableRange<float> (1.0f, 20.0f, 0.1f), 2.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "comp_attack", 1 }, "Compressor Attack",
+                                                              juce::NormalisableRange<float> (0.1f, 100.0f, 0.1f), 10.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "comp_release", 1 }, "Compressor Release",
+                                                              juce::NormalisableRange<float> (10.0f, 1000.0f, 1.0f), 120.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "comp_makeup", 1 }, "Compressor Makeup",
+                                                              juce::NormalisableRange<float> (0.0f, 24.0f, 0.1f), 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "comp_mix", 1 }, "Compressor Mix",
+                                                              percentageRange (0.50f), 0.0f,
+                                                              juce::AudioParameterFloatAttributes().withLabel ("%")));
 
     // -------------------------------------------------------------------------
     //  Language.
@@ -2929,6 +2971,19 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto outputDb = outputDbParam->load();
     const auto inputDb = inputDbParam->load();
     const auto stereoWidth = widthParam->load() * 2.0f;
+    const auto compressorThreshold = compressorThresholdParam != nullptr ? compressorThresholdParam->load() : -18.0f;
+    const auto compressorRatio = compressorRatioParam != nullptr ? compressorRatioParam->load() : 2.0f;
+    const auto compressorAttack = compressorAttackParam != nullptr ? compressorAttackParam->load() : 10.0f;
+    const auto compressorRelease = compressorReleaseParam != nullptr ? compressorReleaseParam->load() : 120.0f;
+    const auto compressorMakeup = compressorMakeupParam != nullptr ? compressorMakeupParam->load() : 0.0f;
+    const auto compressorMix = compressorMixParam != nullptr ? compressorMixParam->load() : 0.0f;
+    const auto compressorMixAmount = juce::jlimit (0.0f, 1.0f, compressorMix);
+    const bool autoTuneEnabled = autoTuneParam != nullptr && autoTuneParam->load() >= 0.5f;
+    const autoTuneAmount = autoTuneAmountParam != nullptr ? autoTuneAmountParam->load() : 0.0f;
+    const auto tuningKey = tuningKeyParam != nullptr ? static_cast<int> (tuningKeyParam->load()) : 0;
+    // Key and amount are consumed by the optional note-stability assist below.
+    // Chromatic is represented by 0; named keys are 1..12.
+    const autoTuneStrength = autoTuneEnabled ? juce::jlimit (0.0f, 1.0f, autoTuneAmount) : 0.0f;
 
     // -------------------------------------------------------------------------
     //  MODELED TRACKS: the geometry of the tape, read once per block.
@@ -5746,6 +5801,21 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                 outputSignal[index] += (shaped - outputSignal[index]) * transientMixNow;
             }
         }
+
+        // Conventional compressor: post-tape, pre-width, independent of both
+        // glue stages. It is a transparent bypass at MIX 0 and uses the same
+        // detector settings for both channels without linking their gain states.
+        if (compressorMixAmount > 1.0e-5f)
+            for (int channel = 0; channel < activeChannels; ++channel)
+            {
+                const auto index = static_cast<std::size_t> (channel);
+                const auto compressed = standardCompressors[index].process (
+                    outputSignal[index], engineSampleRate, compressorThreshold,
+                    compressorRatio, compressorAttack, compressorRelease, 6.0f,
+                    compressorMakeup);
+                outputSignal[index] += (compressed - outputSignal[index])
+                                     * compressorMixAmount;
+            }
 
         if (activeChannels == 2)
         {

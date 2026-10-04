@@ -3514,6 +3514,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     languageBox.addItem (xlat ("LANGUAGE_ENGLISH"), 1);
     languageBox.addItem (xlat ("LANGUAGE_UKRAINIAN"), 2);
     languageBox.setLookAndFeel (&customLookAndFeel);
+    languageLabel.setVisible (false);
+    languageBox.setVisible (false);
 
     languageAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "language", languageBox);
@@ -3543,6 +3545,29 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
                 true, juce::Justification::centredLeft);
     addAndMakeVisible (languageLabel);
     addAndMakeVisible (languageBox);
+
+    // SETUP musical controls: key selection is independent of the UI language,
+    // while autotune remains opt-in and its amount is continuously automatable.
+    tuningKeyBox.addItemList (juce::StringArray { "Chromatic", "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 1);
+    tuningKeyBox.setLookAndFeel (&inlineLookAndFeel);
+    tuningKeyAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "tuning_key", tuningKeyBox);
+    autoTuneButton.setLookAndFeel (&inlineLookAndFeel);
+    autoTuneAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (audioProcessor.parameters, "autotune", autoTuneButton);
+    autoTuneAmountSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    autoTuneAmountSlider.setRange (0.0, 1.0, 0.001);
+    autoTuneAmountSlider.setTextValueSuffix (" %");
+    autoTuneAmountSlider.setLookAndFeel (&customLookAndFeel);
+    autoTuneAmountAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>
+        (audioProcessor.parameters, "autotune_amount", autoTuneAmountSlider);
+    styleLabel (tuningKeyLabel, "KEY", 9.0f, paletteFor (false).secondary, true, juce::Justification::left);
+    styleLabel (autoTuneAmountLabel, "TUNE AMOUNT", 9.0f, paletteFor (false).secondary, true, juce::Justification::left);
+    addAndMakeVisible (tuningKeyLabel);
+    addAndMakeVisible (tuningKeyBox);
+    addAndMakeVisible (autoTuneButton);
+    addAndMakeVisible (autoTuneAmountLabel);
+    addAndMakeVisible (autoTuneAmountSlider);
 
     // Tooltips appear after a third of a second of hover: quick enough to be
     // discoverable, slow enough not to flash while the user sweeps the panel.
@@ -7827,6 +7852,13 @@ void FirstAudioProcessorEditor::resized()
     outputEqLpButton.setVisible (outEqTab);
     oversamplingLabel.setVisible (settingsTab);
     oversamplingBox.setVisible (settingsTab);
+    languageLabel.setVisible (settingsTab);
+    languageBox.setVisible (settingsTab);
+    tuningKeyLabel.setVisible (settingsTab);
+    tuningKeyBox.setVisible (settingsTab);
+    autoTuneButton.setVisible (settingsTab);
+    autoTuneAmountLabel.setVisible (settingsTab);
+    autoTuneAmountSlider.setVisible (settingsTab);
     glButton.setVisible (settingsTab);
     glLabel.setVisible (settingsTab);
     // The UI-sounds switch is on the same page as GL and OVERSAMPLING - it is the
@@ -7883,6 +7915,12 @@ void FirstAudioProcessorEditor::resized()
         // SETTINGS: GL and OVERSAMPLING, two cells on one row.
         placeDeckSwitch (glLabel, glButton, 0, 1, "GL");
         placeDeckSwitch (oversamplingLabel, oversamplingBox, 1, 1, "OVER");
+        placeDeckSwitch (tuningKeyLabel, tuningKeyBox, 2, 1, "KEY");
+        languageLabel.setBounds (grid.getX() + 5, memberRowY + 56, cellWidth - 10, 17);
+        languageBox.setBounds (grid.getX() + 12, memberRowY + 76, cellWidth - 24, 30);
+        autoTuneButton.setBounds (grid.getX() + 12, memberRowY + 112, cellWidth - 24, 30);
+        autoTuneAmountLabel.setBounds (grid.getX() + 2 * cellWidth + 5, memberRowY + 56, cellWidth - 10, 17);
+        autoTuneAmountSlider.setBounds (grid.getX() + 2 * cellWidth + 12, memberRowY + 76, cellWidth - 24, 22);
 
         // UI SOUNDS takes the third cell of the same row. It is the same KIND of
         // switch as GL and OVERSAMPLING - an engine-level preference rather than

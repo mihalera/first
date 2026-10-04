@@ -585,6 +585,14 @@ private:
     juce::Label languageLabel { {}, "LANGUAGE" };
     juce::ComboBox languageBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> languageAttachment;
+    juce::ComboBox tuningKeyBox;
+    juce::ToggleButton autoTuneButton { "AUTO TUNE" };
+    juce::Slider autoTuneAmountSlider;
+    juce::Label tuningKeyLabel;
+    juce::Label autoTuneAmountLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tuningKeyAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoTuneAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> autoTuneAmountAttachment;
 
     std::array<juce::Slider, controlCount> controls;
     std::array<juce::Label, controlCount> controlLabels;
