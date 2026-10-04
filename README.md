@@ -885,7 +885,7 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
 ## Project type
 
 - Audio plugin: **VST3**, **Audio Unit** and **AUv3**
-- Framework: JUCE 9.0.2 (pinned as a git submodule)
+- Framework: JUCE 9.0.3 (pinned as a git submodule)
 - Target platforms: Windows (x64), macOS (universal: arm64 + x86_64), Linux (x64, VST3), Android (arm64-v8a, Standalone)
 - Build system: **CMake** (3.22+), driving MSVC on Windows and Xcode on macOS
 
@@ -896,7 +896,7 @@ one can build.
 
 ## Getting the source
 
-JUCE is a **git submodule pinned at 9.0.2**, so it must be checked out along with the
+JUCE is a **git submodule pinned at 9.0.3**, so it must be checked out along with the
 project. A plain clone leaves `JUCE/` empty and every build fails:
 
 ```sh
@@ -1238,7 +1238,7 @@ installs exactly this set.
 ```
 CMakeLists.txt   the build, and the only place build settings live
 Source/          the plugin: PluginProcessor, PluginEditor, and DSP
-JUCE/            JUCE 9.0.2, pinned as a git submodule
+JUCE/            JUCE 9.0.3, pinned as a git submodule
 .github/         CI: builds VST3 on Windows, VST3 + AU + AUv3 on macOS
 ```
 

@@ -218,7 +218,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v4
         with:
-          # JUCE is a submodule pinned at 9.0.2. Recursive checkout gives exactly
+          # JUCE is a submodule pinned at 9.0.3. Recursive checkout gives exactly
           # the same source that the macOS job builds, so neither platform can
           # drift onto a different JUCE revision.
           submodules: recursive
