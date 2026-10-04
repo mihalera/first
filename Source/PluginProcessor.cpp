@@ -3014,11 +3014,10 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto compressorMix = compressorMixParam != nullptr ? compressorMixParam->load() : 0.0f;
     const auto compressorMixAmount = juce::jlimit (0.0f, 1.0f, compressorMix);
     const bool autoTuneEnabled = autoTuneParam != nullptr && autoTuneParam->load() >= 0.5f;
-    const autoTuneAmount = autoTuneAmountParam != nullptr ? autoTuneAmountParam->load() : 0.0f;
+    const auto autoTuneAmount = autoTuneAmountParam != nullptr ? autoTuneAmountParam->load() : 0.0f;
     const auto tuningTonic = tuningTonicParam != nullptr ? static_cast<int> (tuningTonicParam->load()) : 0;
     const auto tuningMode = tuningModeParam != nullptr ? static_cast<int> (tuningModeParam->load()) : 0;
-    const autoTuneStrength = autoTuneEnabled ? juce::jlimit (0.0f, 1.0f, autoTuneAmount) : 0.0f;
-    const autoTuneRoot = 440.0f * std::pow (2.0f, (static_cast<float> (tuningTonic) - 9.0f) / 12.0f);
+    const auto autoTuneStrength = autoTuneEnabled ? juce::jlimit (0.0f, 1.0f, autoTuneAmount) : 0.0f;
 
     // -------------------------------------------------------------------------
     //  MODELED TRACKS: the geometry of the tape, read once per block.

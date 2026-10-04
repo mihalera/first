@@ -1002,8 +1002,12 @@ j37::render::NativeRenderer::Config TapeScene::nativeRendererConfig() const
     // coordinate system, which is what child HWNDs and Metal layers expect.
     if (auto* peer = getPeer())
     {
-        const auto globalOrigin = localPointToGlobal ({ 0, 0 });
-        const auto peerOrigin = peer->getComponent().localPointToGlobal ({ 0, 0 });
+        // The argument is spelled out: JUCE declares localPointToGlobal for both
+        // Point<int> and Point<float>, and a brace-initialised { 0, 0 } is
+        // convertible to each, so every compiler rejects it as ambiguous. The
+        // Config fields are ints, so the int overload is the one meant here.
+        const auto globalOrigin = localPointToGlobal (juce::Point<int> { 0, 0 });
+        const auto peerOrigin = peer->getComponent().localPointToGlobal (juce::Point<int> { 0, 0 });
         config.positionX = globalOrigin.x - peerOrigin.x;
         config.positionY = globalOrigin.y - peerOrigin.y;
     }
