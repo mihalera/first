@@ -1573,7 +1573,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     //  that shapes the sound.
     // -------------------------------------------------------------------------
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "ui_sounds", 1 },
-                                                            "UI Sounds", true));
+                                                            "UI Sounds", false));
 
     // Musical reference and optional pitch correction. The correction is deliberately
     // opt-in and uses the selected key as a quantisation grid; at zero correction the
