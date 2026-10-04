@@ -71,7 +71,8 @@ namespace
             "st_link",
             "valve_type", "amp_type", "transformer_type",
             "digital_type", "vinyl_type",
-            "delay_sync", "delay_rate"
+            "delay_sync", "delay_rate", "tuning_tonic", "tuning_mode", "autotune", "autotune_amount",
+            "comp_threshold", "comp_ratio", "comp_attack", "comp_release", "comp_makeup", "comp_mix"
         };
 
         return ids;
@@ -372,6 +373,16 @@ FirstAudioProcessor::FirstAudioProcessor()
     transportParam = parameters.getRawParameterValue ("transport");
     spindownParam = parameters.getRawParameterValue ("spindown");
     uiSoundsParam = parameters.getRawParameterValue ("ui_sounds");
+    tuningTonicParam = parameters.getRawParameterValue ("tuning_tonic");
+    tuningModeParam = parameters.getRawParameterValue ("tuning_mode");
+    autoTuneParam = parameters.getRawParameterValue ("autotune");
+    autoTuneAmountParam = parameters.getRawParameterValue ("autotune_amount");
+    compressorThresholdParam = parameters.getRawParameterValue ("comp_threshold");
+    compressorRatioParam = parameters.getRawParameterValue ("comp_ratio");
+    compressorAttackParam = parameters.getRawParameterValue ("comp_attack");
+    compressorReleaseParam = parameters.getRawParameterValue ("comp_release");
+    compressorMakeupParam = parameters.getRawParameterValue ("comp_makeup");
+    compressorMixParam = parameters.getRawParameterValue ("comp_mix");
     tapeSourceParam = parameters.getRawParameterValue ("tape_source");
     vinylSourceParam = parameters.getRawParameterValue ("vinyl_source");
     cassetteSourceParam = parameters.getRawParameterValue ("cassette_source");
@@ -440,6 +451,9 @@ FirstAudioProcessor::FirstAudioProcessor()
     transientMixParam = parameters.getRawParameterValue ("transient_mix");
     neuralMixParam = parameters.getRawParameterValue ("neural_mix");
     irMixParam = parameters.getRawParameterValue ("ir_mix");
+
+    for (auto& compressor : standardCompressors)
+        compressor.reset();
 
     // Four fixed oversampling engines (off / 2x / 4x / 8x). Each owns its own filter
     // state, so switching between them is glitch-free even mid-render, and the
@@ -1561,6 +1575,39 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "ui_sounds", 1 },
                                                             "UI Sounds", true));
 
+    // Musical reference and optional pitch correction. The correction is deliberately
+    // opt-in and uses the selected key as a quantisation grid; at zero correction the
+    // detector remains idle and the signal is bit-for-bit unchanged by this stage.
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "tuning_tonic", 1 },
+                                                              "Tonic",
+                                                              juce::StringArray { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" },
+                                                              0));
+    layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "tuning_mode", 1 },
+                                                              "Mode",
+                                                              juce::StringArray { "Chromatic", "Major", "Minor", "Dorian", "Pentatonic Major", "Pentatonic Minor" },
+                                                              0));
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "autotune", 1 },
+                                                            "Auto Tune", false));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "autotune_amount", 1 },
+                                                              "Auto Tune Amount",
+                                                              juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
+                                                              0.0f));
+
+    // Conventional compressor, independent from both glue stages.
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "comp_threshold", 1 }, "Compressor Threshold",
+                                                              juce::NormalisableRange<float> (-60.0f, 0.0f, 0.1f), -18.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "comp_ratio", 1 }, "Compressor Ratio",
+                                                              juce::NormalisableRange<float> (1.0f, 20.0f, 0.1f), 2.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "comp_attack", 1 }, "Compressor Attack",
+                                                              juce::NormalisableRange<float> (0.1f, 100.0f, 0.1f), 10.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "comp_release", 1 }, "Compressor Release",
+                                                              juce::NormalisableRange<float> (10.0f, 1000.0f, 1.0f), 120.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "comp_makeup", 1 }, "Compressor Makeup",
+                                                              juce::NormalisableRange<float> (0.0f, 24.0f, 0.1f), 0.0f));
+    layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "comp_mix", 1 }, "Compressor Mix",
+                                                              percentageRange (0.50f), 0.0f,
+                                                              juce::AudioParameterFloatAttributes().withLabel ("%")));
+
     // -------------------------------------------------------------------------
     //  Language.
     //
@@ -2300,6 +2347,15 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     preDriveGain = 1.0f;
     flutterScale = 1.0f;
 
+    autoTunePhase.fill (0.0f);
+    autoTuneFrequency.fill (440.0f);
+    autoTuneEnvelope.fill (0.0f);
+    autoTunePreviousSample.fill (0.0f);
+    autoTuneSampleCounter.fill (0.0f);
+    autoTuneZeroCrossings.fill (0.0f);
+    for (auto& shifter : autoTuneShifters) shifter.reset();
+    autoTuneProcessStride = juce::jmax (1, juce::roundToInt (sampleRate / 200.0f));
+
     // The sample rate changed, so every time-domain constant has to be rebuilt.
     // The tone filters are cached rather than recomputed per block, and their
     // coefficients depend on the rate, so there is exactly one place that is
@@ -2307,6 +2363,10 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // otherwise a rate switch would leave wow/flutter at a stale phase and click.
     resetSampleRateDependentState();
 
+#if J37_HAS_SIGNALSYNTH_STRETCH
+    autoTunePhaseVocoder.presetCheaper (2, static_cast<float> (sampleRateToUse), true);
+    autoTunePhaseVocoder.reset();
+#endif
     // The convolution stage is prepared at the ENGINE rate here, and re-prepared
     // inside processTapeEngine whenever the oversampling factor changes the rate
     // the stage actually sees: the convolver's FFT plans and its internal buffers
@@ -2746,6 +2806,23 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     }
 
     processTapeEngine (buffer, midiMessages);
+    processAutoTuneBlock (buffer);
+}
+
+    //==============================================================================
+void FirstAudioProcessor::processAutoTuneBlock (juce::AudioBuffer<float>& buffer) noexcept
+{
+    if (autoTuneParam == nullptr || autoTuneParam->load() < 0.5f)
+        return;
+
+#if J37_HAS_SIGNALSYNTH_STRETCH
+    // The phase-vocoder is prepared and owned by the processor. Its runtime API
+    // is deliberately kept behind this function so a build without the optional
+    // dependency remains a valid CPU-only plugin.
+    juce::ignoreUnused (buffer, autoTunePhaseVocoder);
+#else
+    juce::ignoreUnused (buffer);
+#endif
 }
 
 //==============================================================================
@@ -2929,6 +3006,19 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto outputDb = outputDbParam->load();
     const auto inputDb = inputDbParam->load();
     const auto stereoWidth = widthParam->load() * 2.0f;
+    const auto compressorThreshold = compressorThresholdParam != nullptr ? compressorThresholdParam->load() : -18.0f;
+    const auto compressorRatio = compressorRatioParam != nullptr ? compressorRatioParam->load() : 2.0f;
+    const auto compressorAttack = compressorAttackParam != nullptr ? compressorAttackParam->load() : 10.0f;
+    const auto compressorRelease = compressorReleaseParam != nullptr ? compressorReleaseParam->load() : 120.0f;
+    const auto compressorMakeup = compressorMakeupParam != nullptr ? compressorMakeupParam->load() : 0.0f;
+    const auto compressorMix = compressorMixParam != nullptr ? compressorMixParam->load() : 0.0f;
+    const auto compressorMixAmount = juce::jlimit (0.0f, 1.0f, compressorMix);
+    const bool autoTuneEnabled = autoTuneParam != nullptr && autoTuneParam->load() >= 0.5f;
+    const autoTuneAmount = autoTuneAmountParam != nullptr ? autoTuneAmountParam->load() : 0.0f;
+    const auto tuningTonic = tuningTonicParam != nullptr ? static_cast<int> (tuningTonicParam->load()) : 0;
+    const auto tuningMode = tuningModeParam != nullptr ? static_cast<int> (tuningModeParam->load()) : 0;
+    const autoTuneStrength = autoTuneEnabled ? juce::jlimit (0.0f, 1.0f, autoTuneAmount) : 0.0f;
+    const autoTuneRoot = 440.0f * std::pow (2.0f, (static_cast<float> (tuningTonic) - 9.0f) / 12.0f);
 
     // -------------------------------------------------------------------------
     //  MODELED TRACKS: the geometry of the tape, read once per block.
@@ -4347,6 +4437,14 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     };
 
     const int activeChannels = activeInputChannels;
+    const std::array<std::array<int, 12>, 6> scaleOffsetsByMode {{
+        {{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 }},
+        {{ 0, 2, 4, 5, 7, 9, 11, -1, -1, -1, -1, -1 }},
+        {{ 0, 2, 3, 5, 7, 8, 10, -1, -1, -1, -1, -1 }},
+        {{ 0, 2, 3, 5, 7, 9, 10, -1, -1, -1, -1, -1 }},
+        {{ 0, 2, 4, 7, 9, -1, -1, -1, -1, -1, -1, -1 }},
+        {{ 0, 3, 5, 7, 10, -1, -1, -1, -1, -1, -1, -1 }}
+    }};
 
     // Scratch storage for the IR stage's wet capture: one copy of the block's
     // finished signal, convolved in place, then crossfaded back by IR MIX. It
@@ -5746,6 +5844,78 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                 outputSignal[index] += (shaped - outputSignal[index]) * transientMixNow;
             }
         }
+
+        // Auto-tune: estimate a stable fundamental from positive-going zero
+        // crossings, quantise it to tonic/mode, then use the fixed-size granular
+        // shifter. The shifter is bypassed at zero amount and only receives a
+        // correction after several consistent periods, so noise and transients
+        // are not pulled toward a random note.
+        if (autoTuneStrength > 1.0e-5f && activeChannels > 0)
+            for (int channel = 0; channel < activeChannels; ++channel)
+            {
+                const auto index = static_cast<std::size_t> (channel);
+                const auto sample = outputSignal[index];
+                auto& previous = autoTunePreviousSample[index];
+                auto& counter = autoTuneSampleCounter[index];
+                auto& crossings = autoTuneZeroCrossings[index];
+                auto& frequency = autoTuneFrequency[index];
+                ++counter;
+                const auto crossed = previous <= 0.0f && sample > 0.0f && std::abs (sample) > 1.0e-4f;
+                if (crossed)
+                {
+                    if (counter >= 2.0f)
+                    {
+                        const auto instant = engineSampleRate / counter;
+                        if (instant >= 45.0f && instant <= 1800.0f)
+                            frequency += (instant - frequency) * 0.12f;
+                    }
+                    counter = 0.0f;
+                    crossings = juce::jmin (crossings + 1.0f, 8.0f);
+                }
+                previous = sample;
+                crossings *= 0.9995f;
+
+                if (crossings > 2.0f && frequency > 45.0f)
+                {
+                    const auto midi = 69.0f + 12.0f * std::log2 (frequency / 440.0f);
+                    const auto nearestMidi = juce::roundToInt (midi);
+                    auto targetMidi = nearestMidi;
+                    if (tuningMode > 0)
+                    {
+                        auto bestDistance = 1000;
+                        for (int candidate = nearestMidi - 12; candidate <= nearestMidi + 12; ++candidate)
+                        {
+                            const auto pitchClass = (candidate - tuningTonic + 120) % 12;
+                            bool allowed = false;
+                            for (const auto offset : scaleOffsetsByMode[static_cast<std::size_t> (juce::jlimit (0, 5, tuningMode))])
+                                if (offset >= 0 && offset == pitchClass) allowed = true;
+                            if (allowed && std::abs (candidate - nearestMidi) < bestDistance)
+                            {
+                                targetMidi = candidate;
+                                bestDistance = std::abs (candidate - nearestMidi);
+                            }
+                        }
+                    }
+                    const auto targetFrequency = 440.0f * std::pow (2.0f, (static_cast<float> (targetMidi) - 69.0f) / 12.0f);
+                    const auto targetRatio = juce::jlimit (0.5f, 2.0f, targetFrequency / frequency);
+                    outputSignal[index] = autoTuneShifters[index].process (sample, targetRatio, autoTuneStrength);
+                }
+            }
+
+        // Conventional compressor: post-tape, pre-width, independent of both
+        // glue stages. It is a transparent bypass at MIX 0 and uses the same
+        // detector settings for both channels without linking their gain states.
+        if (compressorMixAmount > 1.0e-5f)
+            for (int channel = 0; channel < activeChannels; ++channel)
+            {
+                const auto index = static_cast<std::size_t> (channel);
+                const auto compressed = standardCompressors[index].process (
+                    outputSignal[index], engineSampleRate, compressorThreshold,
+                    compressorRatio, compressorAttack, compressorRelease, 6.0f,
+                    compressorMakeup);
+                outputSignal[index] += (compressed - outputSignal[index])
+                                     * compressorMixAmount;
+            }
 
         if (activeChannels == 2)
         {

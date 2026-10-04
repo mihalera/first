@@ -795,9 +795,8 @@ jobs:
           if [ ! -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
             echo "Installing Android SDK commandlinetools..."
             mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin"
-            curl -fsSL --max-time 120 -o cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-11076608_latest.zip || { echo "Failed to download commandlinetools - use the latest commandlinetools-linux zip from https://developer.android.com/studio#cmdline-tools"; exit 1; }
+            curl -sSLo cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-10089518_latest.zip
             unzip -q cmdline-tools.zip -d "$ANDROID_SDK_ROOT"
-            rm cmdline-tools.zip
             mv "$ANDROID_SDK_ROOT/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
             rm cmdline-tools.zip
           fi

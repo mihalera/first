@@ -208,15 +208,36 @@ public:
         float lean = 0.0f;          ///< -1 left of centre, +1 right: which way this control is turned to the light
     };
 
-    /** Where the viewer is standing. Called from resized() with the whole editor. */
-    void setPanelCamera (juce::Rectangle<float> panelBounds) noexcept;
+    /** Where the viewer is standing. Called from paint() with the whole editor.
 
-    Perspective perspectiveFor (juce::Rectangle<float> bounds) const noexcept;
+        The panel's rectangle is stored in the space of its TOP-LEVEL component,
+        which is the one space every control can be measured in: a control's own
+        bounds always start at (0, 0), so they cannot say where it stands on the
+        panel. See perspectiveFor().
+    */
+    void setPanelCamera (const juce::Component& panel) noexcept;
+
+    /** What one control looks like from the camera.
+
+        @param bounds   the control's rectangle, in the CONTROL's own coordinates
+        @param control  the control being drawn - its place in the component tree
+                        is what locates it on the panel, never its own size
+    */
+    Perspective perspectiveFor (juce::Rectangle<float> bounds,
+                                const juce::Component& control) const noexcept;
 
 private:
+    /** A component's top-left corner in its top-level component's space.
+
+        The panel and every control go through this, so a control nested inside a
+        tab page lands at the same position on the panel as one that is a direct
+        child of the editor. */
+    static juce::Point<float> offsetToTopLevel (const juce::Component& component) noexcept;
+
     ThemeChoice theme = ThemeChoice::ivory;
     float activity = 0.0f;   ///< Compressor activity, drives the glow around the knobs.
-    juce::Rectangle<float> cameraPanel;
+    juce::Rectangle<float> cameraPanel;   ///< The panel, in its top-level component's space.
+    const juce::Component* cameraRoot = nullptr;   ///< The top-level component the camera was measured in.
 
     // Per-toggle glide state for the sliding thumbs (see noteToggle above).
     struct ToggleGlide
@@ -445,8 +466,18 @@ private:
     // Sixteen pages under three large families (TAPE / FX / SETUP), so no page
     // has to carry more than one subject: DRIVE was twelve knobs on one page and
     // NOISE eleven, which is exactly the crowding the tabs exist to avoid.
-    static constexpr int numTabs = 16;
+    static constexpr int numTabs = 17;
     static constexpr std::size_t decorativeOrbCount = 6;
+
+    // The header's switch grid: four equal columns, three rows, one switch per
+    // cell. resized() places the cells with these and paint() draws the
+    // machine-state pill ON the grid's third row with them, so the pill and the
+    // switches it wraps can never be sized by two different arithmetics again -
+    // the first pass kept a second copy of the old 92 px cell in paint(), and
+    // the pill overhung its own band by 72 px.
+    static constexpr int headerColumnCount = 4;
+    static constexpr int headerColumnWidth = 74;
+    static constexpr int headerColumnGap = 6;
 
     void timerCallback() override;
     void createDecorativePhysics();
@@ -455,7 +486,8 @@ private:
 
     // Cycles the header's theme button: DARK -> IVORY -> LIGHT -> DARK. The tab
     // families resolve the reverse way - one Control-strip button per family and
-    // pages beside it - so the 4 x 92 px grid's four free columns stay free.
+    // pages beside it - so the header grid's four free columns stay free (see
+    // headerColumnCount / headerColumnWidth below).
 
     // Shared by the constructor and by resized(): the knob-grid section captions
     // are created while laying out, so a constructor-local helper was out of scope
@@ -553,6 +585,20 @@ private:
     juce::Label languageLabel { {}, "LANGUAGE" };
     juce::ComboBox languageBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> languageAttachment;
+    juce::ComboBox tuningTonicBox;
+    juce::ComboBox tuningModeBox;
+    juce::ToggleButton autoTuneButton { "AUTO TUNE" };
+    juce::Slider autoTuneAmountSlider;
+    std::array<juce::Slider, 6> compressorControls;
+    std::array<juce::Label, 6> compressorControlLabels;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 6> compressorAttachments;
+    juce::Label tuningTonicLabel;
+    juce::Label tuningModeLabel;
+    juce::Label autoTuneAmountLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tuningTonicAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tuningModeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoTuneAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment> autoTuneAmountAttachment;
 
     std::array<juce::Slider, controlCount> controls;
     std::array<juce::Label, controlCount> controlLabels;
@@ -814,7 +860,7 @@ private:
     // six band knobs and three corner controls, DRIVE GAIN seven plus the DI
     // pad, and a page that scrolls is a page nobody dials.
     static constexpr int tabFamilyCount = 3;
-    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount { 9, 4, 3 };
+    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount { 9, 5, 3 };
     juce::Label metersHeadingLabel;
     juce::Label metersHintLabel;
     juce::Label compressorLabel;

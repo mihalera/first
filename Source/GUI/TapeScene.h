@@ -8,6 +8,7 @@
 
 #include <JuceHeader.h>
 #include "RenderBackend.h"
+#include "NativeRenderer.h"
 
 // The GL typedefs (GLuint, GLint, GLsizei) and the GL commands this component
 // calls live in the module's own header, which the generated JuceHeader also
@@ -183,6 +184,7 @@ public:
         33 ms for a picture that is never going to arrive.
     */
     void serviceContextAttachment();
+    [[nodiscard]] j37::render::NativeRenderer::Config nativeRendererConfig() const;
 
     /** CPU renderer used when the selected native backend is unavailable or
         explicitly set to CPU. It intentionally uses the same telemetry and
@@ -291,6 +293,7 @@ private:
 
     juce::OpenGLContext openGLContext;
     std::unique_ptr<juce::OpenGLShaderProgram> shaderProgram;
+    std::unique_ptr<j37::render::NativeRenderer> nativeRenderer;
 
     Mesh reel {};
     Mesh tapePack {};

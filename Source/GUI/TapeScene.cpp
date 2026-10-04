@@ -875,6 +875,7 @@ namespace
 //==============================================================================
 TapeScene::TapeScene()
 {
+    nativeRenderer = j37::render::createNativeRenderer (j37::render::effectiveBackend());
     setOpaque (true);
     setInterceptsMouseClicks (false, false);
     setWantsKeyboardFocus (false);
@@ -891,6 +892,8 @@ TapeScene::~TapeScene()
     // openGLContextClosing() called on the GL thread - which is the only thread
     // allowed to delete a buffer or a program.
     openGLContext.detach();
+    if (nativeRenderer != nullptr)
+        nativeRenderer->shutdown();
 }
 
 void TapeScene::setAudioState (float newOutputLevel,
@@ -988,6 +991,26 @@ void TapeScene::setPalette (juce::Colour background,
     repaint();
 }
 
+j37::render::NativeRenderer::Config TapeScene::nativeRendererConfig() const
+{
+    j37::render::NativeRenderer::Config config;
+    config.width = juce::jmax (1, getWidth());
+    config.height = juce::jmax (1, getHeight());
+
+    // Native surfaces belong to this component, not to the editor peer. The
+    // renderer therefore receives the component's position in its peer's
+    // coordinate system, which is what child HWNDs and Metal layers expect.
+    if (auto* peer = getPeer())
+    {
+        const auto globalOrigin = localPointToGlobal ({ 0, 0 });
+        const auto peerOrigin = peer->getComponent().localPointToGlobal ({ 0, 0 });
+        config.positionX = globalOrigin.x - peerOrigin.x;
+        config.positionY = globalOrigin.y - peerOrigin.y;
+    }
+
+    return config;
+}
+
 void TapeScene::setSceneEnabled (bool shouldBeEnabled)
 {
     // A non-OpenGL selection is a deliberate CPU fallback for now. Do not
@@ -997,6 +1020,12 @@ void TapeScene::setSceneEnabled (bool shouldBeEnabled)
         sceneEnabled = false;
         openGLContext.detach();
         programLinked.store (0);
+
+        if (nativeRenderer != nullptr && ! nativeRenderer->isInitialised())
+        {
+            nativeRenderer->initialise (*this, nativeRendererConfig());
+        }
+
         return;
     }
 
@@ -1023,7 +1052,13 @@ void TapeScene::setSceneEnabled (bool shouldBeEnabled)
 void TapeScene::serviceContextAttachment()
 {
     if (! j37::render::usesOpenGL() || ! sceneEnabled)
+    {
+        if (j37::render::usesNativeCommandRenderer()
+            && nativeRenderer != nullptr
+            && ! nativeRenderer->isInitialised())
+            nativeRenderer->initialise (*this, nativeRendererConfig());
         return;
+    }
 
     if (openGLContext.isAttached())
     {
@@ -1040,7 +1075,24 @@ void TapeScene::serviceContextAttachment()
 
 void TapeScene::paint (juce::Graphics& g)
 {
-    if (! j37::render::usesCpuFallback())
+    if (j37::render::usesNativeCommandRenderer() && nativeRenderer != nullptr)
+    {
+        if (! nativeRenderer->isInitialised())
+            nativeRenderer->initialise (*this, nativeRendererConfig());
+
+        if (nativeRenderer->beginFrame())
+        {
+            nativeRenderer->clear (juce::Colour (backgroundColour.load (std::memory_order_relaxed)));
+            nativeRenderer->endFrame();
+        }
+
+        // Native surfaces are child windows/layers owned by this component.
+        // JUCE's CPU path remains the fallback if surface creation fails.
+        if (nativeRenderer->isPresentable())
+            return;
+    }
+
+    if (j37::render::usesOpenGL())
         return;
 
     const auto width = static_cast<float> (getWidth());
@@ -1114,6 +1166,14 @@ void TapeScene::paint (juce::Graphics& g)
 
 void TapeScene::resized()
 {
+    // Native swapchains/render targets are resized on the message thread, never
+    // lazily from the render callback. The adapters defer GPU object recreation
+    // until their next beginFrame().
+    if (nativeRenderer != nullptr)
+    {
+        nativeRenderer->resize (nativeRendererConfig());
+    }
+
     // Nothing to place: the projection is derived from the current size in
     // renderOpenGL(), and CPU paint uses the same component bounds.
     repaint();

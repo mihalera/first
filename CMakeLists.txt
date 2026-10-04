@@ -123,26 +123,48 @@ include(J37Tests)
 option(COPY_PLUGIN_AFTER_BUILD "Copy plugins to the user plugin folders after building" OFF)
 
 # Renderer selection is compile-time because a plugin editor must create its
-# graphics device on the host's UI thread. OpenGL is the complete backend today;
-# the other values select an honest CPU fallback until their native integrations
-# are enabled. This keeps the build matrix ready without pretending that a
-# Vulkan/Metal/D3D device can be created by JUCE's OpenGL module.
+# graphics device and host-owned child surface on the UI thread. Native adapters
+# create their device, command resources and presentation surface; unsupported
+# platform/API combinations use the CPU fallback.
 set(J37_RENDER_BACKEND "AUTO" CACHE STRING
-    "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12 or CPU")
+    "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12, BGFX, WGPU, DAWN or CPU")
 set_property(CACHE J37_RENDER_BACKEND PROPERTY STRINGS
-    AUTO OPENGL VULKAN METAL D3D11 D3D12 CPU)
+    AUTO OPENGL VULKAN METAL D3D11 D3D12 BGFX WGPU DAWN CPU)
 string(TOUPPER "${J37_RENDER_BACKEND}" J37_RENDER_BACKEND)
 set(J37_RENDER_DEFINITIONS)
+set(J37_NATIVE_RENDER_DEFINITIONS)
 if(J37_RENDER_BACKEND STREQUAL "OPENGL")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_OPENGL=1)
 elseif(J37_RENDER_BACKEND STREQUAL "VULKAN")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_VULKAN=1)
+    find_package(Vulkan QUIET)
+    if(Vulkan_FOUND)
+        list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_VULKAN=1)
+    endif()
 elseif(J37_RENDER_BACKEND STREQUAL "METAL")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_METAL=1)
+    if(APPLE)
+        list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_METAL=1)
+    endif()
 elseif(J37_RENDER_BACKEND STREQUAL "D3D11")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_D3D11=1)
+    if(WIN32)
+        list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_D3D11=1)
+    endif()
 elseif(J37_RENDER_BACKEND STREQUAL "D3D12")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_D3D12=1)
+    if(WIN32)
+        list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_D3D12=1)
+    endif()
+elseif(J37_RENDER_BACKEND STREQUAL "BGFX")
+    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_BGFX=1)
+    list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_BGFX=1)
+elseif(J37_RENDER_BACKEND STREQUAL "WGPU")
+    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_WEBGPU=1)
+    list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_WGPU=1)
+elseif(J37_RENDER_BACKEND STREQUAL "DAWN")
+    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_WEBGPU=1)
+    list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_DAWN=1)
 elseif(J37_RENDER_BACKEND STREQUAL "CPU")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_CPU=1)
 elseif(NOT J37_RENDER_BACKEND STREQUAL "AUTO")
@@ -251,9 +273,36 @@ target_sources(first PRIVATE
     Source/PluginProcessor.cpp
     Source/PluginEditor.cpp
     Source/GUI/TapeScene.cpp
+    Source/GUI/NativeRenderer.cpp
+    Source/GUI/NativeRenderer_D3D11.cpp
+    Source/GUI/NativeRenderer_D3D12.cpp
+    Source/GUI/NativeRenderer_Vulkan.cpp
     Source/GUI/RenderBackend.h)
 
 target_include_directories(first PRIVATE Source)
+
+if(APPLE)
+    target_sources(first PRIVATE Source/GUI/NativeRenderer_Metal.mm)
+endif()
+
+if(TARGET Vulkan::Vulkan)
+    target_link_libraries(first PRIVATE Vulkan::Vulkan)
+endif()
+if(WIN32 AND (J37_RENDER_BACKEND STREQUAL "D3D11" OR J37_RENDER_BACKEND STREQUAL "D3D12"))
+    target_link_libraries(first PRIVATE d3d11 dxgi dxguid)
+endif()
+if(WIN32 AND J37_RENDER_BACKEND STREQUAL "D3D12")
+    target_link_libraries(first PRIVATE d3d12)
+elseif(APPLE AND J37_RENDER_BACKEND STREQUAL "METAL")
+    # JUCE 9 exposes no separate juce::MetalContext CMake target; its native
+    # Metal support is provided by JUCE's GUI modules plus these frameworks.
+    target_link_libraries(first PRIVATE "-framework Metal" "-framework QuartzCore")
+endif()
+
+# Fetch and link the selected optional graphics backend. WGPU and Dawn both
+# implement the WebGPU API, so they are alternative implementations rather than
+# libraries to link into the same target.
+j37_setup_graphics_backend(first)
 
 # ------------------------------------------------------------------------------
 #  Embedded resources - the factory presets and the translation tables.
@@ -421,6 +470,7 @@ target_link_libraries(first
         foleys::foleys_gui_magic
         xsimd
         signalsmith-stretch
+        SoundTouch
         fftconvolver
         imgui
         farbot
@@ -466,6 +516,7 @@ j37_apply_vendor_libraries(first)
 # ------------------------------------------------------------------------------
 target_compile_definitions(first PUBLIC
     ${J37_RENDER_DEFINITIONS}
+    ${J37_NATIVE_RENDER_DEFINITIONS}
     JUCE_VST3_CAN_REPLACE_VST2=0
     JUCE_STRICT_REFCOUNTEDPOINTER=1
     JUCE_WEB_BROWSER=0
@@ -502,7 +553,7 @@ message(STATUS "  JUCE        : ${CMAKE_CURRENT_SOURCE_DIR}/JUCE")
 message(STATUS "  System      : ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Generator   : ${CMAKE_GENERATOR}")
 message(STATUS "  Build type  : ${CMAKE_BUILD_TYPE}")
-message(STATUS "  Renderer    : requested ${J37_RENDER_BACKEND}; OpenGL native, CPU fallback for pending APIs")
+message(STATUS "  Renderer    : requested ${J37_RENDER_BACKEND}")
 message(STATUS "  Build commit: ${J37_BUILD_COMMIT}")
 if(APPLE)
     message(STATUS "  Archs       : ${CMAKE_OSX_ARCHITECTURES}")
@@ -511,13 +562,15 @@ else()
     message(STATUS "  Formats     : VST3")
 endif()
 message(STATUS "  Libraries   : chowdsp_utils, melatonin_inspector, melatonin_blur, foleys_gui_magic, xsimd")
-message(STATUS "                signalsmith-stretch, fftconvolver, imgui, iPlug2 (source only)")
+message(STATUS "                signalsmith-stretch, SoundTouch (LGPL-2.1), fftconvolver,")
+message(STATUS "                imgui, iPlug2 (source only)")
 message(STATUS "                chowcentaur, vcv_prototype, rack, soundpipe, aubio (source only)")
 message(STATUS "                farbot, readerwriterqueue, kissfft, pocketfft, yasio, dywapitchtrack, pffft")
 message(STATUS "                RTNeural (neural inference, used by the DYNAMICS tab), dr_libs,")
 message(STATUS "                yin_pitch, pitch_detector (MPM), dattorro_verb, sndfile")
 message(STATUS "                nlohmann_json (header only)")
 message(STATUS "                q_dsp, sokol_gfx, glm (header only)")
+message(STATUS "                Optional graphics: BGFX, wgpu-native or Dawn (selected by J37_RENDER_BACKEND)")
 message(STATUS "                transdes, whetstone, multiband-transient-shaper (source only)")
 message(STATUS "                juce_opengl_3d: no such JUCE module, see cmake/J37Dependencies.cmake")
 if(J37_HAVE_VDSP)
