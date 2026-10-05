@@ -140,14 +140,7 @@
   #define J37_HAS_FARBOT 0
  #endif
 
- // signalsmith-stretch: one self-contained header under include/, which is what
- // the CMake target exposes.
- #if __has_include (<signalsmith-stretch/signalsmith-stretch.h>)
-  #include <signalsmith-stretch/signalsmith-stretch.h>
-  #define J37_HAS_SIGNALSMITH 1
- #else
-  #define J37_HAS_SIGNALSMITH 0
- #endif
+
 
  // SoundTouch: its public headers sit flat in include/, and that one directory
  // is what the CMake target exposes, so the spelling is the bare
@@ -165,12 +158,6 @@
  #define J37_HAS_FARBOT 0
  #define J37_HAS_SIGNALSMITH 0
  #define J37_HAS_SOUNDTOUCH 0
-#endif
-#if ! defined (J37_DSP_HARNESS) && __has_include (<signalsmith-stretch/signalsmith-stretch.h>)
- #include <signalsmith-stretch/signalsmith-stretch.h>
- #define J37_HAS_SIGNALSYNTH_STRETCH 1
-#else
- #define J37_HAS_SIGNALSYNTH_STRETCH 0
 #endif
 
 #include <array>
@@ -4703,7 +4690,6 @@ public:
 
     /** The tape engine proper; processBlock routes into this, oversampled or not. */
     void processTapeEngine (juce::dsp::AudioBlock<float>, juce::MidiBuffer&);
-    void processAutoTuneBlock (juce::AudioBuffer<float>&) noexcept;
 
     //==============================================================================
     juce::AudioProcessorEditor* createEditor() override;
@@ -5559,9 +5545,6 @@ private:
     std::array<GlueCompressor, 2> outputCompressorChannels;
     std::array<StandardCompressor, 2> standardCompressors;
     std::array<RealtimePitchShifter, 2> autoTuneShifters;
-#if J37_HAS_SIGNALSYNTH_STRETCH
-    signalsmith::stretch::SignalsmithStretch<float> autoTunePhaseVocoder;
-#endif
     std::array<float, 2> autoTunePhase { 0.0f, 0.0f };
     std::array<float, 2> autoTuneFrequency { 440.0f, 440.0f };
     std::array<float, 2> autoTuneEnvelope {};

@@ -466,7 +466,7 @@ private:
     // Sixteen pages under three large families (TAPE / FX / SETUP), so no page
     // has to carry more than one subject: DRIVE was twelve knobs on one page and
     // NOISE eleven, which is exactly the crowding the tabs exist to avoid.
-    static constexpr int numTabs = 17;
+    static constexpr int numTabs = 18;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     // The header's switch grid: four equal columns, three rows, one switch per
@@ -860,7 +860,7 @@ private:
     // six band knobs and three corner controls, DRIVE GAIN seven plus the DI
     // pad, and a page that scrolls is a page nobody dials.
     static constexpr int tabFamilyCount = 3;
-    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount { 9, 5, 3 };
+    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount { 9, 6, 3 };
     juce::Label metersHeadingLabel;
     juce::Label metersHintLabel;
     juce::Label compressorLabel;

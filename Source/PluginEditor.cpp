@@ -592,7 +592,7 @@ namespace
     //  it: the table below, the subtitle list and the coverage check further
     //  down all size themselves from this constant, so adding a page cannot
     //  leave one of them behind.
-    constexpr std::size_t numTabPages = 17;
+    constexpr std::size_t numTabPages = 18;
     constexpr std::array<TabSpec, numTabPages> tabSpecs { {
         // ---- TAPE family (9 pages): the machine and everything feeding it ---
         //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
@@ -725,10 +725,12 @@ namespace
         //  No knobs of its own: SETTINGS is where the three engine-level switches
         //  live - GL, OVERSAMPLING and the interface sounds - shown by
         //  setCurrentTab, not by the grid.
-             { "SETTINGS", "The engine-level switches and musical setup: rate, language, tonic, mode and autotune.",
-                          0, 2, {} },
+             { "SETTINGS", "The engine-level switches and musical setup: rate, language and tuning reference.",
+                               0, 2, {} },
+             { "AUTOTUNE", "Pitch correction with safe realtime tracking and scale quantisation.",
+                               0, 1, {} },
              { "COMP", "The conventional compressor: threshold, ratio, attack, release, makeup and mix. Independent of both glue stages.",
-                          0, 1, {} }
+                               0, 1, {} }
         } };
 
     // One SHORT subtitle per page, in tabSpecs' order: the sentence the section
@@ -758,8 +760,9 @@ namespace
         "the equaliser after the machine: it corrects the RESULT",
         "the equaliser before the machine: it changes the CHARACTER",
         "the two file-fed stages, each with its loader beside it",
-        "the engine-level switches and musical tuning"
-        , "the conventional compressor, independent of glue"
+        "the engine-level switches and musical tuning",
+        "pitch correction and scale quantisation",
+        "the conventional compressor, independent of glue"
     } };
 
     // Where the divider under the knob-grid heading sits, in pixels from the top of the
@@ -7733,6 +7736,7 @@ void FirstAudioProcessorEditor::resized()
     // added or reordered. Hoisted ABOVE the row arithmetic because the member row
     // is decided by the same flags the layout chain below reads.
     const auto settingsTab = index_of_tab_named ("SETTINGS") == currentTab;
+    const auto autotuneTab = index_of_tab_named ("AUTOTUNE") == currentTab;
     const auto delayTab = index_of_tab_named ("DELAY") == currentTab;
     const auto characterTab = index_of_tab_named ("CHARACTER") == currentTab;
     const auto frontEndTab = index_of_tab_named ("FRONT END") == currentTab;
@@ -7887,9 +7891,9 @@ void FirstAudioProcessorEditor::resized()
     tuningModeLabel.setVisible (settingsTab);
     tuningTonicBox.setVisible (settingsTab);
     tuningModeBox.setVisible (settingsTab);
-    autoTuneButton.setVisible (settingsTab);
-    autoTuneAmountLabel.setVisible (settingsTab);
-    autoTuneAmountSlider.setVisible (settingsTab);
+    autoTuneButton.setVisible (autotuneTab);
+    autoTuneAmountLabel.setVisible (autotuneTab);
+    autoTuneAmountSlider.setVisible (autotuneTab);
     const auto compressorTab = currentTab == index_of_tab_named ("COMP");
     for (std::size_t i = 0; i < compressorControls.size(); ++i)
     {
@@ -7971,6 +7975,13 @@ void FirstAudioProcessorEditor::resized()
                                   memberRowY + 20,
                                   cellWidth - 24,
                                   juce::jmin (30, grid.getBottom() - memberRowY - 22));
+    }
+    else if (autotuneTab)
+    {
+        sectionCaptionLabel.setText ("AUTOTUNE", juce::dontSendNotification);
+        autoTuneButton.setBounds (grid.getX() + 12, grid.getY() + 20, cellWidth - 24, 30);
+        autoTuneAmountLabel.setBounds (grid.getX() + cellWidth + 5, grid.getY() + 1, cellWidth - 10, 17);
+        autoTuneAmountSlider.setBounds (grid.getX() + cellWidth + 12, grid.getY() + 20, cellWidth - 24, 30);
     }
     else if (compressorTab)
     {

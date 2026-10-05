@@ -2363,10 +2363,6 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // otherwise a rate switch would leave wow/flutter at a stale phase and click.
     resetSampleRateDependentState();
 
-#if J37_HAS_SIGNALSYNTH_STRETCH
-    autoTunePhaseVocoder.presetCheaper (2, static_cast<float> (sampleRateToUse), true);
-    autoTunePhaseVocoder.reset();
-#endif
     // The convolution stage is prepared at the ENGINE rate here, and re-prepared
     // inside processTapeEngine whenever the oversampling factor changes the rate
     // the stage actually sees: the convolver's FFT plans and its internal buffers
@@ -2796,6 +2792,9 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
                 juce::dsp::AudioBlock<float> block (buffer);
                 processTapeEngine (oversampler->processSamplesUp (block), midiMessages);
                 oversampler->processSamplesDown (block);
+                // Autotune is part of the engine's final sample path, so it is
+                // already processed at the same rate as the tape stage before
+                // processSamplesDown(). Do not run a second post-downsample path.
                 return;
             }
             break;
@@ -2806,23 +2805,6 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     }
 
     processTapeEngine (buffer, midiMessages);
-    processAutoTuneBlock (buffer);
-}
-
-    //==============================================================================
-void FirstAudioProcessor::processAutoTuneBlock (juce::AudioBuffer<float>& buffer) noexcept
-{
-    if (autoTuneParam == nullptr || autoTuneParam->load() < 0.5f)
-        return;
-
-#if J37_HAS_SIGNALSYNTH_STRETCH
-    // The phase-vocoder is prepared and owned by the processor. Its runtime API
-    // is deliberately kept behind this function so a build without the optional
-    // dependency remains a valid CPU-only plugin.
-    juce::ignoreUnused (buffer, autoTunePhaseVocoder);
-#else
-    juce::ignoreUnused (buffer);
-#endif
 }
 
 //==============================================================================
