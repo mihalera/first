@@ -3118,6 +3118,16 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
     activeTabIsShapers = (std::strcmp (tabSpecs[static_cast<std::size_t> (currentTab)].name,
                                        "SHAPERS") == 0);
 
+    // The family follows the page: the bar's two rows are two views of one
+    // state, and a path that set one without the other left the bar showing a
+    // family that the page was not in - the number-key shortcuts did exactly
+    // that, and the panel could then open a page with NO tab and NO family lit.
+    // setTabFamily returns through resized() here rather than back through this
+    // function, because the page it is given is already inside the family it is
+    // switching to (its range test is false by construction).
+    if (tabSpecs[static_cast<std::size_t> (currentTab)].family != currentTabFamily)
+        setTabFamily (tabSpecs[static_cast<std::size_t> (currentTab)].family);
+
     for (std::size_t i = 0; i < controlCount; ++i)
     {
         const auto onActiveTab = controlIsInTab (i, currentTab);
@@ -3251,6 +3261,11 @@ void FirstAudioProcessorEditor::applyLanguage (int languageIndex)
     languageBox.changeItemText (2, xlat ("LANGUAGE_UKRAINIAN"));
     languageBox.setColour (juce::ComboBox::textColourId, paletteFor (darkTheme).text);
     languageBox.repaint();
+
+    // The caption above that selector is a keyed string too, so it follows the
+    // new table as well. It used to be styled once in the constructor and keep
+    // the previous language until the editor was rebuilt.
+    languageLabel.setText (xlat ("LANGUAGE_CAPTION").toUpperCase(), juce::dontSendNotification);
 
     updateTooltips();
 }
@@ -3600,8 +3615,12 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
             applyLanguage (languageParam->getIndex());
     };
 
-    styleLabel (languageLabel, xlat ("LANGUAGE_CAPTION"), 10.0f, paletteFor (false).secondary,
-                true, juce::Justification::centredLeft);
+    // The caption is an all-caps engraving like every other caption on the panel,
+    // while the keyed string carries ordinary words ("Language"); the case is
+    // applied here rather than in the table, which keeps the lookup key stable
+    // and the translation readable.
+    styleLabel (languageLabel, xlat ("LANGUAGE_CAPTION").toUpperCase(), 10.0f,
+                paletteFor (false).secondary, true, juce::Justification::left);
     addAndMakeVisible (languageLabel);
     addAndMakeVisible (languageBox);
 
@@ -4578,7 +4597,14 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // Every other path - applyLanguage's applyTheme, a knob drag, a preset load -
     // only ever touches styling; the single setTabFamily here is what initially
     // filters the bar and resolves the restored currentTab's family.
-    setTabFamily (currentTab);
+    //
+    // The FAMILY comes out of the spec table rather than out of currentTab
+    // itself: this used to pass the PAGE number straight through, and
+    // setTabFamily's jlimit(0, 2) read page 1 (FRONT END, a TAPE page) as family
+    // 1 (FX) and page 2 (SATURATION) as family 2 - so a session that opened on
+    // any page but the first landed in the wrong family's bar.
+    const auto initialTab = juce::jlimit (0, numTabs - 1, currentTab);
+    setTabFamily (tabSpecs[static_cast<std::size_t> (initialTab)].family);
 
     // The same tapeStockNameList() the choice parameter is built from, so the panel
     // cannot offer a stock the parameter would refuse to select. It did once: the
@@ -8019,28 +8045,39 @@ void FirstAudioProcessorEditor::resized()
     }
     else if (settingsTab)
     {
-        // SETTINGS: GL and OVERSAMPLING, two cells on one row.
+        // SETTINGS: the first band carries the four engine-level selectors - the
+        // two switches and the tuning pair - and the second the two interface
+        // preferences.
         placeDeckSwitch (glLabel, glButton, 0, 1, "GL");
         placeDeckSwitch (oversamplingLabel, oversamplingBox, 1, 1, "OVER");
         placeDeckSwitch (tuningTonicLabel, tuningTonicBox, 2, 1, "TONIC");
         tuningModeLabel.setBounds (grid.getX() + 3 * cellWidth + 5, memberRowY + 1, cellWidth - 10, 17);
         tuningModeBox.setBounds (grid.getX() + 3 * cellWidth + 12, memberRowY + 20, cellWidth - 24, 30);
+
+        // LANGUAGE keeps the first cell of the second band; UI SOUNDS takes the
+        // second. UI SOUNDS used to be written into the THIRD CELL OF THE FIRST
+        // BAND, which is the rectangle the TONIC combo owns - so the two
+        // controls were given the same bounds, the switch was added later and
+        // therefore sat on top, and the page showed a control labelled
+        // "UI Sounds" under the TONIC caption while the key itself could not be
+        // set at all. One caption band, one control band, two cells nothing
+        // else claims.
+        //
+        // The AUTOTUNE pair no longer takes bounds here at all: those rectangles
+        // were left over from when AUTOTUNE was a sub-page of SETTINGS (the page
+        // has its own tab now - see the autotuneTab branch) and they described
+        // cells that are free on THIS page, which is exactly the belief that
+        // produced the double booking above.
         languageLabel.setBounds (grid.getX() + 5, memberRowY + 56, cellWidth - 10, 17);
         languageBox.setBounds (grid.getX() + 12, memberRowY + 76, cellWidth - 24, 30);
-        autoTuneButton.setBounds (grid.getX() + 12, memberRowY + 112, cellWidth - 24, 30);
-        autoTuneAmountLabel.setBounds (grid.getX() + 2 * cellWidth + 5, memberRowY + 56, cellWidth - 10, 17);
-        autoTuneAmountSlider.setBounds (grid.getX() + 2 * cellWidth + 12, memberRowY + 76, cellWidth - 24, 22);
+        uiSoundsButton.setBounds (grid.getX() + cellWidth + 12, memberRowY + 76,
+                                  cellWidth - 24, 30);
 
-        // UI SOUNDS takes the third cell of the same row. It is the same KIND of
-        // switch as GL and OVERSAMPLING - an engine-level preference rather than
-        // a control that shapes the sound - so it belongs beside them rather
-        // than on a page of its own. Its caption is carried by the control's own
-        // button text, which the in-tab style draws beside the pill, so no
-        // Label of its own is needed.
-        uiSoundsButton.setBounds (grid.getX() + 2 * cellWidth + 12,
-                                  memberRowY + 20,
-                                  cellWidth - 24,
-                                  juce::jmin (30, grid.getBottom() - memberRowY - 22));
+        // The caption is put back to the left, where every other caption on the
+        // page sits: the header grid also places this one Label - right-aligned,
+        // beside THEME - and that justification survived into this page, which is
+        // why LANGUAGE was the one caption on SETTINGS that read centred.
+        languageLabel.setJustificationType (juce::Justification::left);
     }
     else if (autotuneTab)
     {
@@ -8287,6 +8324,55 @@ void FirstAudioProcessorEditor::resized()
             { "redo",               &redoButton },
             { "compareBadge",       &compareBadgeLabel },
             { "presetBadge",        &presetBadgeLabel },
+
+            // The tab pages' own members: one page's worth is hand-placed on the
+            // member band at a time, exactly like the deck's line above - and
+            // they were NOT in this list, which is how UI SOUNDS came to be
+            // painted on top of the TONIC combo for a whole release: both
+            // rectangles were reasonable on their own, and nothing looked at
+            // their relationship. Only the visible page's members are measured,
+            // so this stays a sweep of what a person can actually see.
+            { "langLabel",      &languageLabel },
+            { "langBox",        &languageBox },
+            { "tuningTonicLbl", &tuningTonicLabel },
+            { "tuningTonicBox", &tuningTonicBox },
+            { "tuningModeLbl",  &tuningModeLabel },
+            { "tuningModeBox",  &tuningModeBox },
+            { "uiSounds",       &uiSoundsButton },
+            { "glLabel",        &glLabel },
+            { "diPadLabel",     &diPadLabel },
+            { "diPadBox",       &diPadBox },
+            { "tracksLabel",    &tracksLabel },
+            { "tracksBox",      &tracksBox },
+            { "delayTypeLabel", &delayTypeLabel },
+            { "delayTypeBox",   &delayTypeBox },
+            { "delaySyncLabel", &delaySyncLabel },
+            { "delaySyncBtn",   &delaySyncButton },
+            { "delayRateLabel", &delayRateLabel },
+            { "delayRateBox",   &delayRateBox },
+            { "vinylGenLabel",  &vinylGenerationLabel },
+            { "vinylGenBox",    &vinylGenerationBox },
+            { "vinylTTLabel",   &vinylTurntableLabel },
+            { "vinylTTBox",     &vinylTurntableBox },
+            { "vinylCartLabel", &vinylCartridgeLabel },
+            { "vinylCartBox",   &vinylCartridgeBox },
+            { "loadNeural",     &loadNeuralButton },
+            { "clearNeural",    &clearNeuralButton },
+            { "neuralStatus",   &neuralStatusLabel },
+            { "loadIr",         &loadIrButton },
+            { "clearIr",        &clearIrButton },
+            { "irStatus",       &irStatusLabel },
+            { "inEqOrderLbl",   &inputEqOrderLabel },
+            { "inEqOrderBox",   &inputEqOrderBox },
+            { "outEqOrderLbl",  &outputEqOrderLabel },
+            { "outEqOrderBox",  &outputEqOrderBox },
+            { "inEqHp",         &inputEqHpButton },
+            { "inEqLp",         &inputEqLpButton },
+            { "outEqHp",        &outputEqHpButton },
+            { "outEqLp",        &outputEqLpButton },
+            { "autoTune",       &autoTuneButton },
+            { "autoTuneLbl",    &autoTuneAmountLabel },
+            { "autoTuneAmt",    &autoTuneAmountSlider },
         };
 
         // Only what is on screen counts: a hidden tab member is deliberately
