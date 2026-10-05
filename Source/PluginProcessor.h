@@ -4701,14 +4701,14 @@ public:
     bool processBypassedBlock (juce::dsp::AudioBlock<float>&, const BlockContext&);
     void processPostMachineStages (juce::dsp::AudioBlock<float>&, const BlockContext&);
     void processAutoTuneSample (float* stereoSamples, int channels, float rate) noexcept;
-    void publishBlockTelemetry (float inputPeak, float inputRms,
+    void publishBlockTelemetry (const BlockContext& context,
+                                float inputPeak, float inputRms,
                                 float outputPeak, float outputRms,
                                 float inputPeakReductionDb, float peakReductionDb,
-                                float inputEnvelopeActivity, bool clipping,
-                                bool inputClipping, float currentLufs,
-                                float currentInputLufs, float driveInto);
-    static const std::array<std::array<int, 12>, 6>& scaleOffsetsForMode (int modeIndex) noexcept;
-    juce::AudioBuffer<float> postFxScratch;
+                                float inputEnvelopeActivity, float driftNow,
+                                bool clipping, bool inputClipping,
+                                float currentLufs, float currentInputLufs, float driveInto);
+    static const std::array<int, 12>& scaleOffsetsForMode (int modeIndex) noexcept;
 
     //==============================================================================
     juce::AudioProcessorEditor* createEditor() override;
