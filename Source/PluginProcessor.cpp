@@ -2363,16 +2363,11 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // otherwise a rate switch would leave wow/flutter at a stale phase and click.
     resetSampleRateDependentState();
 
-    // The convolution stage is prepared at the ENGINE rate here, and re-prepared
-    // inside processTapeEngine whenever the oversampling factor changes the rate
-    // the stage actually sees: the convolver's FFT plans and its internal buffers
-    // are per-rate state, and running a 48 kHz plan against 96 kHz audio is the
-    // same stale-pipeline click the oversampler reset above exists to prevent.
-    // (The block-size argument is a maximum; passing the host's largest keeps
-    // every per-block call allocation-free.)
     irStage.prepare ({ sampleRate,
-                       static_cast<juce::uint32> (juce::jmax (1, samplesPerBlock)),
+                       static_cast<juce::uint32> (juce::jmax (1, maxEngineSamples)),
                        2 });
+    postFxScratch.setSize (2, juce::jmax (1, samplesPerBlock * 8), false, true, true);
+    postFxScratch.clear();
 
     // Per-channel DC-blocker state: AC coupling restarts from zero after a rate
     // change, exactly like the analogue coupling capacitors do on power-up.
@@ -2843,6 +2838,380 @@ void FirstAudioProcessor::setSpindownHeld (bool shouldHold)
         parameter->setValueNotifyingHost (shouldHold ? 1.0f : 0.0f);
 }
 
+bool FirstAudioProcessor::processBypassedBlock (juce::dsp::AudioBlock<float>& block,
+                                                  const BlockContext& context)
+{
+    const auto bypassRequested = bypassParam != nullptr && bypassParam->load() >= 0.5f;
+    const auto deltaRequested = deltaParam != nullptr && deltaParam->load() >= 0.5f;
+    const bool deltaEngaged = deltaRequested || deltaListenSmoothed.isSmoothing()
+                           || deltaListenSmoothed.getCurrentValue() > 0.0f;
+
+    if (! bypassRequested || bypassSmoothed.isSmoothing()
+        || bypassSmoothed.getCurrentValue() > 0.0f || deltaEngaged)
+        return false;
+
+    bypassActive.store (true, std::memory_order_relaxed);
+    float peak = 0.0f;
+    double squares = 0.0;
+    for (int channel = 0; channel < context.channels; ++channel)
+        for (int sample = 0; sample < context.samples; ++sample)
+        {
+            const auto value = block.getSample (channel, sample);
+            peak = juce::jmax (peak, std::abs (value));
+            squares += static_cast<double> (value) * value;
+        }
+
+    const auto sampleCount = static_cast<double> (context.samples)
+                           * static_cast<double> (juce::jmax (1, context.channels));
+    const auto rms = sampleCount > 0.0 ? static_cast<float> (std::sqrt (squares / sampleCount)) : 0.0f;
+    const auto peakDb = juce::Decibels::gainToDecibels (peak, -70.0f);
+    const auto rmsDb = juce::Decibels::gainToDecibels (rms, -70.0f);
+    const auto combined = peakDb * 0.25f + rmsDb * 0.75f;
+
+    inputPeakLevel.store (peak, std::memory_order_relaxed);
+    outputPeakLevel.store (peak, std::memory_order_relaxed);
+    inputRmsLevel.store (rms, std::memory_order_relaxed);
+    outputRmsLevel.store (rms, std::memory_order_relaxed);
+    inputPeakDb.store (peakDb, std::memory_order_relaxed);
+    outputPeakDb.store (peakDb, std::memory_order_relaxed);
+    inputRmsDb.store (rmsDb, std::memory_order_relaxed);
+    outputRmsDb.store (rmsDb, std::memory_order_relaxed);
+    inputLufs.store (rmsDb, std::memory_order_relaxed);
+    outputLufs.store (rmsDb, std::memory_order_relaxed);
+    inputVuDb.store (rmsDb, std::memory_order_relaxed);
+    outputVuDb.store (rmsDb, std::memory_order_relaxed);
+    inputCombinedDb.store (combined, std::memory_order_relaxed);
+    outputCombinedDb.store (combined, std::memory_order_relaxed);
+    inputClipping.store (peak > 1.0f, std::memory_order_relaxed);
+    outputClipping.store (peak > 1.0f, std::memory_order_relaxed);
+    inputGainReductionDb.store (0.0f, std::memory_order_relaxed);
+    outputGainReductionDb.store (0.0f, std::memory_order_relaxed);
+    inputCompressorActivity.store (0.0f, std::memory_order_relaxed);
+    outputCompressorActivity.store (0.0f, std::memory_order_relaxed);
+    compressorActivity.store (0.0f, std::memory_order_relaxed);
+    return true;
+}
+
+void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>& block,
+                                                    const BlockContext& context)
+{
+    const auto channels = context.channels;
+    const auto samples = context.samples;
+    const auto reverbMix = reverbMixSmoothed.getCurrentValue();
+    const auto vinylMix = vinylSmoothed.getCurrentValue();
+    const auto irMix = irMixSmoothed.getCurrentValue();
+    if (channels <= 0 || samples <= 0) return;
+
+    bool irActive = false;
+    if (irMix > 1.0e-5f && irStage.hasIr
+        && postFxScratch.getNumChannels() >= channels
+        && postFxScratch.getNumSamples() >= samples)
+    {
+        for (int c = 0; c < channels; ++c)
+            postFxScratch.copyFrom (c, 0, block.getChannelPointer (c), samples);
+        irStage.process (postFxScratch, channels, true);
+        irActive = true;
+    }
+
+    if (reverbMix <= 1.0e-5f && vinylMix <= 1.0e-5f && ! irActive) return;
+    const auto reverbSize = reverbSizeSmoothed.getCurrentValue();
+    for (int i = 0; i < samples; ++i)
+        for (int c = 0; c < channels; ++c)
+        {
+            auto* data = block.getChannelPointer (c);
+            auto value = data[i];
+            if (irActive) value += (postFxScratch.getSample (c, i) - value) * irMix;
+            if (reverbMix > 1.0e-5f) value = reverb.process (value, c, reverbSize, reverbMix);
+            if (vinylMix > 1.0e-5f)
+            {
+                auto& stage = c == 0 ? vinylL : vinylR;
+                const auto noiseLevel = noiseLvlSmoothed.getCurrentValue() * noiseTrimSmoothed.getCurrentValue();
+                value = stage.process (value, c, vinylCrackleSmoothed.getCurrentValue() * vinylMix * noiseLevel,
+                                       vinylRumbleSmoothed.getCurrentValue() * vinylMix * noiseLevel, vinylMix,
+                                       vinylRumbleCoefficient, vinylWarmthCoefficient, vinylNoiseState);
+            }
+            data[i] = value;
+        }
+}
+
+const std::array<std::array<int, 12>, 6>& FirstAudioProcessor::scaleOffsetsForMode (int modeIndex) noexcept
+{
+    static constexpr std::array<std::array<int, 12>, 6> scales {{
+        {{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 }},
+        {{ 0, 2, 4, 5, 7, 9, 11, -1, -1, -1, -1, -1 }},
+        {{ 0, 2, 3, 5, 7, 8, 10, -1, -1, -1, -1, -1 }},
+        {{ 0, 2, 3, 5, 7, 9, 10, -1, -1, -1, -1, -1 }},
+        {{ 0, 2, 4, 7, 9, -1, -1, -1, -1, -1, -1, -1 }},
+        {{ 0, 3, 5, 7, 10, -1, -1, -1, -1, -1, -1, -1 }}
+    }};
+    return scales[static_cast<std::size_t> (juce::jlimit (0, 5, modeIndex))];
+}
+
+void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, float rate) noexcept
+{
+    if (samples == nullptr || autoTuneParam == nullptr || autoTuneParam->load() < 0.5f)
+        return;
+    const auto amount = juce::jlimit (0.0f, 1.0f,
+                                      autoTuneAmountParam != nullptr ? autoTuneAmountParam->load() : 0.0f);
+    if (amount <= 1.0e-5f) return;
+    const auto tonic = tuningTonicParam != nullptr ? static_cast<int> (tuningTonicParam->load()) : 0;
+    const auto mode = tuningModeParam != nullptr ? static_cast<int> (tuningModeParam->load()) : 0;
+    const auto& offsets = scaleOffsetsForMode (mode);
+
+    for (int channel = 0; channel < juce::jlimit (0, 2, channels); ++channel)
+    {
+        const auto i = static_cast<std::size_t> (channel);
+        const auto input = samples[i];
+        ++autoTuneSampleCounter[i];
+        if (autoTunePreviousSample[i] <= 0.0f && input > 0.0f && std::abs (input) > 1.0e-4f)
+        {
+            const auto period = autoTuneSampleCounter[i];
+            const auto hz = rate / juce::jmax (1.0f, period);
+            if (period > 1.0f && hz >= 45.0f && hz <= 1400.0f)
+            {
+                autoTuneFrequency[i] += (hz - autoTuneFrequency[i]) * 0.08f;
+                autoTuneZeroCrossings[i] = juce::jmin (8.0f, autoTuneZeroCrossings[i] + 1.0f);
+            }
+            autoTuneSampleCounter[i] = 0.0f;
+        }
+        autoTunePreviousSample[i] = input;
+        autoTuneEnvelope[i] += (std::abs (input) - autoTuneEnvelope[i])
+                             * (std::abs (input) > autoTuneEnvelope[i] ? 0.08f : 0.001f);
+        autoTuneZeroCrossings[i] = juce::jmax (0.0f, autoTuneZeroCrossings[i] - 0.00003f);
+        const auto confidence = juce::jlimit (0.0f, 1.0f, (autoTuneZeroCrossings[i] - 2.0f) / 4.0f)
+                              * juce::jlimit (0.0f, 1.0f, autoTuneEnvelope[i] / 0.01f);
+        if (confidence < 0.05f)
+        {
+            autoTuneCorrectionSmoothed[i] += (1.0f - autoTuneCorrectionSmoothed[i]) * 0.002f;
+            samples[i] = autoTuneShifters[i].process (input, 1.0f, 0.0f);
+            continue;
+        }
+
+        const auto midi = 69.0f + 12.0f * std::log2 (juce::jmax (1.0f, autoTuneFrequency[i]) / 440.0f);
+        const auto nearest = juce::roundToInt (midi);
+        auto target = nearest;
+        if (mode != 0)
+        {
+            auto best = std::numeric_limits<int>::max();
+            for (int candidate = nearest - 12; candidate <= nearest + 12; ++candidate)
+            {
+                const auto pitchClass = ((candidate - tonic) % 12 + 12) % 12;
+                if (std::find (offsets.begin(), offsets.end(), pitchClass) != offsets.end()
+                    && std::abs (candidate - nearest) < best)
+                {
+                    target = candidate;
+                    best = std::abs (candidate - nearest);
+                }
+            }
+        }
+        const auto targetHz = 440.0f * std::pow (2.0f, (static_cast<float> (target) - 69.0f) / 12.0f);
+        const auto ratio = juce::jlimit (0.94f, 1.06f, targetHz / juce::jmax (1.0f, autoTuneFrequency[i]));
+        autoTuneCorrectionSmoothed[i] += (ratio - autoTuneCorrectionSmoothed[i]) * 0.003f * amount;
+        samples[i] = autoTuneShifters[i].process (input, autoTuneCorrectionSmoothed[i], amount * confidence);
+    }
+}
+
+void FirstAudioProcessor::publishBlockTelemetry (float inputPeak, float outputPeak,
+                                                float inputPeakReductionDb, float peakReductionDb,
+                                                float inputEnvelopeActivity, bool clippingThisBlock,
+                                                bool inputClippingThisBlock, float currentLufs,
+                                                float currentInputLufs, float driveInto)
+{
+    const auto inputRms = telemetryInputRmsDb.load (std::memory_order_relaxed);
+    const auto outputRms = telemetryOutputRmsDb.load (std::memory_order_relaxed);
+    juce::ignoreUnused (inputRms, outputRms);
+    // -------------------------------------------------------------------------
+    //  Four-way loudness meter.
+    //
+    //  Each view is converted to dB and then averaged with equal weight, so no single
+    //  scale can dominate the combined reading:
+    //
+    //    dB   - true peak of the block, the only view that reports clipping
+    //    RMS  - electrical average of the whole block
+    //    LUFS - K-weighted, so it tracks perceived loudness rather than voltage
+    //    VU   - 300 ms ballistic average, the classic programme-level display
+    //
+    //  Averaging in dB (rather than linear) keeps the four views comparable, because
+    //  all four are already level scales; converting to linear first would let a single
+    //  silent view drag the result toward -infinity.
+    // -------------------------------------------------------------------------
+    const auto outputPeakDbValue = juce::Decibels::gainToDecibels (outputPeak, -70.0f);
+    const auto outputRmsDbValue = juce::Decibels::gainToDecibels (outputRms, -70.0f);
+    const auto outputVuDbValue = juce::Decibels::gainToDecibels (vuAverage, -70.0f);
+
+    constexpr float viewWeight = 0.25f;
+    const auto combinedDb = outputPeakDbValue * viewWeight
+                          + outputRmsDbValue * viewWeight
+                          + currentLufs * viewWeight
+                          + outputVuDbValue * viewWeight;
+
+    outputPeakDb.store (outputPeakDbValue, std::memory_order_relaxed);
+    outputRmsDb.store (outputRmsDbValue, std::memory_order_relaxed);
+    outputLufs.store (currentLufs, std::memory_order_relaxed);
+    outputVuDb.store (outputVuDbValue, std::memory_order_relaxed);
+    outputCombinedDb.store (combinedDb, std::memory_order_relaxed);
+    outputClipping.store (clippingThisBlock, std::memory_order_relaxed);
+
+    // Same four-way treatment for the input side, so the two meters are directly
+    // comparable: the difference between them is what the plugin did to the level.
+    const auto inputPeakDbValue = juce::Decibels::gainToDecibels (inputPeak, -70.0f);
+    const auto inputRmsDbValue = juce::Decibels::gainToDecibels (inputRms, -70.0f);
+    const auto inputVuDbValue = juce::Decibels::gainToDecibels (inputVuAverage, -70.0f);
+
+    const auto inputCombinedValue = inputPeakDbValue * viewWeight
+                                  + inputRmsDbValue * viewWeight
+                                  + currentInputLufs * viewWeight
+                                  + inputVuDbValue * viewWeight;
+
+    inputPeakDb.store (inputPeakDbValue, std::memory_order_relaxed);
+    inputRmsDb.store (inputRmsDbValue, std::memory_order_relaxed);
+    inputLufs.store (currentInputLufs, std::memory_order_relaxed);
+    inputVuDb.store (inputVuDbValue, std::memory_order_relaxed);
+    inputCombinedDb.store (inputCombinedValue, std::memory_order_relaxed);
+    inputClipping.store (inputClippingThisBlock, std::memory_order_relaxed);
+
+    // Subharmonic telemetry: what the undertone cascade is doing. Published once
+    // per block from the LEFT generator, because the two are locked to the same
+    // note by construction - the anti-phase protection keeps them together, and
+    // reporting both would only invite the reader to compare two numbers that are
+    // supposed to agree.
+    subfundTrackedHz.store (subharmonicL.getTrackedFrequency (engineSampleRate),
+                            std::memory_order_relaxed);
+    subfundConfidence.store (subharmonicL.getCycleConfidence(), std::memory_order_relaxed);
+
+    // Harmonic character, measured on the shaper earlier in the block. Published so the
+    // panel can show the even/odd balance the tape stage is actually producing.
+    evenHarmonicRatio.store (harmonicAnalyser.getEvenRatio(), std::memory_order_relaxed);
+    oddHarmonicRatio.store (harmonicAnalyser.getOddRatio(), std::memory_order_relaxed);
+
+    // Blocks of zero samples arrive during silence (and with some host buffer sizes),
+    // and by then the per-sample smoothing would never have been advanced.
+    inputGainSmoothed.skip (numSamples);
+    outputGainSmoothed.skip (numSamples);
+    mixSmoothed.skip (numSamples);
+    widthSmoothed.skip (numSamples);
+    bypassSmoothed.skip (numSamples);
+
+    // Glue compressor telemetry: worst-case reduction this block plus an activity
+    // envelope the UI can animate, both read without locking. Each stage publishes
+    // its own reduction and activity so the editor can give it a dedicated meter.
+    inputGainReductionDb.store (inputPeakReductionDb, std::memory_order_relaxed);
+    outputGainReductionDb.store (peakReductionDb, std::memory_order_relaxed);
+    inputCompressorActivity.store (juce::jlimit (0.0f, 1.0f, inputEnvelopeActivity),
+                                   std::memory_order_relaxed);
+    outputCompressorActivity.store (juce::jlimit (0.0f, 1.0f,
+                                                  outputCompressor.getEnvelopeActivity()),
+                                    std::memory_order_relaxed);
+    compressorActivity.store (juce::jlimit (0.0f, 1.0f,
+                                            juce::jmax (inputEnvelopeActivity,
+                                                        outputCompressor.getEnvelopeActivity())),
+                              std::memory_order_relaxed);
+
+    // Transport drift mapped to 0..1 for the UI wobble, and a harmonic weight
+    // derived from how hard the input is being driven into the tape curve.
+    transportDrift.store (juce::jlimit (0.0f, 1.0f, 0.5f + driftAccumulator * 2.0f),
+                          std::memory_order_relaxed);
+    const float driveInto = juce::jlimit (0.0f, 1.0f, inputRms * inputGainSmoothed.getCurrentValue()
+                                                          * (0.5f + driveCurve));
+    harmonicCharacter.store (driveInto, std::memory_order_relaxed);
+
+    // -------------------------------------------------------------------------
+    //  Publish one complete telemetry frame.
+    //
+    //  This is the LAST thing the block does, so every value in the frame is the
+    //  final value for this block - the meters, the drift, the harmonics, the
+    //  subfund tracker and the anti-phase guard have all finished writing. With
+    //  the lock-free queue present, this ONE push is what the editor reads: the
+    //  fields cannot be read half-updated, because they are pushed together.
+    //
+    //  The individual atomics are still written, because the editor falls back to
+    //  them when the queue is not compiled in and because they are what the DSP
+    //  harness and any future non-UI consumer read. Keeping both costs a handful of
+    //  relaxed stores per block and means neither path can be the stale one.
+    // -------------------------------------------------------------------------
+    {
+        TelemetryFrame frame;
+        frame.inputPeakDb = inputPeakDb.load (std::memory_order_relaxed);
+        frame.inputRmsDb = inputRmsDb.load (std::memory_order_relaxed);
+        frame.inputLufs = inputLufs.load (std::memory_order_relaxed);
+        frame.inputVuDb = inputVuDb.load (std::memory_order_relaxed);
+        frame.inputCombinedDb = inputCombinedDb.load (std::memory_order_relaxed);
+        frame.inputClipping = inputClipping.load (std::memory_order_relaxed);
+
+        frame.outputPeakDb = outputPeakDb.load (std::memory_order_relaxed);
+        frame.outputRmsDb = outputRmsDb.load (std::memory_order_relaxed);
+        frame.outputLufs = outputLufs.load (std::memory_order_relaxed);
+        frame.outputVuDb = outputVuDb.load (std::memory_order_relaxed);
+        frame.outputCombinedDb = outputCombinedDb.load (std::memory_order_relaxed);
+        frame.outputClipping = outputClipping.load (std::memory_order_relaxed);
+
+        frame.inputGainReductionDb = inputPeakReductionDb;
+        frame.outputGainReductionDb = peakReductionDb;
+        frame.inputCompressorActivity = inputEnvelopeActivity;
+        frame.outputCompressorActivity = outputCompressor.getEnvelopeActivity();
+        frame.compressorActivity = juce::jmax (inputEnvelopeActivity,
+                                               outputCompressor.getEnvelopeActivity());
+
+        frame.transportDrift = transportDrift.load (std::memory_order_relaxed);
+        frame.harmonicCharacter = driveInto;
+        frame.evenHarmonicRatio = evenHarmonicRatio.load (std::memory_order_relaxed);
+        frame.oddHarmonicRatio = oddHarmonicRatio.load (std::memory_order_relaxed);
+        frame.subfundTrackedHz = subfundTrackedHz.load (std::memory_order_relaxed);
+        frame.subfundConfidence = subfundConfidence.load (std::memory_order_relaxed);
+        frame.antiPhaseAmount = antiPhaseCorrection;
+        frame.transportRamp = transportRampPublished.load (std::memory_order_relaxed);
+        frame.spindownRamp = spindownRampPublished.load (std::memory_order_relaxed);
+        frame.bypassActive = bypassActive.load (std::memory_order_relaxed);
+
+#if J37_HAS_RWQ
+        // Non-blocking: if the editor has not drained the ring, the OLDEST frame
+        // is dropped rather than the audio thread waiting. An old meter reading is
+        // worthless, so dropping is the right answer. pop() first is not needed -
+        // ReaderWriterQueue's try_enqueue overwrites nothing and simply fails when
+        // full, so a full ring stops being a problem the moment the editor reads.
+        if (! telemetryQueue.try_enqueue (frame))
+        {
+            // Full ring: make room by discarding the oldest frame, then retry once.
+            TelemetryFrame discarded;
+            telemetryQueue.try_dequeue (discarded);
+            telemetryQueue.try_enqueue (frame);
+        }
+#endif
+
+        // The always-present mirror. These are the three the editor needs even when
+        // the queue is absent, and the values a host-side meter would read.
+        telemetryInputPeakDb.store (frame.inputPeakDb, std::memory_order_relaxed);
+        telemetryOutputPeakDb.store (frame.outputPeakDb, std::memory_order_relaxed);
+        telemetryInputRmsDb.store (frame.inputRmsDb, std::memory_order_relaxed);
+        telemetryOutputRmsDb.store (frame.outputRmsDb, std::memory_order_relaxed);
+        telemetryAntiPhase.store (frame.antiPhaseAmount, std::memory_order_relaxed);
+        telemetryPlatter.store (frame.transportRamp, std::memory_order_relaxed);
+    }
+}
+
+/ worthless, so dropping is the right answer. pop() first is not needed -
+        // ReaderWriterQueue's try_enqueue overwrites nothing and simply fails when
+        // full, so a full ring stops being a problem the moment the editor reads.
+        if (! telemetryQueue.try_enqueue (frame))
+        {
+            // Full ring: make room by discarding the oldest frame, then retry once.
+            TelemetryFrame discarded;
+            telemetryQueue.try_dequeue (discarded);
+            telemetryQueue.try_enqueue (frame);
+        }
+#endif
+
+        // The always-present mirror. These are the three the editor needs even when
+        // the queue is absent, and the values a host-side meter would read.
+        telemetryInputPeakDb.store (frame.inputPeakDb, std::memory_order_relaxed);
+        telemetryOutputPeakDb.store (frame.outputPeakDb, std::memory_order_relaxed);
+        telemetryInputRmsDb.store (frame.inputRmsDb, std::memory_order_relaxed);
+        telemetryOutputRmsDb.store (frame.outputRmsDb, std::memory_order_relaxed);
+        telemetryAntiPhase.store (frame.antiPhaseAmount, std::memory_order_relaxed);
+        telemetryPlatter.store (frame.transportRamp, std::memory_order_relaxed);
+    }
+}
+
 void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                              juce::MidiBuffer& midiMessages)
 {
@@ -2878,99 +3247,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         juce::FloatVectorOperations::clear (
             block.getChannelPointer (static_cast<std::size_t> (channel)), numSamples);
 
-    // -------------------------------------------------------------------------
-    //  Bypass: the parameter is ramped, so the plugin can be switched in and out
-    //  without a click, and while fully bypassed we skip the tape engine entirely.
-    //  Input metering stays alive so the user can still see what is arriving.
-    // -------------------------------------------------------------------------
-    // Getters (never raw fields) so the reads are seq_cst-per-call but always
-    // thread-consistent: `bypassParam->load() >= 0.5f && bypassParam->load() < 0.5f`
-    // against the same atomic could otherwise straddle a host-side value change.
-    const auto bypassRequested = [&]
-    {
-        auto* parameter = bypassParam;
-        return parameter != nullptr && parameter->load() >= 0.5f;
-    }();
-
-    // DELTA listen is read HERE, ahead of the early return below, because the two
-    // interact. Returning the untouched host buffer out of a fully bypassed engine
-    // snapped the monitor from "only what the machine adds" back to the full dry
-    // signal in a single block: with the blend below ignoring the bypass crossfade,
-    // the output was the difference on the last block through the engine and the
-    // raw input on the next one. A monitor that switches position with a step in the
-    // waveform clicks exactly like any other step.
-    //
-    // `deltaEngaged` is the OR of the parameter, the ramp and the current value, so
-    // the return is held off until the monitor has actually finished travelling.
-    // While DELTA is still in the block the engine keeps running and the crossfade
-    // down to silence further down does the rest - a bypassed machine makes no
-    // difference, which is what the delta monitor has to show.
-    const auto deltaListen = [&]
-    {
-        auto* parameter = deltaParam;
-        return parameter != nullptr && parameter->load() >= 0.5f;
-    }();
-    const bool deltaEngaged = deltaListen
-                           || deltaListenSmoothed.isSmoothing()
-                           || deltaListenSmoothed.getCurrentValue() > 0.0f;
-
-    if (bypassRequested && ! bypassSmoothed.isSmoothing() && bypassSmoothed.getCurrentValue() <= 0.0f
-        && ! deltaEngaged)
-    {
-        bypassActive.store (true, std::memory_order_relaxed);
-
-        float bypassPeak = 0.0f;
-        double bypassSquares = 0.0;
-        for (int channel = 0; channel < activeInputChannels; ++channel)
-        {
-            for (int sample = 0; sample < numSamples; ++sample)
-            {
-                // getSample() reads through the block, so the same code serves the
-                // host-buffer path and the oversampler's internal-buffer path.
-                const auto value = block.getSample (channel, sample);
-                bypassPeak = juce::jmax (bypassPeak, std::abs (value));
-                bypassSquares += static_cast<double> (value) * value;
-            }
-        }
-
-        const auto bypassSamples = static_cast<double> (numSamples)
-                                 * static_cast<double> (juce::jmax (1, activeInputChannels));
-        const auto bypassRms = bypassSamples > 0.0
-            ? static_cast<float> (std::sqrt (bypassSquares / bypassSamples)) : 0.0f;
-
-        inputPeakLevel.store (bypassPeak, std::memory_order_relaxed);
-        inputRmsLevel.store (bypassRms, std::memory_order_relaxed);
-        outputPeakLevel.store (bypassPeak, std::memory_order_relaxed);
-        outputRmsLevel.store (bypassRms, std::memory_order_relaxed);
-
-        // While fully bypassed the plugin is transparent, so every loudness view reads
-        // the dry signal and the clipping lamp reflects what is actually passing through.
-        const auto bypassPeakDb = juce::Decibels::gainToDecibels (bypassPeak, -70.0f);
-        const auto bypassRmsDb = juce::Decibels::gainToDecibels (bypassRms, -70.0f);
-        outputPeakDb.store (bypassPeakDb, std::memory_order_relaxed);
-        outputRmsDb.store (bypassRmsDb, std::memory_order_relaxed);
-        outputLufs.store (bypassRmsDb, std::memory_order_relaxed);
-        outputVuDb.store (bypassRmsDb, std::memory_order_relaxed);
-        outputCombinedDb.store (bypassPeakDb * 0.25f + bypassRmsDb * 0.75f,
-                                std::memory_order_relaxed);
-        outputClipping.store (bypassPeak > 1.0f, std::memory_order_relaxed);
-
-        // Bypassed, the input and output are the same signal, so the input meter reports
-        // the same four-way reading.
-        inputPeakDb.store (bypassPeakDb, std::memory_order_relaxed);
-        inputRmsDb.store (bypassRmsDb, std::memory_order_relaxed);
-        inputLufs.store (bypassRmsDb, std::memory_order_relaxed);
-        inputVuDb.store (bypassRmsDb, std::memory_order_relaxed);
-        inputCombinedDb.store (bypassPeakDb * 0.25f + bypassRmsDb * 0.75f,
-                               std::memory_order_relaxed);
-        inputClipping.store (bypassPeak > 1.0f, std::memory_order_relaxed);
-        inputGainReductionDb.store (0.0f, std::memory_order_relaxed);
-        outputGainReductionDb.store (0.0f, std::memory_order_relaxed);
-        inputCompressorActivity.store (0.0f, std::memory_order_relaxed);
-        outputCompressorActivity.store (0.0f, std::memory_order_relaxed);
-        compressorActivity.store (0.0f, std::memory_order_relaxed);
+    // Fast bypass exits before coefficient setup and the per-sample machine loop.
+    // Delta Listen deliberately disables this shortcut until its fade reaches zero.
+    BlockContext blockContext { numSamples, activeInputChannels, engineSampleRate };
+    if (processBypassedBlock (block, blockContext))
         return;
-    }
 
     bypassActive.store (false, std::memory_order_relaxed);
 
@@ -4418,14 +4699,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     };
 
     const int activeChannels = activeInputChannels;
-    const std::array<std::array<int, 12>, 6> scaleOffsetsByMode {{
-        {{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 }},
-        {{ 0, 2, 4, 5, 7, 9, 11, -1, -1, -1, -1, -1 }},
-        {{ 0, 2, 3, 5, 7, 8, 10, -1, -1, -1, -1, -1 }},
-        {{ 0, 2, 3, 5, 7, 9, 10, -1, -1, -1, -1, -1 }},
-        {{ 0, 2, 4, 7, 9, -1, -1, -1, -1, -1, -1, -1 }},
-        {{ 0, 3, 5, 7, 10, -1, -1, -1, -1, -1, -1, -1 }}
-    }};
+    const auto& scaleOffsetsByMode = scaleOffsetsForMode (tuningMode);
 
     // Scratch storage for the IR stage's wet capture: one copy of the block's
     // finished signal, convolved in place, then crossfaded back by IR MIX. It
@@ -4577,7 +4851,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const float inputMakeupFraction = 0.30f + inputDegree * 0.35f;
     const float outputMakeupFraction = 0.35f + outputDegree * 0.35f;
 
-    for (int sample = 0; sample < numSamples; ++sample)
+    const auto processOneSample = [&] (int sample) noexcept
     {
         const float inputGain = inputGainSmoothed.getNextValue();
         const float outputGain = outputGainSmoothed.getNextValue();
@@ -5826,63 +6100,16 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             }
         }
 
-        // Auto-tune: estimate a stable fundamental from positive-going zero
-        // crossings, quantise it to tonic/mode, then use the fixed-size granular
-        // shifter. The shifter is bypassed at zero amount and only receives a
-        // correction after several consistent periods, so noise and transients
-        // are not pulled toward a random note.
-        if (autoTuneStrength > 1.0e-5f && activeChannels > 0)
+        if (autoTuneStrength > 1.0e-5f)
+        {
+            std::array<float, 2> tuneFrame { outputSignal[0], outputSignal[1] };
+            processAutoTuneSample (tuneFrame.data(), activeChannels, engineSampleRate);
             for (int channel = 0; channel < activeChannels; ++channel)
             {
                 const auto index = static_cast<std::size_t> (channel);
-                const auto sample = outputSignal[index];
-                auto& previous = autoTunePreviousSample[index];
-                auto& counter = autoTuneSampleCounter[index];
-                auto& crossings = autoTuneZeroCrossings[index];
-                auto& frequency = autoTuneFrequency[index];
-                ++counter;
-                const auto crossed = previous <= 0.0f && sample > 0.0f && std::abs (sample) > 1.0e-4f;
-                if (crossed)
-                {
-                    if (counter >= 2.0f)
-                    {
-                        const auto instant = engineSampleRate / counter;
-                        if (instant >= 45.0f && instant <= 1800.0f)
-                            frequency += (instant - frequency) * 0.12f;
-                    }
-                    counter = 0.0f;
-                    crossings = juce::jmin (crossings + 1.0f, 8.0f);
-                }
-                previous = sample;
-                crossings *= 0.9995f;
-
-                if (crossings > 2.0f && frequency > 45.0f)
-                {
-                    const auto midi = 69.0f + 12.0f * std::log2 (frequency / 440.0f);
-                    const auto nearestMidi = juce::roundToInt (midi);
-                    auto targetMidi = nearestMidi;
-                    if (tuningMode > 0)
-                    {
-                        auto bestDistance = 1000;
-                        for (int candidate = nearestMidi - 12; candidate <= nearestMidi + 12; ++candidate)
-                        {
-                            const auto pitchClass = (candidate - tuningTonic + 120) % 12;
-                            bool allowed = false;
-                            for (const auto offset : scaleOffsetsByMode[static_cast<std::size_t> (juce::jlimit (0, 5, tuningMode))])
-                                if (offset >= 0 && offset == pitchClass) allowed = true;
-                            if (allowed && std::abs (candidate - nearestMidi) < bestDistance)
-                            {
-                                targetMidi = candidate;
-                                bestDistance = std::abs (candidate - nearestMidi);
-                            }
-                        }
-                    }
-                    const auto targetFrequency = 440.0f * std::pow (2.0f, (static_cast<float> (targetMidi) - 69.0f) / 12.0f);
-                    const auto targetRatio = juce::jlimit (0.5f, 2.0f, targetFrequency / frequency);
-                    outputSignal[index] = autoTuneShifters[index].process (sample, targetRatio, autoTuneStrength);
-                }
+                outputSignal[index] = tuneFrame[index];
             }
-
+        }
         // Conventional compressor: post-tape, pre-width, independent of both
         // glue stages. It is a transparent bypass at MIX 0 and uses the same
         // detector settings for both channels without linking their gain states.
@@ -6190,128 +6417,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         else if (activeChannels == 1)
             currentInputLufs = inputLoudness.processFrame (inputChainHistory[0], inputChainHistory[0],
                                                            inputLoudnessCoefficient);
-    }
+    };
 
-    // -------------------------------------------------------------------------
-    //  Post-machine stages: IR cabinet, then reverb, then vinyl.
-    //
-    //  All three run AFTER the per-sample loop, on the finished block, for one
-    //  reason: none of them belongs inside the tape nonlinearity. A reverb
-    //  inside the wow modulation would be pitch-shifted with it and would smear
-    //  the harmonics the plugin exists to produce; a turntable is the last
-    //  thing in the signal path, so its surface noise must not be recorded onto
-    //  the tape; and a cabinet or a room is heard from the LISTENER's side, so
-    //  it colours the finished record rather than the performance.
-    //
-    //  They are a second pass over the block rather than part of the main loop
-    //  because the reverb is a STEREO processor - its two comb banks have to see
-    //  both channels to produce the width - and because the IR convolver is a
-    //  BLOCK processor (see the note at the scratch buffer): neither can sit in
-    //  a per-sample loop.
-    // -------------------------------------------------------------------------
-    const float reverbMixNow = reverbMixSmoothed.getCurrentValue();
-    const float vinylNow = vinylSmoothed.getCurrentValue();
+    for (int sample = 0; sample < numSamples; ++sample)
+        processOneSample (sample);
 
-    // -- IR CABINET stage -------------------------------------------------------
-    //
-    //  Convolves the finished wet signal against a user-loaded impulse
-    //  response, before the reverb and the vinyl. It runs here rather than
-    //  inside the level stages because an IR is the room around the finished
-    //  record: normalising the file (which loadFromFile does) keeps its blend
-    //  level-safe, and running it after the limiter means the limiter never
-    //  rides the room. DELTA is unaffected either way - the difference signal
-    //  was already formed inside the loop, so it stays "what the machine adds"
-    //  without the room.
-    //
-    //  One convolver per channel - the stage's own note explains why - and the
-    //  wet copy is convolved in the scratch buffer, then crossfaded back
-    //  sample by sample in the pass below by the smoothed IR MIX.
-    // ---------------------------------------------------------------------------
-    const float irMixNow = irMixSmoothed.getCurrentValue();
-    const bool irActive = irStage.hasIr && irMixNow > 1.0e-5f
-                          && scratch.getNumSamples() >= numSamples;
-
-    if (irActive)
-    {
-        // The stage re-prepares itself when the rate it sees has changed,
-        // which keeps the convolvers' plans from running against the wrong
-        // rate after an oversampling switch.
-        if (irStage.preparedSampleRate != engineSampleRate
-            || irStage.preparedMaxBlock < numSamples)
-        {
-            irStage.prepare ({ engineSampleRate,
-                               static_cast<juce::uint32> (juce::jmax (numSamples, 256)),
-                               2 });
-        }
-
-        scratch.clear();
-        for (int channel = 0; channel < activeChannels; ++channel)
-            scratch.copyFrom (channel, 0,
-                              channelData[static_cast<std::size_t> (channel)],
-                              numSamples);
-
-        irStage.process (scratch, activeChannels, true);
-    }
-
-    if (activeChannels > 0
-        && (reverbMixNow > 1.0e-5f || vinylNow > 1.0e-5f || irActive))
-    {
-        const float reverbSizeNow = reverbSizeSmoothed.getCurrentValue();
-        const float crackleNow = vinylCrackleSmoothed.getCurrentValue() * vinylNow;
-        const float rumbleNow = vinylRumbleSmoothed.getCurrentValue() * vinylNow;
-
-        for (int sample = 0; sample < numSamples; ++sample)
-        {
-            for (int channel = 0; channel < activeChannels; ++channel)
-            {
-                float value = channelData[static_cast<std::size_t> (channel)][sample];
-
-                // -- IR cabinet: the room around the finished record ----------
-                // The convolved copy sits in the scratch buffer; this is the
-                // linear IR MIX crossfade over it, applied first so the reverb
-                // and the vinyl colour the ROOM and the record it sits on.
-                if (irActive)
-                {
-                    const auto wet = scratch.getSample (channel, sample);
-                    value += (wet - value) * irMixNow;
-                }
-
-                // -- Reverb: the room the machine is in --------------------------
-                // It is applied to the finished signal, so what reverberates is
-                // the record rather than the performance.
-                if (reverbMixNow > 1.0e-5f)
-                    value = reverb.process (value, channel, reverbSizeNow, reverbMixNow);
-
-                // -- Vinyl: surface, rumble and the RIAA playback character ------
-                // Each channel has its own VinylStage, so the crackle and the
-                // rumble are uncorrelated between the sides - sharing a generator
-                // would put every tick in the centre of the image instead of on
-                // the surface.
-                if (vinylNow > 1.0e-5f)
-                {
-                    auto& vinyl = channel == 0 ? vinylL : vinylR;
-                    // NOISE LVL scales the vinyl noise the same way it scales the
-                    // tape floor: the crackle and rumble CONTROLS set how much of
-                    // each source the record has, NOISE LVL sets how loud the
-                    // sources themselves are. NOISE (the mix) then sets how much
-                    // of that noise section reaches the output - the same
-                    // proportion the tape floor rides, so the two noise
-                    // departments answer to the same two controls. Applied here
-                    // rather than inside the stage so the stage's own type
-                    // voicing stays untouched by the shared trims.
-                    const float vinylNoiseLevel = noiseLvlSmoothed.getCurrentValue()
-                                                * noiseTrimSmoothed.getCurrentValue();
-                    value = vinyl.process (value, channel,
-                                           crackleNow * vinylNoiseLevel,
-                                           rumbleNow * vinylNoiseLevel, vinylNow,
-                                           vinylRumbleCoefficient, vinylWarmthCoefficient,
-                                           vinylNoiseState);
-                }
-
-                channelData[static_cast<std::size_t> (channel)][sample] = value;
-            }
-        }
-    }
+    processPostMachineStages (block, blockContext);
 
     const auto measuredSamples = static_cast<double> (numSamples)
                                * static_cast<double> (juce::jmax (1, activeChannels));
@@ -6336,189 +6447,13 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // Noise-floor levelling is deliberately absent. See the note in the tape loop:
     // the hiss is a constant band-limited floor, not a programme-tracking one.
 
-    const auto retainPeakUntilConsumed = [] (std::atomic<float>& publishedPeak, float blockPeak)
-    {
-        auto accumulatedPeak = publishedPeak.load (std::memory_order_relaxed);
-        while (accumulatedPeak < blockPeak
-               && ! publishedPeak.compare_exchange_weak (accumulatedPeak, blockPeak,
-                                                          std::memory_order_relaxed,
-                                                          std::memory_order_relaxed))
-        {
-        }
-    };
-
-    retainPeakUntilConsumed (inputPeakLevel, inputPeak);
-    inputRmsLevel.store (inputRms, std::memory_order_relaxed);
-    retainPeakUntilConsumed (outputPeakLevel, outputPeak);
-    outputRmsLevel.store (outputRms, std::memory_order_relaxed);
-
-    // -------------------------------------------------------------------------
-    //  Four-way loudness meter.
-    //
-    //  Each view is converted to dB and then averaged with equal weight, so no single
-    //  scale can dominate the combined reading:
-    //
-    //    dB   - true peak of the block, the only view that reports clipping
-    //    RMS  - electrical average of the whole block
-    //    LUFS - K-weighted, so it tracks perceived loudness rather than voltage
-    //    VU   - 300 ms ballistic average, the classic programme-level display
-    //
-    //  Averaging in dB (rather than linear) keeps the four views comparable, because
-    //  all four are already level scales; converting to linear first would let a single
-    //  silent view drag the result toward -infinity.
-    // -------------------------------------------------------------------------
-    const auto outputPeakDbValue = juce::Decibels::gainToDecibels (outputPeak, -70.0f);
-    const auto outputRmsDbValue = juce::Decibels::gainToDecibels (outputRms, -70.0f);
-    const auto outputVuDbValue = juce::Decibels::gainToDecibels (vuAverage, -70.0f);
-
-    constexpr float viewWeight = 0.25f;
-    const auto combinedDb = outputPeakDbValue * viewWeight
-                          + outputRmsDbValue * viewWeight
-                          + currentLufs * viewWeight
-                          + outputVuDbValue * viewWeight;
-
-    outputPeakDb.store (outputPeakDbValue, std::memory_order_relaxed);
-    outputRmsDb.store (outputRmsDbValue, std::memory_order_relaxed);
-    outputLufs.store (currentLufs, std::memory_order_relaxed);
-    outputVuDb.store (outputVuDbValue, std::memory_order_relaxed);
-    outputCombinedDb.store (combinedDb, std::memory_order_relaxed);
-    outputClipping.store (clippingThisBlock, std::memory_order_relaxed);
-
-    // Same four-way treatment for the input side, so the two meters are directly
-    // comparable: the difference between them is what the plugin did to the level.
-    const auto inputPeakDbValue = juce::Decibels::gainToDecibels (inputPeak, -70.0f);
-    const auto inputRmsDbValue = juce::Decibels::gainToDecibels (inputRms, -70.0f);
-    const auto inputVuDbValue = juce::Decibels::gainToDecibels (inputVuAverage, -70.0f);
-
-    const auto inputCombinedValue = inputPeakDbValue * viewWeight
-                                  + inputRmsDbValue * viewWeight
-                                  + currentInputLufs * viewWeight
-                                  + inputVuDbValue * viewWeight;
-
-    inputPeakDb.store (inputPeakDbValue, std::memory_order_relaxed);
-    inputRmsDb.store (inputRmsDbValue, std::memory_order_relaxed);
-    inputLufs.store (currentInputLufs, std::memory_order_relaxed);
-    inputVuDb.store (inputVuDbValue, std::memory_order_relaxed);
-    inputCombinedDb.store (inputCombinedValue, std::memory_order_relaxed);
-    inputClipping.store (inputClippingThisBlock, std::memory_order_relaxed);
-
-    // Subharmonic telemetry: what the undertone cascade is doing. Published once
-    // per block from the LEFT generator, because the two are locked to the same
-    // note by construction - the anti-phase protection keeps them together, and
-    // reporting both would only invite the reader to compare two numbers that are
-    // supposed to agree.
-    subfundTrackedHz.store (subharmonicL.getTrackedFrequency (engineSampleRate),
-                            std::memory_order_relaxed);
-    subfundConfidence.store (subharmonicL.getCycleConfidence(), std::memory_order_relaxed);
-
-    // Harmonic character, measured on the shaper earlier in the block. Published so the
-    // panel can show the even/odd balance the tape stage is actually producing.
-    evenHarmonicRatio.store (harmonicAnalyser.getEvenRatio(), std::memory_order_relaxed);
-    oddHarmonicRatio.store (harmonicAnalyser.getOddRatio(), std::memory_order_relaxed);
-
-    // Blocks of zero samples arrive during silence (and with some host buffer sizes),
-    // and by then the per-sample smoothing would never have been advanced.
-    inputGainSmoothed.skip (numSamples);
-    outputGainSmoothed.skip (numSamples);
-    mixSmoothed.skip (numSamples);
-    widthSmoothed.skip (numSamples);
-    bypassSmoothed.skip (numSamples);
-
-    // Glue compressor telemetry: worst-case reduction this block plus an activity
-    // envelope the UI can animate, both read without locking. Each stage publishes
-    // its own reduction and activity so the editor can give it a dedicated meter.
-    inputGainReductionDb.store (inputPeakReductionDb, std::memory_order_relaxed);
-    outputGainReductionDb.store (peakReductionDb, std::memory_order_relaxed);
-    inputCompressorActivity.store (juce::jlimit (0.0f, 1.0f, inputEnvelopeActivity),
-                                   std::memory_order_relaxed);
-    outputCompressorActivity.store (juce::jlimit (0.0f, 1.0f,
-                                                  outputCompressor.getEnvelopeActivity()),
-                                    std::memory_order_relaxed);
-    compressorActivity.store (juce::jlimit (0.0f, 1.0f,
-                                            juce::jmax (inputEnvelopeActivity,
-                                                        outputCompressor.getEnvelopeActivity())),
-                              std::memory_order_relaxed);
-
-    // Transport drift mapped to 0..1 for the UI wobble, and a harmonic weight
-    // derived from how hard the input is being driven into the tape curve.
-    transportDrift.store (juce::jlimit (0.0f, 1.0f, 0.5f + driftAccumulator * 2.0f),
-                          std::memory_order_relaxed);
-    const float driveInto = juce::jlimit (0.0f, 1.0f, inputRms * inputGainSmoothed.getCurrentValue()
-                                                          * (0.5f + driveCurve));
-    harmonicCharacter.store (driveInto, std::memory_order_relaxed);
-
-    // -------------------------------------------------------------------------
-    //  Publish one complete telemetry frame.
-    //
-    //  This is the LAST thing the block does, so every value in the frame is the
-    //  final value for this block - the meters, the drift, the harmonics, the
-    //  subfund tracker and the anti-phase guard have all finished writing. With
-    //  the lock-free queue present, this ONE push is what the editor reads: the
-    //  fields cannot be read half-updated, because they are pushed together.
-    //
-    //  The individual atomics are still written, because the editor falls back to
-    //  them when the queue is not compiled in and because they are what the DSP
-    //  harness and any future non-UI consumer read. Keeping both costs a handful of
-    //  relaxed stores per block and means neither path can be the stale one.
-    // -------------------------------------------------------------------------
-    {
-        TelemetryFrame frame;
-        frame.inputPeakDb = inputPeakDb.load (std::memory_order_relaxed);
-        frame.inputRmsDb = inputRmsDb.load (std::memory_order_relaxed);
-        frame.inputLufs = inputLufs.load (std::memory_order_relaxed);
-        frame.inputVuDb = inputVuDb.load (std::memory_order_relaxed);
-        frame.inputCombinedDb = inputCombinedDb.load (std::memory_order_relaxed);
-        frame.inputClipping = inputClipping.load (std::memory_order_relaxed);
-
-        frame.outputPeakDb = outputPeakDb.load (std::memory_order_relaxed);
-        frame.outputRmsDb = outputRmsDb.load (std::memory_order_relaxed);
-        frame.outputLufs = outputLufs.load (std::memory_order_relaxed);
-        frame.outputVuDb = outputVuDb.load (std::memory_order_relaxed);
-        frame.outputCombinedDb = outputCombinedDb.load (std::memory_order_relaxed);
-        frame.outputClipping = outputClipping.load (std::memory_order_relaxed);
-
-        frame.inputGainReductionDb = inputPeakReductionDb;
-        frame.outputGainReductionDb = peakReductionDb;
-        frame.inputCompressorActivity = inputEnvelopeActivity;
-        frame.outputCompressorActivity = outputCompressor.getEnvelopeActivity();
-        frame.compressorActivity = juce::jmax (inputEnvelopeActivity,
-                                               outputCompressor.getEnvelopeActivity());
-
-        frame.transportDrift = transportDrift.load (std::memory_order_relaxed);
-        frame.harmonicCharacter = driveInto;
-        frame.evenHarmonicRatio = evenHarmonicRatio.load (std::memory_order_relaxed);
-        frame.oddHarmonicRatio = oddHarmonicRatio.load (std::memory_order_relaxed);
-        frame.subfundTrackedHz = subfundTrackedHz.load (std::memory_order_relaxed);
-        frame.subfundConfidence = subfundConfidence.load (std::memory_order_relaxed);
-        frame.antiPhaseAmount = antiPhaseCorrection;
-        frame.transportRamp = transportRampPublished.load (std::memory_order_relaxed);
-        frame.spindownRamp = spindownRampPublished.load (std::memory_order_relaxed);
-        frame.bypassActive = bypassActive.load (std::memory_order_relaxed);
-
-#if J37_HAS_RWQ
-        // Non-blocking: if the editor has not drained the ring, the OLDEST frame
-        // is dropped rather than the audio thread waiting. An old meter reading is
-        // worthless, so dropping is the right answer. pop() first is not needed -
-        // ReaderWriterQueue's try_enqueue overwrites nothing and simply fails when
-        // full, so a full ring stops being a problem the moment the editor reads.
-        if (! telemetryQueue.try_enqueue (frame))
-        {
-            // Full ring: make room by discarding the oldest frame, then retry once.
-            TelemetryFrame discarded;
-            telemetryQueue.try_dequeue (discarded);
-            telemetryQueue.try_enqueue (frame);
-        }
-#endif
-
-        // The always-present mirror. These are the three the editor needs even when
-        // the queue is absent, and the values a host-side meter would read.
-        telemetryInputPeakDb.store (frame.inputPeakDb, std::memory_order_relaxed);
-        telemetryOutputPeakDb.store (frame.outputPeakDb, std::memory_order_relaxed);
-        telemetryInputRmsDb.store (frame.inputRmsDb, std::memory_order_relaxed);
-        telemetryOutputRmsDb.store (frame.outputRmsDb, std::memory_order_relaxed);
-        telemetryAntiPhase.store (frame.antiPhaseAmount, std::memory_order_relaxed);
-        telemetryPlatter.store (frame.transportRamp, std::memory_order_relaxed);
-    }
+    const float inputRms = measuredSamples > 0.0
+        ? static_cast<float> (std::sqrt (inputSquares / measuredSamples)) : 0.0f;
+    const float outputRms = measuredSamples > 0.0
+        ? static_cast<float> (std::sqrt (outputSquares / measuredSamples)) : 0.0f;
+    publishBlockTelemetry (inputPeak, outputPeak, inputPeakReductionDb, peakReductionDb,
+                           inputEnvelopeActivity, clippingThisBlock, inputClippingThisBlock,
+                           currentLufs, currentInputLufs, driveInto);
 }
 
 //==============================================================================

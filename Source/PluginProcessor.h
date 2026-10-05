@@ -4691,6 +4691,25 @@ public:
     /** The tape engine proper; processBlock routes into this, oversampled or not. */
     void processTapeEngine (juce::dsp::AudioBlock<float>, juce::MidiBuffer&);
 
+
+    struct BlockContext
+    {
+        int samples = 0;
+        int channels = 0;
+        float sampleRate = 0.0f;
+    };
+    bool processBypassedBlock (juce::dsp::AudioBlock<float>&, const BlockContext&);
+    void processPostMachineStages (juce::dsp::AudioBlock<float>&, const BlockContext&);
+    void processAutoTuneSample (float* stereoSamples, int channels, float rate) noexcept;
+    void publishBlockTelemetry (float inputPeak, float inputRms,
+                                float outputPeak, float outputRms,
+                                float inputPeakReductionDb, float peakReductionDb,
+                                float inputEnvelopeActivity, bool clipping,
+                                bool inputClipping, float currentLufs,
+                                float currentInputLufs, float driveInto);
+    static const std::array<std::array<int, 12>, 6>& scaleOffsetsForMode (int modeIndex) noexcept;
+    juce::AudioBuffer<float> postFxScratch;
+
     //==============================================================================
     juce::AudioProcessorEditor* createEditor() override;
     bool hasEditor() const override;
@@ -5545,6 +5564,8 @@ private:
     std::array<GlueCompressor, 2> outputCompressorChannels;
     std::array<StandardCompressor, 2> standardCompressors;
     std::array<RealtimePitchShifter, 2> autoTuneShifters;
+    std::array<float, 2> autoTuneCorrectionSmoothed { 1.0f, 1.0f };
+    juce::AudioBuffer<float> postFxScratch;
     std::array<float, 2> autoTunePhase { 0.0f, 0.0f };
     std::array<float, 2> autoTuneFrequency { 440.0f, 440.0f };
     std::array<float, 2> autoTuneEnvelope {};
