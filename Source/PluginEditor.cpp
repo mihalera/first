@@ -1057,6 +1057,19 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                                                  static_cast<float> (width),
                                                  static_cast<float> (height)).reduced (6.0f);
 
+    // Everything a knob is made of lives inside the rectangle the layout gave
+    // it, six pixels in. The radius solve below is what keeps the SOLID parts
+    // (cap, collar, skirt, wall) inside that rectangle - it takes the side wall
+    // out of the same budget as the face for exactly this reason - and this
+    // ceiling is what keeps the two parts that are NOT hardware inside it too:
+    // the tick marks, which are the furthest thing the scale draws, and the soft
+    // halos, which are light and were the one thing allowed to spill. At the
+    // minimum panel size a knob's ticks reached seven pixels past its own
+    // rectangle and its halo twenty - far enough to land on the value readout
+    // under it and on the member band under that, which is where a knob's arc
+    // was seen standing on the switch beside it.
+    const auto paintCeiling = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
+
     // The camera. A knob's top face is a disc, and a disc seen from anywhere
     // other than directly overhead is an ELLIPSE - flatter the nearer the near
     // edge of the panel it sits. Every term below is drawn as a circle about
@@ -1070,6 +1083,12 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     const auto view = perspectiveFor (bounds, slider);
     const auto centre = view.centre;
     g.saveState();
+    // Clipped to the knob's own rectangle, so the ceiling above is a guarantee
+    // rather than a hope: whatever the halo, the tracer's glow or a later
+    // addition does, nothing this routine paints can reach the next cell. The
+    // clip is opened before the camera transform, so it is the control's
+    // rectangle in the panel - not a rectangle that foreshortens with it.
+    g.reduceClipRegion (bounds.toNearestInt());
     g.addTransform (juce::AffineTransform (
                         view.squashX, 0.0f,
                         centre.x * (1.0f - view.squashX),
@@ -1144,7 +1163,11 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
         // changes and is reused on every frame after that.
         melatonin::DropShadow glow;
         glow.setColor (accent.withAlpha (haloAlpha));
-        glow.setRadius (6.0 + (hovered ? 3.0 : 0.0) + activity * 6.0 * breath);
+        // The blur radius is what decides how far this light reaches past the
+        // cap, so it is solved from the room left to the ceiling rather than
+        // fixed: the halo is as big as its cell allows and no bigger.
+        const auto glowRadius = 6.0f + (hovered ? 3.0f : 0.0f) + activity * 6.0f * breath;
+        glow.setRadius (juce::jmax (2.0f, juce::jmin (glowRadius, paintCeiling - radius)));
 
         juce::Path haloPath;
         haloPath.addEllipse (centre.x - radius, centre.y - radius,
@@ -1153,8 +1176,9 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
 #else
         for (int ring = 3; ring >= 1; --ring)
         {
-            const auto haloRadius = outerRadius + static_cast<float> (ring) * 5.0f
-                                    + activity * 4.0f * breath;
+            const auto haloRadius = juce::jmin (outerRadius + static_cast<float> (ring) * 5.0f
+                                                    + activity * 4.0f * breath,
+                                                paintCeiling);
             g.setColour (accent.withAlpha (haloAlpha / static_cast<float> (ring)));
             g.drawEllipse (centre.x - haloRadius, centre.y - haloRadius,
                            haloRadius * 2.0f, haloRadius * 2.0f, 1.6f);
@@ -1236,8 +1260,14 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
         const auto major = tick % 3 == 0;
         const auto tremble = std::sin (tickScreenAngle * 3.0f + animationPhase * 1.7f)
                              * driftWobble * 1.3f;
-        const auto innerRadius = outerRadius + (major ? 3.0f : 4.0f) + tremble;
-        const auto outerTickRadius = innerRadius + (major ? 5.0f : 2.5f);
+        // The ticks are the furthest thing the knob draws, and they stop at the
+        // ceiling: the tick ring stays concentric and inside the knob's own
+        // rectangle at every cell shape, instead of being the arc that reaches
+        // the control in the next cell.
+        const auto innerRadius = juce::jmin (outerRadius + (major ? 3.0f : 4.0f) + tremble,
+                                             paintCeiling - (major ? 4.0f : 2.0f));
+        const auto outerTickRadius = juce::jmin (innerRadius + (major ? 5.0f : 2.5f),
+                                                 paintCeiling);
         const auto inner = centre + juce::Point<float> (std::cos (tickScreenAngle) * innerRadius,
                                                         std::sin (tickScreenAngle) * innerRadius);
         const auto outer = centre + juce::Point<float> (std::cos (tickScreenAngle) * outerTickRadius,
@@ -1597,7 +1627,13 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
 {
     const auto& palette = paletteForTheme (theme);
     const auto view = perspectiveFor (button.getLocalBounds().toFloat(), button);
-    const auto bounds = button.getLocalBounds().toFloat().reduced (2.0f, 3.0f);
+    // The body is inset four pixels at each side rather than two. The wall, the
+    // caption, the groove and the thumb all live inside this rectangle, so the
+    // inset is the only place a rocker's overall size is decided - and at two
+    // pixels the body ran right up against the cell the layout gave it, which is
+    // what made a row of them read as one strip of metal rather than as separate
+    // switches.
+    const auto bounds = button.getLocalBounds().toFloat().reduced (4.0f, 3.0f);
     const auto isOn = button.getToggleState();
 
     // The FRONT WALL: the part of the switch's side that the camera's angle
@@ -1675,8 +1711,14 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     // groove that ran to the old 4 px inset would paint past the arc. Its own
     // inset is deeper than the wall's, so the front wall drawn along the bottom
     // of the body can never cover it.
+    // The groove is inset by the body's own end radius, so the groove, the thumb
+    // that travels its full length and the state word on that thumb all stay on
+    // the body's STRAIGHT section. At a flat 7 px the groove began inside the
+    // capsule's rounded end, which is the half circle a rocker is drawn as at
+    // each side - and the thumb could be seen riding onto it.
+    const auto endInset = juce::jmax (7.0f, bounds.getHeight() * 0.5f + 1.0f);
     const auto track = bounds.withTrimmedTop (labelHeight)
-                            .withTrimmedLeft (7.0f).withTrimmedRight (7.0f)
+                            .withTrimmedLeft (endInset).withTrimmedRight (endInset)
                             .withTrimmedBottom (juce::jmax (2.0f, bounds.getHeight() * 0.14f));
 
     // Status lamp: one explicit circular footprint, concentric at every scale. The
@@ -1974,8 +2016,14 @@ void J37InlineLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButt
     // the shape every settings panel uses, and deliberately NOT the deck's
     // rocker. The pill is a share of the control's own height so it scales with
     // the cell, and it never grows taller than a comfortable touch target.
-    const auto pillHeight = juce::jlimit (12.0f, 18.0f, bounds.getHeight() * 0.72f);
-    const auto pillWidth = juce::jlimit (pillHeight * 1.7f, bounds.getWidth() * 0.46f,
+    // Smaller than it was (12..18 px tall at 72 % of the cell). A pill's end is a
+    // HALF CIRCLE and the dot at the end of it is a circle of its own: at the old
+    // proportions the dot was four pixels smaller than the pill was tall and rode
+    // the end cap, so the two curves crossed on every one of these switches. The
+    // pill is 11..16 px now and the dot below is sized against the STRAIGHT
+    // section, so it never reaches the cap.
+    const auto pillHeight = juce::jlimit (11.0f, 16.0f, bounds.getHeight() * 0.62f);
+    const auto pillWidth = juce::jlimit (pillHeight * 1.8f, bounds.getWidth() * 0.44f,
                                           pillHeight * 2.4f);
     const auto pill = juce::Rectangle<float> (bounds.getRight() - pillWidth,
                                               bounds.getCentreY() - pillHeight * 0.5f,
@@ -1994,9 +2042,14 @@ void J37InlineLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButt
     g.drawRoundedRectangle (pill, pillHeight * 0.5f, 1.0f);
 
     // The dot. It rides the track's two ends; when on it is the readout colour
-    // on the accent, and when off it is the panel colour on the recess.
-    const auto dotDiameter = juce::jmax (6.0f, pillHeight - 4.0f);
-    const auto dotX = isOn ? pill.getRight() - dotDiameter - 2.0f : pill.getX() + 2.0f;
+    // on the accent, and when off it is the panel colour on the recess. It sits
+    // INSIDE the end radius (half the pill's height) plus a pixel, which is what
+    // keeps a round dot off the pill's own rounded end - the two were crossing
+    // at both ends before.
+    const auto dotDiameter = juce::jmax (5.0f, pillHeight - 7.0f);
+    const auto dotEndInset = pillHeight * 0.5f + 1.0f;
+    const auto dotX = isOn ? pill.getRight() - dotEndInset - dotDiameter
+                           : pill.getX() + dotEndInset;
     const auto dotY = pill.getCentreY() - dotDiameter * 0.5f + (shouldDrawButtonAsDown ? 0.7f : 0.0f);
     g.setColour (isOn ? palette.readout : palette.knobFace);
     g.fillEllipse (dotX, dotY, dotDiameter, dotDiameter);
@@ -2021,8 +2074,12 @@ void J37InlineLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButt
     g.setColour (isOn ? palette.readout : palette.secondary);
     g.setFont (juce::Font (juce::FontOptions (juce::jmax (6.5f, pillHeight * 0.42f),
                                                juce::Font::bold)));
-    const auto wordArea = pill.withTrimmedLeft (isOn ? 2.0f : dotDiameter + 3.0f)
-                               .withTrimmedRight (isOn ? dotDiameter + 3.0f : 2.0f);
+    // The state word takes what is left once the dot's end (its inset, its own
+    // diameter and the two pixels of air around it) is removed from the side the
+    // dot is on.
+    const auto dotFootprint = dotEndInset + dotDiameter + 2.0f;
+    const auto wordArea = pill.withTrimmedLeft (isOn ? dotEndInset : dotFootprint)
+                              .withTrimmedRight (isOn ? dotFootprint : dotEndInset);
     g.drawText (isOn ? "ON" : "OFF", wordArea, juce::Justification::centred, false);
 
     if (shouldDrawButtonAsHighlighted || button.hasKeyboardFocus (false))
@@ -7838,8 +7895,17 @@ void FirstAudioProcessorEditor::resized()
         // a 30 px control vertically CENTRED under its caption, the same height
         // every other switch in the panel shows.
         const auto bandHeight = juce::jmin (30, cell.getHeight() - 22);
+        // The centring is measured against the band's NOMINAL height (50 px),
+        // never against the cell's. On SETTINGS the band is the whole grid - the
+        // page holds no knobs to take the rest of it - and measuring against
+        // that threw GL and OVERSAMPLING 168 px below their own captions while
+        // UI SOUNDS, which is placed directly at +20, stayed at the top: one
+        // page, two layouts. With the nominal band they sit under their captions
+        // on every page, and the arithmetic is unchanged everywhere the band is
+        // 50 px or a few pixels taller.
+        const auto centringBand = juce::jmin (cell.getHeight(), 50);
         const auto bandY = cell.getY() + 20
-                           + juce::jmax (0, (cell.getHeight() - 22 - bandHeight) / 2);
+                           + juce::jmax (0, (centringBand - 22 - bandHeight) / 2);
         box.setBounds (cell.getX() + 12, bandY,
                        cell.getWidth() - 24, bandHeight);
     };

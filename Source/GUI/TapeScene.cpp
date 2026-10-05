@@ -122,8 +122,14 @@ namespace
     constexpr float bankKnobFaceZ = bankFaceZ + 0.020f;
 
     constexpr float bankKnobRadius = 0.060f;
-    constexpr float bankKeyHalfX   = 0.052f;
-    constexpr float bankKeyHalfY   = 0.034f;
+    // The keycaps are smaller than they were (0.052 x 0.034). A key sits at the
+    // end of the bank, one placement away from the third knob's own lit disc, and
+    // at the old size the two met: the cap's right edge at 0.100 against a glow
+    // that reaches 0.115 from that knob's centre - a key standing on the arc
+    // around the knob beside it. Both numbers moved, and the glow moved further
+    // (see its own scale below), so the gap is real rather than renamed.
+    constexpr float bankKeyHalfX   = 0.044f;
+    constexpr float bankKeyHalfY   = 0.028f;
     constexpr float bankKeyHalfZ   = 0.026f;
 
     // The sweep a knob's index mark travels, and the sweep its lit arc covers -
@@ -1778,10 +1784,16 @@ void TapeScene::drawControlBank (const glm::mat4& viewProjection,
 
     for (int i = 0; i < bankKnobCount; ++i)
     {
+        // 1.55 rather than 1.9: at 1.9 the disc reached 0.115 from the knob's
+        // centre and crossed a keycap's own edge at 0.100, which is the light the
+        // key was standing on. At 1.55 it reaches 0.093 and the key's edge is at
+        // 0.108 - the halo is still the deck's activity lamp, and it is now a
+        // light ON the face around its own knob instead of one spilling onto the
+        // control beside it.
         const auto model = faceModel
                          * glm::translate (glm::mat4 (1.0f), { bankPlacements[i].x, 0.0f, 0.008f })
                          * glm::scale (glm::mat4 (1.0f),
-                                       { bankKnobRadius * 1.9f, bankKnobRadius * 1.9f, 1.0f });
+                                       { bankKnobRadius * 1.55f, bankKnobRadius * 1.55f, 1.0f });
 
         shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (model), 1, GL_FALSE);
         shaderProgram->setUniform ("uMode", static_cast<float> (glowMode));
