@@ -2364,7 +2364,7 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     resetSampleRateDependentState();
 
     irStage.prepare ({ sampleRate,
-                       static_cast<juce::uint32> (juce::jmax (1, maxEngineSamples)),
+                       static_cast<juce::uint32> (juce::jmax (1, samplesPerBlock)),
                        2 });
     postFxScratch.setSize (2, juce::jmax (1, samplesPerBlock * 8), false, true, true);
     postFxScratch.clear();
@@ -2934,7 +2934,7 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
         }
 }
 
-const std::array<std::array<int, 12>, 6>& FirstAudioProcessor::scaleOffsetsForMode (int modeIndex) noexcept
+const std::array<int, 12>& FirstAudioProcessor::scaleOffsetsForMode (int modeIndex) noexcept
 {
     static constexpr std::array<std::array<int, 12>, 6> scales {{
         {{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 }},
@@ -3011,15 +3011,15 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
     }
 }
 
-void FirstAudioProcessor::publishBlockTelemetry (float inputPeak, float outputPeak,
+void FirstAudioProcessor::publishBlockTelemetry (const BlockContext& context,
+                                                float inputPeak, float inputRms,
+                                                float outputPeak, float outputRms,
                                                 float inputPeakReductionDb, float peakReductionDb,
-                                                float inputEnvelopeActivity, bool clippingThisBlock,
-                                                bool inputClippingThisBlock, float currentLufs,
-                                                float currentInputLufs, float driveInto)
+                                                float inputEnvelopeActivity, float driftNow,
+                                                bool clippingThisBlock, bool inputClippingThisBlock,
+                                                float currentLufs, float currentInputLufs,
+                                                float driveInto)
 {
-    const auto inputRms = telemetryInputRmsDb.load (std::memory_order_relaxed);
-    const auto outputRms = telemetryOutputRmsDb.load (std::memory_order_relaxed);
-    juce::ignoreUnused (inputRms, outputRms);
     // -------------------------------------------------------------------------
     //  Four-way loudness meter.
     //
@@ -3070,12 +3070,20 @@ void FirstAudioProcessor::publishBlockTelemetry (float inputPeak, float outputPe
     inputCombinedDb.store (inputCombinedValue, std::memory_order_relaxed);
     inputClipping.store (inputClippingThisBlock, std::memory_order_relaxed);
 
+    // The linear peak and RMS levels the scene's peak lamp drains each tick
+    // (getOutputPeakLevel is an exchange), published here exactly as the bypass
+    // path publishes its own pair in processBypassedBlock.
+    inputPeakLevel.store (inputPeak, std::memory_order_relaxed);
+    outputPeakLevel.store (outputPeak, std::memory_order_relaxed);
+    inputRmsLevel.store (inputRms, std::memory_order_relaxed);
+    outputRmsLevel.store (outputRms, std::memory_order_relaxed);
+
     // Subharmonic telemetry: what the undertone cascade is doing. Published once
     // per block from the LEFT generator, because the two are locked to the same
     // note by construction - the anti-phase protection keeps them together, and
     // reporting both would only invite the reader to compare two numbers that are
     // supposed to agree.
-    subfundTrackedHz.store (subharmonicL.getTrackedFrequency (engineSampleRate),
+    subfundTrackedHz.store (subharmonicL.getTrackedFrequency (context.sampleRate),
                             std::memory_order_relaxed);
     subfundConfidence.store (subharmonicL.getCycleConfidence(), std::memory_order_relaxed);
 
@@ -3086,11 +3094,11 @@ void FirstAudioProcessor::publishBlockTelemetry (float inputPeak, float outputPe
 
     // Blocks of zero samples arrive during silence (and with some host buffer sizes),
     // and by then the per-sample smoothing would never have been advanced.
-    inputGainSmoothed.skip (numSamples);
-    outputGainSmoothed.skip (numSamples);
-    mixSmoothed.skip (numSamples);
-    widthSmoothed.skip (numSamples);
-    bypassSmoothed.skip (numSamples);
+    inputGainSmoothed.skip (context.samples);
+    outputGainSmoothed.skip (context.samples);
+    mixSmoothed.skip (context.samples);
+    widthSmoothed.skip (context.samples);
+    bypassSmoothed.skip (context.samples);
 
     // Glue compressor telemetry: worst-case reduction this block plus an activity
     // envelope the UI can animate, both read without locking. Each stage publishes
@@ -3109,10 +3117,8 @@ void FirstAudioProcessor::publishBlockTelemetry (float inputPeak, float outputPe
 
     // Transport drift mapped to 0..1 for the UI wobble, and a harmonic weight
     // derived from how hard the input is being driven into the tape curve.
-    transportDrift.store (juce::jlimit (0.0f, 1.0f, 0.5f + driftAccumulator * 2.0f),
+    transportDrift.store (juce::jlimit (0.0f, 1.0f, 0.5f + driftNow * 2.0f),
                           std::memory_order_relaxed);
-    const float driveInto = juce::jlimit (0.0f, 1.0f, inputRms * inputGainSmoothed.getCurrentValue()
-                                                          * (0.5f + driveCurve));
     harmonicCharacter.store (driveInto, std::memory_order_relaxed);
 
     // -------------------------------------------------------------------------
@@ -3167,29 +3173,6 @@ void FirstAudioProcessor::publishBlockTelemetry (float inputPeak, float outputPe
         // Non-blocking: if the editor has not drained the ring, the OLDEST frame
         // is dropped rather than the audio thread waiting. An old meter reading is
         // worthless, so dropping is the right answer. pop() first is not needed -
-        // ReaderWriterQueue's try_enqueue overwrites nothing and simply fails when
-        // full, so a full ring stops being a problem the moment the editor reads.
-        if (! telemetryQueue.try_enqueue (frame))
-        {
-            // Full ring: make room by discarding the oldest frame, then retry once.
-            TelemetryFrame discarded;
-            telemetryQueue.try_dequeue (discarded);
-            telemetryQueue.try_enqueue (frame);
-        }
-#endif
-
-        // The always-present mirror. These are the three the editor needs even when
-        // the queue is absent, and the values a host-side meter would read.
-        telemetryInputPeakDb.store (frame.inputPeakDb, std::memory_order_relaxed);
-        telemetryOutputPeakDb.store (frame.outputPeakDb, std::memory_order_relaxed);
-        telemetryInputRmsDb.store (frame.inputRmsDb, std::memory_order_relaxed);
-        telemetryOutputRmsDb.store (frame.outputRmsDb, std::memory_order_relaxed);
-        telemetryAntiPhase.store (frame.antiPhaseAmount, std::memory_order_relaxed);
-        telemetryPlatter.store (frame.transportRamp, std::memory_order_relaxed);
-    }
-}
-
-/ worthless, so dropping is the right answer. pop() first is not needed -
         // ReaderWriterQueue's try_enqueue overwrites nothing and simply fails when
         // full, so a full ring stops being a problem the moment the editor reads.
         if (! telemetryQueue.try_enqueue (frame))
@@ -3341,8 +3324,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     outputGainSmoothed.setTargetValue (juce::Decibels::decibelsToGain (outputDb));
     mixSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, mix));
     widthSmoothed.setTargetValue (stereoWidth);
+    // BYPASS and DELTA are read here as plain flags for the smoother targets;
+    // processBypassedBlock above read them for its own early-out.
+    const auto bypassRequested = bypassParam != nullptr && bypassParam->load() >= 0.5f;
+    const auto deltaRequested = deltaParam != nullptr && deltaParam->load() >= 0.5f;
     bypassSmoothed.setTargetValue (bypassRequested ? 0.0f : 1.0f);
-    deltaListenSmoothed.setTargetValue (deltaListen ? 1.0f : 0.0f);
+    deltaListenSmoothed.setTargetValue (deltaRequested ? 1.0f : 0.0f);
 
     // Delay, stereo offset, noise trim and transport state. All read once per block
     // and fed to smoothers, so none of them can step the signal.
@@ -6447,12 +6434,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // Noise-floor levelling is deliberately absent. See the note in the tape loop:
     // the hiss is a constant band-limited floor, not a programme-tracking one.
 
-    const float inputRms = measuredSamples > 0.0
-        ? static_cast<float> (std::sqrt (inputSquares / measuredSamples)) : 0.0f;
-    const float outputRms = measuredSamples > 0.0
-        ? static_cast<float> (std::sqrt (outputSquares / measuredSamples)) : 0.0f;
-    publishBlockTelemetry (inputPeak, outputPeak, inputPeakReductionDb, peakReductionDb,
-                           inputEnvelopeActivity, clippingThisBlock, inputClippingThisBlock,
+    const float driveInto = juce::jlimit (0.0f, 1.0f, inputRms * inputGainSmoothed.getCurrentValue()
+                                                          * (0.5f + driveCurve));
+    publishBlockTelemetry (blockContext, inputPeak, inputRms, outputPeak, outputRms,
+                           inputPeakReductionDb, peakReductionDb, inputEnvelopeActivity,
+                           driftAccumulator, clippingThisBlock, inputClippingThisBlock,
                            currentLufs, currentInputLufs, driveInto);
 }
 
