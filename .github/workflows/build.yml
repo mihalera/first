@@ -779,11 +779,24 @@ jobs:
       # produces the JUCE Standalone .so only; the full APK (manifest, activity,
       # resources, signing) belongs to the Gradle project that consumes the
       # generated native libraries. This step wires Gradle up to the workflow so
-      # Android now ships a downloadable APK artifact, in addition to the
-      # Standalone .so.
+      # Android ships a downloadable APK artifact whenever that Gradle project
+      # is present; until then it reports and skips cleanly.
       - name: Package Android APK artifact
+        id: apk
         run: |
           set -euo pipefail
+
+          # The APK needs a Gradle project (manifest, activity, resources,
+          # signing) that consumes the Standalone .so built above; this
+          # repository does not carry one, so packaging is skipped until it
+          # does, and the job still verifies the .so below.
+          if [ ! -f settings.gradle ] && [ ! -f settings.gradle.kts ] && [ ! -d app ]; then
+            echo "No Android Gradle project found (settings.gradle[.kts] / app/) -"
+            echo "skipping APK packaging; the Standalone .so is still verified below."
+            echo "apk_ready=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          echo "apk_ready=true" >> "$GITHUB_OUTPUT"
 
           # Gradle is expected under $HOME/android-sdk/cmdline-tools/latest/bin.
           # Install commandlinetools into the same location as the SDK and run
@@ -794,27 +807,24 @@ jobs:
 
           if [ ! -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
             echo "Installing Android SDK commandlinetools..."
-            mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin"
-            curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused -o cmdline-tools.zip https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
-            unzip -q cmdline-tools.zip -d "$ANDROID_SDK_ROOT"
-            mv "$ANDROID_SDK_ROOT/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
-            rm cmdline-tools.zip
+            rm -rf "$ANDROID_SDK_ROOT/cmdline-tools" "$RUNNER_TEMP/android-cmdline-tools"
+            curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused -o "$RUNNER_TEMP/cmdline-tools.zip" https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
+            # The zip unpacks to its own cmdline-tools/ directory, but the SDK
+            # layout wants it under cmdline-tools/latest/. Unpack into a
+            # staging directory first: mv would otherwise move the directory
+            # inside itself, which it refuses even when the target name does
+            # not exist yet.
+            unzip -q "$RUNNER_TEMP/cmdline-tools.zip" -d "$RUNNER_TEMP/android-cmdline-tools"
+            mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
+            mv "$RUNNER_TEMP/android-cmdline-tools/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
+            rm -rf "$RUNNER_TEMP/android-cmdline-tools" "$RUNNER_TEMP/cmdline-tools.zip"
           fi
 
           sdkmanager --licenses < /dev/null
           sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
 
-          # Install the Android Gradle plugin and Kotlin plugin, then build the
-          # app with the plugin system that produces the Android artifact.
-          ./gradlew :app:waitForConnectivity --no-daemon
-          if [ -f app/build.gradle.kts ]; then
-            ./gradlew :app:assembleRelease --no-daemon
-          else
-            ./gradlew :app:assembleRelease --no-daemon
-          fi
-
           # Bootstrap the Gradle wrapper so a fresh runner without a checked-in
-          # wrapper (like this repository) can execute assembleRelease.
+          # wrapper can execute assembleRelease.
           if [ ! -f gradlew ]; then
             wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
             unzip -q gradle-8.7-bin.zip
@@ -822,9 +832,7 @@ jobs:
             rm -rf gradle-8.7 gradle-8.7-bin.zip
           fi
 
-          cd app
-          ./gradlew assembleRelease --no-daemon
-          cd "$PWD/.."
+          ./gradlew :app:assembleRelease --no-daemon
 
           if [ ! -f app/build/outputs/apk/release/app-release.apk ]; then
             echo "MISSING: app/build/outputs/apk/release/app-release.apk"
@@ -838,6 +846,7 @@ jobs:
           ls -la "$ART"
 
       - name: Upload Android APK Artifact
+        if: steps.apk.outputs.apk_ready == 'true'
         uses: actions/upload-artifact@v4
         with:
           name: NonlinAnalogSaturator-Android
