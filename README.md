@@ -1,6 +1,7 @@
 # Nonlin Analog Saturator
 
 https://github.com/mihalera/first
+**Build note:** the repository pins JUCE `9.0.3` as a git submodule.
 
 **Nonlin Analog Saturator** - a JUCE-based **mastering-grade analog saturation plugin** built around a nonlinear magnetic tape model, with switchable tape stock, transport speed and tape-style coloration.
 
