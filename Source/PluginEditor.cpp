@@ -3118,6 +3118,16 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
     activeTabIsShapers = (std::strcmp (tabSpecs[static_cast<std::size_t> (currentTab)].name,
                                        "SHAPERS") == 0);
 
+    // The family follows the page: the bar's two rows are two views of one
+    // state, and a path that set one without the other left the bar showing a
+    // family that the page was not in - the number-key shortcuts did exactly
+    // that, and the panel could then open a page with NO tab and NO family lit.
+    // setTabFamily returns through resized() here rather than back through this
+    // function, because the page it is given is already inside the family it is
+    // switching to (its range test is false by construction).
+    if (tabSpecs[static_cast<std::size_t> (currentTab)].family != currentTabFamily)
+        setTabFamily (tabSpecs[static_cast<std::size_t> (currentTab)].family);
+
     for (std::size_t i = 0; i < controlCount; ++i)
     {
         const auto onActiveTab = controlIsInTab (i, currentTab);
