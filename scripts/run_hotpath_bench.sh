@@ -29,34 +29,49 @@ python3 "${HERE}/extract.py" "${BUILD}/extracted_dsp.inc"
 # checks it out under one of these, depending on how the cache is configured.
 NANOBENCH_INC=""
 for candidate in \
-    "${REPO}/.cpm-cache/nanobench/"*/src/include \
-    "${REPO}/.cpm-cache/nanobench/src/include" \
-    "${REPO}/build/_deps/nanobench-src/src/include" \
-    "${REPO}/build/deps/nanobench/src/include" \
-    "${NANOBENCH_SRC:-}/src/include"
+  "${REPO}/.cpm-cache/nanobench/"*/src/include \
+  "${REPO}/.cpm-cache/nanobench/src/include" \
+  "${REPO}/build/_deps/nanobench-src/src/include" \
+  "${REPO}/build/deps/nanobench/src/include" \
+  "${NANOBENCH_SRC:-}/src/include"
 do
-    if [ -n "${candidate}" ] && [ -f "${candidate}/nanobench.h" ]; then
-        NANOBENCH_INC="${candidate}"
-        break
-    fi
+  if [ -n "${candidate}" ] && [ -f "${candidate}/nanobench.h" ]; then
+    NANOBENCH_INC="${candidate}"
+    break
+  fi
 done
 
 if [ -z "${NANOBENCH_INC}" ]; then
-    echo "nanobench.h not found."
-    echo
-    echo "It is fetched by CPM only when the dev tests are enabled:"
-    echo "    cmake -S . -B build -DJ37_BUILD_TESTS=ON"
-    echo
-    echo "Run that once (which populates the CPM cache), or point NANOBENCH_SRC at"
-    echo "a checkout of https://github.com/martinus/nanobench."
-    exit 1
+  echo "nanobench.h not found."
+  echo
+  echo "It is fetched by CPM only when the dev tests are enabled:"
+  echo "    cmake -S . -B build -DJ37_BUILD_TESTS=ON"
+  echo
+  echo "Run that once (which populates the CPM cache), or point NANOBENCH_SRC at"
+  echo "a checkout of https://github.com/martinus/nanobench."
+  exit 1
 fi
 
 echo "nanobench: ${NANOBENCH_INC}"
 echo
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
-    -I "${HERE}" -I "${BUILD}" -I "${NANOBENCH_INC}" \
-    "${HERE}/bench.cpp" -o "${BUILD}/bench"
+# Forward any extra arguments (e.g. --benchmark_min_time, --benchmark_out) to the
+# benchmark binary. The build step above always compiles with ANKERL_NANOBENCH_IMPLEMENT.
+BENCH_ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --json|--benchmark_min_time=*|--benchmark_out=*|--benchmark_out_format=*)
+      BENCH_ARGS+=("$1")
+      ;;
+    *)
+      BENCH_ARGS+=("$1")
+      ;;
+  esac
+  shift
+done
 
-"${BUILD}/bench"
+"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+  -I "${HERE}" -I "${BUILD}" -I "${NANOBENCH_INC}" \
+  "${HERE}/bench.cpp" -o "${BUILD}/bench"
+
+"${BUILD}/bench" "${BENCH_ARGS[@]}"

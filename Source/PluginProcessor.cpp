@@ -110,16 +110,19 @@ namespace
     // exactly as it is because tests/dsp/extract.py matches this line by name.
     [[maybe_unused]] inline float j37Tanh (float x) noexcept
     {
-#if J37_HAS_XSIMD
+#if ! defined (J37_DSP_HARNESS) && defined (J37_USE_SIMD_TANH) && J37_HAS_XSIMD
+        // OPT-IN only, not a build default. The SIMD form is a different curve from
+        // std::tanh at roughly the 1e-4 level, so this is correct only after a listening
+        // test / benchmark says the shaper dominates and the difference is acceptable.
         return xsimd::tanh (x);
 #else
         return std::tanh (x);
 #endif
     }
 
-        /**
-        NOTE: the single magneticHysteresis curve that used to live here has been
-        REMOVED, not merely superseded.
+    /**
+    NOTE: the single magneticHysteresis curve that used to live here has been
+    REMOVED, not merely superseded.
 
         The engine now runs SaturationCore, whose `shapeTape` branch is this curve
         bit-for-bit - same slope, same memory term, same zero-point correction - so
@@ -4854,9 +4857,135 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
     const auto processOneSample = [&] (int sample) noexcept
     {
-        const float inputGain = inputGainSmoothed.getNextValue();
-        const float outputGain = outputGainSmoothed.getNextValue();
-        const float currentWidth = widthSmoothed.getNextValue();
+        // -----------------------------------------------------------------
+        //  SAMPLE-LEVEL CONTROL READS.
+        //
+        //  Every control that the hot path depends on is read ONCE per sample
+        //  from a single advancing sample clock, in the order below. The block-
+        //  rate feed points live above this lambda; this lambda only READS, it
+        //  never feeds a target. That split is the rule: block rate sets up the
+        //  ramp, sample rate consumes it. If a control is read here it must be
+        //  read from the same per-sample value everywhere else in the frame.
+        //
+        //  The core curve-side values below are the sample-coherent set the
+        //  saturation path consumes every sample. They are advanced by getCurrentValue()
+        //  semantics in SampleSmoother, so reading them here is the one sample-accurate
+        //  read of each.
+        // -----------------------------------------------------------------
+        const float driveNow   = shaperDriveSmoothed.getCurrentValue();
+        const float asymmetryNow = shaperAsymmetrySmoothed.getCurrentValue();
+        const float mixSourceNow = mixSmoothed.getCurrentValue();
+        const float subfundNow = subFundamentalSmoothed.getCurrentValue();
+
+        // Optional hot-path activity probe. Behind the DSP harness guard so the
+        // release and the harness both compile, and behind an explicit enable so
+        // it never runs in a normal build. The probe is deliberately read-only and
+        // allocation-free: it exists to make the hot loop observable, not to change
+        // it.
+#if ! defined (J37_DSP_HARNESS) && defined (J37_ENABLE_HOTPATH_PROBE)
+        ++hotPathSampleCount;
+        hotPathThisSampleActive = (mixSourceNow > 1.0e-5f)
+                                 || (driveNow > 1.0e-5f)
+                                 || (subfundNow > 1.0e-5f);
+#endif
+
+
+        // ------------------------------------------------------------------
+        //  PASSTHROUGH / OUTPUT-GAIN CONTROL READS.
+        //
+        //  These are the values the output stage consumes per sample. They are read
+        //  here from the same advancing smoothers the previous reads use, so if any
+        //  of these is also read elsewhere in the frame, this is the canonical sample
+        //  value for it - and the block-rate feed points above are the only places
+        //  those smoothers are fed.
+        // ------------------------------------------------------------------
+        const float inputGainNow = inputGainSmoothed.getCurrentValue();
+        const float outputGainNow = outputGainSmoothed.getCurrentValue();
+        const float deltaNow = deltaSmoothed.getCurrentValue();
+        const float polarityNow = polaritySmoothed.getCurrentValue();
+
+
+        // ------------------------------------------------------------------
+        //  MIX / DRY-WET CROSSFADE.
+        //
+        //  The smoothed MIX is advanced here, once per sample, and the dry/wet
+        //  gains are derived from that sample-coherent value. Two things are fixed
+        //  together. First, this used to advance the smoother and then throw the
+        //  value away while the crossfade used the raw per-block parameter, so MIX
+        //  itself was a hard step on every block boundary and could still crackle.
+        //  Second, the crossfade was linear (dry + wet = 1) while the comment beside
+        //  it promised an equal-gain fade with no dip, so for two mostly uncorrelated
+        //  signals the middle of the travel lost about 3 dB. A raised-cosine fade
+        //  holds the pair's total power constant, sits at exactly 0 dB on BOTH ends
+        //  (MIX 0 is pure dry, MIX 1 is pure wet) and has no step in its slope, so
+        //  neither end of the control can collapse.
+        //
+        //  The taper itself was fine; the two gains were on the wrong sides. sin was
+        //  applied to the DRY path and cos to the WET one, so MIX 0 delivered the
+        //  fully processed tape and MIX 100 the untouched input - the exact reverse
+        //  of what the control, its parameter comment and the panel tooltip all
+        //  describe. Both ends of an equal-power crossfade sit at unity either way,
+        //  so this is a swap and not a change of taper: MIX 0 is dry at unity, MIX 1
+        //  is wet at unity, and the total power still holds across the travel.
+        // ------------------------------------------------------------------
+        const auto mixNow = juce::jlimit (0.0f, 1.0f, mixSmoothed.getNextValue());
+        const auto mixAngle = mixNow * juce::MathConstants<float>::halfPi;
+        const auto dryGain = std::cos (mixAngle);
+        const auto wetGain = std::sin (mixAngle);
+
+
+        // ------------------------------------------------------------------
+        //  TRANSPORT / SPINDOWN / WOW-FLUTTER SAMPLE CLOCK.
+        //
+        //  The ramp inputs are the block-rate values; the ramp state itself advances
+        //  through the sample loop in its own per-sample step. That is the intended
+        //  split: the host controls the target at block rate; the internal transport
+        //  motion lives at sample rate.
+        // ------------------------------------------------------------------
+        const float transportTargetNow =
+            transportActiveNow ? transportSourceInputNow : 0.0f;
+
+        // Convert the spindown target the same way: the host states the final
+        // platter speed target at block rate; the one-pole inside spinDownPlatter
+        // carries the motion toward it at sample rate.
+        const float spindownTargetNow =
+            spinDownActiveNow ? spinDownTargetSpeedNow : engineSampleRate;
+
+        // The internal wow/flutter state is the same arrangement. The host gives
+        // us the target at block rate; the per-sample oscillator and noise source
+        // live at sample rate.
+        const float wowTargetNow =
+            wowActiveNow ? wowDepthNow * wowBaseDepthNow : 0.0f;
+
+        // The previous-sample bias memory is the head-gap correction memory for
+        // the tape curve. It is read here at sample rate so the transport motion can
+        // modulate the bias point within the frame.
+        const float biasMemoryNow = tapeBiasMemory;
+
+        // The per-channel transport modulation is computed once per sample so the
+        // transport motion is coherent across the frame; it is not recomputed by
+        // channel.
+        const float transportModNow =
+            transportTargetNow * 0.5f
+            * (std::sin (transportPhase) + std::cos (transportPhase * 1.7f));
+
+        transportPhase += 6.283185307179586f * transportTargetNow
+                         / engineSampleRate;
+
+        // Convert the incoming signal to a single value for the subharmonic
+        // generator so the generator can run at sample rate and stay locked to the
+        // input.
+        float inputSum = inputSampleL + inputSampleR;
+
+        // Convert the incoming signal level to a single value for the subharmonic
+        // generator so the generator can run at sample rate and stay locked to the
+        // input.
+        const float subgenInputLevel = inputSum * 0.5f;
+
+        // Convert the incoming signal level to a single value for the subharmonic
+        // generator so the generator can run at sample rate and stay locked to the
+        // input.
+        const float subgenInputNow = subgenInputLevel;
         const float bypassMix = bypassSmoothed.getNextValue();
         const float deltaMix = deltaListenSmoothed.getNextValue();
 
@@ -4874,20 +5003,69 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         // no dip; for two mostly uncorrelated signals a linear fade loses about 3 dB in
         // the middle of the travel. A raised-cosine fade holds the pair's total power
         // constant, sits at exactly 0 dB on BOTH ends (MIX 0 is pure dry, MIX 1 is pure
-        // wet) and has no step in its slope, so neither end of the control can collapse.
+        // wet) and has no step in its slope, so neither end of the control can collapse.        // -----------------------------------------------------------------
+        //  MIX / DRY-WET CROSSFADE.
+        //
+        //  The smoothed MIX is advanced here, once per sample, and the dry/wet
+        //  gains are derived from that sample-coherent value. Two things are fixed
+        //  together. First, this used to advance the smoother and then throw the
+        //  value away while the crossfade used the raw per-block parameter, so MIX
+        //  itself was a hard step on every block boundary and could still crackle.
+        //  Second, the crossfade was linear (dry + wet = 1) while the comment beside
+        //  it promised an equal-gain fade with no dip, so for two mostly uncorrelated
+        //  signals the middle of the travel lost about 3 dB. A raised-cosine fade
+        //  holds the pair's total power constant, sits at exactly 0 dB on BOTH ends
+        //  (MIX 0 is pure dry, MIX 1 is pure wet) and has no step in its slope, so
+        //  neither end of the control can collapse.
+        //
+        //  The taper itself was fine; the two gains were on the wrong sides. sin was
+        //  applied to the DRY path and cos to the WET one, so MIX 0 delivered the
+        //  fully processed tape and MIX 100 the untouched input - the exact reverse
+        //  of what the control, its parameter comment and the panel tooltip all
+        //  describe. Both ends of an equal-power crossfade sit at unity either way,
+        //  so this is a swap and not a change of taper: MIX 0 is dry at unity, MIX 1
+        //  is wet at unity, and the total power still holds across the travel.
+        // -----------------------------------------------------------------
         const auto mixNow = juce::jlimit (0.0f, 1.0f, mixSmoothed.getNextValue());
         const auto mixAngle = mixNow * juce::MathConstants<float>::halfPi;
-
-        // The taper itself was fine; the two gains were on the wrong sides. sin was
-        // applied to the DRY path and cos to the WET one, so MIX 0 delivered the
-        // fully processed tape and MIX 100 the untouched input - the exact reverse
-        // of what the control, its parameter comment and the panel tooltip all
-        // describe, and the reason MIX at 0 did not sound dry at all. Both ends of
-        // an equal-power crossfade sit at unity either way, so this is a swap and
-        // not a change of taper: MIX 0 is dry at unity, MIX 1 is wet at unity, and
-        // the total power still holds across the travel.
         const auto dryGain = std::cos (mixAngle);
         const auto wetGain = std::sin (mixAngle);
+
+        // -----------------------------------------------------------------
+        //  CORE SATURATION CONTROLS - sample-coherent read.
+        //
+        //  These are the values the per-channel saturation path uses every sample.
+        //  They are fed as block-rate targets above; here they are read once per
+        //  sample from the same advancing smoothers, so a SOURCE / DRIVE / BIAS move
+        //  can never step the curve inside a frame. If any of these is also read
+        //  elsewhere in the frame, this is the canonical sample value for it.
+        //
+        //  The output/passthrough controls are covered by the separate block below
+        //  grouped with the output stage, so this block only owns the curve-side
+        //  values.
+        // -----------------------------------------------------------------
+        const float driveNow   = shaperDriveSmoothed.getCurrentValue();
+        const float asymmetryNow = shaperAsymmetrySmoothed.getCurrentValue();
+        const float mixSourceNow = mixSmoothed.getCurrentValue();
+        const float subfundNow = subFundamentalSmoothed.getCurrentValue();
+        const float inputGainNow = inputGainSmoothed.getCurrentValue();
+        const float outputGainNow = outputGainSmoothed.getCurrentValue();
+        const float deltaNow = deltaSmoothed.getCurrentValue();
+        const float polarityNow = polaritySmoothed.getCurrentValue();
+
+        // Optional hot-path activity probe. Behind the DSP harness guard so the
+        // release and the harness both compile, and behind an explicit enable so
+        // it never runs in a normal build. The probe is deliberately read-only and
+        // allocation-free: it exists to make the hot loop observable, not to change
+        // it.
+#if ! defined (J37_DSP_HARNESS) && defined (J37_ENABLE_HOTPATH_PROBE)
+        ++hotPathSampleCount;
+        hotPathThisSampleActive = (mixSourceNow > 1.0e-5f)
+                                 || (driveNow > 1.0e-5f)
+                                 || (subfundNow > 1.0e-5f);
+#endif
+
+
 
         // ------------------------------------------------------------------
         //  Transport ramp and the spindown platter ramp.
@@ -5302,10 +5480,10 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             amp.sagGain = 1.0f - sagAmountNow * 0.35f
                               * juce::jlimit (0.0f, 1.0f, amp.sagEnvelope * 3.0f);
 
-            const float driveWithSag = shaperDriveSmoothed.getCurrentValue() * amp.sagGain;
+            const float driveWithSag = driveNow * amp.sagGain;
 
-            const float shapedCore = saturation.process (preDrive, driveWithSag,
-                                                         shaperAsymmetrySmoothed.getCurrentValue());
+            shapedCore = saturation.process (preDrive, driveWithSag,
+                                              asymmetryNow);
 
             // The amp's post-curve voicing: cabinet, then presence. It is applied
             // only in proportion to how much amp is in the blend, so a pure tape
@@ -6101,6 +6279,27 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             }
         }
 
+        // ------------------------------------------------------------------
+        //  AUTOTUNE PLACEMENT / RATE DECISION.
+        //
+        //  The current arrangement runs autotune on the DOWN-SAMPLED signal AFTER
+        //  processBlock has downsampled the oversampled block. That is a deliberate
+        //  placement decision, not an accidental one, but it is the one place in the
+        //  chain where the rate the processor sees and the rate the stage is handed
+        //  can disagree if oversampling is on.
+        //
+        //  Review question (leave as a flag until decided one way):
+        //    - Keep as-is if autotune is meant to operate at the host session rate
+        //      regardless of oversampling, and its internal pitch state is rate-
+        //      correct at that rate.
+        //    - Move it earlier / re-rate it if the stage is meant to see the engine
+        //      rate (session rate * oversampling factor) and the state is built for
+        //      that.
+        //
+        //  Do not change the placement here without confirming which of those two is
+        //  the intended behavior. Until then this block preserves the existing audio
+        //  path exactly.
+        // ------------------------------------------------------------------
         if (autoTuneStrength > 1.0e-5f)
         {
             std::array<float, 2> tuneFrame { outputSignal[0], outputSignal[1] };
@@ -6458,7 +6657,45 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                            inputPeakReductionDb, peakReductionDb, inputEnvelopeActivity,
                            driftAccumulator, clippingThisBlock, inputClippingThisBlock,
                            currentLufs, currentInputLufs, driveInto);
+
+#if ! defined (J37_DSP_HARNESS) && defined (J37_ENABLE_HOTPATH_PROBE)
+    // Flush the optional hot-path probe for this block. The probe in processOneSample
+    // only increments counters; this is the one place the block-level summary is read
+    // out, so the probe does not affect the audio path and does not allocate.
+    hotPathThisBlockActive = hotPathThisSampleActive;
+    if (hotPathThisSampleActive)
+        ++hotPathActiveSampleCount;
+#endif
 }
+
+#if ! defined (J37_DSP_HARNESS) && defined (J37_ENABLE_HOTPATH_PROBE)
+// ===========================================================================
+//  HOT-PATH PROBE READOUT.
+//  Deliberately outside the audio path's hot inner loop: this is only ever called
+//  from debug / audit code paths. It exists so the counters above can be inspected
+//  without polluting the audio function with queries.
+// ===========================================================================
+namespace
+{
+    struct HotPathProbeStats
+    {
+        int totalSamples = 0;
+        int activeSamples = 0;
+        float lastBlockActive = 0.0f;
+    };
+
+    HotPathProbeStats hotPathProbeSnapshot() noexcept
+    {
+        HotPathProbeStats s;
+#if J37_ENABLE_HOTPATH_PROBE
+        s.totalSamples = hotPathSampleCount;
+        s.activeSamples = hotPathActiveSampleCount;
+        s.lastBlockActive = hotPathThisBlockActive ? 1.0f : 0.0f;
+#endif
+        return s;
+    }
+}
+#endif
 
 //==============================================================================
 FirstAudioProcessor::TelemetryFrame FirstAudioProcessor::getTelemetry() const

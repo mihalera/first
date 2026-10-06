@@ -97,6 +97,35 @@ jobs:
       - name: Run the DSP micro-benchmarks
         run: bash tests/dsp/run_bench.sh
 
+      # Informational only: record the CPU share of the naive tanh/exp hot
+      # path against the same nanobench build, never a gate.
+      - name: DSP hot-path probe (tanh/exp CPU share)
+        run: |
+          python3 - <<'PROBE'
+          import math, time, sys
+
+          N = 50_000_000
+          samples = [math.sin(i * 1e-5) for i in range(N % 1000 + 1)]
+          samples = samples * (N // len(samples) + 1)
+          samples = samples[:N]
+
+          def bench(label, fn, data):
+              start = time.perf_counter()
+              out = [fn(x) for x in data]
+              elapsed = time.perf_counter() - start
+              total = sum(out)
+              print(f"{label}: {elapsed:.6f}s  checksum={total:.6f}")
+              return elapsed
+
+          tanh_t = bench("tanh", math.tanh, samples)
+          exp_t = bench("exp", math.exp, samples)
+          total_t = bench("total", lambda x: math.tanh(x) + math.exp(x), samples)
+
+          share = (tanh_t + exp_t) / total_t if total_t else 0.0
+          print(f"tanh+exp CPU share ~ {share:.2%} of tanh+exp frame cost")
+          sys.exit(0)
+          PROBE
+
   # ============================================================================
   #  Editor Debug build - Linux VST3 with the Melatonin inspector embedded
   #
@@ -868,4 +897,3 @@ jobs:
           file "$so" | grep -q "aarch64" || {
             echo "The produced library is not aarch64"; exit 1;
           }
-
