@@ -275,26 +275,30 @@ namespace
     //  also a perfectly good 50%, so any threshold either rewrites a legitimate
     //  setting or misses a real one. The marker is stamped on the way out, so every
     //  state this build writes is already current and the migration only ever runs
-    //  once per file.
+    //  once per file. Later format versions may add similarly explicit migrations.
     //
     //  Unknown properties on the tree root are ignored by AudioProcessorValueTree-
     //  State, so this rides along without touching the parameters or the editor.
     // ==========================================================================
     constexpr const char* stateFormatProperty = "nonlinStateFormat";
-    constexpr int currentStateFormat = 2;   // 1 = MIX as 0..1, 2 = MIX as 0..100
+    constexpr int currentStateFormat = 3;   // 3 = MIX 0..100 and bounded neutral-centred WIDTH
 
     void migrateStateFormat (juce::ValueTree& tree)
     {
         // The cast is not decoration: getProperty returns a juce::var, and var against
         // an int has several viable implicit conversions, so `>=` is ambiguous
         // without it.
-        if (static_cast<int> (tree.getProperty (stateFormatProperty, 1)) >= currentStateFormat)
+        const auto sourceFormat = static_cast<int> (tree.getProperty (stateFormatProperty, 1));
+        if (sourceFormat >= currentStateFormat)
             return;
 
-        if (auto mixChild = tree.getChildWithProperty ("id", "mix"); mixChild.isValid())
+        if (sourceFormat < 2)
         {
-            const auto stored = static_cast<float> (mixChild.getProperty ("value", 50.0f));
-            mixChild.setProperty ("value", stored <= 1.0f ? stored * 100.0f : stored, nullptr);
+            if (auto mixChild = tree.getChildWithProperty ("id", "mix"); mixChild.isValid())
+            {
+                const auto stored = static_cast<float> (mixChild.getProperty ("value", 50.0f));
+                mixChild.setProperty ("value", stored <= 1.0f ? stored * 100.0f : stored, nullptr);
+            }
         }
 
         tree.setProperty (stateFormatProperty, currentStateFormat, nullptr);
@@ -2290,7 +2294,8 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     const float initialMix = (mixParam != nullptr ? mixParam->load() : 50.0f) * 0.01f;
     mixSmoothed.setCurrentAndTargetValue (juce::jlimit (0.0f, 1.0f, initialMix));
     widthSmoothed.reset (sampleRateToUse, smoothingSeconds);
-    widthSmoothed.setCurrentAndTargetValue (widthParam != nullptr ? widthParam->load() * 2.0f : 1.0f);
+    widthSmoothed.setCurrentAndTargetValue (widthParam != nullptr
+        ? juce::jlimit (0.0f, 1.0f, widthParam->load() * 2.0f) : 1.0f);
     bypassSmoothed.reset (sampleRateToUse, 0.01);
     // Start from the state the parameter restores: a session saved with BYPASS on
     // must not spend its first 10 ms ramping from the dry position.
@@ -2817,6 +2822,15 @@ void FirstAudioProcessor::setTransportState (int state)
     }
 }
 
+void FirstAudioProcessor::flushPendingTransportHostSync()
+{
+    if (! transportHostSyncRequested.exchange (false, std::memory_order_acq_rel))
+        return;
+
+    if (auto* parameter = parameters.getParameter ("transport"))
+        parameter->setValueNotifyingHost (parameter->convertTo0to1 (1.0f));
+}
+
 void FirstAudioProcessor::setSpindownHeld (bool shouldHold)
 {
     // Two things have to happen, and both are cheap:
@@ -3251,7 +3265,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto mix = (mixParam != nullptr ? mixParam->load() : 50.0f) * 0.01f;
     const auto outputDb = outputDbParam->load();
     const auto inputDb = inputDbParam->load();
-    const auto stereoWidth = widthParam->load() * 2.0f;
+    const auto stereoWidthParameter = widthParam != nullptr ? widthParam->load() : 0.5f;
+    // Width 50% is the neutral point: 0 = mono, 100 = maximum extra width.
+    // Values above the declared range used to boost SIDE beyond 100%, which can
+    // partially cancel common-centre content when the result is summed to mono.
+    const auto stereoWidth = juce::jlimit (0.0f, 1.0f, stereoWidthParameter * 2.0f);
     const auto compressorThreshold = compressorThresholdParam != nullptr ? compressorThresholdParam->load() : -18.0f;
     const auto compressorRatio = compressorRatioParam != nullptr ? compressorRatioParam->load() : 2.0f;
     const auto compressorAttack = compressorAttackParam != nullptr ? compressorAttackParam->load() : 10.0f;
@@ -4007,8 +4025,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         transportState = static_cast<int> (TransportState::play);
         lastTransportState = -1;   // force the switch below to re-arm the ramp
 
-        if (auto* parameter = parameters.getParameter ("transport"))
-            parameter->setValueNotifyingHost (parameter->convertTo0to1 (1.0f));
+        transportHostSyncRequested.store (true, std::memory_order_relaxed);
     }
 
     lastSpindownHeld = spindownNow;
@@ -4939,8 +4956,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             transportState = static_cast<int> (TransportState::play);
             lastTransportState = transportState;
 
-            if (auto* parameter = parameters.getParameter ("transport"))
-                parameter->setValueNotifyingHost (parameter->convertTo0to1 (1.0f));
+            transportHostSyncRequested.store (true, std::memory_order_relaxed);
         }
 
         // Publish the platter speed and the spindown alone for the editor's reels
@@ -6156,8 +6172,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             outputSignal[0] += (bleedToLeft  - outputSignal[0]) * trackCrosstalk;
             outputSignal[1] += (bleedToRight - outputSignal[1]) * trackCrosstalk;
 
+            // Mid/side matrix. Width 1 is transparent; width 0 is dual mono.
+            // Clamp again here so no stale smoother value or malformed state can
+            // boost SIDE beyond the natural setting and cancel centre information.
+            const float width = juce::jlimit (0.0f, 1.0f, currentWidth);
             const float mid = 0.5f * (outputSignal[0] + outputSignal[1]);
-            const float side = 0.5f * (outputSignal[0] - outputSignal[1]) * currentWidth;
+            const float side = 0.5f * (outputSignal[0] - outputSignal[1]) * width;
             outputSignal[0] = mid + side;
             outputSignal[1] = mid - side;
 
@@ -6481,20 +6501,16 @@ FirstAudioProcessor::TelemetryFrame FirstAudioProcessor::getTelemetry() const
 //==============================================================================
 bool FirstAudioProcessor::loadNeuralModel (const juce::String& modelJson)
 {
-    // A model is installed on BOTH channel stages at once. They share the same
-    // model object, but each holds its own recurrent state, and a load must not
-    // leave one channel on the old model and the other on the new - which is a
-    // stereo mismatch in the nonlinearity itself, the one place it cannot be
-    // tolerated. The parse happens on the message thread; the audio thread only
-    // ever sees the finished pointer.
-    const bool loaded = neuralL.loadFromJson (modelJson);
-
-    if (loaded)
-        neuralR.loadFromJson (modelJson);
-    else
+    // Each stage keeps replaced models alive until teardown, so this installation
+    // cannot invalidate a model pointer already captured by process().
+    const bool loadedLeft = neuralL.loadFromJson (modelJson);
+    const bool loadedRight = neuralR.loadFromJson (modelJson);
+    if (loadedLeft != loadedRight)
+    {
+        neuralL.clear();
         neuralR.clear();
-
-    return loaded;
+    }
+    return loadedLeft && loadedRight;
 }
 
 bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
@@ -6503,40 +6519,27 @@ bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
     // .nam converter: the shared model pointer must not end up describing two
     // different networks on the two sides of the image.
 #if J37_HAS_RTNEURAL
-    bool loaded = false;
+    bool loadedLeft = false;
+    bool loadedRight = false;
 
     try
     {
         const auto parsed = nlohmann::json::parse (namJson.toStdString());
-        loaded = neuralL.buildFromNam (parsed);
+        loadedLeft = neuralL.buildFromNam (parsed);
+        loadedRight = neuralR.buildFromNam (parsed);
     }
     catch (...)
     {
-        loaded = false;
+        loadedLeft = false;
+        loadedRight = false;
     }
 
-    if (loaded)
+    if (loadedLeft != loadedRight)
     {
-        // The RIGHT stage re-runs the converter rather than sharing the left's
-        // model object. NeuralStage is documented as sharing its model between
-        // the channels, but buildFromNam installs through the same unique_ptr
-        // path a JSON load uses, so the honest guarantee is "two identical
-        // models" - which sounds exactly the same and cannot mismatch.
-        try
-        {
-            const auto parsed = nlohmann::json::parse (namJson.toStdString());
-            loaded = neuralR.buildFromNam (parsed);
-        }
-        catch (...)
-        {
-            loaded = false;
-        }
-    }
-
-    if (! loaded)
+        neuralL.clear();
         neuralR.clear();
-
-    return loaded;
+    }
+    return loadedLeft && loadedRight;
 #else
     juce::ignoreUnused (namJson);
     return false;

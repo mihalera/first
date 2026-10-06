@@ -1090,6 +1090,21 @@ void printChainSpectrum()
 
 int main()
 {
+    // The shipping M/S mapping preserves common (centre) content regardless of
+    // width; malformed values are clamped so SIDE can never overtake MID.
+    for (float width : { 0.0f, 0.5f, 1.0f, 1.5f })
+    {
+        const float left = 0.37f;
+        const float right = 0.37f;
+        const float mid = 0.5f * (left + right);
+        const float side = 0.5f * (left - right) * std::clamp (width, 0.0f, 1.0f);
+        const float outL = mid + side;
+        const float outR = mid - side;
+        check (std::abs (outL - left) < 1.0e-7f, "M/S width preserves centred left");
+        check (std::abs (outR - right) < 1.0e-7f, "M/S width preserves centred right");
+        check (std::abs (0.5f * (outL + outR) - left) < 1.0e-7f, "mono fold-down preserves centre");
+    }
+
     std::printf ("SUBFUND subharmonic regression harness\n");
 
     testUndertoneOrdering();

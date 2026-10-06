@@ -166,6 +166,7 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <vector>
 
 //==============================================================================
 /**
@@ -1598,6 +1599,10 @@ struct NeuralStage
     using ModelType = RTNeural::Model<float>;
 
     std::unique_ptr<ModelType> model;
+    std::vector<std::unique_ptr<ModelType>> retiredModels;
+    std::atomic<ModelType*> activeModel { nullptr };
+    std::atomic<bool> clearRequested { false };
+    std::atomic<bool> resetRequested { false };
 
     /** The model's input frame. RTNeural's forward() takes a pointer to a
         float[inSize] and RETURNS the single output sample by value, so one
@@ -1609,7 +1614,8 @@ struct NeuralStage
     bool isActive() const noexcept
     {
 #if J37_HAS_RTNEURAL
-        return model != nullptr;
+        return activeModel.load (std::memory_order_acquire) != nullptr
+            && ! clearRequested.load (std::memory_order_acquire);
 #else
         return false;
 #endif
@@ -1644,9 +1650,15 @@ struct NeuralStage
             if (parsedModel == nullptr)
                 return false;
 
-            // The old model is replaced only once the new one has parsed, so a bad
-            // file leaves the stage exactly as it was rather than clearing it.
+            // Do not destroy a model that the audio thread may currently use.
+            // Keep every replaced model alive until processor teardown; model loads
+            // are rare and this gives a simple, race-free real-time handoff.
+            if (model != nullptr)
+                retiredModels.push_back (std::move (model));
             model = std::move (parsedModel);
+            activeModel.store (model.get(), std::memory_order_release);
+            clearRequested.store (false, std::memory_order_release);
+            resetRequested.store (true, std::memory_order_release);
             return true;
         }
         catch (...)
@@ -1665,7 +1677,8 @@ struct NeuralStage
     void clear() noexcept
     {
 #if J37_HAS_RTNEURAL
-        model.reset();
+        activeModel.store (nullptr, std::memory_order_release);
+        clearRequested.store (true, std::memory_order_release);
 #endif
     }
 
@@ -1834,7 +1847,12 @@ struct NeuralStage
             if (parsedModel == nullptr)
                 return false;
 
+            if (model != nullptr)
+                retiredModels.push_back (std::move (model));
             model = std::move (parsedModel);
+            activeModel.store (model.get(), std::memory_order_release);
+            clearRequested.store (false, std::memory_order_release);
+            resetRequested.store (true, std::memory_order_release);
             return true;
         }
         catch (...)
@@ -1849,8 +1867,10 @@ struct NeuralStage
     void reset() noexcept
     {
 #if J37_HAS_RTNEURAL
-        if (model != nullptr)
-            model->reset();
+        // Model objects remain alive through all swaps, so a captured pointer is
+        // safe for the duration of an audio callback. Recurrent state is owned by
+        // this channel and reset only from the audio thread.
+        resetRequested.store (true, std::memory_order_release);
 #endif
     }
 
@@ -1866,8 +1886,16 @@ struct NeuralStage
     float process (float x, float amount) noexcept
     {
 #if J37_HAS_RTNEURAL
-        if (model == nullptr || amount <= 1.0e-5f)
+        if (amount <= 1.0e-5f)
             return x;
+
+        // Model objects remain alive through replacement and clear requests, so
+        // this atomic snapshot stays valid through the whole inference call.
+        auto* active = activeModel.load (std::memory_order_acquire);
+        if (active == nullptr || clearRequested.load (std::memory_order_acquire))
+            return x;
+        if (resetRequested.exchange (false, std::memory_order_acq_rel))
+            active->reset();
 
         inputFrame[0] = x;
 
@@ -1876,7 +1904,7 @@ struct NeuralStage
         // IS the result. A model whose output size is not 1 would return its
         // first output here, which is the only sensible reading of a 1-in/1-out
         // stage and is why the stage documents itself as such.
-        const float wet = model->forward (inputFrame);
+        const float wet = active->forward (inputFrame);
         return x + (wet - x) * juce::jlimit (0.0f, 1.0f, amount);
 #else
         juce::ignoreUnused (amount);
@@ -4946,6 +4974,8 @@ public:
         the change, then forwards to the engine immediately so the audio thread
         does not have to wait for the next automation pass. */
     void setTransportState (int state);
+    /** Flushes an audio-thread transport transition to the host from a safe thread. */
+    void flushPendingTransportHostSync();
 
     /** The momentary SPINDOWN hold. While held the machine runs down like a
         turntable whose power has been cut; on release it spins back up and the
@@ -5739,6 +5769,7 @@ private:
     //  engine-only state and stay plain floats.
     // -----------------------------------------------------------------------
     std::atomic<bool> spindownHeld { false };
+    std::atomic<bool> transportHostSyncRequested { false };
     float spindownRamp = 1.0f;              // 1 = at speed, 0 = fully stopped
     float spindownCoefficient = 0.0f;       // built from the rate
     // The previous block's hold state, so the release edge can be seen once. Engine

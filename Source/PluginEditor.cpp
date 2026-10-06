@@ -6563,6 +6563,8 @@ void FirstAudioProcessorEditor::timerCallback()
     if (! isShowing())
         return;
 
+    audioProcessor.flushPendingTransportHostSync();
+
     // The startup retry for the OpenGL context, bounded and then forgotten. It runs
     // first so a context that comes up is live before the meters ask for a repaint.
     if (glAttachAttemptsLeft > 0)
