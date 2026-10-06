@@ -1600,6 +1600,7 @@ struct NeuralStage
 
     std::unique_ptr<ModelType> model;
     std::vector<std::unique_ptr<ModelType>> retiredModels;
+    std::mutex controlMutex;
     std::atomic<ModelType*> activeModel { nullptr };
     std::atomic<bool> clearRequested { false };
     std::atomic<bool> resetRequested { false };
@@ -1650,9 +1651,9 @@ struct NeuralStage
             if (parsedModel == nullptr)
                 return false;
 
-            // Do not destroy a model that the audio thread may currently use.
-            // Keep every replaced model alive until processor teardown; model loads
-            // are rare and this gives a simple, race-free real-time handoff.
+            std::lock_guard<std::mutex> lock (controlMutex);
+            // Retain old models until teardown so audio can finish inference with
+            // an already-acquired pointer without racing destruction.
             if (model != nullptr)
                 retiredModels.push_back (std::move (model));
             model = std::move (parsedModel);
@@ -1677,6 +1678,7 @@ struct NeuralStage
     void clear() noexcept
     {
 #if J37_HAS_RTNEURAL
+        std::lock_guard<std::mutex> lock (controlMutex);
         activeModel.store (nullptr, std::memory_order_release);
         clearRequested.store (true, std::memory_order_release);
 #endif
@@ -1847,6 +1849,7 @@ struct NeuralStage
             if (parsedModel == nullptr)
                 return false;
 
+            std::lock_guard<std::mutex> lock (controlMutex);
             if (model != nullptr)
                 retiredModels.push_back (std::move (model));
             model = std::move (parsedModel);
@@ -1867,9 +1870,8 @@ struct NeuralStage
     void reset() noexcept
     {
 #if J37_HAS_RTNEURAL
-        // Model objects remain alive through all swaps, so a captured pointer is
-        // safe for the duration of an audio callback. Recurrent state is owned by
-        // this channel and reset only from the audio thread.
+        // Recurrent state is touched only by the audio thread. Defer reset to its
+        // next inference, avoiding concurrent reset during model swaps/rate changes.
         resetRequested.store (true, std::memory_order_release);
 #endif
     }
@@ -5770,6 +5772,7 @@ private:
     // -----------------------------------------------------------------------
     std::atomic<bool> spindownHeld { false };
     std::atomic<bool> transportHostSyncRequested { false };
+    std::atomic<int> transportHostSyncState { 1 };
     float spindownRamp = 1.0f;              // 1 = at speed, 0 = fully stopped
     float spindownCoefficient = 0.0f;       // built from the rate
     // The previous block's hold state, so the release edge can be seen once. Engine

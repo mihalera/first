@@ -2827,10 +2827,6 @@ void FirstAudioProcessor::flushPendingTransportHostSync()
     if (! transportHostSyncRequested.exchange (false, std::memory_order_acq_rel))
         return;
 
-    if (auto* parameter = parameters.getParameter ("transport"))
-        parameter->setValueNotifyingHost (parameter->convertTo0to1 (1.0f));
-}
-
 void FirstAudioProcessor::setSpindownHeld (bool shouldHold)
 {
     // Two things have to happen, and both are cheap:
@@ -4025,7 +4021,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         transportState = static_cast<int> (TransportState::play);
         lastTransportState = -1;   // force the switch below to re-arm the ramp
 
-        transportHostSyncRequested.store (true, std::memory_order_relaxed);
+        transportHostSyncState.store (1, std::memory_order_relaxed);
+        transportHostSyncRequested.store (true, std::memory_order_release);
     }
 
     lastSpindownHeld = spindownNow;
@@ -4956,7 +4953,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             transportState = static_cast<int> (TransportState::play);
             lastTransportState = transportState;
 
-            transportHostSyncRequested.store (true, std::memory_order_relaxed);
+            transportHostSyncState.store (1, std::memory_order_relaxed);
+            transportHostSyncRequested.store (true, std::memory_order_release);
         }
 
         // Publish the platter speed and the spindown alone for the editor's reels
@@ -6614,6 +6612,3720 @@ void FirstAudioProcessor::setStateInformation (const void* data, int sizeInBytes
 
     // A session load restores the parameters, not the preset that produced them:
     // the badge starts clean and unnamed, exactly like a freshly opened plugin.
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+    markPresetClean ({});
+    lastPresetIndex.store (-1, std::memory_order_relaxed);
+}
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
     markPresetClean ({});
     lastPresetIndex.store (-1, std::memory_order_relaxed);
 }
