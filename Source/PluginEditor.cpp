@@ -3842,7 +3842,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         { "flutter",         "FLUTTER",    0.18,  "NOISE"    },
         { "mix",             "MIX",        0.5,   "MACHINE"  },
         { "output",          "OUTPUT",     0.0,   "MACHINE"  },
-        { "stereo_width",    "WIDTH",      0.5,   "MACHINE"  },
+        { "stereo_width",    "WIDTH",      1.0,   "MACHINE"  },
         // The seven SOURCE knobs, where the old BLEND/SHAPE pair sat: each is
         // its own machine's share of the saturation mix, dialled by name.
         { "tape_source",     "TAPE",       1.0,   "SUBFUND"   },
