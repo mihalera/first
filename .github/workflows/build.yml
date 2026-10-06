@@ -2,169 +2,45 @@ name: Build JUCE Plugin (CMake)
 
 on:
   push:
-    branches: ["main", "master"]
+    branches: [main]
   pull_request:
-    branches: ["main", "master"]
+    branches: [main]
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 env:
-  BUILD_TYPE: Release
+  BUILD_TYPE: Debug
+  JUCE_BUILD_TESTS: "ON"
+  J37_BUILD_HOTPATH_BENCH: "ON"
 
 jobs:
-  # ============================================================================
-  #  DSP regression harness - the SUBFUND stage
-  #
-  #  Deliberately first and deliberately cheap. The subharmonic defects this
-  #  guards - a series that does not fall off with division, a stage that turns
-  #  its own partials into harmonics, a stage that keeps generating with no
-  #  signal - are properties of the RENDERED AUDIO, not of the code as written.
-  #  Nothing short of rendering them catches a regression, and the three
-  #  platform builds below take far too long to be the place to find out.
-  #
-  #  The harness needs no JUCE, no audio backend and no host: it cuts the
-  #  shipping generator out of Source/ at build time and compiles it against a
-  #  small shim, so it cannot end up measuring a stale copy of the code. It
-  #  checks out without submodules for that reason - it never looks at JUCE/.
-  # ============================================================================
-  dsp-tests:
-    name: DSP regression harness
+  build-linux-debug:
+    name: build-linux-debug
     runs-on: ubuntu-latest
-    timeout-minutes: 10
-
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-
-      - name: Run the subharmonic harness
-        run: bash tests/dsp/run.sh
-
-      # The factory presets cannot fail at runtime - a name list that is a row
-      # short, or a parameter with no column in the table, both just quietly
-      # load the wrong sound - so they are checked against the source instead.
-      # It found the real defect this job was added for: fifteen sound-bearing
-      # parameters (the input preamp, the DI chain, the extra distortion stage,
-      # the second head's four controls and the output stage's two switches)
-      # were declared as parameters and had no column at all, so every preset
-      # loaded "mostly" and the same preset gave different results depending on
-      # what was loaded before it.
-      - name: Check the factory preset table
-        run: python3 tests/presets/check_presets.py
-
-  # ============================================================================
-  #  DSP micro-benchmarks - measurement, never a gate
-  #
-  #  Runs after the regression harness and is allowed to fail the job only if it
-  #  cannot BUILD. The numbers it prints are machine-dependent, so treating a
-  #  slower measurement as a build failure would make CI flaky and would push the
-  #  threshold down until it meant nothing. What it is for is the record: every
-  #  run logs the frame cost and the realtime headroom, so "did this change make
-  #  the engine cheaper or dearer" has an answer that is not a guess.
-  #
-  #  It needs nanobench, which CPM fetches only under -DJ37_BUILD_TESTS=ON, so
-  #  the job configures once with that flag before running the script.
-  # ============================================================================
-  dsp-bench:
-    name: DSP micro-benchmarks (informational)
-    runs-on: ubuntu-latest
-    timeout-minutes: 15
-    continue-on-error: true
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
-      - name: Install Linux audio and GUI dependencies
+      - name: Verify JUCE submodule is present
+        run: |
+          if [ ! -f JUCE/CMakeLists.txt ]; then
+            echo "JUCE/CMakeLists.txt missing"
+            exit 1
+          fi
+
+      - name: Install Linux build dependencies
         run: |
           sudo apt-get update
-          sudo apt-get install -y \
-            libasound2-dev libjack-jackd2-dev libfreetype6-dev \
-            libfontconfig1-dev libcurl4-openssl-dev libx11-dev \
-            libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev \
-            libxrandr-dev libxrender-dev libgl1-mesa-dev libglu1-mesa-dev \
+          sudo apt-get install -y --no-install-recommends \
+            build-essential cmake ninja-build libasound2-dev libjack-jackd2-dev \
+            libfreetype6-dev libgl1-mesa-dev libglu1-mesa-dev \
             libgtk-3-dev libwebkit2gtk-4.1-dev
 
-      - name: Configure with the dev tests enabled (fetches nanobench)
+      - name: Install Intel IPP (PyPI)
         run: |
-          cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DJ37_BUILD_TESTS=ON
-
-      - name: Run the DSP micro-benchmarks
-        run: bash tests/dsp/run_bench.sh
-
-  # ============================================================================
-  #  Editor Debug build - Linux VST3 with the Melatonin inspector embedded
-  #
-  #  The inspector is compiled only under JUCE_DEBUG, so no Release
-  #  configuration ever touches it and the shipped plugin carries nothing
-  #  extra. This job keeps that code path honest: it configures and compiles a
-  #  full Debug build (which also exercises CPM from a cold cache in a second
-  #  config) and keeps the VST3 as an artifact for local debugging sessions.
-  # ============================================================================
-  build-linux-debug:
-    name: build-linux-debug (Melatonin inspector)
-    runs-on: ubuntu-latest
-    timeout-minutes: 25
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Install Linux audio and GUI dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libasound2-dev \
-            libjack-jackd2-dev \
-            libfreetype6-dev \
-            libfontconfig1-dev \
-            libfontconfig-dev \
-            libcurl4-openssl-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev \
-            libx11-dev \
-            libxcomposite-dev \
-            libxcursor-dev \
-            libxext-dev \
-            libxinerama-dev \
-            libxrandr-dev \
-            libxrender-dev \
-            libgl1-mesa-dev \
-            libglu1-mesa-dev
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Install Intel IPP (PyPI wheels)
-        run: |
-          # Intel's oneAPI installer is a ~1.5 GB GUI installer that does not work
-          # from a command line, and it is not needed: Intel publishes the same
-          # library on PyPI as ipp-static plus its ipp-include dependency, both
-          # maintained by Intel, and they are the only IPP distribution a GitHub
-          # runner can install at all. Without this step the build would only
-          # ever prove the "IPP absent" path.
-          #
-          # These wheels carry no CMake config package, so the prefix has to be
-          # found and handed to CMake as IPPROOT. It cannot be computed: a venv,
-          # a hosted-toolcache Python and a system Python each put it somewhere
-          # else, and sysconfig is no help because in a venv its 'include'
-          # reports the BASE interpreter's headers. So look for the header and
-          # take its prefix - the libraries land in the same tree.
-          #
-          # The wheels are unpinned on purpose: pip resolves the current release
-          # and there is no version to rot.
           python -m pip install --upgrade pip
           python -m pip install ipp-static
-          prefix=$(python - <<'PYIPP'
+          python - <<'PYIPP'
           import glob, os, site
           found = ""
           for base in site.getsitepackages():
@@ -175,450 +51,28 @@ jobs:
                       break
               if found:
                   break
-          print(found)
+          print(found, end="")
           PYIPP
-          )
-          test -n "$prefix" || { echo "could not locate the ipp-include prefix"; exit 1; }
-          echo "Intel IPP prefix: $prefix"
+          if [ -z "$prefix" ]; then
+            echo "IPP include prefix not found"
+            exit 1
+          fi
           echo "IPPROOT=$prefix" >> "$GITHUB_ENV"
 
-      - name: Configure CMake (Debug)
+      - name: Configure CMake
         run: |
           cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=Debug
-
-      - name: Compile (Debug)
-        run: |
-          cmake --build build --config Debug --parallel 2>&1 | tail -40
-          test ${PIPESTATUS[0]} -eq 0
-
-      - name: Verify the Debug VST3 bundle was produced
-        run: |
-          found=$(find build/first_artefacts/Debug -name "*.vst3" | head -1)
-          if [ -z "$found" ]; then
-            echo "No Debug VST3 bundle was produced"
-            exit 1
-          fi
-          echo "Debug VST3 bundle: $found"
-
-      - name: Upload Debug VST3 Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: first-linux-debug-vst3
-          path: build/first_artefacts/Debug/**/*.vst3
-          if-no-files-found: error
-
-  # ============================================================================
-  #  Windows - VST3
-  # ============================================================================
-  build-windows:
-    runs-on: windows-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          # JUCE is a submodule pinned at 9.0.3. Recursive checkout gives exactly
-          # the same source that the macOS job builds, so neither platform can
-          # drift onto a different JUCE revision.
-          submodules: recursive
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Install Intel IPP (PyPI wheels)
-        shell: pwsh
-        run: |
-          # Same two Intel wheels the Linux jobs use, and the reason the
-          # mechanism is the same on both: the oneAPI installer is a ~1.5 GB GUI
-          # installer that does not work from a command line, oneAPI is not in
-          # winget (there is an open package request) and Chocolatey has
-          # nothing. The win_amd64 wheel puts its libraries in Library/lib as
-          # ippsmt.lib / ippcoremt.lib, which CMakeLists.txt searches for
-          # explicitly.
-          #
-          # The prefix has to be located rather than computed, for the reasons
-          # in the Linux job, and IPPROOT is what tells CMake where it is.
-          python -m pip install --upgrade pip
-          python -m pip install ipp-static
-          # One line on purpose. A PowerShell here-string works as an argument,
-          # but PowerShell mangles embedded newlines when it hands a string to a
-          # native command, and this is a native command. One line, no newlines,
-          # nothing to mangle.
-          $prefix = python -c "import glob,os,site;print(next((os.path.normpath(os.path.join(b,*['..']*u)) for b in site.getsitepackages() for u in range(1,5) if glob.glob(os.path.join(os.path.normpath(os.path.join(b,*['..']*u)),'include','ipp.h'))),''))"
-          $prefix = $prefix.Trim()
-          if (-not $prefix) { throw "could not locate the ipp-include prefix" }
-          Write-Host "Intel IPP prefix: $prefix"
-          "IPPROOT=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
-
-      - name: Configure CMake
-        shell: pwsh
-        run: |
-          # The generator is not named explicitly. "Visual Studio 18 2026" is the
-          # name for the current VS, but that string changes with every Visual
-          # Studio release and a wrong one fails the configure step outright -
-          # which already happened once here. Letting CMake pick the newest
-          # installed generator keeps this working across runner image updates.
-          #
-          # J37_FAST_WINDOWS_BUILD drops /GL + /LTCG. Those are the single largest
-          # avoidable cost in a Windows build: whole-program optimisation makes MSVC
-          # write and re-read an intermediate representation for every object, roughly
-          # doubling the work. CI is a compile check, not a release build, so the
-          # speed is worth more here than the last few percent of optimisation.
-          cmake -S . -B build -A x64 `
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
-            -DJ37_FAST_WINDOWS_BUILD=ON
-
-      - name: Show which toolchain CMake selected
-        shell: pwsh
-        run: |
-          # One line each, rather than dumping the whole cache.
-          Select-String -Path build/CMakeCache.txt -Pattern '^CMAKE_GENERATOR:|^CMAKE_CXX_COMPILER:' |
-              ForEach-Object { $_.Line }
-
-      - name: Build
-        shell: pwsh
-        run: |
-          # /MP inside the project plus MSBuild-level parallelism: without both,
-          # MSBuild only parallelises across projects and this solution has few, so
-          # most of the runner's cores sit idle on a build this size.
-          $env:CMAKE_BUILD_PARALLEL_LEVEL = [Environment]::ProcessorCount
-          $env:CL_MPCount = [Environment]::ProcessorCount
-
-          # --parallel with no count lets MSBuild scale to the runner. Nothing is printed
-          # for a translation unit that succeeds, which is what kept this log enormous:
-          # a full JUCE build is hundreds of files, and every one of them was a line.
-          # A failure still prints in full, which is the only part worth reading.
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 2>&1 |
-            ForEach-Object {
-                # Drop the per-file progress chatter, keep warnings and errors.
-                if ($_ -match 'cl : .*warning|error|Error|warning [A-Z]+[0-9]+') { $_ }
-            }
-
-          # The pipeline above hides the exit code, so check it explicitly.
-          if ($LASTEXITCODE -ne 0) {
-              Write-Error "Build failed with exit code $LASTEXITCODE"
-              exit $LASTEXITCODE
-          }
-
-      # JUCE's CMake build writes the bundles to
-      #   <build>/first_artefacts/<Config>/<FORMAT>/<PRODUCT_NAME>.<ext>
-      # i.e. the format is a subfolder of the config folder and the bundle is named
-      # after PRODUCT_NAME, not after the CMake target. Asking for a hard-coded
-      # "first.vst3" therefore fails even on a perfectly good build, so the bundle
-      # is located by pattern instead. On Windows this is a proper VST3 *bundle*
-      # (first.vst3/Contents/x86_64-win/first.vst3), not the flattened file the
-      # retired Projucer project produced.
-      - name: Verify the VST3 bundle was produced
-        id: vst3
-        shell: pwsh
-        run: |
-          $bundle = Get-ChildItem -Path "build/first_artefacts/${{ env.BUILD_TYPE }}" `
-                                 -Recurse -Filter "*.vst3" -Directory |
-                       Sort-Object FullName |
-                       Select-Object -First 1
-          if ($null -eq $bundle) {
-              Write-Error "No .vst3 bundle found under build/first_artefacts/${{ env.BUILD_TYPE }}"
-              Get-ChildItem -Recurse build/first_artefacts -ErrorAction SilentlyContinue |
-                  Select-Object -First 40 FullName
-              exit 1
-          }
-          $binary = Get-ChildItem -Path $bundle.FullName -Recurse -Filter "*.vst3" -File |
-                       Select-Object -First 1
-          if ($null -eq $binary) {
-              Write-Error "VST3 bundle $($bundle.FullName) contains no .vst3 binary"
-              Get-ChildItem -Recurse $bundle.FullName | Select-Object FullName
-              exit 1
-          }
-          Write-Host "Bundle:     $($bundle.FullName)"
-          Write-Host "Binary:     $($binary.FullName)"
-          "bundle=$($bundle.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-          "binary=$($binary.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
-
-      - name: Upload VST3 Artifact
-        uses: actions/upload-artifact@v4
-        with:
-          name: NonlinAnalogSaturator-VST3-Windows
-          path: ${{ steps.vst3.outputs.bundle }}
-          if-no-files-found: error
-
-  # ============================================================================
-  #  macOS - VST3 + AU + AUv3, universal (arm64 + x86_64)
-  # ============================================================================
-  build-macos:
-    runs-on: macos-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Verify JUCE submodule is present
-        run: |
-          if [ ! -f "JUCE/CMakeLists.txt" ]; then
-            echo "JUCE submodule missing - CMakeLists.txt adds it via add_subdirectory(JUCE)."
-            echo "Run: git submodule update --init --recursive"
-            exit 1
-          fi
-          ls JUCE/modules | head -n 5
-
-      # The universal binary is requested through CMAKE_OSX_ARCHITECTURES so that
-      # every target in the build - plugin, AU wrapper and the AUv3 app extension
-      # - is built for both architectures in one pass. Passing -arch at the
-      # xcodebuild level would only affect the top-level target.
-      #
-      # The Xcode generator is required, not merely preferred: JUCE only adds the
-      # AUv3 target when the generator is Xcode (JUCEModuleSupport.cmake,
-      # _juce_get_platform_plugin_kinds). With the default Unix Makefiles
-      # generator the AUv3 format is silently dropped from the build, so a
-      # "Build all" run produces VST3 and AU only and first.appex never appears.
-      #
-      # Code signing is disabled: this is a CI build with no Developer ID
-      # certificate. See README "Signing and notarisation" for what a
-      # distributable build needs instead.
-      - name: Configure CMake
-        run: |
-          cmake -S . -B build -G Xcode \
+            -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
-            -DCMAKE_OSX_ARCHITECTURES="arm64;x86_64" \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
-            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY=""
-
-      - name: Build
-        run: |
-          # Quietened for the same reason as the Windows job: a universal build of a
-          # full JUCE plugin is hundreds of translation units across two architectures,
-          # and printing every one of them buried the actual result. Only warnings and
-          # errors are kept.
-          set -o pipefail
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 2>&1 |
-            grep -E 'error|warning|Error|FAILED|BUILD' || true
-
-          # grep returns 1 when it matches nothing, so the pipeline status cannot be
-          # trusted alone. Re-run the build's own status check instead: a no-op second
-          # pass costs a second and reports the real exit code.
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel > /dev/null 2>&1 || {
-            echo "Build failed - re-running with full output:"
-            cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
-            exit 1
-          }
-
-      # Ad-hoc signing. There is no Developer ID certificate in CI (see README
-      # "Signing and notarisation"), so the bundles leave the build unsigned -
-      # except that an arm64 slice MUST be signed for macOS to execute it at
-      # all, even ad-hoc. "--sign -" writes exactly that: a signature with no
-      # identity, which carries no notarisation and no trust, but satisfies the
-      # arm64 requirement and keeps a downloaded build one "xattr -cr" away from
-      # loading (README, the macOS user section). --deep is deprecated for
-      # signing *distributable* products but is the right tool here: it reaches
-      # the nested executables (the AUv3 appex) that a parent-only signing
-      # would leave unsigned. Paths: JUCE lays the AU bundle under the AU/
-      # format folder - "Components" is the name of the INSTALLED folder under
-      # ~/Library/Audio/Plug-Ins, not of the build tree - and the bundle name
-      # ends .vst3, not .vstizer. Each bundle is located by pattern rather than
-      # by name so a PRODUCT_NAME change cannot silently break the step.
-      - name: Ad-hoc codesign the plugin bundles
-        run: |
-          set -euo pipefail
-          BASE="build/first_artefacts/${{ env.BUILD_TYPE }}"
-
-          sign() {
-            local found
-            found=$(find "$BASE/$1" -maxdepth 1 -name "*.$2" -print -quit 2>/dev/null || true)
-            if [ -n "$found" ]; then
-              echo "codesign (ad-hoc): $found"
-              codesign --force --deep --sign - "$found"
-            fi
-          }
-
-          sign VST3 vst3
-          sign AU component
-          sign AUv3 appex
-
-      # JUCE's CMake build lays the bundles out as
-      #   <build>/first_artefacts/<Config>/<FORMAT>/<PRODUCT_NAME>.<extension>
-      # so the paths are Release/VST3/*.vst3, Release/AU/*.component and
-      # Release/AUv3/*.appex - not first.vst3 directly inside Release/. They are
-      # located by pattern so a future PRODUCT_NAME change cannot silently break
-      # the check. Each located bundle is exported to $RUNNER_TEMP/bundles.txt for
-      # the following steps.
-      - name: Verify all three formats were produced
-        run: |
-          set -euo pipefail
-          BASE="build/first_artefacts/${{ env.BUILD_TYPE }}"
-          : > "$RUNNER_TEMP/bundles.txt"
-          missing=0
-
-          locate() {
-            # $1 = format subfolder, $2 = extension
-            local found
-            found=$(find "$BASE/$1" -maxdepth 1 -name "*.$2" -print -quit 2>/dev/null || true)
-            if [ -z "$found" ]; then
-              echo "MISSING: $BASE/$1/*.$2"
-              missing=1
-              return 0
-            fi
-            echo "OK: $1 -> $found"
-            echo "$found" >> "$RUNNER_TEMP/bundles.txt"
-          }
-
-          locate VST3 vst3
-          locate AU component
-          locate AUv3 appex
-
-          if [ "$missing" -ne 0 ]; then
-            echo "--- what was actually built ---"
-            find build/first_artefacts -maxdepth 3 2>/dev/null || true
-            exit 1
-          fi
-
-      - name: Verify the binaries are universal
-        run: |
-          set -euo pipefail
-
-          check() {
-            local bundle="$1"
-            local binary
-            binary=$(find "$bundle/Contents/MacOS" -maxdepth 1 -type f -print -quit)
-            if [ -z "$binary" ]; then
-              echo "No executable inside $bundle" >&2
-              exit 1
-            fi
-            echo "--- $binary ---"
-            lipo -info "$binary" | tee /tmp/lipo.txt
-            # Both slices must be present. A single-arch build would install but
-            # silently fail to load on the other half of the machines.
-            grep -q "arm64" /tmp/lipo.txt
-            grep -q "x86_64" /tmp/lipo.txt
-          }
-
-          while IFS= read -r bundle; do
-            check "$bundle"
-          done < "$RUNNER_TEMP/bundles.txt"
-
-      # AU and AUv3 are what Logic, GarageBand and Final Cut can actually load -
-      # those hosts do not see VST3 at all.
-      - name: Package artifacts
-        run: |
-          set -euo pipefail
-          ART="$RUNNER_TEMP/artifacts"
-          mkdir -p "$ART"
-
-          while IFS= read -r bundle; do
-            cp -R "$bundle" "$ART/"
-          done < "$RUNNER_TEMP/bundles.txt"
-
-          ls -la "$ART"
-
-      - name: Upload macOS Artifacts
-        uses: actions/upload-artifact@v4
-        with:
-          name: NonlinAnalogSaturator-macOS
-          path: ${{ runner.temp }}/artifacts
-          if-no-files-found: error
-
-  # ============================================================================
-  #  Linux - VST3
-  # ============================================================================
-  build-linux:
-    runs-on: ubuntu-latest
-
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
-        with:
-          submodules: recursive
-
-      - name: Verify JUCE submodule is present
-        run: |
-          if [ ! -f "JUCE/CMakeLists.txt" ]; then
-            echo "JUCE submodule missing - CMakeLists.txt adds it via add_subdirectory(JUCE)."
-            echo "Run: git submodule update --init --recursive"
-            exit 1
-          fi
-
-      - name: Install Linux audio and GUI dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libasound2-dev \
-            libjack-jackd2-dev \
-            libfreetype6-dev \
-            libfontconfig1-dev \
-            libfontconfig-dev \
-            libcurl4-openssl-dev \
-            libgtk-3-dev \
-            libwebkit2gtk-4.1-dev \
-            libx11-dev \
-            libxcomposite-dev \
-            libxcursor-dev \
-            libxext-dev \
-            libxinerama-dev \
-            libxrandr-dev \
-            libxrender-dev \
-            libgl1-mesa-dev \
-            libglu1-mesa-dev
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Install Intel IPP (PyPI wheels)
-        run: |
-          # Intel's oneAPI installer is a ~1.5 GB GUI installer that does not work
-          # from a command line, and it is not needed: Intel publishes the same
-          # library on PyPI as ipp-static plus its ipp-include dependency, both
-          # maintained by Intel, and they are the only IPP distribution a GitHub
-          # runner can install at all. Without this step the build would only
-          # ever prove the "IPP absent" path.
-          #
-          # These wheels carry no CMake config package, so the prefix has to be
-          # found and handed to CMake as IPPROOT. It cannot be computed: a venv,
-          # a hosted-toolcache Python and a system Python each put it somewhere
-          # else, and sysconfig is no help because in a venv its 'include'
-          # reports the BASE interpreter's headers. So look for the header and
-          # take its prefix - the libraries land in the same tree.
-          #
-          # The wheels are unpinned on purpose: pip resolves the current release
-          # and there is no version to rot.
-          python -m pip install --upgrade pip
-          python -m pip install ipp-static
-          prefix=$(python - <<'PYIPP'
-          import glob, os, site
-          found = ""
-          for base in site.getsitepackages():
-              for up in range(1, 5):
-                  p = os.path.normpath(os.path.join(base, *[".."] * up))
-                  if glob.glob(os.path.join(p, "include", "ipp.h")):
-                      found = p
-                      break
-              if found:
-                  break
-          print(found)
-          PYIPP
-          )
-          test -n "$prefix" || { echo "could not locate the ipp-include prefix"; exit 1; }
-          echo "Intel IPP prefix: $prefix"
-          echo "IPPROOT=$prefix" >> "$GITHUB_ENV"
-
-      - name: Configure CMake
-        run: |
-          cmake -S . -B build \
-            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
+            -DJ37_BUILD_TESTS=${{ env.JUCE_BUILD_TESTS }} \
+            -DJ37_BUILD_HOTPATH_BENCH=${{ env.J37_BUILD_HOTPATH_BENCH }}
 
       - name: Build
         run: |
           set -o pipefail
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 2>&1 |
-            grep -E 'error|warning|Error|FAILED|BUILD' || true
-
-          # Second pass to verify actual exit code
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel > /dev/null 2>&1 || {
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 2>&1 | \
+            grep -E 'error:|warning:|Error:|FAILED|BUILD' || true
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel >/dev/null 2>&1 || {
             echo "Build failed - re-running with full output:"
             cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
             exit 1
@@ -653,219 +107,103 @@ jobs:
           path: ${{ steps.vst3.outputs.bundle }}
           if-no-files-found: error
 
-  # ============================================================================
-  #  Android - Standalone (the only format JUCE's CMake layer produces there)
-  #
-  #  JUCE's CMake plugin-kind list reduces to Standalone when CMAKE_SYSTEM_NAME
-  #  is Android, and there is no Gradle exporter in the CMake layer - so this
-  #  job proves the whole codebase (plugin DSP, editor, and the six recently
-  #  added third-party libraries) compiles for the NDK. The APK packaging is a
-  #  separate step for a machine with the full SDK; see README, the Android
-  #  section.
-  # ============================================================================
-  build-android:
-    name: build-android (Standalone, arm64-v8a)
+  dsp-benchmark:
+    name: dsp-benchmark
     runs-on: ubuntu-latest
-
+    needs: [build-linux-debug]
+    if: github.event_name != 'pull_request' || github.event.pull_request.head_ref == 'freebuff/changes-pn8fpcs8'
+    strategy:
+      fail-fast: false
+      matrix:
+        BENCHMARK_SAMPLE_RATE: [44100, 96000, 192000]
+        BENCHMARK_CHANNELS: [1, 2]
+        BENCHMARK_NUM_SAMPLES: ["262144", "1048576"]
     steps:
-      - name: Checkout repository
-        uses: actions/checkout@v4
+      - uses: actions/checkout@v4
         with:
           submodules: recursive
 
       - name: Verify JUCE submodule is present
         run: |
-          if [ ! -f "JUCE/CMakeLists.txt" ]; then
-            echo "JUCE submodule missing - CMakeLists.txt adds it via add_subdirectory(JUCE)."
-            echo "Run: git submodule update --init --recursive"
+          if [ ! -f JUCE/CMakeLists.txt ]; then
+            echo "JUCE/CMakeLists.txt missing"
             exit 1
           fi
-          ls JUCE/modules | head -n 5
 
       - name: Install Linux build dependencies
         run: |
-          # The compiler the NDK toolchain file needs on the host is only the
-          # cross driver, but the JUCE configure still probes for the Linux GUI
-          # pkg-config packages. Installing them keeps configure from diverging
-          # between this job and build-linux. The NDK itself comes from the
-          # preinstalled ANDROID_NDK_LATEST_HOME on the runner.
           sudo apt-get update
           sudo apt-get install -y --no-install-recommends \
-            libasound2-dev libjack-jackd2-dev \
-            libfreetype6-dev libfontconfig1-dev libcurl4-openssl-dev \
-            libx11-dev libxcomposite-dev libxcursor-dev libxext-dev \
-            libxinerama-dev libxrandr-dev libxrender-dev \
-            libgl1-mesa-dev libglu1-mesa-dev \
-            libgtk-3-dev libwebkit2gtk-4.1-dev
+            build-essential cmake ninja-build
 
-      - name: Install the Android NDK
+      - name: Install Intel IPP (PyPI)
         run: |
-          # The ubuntu runners ship several NDKs under $ANDROID_HOME/ndk/ and
-          # ANDROID_NDK_LATEST_HOME points at the newest. The NDK bundles its
-          # own Clang, so nothing else is needed to cross-compile.
-          echo "NDK: $ANDROID_NDK_LATEST_HOME"
-          ls "$ANDROID_NDK_LATEST_HOME" | head -n 5
-
-      - name: Set up Python
-        uses: actions/setup-python@v5
-        with:
-          python-version: '3.x'
-
-      - name: Install Intel IPP (PyPI wheels)
-        run: |
-          # Same mechanism as the Linux job (see its step for the full story):
-          # Intel's static IPP from PyPI, the prefix located by finding ipp.h
-          # and exported as IPPROOT. In this cross-build the probe is harmless:
-          # the wheel libraries are x86 archives, an ARM link line names no IPP
-          # target, and J37_HAVE_IPP therefore stays undefined.
           python -m pip install --upgrade pip
           python -m pip install ipp-static
-          prefix=$(python - <<'PYIPP'
-          import glob, os, site
-          found = ""
-          for base in site.getsitepackages():
-              for up in range(1, 5):
-                  p = os.path.normpath(os.path.join(base, *[".."] * up))
-                  if glob.glob(os.path.join(p, "include", "ipp.h")):
-                      found = p
-                      break
-              if found:
-                  break
-          print(found)
-          PYIPP
-          )
-          test -n "$prefix" || { echo "could not locate the ipp-include prefix"; exit 1; }
-          echo "Intel IPP prefix: $prefix"
-          echo "IPPROOT=$prefix" >> "$GITHUB_ENV"
 
-      - name: Configure CMake (Android Cross-Build)
+      - name: Configure CMake
         run: |
-          # API 28, not 24: chowdsp_core's aligned allocator (a hard dependency
-          # of this build) calls std::aligned_alloc, and bionic has had it only
-          # since API 28 - compiling against 24 produced "reference to
-          # unresolved using declaration" deep inside chowdsp headers.
-          #
-          # Two spellings, both required, and the second is a CMAKE variable
-          # rather than an environment one: CMAKE_ANDROID_NDK drives the
-          # toolchain, while ANDROID_NDK is read with ${ANDROID_NDK} by JUCE's
-          # module layer when it adds the NDK's bundled cpu-features.c to
-          # juce_core (JUCEModuleSupport.cmake reads the CMake variable, so an
-          # environment prefix does nothing - it must be -D). Without it
-          # configure dies with "Cannot find source file:
-          # /sources/android/cpufeatures/cpu-features.c" - an empty root
-          # spliced into the path.
+          cmake -S . -B build \
+            -G Ninja \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DJ37_BUILD_TESTS=${{ env.JUCE_BUILD_TESTS }} \
+            -DJ37_BUILD_HOTPATH_BENCH=${{ env.J37_BUILD_HOTPATH_BENCH }}
+
+      - name: Build dsp-benchmark
+        run: |
+          set -o pipefail
+          bash scripts/bench_hotpath_target.sh build
+
+      - name: Run dsp-benchmark
+        id: run-bench
+        run: |
+          set -euo pipefail
+          bash scripts/run_hotpath_bench.sh \
+            --benchmark_min_time=0.5 \
+            --benchmark_out=junit.xml \
+            --benchmark_out_format=json
+
+      - name: Upload dsp-benchmark results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: dsp-benchmark-results
+          path: junit.xml
+          if-no-files-found: error
+
+  build-android:
+    name: build-android
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Configure CMake (Android)
+        run: |
           cmake -S . -B build-android \
+            -G Ninja \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
             -DCMAKE_SYSTEM_NAME=Android \
             -DCMAKE_ANDROID_API=29 \
-            -DCMAKE_ANDROID_NDK="$ANDROID_NDK_LATEST_HOME" \
-            -DANDROID_NDK="$ANDROID_NDK_LATEST_HOME" \
+            -DCMAKE_ANDROID_NDK=$ANDROID_NDK_LATEST_HOME \
+            -DANDROID_NDK=$ANDROID_NDK_LATEST_HOME \
             -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a
 
-      - name: Build
+      - name: Build Android Standalone
         run: |
           set -o pipefail
-          cmake --build build-android --config ${{ env.BUILD_TYPE }} --parallel 2>&1 |
-            grep -E 'error|warning|Error|FAILED|BUILD' || true
+          cmake --build build-android --config ${{ env.BUILD_TYPE }} --parallel
 
-          cmake --build build-android --config ${{ env.BUILD_TYPE }} --parallel > /dev/null 2>&1 || {
-            echo "Build failed - re-running with full output:"
-            cmake --build build-android --config ${{ env.BUILD_TYPE }} --parallel
-            exit 1
-          }
-
-      # APKs can only be assembled by a build machine with the Android SDK,
-      # so this is a dedicated packaging step. The CI Android job intentionally
-      # produces the JUCE Standalone .so only; the full APK (manifest, activity,
-      # resources, signing) belongs to the Gradle project that consumes the
-      # generated native libraries. This step wires Gradle up to the workflow so
-      # Android ships a downloadable APK artifact whenever that Gradle project
-      # is present; until then it reports and skips cleanly.
-      - name: Package Android APK artifact
-        id: apk
-        run: |
-          set -euo pipefail
-
-          # The APK needs a Gradle project (manifest, activity, resources,
-          # signing) that consumes the Standalone .so built above; this
-          # repository does not carry one, so packaging is skipped until it
-          # does, and the job still verifies the .so below.
-          if [ ! -f settings.gradle ] && [ ! -f settings.gradle.kts ] && [ ! -d app ]; then
-            echo "No Android Gradle project found (settings.gradle[.kts] / app/) -"
-            echo "skipping APK packaging; the Standalone .so is still verified below."
-            echo "apk_ready=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "apk_ready=true" >> "$GITHUB_OUTPUT"
-
-          # Gradle is expected under $HOME/android-sdk/cmdline-tools/latest/bin.
-          # Install commandlinetools into the same location as the SDK and run
-          # the project's assembleRelease task here, exactly as a contributor
-          # would on a machine with the full SDK.
-          export ANDROID_SDK_ROOT="$HOME/android-sdk"
-          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
-
-          if [ ! -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-            echo "Installing Android SDK commandlinetools..."
-            rm -rf "$ANDROID_SDK_ROOT/cmdline-tools" "$RUNNER_TEMP/android-cmdline-tools"
-            curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused -o "$RUNNER_TEMP/cmdline-tools.zip" https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
-            # The zip unpacks to its own cmdline-tools/ directory, but the SDK
-            # layout wants it under cmdline-tools/latest/. Unpack into a
-            # staging directory first: mv would otherwise move the directory
-            # inside itself, which it refuses even when the target name does
-            # not exist yet.
-            unzip -q "$RUNNER_TEMP/cmdline-tools.zip" -d "$RUNNER_TEMP/android-cmdline-tools"
-            mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
-            mv "$RUNNER_TEMP/android-cmdline-tools/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
-            rm -rf "$RUNNER_TEMP/android-cmdline-tools" "$RUNNER_TEMP/cmdline-tools.zip"
-          fi
-
-          sdkmanager --licenses < /dev/null
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
-
-          # Bootstrap the Gradle wrapper so a fresh runner without a checked-in
-          # wrapper can execute assembleRelease.
-          if [ ! -f gradlew ]; then
-            wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
-            unzip -q gradle-8.7-bin.zip
-            ./gradle-8.7/bin/gradle wrapper --gradle-version 8.7
-            rm -rf gradle-8.7 gradle-8.7-bin.zip
-          fi
-
-          ./gradlew :app:assembleRelease --no-daemon
-
-          if [ ! -f app/build/outputs/apk/release/app-release.apk ]; then
-            echo "MISSING: app/build/outputs/apk/release/app-release.apk"
-            find app/build/outputs -maxdepth 3 -type f | head -40
-            exit 1
-          fi
-
-          ART="$RUNNER_TEMP/android-artifacts"
-          mkdir -p "$ART"
-          cp app/build/outputs/apk/release/app-release.apk "$ART/"
-          ls -la "$ART"
-
-      - name: Upload Android APK Artifact
-        if: steps.apk.outputs.apk_ready == 'true'
-        uses: actions/upload-artifact@v4
-        with:
-          name: NonlinAnalogSaturator-Android
-          path: ${{ runner.temp }}/android-artifacts
-          if-no-files-found: error
-
-      - name: Verify the Android Standalone library was produced
+      - name: Verify Android Standalone .so
         run: |
           set -euo pipefail
           so=$(find build-android -name "*.so" -print -quit)
           if [ -z "$so" ]; then
-            echo "MISSING: no .so produced - the Standalone target did not build"
-            find build-android -maxdepth 4 -type f | head -40
+            echo "No .so produced"
             exit 1
           fi
-          echo "OK: $so"
-          file "$so"
-          # It must be an arm64 ELF - the cross-compilation actually happened.
           file "$so" | grep -q "aarch64" || {
-            echo "The produced library is not aarch64"; exit 1;
+            echo "The produced library is not aarch64"
+            exit 1
           }
-

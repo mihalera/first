@@ -1,86 +1,77 @@
 #!/usr/bin/env bash
 #
-# One-shot hot-path benchmark: configure once, build the bench target, run it.
+# Builds and runs the DSP micro-benchmarks.
 #
-#   scripts/run_hotpath_bench.sh [build dir] [bench args...]
+#   tests/dsp/run_bench.sh
 #
-# This is the human-facing entry point for the hot-path micro-benchmarks in
-#   tests/dsp/bench.cpp
+# Separate from run.sh on purpose. run.sh is the REGRESSION gate: it renders
+# audio and asserts on it, so it must pass on every commit and must stay fast.
+# This is a MEASUREMENT tool: it takes tens of seconds, its numbers depend on the
+# machine, and nothing should ever fail a build because a benchmark got slower.
+# Keeping them in one script would mean either a flaky gate or a benchmark nobody
+# runs.
 #
-# It is intentionally separate from tests/dsp/run_bench.sh. That script is the
-# standalone harness helper that assumes you already have a configured tree and a
-# local nanobench checkout or cache. This wrapper is the repo-native path: it
-# configures the plugin source tree with the dev-test libraries enabled, builds
-# only the bench target, and runs it.
-#
-# First run downloads a small set of pinned dev-only dependencies through CPM
-# (Catch2 and nanobench). That is why the cached package dir is pinned to the
-# repository tree: it survives a build-dir wipe and makes subsequent runs offline.
-#
-# The benchmark is a MEASUREMENT, not a gate. A slow machine, a noisy CI runner,
-# or a different compiler should never fail this script. Only a build failure or
-# a missing dependency is fatal.
-#
-# You can pass extra arguments straight to the bench binary:
-#   scripts/run_hotpath_bench.sh build --benchmark_min_time=0.5
+# nanobench is fetched by CPM under -DJ37_BUILD_TESTS=ON. This script does not
+# invoke CMake, so it looks for the header in the usual CPM cache locations and
+# says plainly what to do when it cannot find it.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="$(cd "$HERE/.." && pwd)"
+REPO="$(cd "${HERE}/../.." && pwd)"
+BUILD="${TMPDIR:-/tmp}/nonlin-dsp-bench"
+CXX="${CXX:-g++}"
 
-BUILD="${1:-build}"
-shift || true
+mkdir -p "${BUILD}"
 
-export CPM_SOURCE_CACHE="${REPO}/.cpm-cache"
-mkdir -p "$CPM_SOURCE_CACHE"
+python3 "${HERE}/extract.py" "${BUILD}/extracted_dsp.inc"
 
-cd "$REPO"
-
-if [ ! -d "$BUILD" ] || [ ! -f "$BUILD/CMakeCache.txt" ]; then
-  echo "--- configure (dev tests + hot-path bench, pinned CPM cache) ---"
-  cmake -S . -B "$BUILD" \
-    -DJ37_BUILD_TESTS=ON \
-    -DJ37_BUILD_HOTPATH_BENCH=ON \
-    -DCMAKE_BUILD_TYPE=Release \
-    -DCMAKE_CXX_COMPILER="${CXX:-g++}" \
-    -DCMAKE_C_COMPILER="${CC:-gcc}" \
-    -DCMAKE_RUNTIME_OUTPUT_DIRECTORY="$BUILD/bin" \
-    -DCMAKE_LIBRARY_OUTPUT_DIRECTORY="$BUILD/lib" \
-    -DCMAKE_ARCHIVE_OUTPUT_DIRECTORY="$BUILD/lib" \
-    -DJUCE_USE_CURL=0 \
-    -DJUCE_WEB_BROWSER=0 \
-    -DCMAKE_DISABLE_FIND_PACKAGE_Jack=ON \
-    -DCMAKE_DISABLE_FIND_PACKAGE_Alsa=ON \
-    -DCMAKE_DISABLE_FIND_PACKAGE_PulseAudio=ON \
-    -DCMAKE_DISABLE_FIND_PACKAGE_CoreAudio=ON \
-    -DCMAKE_DISABLE_FIND_PACKAGE_WASAPI=ON \
-    -DCMAKE_DISABLE_FIND_PACKAGE_DirectX=ON \
-    -DCMAKE_DISABLE_FIND_PACKAGE_X11=ON \
-    -DCMAKE_DISABLE_FIND_PACKAGE_GTK3=ON \
-    -DCMAKE_DISABLE_FIND_PACKAGE_Qt5=ON \
-    -DCMAKE_DISABLE_FIND_PACKAGE_Qt6=ON \
-    -DCMAKE_DISABLE_FIND_PACKAGE_ImGui=ON \
-    -DCMAKE_DISABLE_FIND_PACKAGE_Vulkan=ON \
-    -DCMAKE_DISABLE_FIND_PACKAGE_IPP=ON \
-    -DCMAKE_FIND_PACKAGE_PREFER_CONFIG=ON \
-    > /tmp/nonlin-bench-configure.log 2>&1
-
-  ec=$?
-  if [ "$ec" -ne 0 ]; then
-    echo "configure failed. tail of log:"
-    echo "-----------------------------------------"
-    tail -n 80 /tmp/nonlin-bench-configure.log
-    echo "-----------------------------------------"
-    exit 1
+# nanobench is header-only and lives at src/include/nanobench.h upstream. CPM
+# checks it out under one of these, depending on how the cache is configured.
+NANOBENCH_INC=""
+for candidate in \
+  "${REPO}/.cpm-cache/nanobench/"*/src/include \
+  "${REPO}/.cpm-cache/nanobench/src/include" \
+  "${REPO}/build/_deps/nanobench-src/src/include" \
+  "${REPO}/build/deps/nanobench/src/include" \
+  "${NANOBENCH_SRC:-}/src/include"
+do
+  if [ -n "${candidate}" ] && [ -f "${candidate}/nanobench.h" ]; then
+    NANOBENCH_INC="${candidate}"
+    break
   fi
+done
+
+if [ -z "${NANOBENCH_INC}" ]; then
+  echo "nanobench.h not found."
+  echo
+  echo "It is fetched by CPM only when the dev tests are enabled:"
+  echo "    cmake -S . -B build -DJ37_BUILD_TESTS=ON"
+  echo
+  echo "Run that once (which populates the CPM cache), or point NANOBENCH_SRC at"
+  echo "a checkout of https://github.com/martinus/nanobench."
+  exit 1
 fi
 
-echo "--- build bench target ---"
-"$HERE/bench_hotpath_target.sh" "$BUILD"
-ec=$?
-if [ "$ec" -ne 0 ]; then
-  exit "$ec"
-fi
+echo "nanobench: ${NANOBENCH_INC}"
+echo
 
-echo "--- run bench ---"
-exec "$BUILD/bin/nonlin-hotpath-bench" "$@"
+# Forward any extra arguments (e.g. --benchmark_min_time, --benchmark_out) to the
+# benchmark binary. The build step above always compiles with ANKERL_NANOBENCH_IMPLEMENT.
+BENCH_ARGS=()
+while [ $# -gt 0 ]; do
+  case "$1" in
+    --json|--benchmark_min_time=*|--benchmark_out=*|--benchmark_out_format=*)
+      BENCH_ARGS+=("$1")
+      ;;
+    *)
+      BENCH_ARGS+=("$1")
+      ;;
+  esac
+  shift
+done
+
+"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+  -I "${HERE}" -I "${BUILD}" -I "${NANOBENCH_INC}" \
+  "${HERE}/bench.cpp" -o "${BUILD}/bench"
+
+"${BUILD}/bench" "${BENCH_ARGS[@]}"
