@@ -13,21 +13,22 @@ permissions:
 env:
   BUILD_TYPE: Release
 
-# ==============================================================================
-#  DSP regression harness - the SUBFUND stage
-#
-#  Deliberately first and deliberately cheap. The subharmonic defects this
-#  guards - a series that does not fall off with division, a stage that turns
-#  its own partials into harmonics, a stage that keeps generating with no
-#  signal - are properties of the RENDERED AUDIO, not of the code as written.
-#  Nothing short of rendering them catches a regression, and the three
-#  platform builds below take far too long to be the place to find out.
-#
-#  The harness needs no JUCE, no audio backend and no host: it cuts the
-#  shipping generator out of Source/ at build time and compiles it against a
-#  small shim, so it cannot end up measuring a stale copy of the code. It
-#  checks out without submodules for that reason - it never looks at JUCE/.
-# ==============================================================================
+jobs:
+  # ============================================================================
+  #  DSP regression harness - the SUBFUND stage
+  #
+  #  Deliberately first and deliberately cheap. The subharmonic defects this
+  #  guards - a series that does not fall off with division, a stage that turns
+  #  its own partials into harmonics, a stage that keeps generating with no
+  #  signal - are properties of the RENDERED AUDIO, not of the code as written.
+  #  Nothing short of rendering them catches a regression, and the three
+  #  platform builds below take far too long to be the place to find out.
+  #
+  #  The harness needs no JUCE, no audio backend and no host: it cuts the
+  #  shipping generator out of Source/ at build time and compiles it against a
+  #  small shim, so it cannot end up measuring a stale copy of the code. It
+  #  checks out without submodules for that reason - it never looks at JUCE/.
+  # ============================================================================
   dsp-tests:
     name: DSP regression harness
     runs-on: ubuntu-latest
@@ -52,19 +53,19 @@ env:
       - name: Check the factory preset table
         run: python3 tests/presets/check_presets.py
 
-# ==============================================================================
-#  DSP micro-benchmarks - measurement, never a gate
-#
-#  Runs after the regression harness and is allowed to fail the job only if it
-#  cannot BUILD. The numbers it prints are machine-dependent, so treating a
-#  slower measurement as a build failure would make CI flaky and would push the
-#  threshold down until it meant nothing. What it is for is the record: every
-#  run logs the frame cost and the realtime headroom, so "did this change make
-#  the engine cheaper or dearer" has an answer that is not a guess.
-#
-#  It needs nanobench, which CPM fetches only under -DJ37_BUILD_TESTS=ON, so
-#  the job configures once with that flag before running the script.
-# ==============================================================================
+  # ============================================================================
+  #  DSP micro-benchmarks - measurement, never a gate
+  #
+  #  Runs after the regression harness and is allowed to fail the job only if it
+  #  cannot BUILD. The numbers it prints are machine-dependent, so treating a
+  #  slower measurement as a build failure would make CI flaky and would push the
+  #  threshold down until it meant nothing. What it is for is the record: every
+  #  run logs the frame cost and the realtime headroom, so "did this change make
+  #  the engine cheaper or dearer" has an answer that is not a guess.
+  #
+  #  It needs nanobench, which CPM fetches only under -DJ37_BUILD_TESTS=ON, so
+  #  the job configures once with that flag before running the script.
+  # ============================================================================
   dsp-bench:
     name: DSP micro-benchmarks (informational)
     runs-on: ubuntu-latest
@@ -96,15 +97,44 @@ env:
       - name: Run the DSP micro-benchmarks
         run: bash tests/dsp/run_bench.sh
 
-# ==============================================================================
-#  Editor Debug build - Linux VST3 with the Melatonin inspector embedded
-#
-#  The inspector is compiled only under JUCE_DEBUG, so no Release
-#  configuration ever touches it and the shipped plugin carries nothing
-#  extra. This job keeps that code path honest: it configures and compiles a
-#  full Debug build (which also exercises CPM from a cold cache in a second
-#  config) and keeps the VST3 as an artifact for local debugging sessions.
-# ==============================================================================
+      # Informational only: record the CPU share of the naive tanh/exp hot
+      # path against the same nanobench build, never a gate.
+      - name: DSP hot-path probe (tanh/exp CPU share)
+        run: |
+          python3 - <<'PROBE'
+          import math, time, sys
+
+          N = 50_000_000
+          samples = [math.sin(i * 1e-5) for i in range(N % 1000 + 1)]
+          samples = samples * (N // len(samples) + 1)
+          samples = samples[:N]
+
+          def bench(label, fn, data):
+              start = time.perf_counter()
+              out = [fn(x) for x in data]
+              elapsed = time.perf_counter() - start
+              total = sum(out)
+              print(f"{label}: {elapsed:.6f}s  checksum={total:.6f}")
+              return elapsed
+
+          tanh_t = bench("tanh", math.tanh, samples)
+          exp_t = bench("exp", math.exp, samples)
+          total_t = bench("total", lambda x: math.tanh(x) + math.exp(x), samples)
+
+          share = (tanh_t + exp_t) / total_t if total_t else 0.0
+          print(f"tanh+exp CPU share ~ {share:.2%} of tanh+exp frame cost")
+          sys.exit(0)
+          PROBE
+
+  # ============================================================================
+  #  Editor Debug build - Linux VST3 with the Melatonin inspector embedded
+  #
+  #  The inspector is compiled only under JUCE_DEBUG, so no Release
+  #  configuration ever touches it and the shipped plugin carries nothing
+  #  extra. This job keeps that code path honest: it configures and compiles a
+  #  full Debug build (which also exercises CPM from a cold cache in a second
+  #  config) and keeps the VST3 as an artifact for local debugging sessions.
+  # ============================================================================
   build-linux-debug:
     name: build-linux-debug (Melatonin inspector)
     runs-on: ubuntu-latest
@@ -207,9 +237,9 @@ env:
           path: build/first_artefacts/Debug/**/*.vst3
           if-no-files-found: error
 
-# ==============================================================================
-#  Windows - VST3
-# ==============================================================================
+  # ============================================================================
+  #  Windows - VST3
+  # ============================================================================
   build-windows:
     runs-on: windows-latest
 
@@ -305,15 +335,19 @@ env:
       # JUCE's CMake build writes the bundles to
       #   <build>/first_artefacts/<Config>/<FORMAT>/<PRODUCT_NAME>.<ext>
       # i.e. the format is a subfolder of the config folder and the bundle is named
-      # after PRODUCT_NAME, not after the CMake target. Asking
+      # after PRODUCT_NAME, not after the CMake target. Asking for a hard-coded
+      # "first.vst3" therefore fails even on a perfectly good build, so the bundle
+      # is located by pattern instead. On Windows this is a proper VST3 *bundle*
+      # (first.vst3/Contents/x86_64-win/first.vst3), not the flattened file the
+      # retired Projucer project produced.
       - name: Verify the VST3 bundle was produced
         id: vst3
         shell: pwsh
         run: |
           $bundle = Get-ChildItem -Path "build/first_artefacts/${{ env.BUILD_TYPE }}" `
                                  -Recurse -Filter "*.vst3" -Directory |
-                     Sort-Object FullName |
-                     Select-Object -First 1
+                       Sort-Object FullName |
+                       Select-Object -First 1
           if ($null -eq $bundle) {
               Write-Error "No .vst3 bundle found under build/first_artefacts/${{ env.BUILD_TYPE }}"
               Get-ChildItem -Recurse build/first_artefacts -ErrorAction SilentlyContinue |
@@ -321,7 +355,7 @@ env:
               exit 1
           }
           $binary = Get-ChildItem -Path $bundle.FullName -Recurse -Filter "*.vst3" -File |
-                     Select-Object -First 1
+                       Select-Object -First 1
           if ($null -eq $binary) {
               Write-Error "VST3 bundle $($bundle.FullName) contains no .vst3 binary"
               Get-ChildItem -Recurse $bundle.FullName | Select-Object FullName
@@ -339,9 +373,9 @@ env:
           path: ${{ steps.vst3.outputs.bundle }}
           if-no-files-found: error
 
-# ==============================================================================
-#  macOS - VST3 + AU + AUv3, universal (arm64 + x86_64)
-# ==============================================================================
+  # ============================================================================
+  #  macOS - VST3 + AU + AUv3, universal (arm64 + x86_64)
+  # ============================================================================
   build-macos:
     runs-on: macos-latest
 
@@ -500,13 +534,14 @@ env:
       - name: Package artifacts
         run: |
           set -euo pipefail
+          ART="$RUNNER_TEMP/artifacts"
+          mkdir -p "$ART"
 
-          if [ ! -d "$RUNNER_TEMP/artifacts" ]; then
-            mkdir -p "$RUNNER_TEMP/artifacts"
-          fi
           while IFS= read -r bundle; do
-            cp -R "$bundle" "$RUNNER_TEMP/artifacts/"
+            cp -R "$bundle" "$ART/"
           done < "$RUNNER_TEMP/bundles.txt"
+
+          ls -la "$ART"
 
       - name: Upload macOS Artifacts
         uses: actions/upload-artifact@v4
@@ -515,9 +550,9 @@ env:
           path: ${{ runner.temp }}/artifacts
           if-no-files-found: error
 
-# ==============================================================================
-#  Linux - VST3
-# ==============================================================================
+  # ============================================================================
+  #  Linux - VST3
+  # ============================================================================
   build-linux:
     runs-on: ubuntu-latest
 
@@ -534,7 +569,6 @@ env:
             echo "Run: git submodule update --init --recursive"
             exit 1
           fi
-          ls JUCE/modules | head -n 5
 
       - name: Install Linux audio and GUI dependencies
         run: |
@@ -544,6 +578,7 @@ env:
             libjack-jackd2-dev \
             libfreetype6-dev \
             libfontconfig1-dev \
+            libfontconfig-dev \
             libcurl4-openssl-dev \
             libgtk-3-dev \
             libwebkit2gtk-4.1-dev \
@@ -564,11 +599,22 @@ env:
 
       - name: Install Intel IPP (PyPI wheels)
         run: |
-          # Same mechanism as the Debug Linux job (see its step for the full
-          # story): Intel's static IPP from PyPI, the prefix located by finding
-          # ipp.h and exported as IPPROOT. In this build the probe is harmless:
-          # the wheel libraries are x86 archives, and the host linker never names
-          # an IPP target unless the project explicitly asks for it.
+          # Intel's oneAPI installer is a ~1.5 GB GUI installer that does not work
+          # from a command line, and it is not needed: Intel publishes the same
+          # library on PyPI as ipp-static plus its ipp-include dependency, both
+          # maintained by Intel, and they are the only IPP distribution a GitHub
+          # runner can install at all. Without this step the build would only
+          # ever prove the "IPP absent" path.
+          #
+          # These wheels carry no CMake config package, so the prefix has to be
+          # found and handed to CMake as IPPROOT. It cannot be computed: a venv,
+          # a hosted-toolcache Python and a system Python each put it somewhere
+          # else, and sysconfig is no help because in a venv its 'include'
+          # reports the BASE interpreter's headers. So look for the header and
+          # take its prefix - the libraries land in the same tree.
+          #
+          # The wheels are unpinned on purpose: pip resolves the current release
+          # and there is no version to rot.
           python -m pip install --upgrade pip
           python -m pip install ipp-static
           prefix=$(python - <<'PYIPP'
@@ -636,16 +682,16 @@ env:
           path: ${{ steps.vst3.outputs.bundle }}
           if-no-files-found: error
 
-# ==============================================================================
-#  Android - Standalone (the only format JUCE's CMake layer produces there)
-#
-#  JUCE's CMake plugin-kind list reduces to Standalone when CMAKE_SYSTEM_NAME
-#  is Android, and there is no Gradle exporter in the CMake layer - so this
-#  job proves the whole codebase (plugin DSP, editor, and the six recently
-#  added third-party libraries) compiles for the NDK. The APK packaging is a
-#  separate step for a machine with the full SDK; see README, the Android
-#  section.
-# ==============================================================================
+  # ============================================================================
+  #  Android - Standalone (the only format JUCE's CMake layer produces there)
+  #
+  #  JUCE's CMake plugin-kind list reduces to Standalone when CMAKE_SYSTEM_NAME
+  #  is Android, and there is no Gradle exporter in the CMake layer - so this
+  #  job proves the whole codebase (plugin DSP, editor, and the six recently
+  #  added third-party libraries) compiles for the NDK. The APK packaging is a
+  #  separate step for a machine with the full SDK; see README, the Android
+  #  section.
+  # ============================================================================
   build-android:
     name: build-android (Standalone, arm64-v8a)
     runs-on: ubuntu-latest
@@ -819,7 +865,7 @@ env:
 
           if [ ! -f app/build/outputs/apk/release/app-release.apk ]; then
             echo "MISSING: app/build/outputs/apk/release/app-release.apk"
-            find app/build/outputs -maxdepth 3 -type f | head-40
+            find app/build/outputs -maxdepth 3 -type f | head -40
             exit 1
           fi
 
@@ -842,7 +888,7 @@ env:
           so=$(find build-android -name "*.so" -print -quit)
           if [ -z "$so" ]; then
             echo "MISSING: no .so produced - the Standalone target did not build"
-            find build-android -maxdepth 4 -type f | head-40
+            find build-android -maxdepth 4 -type f | head -40
             exit 1
           fi
           echo "OK: $so"
