@@ -3251,14 +3251,26 @@ void FirstAudioProcessorEditor::applyLanguage (int languageIndex)
     // language names belong. Re-apply the rows through the table just installed:
     // the items exist on every path that reaches here (the constructor adds them
     // before its first call), and a later switch re-translates them the same way.
-    //
+    languageBox.changeItemText (1, xlat ("LANGUAGE_ENGLISH"));
+    languageBox.changeItemText (2, xlat ("LANGUAGE_UKRAINIAN"));
+
+    // ... and then re-select, because changeItemText() rewrites the POPUP's own
+    // row and NOTHING else: juce::ComboBox keeps the string it is displaying in
+    // its value Label, and only setSelectedId()/setText() ever write that. The
+    // item texts above were therefore correct while the field kept whatever it
+    // was showing - the raw key it was added with, since the constructor adds
+    // both rows before any table exists. This is the row the user was looking
+    // at, so it is the one that has to be re-applied; the index this call was
+    // handed is its ID minus one, which is the only mapping the box cannot get
+    // wrong (getSelectedId() itself returns 0 while the field is showing text
+    // that does not match its rows).
+    languageBox.setSelectedId (juce::jlimit (1, 2, languageIndex + 1),
+                               juce::dontSendNotification);
     // applyLanguage runs BEFORE the constructor finishes its styling block
     // (styleCombo below), so re-ink the box's text colour here as well: on a
     // session that opens Ukrainian, the constructor's paletteFor(false) would
     // otherwise repaint the box with the theme's text colour and wipe this -
     // which is exactly the raw-key value the user screenshotted.
-    languageBox.changeItemText (1, xlat ("LANGUAGE_ENGLISH"));
-    languageBox.changeItemText (2, xlat ("LANGUAGE_UKRAINIAN"));
     languageBox.setColour (juce::ComboBox::textColourId, paletteFor (darkTheme).text);
     languageBox.repaint();
 
@@ -3840,7 +3852,14 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         { "character",       "TONE",       0.5,   "MACHINE"  },
         { "wow",             "WOW",        0.14,  "NOISE"    },
         { "flutter",         "FLUTTER",    0.18,  "NOISE"    },
-        { "mix",             "MIX",        50.0,  "MACHINE"  },
+        // MIX's default is 0.5, NOT 50.0: this column is stated in the units the
+        // SLIDER works in (see the id-based range block below), every control on
+        // this row is a 0..1 proportion whose readout is a percentage ("50 %"),
+        // and 50.0 is not a value in that range at all - juce::Slider::setValue
+        // clamps it, so a double-click on MIX behaved like a double-click on a
+        // different knob: it jumped to 100 %, not to the parameter's own 50 %
+        // default, which is the one thing a double-click is supposed to restore.
+        { "mix",             "MIX",        0.5,   "MACHINE"  },
         { "output",          "OUTPUT",     0.0,   "MACHINE"  },
         { "stereo_width",    "WIDTH",      0.5,   "MACHINE"  },
         // The seven SOURCE knobs, where the old BLEND/SHAPE pair sat: each is
@@ -5118,6 +5137,38 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (uiSoundsButton);
 
     // ---------------------------------------------------------------
+    //  The anti-phase guard's switch.
+    //
+    //  The deck already reports the guard: the ANTI-PHASE readout beside the
+    //  transport says "clean" while it is idle and a percentage while it is
+    //  working, because a fault that only exists after a mono fold-down is
+    //  otherwise invisible. What the readout could not do is give the user a way
+    //  to say "I know - pass it through": a deliberately inverted source, a
+    //  mid/side rig, an out-of-phase effect chain, all of them legitimate, all of
+    //  them things the guard would quietly rotate away.
+    //
+    //  A host-visible parameter like UI SOUNDS, so the choice is stored in the
+    //  session, automated, and undone with everything else. It is deliberately
+    //  NOT presettable: a factory preset must not be able to lower a safety net.
+    // ---------------------------------------------------------------
+    antiPhaseGuardButton.setClickingTogglesState (true);
+    setTip (antiPhaseGuardButton, "ANTI-PHASE GUARD - the output protection that "
+                                     "rotates a stereo pair whose sides are in "
+                                     "opposite polarity back toward mono, so a "
+                                     "mono fold-down (a club PA, a phone, a mono "
+                                     "mastering check) still has a centre and a "
+                                     "low end. Leave it on unless the reversal is "
+                                     "deliberate: off, the pair passes through "
+                                     "exactly as it arrives.");
+    antiPhaseGuardButton.setLookAndFeel (&inlineLookAndFeel);
+    antiPhaseGuardAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (audioProcessor.parameters, "anti_phase_guard", antiPhaseGuardButton);
+    addAndMakeVisible (antiPhaseGuardButton);
+    styleLabel (antiPhaseGuardLabel, "ANTI-PHASE", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    addAndMakeVisible (antiPhaseGuardLabel);
+
+    // ---------------------------------------------------------------
     //  The neural model picker, on the DYNAMICS tab beside the NEURAL knob.
     //  It has no parameter and no attachment: a model is data read from a file,
     //  not a value a session or a preset carries, so the two buttons drive the
@@ -5966,6 +6017,7 @@ void FirstAudioProcessorEditor::applyTheme()
     vinylCartridgeLabel.setColour (juce::Label::textColourId, palette.secondary);
     delaySyncLabel.setColour (juce::Label::textColourId, palette.secondary);
     glLabel.setColour (juce::Label::textColourId, palette.secondary);
+    antiPhaseGuardLabel.setColour (juce::Label::textColourId, palette.secondary);
     neuralStatusLabel.setColour (juce::Label::textColourId, palette.secondary);
     // The IR readout re-inks itself in refreshIrStatus() on every change; this
     // covers the theme switch, which repaints without a status change.
@@ -6065,6 +6117,14 @@ void FirstAudioProcessorEditor::applyTheme()
     styleInlineListValue (vinylGenerationBox);
     styleInlineListValue (vinylTurntableBox);
     styleInlineListValue (vinylCartridgeBox);
+    // The tuning pair was missing from this list and from every other colour
+    // call in the file, so TONIC and MODE were the only two lists on the panel
+    // still painted with LookAndFeel_V4's own grey value - which on this panel
+    // reads as a DISABLED control: a grey field under a live caption, beside an
+    // OVERSAMPLING list that is the same widget in the same kind of cell and
+    // looks nothing like it. Two lines, one cause.
+    styleInlineListValue (tuningTonicBox);
+    styleInlineListValue (tuningModeBox);
     // The delay trio is on the deck Look and Feel (see its construction), so it
     // follows styleCombo like every other deck list.
     styleCombo (delayTypeBox);
@@ -6329,12 +6389,10 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     // places the cells with (see PluginEditor.h). The first pass left a second
     // copy of the arithmetic here with the old 92 px cell in it, so the pill ran
     // 72 px wide of its band and sat off to the left of the statusLabel it wraps.
-    constexpr int headerGridWidth = headerColumnCount * headerColumnWidth
-                                  + (headerColumnCount - 1) * headerColumnGap;
-    const auto statusPill = juce::Rectangle<float> (
-        static_cast<float> (layout.header.getRight() - headerGridWidth),
-        static_cast<float> (layout.header.getY() + 62),
-        static_cast<float> (headerGridWidth - 18), 18.0f);
+    // The pill's own rectangle comes from statusPillBounds(), which the timer
+    // invalidates: one definition, so the lamp inside it cannot be drawn here and
+    // repainted there.
+    const auto statusPill = statusPillBounds().toFloat();
     g.setColour (palette.raised.darker (0.16f));
     g.fillRoundedRectangle (statusPill, 4.0f);
 
@@ -6555,6 +6613,90 @@ void FirstAudioProcessorEditor::createDecorativePhysics()
     }
 }
 
+//==============================================================================
+juce::Rectangle<int> FirstAudioProcessorEditor::statusPillBounds() const
+{
+    // The machine-state badge: a raised pill across the header grid's THIRD row,
+    // wrapped around the statusLabel that lives there. The geometry is the header
+    // grid's own constants (see PluginEditor.h), read from the same three numbers
+    // resized() places the cells with - and it is written ONCE, here, because the
+    // pill contains a lamp that pulses with the compressor: a pill drawn on one
+    // rectangle by paint() and invalidated on another by the timer would be a lamp
+    // that never moves.
+    constexpr int headerGridWidth = headerColumnCount * headerColumnWidth
+                                  + (headerColumnCount - 1) * headerColumnGap;
+    const auto layout = getEditorLayout();
+    const juce::Rectangle<int> pill (layout.header.getRight() - headerGridWidth,
+                                     layout.header.getY() + 62,
+                                     headerGridWidth - 18, 18);
+
+    // The lamp's halo is an ellipse wider than the pill it sits in (2.2 x the
+    // pulse radius on each side), so the invalidated rectangle has to be too -
+    // otherwise the glow is clipped at the pill's edges and reads as a hard-edged
+    // bar rather than as light.
+    return pill.expanded (2, 6);
+}
+
+juce::Rectangle<int> FirstAudioProcessorEditor::deckAnimationBounds() const
+{
+    // The deck's animated picture is drawn by this component rather than by a
+    // widget, so it can only be invalidated by REGION:
+    //
+    //   * the software transport - the small reel at deck.right - 42, deck.y + 14
+    //     and the ribbon that falls from it to deck.y + 60. paint() draws it only
+    //     while the 3D scene is not live (a driver that will not give us a
+    //     context, GL switched off), which is exactly the case in which nothing
+    //     else is moving there at all.
+    //   * the particles, in the corridor resized() measured from the gap the
+    //     switches row actually left (deckParticleCorridorX/Y).
+    //
+    // Neither rectangle covers a combo box, a slider or a button: the reel hangs
+    // in the heading strip's right corner, past the build badge's right inset, and
+    // the corridor is the free gap the row reported. That is what keeps this from
+    // reintroducing the popup lag a whole-panel repaint caused.
+    const auto layout = getEditorLayout();
+    juce::Rectangle<int> area (layout.deck.getRight() - 60, layout.deck.getY() + 2, 52, 68);
+
+    if (! deckParticleCorridorX.isEmpty() && ! deckParticleCorridorY.isEmpty())
+        area = area.getUnion ({ deckParticleCorridorX.getStart() - 2,
+                                deckParticleCorridorY.getStart() - 2,
+                                deckParticleCorridorX.getLength() + 4,
+                                deckParticleCorridorY.getLength() + 4 });
+
+    return area;
+}
+
+void FirstAudioProcessorEditor::repaintAnimatedSurfaces()
+{
+    // The knobs. Their halos breathe with the compressor and their pointers ride
+    // an orbit of the same phase; the ticks tremble with the transport's drift.
+    // All of that is read from the look and feel at PAINT time, and a slider only
+    // repaints itself when its VALUE changes - so a knob nobody is touching was
+    // frozen mid-breath for as long as the panel stayed open.
+    for (auto& slider : controls)
+        if (slider.isVisible())
+            slider.repaint();
+
+    // The switches. Their thumbs GLIDE between stops for about five frames after
+    // a click (noteToggle / updateToggleAnimations in the look and feel) and their
+    // lamps light with the machine's activity, so they need the same per-frame
+    // invalidation the knobs do. Twelve widgets, most of them hidden behind a
+    // page: the visible ones are two to four per frame.
+    for (auto* toggle : { &deltaButton, &bypassButton, &polarityButton, &autoGainButton,
+                          &autoTuneButton, &uiSoundsButton, &antiPhaseGuardButton,
+                          &inputEqHpButton, &inputEqLpButton,
+                          &outputEqHpButton, &outputEqLpButton, &delaySyncButton })
+        if (toggle->isVisible())
+            toggle->repaint();
+
+    // The status lamp and the deck's own transport, both drawn by paint().
+    repaint (statusPillBounds());
+
+    if (! tapeScene.isSceneLive())
+        repaint (deckAnimationBounds());
+}
+
+//==============================================================================
 void FirstAudioProcessorEditor::timerCallback()
 {
     audioProcessor.flushPendingTransportHostSync();
@@ -6763,19 +6905,33 @@ void FirstAudioProcessorEditor::timerCallback()
     //  It is shown rather than hidden because this is the one fault that is
     //  INVISIBLE in stereo: without the readout a user would never know the guard
     //  was doing anything, and with it they can see that a fault was caught.
+    //
+    //  "off" is the third state and it is not decoration: with the switch on the
+    //  SETTINGS page the readout is the ONLY place the deck says whether the
+    //  protection is armed, so an idle guard and a disarmed one must never look
+    //  the same. The readout is deliberately NOT a button - a guard that can be
+    //  switched off by clicking the thing that reports it is one mis-click away
+    //  from being off without the user knowing.
     // ------------------------------------------------------------------
     const auto antiPhaseNow = telemetry.antiPhaseAmount;
-    const auto antiPhaseText = antiPhaseNow < 0.01f
-                                   ? xlat ("clean")
-                                   : juce::String (juce::roundToInt (antiPhaseNow * 100.0f))
-                                         + " " + xlat ("% corrected");
+    const auto* antiPhaseGuardSetting = audioProcessor.parameters
+                                            .getRawParameterValue ("anti_phase_guard");
+    const auto antiPhaseGuardOn = antiPhaseGuardSetting == nullptr
+                                  || antiPhaseGuardSetting->load() >= 0.5f;
+    const auto antiPhaseText = ! antiPhaseGuardOn
+                                   ? xlat ("off")
+                                   : antiPhaseNow < 0.01f
+                                       ? xlat ("clean")
+                                       : juce::String (juce::roundToInt (antiPhaseNow * 100.0f))
+                                             + " " + xlat ("% corrected");
     if (antiPhaseText != lastShownAntiPhase)
     {
         lastShownAntiPhase = antiPhaseText;
         antiPhaseReadout.setText (antiPhaseText, juce::dontSendNotification);
         antiPhaseReadout.setColour (juce::Label::textColourId,
-                                    breathe (antiPhaseNow < 0.01f ? harmonicPalette.status
-                                                                  : harmonicPalette.needle));
+                                    breathe (! antiPhaseGuardOn ? harmonicPalette.secondary
+                                            : antiPhaseNow < 0.01f ? harmonicPalette.status
+                                                                   : harmonicPalette.needle));
     }
 
     // Animated presentation state. Everything here is derived from audio
@@ -7056,6 +7212,29 @@ void FirstAudioProcessorEditor::timerCallback()
     // until the host has given it a native peer, and that may not have happened
     // on the first tick.
     tapeScene.serviceContextAttachment();
+
+    // ------------------------------------------------------------------
+    //  The frame's animations, invalidated.
+    //
+    //  Everything above this line ADVANCES the animation - advanceFrame() moved
+    //  the look and feel's phase, updateToggleAnimations() eased every switch's
+    //  thumb, glowAmount and driftAmount followed the machine - and NONE of it
+    //  draws anything by itself. A repaint is what turns those numbers into
+    //  motion, and the timer deliberately stopped repainting the panel every tick
+    //  (see the note about the combo popups above), which is exactly what the
+    //  user saw as "the animations render once and then never move": the panel
+    //  was a still frame of a live machine.
+    //
+    //  So the invalidations are targeted rather than global - a bounded set of
+    //  rectangles that carries all of the animated content and none of the
+    //  combos, sliders and popups the old whole-panel repaint used to stamp over.
+    //  See repaintAnimatedSurfaces().
+    // ------------------------------------------------------------------
+    if (++animationPaintTick >= 2)
+    {
+        animationPaintTick = 0;
+        repaintAnimatedSurfaces();
+    }
 }
 
 void FirstAudioProcessorEditor::resized()
@@ -7999,6 +8178,8 @@ void FirstAudioProcessorEditor::resized()
     // The UI-sounds switch is on the same page as GL and OVERSAMPLING - it is the
     // same kind of engine-level preference - so it follows the same tab.
     uiSoundsButton.setVisible (settingsTab);
+    antiPhaseGuardLabel.setVisible (settingsTab);
+    antiPhaseGuardButton.setVisible (settingsTab);
     delayTypeLabel.setVisible (delayTab);
     delayTypeBox.setVisible (delayTab);
     delayRateLabel.setVisible (delayTab);
@@ -8074,6 +8255,16 @@ void FirstAudioProcessorEditor::resized()
         languageBox.setBounds (grid.getX() + 12, memberRowY + 76, cellWidth - 24, 30);
         uiSoundsButton.setBounds (grid.getX() + cellWidth + 12, memberRowY + 76,
                                   cellWidth - 24, 30);
+        // The guard's switch takes the THIRD cell of that same band. It is the
+        // one cell on this page nothing else claims - the TONIC pair owns the
+        // third cell of the band ABOVE - and it is where a protection setting
+        // belongs: with GL, OVERSAMPLING and UI SOUNDS, not with the machine's
+        // sound. Same caption band, same control band, same insets as the two
+        // controls beside it, so the row reads as one line of preferences.
+        antiPhaseGuardLabel.setBounds (grid.getX() + 2 * cellWidth + 5, memberRowY + 56,
+                                       cellWidth - 10, 17);
+        antiPhaseGuardButton.setBounds (grid.getX() + 2 * cellWidth + 12, memberRowY + 76,
+                                        cellWidth - 24, 30);
 
         // The caption is put back to the left, where every other caption on the
         // page sits: the header grid also places this one Label - right-aligned,
@@ -8341,6 +8532,8 @@ void FirstAudioProcessorEditor::resized()
             { "tuningModeLbl",  &tuningModeLabel },
             { "tuningModeBox",  &tuningModeBox },
             { "uiSounds",       &uiSoundsButton },
+            { "guardLabel",     &antiPhaseGuardLabel },
+            { "guardBtn",       &antiPhaseGuardButton },
             { "glLabel",        &glLabel },
             { "diPadLabel",     &diPadLabel },
             { "diPadBox",       &diPadBox },

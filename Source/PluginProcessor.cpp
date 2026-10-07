@@ -52,7 +52,7 @@ namespace
             "character", "delta", "delay_time", "delay_feedback",
             "delay_pingpong",
             "st_offset", "noise", "noise_lvl", "transport", "spindown",
-            "ui_sounds", "language",
+            "ui_sounds", "language", "anti_phase_guard",
             "tape_source", "vinyl_source", "cassette_source", "digital_source",
             "amp_source", "valve_source", "transformer_source",
             "sag", "presence", "cabinet", "amp_bias",
@@ -77,6 +77,36 @@ namespace
 
         return ids;
     }
+
+    // -------------------------------------------------------------------
+    //  Hot-path probe counters (J37_ENABLE_HOTPATH_PROBE).
+    //
+    //  Four counters, incremented inside the per-sample loop and read out by
+    //  hotPathProbeSnapshot() at the bottom of this file. They live at FILE
+    //  scope rather than as members of the processor because that readout is a
+    //  free function: it has no instance to reach a member through, so a member
+    //  would have to be static - and a static member still has to be DEFINED
+    //  somewhere, which is a second place for the probe to drift out of step
+    //  with itself. Everything here is behind the same two guards as the code
+    //  that touches it, so a build without the flag has no trace of any of it.
+    //
+    //  They are atomics rather than plain ints for the reason the probe exists:
+    //  the counters are written on the AUDIO thread and read by whatever audit or
+    //  benchmark code pulls the snapshot, and a plain counter read across those
+    //  two threads is a data race with a torn-read failure mode.
+    //
+    //  They are DECLARED here because they were referenced for two revisions
+    //  without ever existing: the flag has never been set in CI, so the one build
+    //  that would have caught it is the one nobody ran, and turning on the
+    //  documented probe was a guaranteed compile error. Nothing defines the flag
+    //  today, which is why the breakage was invisible rather than fatal.
+    // -------------------------------------------------------------------
+#if ! defined (J37_DSP_HARNESS) && defined (J37_ENABLE_HOTPATH_PROBE)
+    std::atomic<int> hotPathSampleCount { 0 };
+    std::atomic<int> hotPathActiveSampleCount { 0 };
+    std::atomic<bool> hotPathThisSampleActive { false };
+    std::atomic<bool> hotPathThisBlockActive { false };
+#endif
 
     // Symmetric decibel range shared by the input and output stage controls.
     constexpr float minInputDb = -32.0f;
@@ -376,7 +406,6 @@ FirstAudioProcessor::FirstAudioProcessor()
     subFundamentalParam = parameters.getRawParameterValue ("subfund");
     delayTimeParam = parameters.getRawParameterValue ("delay_time");
     delayFeedbackParam = parameters.getRawParameterValue ("delay_feedback");
-    delayLevelParam = parameters.getRawParameterValue ("delay_feedback");
     delayPingPongParam = parameters.getRawParameterValue ("delay_pingpong");
     stOffsetParam = parameters.getRawParameterValue ("st_offset");
     noiseParam = parameters.getRawParameterValue ("noise");
@@ -384,6 +413,7 @@ FirstAudioProcessor::FirstAudioProcessor()
     transportParam = parameters.getRawParameterValue ("transport");
     spindownParam = parameters.getRawParameterValue ("spindown");
     uiSoundsParam = parameters.getRawParameterValue ("ui_sounds");
+    antiPhaseGuardParam = parameters.getRawParameterValue ("anti_phase_guard");
     tuningTonicParam = parameters.getRawParameterValue ("tuning_tonic");
     tuningModeParam = parameters.getRawParameterValue ("tuning_mode");
     autoTuneParam = parameters.getRawParameterValue ("autotune");
@@ -608,7 +638,8 @@ FirstAudioProcessor::FirstAudioProcessor()
         // Anything else missing from every preset is a bug, and the jassert
         // says which id by name rather than just failing.
         const std::set<juce::String> intentionallyNotPresettable {
-            "bypass", "delta", "ui_sounds", "language", "transport", "spindown",
+            "bypass", "delta", "ui_sounds", "language", "anti_phase_guard",
+            "transport", "spindown",
             "transient_attack", "transient_sustain", "transient_mix", "neural_mix",
             "ir_mix"
         };
@@ -1296,6 +1327,29 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
                                                             0.5f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+    // -------------------------------------------------------------------------
+    //  The anti-phase guard's switch.
+    //
+    //  The guard catches the one fault that is INAUDIBLE where it is created and
+    //  catastrophic where it lands: two sides in opposite polarity sound like a
+    //  wide stereo image until something sums them, and then the centre and the
+    //  low end disappear. It is on by default and should stay on - but "should"
+    //  is not "cannot be turned off": a user with a genuinely phase-inverted
+    //  source (a mis-wired cable they intend to keep, a creative mid/side rig, a
+    //  deliberate out-of-phase effect chain) needs the plugin to pass it through
+    //  untouched rather than quietly narrow the image over a second.
+    //
+    //  A parameter rather than a member of the editor for the same reason the
+    //  language is one: it is saved with the session, restored with it and
+    //  undone with it, and there is no second settings store to keep in step
+    //  with the host's idea of the project. It is deliberately NOT presettable -
+    //  it is a protection, not a sound, and a factory preset must not be able to
+    //  switch a safety net off behind the user's back (see
+    //  intentionallyNotPresettable in the constructor).
+    // -------------------------------------------------------------------------
+    layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "anti_phase_guard", 1 },
+                                                            "Anti-Phase Guard", true));
     // Every parameter carries a versioned ParameterID. The plain-String constructor
     // the controls below used before is deprecated in JUCE 9 and, more importantly,
     // it leaves the parameter unversioned, so a host has no way to tell a future
@@ -3283,9 +3337,13 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto compressorMixAmount = juce::jlimit (0.0f, 1.0f, compressorMix);
     const bool autoTuneEnabled = autoTuneParam != nullptr && autoTuneParam->load() >= 0.5f;
     const auto autoTuneAmount = autoTuneAmountParam != nullptr ? autoTuneAmountParam->load() : 0.0f;
-    const auto tuningTonic = tuningTonicParam != nullptr ? static_cast<int> (tuningTonicParam->load()) : 0;
-    const auto tuningMode = tuningModeParam != nullptr ? static_cast<int> (tuningModeParam->load()) : 0;
     const auto autoTuneStrength = autoTuneEnabled ? juce::jlimit (0.0f, 1.0f, autoTuneAmount) : 0.0f;
+    // The anti-phase guard's switch, read once per block like every other choice.
+    // A missing parameter (a host that restored a session written before the
+    // switch existed) means ON: the guard is protection, and the safe reading of
+    // "not stated" is the state the plugin has always shipped in.
+    const bool antiPhaseGuardOn = antiPhaseGuardParam == nullptr
+                                 || antiPhaseGuardParam->load() >= 0.5f;
 
     // -------------------------------------------------------------------------
     //  MODELED TRACKS: the geometry of the tape, read once per block.
@@ -3356,8 +3414,15 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // Delay, stereo offset, noise trim and transport state. All read once per block
     // and fed to smoothers, so none of them can step the signal.
     const auto delayMs = delayTimeParam != nullptr ? delayTimeParam->load() : 0.0f;
+    // The second head has ONE control and this is it: the tapped output's level
+    // is its return amount, which is what a single LEVEL knob on a tape machine
+    // means (TIME says where the head is, LEVEL says how loud its output is - see
+    // the parameter's own note). It used to be two members bound to the SAME
+    // parameter id under two different names, one called feedback and one called
+    // level, which is an invitation to someone later "fixing" the level and
+    // silently changing the decay instead.
     const auto delayFeedback = delayFeedbackParam != nullptr ? delayFeedbackParam->load() : 0.0f;
-    const auto delayLevel = delayLevelParam != nullptr ? delayLevelParam->load() : 0.0f;
+    const auto delayLevel = delayFeedback;
     const auto delayPingPong = delayPingPongParam != nullptr ? delayPingPongParam->load() : 0.0f;
     const auto stOffsetUs = stOffsetParam != nullptr ? stOffsetParam->load() : 0.0f;
     const auto noiseAmount = noiseParam != nullptr ? noiseParam->load() : 0.5f;
@@ -4709,7 +4774,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     };
 
     const int activeChannels = activeInputChannels;
-    const auto& scaleOffsetsByMode = scaleOffsetsForMode (tuningMode);
 
     // Scratch storage for the IR stage's wet capture. It is reserved in
     // prepareToPlay; do not resize a thread_local AudioBuffer in processBlock,
@@ -6261,16 +6325,37 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             //  The guard measures how much of the frame's energy sits in the SIDE
             //  (the difference) relative to the MID (the sum), using the smoothed
             //  correlation of the two channels. When the two are genuinely in
-            //  anti-phase the correlation goes negative, and the guard rotates the
-            //  right channel's polarity back toward the left's - in proportion to
-            //  how wrong it is, over a slow ramp, so a real stereo image is never
-            //  touched and a genuinely inverted channel is pulled back over tens of
-            //  milliseconds rather than switched.
+            //  anti-phase the correlation goes negative and the guard ROTATES the
+            //  pair's mid/side plane toward mono - in proportion to how wrong it
+            //  is, over a slow ramp, so a real stereo image is never touched and a
+            //  genuinely inverted channel is recovered over tens of milliseconds
+            //  rather than switched.
+            //
+            //  ROTATION rather than attenuation, and the difference is the whole
+            //  point of the guard. Attenuating the SIDE does not make a folding
+            //  mix quieter in the way that matters: the mono sum is 2 x MID and
+            //  scaling SIDE leaves MID exactly where it was, so the null it exists
+            //  to prevent survives untouched - and on a fully inverted pair, where
+            //  MID is zero and every bit of the programme is in SIDE, it fades the
+            //  whole signal to silence instead of recovering it. Rotating the pair
+            //  moves what is in SIDE into MID, which is what makes the fold-down
+            //  audible again: at full engagement an inverted pair comes out as the
+            //  (correct, full-level) mono signal it actually is. The rotation is
+            //  orthogonal, so it preserves the pair's energy exactly - no pumping,
+            //  no fading, nothing to hear except the image coming back.
             //
             //  It deliberately does NOT touch the width control: WIDTH can widen
             //  the image as far as the user likes, because a wide image is a
             //  legitimate stereo choice. What this prevents is the OTHER thing -
             //  the sides being in OPPOSITE polarity, which is not width at all.
+            //
+            //  antiPhaseGuardOn is the user's switch. With the guard off the
+            //  correction is not merely skipped, it is RELAXED through the same
+            //  pole the engagement uses, so turning the switch off unwinds the
+            //  rotation smoothly instead of switching the image back in one
+            //  sample - a click, which is the one thing this stage must never
+            //  make. The DETECTOR keeps running while it is off, because the
+            //  readout is the panel's warning that the sides are in opposition.
             // ------------------------------------------------------------------
             const float frameMid = outputSignal[0] + outputSignal[1];
             const float frameSide = outputSignal[0] - outputSignal[1];
@@ -6296,21 +6381,35 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             const float opposition = antiPhaseProduct < 0.0f
                 ? juce::jlimit (0.0f, 1.0f, -antiPhaseProduct / antiPhaseProductMagnitude)
                 : 0.0f;
-            antiPhaseCorrection += (opposition - antiPhaseCorrection) * antiPhaseCoefficient;
+            antiPhaseCorrection += ((antiPhaseGuardOn ? opposition : 0.0f) - antiPhaseCorrection)
+                                 * antiPhaseCoefficient;
 
-            antiPhaseAmount.store (antiPhaseCorrection, std::memory_order_relaxed);
+            // What the panel shows: the amount the guard is actually working by,
+            // so a switch that is off reads as 0 rather than as the detector's
+            // opinion. The readout's own text distinguishes "off" from "clean".
+            antiPhaseAmount.store (antiPhaseGuardOn ? antiPhaseCorrection : 0.0f,
+                                   std::memory_order_relaxed);
 
-            // Preserve the correlated MID exactly. Only the SIDE component is
-            // attenuated when there is sustained anti-correlation, so a stereo
-            // guard cannot reduce the common-centre signal while trying to fix
-            // an opposing side component.
             if (antiPhaseCorrection > 1.0e-5f)
             {
                 const float guardMid = 0.5f * (outputSignal[0] + outputSignal[1]);
                 const float guardSide = 0.5f * (outputSignal[0] - outputSignal[1]);
-                const float correctedSide = guardSide * (1.0f - antiPhaseCorrection);
-                outputSignal[0] = guardMid + correctedSide;
-                outputSignal[1] = guardMid - correctedSide;
+
+                // The rotation, stated without a trig call per sample. The
+                // correction is the SINE of the angle rather than the angle
+                // itself: sin goes from 0 (no opposition, no rotation) to 1 (a
+                // fully inverted pair, a quarter turn into mono), the pair
+                // rotates monotonically with it, and cos = sqrt (1 - sin^2) is
+                // exact for that angle - so the guard needs one square root per
+                // sample instead of sin plus cos, and still lands exactly on the
+                // quarter turn at full engagement.
+                const float sinRotation = juce::jlimit (0.0f, 1.0f, antiPhaseCorrection);
+                const float cosRotation = std::sqrt (juce::jmax (0.0f, 1.0f - sinRotation * sinRotation));
+                const float rotatedMid = guardMid * cosRotation + guardSide * sinRotation;
+                const float rotatedSide = guardSide * cosRotation - guardMid * sinRotation;
+
+                outputSignal[0] = rotatedMid + rotatedSide;
+                outputSignal[1] = rotatedMid - rotatedSide;
             }
         }
         else
@@ -6319,7 +6418,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // allowed to relax rather than freezing at whatever the last stereo
             // block left it at.
             antiPhaseCorrection += (0.0f - antiPhaseCorrection) * antiPhaseCoefficient;
-            antiPhaseAmount.store (antiPhaseCorrection, std::memory_order_relaxed);
+            antiPhaseAmount.store (0.0f, std::memory_order_relaxed);
         }
 
         // Final stereo width matrix. It runs immediately before output trim/limiting,

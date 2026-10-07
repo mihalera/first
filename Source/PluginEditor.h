@@ -484,6 +484,26 @@ private:
     void applyTheme();
     EditorLayout getEditorLayout() const;
 
+    /** Invalidates the surfaces the timer ANIMATES: the visible knobs, the panel's
+        switches, the deck's own reel and particles, and the header's status lamp.
+
+        Called from timerCallback() every second tick. The whole point is that it
+        repaints a bounded set of rectangles rather than the editor: a whole-panel
+        invalidation every frame is what used to bury an open combo popup under
+        the panel's own repaints, and the panel's animated content is a small
+        fraction of its area. */
+    void repaintAnimatedSurfaces();
+
+    /** The rectangle paint() fills for the header's machine-state pill, lamp and
+        all. Shared with repaintAnimatedSurfaces() so the lamp cannot be drawn on
+        one rectangle and invalidated on another. */
+    juce::Rectangle<int> statusPillBounds() const;
+
+    /** The deck region paint() animates OUTSIDE the widgets: the software reel and
+        its ribbon in the top-right corner, and the particle corridor. Empty while
+        the 3D scene is live, which draws its own. */
+    juce::Rectangle<int> deckAnimationBounds() const;
+
     // Cycles the header's theme button: DARK -> IVORY -> LIGHT -> DARK. The tab
     // families resolve the reverse way - one Control-strip button per family and
     // pages beside it - so the header grid's four free columns stay free (see
@@ -630,6 +650,15 @@ private:
     // The UI-sounds switch, on the SETTINGS tab beside GL.
     juce::ToggleButton uiSoundsButton { "UI SOUNDS" };
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> uiSoundsAttachment;
+
+    // The anti-phase guard's switch, on the SETTINGS tab with the other
+    // engine-level preferences. The guard's own readout is in the deck, beside
+    // the transport it belongs to; the SWITCH lives here because it is a
+    // protection setting rather than a control that shapes the sound, and the
+    // readout says so when it is off (see the deck readout in timerCallback).
+    juce::ToggleButton antiPhaseGuardButton { "GUARD" };
+    juce::Label antiPhaseGuardLabel;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> antiPhaseGuardAttachment;
 
     // -----------------------------------------------------------------------
     //  Neural model picker, on the DYNAMICS tab beside the NEURAL knob.
@@ -795,6 +824,14 @@ private:
     // frame, so the deep parameter-tree copy cannot compete with the audio thread
     // while a knob is being dragged.
     int compareMirrorTick = 0;
+
+    // The animated surfaces are invalidated every SECOND timer tick (15 Hz)
+    // rather than every tick. The terms they carry - the knobs' breathing halos,
+    // the specular sweep, the ticking scale wobble, the switches' five-frame
+    // thumb glide - are all 2 to 4 second motions, so half the timer rate looks
+    // identical to the eye and costs half the paints. See
+    // repaintAnimatedSurfaces().
+    int animationPaintTick = 0;
     int lastShownPreset = -2;
     int lastShownSlot = -1;
     bool lastShownDirty = false;
