@@ -6732,3 +6732,9 @@ void FirstAudioProcessor::setStateInformation (const void* data, int sizeInBytes
     markPresetClean ({});
     lastPresetIndex.store (-1, std::memory_order_relaxed);
 }
+
+//==============================================================================
+juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
+{
+    return new FirstAudioProcessor();
+}
