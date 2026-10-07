@@ -1601,13 +1601,13 @@ struct NeuralStage
     using ModelType = RTNeural::Model<float>;
 
     std::unique_ptr<ModelType> model;
+    // The processor/control thread owns model storage and retains replaced models
+    // until teardown. Audio processing loads only the atomic raw snapshot.
     std::vector<std::unique_ptr<ModelType>> retiredModels;
     std::mutex controlMutex;
     std::atomic<ModelType*> activeModel { nullptr };
     std::atomic<bool> clearRequested { false };
     std::atomic<bool> resetRequested { false };
-    // Audio-thread reader count prevents teardown/replacement from reclaiming a
-    // model pointer while inference is executing without locking the callback.
     std::atomic<unsigned int> readers { 0 };
 
     /** The model's input frame. RTNeural's forward() takes a pointer to a
@@ -1685,10 +1685,12 @@ struct NeuralStage
         std::lock_guard<std::mutex> lock (controlMutex);
         activeModel.store (nullptr, std::memory_order_release);
         clearRequested.store (true, std::memory_order_release);
-        // Do not reclaim model storage here: audio may have captured a pointer
-        // immediately before clear() published nullptr. Reclaim only at teardown.
-        if (model != nullptr)
-            retiredModels.push_back (std::move (model));
+        // Wait off the audio thread for any block already using the previous
+        // snapshot, then reclaim model memory here, never in process().
+        while (readers.load (std::memory_order_acquire) != 0)
+            std::this_thread::yield();
+        model.reset();
+        retiredModels.clear();
         resetRequested.store (true, std::memory_order_release);
 #endif
     }
@@ -1865,6 +1867,8 @@ struct NeuralStage
         }
 
         std::lock_guard<std::mutex> lock (controlMutex);
+        while (readers.load (std::memory_order_acquire) != 0)
+            std::this_thread::yield();
         if (model != nullptr)
             retiredModels.push_back (std::move (model));
         model = std::move (parsedModel);
@@ -1904,9 +1908,6 @@ struct NeuralStage
         if (active == nullptr || clearRequested.load (std::memory_order_acquire))
             return x;
 
-        // Pin and validate the snapshot. Replaced objects are retained until
-        // teardown, and this reader count prevents recurrent-state reset racing
-        // an in-flight forward() call.
         readers.fetch_add (1, std::memory_order_acq_rel);
         if (activeModel.load (std::memory_order_acquire) != active
             || clearRequested.load (std::memory_order_acquire))
@@ -1919,11 +1920,7 @@ struct NeuralStage
 
         inputFrame[0] = x;
 
-        // RTNeural's Model<T>::forward(const T*) returns the single output value
-        // for a 1-out model, so there is no output pointer to check - the value
-        // IS the result. A model whose output size is not 1 would return its
-        // first output here, which is the only sensible reading of a 1-in/1-out
-        // stage and is why the stage documents itself as such.
+        // RTNeural's Model<T>::forward(const T*) returns the single output value.
         const float wet = active->forward (inputFrame);
         readers.fetch_sub (1, std::memory_order_release);
         return x + (wet - x) * juce::jlimit (0.0f, 1.0f, amount);
@@ -4991,6 +4988,9 @@ public:
         index (0 = Stop, 1 = Play, 2 = Start). Start is transient: it is armed
         here and the engine advances it to Play when the capstan arrives. */
     void setTransportState (int state);
+
+    /** Flushes an engine-originated transport transition on a non-audio thread. */
+    void flushPendingTransportHostSync();
 
     /** The momentary SPINDOWN hold. While held the machine runs down like a
         turntable whose power has been cut; on release it spins back up and the

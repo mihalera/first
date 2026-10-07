@@ -6557,6 +6557,8 @@ void FirstAudioProcessorEditor::createDecorativePhysics()
 
 void FirstAudioProcessorEditor::timerCallback()
 {
+    audioProcessor.flushPendingTransportHostSync();
+
     // Hosts can keep an editor alive while its window is hidden. Do not poll
     // telemetry, advance physics, or issue repaint work in that state; the next
     // visible timer tick reconstructs all display-only state from the processor.

@@ -284,7 +284,7 @@ namespace
     //  State, so this rides along without touching the parameters or the editor.
     // ==========================================================================
     constexpr const char* stateFormatProperty = "nonlinStateFormat";
-    constexpr int currentStateFormat = 3;   // 3 = MIX 0..100 and bounded WIDTH range
+    constexpr int currentStateFormat = 4;   // 4 = WIDTH 0..1, natural at 50%, widening above
 
     void migrateStateFormat (juce::ValueTree& tree)
     {
@@ -304,6 +304,9 @@ namespace
             }
         }
 
+        // Before format 4, WIDTH's 0..1 parameter was scaled by 2 in the DSP,
+        // so 0.5 meant natural width. New DSP keeps the same physical mapping,
+        // therefore no value migration is required here.
         tree.setProperty (stateFormatProperty, currentStateFormat, nullptr);
     }
 
@@ -2812,16 +2815,25 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
 //==============================================================================
 void FirstAudioProcessor::setTransportState (int state)
 {
-    // The transport choice parameter is the single source of truth: the host, the
-    // preset state and the panel's combo all read it. Writing it here - rather than
-    // a private flag beside it - is what keeps those three in agreement, and it is
-    // also why START can settle into PLAY on its own: the engine writes the same
-    // parameter when the capstan arrives (see processTapeEngine).
+    // This public command originates outside processBlock, so host notification is
+    // safe here. Engine-originated transitions are published through an atomic and
+    // flushed by the editor timer instead of notifying the host from the audio thread.
     if (auto* parameter = parameters.getParameter ("transport"))
     {
         const auto target = static_cast<float> (juce::jlimit (0, 2, state));
         parameter->setValueNotifyingHost (parameter->convertTo0to1 (target));
     }
+}
+
+void FirstAudioProcessor::flushPendingTransportHostSync()
+{
+    if (! transportHostSyncRequested.exchange (false, std::memory_order_acq_rel))
+        return;
+
+    const auto state = static_cast<float> (juce::jlimit (
+        0, 2, transportHostSyncState.load (std::memory_order_acquire)));
+    if (auto* parameter = parameters.getParameter ("transport"))
+        parameter->setValueNotifyingHost (parameter->convertTo0to1 (state));
 }
 
 
@@ -3259,7 +3271,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto mix = (mixParam != nullptr ? mixParam->load() : 50.0f) * 0.01f;
     const auto outputDb = outputDbParam->load();
     const auto inputDb = inputDbParam->load();
-    // 50% is the natural stereo image, values above 50% widen, and 0% is mono.
+    // Width is bipolar around 50%: 0 is dual mono, 50 is unchanged, 100 doubles SIDE.
     const auto stereoWidth = widthParam != nullptr
         ? juce::jlimit (0.0f, 2.0f, widthParam->load() * 2.0f) : 1.0f;
     const auto compressorThreshold = compressorThresholdParam != nullptr ? compressorThresholdParam->load() : -18.0f;
@@ -4018,7 +4030,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     {
         transportState = static_cast<int> (TransportState::play);
         lastTransportState = -1;   // force the switch below to re-arm the ramp
-
+        transportHostSyncState.store (transportState, std::memory_order_relaxed);
+        transportHostSyncRequested.store (true, std::memory_order_release);
     }
 
     lastSpindownHeld = spindownNow;
@@ -4891,7 +4904,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         const float outputGainNow = outputGainSmoothed.getCurrentValue();
         const float deltaNow = deltaSmoothed.getCurrentValue();
         const float polarityNow = polaritySmoothed.getCurrentValue();
-
+        const float currentWidth = widthSmoothed.getNextValue();
 
         // ------------------------------------------------------------------
         //  MIX / DRY-WET CROSSFADE.
@@ -4960,15 +4973,13 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         transportPhase += 6.283185307179586f * transportTargetNow
                          / engineSampleRate;
 
-        // Convert the incoming signal to a single value for the subharmonic
-        // generator so the generator can run at sample rate and stay locked to the
-        // input.
-        float inputSum = inputSampleL + inputSampleR;
-
-        // Convert the incoming signal level to a single value for the subharmonic
-        // generator so the generator can run at sample rate and stay locked to the
-        // input.
-        const float subgenInputLevel = inputSum * 0.5f;
+        // Feed SUBFUND the real stereo input pair at this frame. This average
+        // zero-crossing tracker remains sensitive to cancellation in anti-phase
+        // material, so it is not used to replace either channel's main audio.
+        const float inputSum = activeChannels == 2
+            ? channelData[0][sample] + channelData[1][sample]
+            : (activeChannels == 1 ? 2.0f * channelData[0][sample] : 0.0f);
+        const float subgenInputLevel = 0.5f * inputSum;
 
         // Convert the incoming signal level to a single value for the subharmonic
         // generator so the generator can run at sample rate and stay locked to the
@@ -5115,7 +5126,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             transportSpinningUp = false;
             transportState = static_cast<int> (TransportState::play);
             lastTransportState = transportState;
-
+            transportHostSyncState.store (transportState, std::memory_order_relaxed);
+            transportHostSyncRequested.store (true, std::memory_order_release);
         }
 
         // Publish the platter speed and the spindown alone for the editor's reels
@@ -6352,12 +6364,10 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             outputSignal[0] += (bleedToLeft  - outputSignal[0]) * trackCrosstalk;
             outputSignal[1] += (bleedToRight - outputSignal[1]) * trackCrosstalk;
 
-            // Mid/side matrix. Width 1 is the original stereo image; values above
-            // 1 widen SIDE while leaving MID unchanged. 0 is dual mono. Bound the
-            // range so malformed automation cannot create unbounded excursions.
-            const float width = juce::jlimit (0.0f, 2.0f, currentWidth);
+            // Keep the transport's inter-track bleed here. The user WIDTH control
+            // is applied once at the final output stage, after the anti-phase guard.
             const float mid = 0.5f * (outputSignal[0] + outputSignal[1]);
-            const float side = 0.5f * (outputSignal[0] - outputSignal[1]) * width;
+            const float side = 0.5f * (outputSignal[0] - outputSignal[1]);
             outputSignal[0] = mid + side;
             outputSignal[1] = mid - side;
 
@@ -6437,10 +6447,18 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             antiPhaseAmount.store (antiPhaseCorrection, std::memory_order_relaxed);
         }
 
-        // Apply the output trim before limiting, not after. The limiter has to be the last
-        // thing that touches the level, otherwise a boost on the OUTPUT control would push
-        // the signal straight past the ceiling it just established and the clipper would
-        // be doing the work instead.
+        // Final stereo width matrix. It runs immediately before output trim/limiting,
+        // so the protection sees the widened peaks. 50% is unity Side, 0% is mono,
+        // 100% is 2x Side; the Mid component remains unchanged.
+        if (activeChannels == 2)
+        {
+            const float mid = 0.5f * (outputSignal[0] + outputSignal[1]);
+            const float side = 0.5f * (outputSignal[0] - outputSignal[1]);
+            outputSignal[0] = mid + side * currentWidth;
+            outputSignal[1] = mid - side * currentWidth;
+        }
+
+        // Apply output trim before the limiter so boosts remain protected.
         for (int channel = 0; channel < activeChannels; ++channel)
             outputSignal[static_cast<std::size_t> (channel)] *= outputGain;
 
