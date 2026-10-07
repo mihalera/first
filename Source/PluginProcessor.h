@@ -1685,10 +1685,11 @@ struct NeuralStage
         std::lock_guard<std::mutex> lock (controlMutex);
         activeModel.store (nullptr, std::memory_order_release);
         clearRequested.store (true, std::memory_order_release);
-        while (readers.load (std::memory_order_acquire) != 0)
-            std::this_thread::yield();
-        model.reset();
-        retiredModels.clear();
+        // Do not reclaim model storage here: audio may have captured a pointer
+        // immediately before clear() published nullptr. Reclaim only at teardown.
+        if (model != nullptr)
+            retiredModels.push_back (std::move (model));
+        resetRequested.store (true, std::memory_order_release);
 #endif
     }
 
@@ -1731,8 +1732,6 @@ struct NeuralStage
             return false;
 
         std::unique_ptr<ModelType> parsedModel;
-        try
-        {
         const auto& config = namJson.at ("config");
         const auto numLayers = config.at ("num_layers").get<int>();
         const auto inputSize = config.at ("input_size").get<int>();
@@ -1865,19 +1864,17 @@ struct NeuralStage
             return false;
         }
 
-                std::lock_guard<std::mutex> lock (controlMutex);
-                while (readers.load (std::memory_order_acquire) != 0)
-                    std::this_thread::yield();
-                if (model != nullptr)
-                    retiredModels.push_back (std::move (model));
-                model = std::move (parsedModel);
-                activeModel.store (model.get(), std::memory_order_release);
-                clearRequested.store (false, std::memory_order_release);
-                resetRequested.store (true, std::memory_order_release);
-                return true;
-            }
-        #endif
-            /** The model's own recurrent state, let go of on a rate change or a model
+        std::lock_guard<std::mutex> lock (controlMutex);
+        if (model != nullptr)
+            retiredModels.push_back (std::move (model));
+        model = std::move (parsedModel);
+        activeModel.store (model.get(), std::memory_order_release);
+        clearRequested.store (false, std::memory_order_release);
+        resetRequested.store (true, std::memory_order_release);
+        return true;
+    }
+#endif
+    /** The model's own recurrent state, let go of on a rate change or a model
         swap so neither can resume from a stale hidden state. */
     void reset() noexcept
     {
@@ -5789,6 +5786,8 @@ private:
     //  engine-only state and stay plain floats.
     // -----------------------------------------------------------------------
     std::atomic<bool> spindownHeld { false };
+    std::atomic<bool> transportHostSyncRequested { false };
+    std::atomic<int> transportHostSyncState { 1 };
     float spindownRamp = 1.0f;              // 1 = at speed, 0 = fully stopped
     float spindownCoefficient = 0.0f;       // built from the rate
     // The previous block's hold state, so the release edge can be seen once. Engine

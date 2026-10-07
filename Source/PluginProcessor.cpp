@@ -3259,6 +3259,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto mix = (mixParam != nullptr ? mixParam->load() : 50.0f) * 0.01f;
     const auto outputDb = outputDbParam->load();
     const auto inputDb = inputDbParam->load();
+    // 50% is the natural stereo image, values above 50% widen, and 0% is mono.
     const auto stereoWidth = widthParam != nullptr
         ? juce::jlimit (0.0f, 2.0f, widthParam->load() * 2.0f) : 1.0f;
     const auto compressorThreshold = compressorThresholdParam != nullptr ? compressorThresholdParam->load() : -18.0f;
