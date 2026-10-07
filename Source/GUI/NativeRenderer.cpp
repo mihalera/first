@@ -46,6 +46,9 @@ class CpuRenderer final : public NativeRenderer {
 } // namespace
 
 std::unique_ptr<NativeRenderer> createNativeRenderer(Backend backend) {
+    // A build with no native adapter compiled in still takes this parameter and
+    // never reads it, which is a warning on MSVC. The use below is deliberate.
+    juce::ignoreUnused (backend);
 #if defined(J37_NATIVE_D3D11)
     if (backend == Backend::directX11)
         if (auto renderer = createD3D11Renderer())

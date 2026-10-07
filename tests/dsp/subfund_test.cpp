@@ -1,4 +1,4 @@
-﻿﻿// =============================================================================
+// =============================================================================
 //  Regression harness for the SUBFUND (subharmonic) stage.
 //
 //  Three defects were reported against the subharmonic generator, and all three

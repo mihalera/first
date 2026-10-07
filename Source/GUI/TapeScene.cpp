@@ -1165,13 +1165,15 @@ void TapeScene::paint (juce::Graphics& g)
 
     // A small moving tape path keeps CPU mode visibly alive without requiring
     // a second rendering API or allocations on the timer thread.
-    juce::Path ribbon;
-    ribbon.startNewSubPath (centre.x - reelRadius * 0.82f, centre.y + reelRadius * 0.72f);
-    ribbon.quadraticTo (centre.x + reelRadius * (0.25f + flutter * 0.20f),
-                        centre.y + reelRadius * (0.92f + flutter * 0.12f),
-                        centre.x + reelRadius * 0.92f, centre.y + reelRadius * 0.52f);
+    // Named `tapePath` rather than `ribbon`: the class already has a `ribbon`
+    // mesh member, and a local of the same name hides it (MSVC C4458).
+    juce::Path tapePath;
+    tapePath.startNewSubPath (centre.x - reelRadius * 0.82f, centre.y + reelRadius * 0.72f);
+    tapePath.quadraticTo (centre.x + reelRadius * (0.25f + flutter * 0.20f),
+                          centre.y + reelRadius * (0.92f + flutter * 0.12f),
+                          centre.x + reelRadius * 0.92f, centre.y + reelRadius * 0.52f);
     g.setColour (tape.brighter (0.25f).withAlpha (0.75f));
-    g.strokePath (ribbon, juce::PathStrokeType (juce::jmax (1.0f, width * 0.018f)));
+    g.strokePath (tapePath, juce::PathStrokeType (juce::jmax (1.0f, width * 0.018f)));
 }
 
 void TapeScene::resized()
