@@ -1,4 +1,4 @@
-﻿// =============================================================================
+﻿﻿// =============================================================================
 //  Regression harness for the SUBFUND (subharmonic) stage.
 //
 //  Three defects were reported against the subharmonic generator, and all three
@@ -29,6 +29,7 @@
 #include "shim.h"
 
 #include <algorithm>
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
@@ -1077,6 +1078,30 @@ void showOldArrangement()
     reportUndertoneHarmonics (old, 400.0, "old arrangement (undertones inside the tape path):");
 }
 
+bool testStereoWidthMatrix()
+{
+    constexpr float left = 0.8f;
+    constexpr float right = 0.2f;
+    constexpr float mid = 0.5f * (left + right);
+    const auto render = [=] (float width)
+    {
+        const float m = 0.5f * (left + right);
+        const float s = 0.5f * (left - right) * width;
+        return std::array<float, 2> { m + s, m - s };
+    };
+    const auto narrow = render (0.5f);
+    const auto normal = render (1.0f);
+    const auto wide = render (2.0f);
+    const auto fold = [] (const std::array<float, 2>& pair)
+    { return 0.5f * (pair[0] + pair[1]); };
+    return std::abs (fold (narrow) - mid) < 1.0e-6f
+        && std::abs (fold (normal) - mid) < 1.0e-6f
+        && std::abs (fold (wide) - mid) < 1.0e-6f
+        && std::abs (normal[0] - left) < 1.0e-6f
+        && std::abs (normal[1] - right) < 1.0e-6f
+        && std::abs (wide[0] - mid) > std::abs (normal[0] - mid);
+}
+
 void printChainSpectrum()
 {
     std::printf ("\n   Diagnostic: the plugin's own output spectrum for a 500 Hz tone with\n"
@@ -1090,22 +1115,8 @@ void printChainSpectrum()
 
 int main()
 {
-    // The shipping M/S mapping preserves common (centre) content regardless of
-    // width; malformed values are clamped so SIDE can never overtake MID.
-    for (float width : { 0.0f, 0.5f, 1.0f, 1.5f })
-    {
-        const float left = 0.37f;
-        const float right = 0.37f;
-        const float mid = 0.5f * (left + right);
-        const float side = 0.5f * (left - right) * std::clamp (width, 0.0f, 1.0f);
-        const float outL = mid + side;
-        const float outR = mid - side;
-        check (std::abs (outL - left) < 1.0e-7f, "M/S width preserves centred left");
-        check (std::abs (outR - right) < 1.0e-7f, "M/S width preserves centred right");
-        check (std::abs (0.5f * (outL + outR) - left) < 1.0e-7f, "mono fold-down preserves centre");
-    }
-
     std::printf ("SUBFUND subharmonic regression harness\n");
+    check (testStereoWidthMatrix(), "stereo width preserves MID and boosts SIDE above natural");
 
     testUndertoneOrdering();
     testNoHarmonicsFromUndertones();

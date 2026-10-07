@@ -284,7 +284,7 @@ namespace
     //  State, so this rides along without touching the parameters or the editor.
     // ==========================================================================
     constexpr const char* stateFormatProperty = "nonlinStateFormat";
-    constexpr int currentStateFormat = 4;   // 4 = SIDE width is bounded; legacy 50% maps to 100% natural width
+    constexpr int currentStateFormat = 3;   // 3 = MIX 0..100 and bounded WIDTH range
 
     void migrateStateFormat (juce::ValueTree& tree)
     {
@@ -301,15 +301,6 @@ namespace
             {
                 const auto stored = static_cast<float> (mixChild.getProperty ("value", 50.0f));
                 mixChild.setProperty ("value", stored <= 1.0f ? stored * 100.0f : stored, nullptr);
-            }
-        }
-
-        if (sourceFormat < 4)
-        {
-            if (auto widthChild = tree.getChildWithProperty ("id", "stereo_width"); widthChild.isValid())
-            {
-                const auto stored = static_cast<float> (widthChild.getProperty ("value", 0.5f));
-                widthChild.setProperty ("value", juce::jlimit (0.0f, 1.0f, stored * 2.0f), nullptr);
             }
         }
 
@@ -382,6 +373,7 @@ FirstAudioProcessor::FirstAudioProcessor()
     subFundamentalParam = parameters.getRawParameterValue ("subfund");
     delayTimeParam = parameters.getRawParameterValue ("delay_time");
     delayFeedbackParam = parameters.getRawParameterValue ("delay_feedback");
+    delayLevelParam = parameters.getRawParameterValue ("delay_feedback");
     delayPingPongParam = parameters.getRawParameterValue ("delay_pingpong");
     stOffsetParam = parameters.getRawParameterValue ("st_offset");
     noiseParam = parameters.getRawParameterValue ("noise");
@@ -1294,13 +1286,12 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
                                                             juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
                                                             0.0f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
-    // WIDTH's 100 percent default is the unmodified stereo image. The control
-    // scales only the SIDE component: 0 is mono, 100 is normal width; lower values
-    // narrow the image without changing the MID signal that survives mono fold-down.
+    // WIDTH at 50 percent is natural stereo width. It scales SIDE from 0x
+    // (dual mono) through 1x (natural) to 2x (extra-wide), preserving MID.
     layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "stereo_width", 1 },
                                                             "Stereo Width",
                                                             juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
-                                                            1.0f,
+                                                            0.5f,
                                                             juce::AudioParameterFloatAttributes().withLabel ("%")));
     // Every parameter carries a versioned ParameterID. The plain-String constructor
     // the controls below used before is deprecated in JUCE 9 and, more importantly,
@@ -2306,7 +2297,7 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     mixSmoothed.setCurrentAndTargetValue (juce::jlimit (0.0f, 1.0f, initialMix));
     widthSmoothed.reset (sampleRateToUse, smoothingSeconds);
     widthSmoothed.setCurrentAndTargetValue (widthParam != nullptr
-        ? juce::jlimit (0.0f, 1.0f, widthParam->load()) : 1.0f);
+        ? juce::jlimit (0.0f, 2.0f, widthParam->load() * 2.0f) : 1.0f);
     bypassSmoothed.reset (sampleRateToUse, 0.01);
     // Start from the state the parameter restores: a session saved with BYPASS on
     // must not spend its first 10 ms ramping from the dry position.
@@ -2833,16 +2824,6 @@ void FirstAudioProcessor::setTransportState (int state)
     }
 }
 
-void FirstAudioProcessor::flushPendingTransportHostSync()
-{
-    if (! transportHostSyncRequested.exchange (false, std::memory_order_acq_rel))
-        return;
-
-    const auto state = static_cast<float> (juce::jlimit (
-        0, 2, transportHostSyncState.load (std::memory_order_acquire)));
-    if (auto* parameter = parameters.getParameter ("transport"))
-        parameter->setValueNotifyingHost (parameter->convertTo0to1 (state));
-}
 
 void FirstAudioProcessor::setSpindownHeld (bool shouldHold)
 {
@@ -3279,7 +3260,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto outputDb = outputDbParam->load();
     const auto inputDb = inputDbParam->load();
     const auto stereoWidth = widthParam != nullptr
-        ? juce::jlimit (0.0f, 1.0f, widthParam->load()) : 1.0f;
+        ? juce::jlimit (0.0f, 2.0f, widthParam->load() * 2.0f) : 1.0f;
     const auto compressorThreshold = compressorThresholdParam != nullptr ? compressorThresholdParam->load() : -18.0f;
     const auto compressorRatio = compressorRatioParam != nullptr ? compressorRatioParam->load() : 2.0f;
     const auto compressorAttack = compressorAttackParam != nullptr ? compressorAttackParam->load() : 10.0f;
@@ -3363,6 +3344,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // and fed to smoothers, so none of them can step the signal.
     const auto delayMs = delayTimeParam != nullptr ? delayTimeParam->load() : 0.0f;
     const auto delayFeedback = delayFeedbackParam != nullptr ? delayFeedbackParam->load() : 0.0f;
+    const auto delayLevel = delayLevelParam != nullptr ? delayLevelParam->load() : 0.0f;
     const auto delayPingPong = delayPingPongParam != nullptr ? delayPingPongParam->load() : 0.0f;
     const auto stOffsetUs = stOffsetParam != nullptr ? stOffsetParam->load() : 0.0f;
     const auto noiseAmount = noiseParam != nullptr ? noiseParam->load() : 0.5f;
@@ -3445,6 +3427,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         juce::jlimit (0.0f, static_cast<float> (juce::jmax (0, delayBufferLength - 1)),
                       effectiveDelayMs * 0.001f * engineSampleRate));
     delayFeedbackSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, delayFeedback));
+    delayLevelSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, delayLevel));
     pingPongSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, delayPingPong));
 
     // ST OFFSET is given in microseconds and converted to samples the same way. Only
@@ -4011,8 +3994,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //
     //  STOP drives the ramp to 0. PLAY holds it at 1. START drives it to 1 over
     //  about a second and is then DONE - the state advances to PLAY when the ramp
-    //  arrives (see the auto-advance just below, which runs on the audio thread
-    //  and writes the parameter so the host and the panel see the same change).
+    //  arrives (see the auto-advance just below, which publishes a request for
+    //  the message thread to notify the host of the changed parameter).
     //
     //  Each transition picks its own ramp length, which the previous version only
     //  did for the spin-up case: a STOP from PLAY reused the last coefficient and
@@ -4035,8 +4018,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         transportState = static_cast<int> (TransportState::play);
         lastTransportState = -1;   // force the switch below to re-arm the ramp
 
-        transportHostSyncState.store (1, std::memory_order_relaxed);
-        transportHostSyncRequested.store (true, std::memory_order_release);
     }
 
     lastSpindownHeld = spindownNow;
@@ -4716,22 +4697,17 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const int activeChannels = activeInputChannels;
     const auto& scaleOffsetsByMode = scaleOffsetsForMode (tuningMode);
 
-    // Scratch storage for the IR stage's wet capture: one copy of the block's
-    // finished signal, convolved in place, then crossfaded back by IR MIX. It
-    // lives at block scope because juce::dsp::Convolution::process is NOT
-    // documented as allocation-free - by contrast with the oversamplers, whose
-    // in-place processUp/processDown is why they can work on the host's own
-    // buffer - so the working copy is reserved at the block's worst-case size
-    // once and reused, and the per-block path never allocates (the reserve
-    // below can only ever grow to a size the host already announced).
+    // Scratch storage for the IR stage's wet capture. It is reserved in
+    // prepareToPlay; do not resize a thread_local AudioBuffer in processBlock,
+    // because a larger host block would allocate on the audio thread.
     //
     // The stage processes the WET signal only: in DELTA listen the difference
     // is taken against the dry reference further down, so an IR blended in at
     // MIX 100 still shows as "what the machine adds" rather than as the room
     // the dry signal never passed through.
-    static thread_local juce::AudioBuffer<float> scratch;
+    auto& scratch = postFxScratch;
     if (scratch.getNumSamples() < numSamples || scratch.getNumChannels() < 2)
-        scratch.setSize (2, juce::jmax (numSamples, 256), false, false, true);
+        return;
 
     // Working pointers into the block's own storage. In the plain path these are
     // the host buffer's channels; in the oversampled path they are the oversampler's
@@ -5127,12 +5103,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         //  fix for START never ending: the ramp reaches speed, the state is written
         //  back as PLAY, and the transport control settles on Play by itself.
         //
-        //  The write goes through the parameter rather than straight into
-        //  transportState, so the host's automation lane and the panel's combo box
-        //  both show the same thing the engine is doing. It is a host-facing call
-        //  from the audio thread, which JUCE permits (the parameter is a plain
-        //  atomic set behind it) and which is exactly what a plugin does when it
-        //  drives one of its own parameters.
+        //  The audio thread publishes a tiny state request only. The editor's
+        //  message-thread timer performs setValueNotifyingHost, keeping host calls
+        //  out of the real-time callback.
         // ------------------------------------------------------------------
         if (transportState == static_cast<int> (TransportState::start)
               && transportSpinningUp
@@ -5142,8 +5115,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             transportState = static_cast<int> (TransportState::play);
             lastTransportState = transportState;
 
-            transportHostSyncState.store (1, std::memory_order_relaxed);
-            transportHostSyncRequested.store (true, std::memory_order_release);
         }
 
         // Publish the platter speed and the spindown alone for the editor's reels
@@ -5832,7 +5803,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                 delayCharacter = delayed;
             }
 
-            const float delayTap = delayCharacter * delayFeedbackSmoothed.getCurrentValue();
+            const float delayTap = delayCharacter * delayLevelSmoothed.getCurrentValue();
 
             // ------------------------------------------------------------------
             //  What is written back into the line.
@@ -6443,13 +6414,17 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
             antiPhaseAmount.store (antiPhaseCorrection, std::memory_order_relaxed);
 
-            // The rotation: as the correction grows, the right channel is blended
-            // toward its own inverted form, which pulls an opposing pair back into
-            // agreement. At correction 0 this is bit-for-bit the untouched signal.
+            // Preserve the correlated MID exactly. Only the SIDE component is
+            // attenuated when there is sustained anti-correlation, so a stereo
+            // guard cannot reduce the common-centre signal while trying to fix
+            // an opposing side component.
             if (antiPhaseCorrection > 1.0e-5f)
             {
-                const float rotated = outputSignal[1] * (1.0f - 2.0f * antiPhaseCorrection);
-                outputSignal[1] += (rotated - outputSignal[1]) * antiPhaseCorrection;
+                const float mid = 0.5f * (outputSignal[0] + outputSignal[1]);
+                const float side = 0.5f * (outputSignal[0] - outputSignal[1]);
+                const float correctedSide = side * (1.0f - antiPhaseCorrection);
+                outputSignal[0] = mid + correctedSide;
+                outputSignal[1] = mid - correctedSide;
             }
         }
         else

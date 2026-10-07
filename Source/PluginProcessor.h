@@ -166,6 +166,8 @@
 #include <cstdint>
 #include <map>
 #include <memory>
+#include <mutex>
+#include <thread>
 #include <vector>
 
 //==============================================================================
@@ -1604,6 +1606,9 @@ struct NeuralStage
     std::atomic<ModelType*> activeModel { nullptr };
     std::atomic<bool> clearRequested { false };
     std::atomic<bool> resetRequested { false };
+    // Audio-thread reader count prevents teardown/replacement from reclaiming a
+    // model pointer while inference is executing without locking the callback.
+    std::atomic<unsigned int> readers { 0 };
 
     /** The model's input frame. RTNeural's forward() takes a pointer to a
         float[inSize] and RETURNS the single output sample by value, so one
@@ -1641,33 +1646,32 @@ struct NeuralStage
         if (json.isEmpty())
             return false;
 
+        std::unique_ptr<ModelType> parsedModel;
         try
         {
             // nlohmann::json::parse throws on malformed input, which the catch below
             // turns into a clean "no model" rather than a crash or a diagnostic the
             // user cannot act on.
             const auto parsed = nlohmann::json::parse (json.toStdString());
-            auto parsedModel = RTNeural::json_parser::parseJson<float> (parsed, false);
+            parsedModel = RTNeural::json_parser::parseJson<float> (parsed, false);
             if (parsedModel == nullptr)
                 return false;
-
-            std::lock_guard<std::mutex> lock (controlMutex);
-            // Retain old models until teardown so audio can finish inference with
-            // an already-acquired pointer without racing destruction.
-            if (model != nullptr)
-                retiredModels.push_back (std::move (model));
-            model = std::move (parsedModel);
-            activeModel.store (model.get(), std::memory_order_release);
-            clearRequested.store (false, std::memory_order_release);
-            resetRequested.store (true, std::memory_order_release);
-            return true;
         }
         catch (...)
         {
-            // A bad model file must not take the plugin down. The stage simply stays
-            // as it was, which is the same audible result as no model.
             return false;
         }
+
+        std::lock_guard<std::mutex> lock (controlMutex);
+        // Old model lifetimes extend until processor destruction. This makes the
+        // atomic pointer hand-off safe even if inference already captured it.
+        if (model != nullptr)
+            retiredModels.push_back (std::move (model));
+        model = std::move (parsedModel);
+        activeModel.store (model.get(), std::memory_order_release);
+        clearRequested.store (false, std::memory_order_release);
+        resetRequested.store (true, std::memory_order_release);
+        return true;
     #else
         juce::ignoreUnused (json);
         return false;
@@ -1681,6 +1685,10 @@ struct NeuralStage
         std::lock_guard<std::mutex> lock (controlMutex);
         activeModel.store (nullptr, std::memory_order_release);
         clearRequested.store (true, std::memory_order_release);
+        while (readers.load (std::memory_order_acquire) != 0)
+            std::this_thread::yield();
+        model.reset();
+        retiredModels.clear();
 #endif
     }
 
@@ -1722,6 +1730,9 @@ struct NeuralStage
             || namJson["architecture"].get<std::string>() != "LSTM")
             return false;
 
+        std::unique_ptr<ModelType> parsedModel;
+        try
+        {
         const auto& config = namJson.at ("config");
         const auto numLayers = config.at ("num_layers").get<int>();
         const auto inputSize = config.at ("input_size").get<int>();
@@ -1845,27 +1856,28 @@ struct NeuralStage
 
         try
         {
-            auto parsedModel = RTNeural::json_parser::parseJson<float> (rtJson, false);
+            parsedModel = RTNeural::json_parser::parseJson<float> (rtJson, false);
             if (parsedModel == nullptr)
                 return false;
-
-            std::lock_guard<std::mutex> lock (controlMutex);
-            if (model != nullptr)
-                retiredModels.push_back (std::move (model));
-            model = std::move (parsedModel);
-            activeModel.store (model.get(), std::memory_order_release);
-            clearRequested.store (false, std::memory_order_release);
-            resetRequested.store (true, std::memory_order_release);
-            return true;
         }
         catch (...)
         {
             return false;
         }
-    }
-#endif
 
-    /** The model's own recurrent state, let go of on a rate change or a model
+                std::lock_guard<std::mutex> lock (controlMutex);
+                while (readers.load (std::memory_order_acquire) != 0)
+                    std::this_thread::yield();
+                if (model != nullptr)
+                    retiredModels.push_back (std::move (model));
+                model = std::move (parsedModel);
+                activeModel.store (model.get(), std::memory_order_release);
+                clearRequested.store (false, std::memory_order_release);
+                resetRequested.store (true, std::memory_order_release);
+                return true;
+            }
+        #endif
+            /** The model's own recurrent state, let go of on a rate change or a model
         swap so neither can resume from a stale hidden state. */
     void reset() noexcept
     {
@@ -1891,11 +1903,20 @@ struct NeuralStage
         if (amount <= 1.0e-5f)
             return x;
 
-        // Model objects remain alive through replacement and clear requests, so
-        // this atomic snapshot stays valid through the whole inference call.
         auto* active = activeModel.load (std::memory_order_acquire);
         if (active == nullptr || clearRequested.load (std::memory_order_acquire))
             return x;
+
+        // Pin and validate the snapshot. Replaced objects are retained until
+        // teardown, and this reader count prevents recurrent-state reset racing
+        // an in-flight forward() call.
+        readers.fetch_add (1, std::memory_order_acq_rel);
+        if (activeModel.load (std::memory_order_acquire) != active
+            || clearRequested.load (std::memory_order_acquire))
+        {
+            readers.fetch_sub (1, std::memory_order_release);
+            return x;
+        }
         if (resetRequested.exchange (false, std::memory_order_acq_rel))
             active->reset();
 
@@ -1907,6 +1928,7 @@ struct NeuralStage
         // first output here, which is the only sensible reading of a 1-in/1-out
         // stage and is why the stage documents itself as such.
         const float wet = active->forward (inputFrame);
+        readers.fetch_sub (1, std::memory_order_release);
         return x + (wet - x) * juce::jlimit (0.0f, 1.0f, amount);
 #else
         juce::ignoreUnused (amount);
@@ -4970,14 +4992,8 @@ public:
 
     /** Sets the transport state. `state` is the transport AudioParameterChoice
         index (0 = Stop, 1 = Play, 2 = Start). Start is transient: it is armed
-        here and the engine advances it to Play when the capstan arrives.
-
-        Writes through to the parameter so the host (and the preset/session) sees
-        the change, then forwards to the engine immediately so the audio thread
-        does not have to wait for the next automation pass. */
+        here and the engine advances it to Play when the capstan arrives. */
     void setTransportState (int state);
-    /** Flushes an audio-thread transport transition to the host from a safe thread. */
-    void flushPendingTransportHostSync();
 
     /** The momentary SPINDOWN hold. While held the machine runs down like a
         turntable whose power has been cut; on release it spins back up and the
@@ -5196,6 +5212,7 @@ private:
     std::atomic<float>* subFundamentalParam = nullptr;
     std::atomic<float>* delayTimeParam = nullptr;
     std::atomic<float>* delayFeedbackParam = nullptr;
+    std::atomic<float>* delayLevelParam = nullptr;
     // PING-PONG's own control, read once per block like the rest of the delay.
     std::atomic<float>* delayPingPongParam = nullptr;
     std::atomic<float>* stOffsetParam = nullptr;
@@ -5657,6 +5674,7 @@ private:
     int delayBufferLength = 0;
     SampleSmoother delaySamplesSmoothed { sampleClock };
     SampleSmoother delayFeedbackSmoothed { sampleClock };
+    SampleSmoother delayLevelSmoothed { sampleClock };
 
     // PING-PONG is smoothed for the same reason the feedback amount is: it
     // decides how much of the repeat is written into each of the two delay
@@ -5771,8 +5789,6 @@ private:
     //  engine-only state and stay plain floats.
     // -----------------------------------------------------------------------
     std::atomic<bool> spindownHeld { false };
-    std::atomic<bool> transportHostSyncRequested { false };
-    std::atomic<int> transportHostSyncState { 1 };
     float spindownRamp = 1.0f;              // 1 = at speed, 0 = fully stopped
     float spindownCoefficient = 0.0f;       // built from the rate
     // The previous block's hold state, so the release edge can be seen once. Engine

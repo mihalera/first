@@ -3840,9 +3840,9 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         { "character",       "TONE",       0.5,   "MACHINE"  },
         { "wow",             "WOW",        0.14,  "NOISE"    },
         { "flutter",         "FLUTTER",    0.18,  "NOISE"    },
-        { "mix",             "MIX",        0.5,   "MACHINE"  },
+        { "mix",             "MIX",        50.0,  "MACHINE"  },
         { "output",          "OUTPUT",     0.0,   "MACHINE"  },
-        { "stereo_width",    "WIDTH",      1.0,   "MACHINE"  },
+        { "stereo_width",    "WIDTH",      0.5,   "MACHINE"  },
         // The seven SOURCE knobs, where the old BLEND/SHAPE pair sat: each is
         // its own machine's share of the saturation mix, dialled by name.
         { "tape_source",     "TAPE",       1.0,   "SUBFUND"   },
@@ -6562,8 +6562,6 @@ void FirstAudioProcessorEditor::timerCallback()
     // visible timer tick reconstructs all display-only state from the processor.
     if (! isShowing())
         return;
-
-    audioProcessor.flushPendingTransportHostSync();
 
     // The startup retry for the OpenGL context, bounded and then forgotten. It runs
     // first so a context that comes up is live before the meters ask for a repaint.
