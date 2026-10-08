@@ -462,6 +462,12 @@ private:
     // 64: the fifty-nine the panel carried, minus the BLEND/SHAPE pair the
     // user asked to remove, plus the seven SOURCE knobs that replaced them.
     static constexpr std::size_t controlCount = 64;
+    // The MEMBER BAND's four columns - the strip a page's own combos and pills
+    // are laid out in (see placeDeckSwitch). The knob strip above it does NOT use
+    // this: its column count is solved per page from the space the page's knob
+    // count leaves, because a knob's disc is capped by its cell's shorter side
+    // and a fixed four columns made every page with six or seven knobs a pair of
+    // half-height rows and half-size knobs.
     static constexpr int tabColumns = 4;
     // Sixteen pages under three large families (TAPE / FX / SETUP), so no page
     // has to carry more than one subject: DRIVE was twelve knobs on one page and

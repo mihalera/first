@@ -8143,12 +8143,15 @@ void FirstAudioProcessorEditor::resized()
     grid.removeFromTop (controlsDividerOffset - 14 + 8);
     grid.removeFromBottom (8);
 
-    // Only the ACTIVE tab is laid out, and its own control count decides the row
-    // count, so a tab is never sized as if it still had to hold the whole panel's
-    // knobs. Tabs hold between three and nine controls; NOISE, the fullest, comes
-    // to three rows of tabColumns, the rest to two.
+    // Only the ACTIVE tab is laid out, and its own control count decides the
+    // strip's column count, so a tab is never sized as if it still had to hold the
+    // whole panel's knobs: a page of two gets two large knobs, and the fullest
+    // page (seven) gets one row of seven across the whole grid.
     const auto& activeTab = tabSpecs[static_cast<std::size_t> (currentTab)];
     const auto tabControlCount = static_cast<int> (activeTab.count);
+    // The MEMBER BAND's cell width - what placeDeckSwitch and every page that
+    // spans a cell of its own measures in. The knob strip solved below does not
+    // use it: its own slot width is solved from the page's knob count.
     const auto cellWidth = grid.getWidth() / tabColumns;
 
     // Which tab is live, looked up by name from the tabSpecs table - the single
@@ -8164,50 +8167,173 @@ void FirstAudioProcessorEditor::resized()
     const auto inEqTab = index_of_tab_named ("IN EQ") == currentTab;
     const auto outEqTab = index_of_tab_named ("OUT EQ") == currentTab;
     const auto machineTab = index_of_tab_named ("MACHINE") == currentTab;
-    const auto dynamicsTab = index_of_tab_named ("DYN") == currentTab;
     const auto mixTab = index_of_tab_named ("MIX") == currentTab;
 
-    // The knob rows the active tab needs (zero on SETTINGS, which holds no knobs),
-    // and one row more when the tab owns member switches - the non-knob combos and
-    // pills placeDeckSwitch lays out under the knobs. SETTINGS is the worst case
-    // and the reason the arithmetic is shared: with no knobs at all, sizing the
-    // grid for knob rows alone left its whole height for a member row that was
-    // then appended BELOW the grid, off the panel - GL and OVERSAMPLING were
-    // clipped by the window's bottom edge on the very tab that holds nothing else.
-    const auto knobRows = (tabControlCount + tabColumns - 1) / tabColumns;
-    // The MIX page counts as a member-row page even though it owns no switch: the
+    // Which pages own a MEMBER BAND - the strip under the knobs that the
+    // non-knob combos and pills (placeDeckSwitch) are laid out in. It is no
+    // longer the same question as "how many rows of knobs does the page need":
+    // the knob strip sizes itself (see below) and the band is a fixed strip of
+    // its own. SETTINGS is the worst case and the reason the arithmetic is
+    // shared: with no knobs at all, sizing the grid for knob rows alone left its
+    // whole height for a member row that was then appended BELOW the grid, off
+    // the panel - GL and OVERSAMPLING were clipped by the window's bottom edge on
+    // the very tab that holds nothing else.
+    //
+    // The MIX page counts as a member page even though it owns no switch: the
     // band it reserves is where the saturation mix bar lives, which is the whole
-    // reason the page is worth its own strip.
+    // reason the page is worth its own strip. FRONT END counts because its DI PAD
+    // is a combo - a member - and can no longer ride the knob grid: a page whose
+    // knobs fill their row has no free cell to put it in (it used to take the
+    // fourth cell of a second row that had three knobs in it). DYN does NOT: its
+    // knobs moved to CHARACTER and nothing ever rode the band it reserved, so the
+    // page now gives that 50 px to its own three knobs instead.
     const auto memberRows = (settingsTab || delayTab || characterTab
-                             || shapersTab || inEqTab || outEqTab
+                             || frontEndTab || shapersTab || inEqTab || outEqTab
                              || machineTab || mixTab) ? 1 : 0;
 
     // The member band is a FIXED strip - a caption band plus a control band -
-    // reserved under the knob rows, and the knob rows share what is left. A
-    // uniform division would tax a page's knobs for a single combo: DRIVE holds
-    // twelve knobs in three rows, and splitting the grid four ways instead of
-    // three would cost every one of them a quarter of its height. A fixed strip
-    // takes a fixed price, and every knob page keeps the row height its own knob
-    // count asks for. 50 px is the label band (17) plus the control's 30 at its
-    // 20 px offset - the geometry placeDeckSwitch below already assumes.
+    // pinned to the grid's BOTTOM edge, and the knob strip takes what is above
+    // it. 50 px is the label band (17) plus the control's 30 at its 20 px offset
+    // - the geometry placeDeckSwitch below already assumes. Pinned rather than
+    // stacked under the knob rows because the knob strip is COMPACT (see the next
+    // block): its tiles take the height they need and no more, so "under the
+    // knobs" would leave the band floating at whatever height the page's knob
+    // count put it, with the panel's surplus beneath it. On the bottom edge it
+    // sits where a machine's own row of mode switches sits, on every page.
     constexpr int memberBandHeight = 50;
-    const auto knobAreaHeight = grid.getHeight()
-                              - (memberRows != 0 ? memberBandHeight : 0);
-    const auto knobRowHeight = knobRows > 0 ? knobAreaHeight / knobRows : 0;
+    // A page with no knobs keeps the whole grid as its band: SETTINGS places two
+    // lines of preferences in it, and they belong at the top, under the divider,
+    // where a page of knobs puts its own captions.
+    const auto knobAreaHeight = (memberRows != 0 && tabControlCount > 0)
+                                    ? grid.getHeight() - memberBandHeight
+                                    : grid.getHeight();
+
+    // ------------------------------------------------------------------
+    //  The knob strip.
+    //
+    //  A knob's disc is capped by the SHORTER side of the paint area it is given
+    //  (see computeKnobMetrics), so the number of rows a page's knobs are laid
+    //  out in is what decides how big they are. Four columns of two rows gave
+    //  every knob half the page's height to draw in and left the second row with
+    //  three of its four cells empty - a small disc in a wide, half-empty cell.
+    //  The column count is solved instead of fixed: every count from one to the
+    //  page's knob count is tried, each is given the tile it would get, and the
+    //  page takes the count whose tile is widest, which is the count whose disc
+    //  comes out largest. Seven knobs across a 714 px grid are 102 px cells and a
+    //  49 px disc each; two rows of four would have made them 28.
+    //
+    //  A tile is then the knob's own geometry and nothing else: a 17 px caption
+    //  band, the 8 px of clearance under it, the paint area itself, and the
+    //  toolkit's 16 px value box under that, all inside the 5 px inset the slider
+    //  rides in. The paint area comes out SQUARE - the shape whose ceilings bind
+    //  at once, so neither side of it is wasted:
+    //
+    //      paint width  = tile width  - 10 (the cell's inset)  - 12 (the paint's)
+    //      paint height = tile height - 10 - 8 (clearance) - 16 (value) - 12
+    //      square       => tile height = tile width + 24
+    //
+    //  which is why the tile is compact rather than stretched to the row: the old
+    //  grid gave every cell the page's whole row height, the disc was drawn in a
+    //  square capped by the CELL's short side, and the surplus height between the
+    //  caption and the knob - and again between the knob and its own value - was
+    //  left as void on every tile on every page.
+    //
+    //  The strip is centred in the area it has: the surplus height a page with
+    //  few knobs has left over - or a page whose discs the panel's WIDTH capped,
+    //  which is what a row of seven does - is split into two margins, where all
+    //  of it heaped under the knobs would read as a hole in the page.
+    // ------------------------------------------------------------------
+    constexpr int knobTileExtraHeight = 24;   // the tile's chrome, solved above
+    constexpr int knobRowGap = 14;            // between two rows of tiles
+    const auto rowsForColumns = [tabControlCount] (int columns)
+    {
+        return (tabControlCount + columns - 1) / columns;
+    };
+    // The widest tile a row of `rows` tiles can be given: wider than this and
+    // the strip would stand taller than the area it has to stand in.
+    const auto widestTileForRows = [knobAreaHeight] (int rows)
+    {
+        return (knobAreaHeight - (rows - 1) * knobRowGap) / rows - knobTileExtraHeight;
+    };
+    // The camera the CANDIDATES are scored at. The score compares counts within
+    // one page - the same band of the same panel - so a mid value is all it needs
+    // to be: the wall moves by a few hundredths across the strip and moves every
+    // candidate the same way.
+    constexpr float knobScoringWall = 0.4f;
+
+    // The row counts are tried from ONE row up, and a count only displaces the
+    // one held if it buys a disc a twentieth larger: the page takes more rows when
+    // the panel is tall enough for that to mean bigger knobs, and keeps the single
+    // row otherwise rather than splitting itself for nothing - a page that flipped
+    // between the two arrangements on a few pixels of window resize would be worse
+    // than either. The score is the disc computeKnobMetrics would give the tile,
+    // which is the same function the knob itself is drawn from: the layout cannot
+    // promise a disc the paint routine then fails to draw.
+    // The counts are walked from the most rows to the fewest (fewer columns are
+    // more rows, by definition), and only the FIRST count of each row count is
+    // scored: within one row count every further column is a narrower tile, so the
+    // count where the row count changes is the widest tile that row count has, and
+    // the only one it has to answer with.
+    auto knobColumns = juce::jmax (1, tabControlCount);
+    auto knobRows = 0;
+    auto knobTileWidth = 0;
+    auto knobScore = 0.0f;
+    auto scoredRows = 0;
+    for (int columns = 1; columns <= tabControlCount; ++columns)
+    {
+        const auto rows = rowsForColumns (columns);
+        if (rows == scoredRows)
+            continue;
+
+        scoredRows = rows;
+        const auto tile = juce::jmin (grid.getWidth() / columns, widestTileForRows (rows));
+        if (tile < 1)
+            continue;
+
+        const auto paintSide = static_cast<float> (tile - 22);   // the square, see above
+        const auto disc = computeKnobMetrics (paintSide, paintSide, knobScoringWall).radius;
+        if (disc > knobScore * 1.04f)
+        {
+            knobScore = disc;
+            knobColumns = columns;
+            knobRows = rows;
+            knobTileWidth = tile;
+        }
+    }
+    // Nothing a panel at its own minimum size allows can make this zero, but a
+    // strip with no tile would place its knobs at negative coordinates: fall back
+    // to one row of the widest slots the grid's width alone can give.
+    if (knobTileWidth < 1)
+    {
+        knobRows = tabControlCount > 0 ? 1 : 0;
+        knobColumns = juce::jmax (1, tabControlCount);
+        knobTileWidth = juce::jmax (1, grid.getWidth() / juce::jmax (1, tabControlCount));
+    }
+    const auto knobTileHeight = knobTileWidth + knobTileExtraHeight;
+    const auto knobStripHeight = knobRows > 0
+                                     ? knobRows * knobTileHeight + (knobRows - 1) * knobRowGap
+                                     : 0;
+    const auto knobStripTop = grid.getY()
+                              + juce::jmax (0, (knobAreaHeight - knobStripHeight) / 2);
+    const auto knobSlotWidth = knobColumns > 0 ? grid.getWidth() / knobColumns : grid.getWidth();
 
     for (int slot = 0; slot < tabControlCount; ++slot)
     {
         const auto i = activeTab.controls[slot];
-        const auto row = slot / tabColumns;
-        const auto column = slot % tabColumns;
-        auto cell = juce::Rectangle<int> (grid.getX() + column * cellWidth,
-                                          grid.getY() + row * knobRowHeight,
-                                          column == tabColumns - 1
-                                              ? grid.getRight() - (grid.getX() + column * cellWidth)
-                                              : cellWidth,
-                                          row == knobRows - 1 && memberRows == 0
-                                              ? grid.getBottom() - (grid.getY() + row * knobRowHeight)
-                                              : knobRowHeight);
+        const auto row = slot / knobColumns;
+        const auto column = slot % knobColumns;
+        // The tiles ride EQUAL SLOTS rather than sitting edge to edge, so a page
+        // whose discs the panel's height capped keeps its knobs spread across the
+        // panel instead of stacking them against the left edge with all the air
+        // on the right - and a last row with fewer knobs than the one above it is
+        // centred as a group under it.
+        const auto slotsInRow = juce::jmin (knobColumns, tabControlCount - row * knobColumns);
+        const auto rowLeft = grid.getX() + (grid.getWidth() - slotsInRow * knobSlotWidth) / 2;
+        const auto tileLeft = rowLeft + column * knobSlotWidth
+                              + (knobSlotWidth - knobTileWidth) / 2;
+        auto cell = juce::Rectangle<int> (tileLeft,
+                                          knobStripTop + row * (knobTileHeight + knobRowGap),
+                                          knobTileWidth, knobTileHeight);
         controlLabels[i].setBounds (cell.getX() + 5, cell.getY() + 1,
                                     cell.getWidth() - 10, 17);
         auto sliderBounds = cell.reduced (5);
@@ -8236,11 +8362,15 @@ void FirstAudioProcessorEditor::resized()
     // collide with the knob rows and with each other. Now the arithmetic exists
     // exactly once: label band 17 px, control band 30 px at its 20 px offset,
     // the control capped at 30 px so it can never overflow the band.
-    // memberRowY is computed from the same arithmetic: the band starts where
-    // the knob rows end (at the grid's top on SETTINGS, which holds no knobs)
-    // and runs to the grid's bottom, so the division's remainder lands inside
-    // the band rather than above it.
-    const auto memberRowY = grid.getY() + knobRows * knobRowHeight;
+    // memberRowY is the band's top edge, and it is measured from the grid's
+    // BOTTOM - the band is the last 50 px of the grid on every page that has one,
+    // and the knob strip above it is laid out in what is left. On SETTINGS, which
+    // holds no knobs, the band is the whole grid and its top edge is the grid's
+    // own, so the page's two lines of preferences sit under the divider as they
+    // always have.
+    const auto memberRowY = (memberRows != 0 && tabControlCount > 0)
+                                ? grid.getBottom() - memberBandHeight
+                                : grid.getY();
     const auto placeDeckSwitch = [&] (juce::Label& label, juce::Component& box,
                                       int column, int columnsWide,
                                       const juce::String& caption)
@@ -8287,21 +8417,6 @@ void FirstAudioProcessorEditor::resized()
     // were not theirs. The active tab decides; every resize re-applies it. The
     // flags themselves are read from the tabSpecs table at the top of the grid
     // section above, where the member-row arithmetic needs them too.
-
-    // The DI pad/load combo rides FRONT END in the knob grid's FOURTH cell of
-    // the second row - the page's five knobs leave it empty, and the pad is the
-    // DI's own input switch, so it sits with the row it feeds. No extra band is
-    // reserved for it: five knobs in two rows is exactly what this cell was.
-    if (frontEndTab)
-    {
-        diPadLabel.setText ("DI PAD", juce::dontSendNotification);
-        diPadLabel.setBounds (grid.getX() + 3 * cellWidth + 5,
-                              grid.getY() + (knobRows - 1) * knobRowHeight + 1,
-                              cellWidth - 10, 17);
-        diPadBox.setBounds (grid.getX() + 3 * cellWidth + 12,
-                            grid.getY() + (knobRows - 1) * knobRowHeight + 20,
-                            cellWidth - 24, 30);
-    }
 
     // The four new lists follow the same rule as the deck switches: each is a
     // full member of exactly one tab, so it is visible only while that tab is.
@@ -8377,16 +8492,24 @@ void FirstAudioProcessorEditor::resized()
     mixBar.setVisible (mixTab);
     if (mixTab)
     {
-        const auto mixBandTop = grid.getY() + knobRows * knobRowHeight;
-        mixBar.setBounds (grid.getX() + 4, mixBandTop + 3, grid.getWidth() - 8,
-                          juce::jmax (20, grid.getBottom() - mixBandTop - 6));
+        mixBar.setBounds (grid.getX() + 4, memberRowY + 3, grid.getWidth() - 8,
+                          juce::jmax (20, grid.getBottom() - memberRowY - 6));
         mixBar.repaint();
     }
 
-    if (machineTab)
+    if (frontEndTab)
     {
-        // MACHINE: seven knobs fill two rows (the second holds three), so the
-        // member row under them is where the machine's TRACKS selector lives.
+        // FRONT END: the DI's own pad/load selector rides the band under the
+        // knobs - the row the DI feeds. It used to take the fourth cell of the
+        // knob grid's second row; the strip is one full row now, so the band is
+        // the only place on the page a combo can be, and it is where the DI's
+        // own input switch belongs anyway.
+        placeDeckSwitch (diPadLabel, diPadBox, 0, 1, "DI PAD");
+    }
+    else if (machineTab)
+    {
+        // MACHINE: the machine's TRACKS selector rides the band at the page's
+        // foot, under its seven knobs.
         placeDeckSwitch (tracksLabel, tracksBox, 0, 1, "TRACKS");
     }
     else if (settingsTab)
@@ -8503,15 +8626,6 @@ void FirstAudioProcessorEditor::resized()
         clearIrButton.setBounds (grid.getX() + 2 * cellWidth + 12,
                                  buttonY, cellWidth - 24, buttonH);
     }
-    else if (dynamicsTab)
-    {
-        // DYNAMICS: three knobs fill the first row and the neural and IR
-        // stages moved to CHARACTER, so this page needs no member row - but
-        // the reserved band logic above sized this grid as if something might
-        // ride it. Nothing does: leave the band empty rather than stretching
-        // the knob rows into it, so the page's layout stays identical to
-        // before the move.
-    }
     else if (inEqTab || outEqTab)
     {
         // IN EQ / OUT EQ: six knobs fill the first row, so the row below is
@@ -8563,10 +8677,9 @@ void FirstAudioProcessorEditor::resized()
     const auto rowGap = 8;
     const auto columnWidth = (meterArea.getWidth() - columnGap) / 2;
 
-    // Note the separate name: the control grid's row height is taken by the knob
-    // arithmetic above (knobRowHeight), so reusing that name here would shadow it
-    // through the rest of the function and trip the redefinition error rather
-    // than silently picking the wrong cell size.
+    // Note the separate name: the knob strip above has already spent "tile" and
+    // "slot" on the grid's cells, so keeping the meters' own vocabulary here is
+    // what stops a later edit from silently reusing the wrong cell size.
     const auto meterRowHeight = (meterArea.getHeight() - rowGap) / 2;
 
     const auto leftColumn = meterArea.getX();
