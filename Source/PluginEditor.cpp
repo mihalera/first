@@ -1044,6 +1044,98 @@ constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tab
     }
 }
 
+//==============================================================================
+//  THE KNOB'S RADIAL BUDGET.
+//
+//  A knob is a stack of concentric rings - the cap, its knurled collar, the scale
+//  groove, the marks hanging off it - and all of them have to fit the rectangle
+//  the layout gave the slider. That arithmetic used to live in the paint routine
+//  as five local constants, with the cap proportional to the cell (0.34 of its
+//  short side) and the groove and the marks ABSOLUTE (8 px out, 3 to 4 more to a
+//  mark, then 5 or 2.5 long). One design at two proportions: on a four-column
+//  page the cap-to-groove ratio came out 1:1.8 with the marks ending flush against
+//  the cell's edge, on a two-knob page 1:1.2 with room to spare - which is how the
+//  same widget read as finished on one page and cramped on the next.
+//
+//  The groove is now measured from the COLLAR, at the proportion the panel's
+//  largest knobs already ship (x1.064: a 47 px cap carrying its groove 3.3 px off
+//  a 51.6 px collar, with a 3.2 px floor so the four-pixel groove keeps a clear
+//  pixel of air off the collar instead of cutting into it). That reproduces the
+//  big knobs exactly, and brings a small knob's groove in from 8 px of clearance
+//  to 3 - which is the room its marks needed to stop being one-pixel stubs.
+//
+//  The mark LENGTHS stay flat, because a mark is read against the groove it hangs
+//  off rather than against the cap - but the DIVISIONS follow the knob's size: a
+//  thirty-pixel radius of scale has room for twice the graduations a ten-pixel one
+//  does, and a scale is drawn to be read, not to be constant.
+//
+//  It is a pure function of the paint area and the perspective wall, in one place,
+//  so every number here can be checked without a renderer.
+//==============================================================================
+namespace
+{
+    struct KnobMetrics
+    {
+        float paintCeiling = 0.0f;    // half the paint area's short side
+        float faceCeiling = 0.0f;     // the largest the cap's face may be
+        float radius = 0.0f;          // the cap's face
+        float collar = 0.0f;          // the knurled collar around it
+        float ring = 0.0f;            // the scale groove's centre line
+        float tickGap = 0.0f;         // groove -> a major mark's inner end
+        float tickLength = 0.0f;
+        float tickClearance = 0.0f;   // what a mark keeps clear of the ceiling
+        float minorGap = 0.0f;
+        float minorLength = 0.0f;
+        float minorClearance = 0.0f;
+        int   tickIntervals = 12;
+    };
+
+    KnobMetrics computeKnobMetrics (float width, float height, float wall) noexcept
+    {
+        KnobMetrics m;
+
+        const auto shortSide = juce::jmin (width, height);
+        const auto halfWidth  = width  * 0.5f - 2.0f;
+        const auto halfHeight = height * 0.5f - 2.0f;
+
+        m.paintCeiling = shortSide * 0.5f;
+        m.faceCeiling  = shortSide * 0.34f;
+
+        // The marks' own weights, and the clearance each keeps from the ceiling.
+        m.tickLength = 5.0f;
+        m.tickClearance = 4.0f;
+        m.minorLength = 2.5f;
+        m.minorClearance = 2.0f;
+
+        // The room a major mark needs, taken off the groove's ceiling BEFORE the
+        // groove is solved from it - otherwise the groove grows into the only
+        // space the scale has and the marks come out as stubs against it.
+        const auto scaleBand = juce::jlimit (3.5f, 6.0f, shortSide * 0.12f);
+
+        // The side wall comes out of the SAME budget as the face: a knob nearer
+        // the viewer shows more of its own side and a SMALLER top face, so the cap
+        // is what gives way and no knob row marches out of its cells.
+        const auto wallFraction = 0.12f + 0.40f * wall;
+        const auto collarAllowance = juce::jmax (2.2f, m.faceCeiling * 0.10f);
+        const auto ringCeiling = juce::jmin (m.faceCeiling + 8.0f, halfWidth, halfHeight - scaleBand);
+
+        m.radius = juce::jmin (m.faceCeiling,
+            juce::jmax (2.0f, (ringCeiling - 1.5f - collarAllowance) / (1.0f + 1.15f * wallFraction)));
+        m.collar = m.radius + juce::jmax (2.2f, m.radius * 0.10f);
+        m.ring = juce::jmin (m.collar + juce::jmax (3.2f, m.collar * 0.064f), halfWidth, halfHeight);
+
+        // The marks hang off the groove by a share of the groove's own radius, so
+        // the scale keeps its shape at every size.
+        m.tickGap  = juce::jmax (2.5f, m.ring * 0.08f);
+        m.minorGap = m.tickGap + juce::jmax (1.0f, m.ring * 0.02f);
+
+        m.tickIntervals = m.radius > 26.0f ? 24 : 12;
+
+        return m;
+    }
+}
+
+//==============================================================================
 void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                                        int x, int y, int width, int height,
                                        float sliderPos,
@@ -1067,8 +1159,9 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     // minimum panel size a knob's ticks reached seven pixels past its own
     // rectangle and its halo twenty - far enough to land on the value readout
     // under it and on the member band under that, which is where a knob's arc
-    // was seen standing on the switch beside it.
-    const auto paintCeiling = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
+    // was seen standing on the switch beside it. The number itself, and every
+    // ceiling measured from it, is solved below by computeKnobMetrics - this
+    // comment describes one budget rather than five local constants.
 
     // The camera. A knob's top face is a disc, and a disc seen from anywhere
     // other than directly overhead is an ELLIPSE - flatter the nearer the near
@@ -1094,59 +1187,25 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                         centre.x * (1.0f - view.squashX),
                         0.0f, view.squashY,
                         centre.y * (1.0f - view.squashY)));
-    // The track ring and the tick marks live OUTSIDE the knob face (face at
-    // radius, ring at +8, ticks up to +9 more), and DRIVE's cells are WIDER
-    // than they are tall: the unconstrained ring was taller than the cell, so
-    // the rasteriser clipped its top and bottom and the surviving left/right
-    // fragments read as broken crescents - the "crooked toggles" on the DRIVE
-    // page. The ring now clamps to the half-extent the cell can actually show;
-    // the face takes what is left, so the whole assembly stays concentric and
-    // fully visible at every cell shape.
-    const auto faceCeiling = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.34f;
+    // The track ring and the tick marks live OUTSIDE the knob face, and DRIVE's
+    // cells are WIDER than they are tall: an unconstrained ring was taller than
+    // the cell, so the rasteriser clipped its top and bottom and the surviving
+    // left/right fragments read as broken crescents - the "crooked toggles" on the
+    // DRIVE page. Every ring in the assembly is therefore solved against the
+    // half-extent the cell can actually show (see computeKnobMetrics), and the cap
+    // takes what is left, so the whole thing stays concentric and fully visible at
+    // every cell shape.
+    // Every ceiling, and the cap, the collar, the groove and the marks that are
+    // measured from it, in one call: see computeKnobMetrics above for what the
+    // numbers are and why the groove is measured from the collar.
+    const auto metrics = computeKnobMetrics (bounds.getWidth(), bounds.getHeight(), view.wall);
+    const auto paintCeiling = metrics.paintCeiling;
+    const auto radius = metrics.radius;
+    const auto outerRadius = metrics.ring;
 
-    // The scale is drawn OUTSIDE the knob face - the track ring at +8 and the
-    // ticks up to eight more beyond that - and on a SHORT cell the old ceiling
-    // let the ring grow into the last pixels of the rectangle, which left the
-    // ticks nowhere to go. They were then clamped to a one-pixel stub lying
-    // against the ring, and the knob read as a plain disc with no scale at all:
-    // the MACHINE page, where four knobs share a row above a member band, against
-    // SATURATION's two full-height ones - the same widget drawn two ways, which
-    // is what made the row look unfinished rather than merely small. The band
-    // below is the room the ticks need, taken off the ceiling BEFORE the ring is
-    // solved from it, so the ring stops short of the edge and every knob shows
-    // its scale whatever cell it was given.
-    //
-    // The cap is 6 px, and both numbers in it are measured rather than guessed.
-    // Four is the length of a major mark and two is what the clamp below keeps
-    // clear of the edge, so six is the smallest band that still draws the whole
-    // mark; and six is also exactly the half-height this pass gives back to every
-    // cell (the readout band and the caption clearance are 12 px shallower
-    // together), so a band that never exceeds it can never leave a knob SMALLER
-    // than it was - on any cell shape, at any panel size. A taller band would buy
-    // the mark a wider gap at the cost of the disc, and the disc is what the row
-    // is read as.
-    const auto scaleBand = juce::jlimit (3.5f, 6.0f,
-                                         juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.12f);
-    const auto outerCeiling = juce::jmin (faceCeiling + 8.0f,
-                                          bounds.getWidth() * 0.5f - 2.0f,
-                                          bounds.getHeight() * 0.5f - 2.0f - scaleBand);
-
-    // The side wall is taken out of the SAME budget as the face, not added to
-    // it. The ring and the ticks already use everything the cell has vertically,
-    // so a wall drawn on top of them would bury the bottom of the scale; and a
-    // knob that simply grew would collide with the row below. What perspective
-    // actually does is the opposite of growing: a knob nearer the viewer shows
-    // more of its own SIDE and a SMALLER top face. So the face radius is the
-    // one that gives way - solve it from the ring inward, leaving room for the
-    // collar and then for the wall - and every knob row recedes into the panel
-    // instead of marching out of its cells.
+    // The side wall, as a fraction of the cap: what the skirt below is drawn
+    // from, and the same term the metrics solved the cap against.
     const auto wallFraction = 0.12f + 0.40f * view.wall;
-    const auto collarAllowance = juce::jmax (2.2f, faceCeiling * 0.10f);
-    const auto radius = juce::jmin (faceCeiling,
-        juce::jmax (2.0f, (outerCeiling - 1.5f - collarAllowance) / (1.0f + 1.15f * wallFraction)));
-    const auto outerRadius = juce::jmin (radius + 8.0f,
-                                         bounds.getWidth() * 0.5f - 2.0f,
-                                         bounds.getHeight() * 0.5f - 2.0f);
     const auto angle = juce::jmap (sliderPos, 0.0f, 1.0f, rotaryStartAngle, rotaryEndAngle);
     // JUCE's Path::addCentredArc measures clockwise from 12 o'clock and places a
     // point at (sin(angle), -cos(angle)). Convert that same angle to ordinary screen
@@ -1175,7 +1234,15 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     //  Animation layer 1: a soft halo that breathes with the compressor
     //  activity, plus a slow pulse so the panel never looks frozen.
     //------------------------------------------------------------------
-    const auto breath = 0.5f + 0.5f * std::sin (animationPhase);
+    // The phase is this knob's OWN, derived from where it stands on the panel.
+    // Every halo used to ride the one shared phase, so a page of twelve knobs
+    // brightened and dimmed in lockstep - which the eye reads as a global
+    // flicker, because it IS one. Offset by position, the same nine lines of
+    // drawing read as a panel with current running through it.
+    const auto knobPosition = offsetToTopLevel (slider);
+    const auto breathPhase = animationPhase
+                             + knobPosition.x * 0.031f + knobPosition.y * 0.017f;
+    const auto breath = 0.5f + 0.5f * std::sin (breathPhase);
     const auto haloAlpha = 0.05f + (hovered ? 0.06f : 0.0f)
                                + activity * 0.20f * (0.6f + 0.4f * breath);
     if (haloAlpha > 0.01f)
@@ -1276,28 +1343,64 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     //  drift, so wow and flutter are visible as well as audible.
     //------------------------------------------------------------------
     const auto driftWobble = (drift - 0.5f) * 2.0f;
-    for (int tick = 0; tick <= 12; ++tick)
+    const auto tickIntervals = metrics.tickIntervals;
+    const auto majorEvery = tickIntervals / 12;
+
+    for (int tick = 0; tick <= tickIntervals; ++tick)
     {
-        const auto tickAngle = juce::jmap (static_cast<float> (tick), 0.0f, 12.0f,
+        const auto tickAngle = juce::jmap (static_cast<float> (tick), 0.0f,
+                                           static_cast<float> (tickIntervals),
                                            rotaryStartAngle, rotaryEndAngle);
         const auto tickScreenAngle = tickAngle - juce::MathConstants<float>::halfPi;
-        const auto major = tick % 3 == 0;
+        const auto major = tick % majorEvery == 0;
         const auto tremble = std::sin (tickScreenAngle * 3.0f + animationPhase * 1.7f)
                              * driftWobble * 1.3f;
-        // The ticks are the furthest thing the knob draws, and they stop at the
-        // ceiling: the tick ring stays concentric and inside the knob's own
-        // rectangle at every cell shape, instead of being the arc that reaches
-        // the control in the next cell.
-        const auto innerRadius = juce::jmin (outerRadius + (major ? 3.0f : 4.0f) + tremble,
-                                             paintCeiling - (major ? 4.0f : 2.0f));
-        const auto outerTickRadius = juce::jmin (innerRadius + (major ? 5.0f : 2.5f),
+        // The marks hang off the groove by the groove's own proportions and stop
+        // at the ceiling, so the scale keeps its shape at every knob size instead
+        // of being a comb on a big one and a stub on a small one (see
+        // computeKnobMetrics). The two weights are also readable at last: the
+        // minor weight used to be 0.42 alpha at 0.8 px, which measures 1.8:1
+        // against the ivory panel - below the 3:1 a graphic needs, and the reason
+        // a thirteen-mark scale read as five marks.
+        const auto innerRadius = juce::jmin (outerRadius + (major ? metrics.tickGap : metrics.minorGap) + tremble,
+                                             paintCeiling - (major ? metrics.tickClearance
+                                                                   : metrics.minorClearance));
+        const auto outerTickRadius = juce::jmin (innerRadius + (major ? metrics.tickLength
+                                                                       : metrics.minorLength),
                                                  paintCeiling);
         const auto inner = centre + juce::Point<float> (std::cos (tickScreenAngle) * innerRadius,
                                                         std::sin (tickScreenAngle) * innerRadius);
         const auto outer = centre + juce::Point<float> (std::cos (tickScreenAngle) * outerTickRadius,
                                                         std::sin (tickScreenAngle) * outerTickRadius);
-        g.setColour (palette.knobEdge.withAlpha (major ? 0.75f : 0.42f));
-        g.drawLine (inner.x, inner.y, outer.x, outer.y, major ? 1.2f : 0.8f);
+        g.setColour (palette.knobEdge.withAlpha (major ? 0.78f : 0.58f));
+        g.drawLine (inner.x, inner.y, outer.x, outer.y, major ? 1.2f : 1.0f);
+    }
+
+    // The neutral mark. On a control whose range straddles zero - every trim,
+    // every EQ band, the polarity of a side channel - the scale has no reference
+    // point without it: every mark on it says "a division", and not one of them
+    // says "this is zero". It sits at the range's mid angle (which on this rotary
+    // convention is 9 o'clock, the same place the pointer stands at half travel)
+    // and it is drawn in the knob's own accent, because it is the one mark that
+    // means something other than a graduation.
+    if (slider.getMinimum() < 0.0 && slider.getMaximum() > 0.0)
+    {
+        const auto neutralAngle = juce::jmap (0.5f, 0.0f, 1.0f,
+                                              rotaryStartAngle, rotaryEndAngle)
+                                  - juce::MathConstants<float>::halfPi;
+        const auto neutralCos = std::cos (neutralAngle), neutralSin = std::sin (neutralAngle);
+        const auto neutralInner = juce::jmin (outerRadius + metrics.tickGap,
+                                              paintCeiling - metrics.tickClearance);
+        const auto neutralOuter = juce::jmin (neutralInner + metrics.tickLength, paintCeiling);
+
+        // A dark line under it first, so the mark reads as cut into the plate on
+        // the themes where the accent is close to the panel's own value.
+        g.setColour (juce::Colours::black.withAlpha (0.35f));
+        g.drawLine (centre.x + neutralCos * neutralInner, centre.y + neutralSin * neutralInner,
+                    centre.x + neutralCos * neutralOuter, centre.y + neutralSin * neutralOuter, 2.6f);
+        g.setColour (accent.withAlpha (0.90f));
+        g.drawLine (centre.x + neutralCos * neutralInner, centre.y + neutralSin * neutralInner,
+                    centre.x + neutralCos * neutralOuter, centre.y + neutralSin * neutralOuter, 1.4f);
     }
 
     //----------------------------------------------------------------------
@@ -1314,7 +1417,7 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     //  thing that is not palette-driven is the accent, and that is the one thing
     //  that is SUPPOSED to differ between knobs (the seven principles).
     //----------------------------------------------------------------------
-    const auto collarRadius = radius + juce::jmax (2.2f, radius * 0.10f);
+    const auto collarRadius = metrics.collar;
 
     // The shadow first, so everything else sits on top of it. The light is up
     // and left (as everywhere else on this panel), so the shadow falls down and
@@ -1493,7 +1596,11 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                                centre.x + sinA * pointerHalfWidth + 1.0f,
                                centre.y - cosA * pointerHalfWidth + 1.2f,
                                tipX + 1.0f, tipY + 1.2f);
-    g.setColour (palette.readout.withAlpha (0.40f));
+    // ...and it is a SHADOW, which is what this colour now says. The copy used to
+    // be the near-white readout colour at 40 percent - a light source where the
+    // lamp cannot reach, which made every pointer read as a groove cut into the
+    // dome instead of a rib standing on it, on every theme.
+    g.setColour (juce::Colours::black.withAlpha (0.34f));
     g.fillPath (pointerShadow);
     g.setColour (accent.darker (0.12f));
     g.fillPath (pointer);
@@ -1857,7 +1964,23 @@ void J37LookAndFeel::drawLabel (juce::Graphics& g, juce::Label& label)
     const auto& palette = paletteForTheme (theme);
     const auto ink = label.findColour (juce::Label::textColourId);
 
-    g.setFont (label.getFont());
+    // A knob's value is the one piece of type on this panel that is read WHILE it
+    // changes, so it is the one piece allowed its own face: tabular figures - the
+    // panel's numeric face, already used by the meters' ladders and the compressor
+    // reduction readout - and a size taken from the band it sits in rather than
+    // the toolkit's fixed fifteen pixels. Proportional digits shift the number
+    // sideways by a pixel or two every time the value crosses a digit boundary
+    // ("1" is narrower than "8"), which on a knob being dragged is the readout
+    // equivalent of a wobbling needle; and a fixed 15 px in a 16 px band leaves
+    // the fit to luck. Only a Label that IS a Slider's value box gets this:
+    // captions, combo fields and the deck's own readouts are untouched.
+    const auto isSliderValue = dynamic_cast<juce::Slider*> (label.getParentComponent()) != nullptr;
+    g.setFont (isSliderValue
+                   ? juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                                    juce::jlimit (11.0f, 13.5f,
+                                                                  static_cast<float> (label.getHeight()) * 0.85f),
+                                                    juce::Font::plain))
+                   : label.getFont());
 
     auto area = label.getLocalBounds().toFloat();
     const auto maxLines = juce::jmax (1,
