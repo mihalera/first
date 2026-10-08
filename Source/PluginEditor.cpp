@@ -1103,9 +1103,33 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     // the face takes what is left, so the whole assembly stays concentric and
     // fully visible at every cell shape.
     const auto faceCeiling = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.34f;
+
+    // The scale is drawn OUTSIDE the knob face - the track ring at +8 and the
+    // ticks up to eight more beyond that - and on a SHORT cell the old ceiling
+    // let the ring grow into the last pixels of the rectangle, which left the
+    // ticks nowhere to go. They were then clamped to a one-pixel stub lying
+    // against the ring, and the knob read as a plain disc with no scale at all:
+    // the MACHINE page, where four knobs share a row above a member band, against
+    // SATURATION's two full-height ones - the same widget drawn two ways, which
+    // is what made the row look unfinished rather than merely small. The band
+    // below is the room the ticks need, taken off the ceiling BEFORE the ring is
+    // solved from it, so the ring stops short of the edge and every knob shows
+    // its scale whatever cell it was given.
+    //
+    // The cap is 6 px, and both numbers in it are measured rather than guessed.
+    // Four is the length of a major mark and two is what the clamp below keeps
+    // clear of the edge, so six is the smallest band that still draws the whole
+    // mark; and six is also exactly the half-height this pass gives back to every
+    // cell (the readout band and the caption clearance are 12 px shallower
+    // together), so a band that never exceeds it can never leave a knob SMALLER
+    // than it was - on any cell shape, at any panel size. A taller band would buy
+    // the mark a wider gap at the cost of the disc, and the disc is what the row
+    // is read as.
+    const auto scaleBand = juce::jlimit (3.5f, 6.0f,
+                                         juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.12f);
     const auto outerCeiling = juce::jmin (faceCeiling + 8.0f,
                                           bounds.getWidth() * 0.5f - 2.0f,
-                                          bounds.getHeight() * 0.5f - 2.0f);
+                                          bounds.getHeight() * 0.5f - 2.0f - scaleBand);
 
     // The side wall is taken out of the SAME budget as the face, not added to
     // it. The ring and the ticks already use everything the cell has vertically,
@@ -3979,7 +4003,15 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         slider.setRotaryParameters (juce::MathConstants<float>::pi * 0.75f,
                                     juce::MathConstants<float>::pi * 2.25f, true);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 64, 18);
+        // The readout band under the knob is 16 px, not the 18 it used to be, for
+        // the reason the knob's own rectangle is measured from: a knob draws in
+        // the space the slider has left after its readout, so two pixels off every
+        // cell's readout is two pixels onto every knob on every page - and on the
+        // pages whose rows are short (MACHINE holds seven knobs in two rows) that
+        // is the difference between a scale the ticks have room for and one they
+        // do not. The readout itself is unaffected: the font it holds is smaller
+        // than the band either way.
+        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 64, 16);
         slider.setTextBoxIsEditable (true);
         // Drag response tuned by ear: velocity-based mode throttled the first pixels
         // of every drag behind an acceleration ramp, which read as "slow knobs".
@@ -5317,7 +5349,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     {
         auto& slider = compressorControls[i];
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 78, 18);
+        // 16 px for the readout, as on the deck's knobs - see the note there.
+        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 78, 16);
         if (i == 0) slider.setRange (-60.0, 0.0, 0.1);
         else if (i == 1) slider.setRange (1.0, 20.0, 0.1);
         else if (i == 2) slider.setRange (0.1, 100.0, 0.1);
@@ -8055,7 +8088,14 @@ void FirstAudioProcessorEditor::resized()
         controlLabels[i].setBounds (cell.getX() + 5, cell.getY() + 1,
                                     cell.getWidth() - 10, 17);
         auto sliderBounds = cell.reduced (5);
-        sliderBounds.removeFromTop (18);
+        // 8 px of clearance under the caption, not the 18 this used to reserve.
+        // The caption's own band is 17 px tall and is laid out above this cell,
+        // so the extra 10 px were never caption clearance at all - they were
+        // taken off the knob, and the knob's drawing area is what is left here
+        // after the readout band. The ticks stop short of the top of that area
+        // (see scaleBand in drawRotarySlider), so the scale ends where this
+        // clearance begins and nothing touches the caption.
+        sliderBounds.removeFromTop (8);
         controls[i].setBounds (sliderBounds);
     }
 

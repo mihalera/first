@@ -6395,16 +6395,28 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                 const float guardMid = 0.5f * (outputSignal[0] + outputSignal[1]);
                 const float guardSide = 0.5f * (outputSignal[0] - outputSignal[1]);
 
-                // The rotation, stated without a trig call per sample. The
-                // correction is the SINE of the angle rather than the angle
-                // itself: sin goes from 0 (no opposition, no rotation) to 1 (a
-                // fully inverted pair, a quarter turn into mono), the pair
-                // rotates monotonically with it, and cos = sqrt (1 - sin^2) is
-                // exact for that angle - so the guard needs one square root per
-                // sample instead of sin plus cos, and still lands exactly on the
-                // quarter turn at full engagement.
-                const float sinRotation = juce::jlimit (0.0f, 1.0f, antiPhaseCorrection);
-                const float cosRotation = std::sqrt (juce::jmax (0.0f, 1.0f - sinRotation * sinRotation));
+                // The correction is the ANGLE, as a fraction of a quarter turn:
+                // 0 leaves the pair exactly as it arrived, 1 is the quarter turn
+                // that recovers an inverted pair into mono, and every level in
+                // between is a proportional rotation of the pair.
+                //
+                // Stating it as the angle rather than as its SINE is the one
+                // thing here that is not a style choice. Keeping sin(angle) in
+                // the correction and recovering cos as sqrt (1 - sin^2) is
+                // arithmetically exact, but its derivative is not: d(angle)/
+                // d(sin) = 1/cos, which is unbounded at the quarter turn. A guard
+                // sitting at full engagement then multiplies every wobble of the
+                // detector - and the whole of a switch-off, which unwinds through
+                // this same pole - into an unbounded step in the angle, and so
+                // into a step in the signal. The angle form moves the pair by at
+                // most a quarter turn per unit of correction at every level, and
+                // the two trig calls ride the same rare branch the rest of the
+                // rotation does (the guard is engaged only while a pair really is
+                // opposed, which is why a slow 400 ms pole is enough to catch it).
+                const float rotation = juce::jlimit (0.0f, 1.0f, antiPhaseCorrection)
+                                       * juce::MathConstants<float>::halfPi;
+                const float sinRotation = std::sin (rotation);
+                const float cosRotation = std::cos (rotation);
                 const float rotatedMid = guardMid * cosRotation + guardSide * sinRotation;
                 const float rotatedSide = guardSide * cosRotation - guardMid * sinRotation;
 
@@ -6665,12 +6677,15 @@ namespace
 
     HotPathProbeStats hotPathProbeSnapshot() noexcept
     {
+        // No condition of its own: this whole namespace is already inside the
+        // probe's guard, and a second, subtly different one here (it used to test
+        // J37_ENABLE_HOTPATH_PROBE alone, without the harness exclusion) is how a
+        // build that defines the flag for the DSP harness would reach for
+        // counters that guard had just compiled away.
         HotPathProbeStats s;
-#if J37_ENABLE_HOTPATH_PROBE
         s.totalSamples = hotPathSampleCount;
         s.activeSamples = hotPathActiveSampleCount;
         s.lastBlockActive = hotPathThisBlockActive ? 1.0f : 0.0f;
-#endif
         return s;
     }
 }
