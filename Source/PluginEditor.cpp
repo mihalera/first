@@ -1575,11 +1575,21 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     g.fillEllipse (sweepCentre.x - radius * 0.36f, sweepCentre.y - radius * 0.36f,
                    radius * 0.72f, radius * 0.72f);
 
-    // The indicator: a tapered rib from the hub to near the rim, in the knob's
-    // own accent, with a dark copy of itself one pixel down and right. The
-    // offset copy is what turns a line into something that stands up off the
+    // The indicator: a tapered rib from the hub out across the face, in the
+    // knob's own accent, with a dark copy of itself one pixel down and right.
+    // The offset copy is what turns a line into something that stands up off the
     // dome - it is the same trick the panel's drop shadows use, at 3 px.
-    const auto pointerLength = radius * 0.86f;
+    // Its length stops WELL short of the rim, and the number is not taste: the
+    // six turning grooves above sit at radius * (0.22 + t * 0.76) for t = 1/7
+    // .. 6/7, so the outermost one - the last division the face is cut with - is
+    // at 0.871 of the face. At 0.86 the rib's tip landed on that ring, which is
+    // what put the pointer on the dial's divisions rather than in the face: on
+    // the small caps the strip draws there was nothing but the tip and the
+    // outermost ring in the same few pixels, and at every size the rib ran out
+    // to the bevel. Between the fourth ring (0.654) and the fifth (0.763) it is
+    // clear of both at every cell, and it still reads as a pointer because it
+    // starts at the hub and is drawn from the same accent as the arc.
+    const auto pointerLength = radius * 0.72f;
     const auto pointerHalfWidth = juce::jmax (1.5f, radius * 0.085f);
     const auto cosA = std::cos (screenAngle), sinA = std::sin (screenAngle);
     const auto tipX = centre.x + cosA * pointerLength;
@@ -8168,6 +8178,20 @@ void FirstAudioProcessorEditor::resized()
     const auto outEqTab = index_of_tab_named ("OUT EQ") == currentTab;
     const auto machineTab = index_of_tab_named ("MACHINE") == currentTab;
     const auto mixTab = index_of_tab_named ("MIX") == currentTab;
+    const auto compressorTab = index_of_tab_named ("COMP") == currentTab;
+
+    // How many knobs the LIVE page has to place, and which list they come from.
+    // The COMP page is the one page whose knobs are not in the tabSpecs table:
+    // they are the compressor's own six, built beside the meters they belong to
+    // rather than declared as a knob page, so the strip is handed their count
+    // here and reads their widgets in its placement loop below. Everything
+    // after this point is therefore written against knobCount rather than
+    // against the tab's own count, and the page is laid out by the same solve
+    // as every other page - it used to place its own six by hand, in cells as
+    // tall as the whole grid, which drew a small cap at the top of each cell
+    // with its readout a hundred-odd pixels under it.
+    const auto knobCount = compressorTab ? static_cast<int> (compressorControls.size())
+                                         : tabControlCount;
 
     // Which pages own a MEMBER BAND - the strip under the knobs that the
     // non-knob combos and pills (placeDeckSwitch) are laid out in. It is no
@@ -8204,7 +8228,7 @@ void FirstAudioProcessorEditor::resized()
     // A page with no knobs keeps the whole grid as its band: SETTINGS places two
     // lines of preferences in it, and they belong at the top, under the divider,
     // where a page of knobs puts its own captions.
-    const auto knobAreaHeight = (memberRows != 0 && tabControlCount > 0)
+    const auto knobAreaHeight = (memberRows != 0 && knobCount > 0)
                                     ? grid.getHeight() - memberBandHeight
                                     : grid.getHeight();
 
@@ -8262,9 +8286,9 @@ void FirstAudioProcessorEditor::resized()
     // was cost the height-capped pages a further 1.4 px of disc (MACHINE at
     // 1060 x 916 measures 70.2 with it and 68.8 without).
     constexpr int knobRowGap = 8;
-    const auto rowsForColumns = [tabControlCount] (int columns)
+    const auto rowsForColumns = [knobCount] (int columns)
     {
-        return (tabControlCount + columns - 1) / columns;
+        return (knobCount + columns - 1) / columns;
     };
     // The camera the CANDIDATES are scored at. The score compares counts within
     // one page - the same band of the same panel - so a mid value is all it needs
@@ -8285,13 +8309,13 @@ void FirstAudioProcessorEditor::resized()
     // The score is the disc computeKnobMetrics would give the tile - the same
     // function the knob itself is drawn from, so the layout cannot promise a disc
     // the paint routine then fails to draw.
-    auto knobColumns = juce::jmax (1, tabControlCount);
+    auto knobColumns = juce::jmax (1, knobCount);
     auto knobRows = 0;
     auto knobTileWidth = 0;
     auto knobTileHeight = 0;
     auto knobScore = 0.0f;
     auto scoredRows = 0;
-    for (int columns = 1; columns <= tabControlCount; ++columns)
+    for (int columns = 1; columns <= knobCount; ++columns)
     {
         const auto rows = rowsForColumns (columns);
         if (rows == scoredRows)
@@ -8344,9 +8368,9 @@ void FirstAudioProcessorEditor::resized()
     // to one row of the widest slots the grid's width alone can give.
     if (knobTileHeight < 1)
     {
-        knobRows = tabControlCount > 0 ? 1 : 0;
-        knobColumns = juce::jmax (1, tabControlCount);
-        knobTileWidth = juce::jmax (1, grid.getWidth() / juce::jmax (1, tabControlCount));
+        knobRows = knobCount > 0 ? 1 : 0;
+        knobColumns = juce::jmax (1, knobCount);
+        knobTileWidth = juce::jmax (1, grid.getWidth() / juce::jmax (1, knobCount));
         knobTileHeight = knobTileWidth + 24;
     }
     const auto knobStripHeight = knobRows > 0
@@ -8356,9 +8380,18 @@ void FirstAudioProcessorEditor::resized()
                               + juce::jmax (0, (knobAreaHeight - knobStripHeight) / 2);
     const auto knobSlotWidth = knobColumns > 0 ? grid.getWidth() / knobColumns : grid.getWidth();
 
-    for (int slot = 0; slot < tabControlCount; ++slot)
+    for (int slot = 0; slot < knobCount; ++slot)
     {
-        const auto i = activeTab.controls[slot];
+        // Which widget this slot IS. The tab table holds every knob page's
+        // controls and nothing else, so a page's slot is an index into it - but
+        // the compressor's six are the one list the table cannot hold (they
+        // belong to the meters panel's stage, not to a knob page), so COMP is
+        // the one page whose slots address their label and slider directly.
+        const auto slotIndex = static_cast<std::size_t> (slot);
+        auto& label = compressorTab ? compressorControlLabels[slotIndex]
+                                    : controlLabels[activeTab.controls[slotIndex]];
+        auto& control = compressorTab ? compressorControls[slotIndex]
+                                      : controls[activeTab.controls[slotIndex]];
         const auto row = slot / knobColumns;
         const auto column = slot % knobColumns;
         // The tiles ride EQUAL SLOTS rather than sitting edge to edge, so a page
@@ -8366,15 +8399,15 @@ void FirstAudioProcessorEditor::resized()
         // panel instead of stacking them against the left edge with all the air
         // on the right - and a last row with fewer knobs than the one above it is
         // centred as a group under it.
-        const auto slotsInRow = juce::jmin (knobColumns, tabControlCount - row * knobColumns);
+        const auto slotsInRow = juce::jmin (knobColumns, knobCount - row * knobColumns);
         const auto rowLeft = grid.getX() + (grid.getWidth() - slotsInRow * knobSlotWidth) / 2;
         const auto tileLeft = rowLeft + column * knobSlotWidth
                               + (knobSlotWidth - knobTileWidth) / 2;
         auto cell = juce::Rectangle<int> (tileLeft,
                                           knobStripTop + row * (knobTileHeight + knobRowGap),
                                           knobTileWidth, knobTileHeight);
-        controlLabels[i].setBounds (cell.getX() + 5, cell.getY() + 1,
-                                    cell.getWidth() - 10, 17);
+        label.setBounds (cell.getX() + 5, cell.getY() + 1,
+                         cell.getWidth() - 10, 17);
         auto sliderBounds = cell.reduced (5);
         // 8 px of clearance under the caption, not the 18 this used to reserve.
         // The caption's own band is 17 px tall and is laid out above this cell,
@@ -8384,7 +8417,7 @@ void FirstAudioProcessorEditor::resized()
         // (see scaleBand in drawRotarySlider), so the scale ends where this
         // clearance begins and nothing touches the caption.
         sliderBounds.removeFromTop (8);
-        controls[i].setBounds (sliderBounds);
+        control.setBounds (sliderBounds);
     }
 
     // The deck's non-knob switches occupy grid cells of their own tab, exactly
@@ -8407,7 +8440,7 @@ void FirstAudioProcessorEditor::resized()
     // holds no knobs, the band is the whole grid and its top edge is the grid's
     // own, so the page's two lines of preferences sit under the divider as they
     // always have.
-    const auto memberRowY = (memberRows != 0 && tabControlCount > 0)
+    const auto memberRowY = (memberRows != 0 && knobCount > 0)
                                 ? grid.getBottom() - memberBandHeight
                                 : grid.getY();
     const auto placeDeckSwitch = [&] (juce::Label& label, juce::Component& box,
@@ -8484,7 +8517,6 @@ void FirstAudioProcessorEditor::resized()
     autoTuneButton.setVisible (autotuneTab);
     autoTuneAmountLabel.setVisible (autotuneTab);
     autoTuneAmountSlider.setVisible (autotuneTab);
-    const auto compressorTab = currentTab == index_of_tab_named ("COMP");
     for (std::size_t i = 0; i < compressorControls.size(); ++i)
     {
         compressorControls[i].setVisible (compressorTab);
@@ -8604,19 +8636,14 @@ void FirstAudioProcessorEditor::resized()
         autoTuneAmountLabel.setBounds (grid.getX() + cellWidth + 5, grid.getY() + 1, cellWidth - 10, 17);
         autoTuneAmountSlider.setBounds (grid.getX() + cellWidth + 12, grid.getY() + 20, cellWidth - 24, 30);
     }
-    else if (compressorTab)
-    {
-        sectionCaptionLabel.setText ("CONVENTIONAL COMPRESSOR", juce::dontSendNotification);
-        const auto compressorTop = grid.getY() + 8;
-        const auto compressorCellWidth = grid.getWidth() / static_cast<int> (compressorControls.size());
-        for (std::size_t i = 0; i < compressorControls.size(); ++i)
-        {
-            const auto x = grid.getX() + static_cast<int> (i) * compressorCellWidth;
-            compressorControlLabels[i].setBounds (x + 4, compressorTop, compressorCellWidth - 8, 18);
-            compressorControls[i].setBounds (x + 4, compressorTop + 18,
-                                              compressorCellWidth - 8, grid.getHeight() - 22);
-        }
-    }
+    // The COMP page has no branch here, and that is the point: its six knobs are
+    // laid out by the knob strip above, like every other page's, and the page's
+    // caption comes from its own tabSubtitles entry ("the conventional
+    // compressor, independent of glue") like every other page's. It used to own
+    // a placement of its own - each slider given a cell as tall as the whole
+    // grid, which drew a small cap at the top of that cell and left its readout
+    // a hundred-odd pixels below the knob it belonged to - and a caption of its
+    // own, which is what the uppercase line above this chain used to say.
     else if (delayTab)
     {
         // SPACE: the delay trio rides the member row under the delay knobs.

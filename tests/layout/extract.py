@@ -9,13 +9,18 @@ one the 780 x 664 floor shipped, where four fixed columns, a chrome constant and
 a row count that each looked reasonable together put a 4 px disc on the MACHINE
 page - so the harness compiles the real text instead of a copy of it.
 
-Six fragments are cut, each verbatim and each by the text that makes it
+Eight fragments are cut, each verbatim and each by the text that makes it
 unambiguous: the radial budget (KnobMetrics and computeKnobMetrics), the editor
-layout's own body, the grid the page lays its controls in, the member band, the
-strip solver, and the tile placement. They are written as separate includes
-because they are statement blocks that have to land inside functions the
-hand-written harness declares - the alternative is a template, and then the
-compiled text is the template's and not the plugin's.
+layout's own body, the grid the page lays its controls in, the knob count the
+strip is handed, the member band, the strip solver, the member band's top edge,
+and the tile placement. They are written as separate includes because they are
+statement blocks that have to land inside functions the hand-written harness
+declares - the alternative is a template, and then the compiled text is the
+template's and not the plugin's.
+
+The fragments are cut in the order the plugin declares them, because that is
+the order the harness has to compile them in: the knob count is what the band
+and the solver are measured from, and the solver is what the placement walks.
 
 Usage:  python3 tests/layout/extract.py <output-dir>
 """
@@ -92,23 +97,37 @@ def main() -> int:
         "editor_layout.inc": span(source,
                                   "auto remaining = getLocalBounds().reduced (14);",
                                   "return layout;"),
-        # The grid a page's controls are laid out in, and the member band pinned
-        # to its foot: what the strip is given to stand in.
+        # The grid a page's controls are laid out in - the strip's own frame.
         "grid.inc": span(source,
                          "auto grid = layout.controls.reduced (14);",
                          "grid.removeFromBottom (8);"),
         "band.inc": span(source,
-                         "constexpr int memberBandHeight = 50;",
-                         "? grid.getHeight() - memberBandHeight\n"
-                         "                                    : grid.getHeight();"),
+                         "const auto knobAreaHeight = (memberRows != 0 && knobCount > 0)",
+                         ": grid.getHeight();"),
+        # How many knobs the live page has to place, and which list they come
+        # from: the COMP page's own six on the one page the tab table cannot
+        # describe, the table's count everywhere else.
+        "knob_count.inc": span(source,
+                               "const auto knobCount = compressorTab ?",
+                               ": tabControlCount;"),
         # The solver and the placement: the two halves the strip is made of.
         "solver.inc": span(source,
                            "constexpr int knobTileChrome = 46;",
                            "\n    const auto knobSlotWidth = knobColumns > 0 "
                            "? grid.getWidth() / knobColumns : grid.getWidth();"),
+        # The member band's top edge - the strip the knobs must stay above.
+        "member_row.inc": span(source,
+                               "const auto memberRowY = (memberRows != 0 && knobCount > 0)",
+                               ": grid.getY();"),
+        # The band's own height, read out of Source/ rather than repeated in the
+        # harness: the strip is measured against it, so a change there cannot
+        # leave the test measuring against the old number.
+        "band_height.inc": "constexpr int memberBandHeight = "
+                           + constant(source, r"constexpr int memberBandHeight = (\d+);",
+                                      "memberBandHeight") + ";",
         "placement.inc": span(source,
-                              "for (int slot = 0; slot < tabControlCount; ++slot)",
-                              "controls[i].setBounds (sliderBounds);\n    }"),
+                              "for (int slot = 0; slot < knobCount; ++slot)",
+                              "control.setBounds (sliderBounds);\n    }"),
         # The constants the fragments above are measured from. The strip declares
         # its own knobRowGap; this copy is what the harness's own checks read, so
         # a change there cannot leave the test measuring against the old gap.
