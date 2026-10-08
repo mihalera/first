@@ -5198,6 +5198,10 @@ private:
     std::atomic<float>* tracksParam = nullptr;
     std::atomic<float>* outputDbParam = nullptr;
     std::atomic<float>* widthParam = nullptr;
+    // The anti-phase guard's switch. Read once per block beside the width it
+    // protects, never per sample: the guard's own pole is what makes it slow, so
+    // the switch has no need to be instantaneous.
+    std::atomic<float>* antiPhaseGuardParam = nullptr;
     std::atomic<float>* bypassParam = nullptr;
     std::atomic<float>* deltaParam = nullptr;
     std::atomic<float>* oversamplingParam = nullptr;
@@ -5208,8 +5212,9 @@ private:
     std::atomic<float>* autoGainParam = nullptr;
     std::atomic<float>* subFundamentalParam = nullptr;
     std::atomic<float>* delayTimeParam = nullptr;
+    // The delay's LEVEL and its feedback are the same parameter by design, so
+    // there is one member for both - see the read in processBlock.
     std::atomic<float>* delayFeedbackParam = nullptr;
-    std::atomic<float>* delayLevelParam = nullptr;
     // PING-PONG's own control, read once per block like the rest of the delay.
     std::atomic<float>* delayPingPongParam = nullptr;
     std::atomic<float>* stOffsetParam = nullptr;
@@ -5800,11 +5805,14 @@ private:
     //  `antiPhaseProduct` is a slow correlation envelope of the two output
     //  channels' sum and difference: positive when the sides agree, negative when
     //  they oppose. `antiPhaseCorrection` is the 0..1 amount the guard rotates the
-    //  right channel by, and it only ever rises while the correlation is negative.
-    //  `antiPhaseCoefficient` is its block-rate pole (see resetSampleRateDependentState).
+    //  pair's mid/side plane by - it is the SINE of the rotation, so it reaches a
+    //  quarter turn (full recovery of an inverted pair) at 1 - and it only ever
+    //  rises while the correlation is negative. `antiPhaseCoefficient` is its
+    //  per-sample pole (see resetSampleRateDependentState).
     //
     //  `antiPhaseAmount` is published for the panel so the user can SEE the guard
-    //  working rather than only hearing its absence.
+    //  working rather than only hearing its absence. It reads 0 whenever the guard
+    //  is switched off, which is the one thing the readout cannot say on its own.
     // -----------------------------------------------------------------------
     float antiPhaseProduct = 0.0f;
     float antiPhaseCorrection = 0.0f;

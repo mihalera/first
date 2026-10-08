@@ -1044,6 +1044,98 @@ constexpr bool tabsCoverAllControls (const std::array<TabSpec, numTabPages>& tab
     }
 }
 
+//==============================================================================
+//  THE KNOB'S RADIAL BUDGET.
+//
+//  A knob is a stack of concentric rings - the cap, its knurled collar, the scale
+//  groove, the marks hanging off it - and all of them have to fit the rectangle
+//  the layout gave the slider. That arithmetic used to live in the paint routine
+//  as five local constants, with the cap proportional to the cell (0.34 of its
+//  short side) and the groove and the marks ABSOLUTE (8 px out, 3 to 4 more to a
+//  mark, then 5 or 2.5 long). One design at two proportions: on a four-column
+//  page the cap-to-groove ratio came out 1:1.8 with the marks ending flush against
+//  the cell's edge, on a two-knob page 1:1.2 with room to spare - which is how the
+//  same widget read as finished on one page and cramped on the next.
+//
+//  The groove is now measured from the COLLAR, at the proportion the panel's
+//  largest knobs already ship (x1.064: a 47 px cap carrying its groove 3.3 px off
+//  a 51.6 px collar, with a 3.2 px floor so the four-pixel groove keeps a clear
+//  pixel of air off the collar instead of cutting into it). That reproduces the
+//  big knobs exactly, and brings a small knob's groove in from 8 px of clearance
+//  to 3 - which is the room its marks needed to stop being one-pixel stubs.
+//
+//  The mark LENGTHS stay flat, because a mark is read against the groove it hangs
+//  off rather than against the cap - but the DIVISIONS follow the knob's size: a
+//  thirty-pixel radius of scale has room for twice the graduations a ten-pixel one
+//  does, and a scale is drawn to be read, not to be constant.
+//
+//  It is a pure function of the paint area and the perspective wall, in one place,
+//  so every number here can be checked without a renderer.
+//==============================================================================
+namespace
+{
+    struct KnobMetrics
+    {
+        float paintCeiling = 0.0f;    // half the paint area's short side
+        float faceCeiling = 0.0f;     // the largest the cap's face may be
+        float radius = 0.0f;          // the cap's face
+        float collar = 0.0f;          // the knurled collar around it
+        float ring = 0.0f;            // the scale groove's centre line
+        float tickGap = 0.0f;         // groove -> a major mark's inner end
+        float tickLength = 0.0f;
+        float tickClearance = 0.0f;   // what a mark keeps clear of the ceiling
+        float minorGap = 0.0f;
+        float minorLength = 0.0f;
+        float minorClearance = 0.0f;
+        int   tickIntervals = 12;
+    };
+
+    KnobMetrics computeKnobMetrics (float width, float height, float wall) noexcept
+    {
+        KnobMetrics m;
+
+        const auto shortSide = juce::jmin (width, height);
+        const auto halfWidth  = width  * 0.5f - 2.0f;
+        const auto halfHeight = height * 0.5f - 2.0f;
+
+        m.paintCeiling = shortSide * 0.5f;
+        m.faceCeiling  = shortSide * 0.34f;
+
+        // The marks' own weights, and the clearance each keeps from the ceiling.
+        m.tickLength = 5.0f;
+        m.tickClearance = 4.0f;
+        m.minorLength = 2.5f;
+        m.minorClearance = 2.0f;
+
+        // The room a major mark needs, taken off the groove's ceiling BEFORE the
+        // groove is solved from it - otherwise the groove grows into the only
+        // space the scale has and the marks come out as stubs against it.
+        const auto scaleBand = juce::jlimit (3.5f, 6.0f, shortSide * 0.12f);
+
+        // The side wall comes out of the SAME budget as the face: a knob nearer
+        // the viewer shows more of its own side and a SMALLER top face, so the cap
+        // is what gives way and no knob row marches out of its cells.
+        const auto wallFraction = 0.12f + 0.40f * wall;
+        const auto collarAllowance = juce::jmax (2.2f, m.faceCeiling * 0.10f);
+        const auto ringCeiling = juce::jmin (m.faceCeiling + 8.0f, halfWidth, halfHeight - scaleBand);
+
+        m.radius = juce::jmin (m.faceCeiling,
+            juce::jmax (2.0f, (ringCeiling - 1.5f - collarAllowance) / (1.0f + 1.15f * wallFraction)));
+        m.collar = m.radius + juce::jmax (2.2f, m.radius * 0.10f);
+        m.ring = juce::jmin (m.collar + juce::jmax (3.2f, m.collar * 0.064f), halfWidth, halfHeight);
+
+        // The marks hang off the groove by a share of the groove's own radius, so
+        // the scale keeps its shape at every size.
+        m.tickGap  = juce::jmax (2.5f, m.ring * 0.08f);
+        m.minorGap = m.tickGap + juce::jmax (1.0f, m.ring * 0.02f);
+
+        m.tickIntervals = m.radius > 26.0f ? 24 : 12;
+
+        return m;
+    }
+}
+
+//==============================================================================
 void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                                        int x, int y, int width, int height,
                                        float sliderPos,
@@ -1067,8 +1159,9 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     // minimum panel size a knob's ticks reached seven pixels past its own
     // rectangle and its halo twenty - far enough to land on the value readout
     // under it and on the member band under that, which is where a knob's arc
-    // was seen standing on the switch beside it.
-    const auto paintCeiling = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f;
+    // was seen standing on the switch beside it. The number itself, and every
+    // ceiling measured from it, is solved below by computeKnobMetrics - this
+    // comment describes one budget rather than five local constants.
 
     // The camera. A knob's top face is a disc, and a disc seen from anywhere
     // other than directly overhead is an ELLIPSE - flatter the nearer the near
@@ -1094,35 +1187,25 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                         centre.x * (1.0f - view.squashX),
                         0.0f, view.squashY,
                         centre.y * (1.0f - view.squashY)));
-    // The track ring and the tick marks live OUTSIDE the knob face (face at
-    // radius, ring at +8, ticks up to +9 more), and DRIVE's cells are WIDER
-    // than they are tall: the unconstrained ring was taller than the cell, so
-    // the rasteriser clipped its top and bottom and the surviving left/right
-    // fragments read as broken crescents - the "crooked toggles" on the DRIVE
-    // page. The ring now clamps to the half-extent the cell can actually show;
-    // the face takes what is left, so the whole assembly stays concentric and
-    // fully visible at every cell shape.
-    const auto faceCeiling = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.34f;
-    const auto outerCeiling = juce::jmin (faceCeiling + 8.0f,
-                                          bounds.getWidth() * 0.5f - 2.0f,
-                                          bounds.getHeight() * 0.5f - 2.0f);
+    // The track ring and the tick marks live OUTSIDE the knob face, and DRIVE's
+    // cells are WIDER than they are tall: an unconstrained ring was taller than
+    // the cell, so the rasteriser clipped its top and bottom and the surviving
+    // left/right fragments read as broken crescents - the "crooked toggles" on the
+    // DRIVE page. Every ring in the assembly is therefore solved against the
+    // half-extent the cell can actually show (see computeKnobMetrics), and the cap
+    // takes what is left, so the whole thing stays concentric and fully visible at
+    // every cell shape.
+    // Every ceiling, and the cap, the collar, the groove and the marks that are
+    // measured from it, in one call: see computeKnobMetrics above for what the
+    // numbers are and why the groove is measured from the collar.
+    const auto metrics = computeKnobMetrics (bounds.getWidth(), bounds.getHeight(), view.wall);
+    const auto paintCeiling = metrics.paintCeiling;
+    const auto radius = metrics.radius;
+    const auto outerRadius = metrics.ring;
 
-    // The side wall is taken out of the SAME budget as the face, not added to
-    // it. The ring and the ticks already use everything the cell has vertically,
-    // so a wall drawn on top of them would bury the bottom of the scale; and a
-    // knob that simply grew would collide with the row below. What perspective
-    // actually does is the opposite of growing: a knob nearer the viewer shows
-    // more of its own SIDE and a SMALLER top face. So the face radius is the
-    // one that gives way - solve it from the ring inward, leaving room for the
-    // collar and then for the wall - and every knob row recedes into the panel
-    // instead of marching out of its cells.
+    // The side wall, as a fraction of the cap: what the skirt below is drawn
+    // from, and the same term the metrics solved the cap against.
     const auto wallFraction = 0.12f + 0.40f * view.wall;
-    const auto collarAllowance = juce::jmax (2.2f, faceCeiling * 0.10f);
-    const auto radius = juce::jmin (faceCeiling,
-        juce::jmax (2.0f, (outerCeiling - 1.5f - collarAllowance) / (1.0f + 1.15f * wallFraction)));
-    const auto outerRadius = juce::jmin (radius + 8.0f,
-                                         bounds.getWidth() * 0.5f - 2.0f,
-                                         bounds.getHeight() * 0.5f - 2.0f);
     const auto angle = juce::jmap (sliderPos, 0.0f, 1.0f, rotaryStartAngle, rotaryEndAngle);
     // JUCE's Path::addCentredArc measures clockwise from 12 o'clock and places a
     // point at (sin(angle), -cos(angle)). Convert that same angle to ordinary screen
@@ -1151,7 +1234,15 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     //  Animation layer 1: a soft halo that breathes with the compressor
     //  activity, plus a slow pulse so the panel never looks frozen.
     //------------------------------------------------------------------
-    const auto breath = 0.5f + 0.5f * std::sin (animationPhase);
+    // The phase is this knob's OWN, derived from where it stands on the panel.
+    // Every halo used to ride the one shared phase, so a page of twelve knobs
+    // brightened and dimmed in lockstep - which the eye reads as a global
+    // flicker, because it IS one. Offset by position, the same nine lines of
+    // drawing read as a panel with current running through it.
+    const auto knobPosition = offsetToTopLevel (slider);
+    const auto breathPhase = animationPhase
+                             + knobPosition.x * 0.031f + knobPosition.y * 0.017f;
+    const auto breath = 0.5f + 0.5f * std::sin (breathPhase);
     const auto haloAlpha = 0.05f + (hovered ? 0.06f : 0.0f)
                                + activity * 0.20f * (0.6f + 0.4f * breath);
     if (haloAlpha > 0.01f)
@@ -1252,28 +1343,64 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     //  drift, so wow and flutter are visible as well as audible.
     //------------------------------------------------------------------
     const auto driftWobble = (drift - 0.5f) * 2.0f;
-    for (int tick = 0; tick <= 12; ++tick)
+    const auto tickIntervals = metrics.tickIntervals;
+    const auto majorEvery = tickIntervals / 12;
+
+    for (int tick = 0; tick <= tickIntervals; ++tick)
     {
-        const auto tickAngle = juce::jmap (static_cast<float> (tick), 0.0f, 12.0f,
+        const auto tickAngle = juce::jmap (static_cast<float> (tick), 0.0f,
+                                           static_cast<float> (tickIntervals),
                                            rotaryStartAngle, rotaryEndAngle);
         const auto tickScreenAngle = tickAngle - juce::MathConstants<float>::halfPi;
-        const auto major = tick % 3 == 0;
+        const auto major = tick % majorEvery == 0;
         const auto tremble = std::sin (tickScreenAngle * 3.0f + animationPhase * 1.7f)
                              * driftWobble * 1.3f;
-        // The ticks are the furthest thing the knob draws, and they stop at the
-        // ceiling: the tick ring stays concentric and inside the knob's own
-        // rectangle at every cell shape, instead of being the arc that reaches
-        // the control in the next cell.
-        const auto innerRadius = juce::jmin (outerRadius + (major ? 3.0f : 4.0f) + tremble,
-                                             paintCeiling - (major ? 4.0f : 2.0f));
-        const auto outerTickRadius = juce::jmin (innerRadius + (major ? 5.0f : 2.5f),
+        // The marks hang off the groove by the groove's own proportions and stop
+        // at the ceiling, so the scale keeps its shape at every knob size instead
+        // of being a comb on a big one and a stub on a small one (see
+        // computeKnobMetrics). The two weights are also readable at last: the
+        // minor weight used to be 0.42 alpha at 0.8 px, which measures 1.8:1
+        // against the ivory panel - below the 3:1 a graphic needs, and the reason
+        // a thirteen-mark scale read as five marks.
+        const auto innerRadius = juce::jmin (outerRadius + (major ? metrics.tickGap : metrics.minorGap) + tremble,
+                                             paintCeiling - (major ? metrics.tickClearance
+                                                                   : metrics.minorClearance));
+        const auto outerTickRadius = juce::jmin (innerRadius + (major ? metrics.tickLength
+                                                                       : metrics.minorLength),
                                                  paintCeiling);
         const auto inner = centre + juce::Point<float> (std::cos (tickScreenAngle) * innerRadius,
                                                         std::sin (tickScreenAngle) * innerRadius);
         const auto outer = centre + juce::Point<float> (std::cos (tickScreenAngle) * outerTickRadius,
                                                         std::sin (tickScreenAngle) * outerTickRadius);
-        g.setColour (palette.knobEdge.withAlpha (major ? 0.75f : 0.42f));
-        g.drawLine (inner.x, inner.y, outer.x, outer.y, major ? 1.2f : 0.8f);
+        g.setColour (palette.knobEdge.withAlpha (major ? 0.78f : 0.58f));
+        g.drawLine (inner.x, inner.y, outer.x, outer.y, major ? 1.2f : 1.0f);
+    }
+
+    // The neutral mark. On a control whose range straddles zero - every trim,
+    // every EQ band, the polarity of a side channel - the scale has no reference
+    // point without it: every mark on it says "a division", and not one of them
+    // says "this is zero". It sits at the range's mid angle (which on this rotary
+    // convention is 9 o'clock, the same place the pointer stands at half travel)
+    // and it is drawn in the knob's own accent, because it is the one mark that
+    // means something other than a graduation.
+    if (slider.getMinimum() < 0.0 && slider.getMaximum() > 0.0)
+    {
+        const auto neutralAngle = juce::jmap (0.5f, 0.0f, 1.0f,
+                                              rotaryStartAngle, rotaryEndAngle)
+                                  - juce::MathConstants<float>::halfPi;
+        const auto neutralCos = std::cos (neutralAngle), neutralSin = std::sin (neutralAngle);
+        const auto neutralInner = juce::jmin (outerRadius + metrics.tickGap,
+                                              paintCeiling - metrics.tickClearance);
+        const auto neutralOuter = juce::jmin (neutralInner + metrics.tickLength, paintCeiling);
+
+        // A dark line under it first, so the mark reads as cut into the plate on
+        // the themes where the accent is close to the panel's own value.
+        g.setColour (juce::Colours::black.withAlpha (0.35f));
+        g.drawLine (centre.x + neutralCos * neutralInner, centre.y + neutralSin * neutralInner,
+                    centre.x + neutralCos * neutralOuter, centre.y + neutralSin * neutralOuter, 2.6f);
+        g.setColour (accent.withAlpha (0.90f));
+        g.drawLine (centre.x + neutralCos * neutralInner, centre.y + neutralSin * neutralInner,
+                    centre.x + neutralCos * neutralOuter, centre.y + neutralSin * neutralOuter, 1.4f);
     }
 
     //----------------------------------------------------------------------
@@ -1290,7 +1417,7 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     //  thing that is not palette-driven is the accent, and that is the one thing
     //  that is SUPPOSED to differ between knobs (the seven principles).
     //----------------------------------------------------------------------
-    const auto collarRadius = radius + juce::jmax (2.2f, radius * 0.10f);
+    const auto collarRadius = metrics.collar;
 
     // The shadow first, so everything else sits on top of it. The light is up
     // and left (as everywhere else on this panel), so the shadow falls down and
@@ -1469,7 +1596,11 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
                                centre.x + sinA * pointerHalfWidth + 1.0f,
                                centre.y - cosA * pointerHalfWidth + 1.2f,
                                tipX + 1.0f, tipY + 1.2f);
-    g.setColour (palette.readout.withAlpha (0.40f));
+    // ...and it is a SHADOW, which is what this colour now says. The copy used to
+    // be the near-white readout colour at 40 percent - a light source where the
+    // lamp cannot reach, which made every pointer read as a groove cut into the
+    // dome instead of a rib standing on it, on every theme.
+    g.setColour (juce::Colours::black.withAlpha (0.34f));
     g.fillPath (pointerShadow);
     g.setColour (accent.darker (0.12f));
     g.fillPath (pointer);
@@ -1833,7 +1964,23 @@ void J37LookAndFeel::drawLabel (juce::Graphics& g, juce::Label& label)
     const auto& palette = paletteForTheme (theme);
     const auto ink = label.findColour (juce::Label::textColourId);
 
-    g.setFont (label.getFont());
+    // A knob's value is the one piece of type on this panel that is read WHILE it
+    // changes, so it is the one piece allowed its own face: tabular figures - the
+    // panel's numeric face, already used by the meters' ladders and the compressor
+    // reduction readout - and a size taken from the band it sits in rather than
+    // the toolkit's fixed fifteen pixels. Proportional digits shift the number
+    // sideways by a pixel or two every time the value crosses a digit boundary
+    // ("1" is narrower than "8"), which on a knob being dragged is the readout
+    // equivalent of a wobbling needle; and a fixed 15 px in a 16 px band leaves
+    // the fit to luck. Only a Label that IS a Slider's value box gets this:
+    // captions, combo fields and the deck's own readouts are untouched.
+    const auto isSliderValue = dynamic_cast<juce::Slider*> (label.getParentComponent()) != nullptr;
+    g.setFont (isSliderValue
+                   ? juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
+                                                    juce::jlimit (11.0f, 13.5f,
+                                                                  static_cast<float> (label.getHeight()) * 0.85f),
+                                                    juce::Font::plain))
+                   : label.getFont());
 
     auto area = label.getLocalBounds().toFloat();
     const auto maxLines = juce::jmax (1,
@@ -3251,14 +3398,26 @@ void FirstAudioProcessorEditor::applyLanguage (int languageIndex)
     // language names belong. Re-apply the rows through the table just installed:
     // the items exist on every path that reaches here (the constructor adds them
     // before its first call), and a later switch re-translates them the same way.
-    //
+    languageBox.changeItemText (1, xlat ("LANGUAGE_ENGLISH"));
+    languageBox.changeItemText (2, xlat ("LANGUAGE_UKRAINIAN"));
+
+    // ... and then re-select, because changeItemText() rewrites the POPUP's own
+    // row and NOTHING else: juce::ComboBox keeps the string it is displaying in
+    // its value Label, and only setSelectedId()/setText() ever write that. The
+    // item texts above were therefore correct while the field kept whatever it
+    // was showing - the raw key it was added with, since the constructor adds
+    // both rows before any table exists. This is the row the user was looking
+    // at, so it is the one that has to be re-applied; the index this call was
+    // handed is its ID minus one, which is the only mapping the box cannot get
+    // wrong (getSelectedId() itself returns 0 while the field is showing text
+    // that does not match its rows).
+    languageBox.setSelectedId (juce::jlimit (1, 2, languageIndex + 1),
+                               juce::dontSendNotification);
     // applyLanguage runs BEFORE the constructor finishes its styling block
     // (styleCombo below), so re-ink the box's text colour here as well: on a
     // session that opens Ukrainian, the constructor's paletteFor(false) would
     // otherwise repaint the box with the theme's text colour and wipe this -
     // which is exactly the raw-key value the user screenshotted.
-    languageBox.changeItemText (1, xlat ("LANGUAGE_ENGLISH"));
-    languageBox.changeItemText (2, xlat ("LANGUAGE_UKRAINIAN"));
     languageBox.setColour (juce::ComboBox::textColourId, paletteFor (darkTheme).text);
     languageBox.repaint();
 
@@ -3840,7 +3999,14 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         { "character",       "TONE",       0.5,   "MACHINE"  },
         { "wow",             "WOW",        0.14,  "NOISE"    },
         { "flutter",         "FLUTTER",    0.18,  "NOISE"    },
-        { "mix",             "MIX",        50.0,  "MACHINE"  },
+        // MIX's default is 0.5, NOT 50.0: this column is stated in the units the
+        // SLIDER works in (see the id-based range block below), every control on
+        // this row is a 0..1 proportion whose readout is a percentage ("50 %"),
+        // and 50.0 is not a value in that range at all - juce::Slider::setValue
+        // clamps it, so a double-click on MIX behaved like a double-click on a
+        // different knob: it jumped to 100 %, not to the parameter's own 50 %
+        // default, which is the one thing a double-click is supposed to restore.
+        { "mix",             "MIX",        0.5,   "MACHINE"  },
         { "output",          "OUTPUT",     0.0,   "MACHINE"  },
         { "stereo_width",    "WIDTH",      0.5,   "MACHINE"  },
         // The seven SOURCE knobs, where the old BLEND/SHAPE pair sat: each is
@@ -3960,7 +4126,15 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
         slider.setRotaryParameters (juce::MathConstants<float>::pi * 0.75f,
                                     juce::MathConstants<float>::pi * 2.25f, true);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 64, 18);
+        // The readout band under the knob is 16 px, not the 18 it used to be, for
+        // the reason the knob's own rectangle is measured from: a knob draws in
+        // the space the slider has left after its readout, so two pixels off every
+        // cell's readout is two pixels onto every knob on every page - and on the
+        // pages whose rows are short (MACHINE holds seven knobs in two rows) that
+        // is the difference between a scale the ticks have room for and one they
+        // do not. The readout itself is unaffected: the font it holds is smaller
+        // than the band either way.
+        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 64, 16);
         slider.setTextBoxIsEditable (true);
         // Drag response tuned by ear: velocity-based mode throttled the first pixels
         // of every drag behind an acceleration ramp, which read as "slow knobs".
@@ -5118,6 +5292,38 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (uiSoundsButton);
 
     // ---------------------------------------------------------------
+    //  The anti-phase guard's switch.
+    //
+    //  The deck already reports the guard: the ANTI-PHASE readout beside the
+    //  transport says "clean" while it is idle and a percentage while it is
+    //  working, because a fault that only exists after a mono fold-down is
+    //  otherwise invisible. What the readout could not do is give the user a way
+    //  to say "I know - pass it through": a deliberately inverted source, a
+    //  mid/side rig, an out-of-phase effect chain, all of them legitimate, all of
+    //  them things the guard would quietly rotate away.
+    //
+    //  A host-visible parameter like UI SOUNDS, so the choice is stored in the
+    //  session, automated, and undone with everything else. It is deliberately
+    //  NOT presettable: a factory preset must not be able to lower a safety net.
+    // ---------------------------------------------------------------
+    antiPhaseGuardButton.setClickingTogglesState (true);
+    setTip (antiPhaseGuardButton, "ANTI-PHASE GUARD - the output protection that "
+                                     "rotates a stereo pair whose sides are in "
+                                     "opposite polarity back toward mono, so a "
+                                     "mono fold-down (a club PA, a phone, a mono "
+                                     "mastering check) still has a centre and a "
+                                     "low end. Leave it on unless the reversal is "
+                                     "deliberate: off, the pair passes through "
+                                     "exactly as it arrives.");
+    antiPhaseGuardButton.setLookAndFeel (&inlineLookAndFeel);
+    antiPhaseGuardAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (audioProcessor.parameters, "anti_phase_guard", antiPhaseGuardButton);
+    addAndMakeVisible (antiPhaseGuardButton);
+    styleLabel (antiPhaseGuardLabel, "ANTI-PHASE", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    addAndMakeVisible (antiPhaseGuardLabel);
+
+    // ---------------------------------------------------------------
     //  The neural model picker, on the DYNAMICS tab beside the NEURAL knob.
     //  It has no parameter and no attachment: a model is data read from a file,
     //  not a value a session or a preset carries, so the two buttons drive the
@@ -5266,7 +5472,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     {
         auto& slider = compressorControls[i];
         slider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 78, 18);
+        // 16 px for the readout, as on the deck's knobs - see the note there.
+        slider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 78, 16);
         if (i == 0) slider.setRange (-60.0, 0.0, 0.1);
         else if (i == 1) slider.setRange (1.0, 20.0, 0.1);
         else if (i == 2) slider.setRange (0.1, 100.0, 0.1);
@@ -5966,6 +6173,7 @@ void FirstAudioProcessorEditor::applyTheme()
     vinylCartridgeLabel.setColour (juce::Label::textColourId, palette.secondary);
     delaySyncLabel.setColour (juce::Label::textColourId, palette.secondary);
     glLabel.setColour (juce::Label::textColourId, palette.secondary);
+    antiPhaseGuardLabel.setColour (juce::Label::textColourId, palette.secondary);
     neuralStatusLabel.setColour (juce::Label::textColourId, palette.secondary);
     // The IR readout re-inks itself in refreshIrStatus() on every change; this
     // covers the theme switch, which repaints without a status change.
@@ -6065,6 +6273,14 @@ void FirstAudioProcessorEditor::applyTheme()
     styleInlineListValue (vinylGenerationBox);
     styleInlineListValue (vinylTurntableBox);
     styleInlineListValue (vinylCartridgeBox);
+    // The tuning pair was missing from this list and from every other colour
+    // call in the file, so TONIC and MODE were the only two lists on the panel
+    // still painted with LookAndFeel_V4's own grey value - which on this panel
+    // reads as a DISABLED control: a grey field under a live caption, beside an
+    // OVERSAMPLING list that is the same widget in the same kind of cell and
+    // looks nothing like it. Two lines, one cause.
+    styleInlineListValue (tuningTonicBox);
+    styleInlineListValue (tuningModeBox);
     // The delay trio is on the deck Look and Feel (see its construction), so it
     // follows styleCombo like every other deck list.
     styleCombo (delayTypeBox);
@@ -6329,12 +6545,10 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     // places the cells with (see PluginEditor.h). The first pass left a second
     // copy of the arithmetic here with the old 92 px cell in it, so the pill ran
     // 72 px wide of its band and sat off to the left of the statusLabel it wraps.
-    constexpr int headerGridWidth = headerColumnCount * headerColumnWidth
-                                  + (headerColumnCount - 1) * headerColumnGap;
-    const auto statusPill = juce::Rectangle<float> (
-        static_cast<float> (layout.header.getRight() - headerGridWidth),
-        static_cast<float> (layout.header.getY() + 62),
-        static_cast<float> (headerGridWidth - 18), 18.0f);
+    // The pill's own rectangle comes from statusPillBounds(), which the timer
+    // invalidates: one definition, so the lamp inside it cannot be drawn here and
+    // repainted there.
+    const auto statusPill = statusPillBounds().toFloat();
     g.setColour (palette.raised.darker (0.16f));
     g.fillRoundedRectangle (statusPill, 4.0f);
 
@@ -6555,6 +6769,90 @@ void FirstAudioProcessorEditor::createDecorativePhysics()
     }
 }
 
+//==============================================================================
+juce::Rectangle<int> FirstAudioProcessorEditor::statusPillBounds() const
+{
+    // The machine-state badge: a raised pill across the header grid's THIRD row,
+    // wrapped around the statusLabel that lives there. The geometry is the header
+    // grid's own constants (see PluginEditor.h), read from the same three numbers
+    // resized() places the cells with - and it is written ONCE, here, because the
+    // pill contains a lamp that pulses with the compressor: a pill drawn on one
+    // rectangle by paint() and invalidated on another by the timer would be a lamp
+    // that never moves.
+    constexpr int headerGridWidth = headerColumnCount * headerColumnWidth
+                                  + (headerColumnCount - 1) * headerColumnGap;
+    const auto layout = getEditorLayout();
+    const juce::Rectangle<int> pill (layout.header.getRight() - headerGridWidth,
+                                     layout.header.getY() + 62,
+                                     headerGridWidth - 18, 18);
+
+    // The lamp's halo is an ellipse wider than the pill it sits in (2.2 x the
+    // pulse radius on each side), so the invalidated rectangle has to be too -
+    // otherwise the glow is clipped at the pill's edges and reads as a hard-edged
+    // bar rather than as light.
+    return pill.expanded (2, 6);
+}
+
+juce::Rectangle<int> FirstAudioProcessorEditor::deckAnimationBounds() const
+{
+    // The deck's animated picture is drawn by this component rather than by a
+    // widget, so it can only be invalidated by REGION:
+    //
+    //   * the software transport - the small reel at deck.right - 42, deck.y + 14
+    //     and the ribbon that falls from it to deck.y + 60. paint() draws it only
+    //     while the 3D scene is not live (a driver that will not give us a
+    //     context, GL switched off), which is exactly the case in which nothing
+    //     else is moving there at all.
+    //   * the particles, in the corridor resized() measured from the gap the
+    //     switches row actually left (deckParticleCorridorX/Y).
+    //
+    // Neither rectangle covers a combo box, a slider or a button: the reel hangs
+    // in the heading strip's right corner, past the build badge's right inset, and
+    // the corridor is the free gap the row reported. That is what keeps this from
+    // reintroducing the popup lag a whole-panel repaint caused.
+    const auto layout = getEditorLayout();
+    juce::Rectangle<int> area (layout.deck.getRight() - 60, layout.deck.getY() + 2, 52, 68);
+
+    if (! deckParticleCorridorX.isEmpty() && ! deckParticleCorridorY.isEmpty())
+        area = area.getUnion ({ deckParticleCorridorX.getStart() - 2,
+                                deckParticleCorridorY.getStart() - 2,
+                                deckParticleCorridorX.getLength() + 4,
+                                deckParticleCorridorY.getLength() + 4 });
+
+    return area;
+}
+
+void FirstAudioProcessorEditor::repaintAnimatedSurfaces()
+{
+    // The knobs. Their halos breathe with the compressor and their pointers ride
+    // an orbit of the same phase; the ticks tremble with the transport's drift.
+    // All of that is read from the look and feel at PAINT time, and a slider only
+    // repaints itself when its VALUE changes - so a knob nobody is touching was
+    // frozen mid-breath for as long as the panel stayed open.
+    for (auto& slider : controls)
+        if (slider.isVisible())
+            slider.repaint();
+
+    // The switches. Their thumbs GLIDE between stops for about five frames after
+    // a click (noteToggle / updateToggleAnimations in the look and feel) and their
+    // lamps light with the machine's activity, so they need the same per-frame
+    // invalidation the knobs do. Twelve widgets, most of them hidden behind a
+    // page: the visible ones are two to four per frame.
+    for (auto* toggle : { &deltaButton, &bypassButton, &polarityButton, &autoGainButton,
+                          &autoTuneButton, &uiSoundsButton, &antiPhaseGuardButton,
+                          &inputEqHpButton, &inputEqLpButton,
+                          &outputEqHpButton, &outputEqLpButton, &delaySyncButton })
+        if (toggle->isVisible())
+            toggle->repaint();
+
+    // The status lamp and the deck's own transport, both drawn by paint().
+    repaint (statusPillBounds());
+
+    if (! tapeScene.isSceneLive())
+        repaint (deckAnimationBounds());
+}
+
+//==============================================================================
 void FirstAudioProcessorEditor::timerCallback()
 {
     audioProcessor.flushPendingTransportHostSync();
@@ -6763,19 +7061,33 @@ void FirstAudioProcessorEditor::timerCallback()
     //  It is shown rather than hidden because this is the one fault that is
     //  INVISIBLE in stereo: without the readout a user would never know the guard
     //  was doing anything, and with it they can see that a fault was caught.
+    //
+    //  "off" is the third state and it is not decoration: with the switch on the
+    //  SETTINGS page the readout is the ONLY place the deck says whether the
+    //  protection is armed, so an idle guard and a disarmed one must never look
+    //  the same. The readout is deliberately NOT a button - a guard that can be
+    //  switched off by clicking the thing that reports it is one mis-click away
+    //  from being off without the user knowing.
     // ------------------------------------------------------------------
     const auto antiPhaseNow = telemetry.antiPhaseAmount;
-    const auto antiPhaseText = antiPhaseNow < 0.01f
-                                   ? xlat ("clean")
-                                   : juce::String (juce::roundToInt (antiPhaseNow * 100.0f))
-                                         + " " + xlat ("% corrected");
+    const auto* antiPhaseGuardSetting = audioProcessor.parameters
+                                            .getRawParameterValue ("anti_phase_guard");
+    const auto antiPhaseGuardOn = antiPhaseGuardSetting == nullptr
+                                  || antiPhaseGuardSetting->load() >= 0.5f;
+    const auto antiPhaseText = ! antiPhaseGuardOn
+                                   ? xlat ("off")
+                                   : antiPhaseNow < 0.01f
+                                       ? xlat ("clean")
+                                       : juce::String (juce::roundToInt (antiPhaseNow * 100.0f))
+                                             + " " + xlat ("% corrected");
     if (antiPhaseText != lastShownAntiPhase)
     {
         lastShownAntiPhase = antiPhaseText;
         antiPhaseReadout.setText (antiPhaseText, juce::dontSendNotification);
         antiPhaseReadout.setColour (juce::Label::textColourId,
-                                    breathe (antiPhaseNow < 0.01f ? harmonicPalette.status
-                                                                  : harmonicPalette.needle));
+                                    breathe (! antiPhaseGuardOn ? harmonicPalette.secondary
+                                            : antiPhaseNow < 0.01f ? harmonicPalette.status
+                                                                   : harmonicPalette.needle));
     }
 
     // Animated presentation state. Everything here is derived from audio
@@ -7056,6 +7368,29 @@ void FirstAudioProcessorEditor::timerCallback()
     // until the host has given it a native peer, and that may not have happened
     // on the first tick.
     tapeScene.serviceContextAttachment();
+
+    // ------------------------------------------------------------------
+    //  The frame's animations, invalidated.
+    //
+    //  Everything above this line ADVANCES the animation - advanceFrame() moved
+    //  the look and feel's phase, updateToggleAnimations() eased every switch's
+    //  thumb, glowAmount and driftAmount followed the machine - and NONE of it
+    //  draws anything by itself. A repaint is what turns those numbers into
+    //  motion, and the timer deliberately stopped repainting the panel every tick
+    //  (see the note about the combo popups above), which is exactly what the
+    //  user saw as "the animations render once and then never move": the panel
+    //  was a still frame of a live machine.
+    //
+    //  So the invalidations are targeted rather than global - a bounded set of
+    //  rectangles that carries all of the animated content and none of the
+    //  combos, sliders and popups the old whole-panel repaint used to stamp over.
+    //  See repaintAnimatedSurfaces().
+    // ------------------------------------------------------------------
+    if (++animationPaintTick >= 2)
+    {
+        animationPaintTick = 0;
+        repaintAnimatedSurfaces();
+    }
 }
 
 void FirstAudioProcessorEditor::resized()
@@ -7808,12 +8143,15 @@ void FirstAudioProcessorEditor::resized()
     grid.removeFromTop (controlsDividerOffset - 14 + 8);
     grid.removeFromBottom (8);
 
-    // Only the ACTIVE tab is laid out, and its own control count decides the row
-    // count, so a tab is never sized as if it still had to hold the whole panel's
-    // knobs. Tabs hold between three and nine controls; NOISE, the fullest, comes
-    // to three rows of tabColumns, the rest to two.
+    // Only the ACTIVE tab is laid out, and its own control count decides the
+    // strip's column count, so a tab is never sized as if it still had to hold the
+    // whole panel's knobs: a page of two gets two large knobs, and the fullest
+    // page (seven) gets one row of seven across the whole grid.
     const auto& activeTab = tabSpecs[static_cast<std::size_t> (currentTab)];
     const auto tabControlCount = static_cast<int> (activeTab.count);
+    // The MEMBER BAND's cell width - what placeDeckSwitch and every page that
+    // spans a cell of its own measures in. The knob strip solved below does not
+    // use it: its own slot width is solved from the page's knob count.
     const auto cellWidth = grid.getWidth() / tabColumns;
 
     // Which tab is live, looked up by name from the tabSpecs table - the single
@@ -7829,54 +8167,223 @@ void FirstAudioProcessorEditor::resized()
     const auto inEqTab = index_of_tab_named ("IN EQ") == currentTab;
     const auto outEqTab = index_of_tab_named ("OUT EQ") == currentTab;
     const auto machineTab = index_of_tab_named ("MACHINE") == currentTab;
-    const auto dynamicsTab = index_of_tab_named ("DYN") == currentTab;
     const auto mixTab = index_of_tab_named ("MIX") == currentTab;
 
-    // The knob rows the active tab needs (zero on SETTINGS, which holds no knobs),
-    // and one row more when the tab owns member switches - the non-knob combos and
-    // pills placeDeckSwitch lays out under the knobs. SETTINGS is the worst case
-    // and the reason the arithmetic is shared: with no knobs at all, sizing the
-    // grid for knob rows alone left its whole height for a member row that was
-    // then appended BELOW the grid, off the panel - GL and OVERSAMPLING were
-    // clipped by the window's bottom edge on the very tab that holds nothing else.
-    const auto knobRows = (tabControlCount + tabColumns - 1) / tabColumns;
-    // The MIX page counts as a member-row page even though it owns no switch: the
+    // Which pages own a MEMBER BAND - the strip under the knobs that the
+    // non-knob combos and pills (placeDeckSwitch) are laid out in. It is no
+    // longer the same question as "how many rows of knobs does the page need":
+    // the knob strip sizes itself (see below) and the band is a fixed strip of
+    // its own. SETTINGS is the worst case and the reason the arithmetic is
+    // shared: with no knobs at all, sizing the grid for knob rows alone left its
+    // whole height for a member row that was then appended BELOW the grid, off
+    // the panel - GL and OVERSAMPLING were clipped by the window's bottom edge on
+    // the very tab that holds nothing else.
+    //
+    // The MIX page counts as a member page even though it owns no switch: the
     // band it reserves is where the saturation mix bar lives, which is the whole
-    // reason the page is worth its own strip.
+    // reason the page is worth its own strip. FRONT END counts because its DI PAD
+    // is a combo - a member - and can no longer ride the knob grid: a page whose
+    // knobs fill their row has no free cell to put it in (it used to take the
+    // fourth cell of a second row that had three knobs in it). DYN does NOT: its
+    // knobs moved to CHARACTER and nothing ever rode the band it reserved, so the
+    // page now gives that 50 px to its own three knobs instead.
     const auto memberRows = (settingsTab || delayTab || characterTab
-                             || shapersTab || inEqTab || outEqTab
+                             || frontEndTab || shapersTab || inEqTab || outEqTab
                              || machineTab || mixTab) ? 1 : 0;
 
     // The member band is a FIXED strip - a caption band plus a control band -
-    // reserved under the knob rows, and the knob rows share what is left. A
-    // uniform division would tax a page's knobs for a single combo: DRIVE holds
-    // twelve knobs in three rows, and splitting the grid four ways instead of
-    // three would cost every one of them a quarter of its height. A fixed strip
-    // takes a fixed price, and every knob page keeps the row height its own knob
-    // count asks for. 50 px is the label band (17) plus the control's 30 at its
-    // 20 px offset - the geometry placeDeckSwitch below already assumes.
+    // pinned to the grid's BOTTOM edge, and the knob strip takes what is above
+    // it. 50 px is the label band (17) plus the control's 30 at its 20 px offset
+    // - the geometry placeDeckSwitch below already assumes. Pinned rather than
+    // stacked under the knob rows because the knob strip is COMPACT (see the next
+    // block): its tiles take the height they need and no more, so "under the
+    // knobs" would leave the band floating at whatever height the page's knob
+    // count put it, with the panel's surplus beneath it. On the bottom edge it
+    // sits where a machine's own row of mode switches sits, on every page.
     constexpr int memberBandHeight = 50;
-    const auto knobAreaHeight = grid.getHeight()
-                              - (memberRows != 0 ? memberBandHeight : 0);
-    const auto knobRowHeight = knobRows > 0 ? knobAreaHeight / knobRows : 0;
+    // A page with no knobs keeps the whole grid as its band: SETTINGS places two
+    // lines of preferences in it, and they belong at the top, under the divider,
+    // where a page of knobs puts its own captions.
+    const auto knobAreaHeight = (memberRows != 0 && tabControlCount > 0)
+                                    ? grid.getHeight() - memberBandHeight
+                                    : grid.getHeight();
+
+    // ------------------------------------------------------------------
+    //  The knob strip.
+    //
+    //  A knob's disc is capped by the SHORTER side of the paint area it is given
+    //  (see computeKnobMetrics), so the number of rows a page's knobs are laid
+    //  out in is what decides how big they are. Four columns of two rows gave
+    //  every knob half the page's height to draw in and left the second row with
+    //  three of its four cells empty - a small disc in a wide, half-empty cell.
+    //  The column count is solved instead of fixed: every count from one to the
+    //  page's knob count is tried, each is given the tile it would get, and the
+    //  page takes the count whose disc comes out largest - measured, not guessed:
+    //  MACHINE's seven come out as 54 px discs across a 1200 x 823 panel where the
+    //  four-column grid gave 42, and as 17 px ones at the 780 x 664 floor, where
+    //  that grid drew a 4 px dot in a half-empty cell.
+    //
+    //  A tile is then the knob's own geometry and nothing else: a 17 px caption
+    //  band, the 8 px of clearance under it, the paint area itself, and the
+    //  toolkit's 16 px value box under that, all inside the 5 px inset the slider
+    //  rides in. The paint area is at least SQUARE - the shape whose ceilings bind
+    //  at once - and the same 46 px of chrome comes off its width and its height,
+    //  so a square tile is a square paint area:
+    //
+    //      paint width  = tile width  - 10 (the cell's inset)  - 12 (the paint's)
+    //      paint height = tile height - 10 - 8 (clearance) - 16 (value) - 12
+    //      square       => tile height = tile width + 24
+    //
+    //  and 24 is the tile's FLOOR. The tile is never shorter than the square one,
+    //  because a shorter one caps the disc twice; and it is never taller than the
+    //  height at which a taller one stops buying radius (that height is solved
+    //  below rather than assumed, and on a small knob it is well past square).
+    //  Either way the tile is COMPACT rather than stretched to the row: the old
+    //  grid gave every cell the page's whole row height, the disc was drawn in a
+    //  square capped by the CELL's short side, and the surplus height between the
+    //  caption and the knob - and again between the knob and its own value - was
+    //  left as void on every tile on every page.
+    //
+    //  The strip is centred in the area it has: the surplus height a page with
+    //  few knobs has left over - or a page whose discs the panel's WIDTH capped,
+    //  which is what a row of seven does - is split into two margins, where all
+    //  of it heaped under the knobs would read as a hole in the page.
+    // ------------------------------------------------------------------
+    // The tile's CHROME, down the height: the caption band inside the cell (18 px),
+    // the toolkit's own 16 px value box under the rotary, and the six pixels
+    // drawRotarySlider keeps round itself. Across the width the same three cost
+    // the cell's 10 px of inset plus the same 12 - 22 in all - and the 24 px
+    // between the two is exactly the height a square tile adds to its width.
+    constexpr int knobTileChrome = 46;
+    // Between two rows of tiles. A gap is air the rows are separated by, and it is
+    // charged to the knobs of every row - so it is the smallest one that still
+    // separates two lines of type: 8 px here leaves the readout of the row above
+    // and the caption band of the row below 14 px apart, where the 14 px gap this
+    // was cost the height-capped pages a further 1.4 px of disc (MACHINE at
+    // 1060 x 916 measures 70.2 with it and 68.8 without).
+    constexpr int knobRowGap = 8;
+    const auto rowsForColumns = [tabControlCount] (int columns)
+    {
+        return (tabControlCount + columns - 1) / columns;
+    };
+    // The camera the CANDIDATES are scored at. The score compares counts within
+    // one page - the same band of the same panel - so a mid value is all it needs
+    // to be: the wall moves by a few hundredths across the strip and moves every
+    // candidate the same way.
+    constexpr float knobScoringWall = 0.4f;
+
+    // The counts are walked from the MOST rows to the fewest (one column is n rows
+    // by definition, so fewer columns means more rows), and a count only displaces
+    // the one held if it buys a disc a twentieth larger: a page settles on more
+    // rows when the panel is tall enough for that to mean bigger knobs, and stays
+    // on the single row otherwise rather than splitting itself for nothing - a
+    // strip that flipped between the two arrangements on a few pixels of window
+    // resize would be worse than either.
+    // At each step only the count where the ROW COUNT CHANGES is scored: within
+    // one row count every further column is a narrower slot, so that count is the
+    // widest slot the row count has, and the only one it has to answer with.
+    // The score is the disc computeKnobMetrics would give the tile - the same
+    // function the knob itself is drawn from, so the layout cannot promise a disc
+    // the paint routine then fails to draw.
+    auto knobColumns = juce::jmax (1, tabControlCount);
+    auto knobRows = 0;
+    auto knobTileWidth = 0;
+    auto knobTileHeight = 0;
+    auto knobScore = 0.0f;
+    auto scoredRows = 0;
+    for (int columns = 1; columns <= tabControlCount; ++columns)
+    {
+        const auto rows = rowsForColumns (columns);
+        if (rows == scoredRows)
+            continue;
+
+        scoredRows = rows;
+        // What this count offers: the slot width it would give each tile, and the
+        // height one row of `rows` has to be drawn in.
+        const auto slotWidth = grid.getWidth() / columns;
+        const auto rowHeight = (knobAreaHeight - (rows - 1) * knobRowGap) / rows;
+        const auto paintWidth = slotWidth - 22;
+
+        if (paintWidth < 4 || rowHeight <= knobTileChrome)
+            continue;
+
+        // The tile's HEIGHT is solved, not derived: it is the smallest height at
+        // which the cap stops growing. On a big knob that height is the square
+        // one - what caps the cap is the face ceiling, and a taller paint area
+        // buys nothing past it. On a small knob the groove and its marks bind
+        // first, and a taller paint area goes on buying radius until the ring's
+        // own ceiling is reached, several pixels past square. Solving it this way
+        // is what the old grid was giving away on exactly the pages the user saw
+        // as cramped - and it keeps the readout under the knob as close to it as
+        // the cap allows, on the pages where it does not cost anything either.
+        auto tileHeight = knobTileChrome + 1;
+        auto disc = 0.0f;
+        for (int candidate = knobTileChrome + 1; candidate <= rowHeight; ++candidate)
+        {
+            const auto radius = computeKnobMetrics (static_cast<float> (paintWidth),
+                                                    static_cast<float> (candidate - knobTileChrome),
+                                                    knobScoringWall).radius;
+            if (radius > disc)
+            {
+                disc = radius;
+                tileHeight = candidate;
+            }
+        }
+
+        if (disc > knobScore * 1.04f)
+        {
+            knobScore = disc;
+            knobColumns = columns;
+            knobRows = rows;
+            knobTileWidth = slotWidth;
+            knobTileHeight = tileHeight;
+        }
+    }
+    // Nothing a panel at its own minimum size allows can make this zero, but a
+    // strip with no tile would place its knobs at negative coordinates: fall back
+    // to one row of the widest slots the grid's width alone can give.
+    if (knobTileHeight < 1)
+    {
+        knobRows = tabControlCount > 0 ? 1 : 0;
+        knobColumns = juce::jmax (1, tabControlCount);
+        knobTileWidth = juce::jmax (1, grid.getWidth() / juce::jmax (1, tabControlCount));
+        knobTileHeight = knobTileWidth + 24;
+    }
+    const auto knobStripHeight = knobRows > 0
+                                     ? knobRows * knobTileHeight + (knobRows - 1) * knobRowGap
+                                     : 0;
+    const auto knobStripTop = grid.getY()
+                              + juce::jmax (0, (knobAreaHeight - knobStripHeight) / 2);
+    const auto knobSlotWidth = knobColumns > 0 ? grid.getWidth() / knobColumns : grid.getWidth();
 
     for (int slot = 0; slot < tabControlCount; ++slot)
     {
         const auto i = activeTab.controls[slot];
-        const auto row = slot / tabColumns;
-        const auto column = slot % tabColumns;
-        auto cell = juce::Rectangle<int> (grid.getX() + column * cellWidth,
-                                          grid.getY() + row * knobRowHeight,
-                                          column == tabColumns - 1
-                                              ? grid.getRight() - (grid.getX() + column * cellWidth)
-                                              : cellWidth,
-                                          row == knobRows - 1 && memberRows == 0
-                                              ? grid.getBottom() - (grid.getY() + row * knobRowHeight)
-                                              : knobRowHeight);
+        const auto row = slot / knobColumns;
+        const auto column = slot % knobColumns;
+        // The tiles ride EQUAL SLOTS rather than sitting edge to edge, so a page
+        // whose discs the panel's height capped keeps its knobs spread across the
+        // panel instead of stacking them against the left edge with all the air
+        // on the right - and a last row with fewer knobs than the one above it is
+        // centred as a group under it.
+        const auto slotsInRow = juce::jmin (knobColumns, tabControlCount - row * knobColumns);
+        const auto rowLeft = grid.getX() + (grid.getWidth() - slotsInRow * knobSlotWidth) / 2;
+        const auto tileLeft = rowLeft + column * knobSlotWidth
+                              + (knobSlotWidth - knobTileWidth) / 2;
+        auto cell = juce::Rectangle<int> (tileLeft,
+                                          knobStripTop + row * (knobTileHeight + knobRowGap),
+                                          knobTileWidth, knobTileHeight);
         controlLabels[i].setBounds (cell.getX() + 5, cell.getY() + 1,
                                     cell.getWidth() - 10, 17);
         auto sliderBounds = cell.reduced (5);
-        sliderBounds.removeFromTop (18);
+        // 8 px of clearance under the caption, not the 18 this used to reserve.
+        // The caption's own band is 17 px tall and is laid out above this cell,
+        // so the extra 10 px were never caption clearance at all - they were
+        // taken off the knob, and the knob's drawing area is what is left here
+        // after the readout band. The ticks stop short of the top of that area
+        // (see scaleBand in drawRotarySlider), so the scale ends where this
+        // clearance begins and nothing touches the caption.
+        sliderBounds.removeFromTop (8);
         controls[i].setBounds (sliderBounds);
     }
 
@@ -7894,11 +8401,15 @@ void FirstAudioProcessorEditor::resized()
     // collide with the knob rows and with each other. Now the arithmetic exists
     // exactly once: label band 17 px, control band 30 px at its 20 px offset,
     // the control capped at 30 px so it can never overflow the band.
-    // memberRowY is computed from the same arithmetic: the band starts where
-    // the knob rows end (at the grid's top on SETTINGS, which holds no knobs)
-    // and runs to the grid's bottom, so the division's remainder lands inside
-    // the band rather than above it.
-    const auto memberRowY = grid.getY() + knobRows * knobRowHeight;
+    // memberRowY is the band's top edge, and it is measured from the grid's
+    // BOTTOM - the band is the last 50 px of the grid on every page that has one,
+    // and the knob strip above it is laid out in what is left. On SETTINGS, which
+    // holds no knobs, the band is the whole grid and its top edge is the grid's
+    // own, so the page's two lines of preferences sit under the divider as they
+    // always have.
+    const auto memberRowY = (memberRows != 0 && tabControlCount > 0)
+                                ? grid.getBottom() - memberBandHeight
+                                : grid.getY();
     const auto placeDeckSwitch = [&] (juce::Label& label, juce::Component& box,
                                       int column, int columnsWide,
                                       const juce::String& caption)
@@ -7946,21 +8457,6 @@ void FirstAudioProcessorEditor::resized()
     // flags themselves are read from the tabSpecs table at the top of the grid
     // section above, where the member-row arithmetic needs them too.
 
-    // The DI pad/load combo rides FRONT END in the knob grid's FOURTH cell of
-    // the second row - the page's five knobs leave it empty, and the pad is the
-    // DI's own input switch, so it sits with the row it feeds. No extra band is
-    // reserved for it: five knobs in two rows is exactly what this cell was.
-    if (frontEndTab)
-    {
-        diPadLabel.setText ("DI PAD", juce::dontSendNotification);
-        diPadLabel.setBounds (grid.getX() + 3 * cellWidth + 5,
-                              grid.getY() + (knobRows - 1) * knobRowHeight + 1,
-                              cellWidth - 10, 17);
-        diPadBox.setBounds (grid.getX() + 3 * cellWidth + 12,
-                            grid.getY() + (knobRows - 1) * knobRowHeight + 20,
-                            cellWidth - 24, 30);
-    }
-
     // The four new lists follow the same rule as the deck switches: each is a
     // full member of exactly one tab, so it is visible only while that tab is.
     diPadLabel.setVisible (frontEndTab);
@@ -7999,6 +8495,8 @@ void FirstAudioProcessorEditor::resized()
     // The UI-sounds switch is on the same page as GL and OVERSAMPLING - it is the
     // same kind of engine-level preference - so it follows the same tab.
     uiSoundsButton.setVisible (settingsTab);
+    antiPhaseGuardLabel.setVisible (settingsTab);
+    antiPhaseGuardButton.setVisible (settingsTab);
     delayTypeLabel.setVisible (delayTab);
     delayTypeBox.setVisible (delayTab);
     delayRateLabel.setVisible (delayTab);
@@ -8033,16 +8531,24 @@ void FirstAudioProcessorEditor::resized()
     mixBar.setVisible (mixTab);
     if (mixTab)
     {
-        const auto mixBandTop = grid.getY() + knobRows * knobRowHeight;
-        mixBar.setBounds (grid.getX() + 4, mixBandTop + 3, grid.getWidth() - 8,
-                          juce::jmax (20, grid.getBottom() - mixBandTop - 6));
+        mixBar.setBounds (grid.getX() + 4, memberRowY + 3, grid.getWidth() - 8,
+                          juce::jmax (20, grid.getBottom() - memberRowY - 6));
         mixBar.repaint();
     }
 
-    if (machineTab)
+    if (frontEndTab)
     {
-        // MACHINE: seven knobs fill two rows (the second holds three), so the
-        // member row under them is where the machine's TRACKS selector lives.
+        // FRONT END: the DI's own pad/load selector rides the band under the
+        // knobs - the row the DI feeds. It used to take the fourth cell of the
+        // knob grid's second row; the strip is one full row now, so the band is
+        // the only place on the page a combo can be, and it is where the DI's
+        // own input switch belongs anyway.
+        placeDeckSwitch (diPadLabel, diPadBox, 0, 1, "DI PAD");
+    }
+    else if (machineTab)
+    {
+        // MACHINE: the machine's TRACKS selector rides the band at the page's
+        // foot, under its seven knobs.
         placeDeckSwitch (tracksLabel, tracksBox, 0, 1, "TRACKS");
     }
     else if (settingsTab)
@@ -8074,6 +8580,16 @@ void FirstAudioProcessorEditor::resized()
         languageBox.setBounds (grid.getX() + 12, memberRowY + 76, cellWidth - 24, 30);
         uiSoundsButton.setBounds (grid.getX() + cellWidth + 12, memberRowY + 76,
                                   cellWidth - 24, 30);
+        // The guard's switch takes the THIRD cell of that same band. It is the
+        // one cell on this page nothing else claims - the TONIC pair owns the
+        // third cell of the band ABOVE - and it is where a protection setting
+        // belongs: with GL, OVERSAMPLING and UI SOUNDS, not with the machine's
+        // sound. Same caption band, same control band, same insets as the two
+        // controls beside it, so the row reads as one line of preferences.
+        antiPhaseGuardLabel.setBounds (grid.getX() + 2 * cellWidth + 5, memberRowY + 56,
+                                       cellWidth - 10, 17);
+        antiPhaseGuardButton.setBounds (grid.getX() + 2 * cellWidth + 12, memberRowY + 76,
+                                        cellWidth - 24, 30);
 
         // The caption is put back to the left, where every other caption on the
         // page sits: the header grid also places this one Label - right-aligned,
@@ -8149,15 +8665,6 @@ void FirstAudioProcessorEditor::resized()
         clearIrButton.setBounds (grid.getX() + 2 * cellWidth + 12,
                                  buttonY, cellWidth - 24, buttonH);
     }
-    else if (dynamicsTab)
-    {
-        // DYNAMICS: three knobs fill the first row and the neural and IR
-        // stages moved to CHARACTER, so this page needs no member row - but
-        // the reserved band logic above sized this grid as if something might
-        // ride it. Nothing does: leave the band empty rather than stretching
-        // the knob rows into it, so the page's layout stays identical to
-        // before the move.
-    }
     else if (inEqTab || outEqTab)
     {
         // IN EQ / OUT EQ: six knobs fill the first row, so the row below is
@@ -8209,10 +8716,9 @@ void FirstAudioProcessorEditor::resized()
     const auto rowGap = 8;
     const auto columnWidth = (meterArea.getWidth() - columnGap) / 2;
 
-    // Note the separate name: the control grid's row height is taken by the knob
-    // arithmetic above (knobRowHeight), so reusing that name here would shadow it
-    // through the rest of the function and trip the redefinition error rather
-    // than silently picking the wrong cell size.
+    // Note the separate name: the knob strip above has already spent "tile" and
+    // "slot" on the grid's cells, so keeping the meters' own vocabulary here is
+    // what stops a later edit from silently reusing the wrong cell size.
     const auto meterRowHeight = (meterArea.getHeight() - rowGap) / 2;
 
     const auto leftColumn = meterArea.getX();
@@ -8341,6 +8847,8 @@ void FirstAudioProcessorEditor::resized()
             { "tuningModeLbl",  &tuningModeLabel },
             { "tuningModeBox",  &tuningModeBox },
             { "uiSounds",       &uiSoundsButton },
+            { "guardLabel",     &antiPhaseGuardLabel },
+            { "guardBtn",       &antiPhaseGuardButton },
             { "glLabel",        &glLabel },
             { "diPadLabel",     &diPadLabel },
             { "diPadBox",       &diPadBox },

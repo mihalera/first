@@ -922,6 +922,21 @@ void TapeScene::setAudioState (float newOutputLevel,
     // editor goes away. The GPU path also needs this invalidation because its
     // context is intentionally not continuously repainting.
     repaint();
+
+    // ... and on the accelerated path that repaint() is NOT enough. This
+    // component's context is attached with component painting DISABLED - the
+    // panel's own context draws the 2D editor, this one draws the transport -
+    // so there is no JUCE paint to invalidate here at all, and the context is
+    // not continuously repainting either. JUCE documents that second setting
+    // exactly: "if false, then after each render callback, it will wait for
+    // another call to triggerRepaint() before rendering again". Nothing in this
+    // class ever made that call, so the reels, the tape ribbon and the bank of
+    // knobs were rendered ONCE, when the context came up, and then stood still
+    // for as long as the window was open. This is the call that turns the five
+    // floats above into motion - one frame per editor tick, on the render
+    // thread, coalesced by JUCE if a frame is already queued.
+    if (openGLContext.isAttached())
+        openGLContext.triggerRepaint();
 }
 
 void TapeScene::setControlValues (const float* values, int count) noexcept
@@ -1187,8 +1202,14 @@ void TapeScene::resized()
     }
 
     // Nothing to place: the projection is derived from the current size in
-    // renderOpenGL(), and CPU paint uses the same component bounds.
+    // renderOpenGL(), and CPU paint uses the same component bounds. A resize is
+    // also a frame the user must SEE - the viewport just changed shape - so the
+    // accelerated path is asked for one here too (see setAudioState for why a
+    // repaint() alone does not reach renderOpenGL() on this component).
     repaint();
+
+    if (openGLContext.isAttached())
+        openGLContext.triggerRepaint();
 }
 
 bool TapeScene::isSceneLive() const noexcept

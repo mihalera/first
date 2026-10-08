@@ -41,6 +41,18 @@ jobs:
       - name: Run the subharmonic harness
         run: bash tests/dsp/run.sh
 
+      # The knob strip's geometry is arithmetic, not rendering: the editor layout
+      # becomes a grid, the grid becomes a column count and a tile, and the tile
+      # becomes the disc the LookAndFeel is handed. This harness cuts those five
+      # blocks out of Source/PluginEditor.cpp, compiles them against a stub of the
+      # toolkit, and walks every page at four panel sizes - so a layout that puts
+      # a 4 px disc on a seven-knob page (which is what the 780 x 664 floor did
+      # before the strip was solved) fails here in seconds rather than in a
+      # screenshot on someone else's display. Same shape as the DSP harness above:
+      # no JUCE, no window, no submodules.
+      - name: Run the knob layout harness
+        run: bash tests/layout/run.sh
+
       # The factory presets cannot fail at runtime - a name list that is a row
       # short, or a parameter with no column in the table, both just quietly
       # load the wrong sound - so they are checked against the source instead.
