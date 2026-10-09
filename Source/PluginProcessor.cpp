@@ -3276,9 +3276,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
     const int numSamples = static_cast<int> (block.getNumSamples());
 
-    // This engine block uses the host rate; oversampling, when selected, wraps
-    // this call with JUCE's up/downsamplers in processBlock.
-    const auto engineSampleRate = juce::jmax (1.0f, sampleRate);
+    // processBlock has already expanded oversampled blocks. Build all DSP time
+    // constants against the rate of this block, not the host/base rate.
+    const auto engineSampleRate = juce::jmax (1.0f, sampleRate * oversamplingRateFactor);
 
     // The engine works directly on the block: in the oversampled path the block
     // references the oversampler's internal storage, in the plain path it wraps
@@ -3322,7 +3322,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto mix = (mixParam != nullptr ? mixParam->load() : 50.0f) * 0.01f;
     const auto outputDb = outputDbParam->load();
     const auto inputDb = inputDbParam->load();
-    // Width is bipolar around 50%: 0 is dual mono, 50 is unchanged, 100 doubles SIDE.
+    // Width parameter maps 0/50/100 percent to 0x/1x/2x SIDE.
     const auto stereoWidth = widthParam != nullptr
         ? juce::jlimit (0.0f, 2.0f, widthParam->load() * 2.0f) : 1.0f;
     const auto compressorThreshold = compressorThresholdParam != nullptr ? compressorThresholdParam->load() : -18.0f;
@@ -3391,9 +3391,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         1, tracksBleedBufferLength - 2,
         juce::roundToInt (tracksSpacingMs[tracksIndex] * 0.001f * engineSampleRate));
 
-    // Output-stage switches, read once per block: polarity is a pure sign flip on
-    // whatever leaves the machine, and auto gain gates the slow programme
-    // compensator (see the final gain compensation section below).
+    // Output-stage switches are read once per block. Polarity is applied to each
+    // final sample, after the clean-mono diagnostics, and auto gain gates the slow
+    // programme-level compensator.
     const float polaritySign = (polarityParam != nullptr && polarityParam->load() >= 0.5f) ? -1.0f : 1.0f;
     const bool autoGainEnabled = autoGainParam == nullptr || autoGainParam->load() >= 0.5f;
 
@@ -4942,7 +4942,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         const float deltaMix = deltaListenSmoothed.getCurrentValue();
         const float driveNow = shaperDriveSmoothed.getCurrentValue();
         const float asymmetryNow = shaperAsymmetrySmoothed.getCurrentValue();
-        const float linkNow = stLinkSmoothed.getCurrentValue();
         referenceBlockPower = 0.0f;
 
         // Optional hot-path activity probe. Behind the DSP harness guard so the
@@ -5198,6 +5197,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             //  It runs before the IN EQ as well, because on the hardware the
             //  box is physically between the instrument and everything else.
             // ------------------------------------------------------------------
+            const float diNow = diSmoothed.getCurrentValue();
+            const float diLoadNow = diLoadSmoothed.getCurrentValue();
+            const float diTransformerNow = diTransformerSmoothed.getCurrentValue();
             if (diNow > 1.0e-5f)
             {
                 x = inputStage.processDiBox (x, diNow, diLoadNow,
@@ -5206,6 +5208,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                              diHumIncrement);
             }
 
+            const float distortionNow = distortionSmoothed.getCurrentValue();
             if (distortionNow > 1.0e-5f)
                 x = inputStage.processDistortion (x, distortionNow);
 

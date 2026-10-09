@@ -1663,12 +1663,8 @@ struct NeuralStage
         }
 
         std::lock_guard<std::mutex> lock (controlMutex);
-        // Publish null while controlMutex prevents another writer; after readers
-        // drain we can safely replace the storage. The audio thread itself never waits.
-        activeModel.store (nullptr, std::memory_order_release);
-        clearRequested.store (true, std::memory_order_release);
-        while (readers.load (std::memory_order_acquire) != 0)
-            std::this_thread::yield();
+        // Retain old storage after publishing replacement; any audio reader that
+        // already captured the old pointer finishes before destruction at teardown.
         if (model != nullptr)
             retiredModels.push_back (std::move (model));
         model = std::move (parsedModel);
@@ -1687,9 +1683,10 @@ struct NeuralStage
     {
 #if J37_HAS_RTNEURAL
         std::lock_guard<std::mutex> lock (controlMutex);
-        activeModel.store (nullptr, std::memory_order_release);
+        // Stop new readers, then wait on this control thread for any in-flight
+        // forward() call using the previous snapshot before freeing model storage.
         clearRequested.store (true, std::memory_order_release);
-        // This runs on the control thread; process() never waits for readers.
+        activeModel.store (nullptr, std::memory_order_release);
         while (readers.load (std::memory_order_acquire) != 0)
             std::this_thread::yield();
         model.reset();
@@ -1872,6 +1869,12 @@ struct NeuralStage
         }
 
         std::lock_guard<std::mutex> lock (controlMutex);
+        // Publish the replacement only after current inference readers finish;
+        // parsing/allocation and this wait are control-thread work.
+        clearRequested.store (true, std::memory_order_release);
+        activeModel.store (nullptr, std::memory_order_release);
+        while (readers.load (std::memory_order_acquire) != 0)
+            std::this_thread::yield();
         if (model != nullptr)
             retiredModels.push_back (std::move (model));
         model = std::move (parsedModel);
