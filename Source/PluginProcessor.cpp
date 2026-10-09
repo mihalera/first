@@ -4932,13 +4932,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         //  ramp, sample rate consumes it. If a control is read here it must be
         //  read from the same per-sample value everywhere else in the frame.
         //
-        // Advance the input-gain smoother once per frame; all other smoothers
-        // advance lazily on their first read below. Keep this section free of
-        // duplicate snapshots: the frame loop owns each stage's local values.
-        // This is the one advancing smoother: SampleClock moves once, and the
-        // remaining smoothers advance lazily on their first getCurrentValue().
-        // Consume exactly one input-gain sample; lazy SampleSmoother reads below
-        // advance the remaining controls once against this shared sample clock.
+        // The input-gain smoother is the sample-clock leader. Each other smoother
+        // advances lazily on the first getCurrentValue() call in this frame.
         const float inputGain = inputGainSmoothed.getNextValue();
         const float outputGain = outputGainSmoothed.getCurrentValue();
         const float currentWidth = widthSmoothed.getCurrentValue();
@@ -4950,7 +4945,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         const float deltaMix = deltaListenSmoothed.getCurrentValue();
         const float driveNow = shaperDriveSmoothed.getCurrentValue();
         const float asymmetryNow = shaperAsymmetrySmoothed.getCurrentValue();
-        const float linkNow = stLinkSmoothed.getCurrentValue();
         referenceBlockPower = 0.0f;
 
         // Optional hot-path activity probe. Behind the DSP harness guard so the
