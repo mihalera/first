@@ -1,1 +1,31 @@
-{"image":"mcr.microsoft.com/devcontainers/universal:2"}
+{
+  "name": "JUCE 9.0.3 Plugin Dev",
+  "image": "mcr.microsoft.com/devcontainers/cpp:1-ubuntu-22.04",
+  "features": {
+    "ghcr.io/devcontainers/features/git:1": {},
+    "ghcr.io/devcontainers/features/github-cli:1": {}
+  },
+  "customizations": {
+    "vscode": {
+      "extensions": [
+        "ms-vscode.cpptools",
+        "ms-vscode.cmake-tools",
+        "twxs.cmake",
+        "llvm-vs-code-extensions.vscode-clangd",
+        "ms-vscode.cpptools-extension-pack"
+      ],
+      "settings": {
+        "cmake.configureOnOpen": true,
+        "cmake.generator": "Ninja",
+        "C_Cpp.default.configurationProvider": "ms-vscode.cmake-tools",
+        "clangd.arguments": [
+          "--header-insertion=iwyu"
+        ],
+        "editor.formatOnSave": true,
+        "files.eol": "\n"
+      }
+    }
+  },
+  "postCreateCommand": "sudo apt-get update && sudo DEBIAN_FRONTEND=noninteractive apt-get install -y --no-install-recommends build-essential cmake ninja-build pkg-config git libasound2-dev libjack-jackd2-dev libx11-dev libxrandr-dev libxinerama-dev libxcursor-dev libxcomposite-dev libfreetype6-dev libglu1-mesa-dev libgtk-3-dev libwebkit2gtk-4.1-dev libcurl4-openssl-dev libssl-dev && git config --global core.autocrlf input",
+  "remoteUser": "vscode"
+}

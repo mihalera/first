@@ -1608,6 +1608,7 @@ struct NeuralStage
     std::atomic<ModelType*> activeModel { nullptr };
     std::atomic<bool> clearRequested { false };
     std::atomic<bool> resetRequested { false };
+    std::atomic<unsigned int> readers { 0 };
 
     /** The model's input frame. RTNeural's forward() takes a pointer to a
         float[inSize] and RETURNS the single output sample by value, so one
@@ -1662,8 +1663,12 @@ struct NeuralStage
         }
 
         std::lock_guard<std::mutex> lock (controlMutex);
-        // Old model lifetimes extend until processor destruction. This makes the
-        // atomic pointer hand-off safe even if inference already captured it.
+        // Publish null while controlMutex prevents another writer; after readers
+        // drain we can safely replace the storage. The audio thread itself never waits.
+        activeModel.store (nullptr, std::memory_order_release);
+        clearRequested.store (true, std::memory_order_release);
+        while (readers.load (std::memory_order_acquire) != 0)
+            std::this_thread::yield();
         if (model != nullptr)
             retiredModels.push_back (std::move (model));
         model = std::move (parsedModel);
@@ -1684,10 +1689,11 @@ struct NeuralStage
         std::lock_guard<std::mutex> lock (controlMutex);
         activeModel.store (nullptr, std::memory_order_release);
         clearRequested.store (true, std::memory_order_release);
-        // Retain storage after publishing the clear request because a block may
-        // already hold the previous raw model pointer.
-        if (model != nullptr)
-            retiredModels.push_back (std::move (model));
+        // This runs on the control thread; process() never waits for readers.
+        while (readers.load (std::memory_order_acquire) != 0)
+            std::this_thread::yield();
+        model.reset();
+        retiredModels.clear();
         resetRequested.store (true, std::memory_order_release);
 #endif
     }

@@ -4929,12 +4929,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         //  ramp, sample rate consumes it. If a control is read here it must be
         //  read from the same per-sample value everywhere else in the frame.
         //
-        // The input-gain smoother is the sample-clock leader. Each other smoother
-        // advances lazily on the first getCurrentValue() call in this frame.
-        // Exact per-frame smoother advancement: inputGainSmoothed owns the shared
-        // clock, and these lazy reads advance their smoother once for that same frame.
-        // Advance the input leader, then use the current value from each smoother
-        // once in this frame. getCurrentValue() advances lazily via SampleClock.
+        // The input-gain smoother advances the shared sample clock. Other controls
+        // consume their current sample lazily when first read in the frame.
         const float inputGain = inputGainSmoothed.getNextValue();
         const float outputGain = outputGainSmoothed.getCurrentValue();
         const float currentWidth = widthSmoothed.getCurrentValue();
