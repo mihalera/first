@@ -10,9 +10,12 @@
 // What it checks is what the panel actually shows: that every knob gets a tile
 // that stands inside its page and above the member band, that no two tiles
 // overlap, that the strip is centred in the space it has, that the disc is
-// drawable at the editor's 780 x 664 floor, and - the two that catch a layout
-// drifting away from the paint routine - that the tile's height is the solved
-// ideal and that the disc the solver scored is the disc the paint routine draws.
+// drawable at the editor's 780 x 664 floor, that the indicator's tip stops
+// between the cap's turning rings instead of on one of them, that every list's
+// value text keeps clear of its field's left wall and that the inset grows with
+// the window, and - the two that catch a layout drifting away from the paint
+// routine - that the tile's height is the solved ideal and that the disc the
+// solver scored is the disc the paint routine draws.
 //
 // The toolkit geometry it measures against, from JUCE 9.0.3:
 //   * LookAndFeel_V2::getSliderLayout keeps a 16 px value box at the slider's
@@ -80,6 +83,12 @@ using extracted::computeKnobMetrics;
 using extracted::KnobMetrics;
 
 #include "constants.inc"
+#include "band_height.inc"
+
+// The lists' text inset, cut verbatim out of Source/ like the knob's radial
+// budget: a pure function of the field it is written in and the panel it stands
+// on, so the padding every list uses is measurable here at every window size.
+#include "combo_text.inc"
 
 struct EditorLayout
 {
@@ -111,6 +120,22 @@ struct ActiveTabStub
 };
 ActiveTabStub activeTab;
 
+// The COMP page's six knobs are the compressor's own - built beside the meters
+// they belong to, not listed in the tab table - so the harness carries the
+// second pair of arrays the editor does, and the same flag that tells the strip
+// which pair a slot addresses.
+constexpr int stubCompressorCount = 6;
+std::array<StubLabel, stubCompressorCount> compressorControlLabels;
+std::array<StubSlider, stubCompressorCount> compressorControls;
+bool compressorTab = false;
+
+// The AUTOTUNE page's own knob, the other widget the tab table cannot hold: the
+// tune amount, one slider built beside the page's pill switch. The strip is
+// handed one knob for that page and reads this pair for its single slot.
+StubLabel autoTuneAmountLabel;
+StubSlider autoTuneAmountSlider;
+bool autotuneTab = false;
+
 // ---- the plugin's layout chain, cut verbatim out of Source/ ----------------
 juce::Rectangle<int> localBounds;
 juce::Rectangle<int> getLocalBounds() { return localBounds; }
@@ -121,31 +146,43 @@ EditorLayout editorLayoutOf (int W, int H)
 #include "editor_layout.inc"
 }
 
-struct Page { const char* name; int knobs; bool band; };
+// Where a page's knobs come from. A page either declares them in the tab table,
+// or owns them itself - COMP's six are the compressor's, built beside the meters
+// they belong to, and AUTOTUNE's one is the tune amount, built with its switch.
+// Both own pages list nothing in their tab entry, and the strip is handed the
+// count and the widgets instead (see knobCount and the placement loop).
+enum class Knobs { table, compressor, autotune };
+
+struct Page { const char* name; int knobs; bool band; Knobs source = Knobs::table; };
 
 struct Built
 {
     std::vector<juce::Rectangle<int>> cells;     // the tile the layout gave the knob
     std::vector<juce::Rectangle<int>> sliders;   // the rectangle the toolkit paints in
     juce::Rectangle<int> grid;
-    int areaHeight = 0, columns = 0, rows = 0;
+    int areaHeight = 0, columns = 0, rows = 0, memberRow = 0;
     float score = 0.0f;
 };
 
 Built buildPage (const juce::Rectangle<int>& controlsBand, const Page& page)
 {
-    const auto tabControlCount = page.knobs;
+    // The tab table's count is zero on both pages that own their knobs - the
+    // compressor's six and the tune amount are not in it - so the two counts are
+    // a page's knobs and nothing.
+    const auto tabControlCount = page.source == Knobs::table ? page.knobs : 0;
     const auto memberRows = page.band ? 1 : 0;
+    compressorTab = page.source == Knobs::compressor;
+    autotuneTab = page.source == Knobs::autotune;
+    activeTab.count = tabControlCount;
+    for (int i = 0; i < tabControlCount; ++i)
+        activeTab.controls[static_cast<std::size_t> (i)] = i;
     EditorLayout layout;
     layout.controls = controlsBand;
 
 #include "grid.inc"
+#include "knob_count.inc"
 #include "band.inc"
-
-    activeTab.count = page.knobs;
-    for (int i = 0; i < page.knobs; ++i)
-        activeTab.controls[static_cast<std::size_t> (i)] = i;
-
+#include "member_row.inc"
 #include "solver.inc"
 
     // The score the solver settled on, read straight out of its own scope: the
@@ -157,13 +194,20 @@ Built buildPage (const juce::Rectangle<int>& controlsBand, const Page& page)
     Built built;
     built.grid = grid;
     built.areaHeight = knobAreaHeight;
+    // The band's top edge, from the editor's own expression rather than from the
+    // harness's copy of the height: the check below is that the strip stops
+    // exactly where the band begins, which is the one place the two could drift.
+    built.memberRow = memberRowY;
     built.columns = knobColumns;
     built.rows = knobRows;
     built.score = solvedScore;
 
-    for (int i = 0; i < page.knobs; ++i)
+    for (int i = 0; i < knobCount; ++i)
     {
-        const auto& slider = controls[i].bounds;
+        const auto& slider = compressorTab
+                                 ? compressorControls[static_cast<std::size_t> (i)].bounds
+                                 : autotuneTab ? autoTuneAmountSlider.bounds
+                                               : controls[i].bounds;
         built.sliders.push_back (slider);
         // Back from the rectangle the toolkit sizes to the TILE the layout placed:
         // the cell reduced by 5, then 8 px of caption clearance off its top.
@@ -181,6 +225,21 @@ float wallFor (float absX, float absY, int W, int H)
     const float dx = juce::jlimit (-1.0f, 1.0f, (absX - W * 0.5f) / std::max (1.0f, W * 0.5f));
     const float dy = juce::jlimit (-1.0f, 1.0f, (absY - H * 0.5f) / std::max (1.0f, H * 0.5f));
     return juce::jlimit (0.0f, 1.0f, 0.08f + 0.34f * std::max (0.0f, dy) + 0.12f * std::abs (dx));
+}
+
+// The deck's fields - SPEED, the type selectors, the presets - are 30 px tall at
+// every window size (see the deck-row table in Source/), which is the height the
+// list checks below are measured at.
+constexpr int deckFieldHeight = 30;
+
+// Where the face's r-th turning ring stands, as a fraction of the cap radius:
+// ring r is cut at radius * (knobGrooveFirst + r * knobGrooveStride / steps), the
+// loop in drawRotarySlider the knobGroove* numbers are cut out of. The indicator
+// is measured against the same ladder - which is the point, because both are
+// drawn from the same `radius` under the same camera transform.
+float grooveFraction (int ring)
+{
+    return knobGrooveFirst + static_cast<float> (ring) * knobGrooveStride / knobGrooveSteps;
 }
 
 // What drawRotarySlider is handed for one knob: the slider's rectangle less the
@@ -207,10 +266,13 @@ const Page pages[] = {
     { "VINYL", 3, false }, { "MIX", 7, true }, { "SUB FUND", 3, false },
     { "DELAY", 4, true }, { "REVERB", 2, false }, { "DYN", 3, false },
     { "OUT EQ", 6, true }, { "IN EQ", 6, true }, { "SHAPERS", 2, true },
-    { "SETTINGS", 0, true }, { "AUTOTUNE", 0, false }, { "COMP", 0, false },
+    { "SETTINGS", 0, true },
+    // The two pages that own their knobs. AUTOTUNE's one rides the strip with a
+    // member band under it for the AUTO TUNE pill; COMP's six take the whole page,
+    // as its meters live in their own panel beside the grid - see the stubs above.
+    { "AUTOTUNE", 1, true, Knobs::autotune },
+    { "COMP", 6, false, Knobs::compressor },
 };
-
-constexpr int memberBandHeight = 50;
 
 int failures = 0;
 
@@ -253,6 +315,40 @@ Old solveOld (const juce::Rectangle<int>& grid, const Page& page)
     return old;
 }
 
+// The AUTOTUNE page's own placement, which the strip replaced: the tune amount
+// rode a 30 px band beside the pill, so the toolkit kept a 15 px value box out of
+// the control and handed its art a paint area three pixels deep.
+// Kept to print what taking the page onto the strip bought - not asserted on.
+float oldAutotuneDisc (const juce::Rectangle<int>& grid, int W, int H)
+{
+    constexpr int tabColumns = 4;
+    const int cellWidth = grid.getWidth() / tabColumns;
+    const juce::Rectangle<int> slider (grid.getX() + cellWidth + 12, grid.getY() + 20,
+                                       cellWidth - 24, 30);
+    return metricsFor (slider, W, H).radius * 2.0f;
+}
+
+// The COMP page's own placement, which the strip replaced: six cells across the
+// grid's width and every slider as tall as the whole grid, so the toolkit drew
+// the cap at the top of a very tall rectangle and put the readout at its foot.
+// Kept to print what taking the page onto the strip bought - not asserted on.
+float oldCompressorDisc (const juce::Rectangle<int>& grid, int W, int H, int knobs)
+{
+    const int cellWidth = grid.getWidth() / knobs;
+    float disc = 0.0f;
+
+    for (int i = 0; i < knobs; ++i)
+    {
+        const juce::Rectangle<int> slider (grid.getX() + i * cellWidth + 4,
+                                           grid.getY() + 26,
+                                           cellWidth - 8,
+                                           grid.getHeight() - 22);
+        disc = std::max (disc, metricsFor (slider, W, H).radius * 2.0f);
+    }
+
+    return disc;
+}
+
 int main()
 {
     // The editor's own resize limits, and two sizes inside them a session is
@@ -268,7 +364,10 @@ int main()
         for (const auto& page : pages)
         {
             const auto built = buildPage (layout.controls, page);
-            const int band = page.band && page.knobs > 0 ? memberBandHeight : 0;
+            // The band the strip must stay above: the same expression the editor
+            // writes its member row from, so a page that reserves a band with no
+            // knobs (SETTINGS) is not asked to leave room it does not have.
+            const int band = built.areaHeight != built.grid.getHeight() ? memberBandHeight : 0;
             const int area = built.grid.getHeight() - band;
             const int areaBottom = built.grid.getBottom() - band;
             const int topAir = built.cells.empty() ? 0 : built.cells[0].getY() - built.grid.getY();
@@ -288,13 +387,25 @@ int main()
                 smallestDisc = std::min (smallestDisc, metrics.radius * 2.0f);
             }
 
-            const auto old = solveOld (built.grid, page);
             float oldDisc = 0.0f;
-            for (const auto& cell : old.cells)
+
+            if (page.source == Knobs::compressor)
             {
-                auto slider = cell.reduced (5);     // the old placement, as it was
-                slider.removeFromTop (8);
-                oldDisc = std::max (oldDisc, metricsFor (slider, W, H).radius * 2.0f);
+                oldDisc = oldCompressorDisc (built.grid, W, H, page.knobs);
+            }
+            else if (page.source == Knobs::autotune)
+            {
+                oldDisc = oldAutotuneDisc (built.grid, W, H);
+            }
+            else
+            {
+                const auto old = solveOld (built.grid, page);
+                for (const auto& cell : old.cells)
+                {
+                    auto slider = cell.reduced (5);     // the old placement, as it was
+                    slider.removeFromTop (8);
+                    oldDisc = std::max (oldDisc, metricsFor (slider, W, H).radius * 2.0f);
+                }
             }
 
             const int rows = (page.knobs + built.columns - 1) / built.columns;
@@ -317,6 +428,8 @@ int main()
             check (smallestDisc >= 2.0f, "every disc is drawable (>= 2 px)", page.name, W, H);
             check (topAir >= 0 && bottomAir >= 0,
                    "no tile stands outside the knob area", page.name, W, H);
+            check (band == 0 || built.memberRow == areaBottom,
+                   "the knob area ends where the member band begins", page.name, W, H);
             check (std::abs (topAir - bottomAir) <= 1,
                    "the strip is centred in the area", page.name, W, H);
             check (tileH >= tileW + 24 || tileH == rowHeight,
@@ -355,7 +468,80 @@ int main()
             // 3. The disc the fast score promised is the disc the paint draws.
             check (std::abs (built.score - painted) < 0.001f,
                    "the scored disc equals the drawn one", page.name, W, H);
+
+            // 4. The indicator stops BETWEEN the face's turning rings, not on one
+            //    of them. Its rib used to run out to 0.86 of the cap where the
+            //    outermost ring is cut at 0.871, so on every knob the tip and a
+            //    division shared their last few pixels - the pointer looked like
+            //    it was riding the scale, and on the small caps the COMP page's
+            //    strip draws there was nothing between the two but the tip and the
+            //    ring. Both numbers come out of the paint routine above, so a
+            //    redrawn ladder moves this check instead of failing it, and the
+            //    clearance is stated in ring spacings: the tip stands at least a
+            //    quarter of one clear of every ring it is drawn among.
+            float ringClearance = 1.0e9f;
+            for (int ring = 1; ring <= knobGrooveRings; ++ring)
+                ringClearance = std::min (ringClearance,
+                                          std::abs (knobPointerLength - grooveFraction (ring)));
+
+            check (knobPointerLength < grooveFraction (knobGrooveRings),
+                   "the indicator stops inside the outermost turning ring", page.name, W, H);
+            check (ringClearance >= 0.25f * knobGrooveStride / knobGrooveSteps,
+                   "the indicator's tip stands clear of every turning ring",
+                   page.name, W, H);
+
+            // 5. ...and the indicator BEAD - the lit dot riding the end of the
+            //    active arc - is painted after the cap, not before it. Nothing in
+            //    the numbers says so, because it is the routine's order that
+            //    decides it: the collar stands a few pixels inside the groove the
+            //    bead rides, so a bead painted first came out with its inner half
+            //    under the knob, which is exactly how it looked.
+            check (knobBeadOverCap == 1,
+                   "the indicator bead is drawn over the cap, not under it",
+                   page.name, W, H);
         }
+
+        // ---- the lists' value text ------------------------------------------
+        //  Every list on the panel - the deck's fields and the tab pages' alike -
+        //  places its value text through the one function cut out of the plugin,
+        //  so the padding can be measured at this panel's size without a window.
+        //  Three things have to hold: a digit never stands against the field's
+        //  left wall, the inset grows with the panel instead of being the same
+        //  number at 780 and at 1500, and BOTH list styles ask the same rule -
+        //  a panel that pads one kind of list and walls the other is two panels.
+        const auto deckInset = comboTextInset (deckFieldHeight, H);
+
+        std::printf ("  %-9s list inset %d px (field %d, panel %d) | %d call site(s)\n",
+                     "LISTS", deckInset, deckFieldHeight, H, comboTextInsetCallSites);
+
+        // Three pixels is the REQUIREMENT, so it is written here as a number: the
+        // plugin's own floor is read out of it below, and a check that compared the
+        // inset against that floor would be asking the constant whether it agrees
+        // with itself. What is being held to the three is the solved inset.
+        constexpr int listTextMinimum = 3;
+
+        // The smallest field on this panel is a member row's 28 px box and the
+        // largest is a deck field at 30; the range below is wider than both, so the
+        // rule is held to the requirement at sizes this panel does not have yet.
+        for (int fieldHeight = 16; fieldHeight <= 44; ++fieldHeight)
+        {
+            check (comboTextInset (fieldHeight, H) >= listTextMinimum,
+                   "a list's text keeps clear of its field's left wall", "LISTS", W, H);
+            check (comboTextInset (fieldHeight, H) * 2 <= fieldHeight,
+                   "a list's inset never takes more than half its field's height",
+                   "LISTS", W, H);
+        }
+
+        check (comboTextMinimumInset >= listTextMinimum,
+               "the plugin's own floor is at least the three pixels required",
+               "LISTS", W, H);
+        check (deckInset >= comboTextInset (deckFieldHeight, 664),
+               "a list's inset never shrinks as the panel grows", "LISTS", W, H);
+        check (H < 1180 || deckInset > comboTextInset (deckFieldHeight, 664),
+               "a list's inset follows the window rather than a constant", "LISTS", W, H);
+        check (comboTextInsetCallSites >= 2,
+               "both list styles place their text through the one inset rule",
+               "LISTS", W, H);
     }
 
     std::printf ("\n%s (%d failures)\n",

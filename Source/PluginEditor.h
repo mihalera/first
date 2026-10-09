@@ -312,6 +312,17 @@ public:
         clear of the caret (see J37LookAndFeel's note for why this exists). */
     void positionComboBoxText (juce::ComboBox&, juce::Label&) override;
 
+    /** The panel's own height, so an in-tab list's text inset can follow the
+        window exactly as a deck list's does. The two list styles are drawn by
+        two look-and-feels and the inset is solved from the panel, so both of
+        them have to be told how tall it is - set from paint(), where the deck's
+        own camera is set, for the same reason: it is the panel's size that
+        decides, and the panel has one size at paint time. */
+    void setPanelBounds (const juce::Component& panel) noexcept
+    {
+        panelHeight = panel.getHeight();
+    }
+
     /** Ink-only value Label paint, matching the deck style's (no fill card). */
     void drawLabel (juce::Graphics&, juce::Label&) override;
 
@@ -322,6 +333,7 @@ public:
 
 private:
     J37LookAndFeel::ThemeChoice theme = J37LookAndFeel::ThemeChoice::ivory;
+    int panelHeight = 0;   ///< The panel the lists stand on; 0 until the first paint.
 };
 
 class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor,
