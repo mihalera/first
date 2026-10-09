@@ -10,9 +10,11 @@
 // What it checks is what the panel actually shows: that every knob gets a tile
 // that stands inside its page and above the member band, that no two tiles
 // overlap, that the strip is centred in the space it has, that the disc is
-// drawable at the editor's 780 x 664 floor, and - the two that catch a layout
-// drifting away from the paint routine - that the tile's height is the solved
-// ideal and that the disc the solver scored is the disc the paint routine draws.
+// drawable at the editor's 780 x 664 floor, that the indicator's tip stops
+// between the cap's turning rings instead of on one of them, and - the two that
+// catch a layout drifting away from the paint routine - that the tile's height is
+// the solved ideal and that the disc the solver scored is the disc the paint
+// routine draws.
 //
 // The toolkit geometry it measures against, from JUCE 9.0.3:
 //   * LookAndFeel_V2::getSliderLayout keeps a 16 px value box at the slider's
@@ -202,6 +204,16 @@ float wallFor (float absX, float absY, int W, int H)
     const float dx = juce::jlimit (-1.0f, 1.0f, (absX - W * 0.5f) / std::max (1.0f, W * 0.5f));
     const float dy = juce::jlimit (-1.0f, 1.0f, (absY - H * 0.5f) / std::max (1.0f, H * 0.5f));
     return juce::jlimit (0.0f, 1.0f, 0.08f + 0.34f * std::max (0.0f, dy) + 0.12f * std::abs (dx));
+}
+
+// Where the face's r-th turning ring stands, as a fraction of the cap radius:
+// ring r is cut at radius * (knobGrooveFirst + r * knobGrooveStride / steps), the
+// loop in drawRotarySlider the knobGroove* numbers are cut out of. The indicator
+// is measured against the same ladder - which is the point, because both are
+// drawn from the same `radius` under the same camera transform.
+float grooveFraction (int ring)
+{
+    return knobGrooveFirst + static_cast<float> (ring) * knobGrooveStride / knobGrooveSteps;
 }
 
 // What drawRotarySlider is handed for one knob: the slider's rectangle less the
@@ -411,6 +423,27 @@ int main()
             // 3. The disc the fast score promised is the disc the paint draws.
             check (std::abs (built.score - painted) < 0.001f,
                    "the scored disc equals the drawn one", page.name, W, H);
+
+            // 4. The indicator stops BETWEEN the face's turning rings, not on one
+            //    of them. Its rib used to run out to 0.86 of the cap where the
+            //    outermost ring is cut at 0.871, so on every knob the tip and a
+            //    division shared their last few pixels - the pointer looked like
+            //    it was riding the scale, and on the small caps the COMP page's
+            //    strip draws there was nothing between the two but the tip and the
+            //    ring. Both numbers come out of the paint routine above, so a
+            //    redrawn ladder moves this check instead of failing it, and the
+            //    clearance is stated in ring spacings: the tip stands at least a
+            //    quarter of one clear of every ring it is drawn among.
+            float ringClearance = 1.0e9f;
+            for (int ring = 1; ring <= knobGrooveRings; ++ring)
+                ringClearance = std::min (ringClearance,
+                                          std::abs (knobPointerLength - grooveFraction (ring)));
+
+            check (knobPointerLength < grooveFraction (knobGrooveRings),
+                   "the indicator stops inside the outermost turning ring", page.name, W, H);
+            check (ringClearance >= 0.25f * knobGrooveStride / knobGrooveSteps,
+                   "the indicator's tip stands clear of every turning ring",
+                   page.name, W, H);
         }
     }
 

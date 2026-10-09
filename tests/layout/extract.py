@@ -13,7 +13,8 @@ Eight fragments are cut, each verbatim and each by the text that makes it
 unambiguous: the radial budget (KnobMetrics and computeKnobMetrics), the editor
 layout's own body, the grid the page lays its controls in, the knob count the
 strip is handed, the member band, the strip solver, the member band's top edge,
-and the tile placement. They are written as separate includes because they are
+the tile placement, and the cap's own divisions with the length of the indicator
+that runs among them. They are written as separate includes because they are
 statement blocks that have to land inside functions the hand-written harness
 declares - the alternative is a template, and then the compiled text is the
 template's and not the plugin's.
@@ -72,6 +73,16 @@ def constant(text: str, pattern: str, name: str) -> str:
     return match.group(1)
 
 
+def ladder(text: str, pattern: str, name: str) -> list[str]:
+    """The numbers `pattern` captures, from the one place in `text` it matches."""
+    matches = re.findall(pattern, text)
+    if len(matches) != 1:
+        raise SystemExit(f"extract.py: `{name}` matches {len(matches)} places in "
+                         f"{EDITOR.name}; the layout harness cannot tell them apart.")
+    found = matches[0]
+    return list(found) if isinstance(found, tuple) else [found]
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("output_dir", nargs="?", default="extracted_layout",
@@ -85,6 +96,21 @@ def main() -> int:
 
     divider = constant(source, r"controlsDividerOffset = (\d+);", "controlsDividerOffset")
     row_gap = constant(source, r"constexpr int knobRowGap = (\d+);", "knobRowGap")
+
+    # The cap's own turning rings and how far the indicator runs among them. The
+    # complaint this measures is a tip that lands ON a division, so neither
+    # number can be restated in the harness: both are read out of the paint
+    # routine, and a redrawn ladder moves the check with it.
+    pointer_length = ladder(source, r"const auto pointerLength = radius \* ([0-9.]+)f;",
+                            "the indicator's length")[0]
+    groove_rings = ladder(source, r"for \(int ring = 1; ring <= (\d+); \+\+ring\)",
+                          "the turning rings")[0]
+    groove_steps = ladder(source,
+                          r"const auto t = static_cast<float> \(ring\) / ([0-9.]+)f;",
+                          "the turning rings' step")[0]
+    groove_first, groove_stride = ladder(
+        source, r"const auto ringRadius = radius \* \(([0-9.]+)f \+ t \* ([0-9.]+)f\);",
+        "the turning rings' span")
 
     fragments = {
         # The radial budget: one pure function of the paint area and the camera.
@@ -136,6 +162,18 @@ def main() -> int:
             "// tiles - read out of Source/ rather than repeated here.",
             f"constexpr int controlsDividerOffset = {divider};",
             f"constexpr int knobRowGap = {row_gap};",
+            "",
+            "// The cap's divisions and the indicator's own length. Ring r is cut at",
+            "// radius * (knobGrooveFirst + r * knobGrooveStride / knobGrooveSteps),",
+            "// and the rib runs out to knobPointerLength of that same radius - both",
+            "// out of drawRotarySlider, so a knob that grew a longer indicator, or a",
+            "// face cut with a different ladder, cannot leave the checks below",
+            "// measuring the numbers this file used to carry.",
+            f"constexpr float knobPointerLength = {pointer_length}f;",
+            f"constexpr int knobGrooveRings = {groove_rings};",
+            f"constexpr float knobGrooveSteps = {groove_steps}f;",
+            f"constexpr float knobGrooveFirst = {groove_first}f;",
+            f"constexpr float knobGrooveStride = {groove_stride}f;",
         ]),
     }
 

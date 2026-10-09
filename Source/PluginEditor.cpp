@@ -5493,7 +5493,11 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         slider.setLookAndFeel (&customLookAndFeel);
         slider.setName (compressorNames[i]);
         compressorControlLabels[i].setText (compressorNames[i], juce::dontSendNotification);
+        // Same caption as every other page's knobs - the COMP page's strip is the
+        // common one now, so its labels must match it rather than the meters' type.
+        compressorControlLabels[i].setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
         compressorControlLabels[i].setJustificationType (juce::Justification::centred);
+        compressorControlLabels[i].setInterceptsMouseClicks (false, false);
         addAndMakeVisible (compressorControls[i]);
         addAndMakeVisible (compressorControlLabels[i]);
         compressorAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>
