@@ -1327,16 +1327,14 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     g.strokePath (activeCore, juce::PathStrokeType (1.0f, juce::PathStrokeType::curved,
                                                     juce::PathStrokeType::rounded));
 
-    // Bright tracer dot riding the end of the active arc - the clearest "live" cue.
-    const auto tracer = centre + juce::Point<float> (std::cos (screenAngle) * outerRadius,
-                                                     std::sin (screenAngle) * outerRadius);
-    const auto tracerPulse = 2.6f + 1.4f * breath + activity * 2.0f;
-    g.setColour (accent.withAlpha (0.35f));
-    g.fillEllipse (tracer.x - tracerPulse * 1.9f, tracer.y - tracerPulse * 1.9f,
-                   tracerPulse * 3.8f, tracerPulse * 3.8f);
-    g.setColour (palette.readout);
-    g.fillEllipse (tracer.x - tracerPulse, tracer.y - tracerPulse,
-                   tracerPulse * 2.0f, tracerPulse * 2.0f);
+    // The tracer dot - the lit bead riding the end of the active arc - is the
+    // LAST thing the knob draws, over its own cap: see below, after the hub. It
+    // used to be painted here, and the collar is drawn after this point, so the
+    // bead's inner half was under the collar at every size - a light that is
+    // three-quarters of a circle is a light that reads as clipped metal. It is
+    // still drawn inside the camera transform (with the hub), so it squashes
+    // with the groove it rides rather than staying round on a foreshortened
+    // scale.
 
     //------------------------------------------------------------------
     //  Animation layer 2: the scale ticks tremble with the transport
@@ -1644,6 +1642,24 @@ void J37LookAndFeel::drawRotarySlider (juce::Graphics& g,
     g.setColour (palette.knobHighlight.withAlpha (0.45f));
     g.drawEllipse (centre.x - hubRadius, centre.y - hubRadius,
                    hubRadius * 2.0f, hubRadius * 2.0f, 0.7f);
+
+    // The tracer bead, last so nothing on the knob can cover it. It rides the
+    // scale groove's centre line at the live angle, and its own glow is a wider,
+    // fainter copy of the same disc. Both are drawn AFTER the collar, the knurl
+    // and the cap: the collar stands a few pixels inside the groove, where a
+    // bead of this size always overlapped it, and a lit indicator is the one
+    // piece of this widget that is meant to sit on top of the hardware rather
+    // than inside it. Still inside the camera transform, so it foreshortens with
+    // the groove it belongs to.
+    const auto tracer = centre + juce::Point<float> (std::cos (screenAngle) * outerRadius,
+                                                     std::sin (screenAngle) * outerRadius);
+    const auto tracerPulse = 2.6f + 1.4f * breath + activity * 2.0f;
+    g.setColour (accent.withAlpha (0.35f));
+    g.fillEllipse (tracer.x - tracerPulse * 1.9f, tracer.y - tracerPulse * 1.9f,
+                   tracerPulse * 3.8f, tracerPulse * 3.8f);
+    g.setColour (palette.readout);
+    g.fillEllipse (tracer.x - tracerPulse, tracer.y - tracerPulse,
+                   tracerPulse * 2.0f, tracerPulse * 2.0f);
 
     // Out of the camera transform before the focus ring: a focus ring is the one
     // thing on the panel that belongs to the SCREEN rather than to the object,
@@ -3806,15 +3822,41 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     autoTuneButton.setLookAndFeel (&inlineLookAndFeel);
     autoTuneAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
         (audioProcessor.parameters, "autotune", autoTuneButton);
-    autoTuneAmountSlider.setSliderStyle (juce::Slider::LinearHorizontal);
+    // A rotary, laid out by the knob strip like every other page's controls - see
+    // the AUTOTUNE branch in resized(). As a LinearHorizontal bar this was the
+    // one control on the panel the toolkit drew for itself (J37LookAndFeel
+    // overrides the rotary, the switch and the toggle, and inherits JUCE's stock
+    // slider art), and the band it rode was 30 px tall: the toolkit kept a 15 px
+    // value box out of that and handed the art a paint area three pixels deep, so
+    // the page's only knob was a two-pixel bead beside a stock grey track.
+    autoTuneAmountSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+    // 16 px for the readout, as on the deck's knobs - see the note there.
+    autoTuneAmountSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 78, 16);
     autoTuneAmountSlider.setRange (0.0, 1.0, 0.001);
-    autoTuneAmountSlider.setTextValueSuffix (" %");
+    // The readout reads "50 %", the way the panel's other fraction knobs read (see
+    // the transient shaper's two amounts, the same pair of functions): the
+    // parameter IS a fraction and its unit IS percent, so the toolkit's own
+    // 0.500-with-a-percent-sign was the wrong number WITH a percent sign after
+    // it. The unit rides inside the text function rather than in
+    // setTextValueSuffix, so it cannot be written twice.
+    autoTuneAmountSlider.textFromValueFunction = [] (double value)
+    {
+        return juce::String (juce::roundToInt (value * 100.0)) + " %";
+    };
+    autoTuneAmountSlider.valueFromTextFunction = [] (const juce::String& text)
+    {
+        return juce::jlimit (0.0, 1.0, text.getDoubleValue() / 100.0);
+    };
     autoTuneAmountSlider.setLookAndFeel (&customLookAndFeel);
     autoTuneAmountAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>
         (audioProcessor.parameters, "autotune_amount", autoTuneAmountSlider);
     styleLabel (tuningTonicLabel, "TONIC", 9.0f, paletteFor (false).secondary, true, juce::Justification::left);
     styleLabel (tuningModeLabel, "MODE", 9.0f, paletteFor (false).secondary, true, juce::Justification::left);
-    styleLabel (autoTuneAmountLabel, "TUNE AMOUNT", 9.0f, paletteFor (false).secondary, true, juce::Justification::left);
+    // Centred, and click-through, because this caption is now a knob page's - the
+    // strip places it in the tile's caption band like every other page's label,
+    // and a left-aligned caption over a centred knob reads as a stray word.
+    styleLabel (autoTuneAmountLabel, "TUNE AMOUNT", 9.0f, paletteFor (false).secondary, true, juce::Justification::centred);
+    autoTuneAmountLabel.setInterceptsMouseClicks (false, false);
     addAndMakeVisible (tuningTonicLabel);
     addAndMakeVisible (tuningModeLabel);
     addAndMakeVisible (tuningTonicBox);
@@ -6164,6 +6206,15 @@ void FirstAudioProcessorEditor::applyTheme()
     for (auto& label : controlLabels)
         label.setColour (juce::Label::textColourId, palette.secondary);
 
+    // Three captions the constructor inked and nothing re-inked: TUNE AMOUNT is a
+    // knob page's caption now (the loop above places it in the knob strip), and the
+    // TONIC and MODE captions are its peers - the two pages used to share one tab.
+    // All three follow the panel like every other caption on it, instead of
+    // keeping the ivory panel's ink on charcoal.
+    autoTuneAmountLabel.setColour (juce::Label::textColourId, palette.secondary);
+    tuningTonicLabel.setColour (juce::Label::textColourId, palette.secondary);
+    tuningModeLabel.setColour (juce::Label::textColourId, palette.secondary);
+
     // The deck's and the tabs' remaining captions. Every label the constructor
     // styles with paletteFor(false) has to be re-inked here as well, or a theme
     // switch leaves it in the previous panel's colour - the six type selectors,
@@ -8185,17 +8236,21 @@ void FirstAudioProcessorEditor::resized()
     const auto compressorTab = index_of_tab_named ("COMP") == currentTab;
 
     // How many knobs the LIVE page has to place, and which list they come from.
-    // The COMP page is the one page whose knobs are not in the tabSpecs table:
-    // they are the compressor's own six, built beside the meters they belong to
-    // rather than declared as a knob page, so the strip is handed their count
-    // here and reads their widgets in its placement loop below. Everything
-    // after this point is therefore written against knobCount rather than
-    // against the tab's own count, and the page is laid out by the same solve
-    // as every other page - it used to place its own six by hand, in cells as
-    // tall as the whole grid, which drew a small cap at the top of each cell
-    // with its readout a hundred-odd pixels under it.
+    // Two pages own knobs the tabSpecs table cannot describe: COMP's six are the
+    // compressor's own, built beside the meters they belong to, and AUTOTUNE's one
+    // is the tune amount, built with the page's pill switch. Neither is declared
+    // as a knob page, so the strip is handed their count here and reads their
+    // widgets in its placement loop below. Everything after this point is written
+    // against knobCount rather than against the tab's own count, and both pages are
+    // laid out by the same solve as every other page: COMP used to place its own
+    // six by hand, in cells as tall as the whole grid, which drew a small cap at
+    // the top of each cell with its readout a hundred-odd pixels under it, and
+    // AUTOTUNE rode a 30 px band beside its switch, which the toolkit turned into a
+    // three-pixel paint area - a bead on a stock bar, one knob on the panel drawn
+    // by JUCE's own slider art.
     const auto knobCount = compressorTab ? static_cast<int> (compressorControls.size())
-                                         : tabControlCount;
+                                         : autotuneTab ? 1
+                                                       : tabControlCount;
 
     // Which pages own a MEMBER BAND - the strip under the knobs that the
     // non-knob combos and pills (placeDeckSwitch) are laid out in. It is no
@@ -8217,7 +8272,7 @@ void FirstAudioProcessorEditor::resized()
     // page now gives that 50 px to its own three knobs instead.
     const auto memberRows = (settingsTab || delayTab || characterTab
                              || frontEndTab || shapersTab || inEqTab || outEqTab
-                             || machineTab || mixTab) ? 1 : 0;
+                             || machineTab || mixTab || autotuneTab) ? 1 : 0;
 
     // The member band is a FIXED strip - a caption band plus a control band -
     // pinned to the grid's BOTTOM edge, and the knob strip takes what is above
@@ -8388,14 +8443,16 @@ void FirstAudioProcessorEditor::resized()
     {
         // Which widget this slot IS. The tab table holds every knob page's
         // controls and nothing else, so a page's slot is an index into it - but
-        // the compressor's six are the one list the table cannot hold (they
-        // belong to the meters panel's stage, not to a knob page), so COMP is
-        // the one page whose slots address their label and slider directly.
+        // COMP's six and AUTOTUNE's one are the widgets the table cannot hold
+        // (they belong to their page's own machinery rather than to a knob page),
+        // so those two pages' slots address their label and slider directly.
         const auto slotIndex = static_cast<std::size_t> (slot);
         auto& label = compressorTab ? compressorControlLabels[slotIndex]
-                                    : controlLabels[activeTab.controls[slotIndex]];
+                                    : autotuneTab ? autoTuneAmountLabel
+                                                  : controlLabels[activeTab.controls[slotIndex]];
         auto& control = compressorTab ? compressorControls[slotIndex]
-                                      : controls[activeTab.controls[slotIndex]];
+                                      : autotuneTab ? autoTuneAmountSlider
+                                                    : controls[activeTab.controls[slotIndex]];
         const auto row = slot / knobColumns;
         const auto column = slot % knobColumns;
         // The tiles ride EQUAL SLOTS rather than sitting edge to edge, so a page
@@ -8636,9 +8693,15 @@ void FirstAudioProcessorEditor::resized()
     else if (autotuneTab)
     {
         sectionCaptionLabel.setText ("AUTOTUNE", juce::dontSendNotification);
-        autoTuneButton.setBounds (grid.getX() + 12, grid.getY() + 20, cellWidth - 24, 30);
-        autoTuneAmountLabel.setBounds (grid.getX() + cellWidth + 5, grid.getY() + 1, cellWidth - 10, 17);
-        autoTuneAmountSlider.setBounds (grid.getX() + cellWidth + 12, grid.getY() + 20, cellWidth - 24, 30);
+        // The page's knob is on the strip above, with its caption and its readout
+        // in its own tile (see knobCount), so the band under the strip carries the
+        // control the page has left: the AUTO TUNE pill. It names itself - the
+        // inline look-and-feel draws the button's own text beside its pill - so it
+        // needs no caption band, and it is placed in the band's control row with
+        // the same insets as the switches on every other page's member row.
+        const auto bandHeight = juce::jmin (30, grid.getBottom() - memberRowY - 22);
+        autoTuneButton.setBounds (grid.getX() + 12, memberRowY + 20,
+                                  cellWidth - 24, bandHeight);
     }
     // The COMP page has no branch here, and that is the point: its six knobs are
     // laid out by the knob strip above, like every other page's, and the page's

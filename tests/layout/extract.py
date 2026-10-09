@@ -14,10 +14,10 @@ unambiguous: the radial budget (KnobMetrics and computeKnobMetrics), the editor
 layout's own body, the grid the page lays its controls in, the knob count the
 strip is handed, the member band, the strip solver, the member band's top edge,
 the tile placement, and the cap's own divisions with the length of the indicator
-that runs among them. They are written as separate includes because they are
-statement blocks that have to land inside functions the hand-written harness
-declares - the alternative is a template, and then the compiled text is the
-template's and not the plugin's.
+that runs among them and the order it is painted in. They are written as
+separate includes because they are statement blocks that have to land inside
+functions the hand-written harness declares - the alternative is a template, and
+then the compiled text is the template's and not the plugin's.
 
 The fragments are cut in the order the plugin declares them, because that is
 the order the harness has to compile them in: the knob count is what the band
@@ -112,6 +112,20 @@ def main() -> int:
         source, r"const auto ringRadius = radius \* \(([0-9.]+)f \+ t \* ([0-9.]+)f\);",
         "the turning rings' span")
 
+    # Where the bead's paint sits in the routine. It is drawn LAST on purpose: the
+    # collar stands a few pixels inside the groove the bead rides, so a bead
+    # painted before the cap comes out with its inner half shaved off - a lamp
+    # under the knob, which is what it looked like. That is a property of the
+    # routine's SEQUENCE rather than of any number in it, so it is the one thing
+    # here that is measured from the order the two blocks appear in.
+    bead_at = source.find("g.fillEllipse (tracer.x")
+    cap_at = source.find("const auto skirt = radius")
+    if bead_at < 0 or cap_at < 0:
+        raise SystemExit(f"extract.py: the indicator bead's paint and the cap's "
+                         f"first solid part are not both in {EDITOR.name}. The "
+                         f"layout harness measures their order in drawRotarySlider.")
+    bead_over_cap = 1 if bead_at > cap_at else 0
+
     fragments = {
         # The radial budget: one pure function of the paint area and the camera.
         "metrics.inc": "\n".join([
@@ -174,6 +188,12 @@ def main() -> int:
             f"constexpr float knobGrooveSteps = {groove_steps}f;",
             f"constexpr float knobGrooveFirst = {groove_first}f;",
             f"constexpr float knobGrooveStride = {groove_stride}f;",
+            "",
+            "// 1 while the indicator bead is painted after the cap's first solid part",
+            "// (the skirt) rather than before it - see extract.py. The collar stands a",
+            "// few pixels inside the groove the bead rides, so the other order shaves",
+            "// the bead's inner half off under the knob.",
+            f"constexpr int knobBeadOverCap = {bead_over_cap};",
         ]),
     }
 

@@ -123,6 +123,13 @@ std::array<StubLabel, stubCompressorCount> compressorControlLabels;
 std::array<StubSlider, stubCompressorCount> compressorControls;
 bool compressorTab = false;
 
+// The AUTOTUNE page's own knob, the other widget the tab table cannot hold: the
+// tune amount, one slider built beside the page's pill switch. The strip is
+// handed one knob for that page and reads this pair for its single slot.
+StubLabel autoTuneAmountLabel;
+StubSlider autoTuneAmountSlider;
+bool autotuneTab = false;
+
 // ---- the plugin's layout chain, cut verbatim out of Source/ ----------------
 juce::Rectangle<int> localBounds;
 juce::Rectangle<int> getLocalBounds() { return localBounds; }
@@ -133,9 +140,14 @@ EditorLayout editorLayoutOf (int W, int H)
 #include "editor_layout.inc"
 }
 
-// `compressor` marks the one page whose knobs are the compressor's own six: its
-// tab entry lists no controls at all, and the strip is handed the other array.
-struct Page { const char* name; int knobs; bool band; bool compressor = false; };
+// Where a page's knobs come from. A page either declares them in the tab table,
+// or owns them itself - COMP's six are the compressor's, built beside the meters
+// they belong to, and AUTOTUNE's one is the tune amount, built with its switch.
+// Both own pages list nothing in their tab entry, and the strip is handed the
+// count and the widgets instead (see knobCount and the placement loop).
+enum class Knobs { table, compressor, autotune };
+
+struct Page { const char* name; int knobs; bool band; Knobs source = Knobs::table; };
 
 struct Built
 {
@@ -148,11 +160,13 @@ struct Built
 
 Built buildPage (const juce::Rectangle<int>& controlsBand, const Page& page)
 {
-    // The tab table's count is zero on the COMP page - the compressor's knobs are
-    // not in it - so the two counts are the page's knobs and nothing.
-    const auto tabControlCount = page.compressor ? 0 : page.knobs;
+    // The tab table's count is zero on both pages that own their knobs - the
+    // compressor's six and the tune amount are not in it - so the two counts are
+    // a page's knobs and nothing.
+    const auto tabControlCount = page.source == Knobs::table ? page.knobs : 0;
     const auto memberRows = page.band ? 1 : 0;
-    compressorTab = page.compressor;
+    compressorTab = page.source == Knobs::compressor;
+    autotuneTab = page.source == Knobs::autotune;
     activeTab.count = tabControlCount;
     for (int i = 0; i < tabControlCount; ++i)
         activeTab.controls[static_cast<std::size_t> (i)] = i;
@@ -186,7 +200,8 @@ Built buildPage (const juce::Rectangle<int>& controlsBand, const Page& page)
     {
         const auto& slider = compressorTab
                                  ? compressorControls[static_cast<std::size_t> (i)].bounds
-                                 : controls[i].bounds;
+                                 : autotuneTab ? autoTuneAmountSlider.bounds
+                                               : controls[i].bounds;
         built.sliders.push_back (slider);
         // Back from the rectangle the toolkit sizes to the TILE the layout placed:
         // the cell reduced by 5, then 8 px of caption clearance off its top.
@@ -240,10 +255,12 @@ const Page pages[] = {
     { "VINYL", 3, false }, { "MIX", 7, true }, { "SUB FUND", 3, false },
     { "DELAY", 4, true }, { "REVERB", 2, false }, { "DYN", 3, false },
     { "OUT EQ", 6, true }, { "IN EQ", 6, true }, { "SHAPERS", 2, true },
-    { "SETTINGS", 0, true }, { "AUTOTUNE", 0, false },
-    // The compressor page: six knobs, no member band, and not one of them in the
-    // tab table - see the compressor stubs above.
-    { "COMP", 6, false, true },
+    { "SETTINGS", 0, true },
+    // The two pages that own their knobs. AUTOTUNE's one rides the strip with a
+    // member band under it for the AUTO TUNE pill; COMP's six take the whole page,
+    // as its meters live in their own panel beside the grid - see the stubs above.
+    { "AUTOTUNE", 1, true, Knobs::autotune },
+    { "COMP", 6, false, Knobs::compressor },
 };
 
 int failures = 0;
@@ -285,6 +302,19 @@ Old solveOld (const juce::Rectangle<int>& grid, const Page& page)
     }
 
     return old;
+}
+
+// The AUTOTUNE page's own placement, which the strip replaced: the tune amount
+// rode a 30 px band beside the pill, so the toolkit kept a 15 px value box out of
+// the control and handed its art a paint area three pixels deep.
+// Kept to print what taking the page onto the strip bought - not asserted on.
+float oldAutotuneDisc (const juce::Rectangle<int>& grid, int W, int H)
+{
+    constexpr int tabColumns = 4;
+    const int cellWidth = grid.getWidth() / tabColumns;
+    const juce::Rectangle<int> slider (grid.getX() + cellWidth + 12, grid.getY() + 20,
+                                       cellWidth - 24, 30);
+    return metricsFor (slider, W, H).radius * 2.0f;
 }
 
 // The COMP page's own placement, which the strip replaced: six cells across the
@@ -348,9 +378,13 @@ int main()
 
             float oldDisc = 0.0f;
 
-            if (page.compressor)
+            if (page.source == Knobs::compressor)
             {
                 oldDisc = oldCompressorDisc (built.grid, W, H, page.knobs);
+            }
+            else if (page.source == Knobs::autotune)
+            {
+                oldDisc = oldAutotuneDisc (built.grid, W, H);
             }
             else
             {
@@ -443,6 +477,16 @@ int main()
                    "the indicator stops inside the outermost turning ring", page.name, W, H);
             check (ringClearance >= 0.25f * knobGrooveStride / knobGrooveSteps,
                    "the indicator's tip stands clear of every turning ring",
+                   page.name, W, H);
+
+            // 5. ...and the indicator BEAD - the lit dot riding the end of the
+            //    active arc - is painted after the cap, not before it. Nothing in
+            //    the numbers says so, because it is the routine's order that
+            //    decides it: the collar stands a few pixels inside the groove the
+            //    bead rides, so a bead painted first came out with its inner half
+            //    under the knob, which is exactly how it looked.
+            check (knobBeadOverCap == 1,
+                   "the indicator bead is drawn over the cap, not under it",
                    page.name, W, H);
         }
     }
