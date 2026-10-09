@@ -3276,12 +3276,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
     const int numSamples = static_cast<int> (block.getNumSamples());
 
-    // Every time constant inside the engine is a duration converted from a sample
-    // rate, so it has to see the rate the block actually runs at: the session rate in
-    // the plain path, and the multiplied rate in the oversampled path (see
-    // processBlock). Reading `sampleRate` here instead would silently turn every
-    // filter, detector and modulator off-tune the moment oversampling is switched on.
-    const auto engineSampleRate = juce::jmax (1.0f, sampleRate * oversamplingRateFactor);
+    // This engine block uses the host rate; oversampling, when selected, wraps
+    // this call with JUCE's up/downsamplers in processBlock.
+    const auto engineSampleRate = juce::jmax (1.0f, sampleRate);
 
     // The engine works directly on the block: in the oversampled path the block
     // references the oversampler's internal storage, in the plain path it wraps
@@ -4934,6 +4931,10 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         //
         // The input-gain smoother is the sample-clock leader. Each other smoother
         // advances lazily on the first getCurrentValue() call in this frame.
+        // Exact per-frame smoother advancement: inputGainSmoothed owns the shared
+        // clock, and these lazy reads advance their smoother once for that same frame.
+        // Advance the input leader, then use the current value from each smoother
+        // once in this frame. getCurrentValue() advances lazily via SampleClock.
         const float inputGain = inputGainSmoothed.getNextValue();
         const float outputGain = outputGainSmoothed.getCurrentValue();
         const float currentWidth = widthSmoothed.getCurrentValue();
@@ -4945,6 +4946,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         const float deltaMix = deltaListenSmoothed.getCurrentValue();
         const float driveNow = shaperDriveSmoothed.getCurrentValue();
         const float asymmetryNow = shaperAsymmetrySmoothed.getCurrentValue();
+        const float linkNow = stLinkSmoothed.getCurrentValue();
         referenceBlockPower = 0.0f;
 
         // Optional hot-path activity probe. Behind the DSP harness guard so the

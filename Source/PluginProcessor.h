@@ -1608,7 +1608,6 @@ struct NeuralStage
     std::atomic<ModelType*> activeModel { nullptr };
     std::atomic<bool> clearRequested { false };
     std::atomic<bool> resetRequested { false };
-    std::atomic<unsigned int> readers { 0 };
 
     /** The model's input frame. RTNeural's forward() takes a pointer to a
         float[inSize] and RETURNS the single output sample by value, so one
@@ -1685,12 +1684,10 @@ struct NeuralStage
         std::lock_guard<std::mutex> lock (controlMutex);
         activeModel.store (nullptr, std::memory_order_release);
         clearRequested.store (true, std::memory_order_release);
-        // Wait off the audio thread for any block already using the previous
-        // snapshot, then reclaim model memory here, never in process().
-        while (readers.load (std::memory_order_acquire) != 0)
-            std::this_thread::yield();
-        model.reset();
-        retiredModels.clear();
+        // Retain storage after publishing the clear request because a block may
+        // already hold the previous raw model pointer.
+        if (model != nullptr)
+            retiredModels.push_back (std::move (model));
         resetRequested.store (true, std::memory_order_release);
 #endif
     }
@@ -1734,10 +1731,12 @@ struct NeuralStage
             return false;
 
         std::unique_ptr<ModelType> parsedModel;
-        const auto& config = namJson.at ("config");
-        const auto numLayers = config.at ("num_layers").get<int>();
-        const auto inputSize = config.at ("input_size").get<int>();
-        const auto hiddenSize = config.at ("hidden_size").get<int>();
+        try
+        {
+            const auto& config = namJson.at ("config");
+            const auto numLayers = config.at ("num_layers").get<int>();
+            const auto inputSize = config.at ("input_size").get<int>();
+            const auto hiddenSize = config.at ("hidden_size").get<int>();
 
         // A .nam file's weights array is 1-D JSON. Anything else is not a
         // shape this converter understands.
@@ -1867,8 +1866,6 @@ struct NeuralStage
         }
 
         std::lock_guard<std::mutex> lock (controlMutex);
-        while (readers.load (std::memory_order_acquire) != 0)
-            std::this_thread::yield();
         if (model != nullptr)
             retiredModels.push_back (std::move (model));
         model = std::move (parsedModel);
@@ -1904,11 +1901,14 @@ struct NeuralStage
         if (amount <= 1.0e-5f)
             return x;
 
+        readers.fetch_add (1, std::memory_order_acq_rel);
         auto* active = activeModel.load (std::memory_order_acquire);
         if (active == nullptr || clearRequested.load (std::memory_order_acquire))
+        {
+            readers.fetch_sub (1, std::memory_order_release);
             return x;
+        }
 
-        readers.fetch_add (1, std::memory_order_acq_rel);
         if (activeModel.load (std::memory_order_acquire) != active
             || clearRequested.load (std::memory_order_acquire))
         {
