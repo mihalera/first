@@ -4937,6 +4937,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         // duplicate snapshots: the frame loop owns each stage's local values.
         // This is the one advancing smoother: SampleClock moves once, and the
         // remaining smoothers advance lazily on their first getCurrentValue().
+        // Consume exactly one input-gain sample; lazy SampleSmoother reads below
+        // advance the remaining controls once against this shared sample clock.
         const float inputGain = inputGainSmoothed.getNextValue();
         const float outputGain = outputGainSmoothed.getCurrentValue();
         const float currentWidth = widthSmoothed.getCurrentValue();
@@ -4948,21 +4950,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         const float deltaMix = deltaListenSmoothed.getCurrentValue();
         const float driveNow = shaperDriveSmoothed.getCurrentValue();
         const float asymmetryNow = shaperAsymmetrySmoothed.getCurrentValue();
-        const float subfundNow = subFundamentalSmoothed.getCurrentValue();
         const float linkNow = stLinkSmoothed.getCurrentValue();
-        const float diNow = diSmoothed.getCurrentValue();
-        const float diLoadNow = diLoadSmoothed.getCurrentValue();
-        const float diTransformerNow = diTransformerSmoothed.getCurrentValue();
-        const float distortionNow = distortionSmoothed.getCurrentValue();
-        const float preampNow = preampSmoothed.getCurrentValue();
-        const float neuralMixNow = neuralMixSmoothed.getCurrentValue();
-        const float transientAttackNow = transientAttackSmoothed.getCurrentValue();
-        const float transientSustainNow = transientSustainSmoothed.getCurrentValue();
-        const float transientMixNow = transientMixSmoothed.getCurrentValue();
-        const float compMixNow = compressorMixAmount;
-        const float polaritySignNow = polaritySign;
-        const float inputEqMidCoefficientNow = inputEqMidCoefficient;
-        const float outputEqMidCoefficientNow = outputEqMidCoefficient;
         referenceBlockPower = 0.0f;
 
         // Optional hot-path activity probe. Behind the DSP harness guard so the
@@ -5218,17 +5206,14 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             //  It runs before the IN EQ as well, because on the hardware the
             //  box is physically between the instrument and everything else.
             // ------------------------------------------------------------------
-            const float diNow = diSmoothed.getCurrentValue();
             if (diNow > 1.0e-5f)
             {
-                x = inputStage.processDiBox (x, diNow,
-                                             diLoadSmoothed.getCurrentValue(),
-                                             diPadDb, diTransformerSmoothed.getCurrentValue(),
+                x = inputStage.processDiBox (x, diNow, diLoadNow,
+                                             diPadDb, diTransformerNow,
                                              diLoadCoefficient, diTransformerCoefficient,
                                              diHumIncrement);
             }
 
-            const float distortionNow = distortionSmoothed.getCurrentValue();
             if (distortionNow > 1.0e-5f)
                 x = inputStage.processDistortion (x, distortionNow);
 
