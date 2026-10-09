@@ -1963,6 +1963,47 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
 }
 
 //==============================================================================
+//  Where a list's value text starts inside its own field.
+//
+//  It used to start one pixel from the field's left wall - the value sat against
+//  the border, which is the "text touching the wall" these lists were reported
+//  for, and one pixel is also what LookAndFeel_V2 (and so V4) hard-codes, which
+//  is where the number came from. Two shares decide it now, added together:
+//
+//   * a share of the FIELD's own height, so the padding keeps its proportion on
+//     a twenty-eight-pixel member-row box and on a thirty-pixel deck field alike,
+//     instead of being one number that is right for neither;
+//   * a share of the PANEL's height, which is the part that ties it to the
+//     window: a bigger panel gives its lists the same extra air it gives
+//     everything else on it, so the inset grows with the window the way the
+//     knobs' own geometry does.
+//
+//  The three-pixel floor is the one number that is a REQUIREMENT rather than a
+//  proportion - below it a digit's stem is back against the wall whatever the
+//  shares say - and it is what keeps a small field readable at the panel's
+//  minimum size.
+//
+//  Both list styles place their text through this one function (see the two
+//  positionComboBoxText overrides below), because a panel that pads one kind of
+//  list and walls the other reads as two panels. The deck's fields are a fixed
+//  30 px tall at every window size, so on this panel the two shares land at seven
+//  pixels at the smallest window and nine at the largest - measured, not asserted:
+//  the layout harness at tests/layout prints that pair at every panel size.
+//==============================================================================
+namespace
+{
+    constexpr int comboTextMinimumInset = 3;
+
+    int comboTextInset (int fieldHeight, int panelHeight) noexcept
+    {
+        const auto fieldShare = juce::roundToInt (static_cast<float> (fieldHeight) * 0.12f);
+        const auto panelShare = juce::roundToInt (static_cast<float> (panelHeight) * 0.004f);
+
+        return juce::jmax (comboTextMinimumInset, fieldShare + panelShare);
+    }
+}
+
+//==============================================================================
 //  The deck's combo boxes (MODEL, SPEED, the workflow lists) are painted by
 //  LookAndFeel_V4::drawComboBox, which reserves a 30 px arrow zone on the right -
 //  but V4's positionComboBoxText was never overridden, so the value Label sat in
@@ -1973,7 +2014,14 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
 //==============================================================================
 void J37LookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
 {
-    label.setBounds (1, 1, juce::jmax (0, box.getWidth() - 30), box.getHeight() - 2);
+    // The panel's own height comes in through the camera (setPanelCamera, which
+    // the editor sets from paint()); until it has been set the two shares add up
+    // from zero, which is why they are added rather than multiplied - an unset
+    // panel costs this list a few pixels of air, not its whole inset.
+    const auto panelHeight = juce::roundToInt (cameraPanel.getHeight());
+    const auto inset = comboTextInset (box.getHeight(), panelHeight);
+
+    label.setBounds (inset, 1, juce::jmax (0, box.getWidth() - 30), box.getHeight() - 2);
     label.setFont (getComboBoxFont (box));
 }
 
@@ -2140,13 +2188,20 @@ juce::Font J37InlineLookAndFeel::getComboBoxFont (juce::ComboBox& box)
 
 void J37InlineLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
 {
-    // The value Label, placed for the in-tab style: left-aligned with the same
-    // inset the old hand-drawn text used, and trimmed on the right so a long
-    // entry ellipsises before it reaches the caret. Print-the-value lives ONLY
-    // here (see drawComboBox above): the base class never runs for these lists,
-    // so without this override the Label kept V4's geometry - centred, 30 px
-    // reserved for an arrow zone the flat field does not draw.
-    label.setBounds (6, 1, juce::jmax (0, box.getWidth() - 26), box.getHeight() - 2);
+    // The value Label, placed for the in-tab style: left-aligned like a settings
+    // row, and trimmed on the right so a long entry ellipsises before it reaches
+    // the caret. Print-the-value lives ONLY here (see drawComboBox above): the base
+    // class never runs for these lists, so without this override the Label kept
+    // V4's geometry - centred, 30 px reserved for an arrow zone the flat field
+    // does not draw.
+    //
+    // The inset is the SAME solved one the deck's lists use (comboTextInset): the
+    // in-tab style used to carry its own hard-coded six pixels, which meant one
+    // list could be padded for a small window and the list beside it for a large
+    // one - two rules for one panel's padding, and neither of them moved when the
+    // window did.
+    const auto inset = comboTextInset (box.getHeight(), panelHeight);
+    label.setBounds (inset, 1, juce::jmax (0, box.getWidth() - 26), box.getHeight() - 2);
     label.setFont (getComboBoxFont (box));
     label.setJustificationType (juce::Justification::centredLeft);
 }
@@ -6496,6 +6551,10 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     // top-level space every control is measured in, which is what it needs to
     // know where each control stands relative to the viewer.
     customLookAndFeel.setPanelCamera (*this);
+    // The in-tab lists' inset is solved from the same panel height the camera is
+    // measured in (comboTextInset), so the second look-and-feel is told the same
+    // thing here rather than reading a size of its own.
+    inlineLookAndFeel.setPanelBounds (*this);
     drawPanel (g, layout.header, palette, 5.0f);
     drawPanel (g, layout.deck, palette, 5.0f);
     drawPanel (g, layout.controls, palette, 5.0f);

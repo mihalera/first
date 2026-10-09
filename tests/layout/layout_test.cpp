@@ -11,10 +11,11 @@
 // that stands inside its page and above the member band, that no two tiles
 // overlap, that the strip is centred in the space it has, that the disc is
 // drawable at the editor's 780 x 664 floor, that the indicator's tip stops
-// between the cap's turning rings instead of on one of them, and - the two that
-// catch a layout drifting away from the paint routine - that the tile's height is
-// the solved ideal and that the disc the solver scored is the disc the paint
-// routine draws.
+// between the cap's turning rings instead of on one of them, that every list's
+// value text keeps clear of its field's left wall and that the inset grows with
+// the window, and - the two that catch a layout drifting away from the paint
+// routine - that the tile's height is the solved ideal and that the disc the
+// solver scored is the disc the paint routine draws.
 //
 // The toolkit geometry it measures against, from JUCE 9.0.3:
 //   * LookAndFeel_V2::getSliderLayout keeps a 16 px value box at the slider's
@@ -83,6 +84,11 @@ using extracted::KnobMetrics;
 
 #include "constants.inc"
 #include "band_height.inc"
+
+// The lists' text inset, cut verbatim out of Source/ like the knob's radial
+// budget: a pure function of the field it is written in and the panel it stands
+// on, so the padding every list uses is measurable here at every window size.
+#include "combo_text.inc"
 
 struct EditorLayout
 {
@@ -220,6 +226,11 @@ float wallFor (float absX, float absY, int W, int H)
     const float dy = juce::jlimit (-1.0f, 1.0f, (absY - H * 0.5f) / std::max (1.0f, H * 0.5f));
     return juce::jlimit (0.0f, 1.0f, 0.08f + 0.34f * std::max (0.0f, dy) + 0.12f * std::abs (dx));
 }
+
+// The deck's fields - SPEED, the type selectors, the presets - are 30 px tall at
+// every window size (see the deck-row table in Source/), which is the height the
+// list checks below are measured at.
+constexpr int deckFieldHeight = 30;
 
 // Where the face's r-th turning ring stands, as a fraction of the cap radius:
 // ring r is cut at radius * (knobGrooveFirst + r * knobGrooveStride / steps), the
@@ -489,6 +500,48 @@ int main()
                    "the indicator bead is drawn over the cap, not under it",
                    page.name, W, H);
         }
+
+        // ---- the lists' value text ------------------------------------------
+        //  Every list on the panel - the deck's fields and the tab pages' alike -
+        //  places its value text through the one function cut out of the plugin,
+        //  so the padding can be measured at this panel's size without a window.
+        //  Three things have to hold: a digit never stands against the field's
+        //  left wall, the inset grows with the panel instead of being the same
+        //  number at 780 and at 1500, and BOTH list styles ask the same rule -
+        //  a panel that pads one kind of list and walls the other is two panels.
+        const auto deckInset = comboTextInset (deckFieldHeight, H);
+
+        std::printf ("  %-9s list inset %d px (field %d, panel %d) | %d call site(s)\n",
+                     "LISTS", deckInset, deckFieldHeight, H, comboTextInsetCallSites);
+
+        // Three pixels is the REQUIREMENT, so it is written here as a number: the
+        // plugin's own floor is read out of it below, and a check that compared the
+        // inset against that floor would be asking the constant whether it agrees
+        // with itself. What is being held to the three is the solved inset.
+        constexpr int listTextMinimum = 3;
+
+        // The smallest field on this panel is a member row's 28 px box and the
+        // largest is a deck field at 30; the range below is wider than both, so the
+        // rule is held to the requirement at sizes this panel does not have yet.
+        for (int fieldHeight = 16; fieldHeight <= 44; ++fieldHeight)
+        {
+            check (comboTextInset (fieldHeight, H) >= listTextMinimum,
+                   "a list's text keeps clear of its field's left wall", "LISTS", W, H);
+            check (comboTextInset (fieldHeight, H) * 2 <= fieldHeight,
+                   "a list's inset never takes more than half its field's height",
+                   "LISTS", W, H);
+        }
+
+        check (comboTextMinimumInset >= listTextMinimum,
+               "the plugin's own floor is at least the three pixels required",
+               "LISTS", W, H);
+        check (deckInset >= comboTextInset (deckFieldHeight, 664),
+               "a list's inset never shrinks as the panel grows", "LISTS", W, H);
+        check (H < 1180 || deckInset > comboTextInset (deckFieldHeight, 664),
+               "a list's inset follows the window rather than a constant", "LISTS", W, H);
+        check (comboTextInsetCallSites >= 2,
+               "both list styles place their text through the one inset rule",
+               "LISTS", W, H);
     }
 
     std::printf ("\n%s (%d failures)\n",

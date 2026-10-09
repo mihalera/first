@@ -13,8 +13,9 @@ Eight fragments are cut, each verbatim and each by the text that makes it
 unambiguous: the radial budget (KnobMetrics and computeKnobMetrics), the editor
 layout's own body, the grid the page lays its controls in, the knob count the
 strip is handed, the member band, the strip solver, the member band's top edge,
-the tile placement, and the cap's own divisions with the length of the indicator
-that runs among them and the order it is painted in. They are written as
+the tile placement, the cap's own divisions with the length of the indicator that
+runs among them and the order it is painted in, and the inset every list's value
+text starts at. They are written as
 separate includes because they are statement blocks that have to land inside
 functions the hand-written harness declares - the alternative is a template, and
 then the compiled text is the template's and not the plugin's.
@@ -126,6 +127,14 @@ def main() -> int:
                          f"layout harness measures their order in drawRotarySlider.")
     bead_over_cap = 1 if bead_at > cap_at else 0
 
+    # The lists' text inset. The floor is a requirement rather than a proportion,
+    # so it is read out with the function, and the CALL SITES are counted: the two
+    # list styles are drawn by two look-and-feels, and "one of them was padded and
+    # the other was walled" is exactly the state this guards against.
+    combo_floor = constant(source, r"constexpr int comboTextMinimumInset = (\d+);",
+                           "comboTextMinimumInset")
+    combo_calls = source.count("comboTextInset (box.getHeight(), panelHeight)")
+
     fragments = {
         # The radial budget: one pure function of the paint area and the camera.
         "metrics.inc": "\n".join([
@@ -168,6 +177,10 @@ def main() -> int:
         "placement.inc": span(source,
                               "for (int slot = 0; slot < knobCount; ++slot)",
                               "control.setBounds (sliderBounds);\n    }"),
+        # Where a list's value text starts, as a pure function of the field it is
+        # written in and the panel it stands on - so the padding every list on the
+        # panel uses can be measured at every window size without a window.
+        "combo_text.inc": brace_block(source, "int comboTextInset"),
         # The constants the fragments above are measured from. The strip declares
         # its own knobRowGap; this copy is what the harness's own checks read, so
         # a change there cannot leave the test measuring against the old gap.
@@ -194,6 +207,12 @@ def main() -> int:
             "// few pixels inside the groove the bead rides, so the other order shaves",
             "// the bead's inner half off under the knob.",
             f"constexpr int knobBeadOverCap = {bead_over_cap};",
+            "",
+            "// The floor under every list's inset, and how many places place their",
+            "// text through comboTextInset - the deck's lists and the tab pages' are",
+            "// drawn by two look-and-feels, and both have to ask this one function.",
+            f"constexpr int comboTextMinimumInset = {combo_floor};",
+            f"constexpr int comboTextInsetCallSites = {combo_calls};",
         ]),
     }
 
