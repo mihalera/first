@@ -2978,8 +2978,8 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
 
     bool irActive = false;
     if (irMix > 1.0e-5f && irStage.hasIr
-        && postFxScratch.getNumChannels() >= channels
-        && postFxScratch.getNumSamples() >= samples)
+        && channels <= postFxScratch.getNumChannels()
+        && samples <= postFxScratch.getNumSamples())
     {
         for (int c = 0; c < channels; ++c)
             postFxScratch.copyFrom (c, 0, block.getChannelPointer (c), samples);
@@ -4781,8 +4781,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // MIX 100 still shows as "what the machine adds" rather than as the room
     // the dry signal never passed through.
     auto& scratch = postFxScratch;
-    if (scratch.getNumSamples() < numSamples || scratch.getNumChannels() < 2)
-        return;
 
     // Working pointers into the block's own storage. In the plain path these are
     // the host buffer's channels; in the oversampled path they are the oversampler's
@@ -4929,11 +4927,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         //  ramp, sample rate consumes it. If a control is read here it must be
         //  read from the same per-sample value everywhere else in the frame.
         //
-        // The input-gain smoother advances the shared sample clock. Other controls
-        // consume their current sample lazily when first read in the frame.
+        // Advance the shared sample clock exactly once on this frame.
         const float inputGain = inputGainSmoothed.getNextValue();
         const float outputGain = outputGainSmoothed.getCurrentValue();
-        const float currentWidth = widthSmoothed.getCurrentValue();
         const float mixNow = juce::jlimit (0.0f, 1.0f, mixSmoothed.getCurrentValue());
         const float mixAngle = mixNow * juce::MathConstants<float>::halfPi;
         const float dryGain = std::cos (mixAngle);
@@ -4942,8 +4938,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         const float deltaMix = deltaListenSmoothed.getCurrentValue();
         const float driveNow = shaperDriveSmoothed.getCurrentValue();
         const float asymmetryNow = shaperAsymmetrySmoothed.getCurrentValue();
+        const float linkNow = stLinkSmoothed.getCurrentValue();
+        const float currentWidth = widthSmoothed.getCurrentValue();
         referenceBlockPower = 0.0f;
-
         // Optional hot-path activity probe. Behind the DSP harness guard so the
         // release and the harness both compile, and behind an explicit enable so
         // it never runs in a normal build. The probe is deliberately read-only and
@@ -5197,9 +5194,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             //  It runs before the IN EQ as well, because on the hardware the
             //  box is physically between the instrument and everything else.
             // ------------------------------------------------------------------
-            const float diNow = diSmoothed.getCurrentValue();
-            const float diLoadNow = diLoadSmoothed.getCurrentValue();
-            const float diTransformerNow = diTransformerSmoothed.getCurrentValue();
             if (diNow > 1.0e-5f)
             {
                 x = inputStage.processDiBox (x, diNow, diLoadNow,
@@ -5208,11 +5202,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                              diHumIncrement);
             }
 
-            const float distortionNow = distortionSmoothed.getCurrentValue();
             if (distortionNow > 1.0e-5f)
                 x = inputStage.processDistortion (x, distortionNow);
 
-            const float preampNow = preampSmoothed.getCurrentValue();
             if (preampNow > 1.0e-5f)
                 x = inputStage.processPreamp (x, preampNow, preampLowCutCoefficient);
             // ------------------------------------------------------------------
