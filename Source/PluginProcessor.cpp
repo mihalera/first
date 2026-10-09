@@ -4932,64 +4932,37 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         //  ramp, sample rate consumes it. If a control is read here it must be
         //  read from the same per-sample value everywhere else in the frame.
         //
-        //  The core curve-side values below are the sample-coherent set the
-        //  saturation path consumes every sample. The shaper's drive and its
-        //  asymmetry are read once here, from the same advancing smoothers the
-        //  curve reads further down the frame, so the curve cannot step inside a
-        //  frame.
-        // -----------------------------------------------------------------
-        const float driveNow   = shaperDriveSmoothed.getCurrentValue();
-        const float asymmetryNow = shaperAsymmetrySmoothed.getCurrentValue();
-
-        // ------------------------------------------------------------------
-        //  PASSTHROUGH / OUTPUT-GAIN CONTROL READS.
-        //
-        //  These are the values the output stage consumes per sample, read from the
-        //  same advancing smoothers the rest of the frame reads.
-        //
-        //  The input trim is read FIRST and with getNextValue(), because that
-        //  smoother owns the shared per-sample clock: advancing it here is what
-        //  makes every getCurrentValue() read in this frame sample-accurate. Reading
-        //  it with getCurrentValue() instead leaves the clock standing still, which
-        //  freezes every ramp in the engine at its reset value.
-        // ------------------------------------------------------------------
+        // Advance the input-gain smoother once per frame; all other smoothers
+        // advance lazily on their first read below. Keep this section free of
+        // duplicate snapshots: the frame loop owns each stage's local values.
+        // This is the one advancing smoother: SampleClock moves once, and the
+        // remaining smoothers advance lazily on their first getCurrentValue().
         const float inputGain = inputGainSmoothed.getNextValue();
-        const float outputGain = outputGainSmoothed.getNextValue();
-        const float currentWidth = widthSmoothed.getNextValue();
-
-        // ------------------------------------------------------------------
-        //  MIX / DRY-WET CROSSFADE.
-        //
-        //  The smoothed MIX is advanced here, once per sample, and the dry/wet
-        //  gains are derived from that sample-coherent value. Two things are fixed
-        //  together. First, this used to advance the smoother and then throw the
-        //  value away while the crossfade used the raw per-block parameter, so MIX
-        //  itself was a hard step on every block boundary and could still crackle.
-        //  Second, the crossfade was linear (dry + wet = 1) while the comment beside
-        //  it promised an equal-gain fade with no dip, so for two mostly uncorrelated
-        //  signals the middle of the travel lost about 3 dB. A raised-cosine fade
-        //  holds the pair's total power constant, sits at exactly 0 dB on BOTH ends
-        //  (MIX 0 is pure dry, MIX 1 is pure wet) and has no step in its slope, so
-        //  neither end of the control can collapse.
-        //
-        //  The taper itself was fine; the two gains were on the wrong sides. sin was
-        //  applied to the DRY path and cos to the WET one, so MIX 0 delivered the
-        //  fully processed tape and MIX 100 the untouched input - the exact reverse
-        //  of what the control, its parameter comment and the panel tooltip all
-        //  describe. Both ends of an equal-power crossfade sit at unity either way,
-        //  so this is a swap and not a change of taper: MIX 0 is dry at unity, MIX 1
-        //  is wet at unity, and the total power still holds across the travel.
-        // ------------------------------------------------------------------
-        const auto mixNow = juce::jlimit (0.0f, 1.0f, mixSmoothed.getNextValue());
-        const auto mixAngle = mixNow * juce::MathConstants<float>::halfPi;
-        const auto dryGain = std::cos (mixAngle);
-        const auto wetGain = std::sin (mixAngle);
-
-
-        const float bypassMix = bypassSmoothed.getNextValue();
-        const float deltaMix = deltaListenSmoothed.getNextValue();
-
-        // Per-sample reference power for the final compensation, reset each iteration.
+        const float outputGain = outputGainSmoothed.getCurrentValue();
+        const float currentWidth = widthSmoothed.getCurrentValue();
+        const float mixNow = juce::jlimit (0.0f, 1.0f, mixSmoothed.getCurrentValue());
+        const float mixAngle = mixNow * juce::MathConstants<float>::halfPi;
+        const float dryGain = std::cos (mixAngle);
+        const float wetGain = std::sin (mixAngle);
+        const float bypassMix = bypassSmoothed.getCurrentValue();
+        const float deltaMix = deltaListenSmoothed.getCurrentValue();
+        const float driveNow = shaperDriveSmoothed.getCurrentValue();
+        const float asymmetryNow = shaperAsymmetrySmoothed.getCurrentValue();
+        const float subfundNow = subFundamentalSmoothed.getCurrentValue();
+        const float linkNow = stLinkSmoothed.getCurrentValue();
+        const float diNow = diSmoothed.getCurrentValue();
+        const float diLoadNow = diLoadSmoothed.getCurrentValue();
+        const float diTransformerNow = diTransformerSmoothed.getCurrentValue();
+        const float distortionNow = distortionSmoothed.getCurrentValue();
+        const float preampNow = preampSmoothed.getCurrentValue();
+        const float neuralMixNow = neuralMixSmoothed.getCurrentValue();
+        const float transientAttackNow = transientAttackSmoothed.getCurrentValue();
+        const float transientSustainNow = transientSustainSmoothed.getCurrentValue();
+        const float transientMixNow = transientMixSmoothed.getCurrentValue();
+        const float compMixNow = compressorMixAmount;
+        const float polaritySignNow = polaritySign;
+        const float inputEqMidCoefficientNow = inputEqMidCoefficient;
+        const float outputEqMidCoefficientNow = outputEqMidCoefficient;
         referenceBlockPower = 0.0f;
 
         // Optional hot-path activity probe. Behind the DSP harness guard so the
@@ -5417,7 +5390,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             const float driveWithSag = driveNow * amp.sagGain;
 
             const float shapedCore = saturation.process (preDrive, driveWithSag,
-                                                          asymmetryNow);
+                                                         asymmetryNow);
 
             // The amp's post-curve voicing: cabinet, then presence. It is applied
             // only in proportion to how much amp is in the blend, so a pure tape
