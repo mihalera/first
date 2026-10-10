@@ -5258,23 +5258,27 @@ void FirstAudioProcessorEditor::setUpTransportRow()
     //  START settles into PLAY, so the lit key always matches the engine.
     //
     //  STOP-to-PLAY is handled as a TOGGLE on the same key: pressing STOP while
-    //  running stops, pressing STOP again starts, which is what the request asked
-    //  for and what a single transport key does on a deck. START is the explicit
-    //  "spin up from rest" key and is what settles into PLAY.
+    //  running stops, pressing STOP again starts, which is what a single transport
+    //  key does on a deck. START is the engagement gesture, and on a machine that
+    //  is already running it re-cues - a short brake and then the spin-up - so it
+    //  is never the no-op it was reported as.
     // ---------------------------------------------------------------
     styleLabel (transportLabel, "TRANSPORT", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
-    addAndMakeVisible (transportLabel);
-
-    setTip (transportStopButton, "STOP - the capstan comes to rest. True silence: no "
-                                    "hiss, no wow, no delay tail. Pressing it again while "
-                                    "stopped spins the machine back up to PLAY.");
-    setTip (transportPlayButton, "PLAY - normal running. This is where the machine rests "
-                                     "after START has spun it up.");
-    setTip (transportStartButton, "START - spins the capstan up from rest over about a "
-                                      "second, the way a deck sounds when you hit play on a "
-                                      "take. The pitch climbs into tune and the state settles "
-                                      "into PLAY by itself when the machine reaches speed.");
+    addAndMakeVisible (transportLabel);        setTip (transportStopButton, "STOP - brakes the capstan to rest and leaves it "
+                                    "there. A machine that is not moving passes nothing, so "
+                                    "the output goes silent: no tape, no dry input, no hiss, "
+                                    "no delay tail. Pressing it again spins the machine "
+                                    "back up to PLAY.");
+    setTip (transportPlayButton, "PLAY - normal running. This is where the machine rests, "
+                                     "and where START settles by itself.");
+    setTip (transportStartButton, "START - the engagement gesture: the capstan comes up "
+                                      "from rest over about a second, the way a deck sounds "
+                                      "when you hit play on a take, and the control settles "
+                                      "on PLAY when the platter reaches speed. Pressed while "
+                                      "the machine is already running it re-cues first - a "
+                                      "short brake, then the spin-up - so the key does "
+                                      "something from every state.");
 
     for (auto* button : { &transportStopButton, &transportPlayButton, &transportStartButton })
     {
@@ -5304,11 +5308,11 @@ void FirstAudioProcessorEditor::setUpTransportRow()
                 true, juce::Justification::left);
     addAndMakeVisible (spindownLabel);
     spindownButton.setLookAndFeel (&customLookAndFeel);
-    setTip (spindownButton, "Hold to cut the platter's power: the record runs down and "
-                               "the pitch falls away, the way a turntable coasting to a stop "
-                               "sounds. Release and it spins back up into PLAY. It also "
-                               "brings the platter up if the machine was stopped, so the "
-                               "gesture always has something to act on.");
+    setTip (spindownButton, "Hold to cut the platter's power: the machine winds down "
+                               "over about a second and a half, and comes back up when you "
+                               "release it. A hold also brings the platter up if the "
+                               "machine was stopped, so the gesture always has something "
+                               "to act on.");
     spindownButton.onHoldChanged = [this] (bool held)
     {
         audioProcessor.setSpindownHeld (held);

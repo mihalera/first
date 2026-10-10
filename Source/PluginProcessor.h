@@ -4703,6 +4703,271 @@ struct RealtimePitchShifter
 
 //==============================================================================
 /**
+    The transport: one capstan, three keys, and a power cut.
+
+    Both the engine and the panel read the same state, so it lives here as one
+    small object rather than as a handful of floats in the processor:
+
+      * `ramp`     - the capstan: 0 at rest, 1 at speed.
+      * `spindown` - the momentary run-down: 1 while powered, 0 while held.
+
+    `platter()` is the two multiplied, and that one number is what the machine
+    follows - the level it passes, the depth of its wow and flutter, how much
+    band its heads can put out (see `speedScale` at the call site), and the value
+    the panel spins its reels at.
+
+    The three states are the ones a tape deck has:
+
+      STOP   brakes the capstan to rest and leaves it there. That is what makes a
+             stopped machine SILENT rather than quiet: a deck that is not moving
+             does not pass a faded copy of its input, it passes nothing.
+      PLAY   normal running.
+      START  the engagement gesture. The capstan comes up to speed and the state
+             then advances to PLAY by itself; the engine publishes that
+             transition for the message thread to hand to the host.
+
+    Pressing START on a machine that is ALREADY running re-cues first: a short
+    brake to rest, and then the full spin-up. That is the gesture the key names,
+    and it is the only reading under which the key does something from every
+    state - without it, START on a running machine is the no-op it was reported
+    as, because the machine it is asked to spin up is already turning.
+
+    The durations below are SECONDS, and the ramps are linear in time so that they
+    mean what they say. They replaced one-pole coefficients built from numbers
+    that read like durations: an exponential ramp reaches 0.999 only after 6.9
+    time constants, so the old "about a second" spin-up was really a seven-second
+    creep that never settled into PLAY during a take, and the old "350 ms" stop
+    needed about four seconds to reach rest. A transport gesture is a duration.
+*/
+struct TransportRig
+{
+    enum class State : int
+    {
+        stop  = 0,
+        play  = 1,
+        start = 2
+    };
+
+    // The gestures, in seconds. STOP is a COAST rather than a clamp: a platter
+    // with mass takes a moment to stop, and that moment is the gesture. START's
+    // spin-up is longer than its re-cue's brake for the same physical reason -
+    // bringing a capstan up to speed is the slow half of it. The spindown hold
+    // coasts longer than STOP does because the long tail IS the effect, and it
+    // comes back up faster so releasing the button feels like power returning.
+    static constexpr float stopCoastSeconds      = 0.75f;
+    static constexpr float startSpinUpSeconds    = 1.10f;
+    static constexpr float startRecueSeconds     = 0.30f;
+    static constexpr float playRelockSeconds     = 0.25f;
+    static constexpr float spindownCoastSeconds  = 1.60f;
+    static constexpr float spindownReturnSeconds = 0.90f;
+
+    // The capstan and the momentary run-down. Public because the engine reads
+    // them for more than the product (the telemetry and the panel's reels want
+    // the run-down on its own), not because anything writes them.
+    float ramp = 1.0f;
+    float spindown = 1.0f;
+
+    // The state, engine side. START is advanced by `advanceFrame()` and the
+    // parameter catches up when the editor's timer writes it back.
+    int state = static_cast<int> (State::play);
+
+    /** 0..1 - what the rest of the machine follows. */
+    float platter() const noexcept { return ramp * spindown; }
+
+    /** True while the platter is at full speed. The level compensator measures
+        the machine's output against the input, so it must not try to correct a
+        machine that is not running. */
+    bool atSpeed() const noexcept { return platter() >= 0.999f; }
+
+    /** The state the engine has asked the host to follow - START settling into
+        PLAY, or a spindown released on a stopped machine - or -1 for nothing to
+        publish. Taken once: the engine copies it into the atomic the editor's
+        timer flushes to the parameter. */
+    int takeRequestedState() noexcept
+    {
+        const auto requested = requestedState;
+        requestedState = -1;
+        return requested;
+    }
+
+    void prepare (double sampleRateIn) noexcept
+    {
+        sampleRate = sampleRateIn > 1.0 ? sampleRateIn : 48000.0;
+        ramp = 1.0f;
+        spindown = 1.0f;
+        rampStep = 0.0f;
+        spindownStep = 0.0f;
+        state = static_cast<int> (State::play);
+        lastState = -1;
+        spinningUp = false;
+        recue = false;
+        advancedToPlay = false;
+        lastHeld = false;
+        requestedState = -1;
+    }
+
+    /** Once per block: the `transport` parameter's own value, the momentary hold
+        (an atomic written by the panel), and the rate the ENGINE is running at -
+        the oversampled rate, because the ramps advance once per engine frame and
+        the durations above are wall-clock seconds.
+    */
+    void beginBlock (int stateIndex, bool held, double engineRate) noexcept
+    {
+        if (engineRate > 1.0)
+            sampleRate = engineRate;
+
+        auto requested = stateIndex < 0 ? 1 : (stateIndex > 2 ? 2 : stateIndex);
+
+        // START is a transient and the engine advances it to PLAY itself. Until
+        // the host has written that back, the parameter still reads START, and
+        // treating each of those blocks as a fresh press would re-cue the
+        // machine once per block - so the advance is remembered here and a
+        // parameter that still says START is read as the PLAY it is on its way
+        // to. A parameter that says anything else clears it.
+        if (advancedToPlay && requested == static_cast<int> (State::start))
+            requested = static_cast<int> (State::play);
+        if (requested != static_cast<int> (State::start))
+            advancedToPlay = false;
+
+        state = requested;
+
+        // The release edge of a spindown hold. A hold forces the platter to run,
+        // so releasing it on a stopped machine leaves the machine RUNNING: the
+        // gesture put the platter in motion and cutting the power does not brake
+        // it. The state follows, through the same request the auto-advance uses.
+        if (lastHeld && ! held && state == static_cast<int> (State::stop))
+        {
+            state = static_cast<int> (State::play);
+            lastState = -1;                 // re-arm: the PLAY case spins it up
+            requestedState = state;
+        }
+
+        // A hold pressed on a STOPPED machine brings the platter up first - the
+        // cut has to have something to cut. The engine side only: the parameter
+        // follows on release, which is when the gesture has an answer.
+        if (held && state == static_cast<int> (State::stop))
+        {
+            state = static_cast<int> (State::play);
+            lastState = -1;
+        }
+
+        lastHeld = held;
+
+        spindownStep = (held ? -1.0f : 1.0f) * stepFor (held ? spindownCoastSeconds
+                                                             : spindownReturnSeconds);
+
+        if (state != lastState)
+        {
+            switch (state)
+            {
+                case static_cast<int> (State::stop):
+                    rampStep = -stepFor (stopCoastSeconds);
+                    spinningUp = false;
+                    recue = false;
+                    break;
+
+                case static_cast<int> (State::start):
+                    if (ramp > 0.0f)
+                    {
+                        recue = true;                        // already turning
+                        rampStep = -stepFor (startRecueSeconds);
+                        spinningUp = false;
+                    }
+                    else
+                    {
+                        recue = false;
+                        rampStep = stepFor (startSpinUpSeconds);
+                        spinningUp = true;
+                    }
+                    break;
+
+                case static_cast<int> (State::play):
+                default:
+                    // Arriving here FROM the spin-up the ramp is already running
+                    // on its own timing; PLAY selected directly is a re-lock.
+                    if (! spinningUp)
+                    {
+                        recue = false;
+                        rampStep = ramp < 1.0f ? stepFor (playRelockSeconds) : 0.0f;
+                    }
+                    break;
+            }
+
+            lastState = state;
+        }
+    }
+
+    /** Once per sample frame: advance the capstan and the run-down. */
+    void advanceFrame() noexcept
+    {
+        if (recue)
+        {
+            ramp += rampStep;
+            if (ramp <= 0.0f)
+            {
+                ramp = 0.0f;                      // the brake landed: spin it up
+                recue = false;
+                rampStep = stepFor (startSpinUpSeconds);
+                spinningUp = true;
+            }
+        }
+        else if (rampStep != 0.0f)
+        {
+            ramp += rampStep;
+
+            if (rampStep > 0.0f)
+            {
+                if (ramp >= 1.0f)
+                {
+                    ramp = 1.0f;
+                    rampStep = 0.0f;
+
+                    // START is done the moment the capstan arrives, and the state
+                    // says so: the machine has no "starting" position.
+                    if (spinningUp)
+                    {
+                        spinningUp = false;
+
+                        if (state == static_cast<int> (State::start))
+                        {
+                            state = static_cast<int> (State::play);
+                            lastState = state;
+                            advancedToPlay = true;
+                            requestedState = state;
+                        }
+                    }
+                }
+            }
+            else if (ramp <= 0.0f)
+            {
+                ramp = 0.0f;                      // at rest, and it stays there
+                rampStep = 0.0f;
+            }
+        }
+
+        spindown += spindownStep;
+        spindown = spindown < 0.0f ? 0.0f : (spindown > 1.0f ? 1.0f : spindown);
+    }
+
+private:
+    float stepFor (float seconds) const noexcept
+    {
+        return 1.0f / (seconds > 0.0001f ? seconds * static_cast<float> (sampleRate) : 1.0f);
+    }
+
+    double sampleRate = 48000.0;
+    float rampStep = 0.0f;
+    float spindownStep = 0.0f;
+    int lastState = -1;
+    int requestedState = -1;
+    bool spinningUp = false;
+    bool recue = false;
+    bool advancedToPlay = false;
+    bool lastHeld = false;
+};
+
+//==============================================================================
+/**
     The tape machine. Signal flow, in order:
 
       input trim -> input glue compressor -> record head (bias + magnetic hysteresis)
@@ -5732,44 +5997,17 @@ private:
     // -----------------------------------------------------------------------
     //  Transport state (STOP / PLAY / START), and SPINDOWN.
     //
-    //  `transportRamp` is 0 when the capstan is at rest and 1 when it is running
-    //  at speed. It scales the wet path AND the transport modulation together,
-    //  which is what makes STOP true silence rather than a mute and START a
-    //  pitch ramp rather than a fade.
+    //  The capstan itself is `transport` - a TransportRig, documented above this
+    //  class - because it is one piece of state that the engine, the panel and a
+    //  saved session all have to agree about, and because its gesture is worth
+    //  being able to exercise on its own (tests/transport compiles this struct
+    //  out of this header and drives it).
     //
-    //  The STATE.
-    //
-    //  0 STOP   - the capstan is at rest. True silence: no hiss, no modulation,
-    //             no delay tail.
-    //  1 PLAY   - normal running. This is the resting "engaged" state and the one
-    //             START settles into.
-    //  2 START  - a TRANSIENT, not a third resting position. The capstan spins up
-    //             over about a second and START is immediately done: the state
-    //             advances to PLAY by itself (see the auto-advance in
-    //             processTapeEngine).
-    //
-    //  START must NOT loop or stay engaged: the previous implementation left the
-    //  ramp climbing forever because START and PLAY shared a target and the state
-    //  never advanced. The auto-advance is now the point: pressing START, the
-    //  capstan arrives at speed and the control reads PLAY.
+    //  What stays here is exactly what the MESSAGE thread touches: the momentary
+    //  hold, and the one transition the engine asks the host to follow (START
+    //  settling into PLAY, or a spindown released on a stopped machine).
     // -----------------------------------------------------------------------
-    float transportRamp = 1.0f;
-    float transportRampCoefficient = 0.0f;
-    int lastTransportState = -1;
-
-    // True while START (or a spindown recovery) is spinning the capstan up. The
-    // auto-advance to PLAY watches this, so the transition happens once per
-    // spin-up rather than being re-armed on every block.
-    bool transportSpinningUp = false;
-
-    /** The transport states, named rather than as bare integers so a reader can
-        tell 2 from a typo. Values match the `transport` AudioParameterChoice. */
-    enum class TransportState : int
-    {
-        stop    = 0,
-        play    = 1,
-        start   = 2
-    };
+    TransportRig transport;
 
     // -----------------------------------------------------------------------
     //  SPINDOWN.
@@ -5782,22 +6020,17 @@ private:
     //
     //  The run-down is deliberately slower than STOP's settle: a platter with
     //  mass does not stop instantly, and the whole point of the effect is the
-    //  long tail as the pitch falls away. It also runs the pitch DOWN rather
-    //  than the level, because a slowing turntable loses speed before it loses
-    //  signal.
+    //  long tail as it winds down. It multiplies the transport, so a hold on a
+    //  running machine runs it down and a hold on a stopped one brings it up
+    //  first - either way the platter is what the gesture moves.
     //
     //  `spindownHeld` is written by the editor (message thread) and read by the
-    //  engine (audio thread) every block, so it is an atomic. The two ramps are
-    //  engine-only state and stay plain floats.
+    //  engine (audio thread) every block, so it is an atomic. The ramp it feeds
+    //  lives in the rig, which is engine-only state.
     // -----------------------------------------------------------------------
     std::atomic<bool> spindownHeld { false };
     std::atomic<bool> transportHostSyncRequested { false };
     std::atomic<int> transportHostSyncState { 1 };
-    float spindownRamp = 1.0f;              // 1 = at speed, 0 = fully stopped
-    float spindownCoefficient = 0.0f;       // built from the rate
-    // The previous block's hold state, so the release edge can be seen once. Engine
-    // only: it is not read by the editor and needs no atomic.
-    bool lastSpindownHeld = false;
 
     // -----------------------------------------------------------------------
     //  Output anti-phase prevention.

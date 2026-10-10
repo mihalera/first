@@ -1653,16 +1653,25 @@ namespace
     {
         //  Transport state: STOP / PLAY / START.
         //
-        //  Three states rather than a play/stop pair, because a tape machine has three
-        //  and the middle one is not "stopped":
+        //  Three states rather than a play/stop pair, because a tape deck has three:
         //
-        //    STOP  - the capstan is at rest. The tape is not moving, so there is no
-        //            hiss, no modulation and no delay tail: the machine is silent.
-        //    PLAY  - normal running, which is what every earlier build did.
-        //    START - the moment of engagement: the capstan comes up to speed, so the
-        //            transport runs flat, the modulation deepens and the pitch rides
-        //            up into tune over about a second. This is the sound a tape machine
-        //            makes when you hit play on a take.
+        //    STOP  - the capstan is braked to rest and stays there. A machine that
+        //            is not moving passes nothing, so the plugin is SILENT: no tape,
+        //            no dry input, no hiss, no delay tail. Pressing STOP again spins
+        //            the machine back up.
+        //    PLAY  - normal running, which is where START settles.
+        //    START - the engagement gesture: the capstan comes up to speed over
+        //            about 1.1 s and the state advances to PLAY by itself. Pressed
+        //            while the machine is already running it RE-CUES first (a 0.3 s
+        //            brake, then the spin-up), so the key does something from every
+        //            state. The durations live in TransportRig, with the reason they
+        //            are durations rather than one-pole time constants.
+        //
+        //  What the transport moves is the machine's LEVEL, its modulation and its
+        //  speed response (the same character mapping the SPEED control uses), all
+        //  following one number - the platter's speed. It does not repitch the
+        //  programme: this plugin has no repitch stage, so STOP is a coast to
+        //  silence rather than a DJ-style pitch bend.
         // -------------------------------------------------------------------------
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "transport", 1 }, "Transport",
                                                                 juce::StringArray { "Stop", "Play", "Start" },
@@ -2652,14 +2661,13 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     stOffsetBuffer.fill (0.0f);
     stOffsetWritePosition = 0;
 
-    // A transport given no state yet starts at speed if the parameter says PLAY,
-    // so a fresh instance is not silent until the user touches the switch. The
-    // constructor leaves lastTransportState at -1, so seeding it here is what
-    // makes the first block land on the right ramp. The spindown ramp starts at
-    // speed too, and syncs from the parameter so a session that was saved
-    // mid-hold comes back held.
-    transportRamp = 1.0f;
-    spindownRamp = 1.0f;
+    // The transport starts at speed and lets the first block decide what it should
+    // actually be doing: the rig re-arms on its first beginBlock() (it keeps
+    // `lastState` at -1), so a session saved at STOP or mid-hold comes back the
+    // way it was saved rather than silent until the user touches the switch. The
+    // rate is the ENGINE's, because the ramps advance per engine frame and the
+    // gesture durations are wall-clock seconds.
+    transport.prepare (static_cast<double> (sampleRate) * oversamplingRateFactor);
     if (spindownParam != nullptr)
         spindownHeld.store (spindownParam->load() >= 0.5f, std::memory_order_relaxed);
 
@@ -4255,93 +4263,30 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     antiPhaseProductMagnitude = juce::jmax (1.0e-3f, antiPhaseProductMagnitude);
 
     // -------------------------------------------------------------------------
-    //  Transport, rebuilt so the three states are genuinely different and START
-    //  is a real transient.
+    //  Transport: handed to the rig.
     //
-    //  STOP drives the ramp to 0. PLAY holds it at 1. START drives it to 1 over
-    //  about a second and is then DONE - the state advances to PLAY when the ramp
-    //  arrives (see the auto-advance just below, which publishes a request for
-    //  the message thread to notify the host of the changed parameter).
+    //  Everything about the gesture - the three states, their durations, the
+    //  re-cue, the momentary hold, and the auto-advance out of START - lives in
+    //  TransportRig, because that is the part worth exercising on its own. What
+    //  the engine does with it is follow `platter()`: the machine's level, its
+    //  modulation depth and its speed response are all functions of that one
+    //  number, and the gate below is where the machine's output stops.
     //
-    //  Each transition picks its own ramp length, which the previous version only
-    //  did for the spin-up case: a STOP from PLAY reused the last coefficient and
-    //  therefore coasted down on a spin-up's timing.
-    //
-    //  The spindown hold OVERRIDES this and is handled with it: a spindown is a
-    //  running state, so while it is held the transport is treated as running
-    //  (the platter must not also be stopped) and the platter speed comes from
-    //  the spindown ramp below.
+    //  The state the rig settles on (START arriving at speed, or a hold released
+    //  on a stopped machine) comes back as a request rather than as a host call:
+    //  the atomics here are flushed to the parameter by the editor's timer, so no
+    //  host notification ever happens on the audio thread.
     // -------------------------------------------------------------------------
     const bool spindownNow = spindownHeld.load (std::memory_order_relaxed);
+    transport.beginBlock (transportState, spindownNow, engineSampleRate);
+    transportState = transport.state;
 
-    // Detect the release edge of the spindown hold. A spindown pressed from STOP
-    // forces the platter to run (below), so on release the machine must settle into
-    // PLAY rather than snapping back to silence - the gesture put the platter in
-    // motion and releasing the power leaves it running. That is written to the
-    // parameter, so the panel's keys and the host's lane follow.
-    if (lastSpindownHeld && ! spindownNow && transportState == 0)
+    if (const auto requestedTransportState = transport.takeRequestedState();
+        requestedTransportState >= 0)
     {
-        transportState = static_cast<int> (TransportState::play);
-        lastTransportState = -1;   // force the switch below to re-arm the ramp
-        transportHostSyncState.store (transportState, std::memory_order_relaxed);
+        transportHostSyncState.store (requestedTransportState, std::memory_order_relaxed);
         transportHostSyncRequested.store (true, std::memory_order_release);
     }
-
-    lastSpindownHeld = spindownNow;
-
-    // The transport the engine should DRIVE toward, before the spindown mask.
-    // A spindown forces a running transport so a held platter that was stopped
-    // does not stay silent; released, the machine settles into PLAY and the
-    // transport state is written to match.
-    if (transportState != lastTransportState)
-    {
-        switch (transportState)
-        {
-            case 0:   // STOP - settle to rest. Quicker than a spin-up: a stopped
-                      // capstan is braked, not coasting.
-                transportRampCoefficient = onePoleCoefficient (350.0f, engineSampleRate);
-                transportSpinningUp = false;
-                break;
-
-            case 2:   // START - the full spin-up, from wherever the ramp is.
-                transportRampCoefficient = onePoleCoefficient (1000.0f, engineSampleRate);
-                transportSpinningUp = true;
-                break;
-
-            case 1:   // PLAY - if we arrived here from START the ramp is already
-                      // running and must keep its spin-up timing; if the user
-                      // selected PLAY directly it is a short re-lock.
-            default:
-                if (! transportSpinningUp)
-                    transportRampCoefficient = onePoleCoefficient (350.0f, engineSampleRate);
-                break;
-        }
-
-        lastTransportState = transportState;
-    }
-
-    // -------------------------------------------------------------------------
-    //  SPINDOWN: the momentary hold.
-    //
-    //  While held, the machine runs down like a turntable whose power has been
-    //  cut. The coefficient is chosen for the run-down (~1.2 s, so the pitch
-    //  slides audibly rather than stopping) and for the spin-back-up when the
-    //  button is released (~0.5 s, so releasing it feels like power returning).
-    //
-    //  It multiplies the transport ramp rather than replacing it, so a spindown
-    //  from PLAY runs down and a spindown from STOP does nothing - which is
-    //  correct, because a stopped machine cannot slow further.
-    //
-    //  The transport target is forced to `running` while the hold is engaged, so
-    //  a spindown pressed from STOP brings the platter up instead of doing
-    //  nothing. That is what a DJ pressing the stop button on a deck expects: the
-    //  record is under the head, so the gesture always has something to act on.
-    // -------------------------------------------------------------------------
-    const bool transportRunning = spindownNow || transportState != 0;
-    const float transportTarget = transportRunning ? 1.0f : 0.0f;
-    const float spindownTarget = spindownNow ? 0.0f : 1.0f;
-    spindownCoefficient = spindownNow ? onePoleCoefficient (1200.0f, engineSampleRate)
-                                      : onePoleCoefficient (500.0f, engineSampleRate);
 
     // -------------------------------------------------------------------------
     //  Analogue transfer curves.
@@ -4365,7 +4310,14 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // position, converted to the raised-cosine dry/wet gains per sample below. Any
     // extra curve on it would only make the blend disagree with its own readout.
     const auto twoPi = juce::MathConstants<float>::twoPi;
-    const auto speedScale = (speed == 0) ? 0.76f : (speed == 1) ? 1.0f : 1.34f;
+    // The SPEED control's own character mapping, moved by the platter: a machine
+    // that is winding down behaves the way a machine running slower does - less
+    // band from its heads, slower wander, its bias following - which is what
+    // makes a coast read as the transport losing speed rather than as a fade. At
+    // speed this is exactly the SPEED control's number, so a running machine is
+    // unchanged by it.
+    const auto speedChoiceScale = (speed == 0) ? 0.76f : (speed == 1) ? 1.0f : 1.34f;
+    const auto speedScale = speedChoiceScale * (0.76f + 0.24f * transport.platter());
 
     // The wow rate is tempo-locked. A machine's speed irregularities read as
     // musical when they land on the track's own timing, so the LFO is anchored to
@@ -5194,74 +5146,49 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 #endif
 
         // ------------------------------------------------------------------
-        //  Transport ramp and the spindown platter ramp.
+        //  The transport's own frame.
         //
-        //  Both are advanced once per FRAME and used for the whole frame, so both
+        //  One advance per FRAME and one value used for the whole frame, so both
         //  channels ride the same capstan - advancing a ramp per channel would put
-        //  the sides a sample apart, which is a channel skew, not a transport.
-        //
-        //  STOP drives the transport to 0, PLAY holds it at 1, and START lets it
-        //  climb back from wherever it was. The spindown ramp runs the platter
-        //  speed the other way: 1 at speed, 0 fully stopped, and it MULTIPLIES the
-        //  transport, so the two compose into one platter speed.
+        //  the sides a sample apart, which is a channel skew, not a transport. The
+        //  rig owns the arithmetic and the gesture; this is the only place the
+        //  engine touches it inside the loop.
         // ------------------------------------------------------------------
-        transportRamp += (transportTarget - transportRamp) * transportRampCoefficient;
-        if (transportTarget <= 0.0f && transportRamp < 1.0e-5f)
-            transportRamp = 0.0f;
+        transport.advanceFrame();
 
-        spindownRamp += (spindownTarget - spindownRamp) * spindownCoefficient;
-        if (spindownTarget <= 0.0f && spindownRamp < 1.0e-5f)
-            spindownRamp = 0.0f;
+        // The platter's actual speed, which is what the machine's level, its
+        // modulation depth and its reels all follow. It is the PRODUCT of the
+        // capstan ramp and the run-down, which is what makes a spindown from a
+        // stopped transport and a stop during a spindown land in the same place.
+        const float platterSpeed = transport.platter();
 
-        // The platter's actual speed, which is what the machine's pitch, its
-        // modulation depth and its reels all follow. This is the single value the
-        // rest of the loop reads; it is the PRODUCT of the two ramps rather than
-        // either one, which is what makes a spindown from a stopped transport and
-        // a stop during a spindown both land at the same place.
-        const float platterSpeed = transportRamp * spindownRamp;
-
-        // The spin-up pitch error: while the platter is below speed the transport
-        // runs flat, and that is what makes the ramp read as a machine engaging
-        // rather than as a fade-in. A spindown drives the same term the other
-        // way, so the pitch falls away as the platter coasts down.
+        // How much of the machine's own motion reaches the signal: a transport
+        // below speed runs flat, which is what makes the ramp read as a machine
+        // engaging rather than as a fade-in. A spindown drives the same term the
+        // other way, so the machine goes slack as the platter coasts.
         //
-        // The curve is raised to platterPitchExponent so the pitch holds near speed
+        // The curve is raised to platterPitchExponent so the term holds near speed
         // until the platter is genuinely slow, then falls away quickly. That is what
-        // makes a spindown read as a turntable losing its drive rather than as a
-        // fade-out, and it is why the exponent has to be ABOVE 1: below 1 the pitch
-        // would droop the instant the button went down.
+        // makes a coast read as a machine losing its drive rather than as a
+        // fade-out, and it is why the exponent has to be ABOVE 1: below 1 the
+        // machine would go slack the instant the button went down.
+        //
+        // What this deliberately does NOT do is move the programme's PITCH. A DJ
+        // stop bends the material down as the record slows, and this plugin has no
+        // repitch stage to bend it with: its transport moves the level, the
+        // modulation and the speed response, and the coast is what stops the
+        // sound. A repitch is a stage of its own - a buffer read at the platter's
+        // rate, with a resync when the platter comes back to speed - and it is not
+        // claimed here.
         const float pitchedPlatter = std::pow (platterSpeed, platterPitchExponent);
         const float speedError = (1.0f - (1.0f - pitchedPlatter) * 0.7f)
                                * (1.0f - loadInducedSpeedError);
 
-        // ------------------------------------------------------------------
-        //  START is transient: advance it to PLAY once the capstan arrives.
-        //
-        //  A tape deck has no "starting" position - you press play, it comes up to
-        //  speed, and then it IS playing. That is what this does, and it is the
-        //  fix for START never ending: the ramp reaches speed, the state is written
-        //  back as PLAY, and the transport control settles on Play by itself.
-        //
-        //  The audio thread publishes a tiny state request only. The editor's
-        //  message-thread timer performs setValueNotifyingHost, keeping host calls
-        //  out of the real-time callback.
-        // ------------------------------------------------------------------
-        if (transportState == static_cast<int> (TransportState::start)
-              && transportSpinningUp
-              && transportRamp >= 0.999f)
-        {
-            transportSpinningUp = false;
-            transportState = static_cast<int> (TransportState::play);
-            lastTransportState = transportState;
-            transportHostSyncState.store (transportState, std::memory_order_relaxed);
-            transportHostSyncRequested.store (true, std::memory_order_release);
-        }
-
-        // Publish the platter speed and the spindown alone for the editor's reels
+        // Publish the platter speed and the run-down alone for the editor's reels
         // and momentary button. Relaxed stores: these are advisory UI values, and
         // the UI reads them with relaxed loads, so there is nothing to synchronise.
         transportRampPublished.store (platterSpeed, std::memory_order_relaxed);
-        spindownRampPublished.store (spindownRamp, std::memory_order_relaxed);
+        spindownRampPublished.store (transport.spindown, std::memory_order_relaxed);
 
         std::array<float, 2> tapeOutput {};
 
@@ -6057,8 +5984,15 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // agree on what "dry" means - and because the dry leg no longer rides
             // the processed signal, MIX 0 IS the input, whatever the front-end
             // stages are doing.
+            //
+            //  The transport gates BOTH legs. A stopped machine passes nothing, so
+            //  STOP is silence rather than "the wet part went away and the input is
+            //  still there" - which is exactly what a stop on a deck does, and
+            //  what the panel's STOP key and its tooltip promise. With MIX at 0 the
+            //  machine is the input's path, so STOP there is a stop too.
             const float wetMix = aligned * wetGain * platterSpeed;
-            const float dryMix = machineDryInput[static_cast<std::size_t> (channel)] * dryGain;
+            const float dryMix = machineDryInput[static_cast<std::size_t> (channel)]
+                               * dryGain * platterSpeed;
             tapeOutput[static_cast<std::size_t> (channel)] = dryMix + wetMix;
         }
 
@@ -6223,7 +6157,15 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         //  keeps the compressors' punch intact: it corrects the average, not transients.
         // ---------------------------------------------------------------------
         float compensationGain = 1.0f;
-        if (autoGainEnabled && referenceBlockPower > 0.0f)
+        //
+        //  The compensation measures the MACHINE's output against the input, so it
+        //  must not try to correct a machine that is not running: with STOP gating
+        //  that output the measurement would collapse, the compensator would ramp
+        //  to its +12 dB limit while the machine sat still, and START would then
+        //  come back loud before the correction relaxed. While the platter is not
+        //  at speed the last correction is held instead - which is also the honest
+        //  reading, because a stopped machine has no output to measure.
+        if (autoGainEnabled && transport.atSpeed() && referenceBlockPower > 0.0f)
         {
             // Power of the signal as it leaves the compressors and tape stage, but
             // BEFORE this compensation is folded in - measuring the compensated output
@@ -6276,8 +6218,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // the compensator and the output trim all read as "character", so a
             // perfectly dry MIX 0 still monitored as a loud level change rather than
             // silence.
+            // Gated with the machine, for the same reason the dry leg is: DELTA is
+            // the difference between what the machine made and the same signal at
+            // MIX 0, and at rest both are nothing. Ungated, DELTA on a stopped
+            // machine would monitor the input on its own - the opposite of silence.
             machineDry[index] = machineDryInput[index]
-                              * stageGainPerChannel[index] * compensationGain;
+                              * stageGainPerChannel[index] * compensationGain * platterSpeed;
         }
 
         // -------------------------------------------------------------------
@@ -6307,7 +6253,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         // -------------------------------------------------------------------
         for (int channel = 0; channel < activeChannels; ++channel)
             outputSignal[static_cast<std::size_t> (channel)] +=
-                undertoneOutput[static_cast<std::size_t> (channel)] * wetGain * finalOutputGain;
+                undertoneOutput[static_cast<std::size_t> (channel)] * wetGain * finalOutputGain
+                * platterSpeed;
 
         // -------------------------------------------------------------------
         //  OUT EQ - the output equaliser, at the other end of the machine.
