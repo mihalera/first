@@ -3623,11 +3623,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto stOffsetUs = stOffsetParam != nullptr ? stOffsetParam->load() : 0.0f;
     const auto noiseAmount = noiseParam != nullptr ? noiseParam->load() : 0.5f;
     const auto noiseLvlAmount = noiseLvlParam != nullptr ? noiseLvlParam->load() : 1.0f;
-    // The transport state is advanced by the engine too (START settles into PLAY),
-    // so it is not const here: it is a local mirror of the parameter, written back
-    // through it below when the spin-up completes.
-    auto transportState = transportParam != nullptr
-                              ? static_cast<int> (transportParam->load()) : 1;
+    // The transport state, read once per block from the parameter. The engine reads
+    // it here and does not write it: the state it settles on by itself (START
+    // arriving at speed, or a hold released on a stopped machine) leaves the rig as a
+    // request, and the editor's timer is what turns that into a host notification.
+    const auto transportState = transportParam != nullptr
+                                    ? static_cast<int> (transportParam->load()) : 1;
 
     // -----------------------------------------------------------------------
     //  Tempo, from the host.
@@ -4279,7 +4280,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // -------------------------------------------------------------------------
     const bool spindownNow = spindownHeld.load (std::memory_order_relaxed);
     transport.beginBlock (transportState, spindownNow, engineSampleRate);
-    transportState = transport.state;
 
     if (const auto requestedTransportState = transport.takeRequestedState();
         requestedTransportState >= 0)
@@ -4683,10 +4683,26 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // A plunger that is slowing loses speed before it loses signal. The whole point
     // of SPINDOWN is that the pitch goes first, so the platter speed is mapped
     // through a curve that stays near 1 until the platter is well below speed and
-    // then falls away quickly - an exponent above 1 would do the opposite and make
-    // the very start of the run-down audible as a fade. The value is applied in the
-    // per-sample loop, where the platter speed actually lives.
+    // then falls away quickly: an exponent above 1 does that, and an exponent below
+    // it would do the opposite - it would spend the modulation at the very start of
+    // the run-down, where a machine is still moving and nothing should be happening
+    // to it yet. The value is applied in the per-sample loop, where the platter
+    // speed actually lives.
     constexpr float platterPitchExponent = 1.35f;
+
+    // The machine's OUTPUT gate, and a different shape from the modulation term
+    // above on purpose. A tape that is still moving is still being read: its level
+    // holds until the travel is nearly gone and then collapses, which is what makes
+    // a stop read as the machine going away rather than as someone pulling a fader
+    // down. The first version of this gate was linear (the platter speed straight),
+    // which is 6 dB down halfway through a coast and exactly the sound that was
+    // reported as "STOP just makes it quieter". At this exponent the level is 0.77
+    // at nine tenths of speed, 0.18 at half speed and -35 dB at a fifth of it, so
+    // the audible part of a coast is its last third. The trade the shape makes is on
+    // the way back up: a spin-up with no repitch stage to glide brings the machine's
+    // sound in concentrated in its last third instead of fading it in early, which
+    // is the honest reading of a machine engaging.
+    constexpr float platterGateExponent = 2.5f;
 
     // A hard-driven machine also runs its transport more loosely: pushing a deck
     // that hard is a physical load, and the speed error is the same term the ramp
@@ -5183,6 +5199,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         const float pitchedPlatter = std::pow (platterSpeed, platterPitchExponent);
         const float speedError = (1.0f - (1.0f - pitchedPlatter) * 0.7f)
                                * (1.0f - loadInducedSpeedError);
+
+        // What the machine passes while it is turning, 0 at rest. See
+        // platterGateExponent: this is the multiplier the output stage's two legs
+        // are both gated by, and it is why STOP is silence rather than a fade.
+        const float platterGate = std::pow (platterSpeed, platterGateExponent);
 
         // Publish the platter speed and the run-down alone for the editor's reels
         // and momentary button. Relaxed stores: these are advisory UI values, and
@@ -5989,10 +6010,13 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             //  STOP is silence rather than "the wet part went away and the input is
             //  still there" - which is exactly what a stop on a deck does, and
             //  what the panel's STOP key and its tooltip promise. With MIX at 0 the
-            //  machine is the input's path, so STOP there is a stop too.
-            const float wetMix = aligned * wetGain * platterSpeed;
+            //  machine is the input's path, so STOP there is a stop too. The gate's
+            //  SHAPE is `platterGate` and not the platter speed itself: a linear
+            //  gate is a fader, and a fader is what the report heard. tests/transport
+            //  reads both of these legs as text precisely so neither can lose it.
+            const float wetMix = aligned * wetGain * platterGate;
             const float dryMix = machineDryInput[static_cast<std::size_t> (channel)]
-                               * dryGain * platterSpeed;
+                               * dryGain * platterGate;
             tapeOutput[static_cast<std::size_t> (channel)] = dryMix + wetMix;
         }
 

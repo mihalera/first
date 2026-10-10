@@ -3079,9 +3079,10 @@ void FirstAudioProcessorEditor::rebuildPanelTextureLayers()
 
 // The three transport keys plus the momentary spindown button. Same rule as the tab
 // bar: a plain TextButton's getToggleState() is always false, so the lit key's
-// colours are written to BOTH the ...Id and the ...OnId pair. START and SPINUP share
-// the START key's lamp, because START is what the engine advances into PLAY - the
-// key that is lit is the state that is running.
+// colours are written to BOTH the ...Id and the ...OnId pair. START is the one state
+// the engine advances out of by itself - it becomes PLAY when the capstan arrives - so
+// its lamp is the only one that goes out on its own, and the key that is lit is the
+// state the machine is in.
 int FirstAudioProcessorEditor::currentTransportState() const
 {
     // Read through the parameter, not a local mirror, so an automation lane moving
@@ -3108,9 +3109,9 @@ void FirstAudioProcessorEditor::styleTransportButtons()
         button.repaint();
     };
 
-    // STOP is lit when the machine is at rest; PLAY when it is running (including
-    // the internal SPINUP state, which is a running platter); START is lit while the
-    // capstan is actively climbing, which is the one moment the two are different.
+    // STOP is lit when the machine is at rest; PLAY when it is running; START while
+    // the capstan is climbing - which is the one moment the other two are both
+    // wrong: the machine is neither at rest nor up to speed yet.
     styleKey (transportStopButton, state == 0);
     styleKey (transportPlayButton, state == 1);
     styleKey (transportStartButton, state == 2);

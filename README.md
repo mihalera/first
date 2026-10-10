@@ -355,9 +355,10 @@ output EQ -> neural stage (optional, after the tape) -> transient shaper (DYN) -
 output trim (dB) -> stereo width -> anti-phase guard -> safety limiter -> soft clipper ->
 reverb (SPACE) -> vinyl (VINYL).
 
-The transport state (STOP / PLAY / START) scales the whole wet side of that path and
-the transport modulation together, so STOP is the machine coming to rest rather than a
-mute on the output.
+The transport state (STOP / PLAY / START) gates what the machine passes and scales the
+transport modulation with it, so STOP is the machine coming to rest rather than a mute
+on the output. Both sides of the MIX crossfade carry that gate, the dry leg included:
+a stopped machine passes nothing at all, whatever MIX is set to.
 
 The two DYN stages sit at the **end of the wet path** deliberately. The neural stage is
 one more nonlinearity and belongs with the machine; the transient shaper moves the
@@ -402,15 +403,37 @@ A tape machine has three states and the middle one is not "stopped":
 
 | State | What the machine does |
 | --- | --- |
-| **Stop** | The capstan is at rest. The tape is not moving, so there is no hiss, no modulation and no delay tail. The wet path coasts down and the machine reaches true silence - not a mute on the output, because the machine's own noise goes with it |
+| **Stop** | The capstan is braked to rest, in 0.75 s, and stays there. The tape is not moving, so there is no hiss, no modulation and no delay tail - the machine reaches true silence, not a mute on the output, because its own noise goes with it. Pressing STOP again spins it back up |
 | **Play** | Normal running. Everything the panel describes is active. This is the default and what every earlier build did |
-| **Start** | The moment of engagement. The capstan comes up to speed, so the transport runs flat, the modulation deepens and the pitch rides up into tune over about a second - the sound a deck makes when you hit play on a take |
+| **Start** | The moment of engagement. The capstan comes up from rest in 1.1 s, and the control settles on PLAY by itself when the platter reaches speed. Pressed while the machine is ALREADY running it re-cues first - a 0.30 s brake to rest, then the spin-up - so the key does something from every state instead of being the no-op it used to be on a machine that was already turning |
+
+**SPINDOWN** is the other half of the transport: a momentary hold, not a fourth state.
+Held, it cuts the platter's power and the machine coasts down over 1.6 s; released, it
+comes back up in 0.9 s. A hold on a stopped machine brings the platter up first and cuts
+it from there, and releasing a hold leaves the machine RUNNING rather than stopped. The
+run-down multiplies the capstan, so the two gestures compose: a stop during a hold and a
+hold during a stop land in the same place.
 
 The ramp is advanced once per **frame**, not per channel: advancing it per channel would
-put the two sides a sample apart, which is a channel skew rather than a transport. A
-START from STOP gets a full one-second spin-up; a START from PLAY is a re-engagement and
-gets a much shorter re-lock, because a button press that changed nothing should not
-slide the pitch for a second.
+put the two sides a sample apart, which is a channel skew rather than a transport. Every
+gesture is a duration in seconds rather than a one-pole time constant, and the durations
+live in `TransportRig` (the header, next to the note on why) with the constants' names
+carrying the number - `stopCoastSeconds`, `startSpinUpSeconds`, `startRecueSeconds`,
+`playRelockSeconds`, `spindownCoastSeconds`, `spindownReturnSeconds`.
+
+What the transport moves is the machine's level, its modulation depth and its speed
+response (the same character mapping the SPEED control uses) - all following one number,
+the platter's speed. It does **not** repitch the programme: a DJ stop bends the material
+down as the record slows, and this plugin has no repitch stage to bend it with. STOP is
+therefore a coast to silence - and the level gate holds the machine's output through the
+coast and collapses it at the end (a linear gate is a fader, which is what STOP used to
+sound like) - rather than a pitch bend. A varispeed stage is a project of its own: a
+buffer read at the platter's rate, with a resync when the platter comes back up.
+
+`tests/transport/` drives the shipping `TransportRig` frame by frame and checks each of
+these gestures against the duration its own name claims, so the two defects this section
+used to describe - a START that did nothing on a running machine and a STOP that only
+made the machine quieter - cannot come back quietly.
 
 ## Noise floor level
 
@@ -439,7 +462,8 @@ rest stays silent.
 | Delay Level | 0 to 100 % | How loud the second head's output is. Each pass round the tape loses top end, the way a real repeat does. Default 0 % |
 | ST Offset | -500 to +500 us | Inter-channel time offset. Real stereo decks record the two tracks with separate head gaps a fraction of a millimetre apart and the tape skews across them, so the channels are never perfectly aligned. Positive lags the right channel. Default 0 us |
 | Noise | 0 to 100 % | A trim on top of whatever floor the loaded tape formula sets. The formula's own character is untouched, so the floor can be lifted for a dirty bounce or pulled to a clinical black without changing stock. Gated by the transport. Default 50 % (neutral) |
-| Transport | Stop / Play / Start | The machine's three states. STOP lets the capstan coast to rest - no hiss, no wow, no delay tail: true silence, not a mute. START spins up from rest, running flat and climbing into tune over about a second |
+| Transport | Stop / Play / Start | The machine's three states. STOP brakes the capstan to rest in 0.75 s - no hiss, no wow, no delay tail: true silence, not a mute - and pressing it again spins the machine back up. START comes up from rest in 1.1 s and settles on PLAY by itself; pressed while already running it re-cues first (a 0.30 s brake, then the spin-up). PLAY is normal running, and a re-lock from a partial ramp takes 0.25 s |
+| Spindown | on/off (momentary in the panel) | Hold to cut the platter's power: the machine coasts down over 1.6 s and comes back up in 0.9 s when released. A hold also brings the platter up if the machine was stopped, and releasing a hold leaves the machine running. As a parameter it survives in the state and can be automated. Default off |
 | Output | -32 to +32 dB | Calibrated output trim in dB |
 | Width | 0 to 100 % | Mono through natural to extra wide |
 | Bypass | on/off | Ramps the whole tape engine out without clicking |
@@ -1251,7 +1275,7 @@ CMakeLists.txt   the build, and the only place build settings live
 Source/          the plugin: PluginProcessor, PluginEditor, and DSP
 JUCE/            JUCE 9.0.3, pinned as a git submodule
 .github/         CI: builds VST3 on Windows, VST3 + AU + AUv3 on macOS
-tests/           harnesses that need no JUCE: DSP, knob layout, saved state
+tests/           harnesses that need no JUCE: DSP, transport, knob layout, saved state
 SPLITTING-BIG-FILES.md   how far the long files can be split, and what it costs
 ```
 

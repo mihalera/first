@@ -4816,7 +4816,8 @@ struct TransportRig
         if (engineRate > 1.0)
             sampleRate = engineRate;
 
-        auto requested = stateIndex < 0 ? 1 : (stateIndex > 2 ? 2 : stateIndex);
+        const auto parameterState = stateIndex < 0 ? 1 : (stateIndex > 2 ? 2 : stateIndex);
+        auto requested = parameterState;
 
         // START is a transient and the engine advances it to PLAY itself. Until
         // the host has written that back, the parameter still reads START, and
@@ -4824,9 +4825,15 @@ struct TransportRig
         // machine once per block - so the advance is remembered here and a
         // parameter that still says START is read as the PLAY it is on its way
         // to. A parameter that says anything else clears it.
-        if (advancedToPlay && requested == static_cast<int> (State::start))
+        //
+        // The clear has to read the PARAMETER's value, not the rewritten one: the
+        // rewritten value is PLAY whenever the guard fires, so clearing on it
+        // would clear the guard on the very next block and the machine would
+        // re-cue once per block after all. (tests/transport drives exactly this: a
+        // parameter that stays on START for two seconds of blocks.)
+        if (advancedToPlay && parameterState == static_cast<int> (State::start))
             requested = static_cast<int> (State::play);
-        if (requested != static_cast<int> (State::start))
+        if (parameterState != static_cast<int> (State::start))
             advancedToPlay = false;
 
         state = requested;
@@ -4853,8 +4860,21 @@ struct TransportRig
 
         lastHeld = held;
 
-        spindownStep = (held ? -1.0f : 1.0f) * stepFor (held ? spindownCoastSeconds
-                                                             : spindownReturnSeconds);
+        // The run-down, and where it is allowed to start.
+        //
+        // A hold CUTS THE POWER, and a machine whose power is cut has to have been
+        // running: a hold on a machine whose platter is not yet up is the gesture
+        // of bringing it up and THEN cutting - so the run-down is held at 1 until
+        // the capstan arrives and falls from there. Letting the two ramps overlap
+        // instead (as they did) peaks the platter short of speed and cuts it from
+        // there: the machine is never actually running at the moment the power
+        // goes, which is not a thing a turntable does.
+        if (! held)
+            spindownStep = stepFor (spindownReturnSeconds);    // the power comes back
+        else if (ramp >= 1.0f)
+            spindownStep = -stepFor (spindownCoastSeconds);
+        else
+            spindownStep = 0.0f;                               // the cut waits for the platter
 
         if (state != lastState)
         {
