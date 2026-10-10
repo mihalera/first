@@ -6255,10 +6255,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
             // Keep the transport's inter-track bleed here. The user WIDTH control
             // is applied once at the final output stage, after the anti-phase guard.
-            const float mid = 0.5f * (outputSignal[0] + outputSignal[1]);
-            const float side = 0.5f * (outputSignal[0] - outputSignal[1]);
-            outputSignal[0] = mid + side;
-            outputSignal[1] = mid - side;
 
             // ------------------------------------------------------------------
             //  Anti-phase prevention.

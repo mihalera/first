@@ -1577,7 +1577,7 @@ struct TransientShaper
       - It is guarded. J37_HAS_RTNEURAL is 0 under the DSP harness and where the
         library was not fetched, and every member below then reduces to the
         pass-through. The class compiles either way, so no call site needs an
-        #if around it.
+        conditional guards around it.
 
     A 1-in/1-out model is deliberate: the stage sits IN the mono per-channel
     chain, so a stereo pair is two instances of the same model rather than one
@@ -1601,11 +1601,14 @@ struct NeuralStage
     using ModelType = RTNeural::Model<float>;
 
     std::unique_ptr<ModelType> model;
+    // Old model objects are kept alive until stage destruction. Model replacement
+    // is rare; retaining them avoids deallocation while an audio callback may be
+    // finishing inference with a previously loaded pointer.
+    std::vector<std::unique_ptr<ModelType>> retiredModels;
     std::mutex controlMutex;
     std::atomic<ModelType*> activeModel { nullptr };
     std::atomic<bool> clearRequested { false };
     std::atomic<bool> resetRequested { false };
-    std::atomic<unsigned int> readers { 0 };
 
     /** The model's input frame. RTNeural's forward() takes a pointer to a
         float[inSize] and RETURNS the single output sample by value, so one
@@ -1660,12 +1663,11 @@ struct NeuralStage
         }
 
         std::lock_guard<std::mutex> lock (controlMutex);
-        // Stop new readers, wait on this control thread for in-flight inference,
-        // then replace the model without ever blocking the audio callback.
+        // Retain the previous model until teardown. Audio threads may still hold
+        // the pointer they loaded before publication of the replacement.
         clearRequested.store (true, std::memory_order_release);
-        activeModel.store (nullptr, std::memory_order_release);
-        while (readers.load (std::memory_order_acquire) != 0)
-            std::this_thread::yield();
+        if (model != nullptr)
+            retiredModels.push_back (std::move (model));
         model = std::move (parsedModel);
         activeModel.store (model.get(), std::memory_order_release);
         clearRequested.store (false, std::memory_order_release);
@@ -1682,12 +1684,10 @@ struct NeuralStage
     {
 #if J37_HAS_RTNEURAL
         std::lock_guard<std::mutex> lock (controlMutex);
-        activeModel.store (nullptr, std::memory_order_release);
         clearRequested.store (true, std::memory_order_release);
-        while (readers.load (std::memory_order_acquire) != 0)
-            std::this_thread::yield();
-        model.reset();
-        retiredModels.clear();
+        activeModel.store (nullptr, std::memory_order_release);
+        if (model != nullptr)
+            retiredModels.push_back (std::move (model));
         resetRequested.store (true, std::memory_order_release);
 #endif
     }
@@ -1867,9 +1867,8 @@ struct NeuralStage
 
         std::lock_guard<std::mutex> lock (controlMutex);
         clearRequested.store (true, std::memory_order_release);
-        while (readers.load (std::memory_order_acquire) != 0)
-            std::this_thread::yield();
-        activeModel.store (nullptr, std::memory_order_release);
+        if (model != nullptr)
+            retiredModels.push_back (std::move (model));
         model = std::move (parsedModel);
         activeModel.store (model.get(), std::memory_order_release);
         clearRequested.store (false, std::memory_order_release);
@@ -1907,13 +1906,9 @@ struct NeuralStage
         if (active == nullptr || clearRequested.load (std::memory_order_acquire))
             return x;
 
-        readers.fetch_add (1, std::memory_order_acq_rel);
         if (activeModel.load (std::memory_order_acquire) != active
             || clearRequested.load (std::memory_order_acquire))
-        {
-            readers.fetch_sub (1, std::memory_order_release);
             return x;
-        }
         if (resetRequested.exchange (false, std::memory_order_acq_rel))
             active->reset();
 
@@ -1921,7 +1916,6 @@ struct NeuralStage
 
         // RTNeural's Model<T>::forward(const T*) returns the single output value.
         const float wet = active->forward (inputFrame);
-        readers.fetch_sub (1, std::memory_order_release);
         return x + (wet - x) * juce::jlimit (0.0f, 1.0f, amount);
 #else
         juce::ignoreUnused (amount);
