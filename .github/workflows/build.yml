@@ -49,7 +49,10 @@ jobs:
       # a 4 px disc on a seven-knob page (which is what the 780 x 664 floor did
       # before the strip was solved) fails here in seconds rather than in a
       # screenshot on someone else's display. Same shape as the DSP harness above:
-      # no JUCE, no window, no submodules.
+      # no JUCE, no window, no submodules. The same run also reads the two ends of
+      # the editor's constructor split - the phases the header declares and the
+      # one call per phase in the constructor - because a phase that stops being
+      # called still compiles and simply leaves its controls unbuilt.
       - name: Run the knob layout harness
         run: bash tests/layout/run.sh
 

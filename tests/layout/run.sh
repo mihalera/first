@@ -11,6 +11,11 @@
 # geometry can be measured on every pull request instead of only where the
 # plugin is built - and measured as the disc the paint routine will draw, not as
 # the numbers a comment claims.
+#
+# The same run also checks the editor's constructor against the phases the header
+# declares: every phase defined once, called once, in the declared order. Both
+# halves of a split whose failure is a control that quietly never gets built - see
+# the note in extract.py - and this is the only job that sees it.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"

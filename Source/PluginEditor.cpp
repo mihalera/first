@@ -3844,7 +3844,7 @@ namespace
     // replay's translate(already-translated) could never hit the table,
     // which is why the knob tooltips stayed English (or half-switched) after
     // a language change.
-juce::String parameterTooltipText (const juce::String& id)
+    juce::String parameterTooltipText (const juce::String& id)
     {
         if (id == "input")
             return "INPUT - output-stages the signal into the machine before the "
@@ -4262,7 +4262,7 @@ juce::String parameterTooltipText (const juce::String& id)
                    "finished sound, where nothing downstream responds to it. "
                    "20 kHz is effectively out of the way.";
         return {};
-}
+    }
 } // namespace
 
 FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
@@ -7477,8 +7477,10 @@ void FirstAudioProcessorEditor::timerCallback()
     // grid draws under it), or falls back to the interaction hint when the
     // pointer rests on nothing. A tooltip needs hover-and-wait; this bar
     // answers in one frame, which is why the two coexist. The name is read
-    // from the component rather than from parameterTooltip: that lambda
-    // captures constructor locals by reference and must not outlive them.
+    // from the component rather than from parameterTooltipText: the bar wants
+    // the knob's own caption - the short name the grid already draws under it,
+    // and the same one the host reports - while the tooltip's text is the
+    // sentence that explains the control, which is the tooltip's job.
     {
         juce::String hoveredControl;
         const auto mouse = getMouseXYRelative();

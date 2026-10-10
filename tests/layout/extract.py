@@ -24,6 +24,15 @@ The fragments are cut in the order the plugin declares them, because that is
 the order the harness has to compile them in: the knob count is what the band
 and the solver are measured from, and the solver is what the placement walks.
 
+One more thing is checked rather than cut, because it cannot be compiled: the
+editor's constructor is a list of calls, one per phase, and the header declares
+those phases in the order it calls them. A phase the constructor stops calling
+still compiles and still links - it just leaves the panel without everything
+that phase built, which shows up as a knob with no attachment or a switch no
+handler hears, somewhere else. So the two ends are read out of Source/ and
+compared: every declared phase defined exactly once, called exactly once, in
+the declared order.
+
 Usage:  python3 tests/layout/extract.py <output-dir>
 """
 
@@ -35,6 +44,14 @@ import re
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 EDITOR = REPO / "Source" / "PluginEditor.cpp"
+HEADER = REPO / "Source" / "PluginEditor.h"
+
+# The editor's constructor, declared as a list of calls - and the header block
+# that declares the phases, under this title, in the order they must be called.
+CONSTRUCTOR = "FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)"
+PHASE_TITLE = "//  The constructor's phases, in the order it calls them."
+PHASE_DECLARATION = re.compile(r"^\s*void (\w+)\s*\(\s*\);\s*$")
+PHASE_CALL = re.compile(r"^\s*(\w+)\s*\(\s*\);\s*$", re.M)
 
 
 def brace_block(text: str, anchor: str) -> str:
@@ -84,6 +101,105 @@ def ladder(text: str, pattern: str, name: str) -> list[str]:
     return list(found) if isinstance(found, tuple) else [found]
 
 
+def body_of(text: str, signature: str) -> str:
+    """The text between the braces of `signature`'s own block.
+
+    Skipping comments and string literals in one pass, because the block being
+    read is a constructor full of both.
+    """
+    if text.count(signature) != 1:
+        raise SystemExit(f"extract.py: `{signature}` appears {text.count(signature)} times in "
+                         f"{EDITOR.name}; the layout harness cannot read its body.")
+
+    open_at = text.index("{", text.index(signature))
+    position = open_at
+    depth = 0
+
+    while position < len(text):
+        c = text[position]
+
+        if c in "\"'":
+            quote = c
+            position += 1
+            while position < len(text) and text[position] != quote:
+                position += 2 if text[position] == "\\" else 1
+        elif c == "/" and position + 1 < len(text) and text[position + 1] == "/":
+            end = text.find("\n", position)
+            position = len(text) if end < 0 else end
+        elif c == "/" and position + 1 < len(text) and text[position + 1] == "*":
+            end = text.find("*/", position + 2)
+            position = len(text) if end < 0 else end + 2
+        elif c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return text[open_at + 1:position]
+
+        position += 1
+
+    raise SystemExit(f"extract.py: the block opened by `{signature}` is never closed.")
+
+
+def check_constructor_phases(source: str, header: str) -> list[str]:
+    """The constructor's phases, checked end to end, and returned in order.
+
+    The header declares them under its own rule comment, in the order the
+    constructor has to call them; the constructor calls one per statement. The
+    compiler only sees that both ends exist, so a phase that is declared, then
+    defined, then never called is a clean build and a broken panel. This is the
+    one place that can see it.
+    """
+    if PHASE_TITLE not in header:
+        raise SystemExit(f"extract.py: the header no longer carries `{PHASE_TITLE}`; the "
+                         f"editor's constructor-split phases are declared there.")
+
+    declarations: list[str] = []
+    for line in header[header.index(PHASE_TITLE):].split("\n")[1:]:
+        declaration = PHASE_DECLARATION.match(line)
+        if declaration:
+            declarations.append(declaration.group(1))
+        elif declarations and not line.strip():
+            break
+
+    if len(declarations) < 10:
+        raise SystemExit(f"extract.py: only {len(declarations)} constructor phases found under "
+                         f"`{PHASE_TITLE}`; the editor's build is one call per phase.")
+
+    calls = PHASE_CALL.findall(body_of(source, CONSTRUCTOR))
+    problems: list[str] = []
+
+    for name in declarations:
+        if calls.count(name) == 0:
+            problems.append(f"{name}() is declared but the constructor never calls it, so "
+                            f"the panel is built without it")
+        elif calls.count(name) > 1:
+            problems.append(f"{name}() is called {calls.count(name)} times")
+
+        definitions = len(re.findall(r"FirstAudioProcessorEditor::" + re.escape(name) + r"\s*\(\s*\)",
+                                     source))
+        if definitions == 0:
+            problems.append(f"{name}() is declared but has no definition in {EDITOR.name}")
+        elif definitions > 1:
+            problems.append(f"{name}() is defined {definitions} times in {EDITOR.name}")
+
+    for name in calls:
+        if name not in declarations:
+            problems.append(f"the constructor calls {name}(), which the header's phase block "
+                            f"does not declare")
+
+    if sorted(calls) == sorted(declarations) and calls != declarations:
+        problems.append("the constructor calls the phases in a different order than the header "
+                        "declares them, and a phase may rely on the ones before it having run")
+
+    if problems:
+        raise SystemExit("extract.py: the editor's constructor and its declared phases disagree - "
+                         "the layout harness reads one from PluginEditor.cpp and the other from "
+                         "PluginEditor.h:\n  - " + "\n  - ".join(problems))
+
+    return declarations
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("output_dir", nargs="?", default="extracted_layout",
@@ -94,6 +210,10 @@ def main() -> int:
     destination = pathlib.Path(arguments.output_dir)
     destination.mkdir(parents=True, exist_ok=True)
     source = EDITOR.read_text()
+
+    phases = check_constructor_phases(source, HEADER.read_text())
+    print(f"constructor phases: {len(phases)} declared, defined once and called once, "
+          f"in the declared order")
 
     divider = constant(source, r"controlsDividerOffset = (\d+);", "controlsDividerOffset")
     row_gap = constant(source, r"constexpr int knobRowGap = (\d+);", "knobRowGap")
