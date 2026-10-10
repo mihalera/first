@@ -1601,7 +1601,6 @@ struct NeuralStage
     using ModelType = RTNeural::Model<float>;
 
     std::unique_ptr<ModelType> model;
-    std::vector<std::unique_ptr<ModelType>> retiredModels;
     std::mutex controlMutex;
     std::atomic<ModelType*> activeModel { nullptr };
     std::atomic<bool> clearRequested { false };
@@ -1661,12 +1660,12 @@ struct NeuralStage
         }
 
         std::lock_guard<std::mutex> lock (controlMutex);
-        // Stop new readers, then wait on this control-thread path for any current
-        // inference to finish before replacing model storage.
+        // Stop new readers, wait on this control thread for in-flight inference,
+        // then replace the model without ever blocking the audio callback.
         clearRequested.store (true, std::memory_order_release);
+        activeModel.store (nullptr, std::memory_order_release);
         while (readers.load (std::memory_order_acquire) != 0)
             std::this_thread::yield();
-        activeModel.store (nullptr, std::memory_order_release);
         model = std::move (parsedModel);
         activeModel.store (model.get(), std::memory_order_release);
         clearRequested.store (false, std::memory_order_release);
@@ -1683,10 +1682,10 @@ struct NeuralStage
     {
 #if J37_HAS_RTNEURAL
         std::lock_guard<std::mutex> lock (controlMutex);
+        activeModel.store (nullptr, std::memory_order_release);
         clearRequested.store (true, std::memory_order_release);
         while (readers.load (std::memory_order_acquire) != 0)
             std::this_thread::yield();
-        activeModel.store (nullptr, std::memory_order_release);
         model.reset();
         retiredModels.clear();
         resetRequested.store (true, std::memory_order_release);

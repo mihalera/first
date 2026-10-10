@@ -3322,7 +3322,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto mix = (mixParam != nullptr ? mixParam->load() : 50.0f) * 0.01f;
     const auto outputDb = outputDbParam->load();
     const auto inputDb = inputDbParam->load();
-    // Width parameter maps 0/50/100 percent to 0x/1x/2x SIDE.
+    // WIDTH is centred at 50%: 0 is mono, 50 is natural, 100 doubles SIDE.
     const auto stereoWidth = widthParam != nullptr
         ? juce::jlimit (0.0f, 2.0f, widthParam->load() * 2.0f) : 1.0f;
     const auto compressorThreshold = compressorThresholdParam != nullptr ? compressorThresholdParam->load() : -18.0f;
@@ -4927,9 +4927,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         //  ramp, sample rate consumes it. If a control is read here it must be
         //  read from the same per-sample value everywhere else in the frame.
         //
-        // Advance the shared sample clock exactly once on this frame.
+        // INPUT owns the shared sample-clock advance; the following reads advance
+        // their individual ramps lazily for this same frame.
         const float inputGain = inputGainSmoothed.getNextValue();
         const float outputGain = outputGainSmoothed.getCurrentValue();
+        const float currentWidth = widthSmoothed.getCurrentValue();
         const float mixNow = juce::jlimit (0.0f, 1.0f, mixSmoothed.getCurrentValue());
         const float mixAngle = mixNow * juce::MathConstants<float>::halfPi;
         const float dryGain = std::cos (mixAngle);
@@ -4938,8 +4940,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         const float deltaMix = deltaListenSmoothed.getCurrentValue();
         const float driveNow = shaperDriveSmoothed.getCurrentValue();
         const float asymmetryNow = shaperAsymmetrySmoothed.getCurrentValue();
-        const float linkNow = stLinkSmoothed.getCurrentValue();
-        const float currentWidth = widthSmoothed.getCurrentValue();
+        const float diNow = diSmoothed.getCurrentValue();
+        const float diLoadNow = diLoadSmoothed.getCurrentValue();
+        const float diTransformerNow = diTransformerSmoothed.getCurrentValue();
+        const float distortionNow = distortionSmoothed.getCurrentValue();
+        const float preampNow = preampSmoothed.getCurrentValue();
         referenceBlockPower = 0.0f;
         // Optional hot-path activity probe. Behind the DSP harness guard so the
         // release and the harness both compile, and behind an explicit enable so
