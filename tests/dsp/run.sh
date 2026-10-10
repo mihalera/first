@@ -19,7 +19,19 @@ mkdir -p "${BUILD}"
 
 python3 "${HERE}/extract.py" "${BUILD}/extracted_dsp.inc"
 
+# J37_SANITIZE=address,undefined puts the harness, and with it the shipped DSP it
+# renders, under those sanitizers. The harness is seconds of work, so the
+# sanitizer pass rides along with the debug build in the workflow rather than
+# waiting for a separate sanitized build of the plugin.
+sanitize_flags=()
+if [ -n "${J37_SANITIZE:-}" ]; then
+    sanitize_flags=("-fsanitize=${J37_SANITIZE}" "-fno-sanitize-recover=all"
+                    "-fno-omit-frame-pointer" "-g")
+    echo "sanitizers: ${J37_SANITIZE}"
+fi
+
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+    "${sanitize_flags[@]}" \
     -I "${HERE}" -I "${BUILD}" \
     "${HERE}/subfund_test.cpp" -o "${BUILD}/subfund_test"
 

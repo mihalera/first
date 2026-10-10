@@ -49,9 +49,38 @@ jobs:
       # a 4 px disc on a seven-knob page (which is what the 780 x 664 floor did
       # before the strip was solved) fails here in seconds rather than in a
       # screenshot on someone else's display. Same shape as the DSP harness above:
-      # no JUCE, no window, no submodules.
+      # no JUCE, no window, no submodules. The same run also reads the two ends of
+      # the editor's constructor split - the phases the header declares and the
+      # one call per phase in the constructor - because a phase that stops being
+      # called still compiles and simply leaves its controls unbuilt.
       - name: Run the knob layout harness
         run: bash tests/layout/run.sh
+
+      # The parameter table and the saved-state round trip. A state a host saved
+      # is a promise to the user: opening a project written by an older build has
+      # to give back the sound it was saved with, and a block the host hands over
+      # has to be refused rather than half-applied. Both live in the two functions
+      # that write and read the state tree, and the MIX rescale from 0..1 to
+      # 0..100 is exactly the change that fails silently - the state still loads,
+      # it just loads as a different sound. So this cuts the shipping parameter
+      # table and those functions out of Source/, compiles them against a stub of
+      # the toolkit, and writes, reads and migrates states. Same shape as the two
+      # harnesses above: no JUCE, no host, seconds of work.
+      - name: Run the saved-state harness
+        run: bash tests/state/run.sh
+
+      # The transport - STOP / PLAY / START and the SPINDOWN hold. Both defects
+      # this guards were GESTURES, and a gesture is not visible in the source: the
+      # machine as written looked right, START did nothing on a machine that was
+      # already running, and STOP approached rest asymptotically instead of
+      # arriving, so a "stopped" machine was still passing a faded copy of its
+      # input. This harness cuts the shipping TransportRig out of the header and
+      # drives it frame by frame, checking each key against the duration its own
+      # note claims and the platter the engine actually follows - including the
+      # one multiplication that makes STOP silence rather than lower. Same shape as
+      # the harnesses above: no JUCE, no host, a few seconds.
+      - name: Run the transport harness
+        run: bash tests/transport/run.sh
 
       # The factory presets cannot fail at runtime - a name list that is a row
       # short, or a parameter with no column in the table, both just quietly
@@ -222,6 +251,22 @@ jobs:
           test -n "$prefix" || { echo "could not locate the ipp-include prefix"; exit 1; }
           echo "Intel IPP prefix: $prefix"
           echo "IPPROOT=$prefix" >> "$GITHUB_ENV"
+
+      # The one thing a Debug build proves that Release hides is what the
+      # sanitizers can see, and this job is the only place a Debug toolchain is
+      # already paid for. The four harnesses are seconds of work each and need
+      # no toolkit, no host and no submodules, so they run here a second time
+      # with ASan and UBSan turned on: the shipped DSP generator, the knob
+      # strip's arithmetic, the state writer/reader and the transport rig,
+      # executed as compiled out of Source/ rather than as a copy of it.
+      # -fno-sanitize-recover=all makes any finding fail the step instead of
+      # printing and carrying on.
+      - name: Run the harnesses under ASan and UBSan
+        run: |
+          J37_SANITIZE=address,undefined bash tests/dsp/run.sh
+          J37_SANITIZE=address,undefined bash tests/layout/run.sh
+          J37_SANITIZE=address,undefined bash tests/state/run.sh
+          J37_SANITIZE=address,undefined bash tests/transport/run.sh
 
       - name: Configure CMake (Debug)
         run: |
