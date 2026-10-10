@@ -27,6 +27,12 @@
 // exactly how much is modelled and what is deliberately not.
 #include "juce_stub.h"
 
+// <array> explicitly: the extracted preamble declares the model name tables as
+// std::array, and whether the standard headers already included here happen to
+// pull <array> in is a property of the TOOLCHAIN, not of this harness - it was
+// pulled in on the machine this was written on and not on the CI runner's, where
+// the tables came out as "initializer but incomplete type".
+#include <array>
 #include <atomic>
 #include <cstdio>
 #include <string>

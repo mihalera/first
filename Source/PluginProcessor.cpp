@@ -1661,11 +1661,14 @@ namespace
         //            the machine back up.
         //    PLAY  - normal running, which is where START settles.
         //    START - the engagement gesture: the capstan comes up to speed over
-        //            about 1.1 s and the state advances to PLAY by itself. Pressed
-        //            while the machine is already running it RE-CUES first (a 0.3 s
-        //            brake, then the spin-up), so the key does something from every
-        //            state. The durations live in TransportRig, with the reason they
-        //            are durations rather than one-pole time constants.
+        //            about 1.1 s and the state advances to PLAY by itself. It is a
+        //            SPIN-UP and nothing else: pressed on a machine that is already
+        //            running there is nothing left to drive, so the state settles
+        //            straight into PLAY - no brake first, which would make the key
+        //            a re-cue rather than a start. The durations live in
+        //            TransportRig, with the reason they are durations rather than
+        //            one-pole time constants, and with the TAPE SPEED / VINYL SPEED
+        //            / tempo scales that move them with the deck's own settings.
         //
         //  What the transport moves is the machine's LEVEL, its modulation and its
         //  speed response (the same character mapping the SPEED control uses), all
@@ -4267,11 +4270,18 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //  Transport: handed to the rig.
     //
     //  Everything about the gesture - the three states, their durations, the
-    //  re-cue, the momentary hold, and the auto-advance out of START - lives in
-    //  TransportRig, because that is the part worth exercising on its own. What
-    //  the engine does with it is follow `platter()`: the machine's level, its
-    //  modulation depth and its speed response are all functions of that one
-    //  number, and the gate below is where the machine's output stops.
+    //  deck's own settings that scale them, the momentary hold, and the
+    //  auto-advance out of START - lives in TransportRig, because that is the
+    //  part worth exercising on its own. What the engine does with it is follow
+    //  `platter()`: the machine's level, its modulation depth and its speed
+    //  response are all functions of that one number, and the gate below is
+    //  where the machine's output stops.
+    //
+    //  The rig is handed SPEED (the tape speed), VINYL SPEED (the turntable) and
+    //  the host tempo every block, because the three of them scale the gestures:
+    //  a 30 ips machine takes longer to come up and to coast, a 78 rpm platter
+    //  runs down for longer, and a take at 60 BPM moves twice as slowly as one at
+    //  120. A host that offers no tempo leaves the rig on its 120 BPM anchor.
     //
     //  The state the rig settles on (START arriving at speed, or a hold released
     //  on a stopped machine) comes back as a request rather than as a host call:
@@ -4279,7 +4289,10 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //  host notification ever happens on the audio thread.
     // -------------------------------------------------------------------------
     const bool spindownNow = spindownHeld.load (std::memory_order_relaxed);
-    transport.beginBlock (transportState, spindownNow, engineSampleRate);
+    const auto vinylSpeedChoice = vinylSpeedParam != nullptr
+                                      ? static_cast<int> (vinylSpeedParam->load()) : 0;
+    transport.beginBlock (transportState, spindownNow, engineSampleRate,
+                          speed, vinylSpeedChoice, hostTempoBpm);
 
     if (const auto requestedTransportState = transport.takeRequestedState();
         requestedTransportState >= 0)

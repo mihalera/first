@@ -5260,9 +5260,10 @@ void FirstAudioProcessorEditor::setUpTransportRow()
     //
     //  STOP-to-PLAY is handled as a TOGGLE on the same key: pressing STOP while
     //  running stops, pressing STOP again starts, which is what a single transport
-    //  key does on a deck. START is the engagement gesture, and on a machine that
-    //  is already running it re-cues - a short brake and then the spin-up - so it
-    //  is never the no-op it was reported as.
+    //  key does on a deck. START is the engagement gesture and nothing else: it
+    //  drives the capstan UP, and a machine already at speed has nothing left to
+    //  engage, so the state settles on PLAY. It never brakes first - a key that
+    //  stopped the machine before starting it would be a re-cue, not a start.
     // ---------------------------------------------------------------
     styleLabel (transportLabel, "TRANSPORT", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
@@ -5274,12 +5275,14 @@ void FirstAudioProcessorEditor::setUpTransportRow()
     setTip (transportPlayButton, "PLAY - normal running. This is where the machine rests, "
                                      "and where START settles by itself.");
     setTip (transportStartButton, "START - the engagement gesture: the capstan comes up "
-                                      "from rest over about a second, the way a deck sounds "
-                                      "when you hit play on a take, and the control settles "
-                                      "on PLAY when the platter reaches speed. Pressed while "
-                                      "the machine is already running it re-cues first - a "
-                                      "short brake, then the spin-up - so the key does "
-                                      "something from every state.");
+                                      "over about a second, the way a deck sounds when you "
+                                      "hit play on a take, and the control settles on PLAY "
+                                      "when the platter reaches speed. It is a spin-up and "
+                                      "nothing else - catching the machine mid-coast it brings "
+                                      "it back up, and on a machine already running there is "
+                                      "nothing left to engage, so it lands on PLAY. Its "
+                                      "timing follows the deck: tape speed, turntable speed "
+                                      "for the run-down, and the session's tempo.");
 
     for (auto* button : { &transportStopButton, &transportPlayButton, &transportStartButton })
     {
@@ -5951,12 +5954,11 @@ void FirstAudioProcessorEditor::addDeckControlsToPanel()
     vinylSpeedAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "vinyl_speed", vinylSpeedBox);
     speedAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "speed", speedBox);
 }
 
 void FirstAudioProcessorEditor::setUpSceneAndMeters()
 {
-        (audioProcessor.parameters, "speed", speedBox);
-
     // The 3D transport goes in FIRST, so it is the bottom-most child. It is a
     // child component rather than part of this editor's own painting because it
     // needs a custom renderer and this editor's context is a component painter -

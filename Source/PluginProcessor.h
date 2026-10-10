@@ -4726,11 +4726,29 @@ struct RealtimePitchShifter
              then advances to PLAY by itself; the engine publishes that
              transition for the message thread to hand to the host.
 
-    Pressing START on a machine that is ALREADY running re-cues first: a short
-    brake to rest, and then the full spin-up. That is the gesture the key names,
-    and it is the only reading under which the key does something from every
-    state - without it, START on a running machine is the no-op it was reported
-    as, because the machine it is asked to spin up is already turning.
+    START is a SPIN-UP and nothing else: the capstan is driven up from wherever
+    it is - from rest, or from partway down after a coast the key has caught - and
+    on a machine that is already at speed there is nothing left to drive, so the
+    key settles the state straight into PLAY. It does NOT brake first. An earlier
+    version "re-cued" the machine instead (a short brake, then the spin-up) to
+    give the key something to do on a running machine, and that is a different
+    gesture wearing START's name: a deck that stops before it starts is not what
+    the key means, and the brake is the one thing it must not do.
+
+    The gestures are the deck's OWN, so they move with the deck's settings, and
+    `beginBlock()` is handed all three:
+
+      * TAPE SPEED scales the CAPSTAN gestures - STOP's coast, START's spin-up and
+        PLAY's re-lock. The tape travels further per second, so the flywheel is
+        carrying more energy: it takes longer to bring up and longer to hold
+        back.
+      * VINYL SPEED scales the PLATTER gesture - SPINDOWN's run-down and its
+        return. A 78 turns more than twice as fast as a 33 and spends the energy
+        a power cut leaves it for longer.
+      * the TEMPO scales everything. The deck's motions are part of the take and
+        the take is at this tempo - the same argument that tempo-locks the wow
+        rate and the delay - so a gesture at 240 BPM takes half the time it takes
+        at 120.
 
     The durations below are SECONDS, and the ramps are linear in time so that they
     mean what they say. They replaced one-pole coefficients built from numbers
@@ -4748,18 +4766,45 @@ struct TransportRig
         start = 2
     };
 
-    // The gestures, in seconds. STOP is a COAST rather than a clamp: a platter
-    // with mass takes a moment to stop, and that moment is the gesture. START's
-    // spin-up is longer than its re-cue's brake for the same physical reason -
-    // bringing a capstan up to speed is the slow half of it. The spindown hold
+    // The gestures, in seconds AT THE DEFAULT MACHINE - 15 ips, 33 rpm, 120 BPM.
+    // Every scale below is exactly 1 there, so these are the numbers a fresh
+    // instance performs: what the panel's tips, the parameter's own comment and
+    // the README quote. STOP is a COAST rather than a clamp: a platter with mass
+    // takes a moment to stop, and that moment is the gesture. The spindown hold
     // coasts longer than STOP does because the long tail IS the effect, and it
     // comes back up faster so releasing the button feels like power returning.
     static constexpr float stopCoastSeconds      = 0.75f;
     static constexpr float startSpinUpSeconds    = 1.10f;
-    static constexpr float startRecueSeconds     = 0.30f;
     static constexpr float playRelockSeconds     = 0.25f;
     static constexpr float spindownCoastSeconds  = 1.60f;
     static constexpr float spindownReturnSeconds = 0.90f;
+
+    // The two rate selectors as SCALES on those seconds, anchored on the default
+    // machine so that selecting the default is choosing the documented gesture.
+    //
+    // Each is the square root of the speed's ratio to its own anchor: a 30 ips
+    // deck runs twice the tape of a 15 and coasts 1.41 as long, a 78 turns 2.36
+    // times as fast as a 33 and coasts 1.54 as long. The square root rather than
+    // the ratio because only part of what a transport fights - the flywheel's
+    // stored energy - grows with the speed; the servo's own rate does not, and
+    // the ratio would turn the 30 ips spin-up into a two-second wait that reads
+    // as a fault rather than as a machine.
+    static constexpr float tapeSpeedScales[3]  { 0.71f, 1.00f, 1.41f };   // 7.5 / 15 / 30 ips
+    static constexpr float vinylSpeedScales[3] { 1.00f, 1.17f, 1.54f };   // 33 / 45 / 78 rpm
+
+    /** The tempo's scale on every gesture: half the tempo, twice the gesture,
+        anchored at 120 BPM - the same anchor the wow rate uses, and the tempo a
+        host that offers no playhead is assumed to be running at. Clamped to half
+        and double, so a 5 BPM session cannot stretch a gesture into a stall and
+        a 400 BPM one cannot squeeze it into a click. */
+    static float tempoScaleFor (double bpm) noexcept
+    {
+        if (! (bpm > 1.0))
+            return 1.0f;
+
+        const auto ratio = 120.0 / bpm;
+        return static_cast<float> (ratio < 0.5 ? 0.5 : (ratio > 2.0 ? 2.0 : ratio));
+    }
 
     // The capstan and the momentary run-down. Public because the engine reads
     // them for more than the product (the telemetry and the panel's reels want
@@ -4797,39 +4842,56 @@ struct TransportRig
         spindown = 1.0f;
         rampStep = 0.0f;
         spindownStep = 0.0f;
+        capstanScale = 1.0f;
+        platterScale = 1.0f;
         state = static_cast<int> (State::play);
         lastState = -1;
         spinningUp = false;
-        recue = false;
         advancedToPlay = false;
         lastHeld = false;
         requestedState = -1;
     }
 
     /** Once per block: the `transport` parameter's own value, the momentary hold
-        (an atomic written by the panel), and the rate the ENGINE is running at -
-        the oversampled rate, because the ramps advance once per engine frame and
-        the durations above are wall-clock seconds.
+        (an atomic written by the panel), the rate the ENGINE is running at - the
+        oversampled rate, because the ramps advance once per engine frame and the
+        durations above are wall-clock seconds - and the deck's own settings: the
+        TAPE SPEED and VINYL SPEED choice indices, which scale the gestures (see
+        the tables above), and the tempo they are scaled to.
     */
-    void beginBlock (int stateIndex, bool held, double engineRate) noexcept
+    void beginBlock (int stateIndex, bool held, double engineRate,
+                     int tapeSpeed, int vinylSpeed, double tempoBpm) noexcept
     {
         if (engineRate > 1.0)
             sampleRate = engineRate;
+
+        // The deck's settings, as scales on the durations. The indices are clamped
+        // because a choice parameter is a small integer and a stray one must not
+        // index outside the tables; they are re-derived every block rather than
+        // read when a gesture starts, but the STEPS are stored when a gesture
+        // starts, so a selector moved mid-coast cannot step the ramp that is
+        // running - the next gesture is the one that follows the change.
+        const auto tapeIndex = tapeSpeed < 0 ? 0 : (tapeSpeed > 2 ? 2 : tapeSpeed);
+        const auto vinylIndex = vinylSpeed < 0 ? 0 : (vinylSpeed > 2 ? 2 : vinylSpeed);
+        const auto tempoScale = tempoScaleFor (tempoBpm);
+
+        capstanScale = tapeSpeedScales[tapeIndex] * tempoScale;
+        platterScale = vinylSpeedScales[vinylIndex] * tempoScale;
 
         const auto parameterState = stateIndex < 0 ? 1 : (stateIndex > 2 ? 2 : stateIndex);
         auto requested = parameterState;
 
         // START is a transient and the engine advances it to PLAY itself. Until
         // the host has written that back, the parameter still reads START, and
-        // treating each of those blocks as a fresh press would re-cue the
-        // machine once per block - so the advance is remembered here and a
+        // treating each of those blocks as a fresh press would restart the
+        // gesture once per block - so the advance is remembered here and a
         // parameter that still says START is read as the PLAY it is on its way
         // to. A parameter that says anything else clears it.
         //
         // The clear has to read the PARAMETER's value, not the rewritten one: the
         // rewritten value is PLAY whenever the guard fires, so clearing on it
         // would clear the guard on the very next block and the machine would
-        // re-cue once per block after all. (tests/transport drives exactly this: a
+        // restart once per block after all. (tests/transport drives exactly this: a
         // parameter that stays on START for two seconds of blocks.)
         if (advancedToPlay && parameterState == static_cast<int> (State::start))
             requested = static_cast<int> (State::play);
@@ -4870,9 +4932,9 @@ struct TransportRig
         // there: the machine is never actually running at the moment the power
         // goes, which is not a thing a turntable does.
         if (! held)
-            spindownStep = stepFor (spindownReturnSeconds);    // the power comes back
+            spindownStep = stepFor (spindownReturnSeconds * platterScale);   // the power comes back
         else if (ramp >= 1.0f)
-            spindownStep = -stepFor (spindownCoastSeconds);
+            spindownStep = -stepFor (spindownCoastSeconds * platterScale);
         else
             spindownStep = 0.0f;                               // the cut waits for the platter
 
@@ -4881,23 +4943,29 @@ struct TransportRig
             switch (state)
             {
                 case static_cast<int> (State::stop):
-                    rampStep = -stepFor (stopCoastSeconds);
+                    rampStep = -stepFor (stopCoastSeconds * capstanScale);
                     spinningUp = false;
-                    recue = false;
                     break;
 
                 case static_cast<int> (State::start):
-                    if (ramp > 0.0f)
+                    // START drives the capstan UP from wherever it is, at the
+                    // spin-up's rate: from rest, or from partway down after a
+                    // coast the key has caught. Never DOWN - the brake is STOP's.
+                    // The one machine with nothing left to engage is one already
+                    // at speed, and that settles straight into PLAY rather than
+                    // inventing a gesture to perform.
+                    if (ramp < 1.0f)
                     {
-                        recue = true;                        // already turning
-                        rampStep = -stepFor (startRecueSeconds);
-                        spinningUp = false;
+                        spinningUp = true;
+                        rampStep = stepFor (startSpinUpSeconds * capstanScale);
                     }
                     else
                     {
-                        recue = false;
-                        rampStep = stepFor (startSpinUpSeconds);
-                        spinningUp = true;
+                        spinningUp = false;
+                        rampStep = 0.0f;
+                        state = static_cast<int> (State::play);
+                        requestedState = state;
+                        advancedToPlay = true;
                     }
                     break;
 
@@ -4906,10 +4974,7 @@ struct TransportRig
                     // Arriving here FROM the spin-up the ramp is already running
                     // on its own timing; PLAY selected directly is a re-lock.
                     if (! spinningUp)
-                    {
-                        recue = false;
-                        rampStep = ramp < 1.0f ? stepFor (playRelockSeconds) : 0.0f;
-                    }
+                        rampStep = ramp < 1.0f ? stepFor (playRelockSeconds * capstanScale) : 0.0f;
                     break;
             }
 
@@ -4920,18 +4985,7 @@ struct TransportRig
     /** Once per sample frame: advance the capstan and the run-down. */
     void advanceFrame() noexcept
     {
-        if (recue)
-        {
-            ramp += rampStep;
-            if (ramp <= 0.0f)
-            {
-                ramp = 0.0f;                      // the brake landed: spin it up
-                recue = false;
-                rampStep = stepFor (startSpinUpSeconds);
-                spinningUp = true;
-            }
-        }
-        else if (rampStep != 0.0f)
+        if (rampStep != 0.0f)
         {
             ramp += rampStep;
 
@@ -4978,10 +5032,11 @@ private:
     double sampleRate = 48000.0;
     float rampStep = 0.0f;
     float spindownStep = 0.0f;
+    float capstanScale = 1.0f;      // TAPE SPEED * tempo: on the capstan's gestures
+    float platterScale = 1.0f;      // VINYL SPEED * tempo: on the platter's
     int lastState = -1;
     int requestedState = -1;
     bool spinningUp = false;
-    bool recue = false;
     bool advancedToPlay = false;
     bool lastHeld = false;
 };

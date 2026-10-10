@@ -227,6 +227,12 @@ Each channel has its own noise generator, so the crackle and the rumble are
 uncorrelated between the sides - sharing one would put every tick in the centre of the
 image instead of on the surface.
 
+**VINYL SPEED** (33 / 45 / 78) is the motor rather than the record: it sets the rate
+every one of those faults runs at, and it is also what the transport reads when
+SPINDOWN cuts the platter's power - a shellac turning at 78 coasts for longer than a
+33, because it has more of that energy to spend. See
+[Transport](#transport-start-play-stop) for the numbers.
+
 ## Modes
 
 Two switches that re-voice the **whole machine**:
@@ -405,7 +411,7 @@ A tape machine has three states and the middle one is not "stopped":
 | --- | --- |
 | **Stop** | The capstan is braked to rest, in 0.75 s, and stays there. The tape is not moving, so there is no hiss, no modulation and no delay tail - the machine reaches true silence, not a mute on the output, because its own noise goes with it. Pressing STOP again spins it back up |
 | **Play** | Normal running. Everything the panel describes is active. This is the default and what every earlier build did |
-| **Start** | The moment of engagement. The capstan comes up from rest in 1.1 s, and the control settles on PLAY by itself when the platter reaches speed. Pressed while the machine is ALREADY running it re-cues first - a 0.30 s brake to rest, then the spin-up - so the key does something from every state instead of being the no-op it used to be on a machine that was already turning |
+| **Start** | The moment of engagement: the capstan is driven **up** from wherever it is - 1.1 s from rest - and the control settles on PLAY by itself when the platter reaches speed. It is a spin-up and nothing else. Catching the machine mid-coast it brings it back up at the same rate, and a machine already at speed has nothing left to engage, so there the key simply lands on PLAY. It never brakes first: a key that stopped the deck before starting it would be a re-cue, not a start |
 
 **SPINDOWN** is the other half of the transport: a momentary hold, not a fourth state.
 Held, it cuts the platter's power and the machine coasts down over 1.6 s; released, it
@@ -414,12 +420,39 @@ it from there, and releasing a hold leaves the machine RUNNING rather than stopp
 run-down multiplies the capstan, so the two gestures compose: a stop during a hold and a
 hold during a stop land in the same place.
 
+**The gestures are the deck's own**, so they move with the deck's settings:
+
+| Setting | What it scales | Anchor | Away from it |
+| --- | --- | --- | --- |
+| **Speed** (TAPE SPEED) | START's spin-up, STOP's coast, PLAY's re-lock | 15 ips = 1.00 | 7.5 ips = 0.71, 30 ips = 1.41 |
+| **Vinyl Speed** | SPINDOWN's run-down and its return | 33 rpm = 1.00 | 45 rpm = 1.17, 78 rpm = 1.54 |
+| the host's **tempo** | every gesture above | 120 BPM = 1.00 | 60 BPM = 2.00, 240 BPM = 0.50, and clamped there |
+
+Each rate scale is the square root of the speed's ratio to its anchor, because only part
+of what a transport fights - the flywheel's stored energy - grows with the speed, while
+the servo's own rate does not. The scales multiply, because they are independent facts
+about the machine: a 30 ips deck is carrying more tape and a slow take moves more
+slowly, and both are true at once.
+
+At the defaults - 15 ips, 33 rpm, 120 BPM - every scale is exactly 1, so a fresh
+instance performs the durations above. Move the selectors and the gestures follow: a
+30 ips machine coasts to rest in 1.06 s and comes back up in 1.55 s, a 7.5 ips one in
+0.53 s and 0.78 s; a 78 rpm platter runs down in 2.46 s where a 33 takes 1.60 s; at
+60 BPM everything takes twice as long (30 ips stops in 2.12 s, a 78 runs down for
+4.93 s) and at 240 BPM half as long.
+
+The tempo is read from the host, once per block, the same playhead read the delay's sync
+mode and the wow rate already use; a host that offers no tempo leaves the rig on its
+120 BPM anchor.
+
 The ramp is advanced once per **frame**, not per channel: advancing it per channel would
 put the two sides a sample apart, which is a channel skew rather than a transport. Every
 gesture is a duration in seconds rather than a one-pole time constant, and the durations
 live in `TransportRig` (the header, next to the note on why) with the constants' names
-carrying the number - `stopCoastSeconds`, `startSpinUpSeconds`, `startRecueSeconds`,
-`playRelockSeconds`, `spindownCoastSeconds`, `spindownReturnSeconds`.
+carrying the number - `stopCoastSeconds`, `startSpinUpSeconds`, `playRelockSeconds`,
+`spindownCoastSeconds`, `spindownReturnSeconds` - and with `tapeSpeedScales`,
+`vinylSpeedScales` and `tempoScaleFor()` carrying what the deck's settings multiply
+them by.
 
 What the transport moves is the machine's level, its modulation depth and its speed
 response (the same character mapping the SPEED control uses) - all following one number,
@@ -431,9 +464,11 @@ sound like) - rather than a pitch bend. A varispeed stage is a project of its ow
 buffer read at the platter's rate, with a resync when the platter comes back up.
 
 `tests/transport/` drives the shipping `TransportRig` frame by frame and checks each of
-these gestures against the duration its own name claims, so the two defects this section
-used to describe - a START that did nothing on a running machine and a STOP that only
-made the machine quieter - cannot come back quietly.
+these gestures against the duration its own name claims and against the scale the deck's
+settings put on it - one machine per tape speed, per turntable speed and per tempo, plus
+the corner where all three are at once - so the defects this section used to describe
+(a STOP that only made the machine quieter, a START that braked first, and gestures that
+ignored the deck) cannot come back quietly.
 
 ## Noise floor level
 
@@ -462,13 +497,13 @@ rest stays silent.
 | Delay Level | 0 to 100 % | How loud the second head's output is. Each pass round the tape loses top end, the way a real repeat does. Default 0 % |
 | ST Offset | -500 to +500 us | Inter-channel time offset. Real stereo decks record the two tracks with separate head gaps a fraction of a millimetre apart and the tape skews across them, so the channels are never perfectly aligned. Positive lags the right channel. Default 0 us |
 | Noise | 0 to 100 % | A trim on top of whatever floor the loaded tape formula sets. The formula's own character is untouched, so the floor can be lifted for a dirty bounce or pulled to a clinical black without changing stock. Gated by the transport. Default 50 % (neutral) |
-| Transport | Stop / Play / Start | The machine's three states. STOP brakes the capstan to rest in 0.75 s - no hiss, no wow, no delay tail: true silence, not a mute - and pressing it again spins the machine back up. START comes up from rest in 1.1 s and settles on PLAY by itself; pressed while already running it re-cues first (a 0.30 s brake, then the spin-up). PLAY is normal running, and a re-lock from a partial ramp takes 0.25 s |
-| Spindown | on/off (momentary in the panel) | Hold to cut the platter's power: the machine coasts down over 1.6 s and comes back up in 0.9 s when released. A hold also brings the platter up if the machine was stopped, and releasing a hold leaves the machine running. As a parameter it survives in the state and can be automated. Default off |
+| Transport | Stop / Play / Start | The machine's three states. STOP brakes the capstan to rest in 0.75 s - no hiss, no wow, no delay tail: true silence, not a mute - and pressing it again spins the machine back up. START is the spin-up and nothing else: 1.1 s from rest, it catches a coasting machine and brings it back up at the same rate, it settles on PLAY by itself, and it never brakes first. PLAY is normal running, and a re-lock from a partial ramp takes 0.25 s. TAPE SPEED scales the three capstan gestures, VINYL SPEED scales the run-down, and the host tempo scales them all - see [Transport](#transport-start-play-stop) |
+| Spindown | on/off (momentary in the panel) | Hold to cut the platter's power: the machine coasts down over 1.6 s (2.46 s on a 78 rpm platter) and comes back up in 0.9 s when released. A hold also brings the platter up if the machine was stopped, and releasing a hold leaves the machine running. As a parameter it survives in the state and can be automated. Default off |
 | Output | -32 to +32 dB | Calibrated output trim in dB |
 | Width | 0 to 100 % | Mono through natural to extra wide |
 | Bypass | on/off | Ramps the whole tape engine out without clicking |
 | Tape Type | J37 / Ampex 456 / Studer A800 / Chrome / Type 111 / GP9 / Quantegy 499 / RTM SM911 / SM 468 / 888 / 815 / 811 | Model character (also shapes the glue time constants) |
-| Speed | 7.5 / 15 / 30 ips | Transport speed, affects modulation, top end and glue timing |
+| Speed | 7.5 / 15 / 30 ips | Transport speed, affects modulation, top end, glue timing, and how long the transport's own gestures take |
 | Oversampling | Off / 2x / 4x / 8x | Runs the tape engine at a higher internal rate to reduce aliasing; the added latency is reported to the host |
 | Polarity | on/off | Inverts the output polarity (180-degree flip), after the protection chain and the meters' magnitude path |
 | Auto Gain | on/off | Lets the slow programme compensator restore the level the INPUT trim dialled in; off leaves the output exactly at the level the chain produced |

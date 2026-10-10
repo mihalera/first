@@ -336,6 +336,24 @@ private:
     int panelHeight = 0;   ///< The panel the lists stand on; 0 until the first paint.
 };
 
+// The panel's knob strip as ONE number: sixty-four controls. Declared here,
+// above BOTH of its users, because they no longer live in the same scope: the
+// class below sizes its sliders, labels and attachments from it, and the control
+// table that NAMES those knobs is at file scope in the .cpp (see THE CONTROL
+// TABLE in PluginEditor.cpp) - a constant inside the class is not visible there,
+// which is a build error rather than a warning, and was one.
+//
+// 64: the fifty-nine the panel carried, minus the BLEND/SHAPE pair the user asked
+// to remove, plus the seven SOURCE knobs that replaced them.
+//
+// The count, the controlIds / controlNames lists, the defaultValues array and the
+// tabSpecs table are all views of ONE list and must agree. Sizing the arrays from
+// this name rather than from a literal is what turns a mismatch into a compile
+// error (C2078) instead of a silent out-of-bounds read at run time, and the tab
+// table is checked against this count by a static_assert in setCurrentTab, so a
+// knob that no tab lists is a build error too.
+inline constexpr std::size_t controlCount = 64;
+
 class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor,
                                         private juce::Timer
 {
@@ -464,16 +482,11 @@ private:
     // The grid sizes its own row count from the active tab, so it neither grows
     // nor jumps when the user switches tabs.
     //
-    // The count here, the controlIds / controlNames lists, the defaultValues array
-    // and the tabSpecs table in the .cpp are all views of ONE list and must agree.
-    // That is why the array is sized by controlCount rather than by a literal: a
-    // mismatch is then a compile error (C2078) instead of a silent out-of-bounds
-    // read at run time. The tab table is checked against controlCount by a
-    // static_assert too, so a knob that no tab lists is a build error, not a knob
-    // that silently disappears from the panel.
-    // 64: the fifty-nine the panel carried, minus the BLEND/SHAPE pair the
-    // user asked to remove, plus the seven SOURCE knobs that replaced them.
-    static constexpr std::size_t controlCount = 64;
+    // The count this strip is sized by is `controlCount`, declared above the
+    // class rather than inside it: the control table in the .cpp sizes itself
+    // from the same number and is at file scope, so the count has to be visible
+    // to both. See the note above it for what the count is, and for why the
+    // arrays are sized from a name instead of a literal.
     // The MEMBER BAND's four columns - the strip a page's own combos and pills
     // are laid out in (see placeDeckSwitch). The knob strip above it does NOT use
     // this: its column count is solved per page from the space the page's knob

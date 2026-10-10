@@ -8,10 +8,11 @@ So `struct TransportRig` is cut out of Source/PluginProcessor.h verbatim, exactl
 as tests/dsp/extract.py cuts the DSP stages, and the harness drives the real
 object.
 
-The struct is the whole transport: the three states, the durations, the re-cue,
-the momentary hold and the auto-advance out of START. The engine reads
-`platter()` from it and follows that number, so a rig that arrives where it says
-it arrives is the machine arriving there too.
+The struct is the whole transport: the three states, the durations, the scales
+the deck's own settings put on them (tape speed, turntable speed, tempo), the
+momentary hold and the auto-advance out of START. The engine reads `platter()`
+from it and follows that number, so a rig that arrives where it says it arrives
+is the machine arriving there too.
 
 Usage:  python3 tests/transport/extract.py <output.inc>
 """
@@ -172,8 +173,11 @@ def main() -> int:
     # The durations the harness reasons about are named constants in the struct,
     # so they are read back here and reported: a gesture that is documented for
     # one second and implemented as seven is the failure mode this exists for,
-    # and seeing the numbers in the log is how a reviewer notices.
+    # and seeing the numbers in the log is how a reviewer notices. The scale
+    # tables are reported with them, because they are what turns those seconds
+    # into the gesture a given machine performs.
     seconds = re.findall(r"static constexpr float (\w+Seconds)\s*=\s*([0-9.]+)f;", body)
+    scales = re.findall(r"static constexpr float (\w+Scales)\[3\]\s*\{([^}]*)\};", body)
     if len(seconds) < 4:
         raise SystemExit(f"extract.py: only {len(seconds)} `...Seconds` constants found in "
                          f"TransportRig; its gestures are stated in seconds.")
@@ -185,6 +189,7 @@ def main() -> int:
 
     print(f"wrote {destination} ({len(body.splitlines())} lines)")
     print("gestures: " + ", ".join(f"{name} = {value}s" for name, value in seconds))
+    print("scales:   " + ", ".join(f"{name} = [{values.strip()}]" for name, values in scales))
     return 0
 
 
