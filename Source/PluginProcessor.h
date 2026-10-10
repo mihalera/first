@@ -1874,6 +1874,11 @@ struct NeuralStage
         clearRequested.store (false, std::memory_order_release);
         resetRequested.store (true, std::memory_order_release);
         return true;
+        }
+        catch (...)
+        {
+            return false;
+        }
     }
 #endif
     /** The model's own recurrent state, let go of on a rate change or a model
