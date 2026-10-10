@@ -21,7 +21,18 @@ mkdir -p "${BUILD}"
 
 python3 "${HERE}/extract.py" "${BUILD}"
 
+# J37_SANITIZE=address,undefined puts the harness, and the layout arithmetic it
+# compiles out of Source/, under those sanitizers - see the sanitizer step in
+# build-linux-debug.
+sanitize_flags=()
+if [ -n "${J37_SANITIZE:-}" ]; then
+    sanitize_flags=("-fsanitize=${J37_SANITIZE}" "-fno-sanitize-recover=all"
+                    "-fno-omit-frame-pointer" "-g")
+    echo "sanitizers: ${J37_SANITIZE}"
+fi
+
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+    "${sanitize_flags[@]}" \
     -I "${HERE}" -I "${BUILD}" \
     "${HERE}/layout_test.cpp" -o "${BUILD}/layout_test"
 

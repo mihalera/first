@@ -502,6 +502,45 @@ private:
     void applyTheme();
     EditorLayout getEditorLayout() const;
 
+    // -------------------------------------------------------------------------
+    //  The constructor's phases, in the order it calls them.
+    //
+    //  The constructor was one 2,245-line function: the window's size, the whole
+    //  panel's worth of controls, every attachment and every handler, with nothing
+    //  between them to say where one part ended and the next began. Each phase
+    //  below is one part of that build, moved out whole - the statements are the
+    //  same statements in the same order, so the panel is built exactly as it was.
+    //
+    //  One rule holds the order together: a phase may rely on the phases BEFORE it
+    //  having run, and on nothing else. Anything a later phase needs that an earlier
+    //  one computed is reached through a member, or recomputed, exactly as the old
+    //  single body did. Set the size first (setSize() runs resized()), read the
+    //  control table second, attach the controllers third, and start the timer last.
+    // -------------------------------------------------------------------------
+    void setUpWindowAndSize();
+    void createDebugInspector();
+    void setUpLanguageAndTuning();
+    void setUpTooltipsAndPhysics();
+    void stylePanelLabels();
+    void setUpControlStrip();
+    void setUpTabButtons();
+    void setUpDeckSelectors();
+    void setUpTopSwitches();
+    void setUpOversamplingAndInstrument();
+    void setUpVinylSelectors();
+    void setUpTransportRow();
+    void setUpDelayRow();
+    void setUpModeAndGlSwitches();
+    void setUpSettingsSwitches();
+    void setUpModelButtons();
+    void setUpInlineLists();
+    void setUpEqCornerSwitches();
+    void setUpPresetBar();
+    void addDeckControlsToPanel();
+    void setUpSceneAndMeters();
+    void setUpOpenGlRendering();
+    void finishConstruction();
+
     /** Invalidates the surfaces the timer ANIMATES: the visible knobs, the panel's
         switches, the deck's own reel and particles, and the header's status lamp.
 

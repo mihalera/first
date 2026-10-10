@@ -3694,362 +3694,21 @@ void FirstAudioProcessorEditor::refreshIrStatus()
                                  : paletteFor (false).secondary);
 }
 
-FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
-    : AudioProcessorEditor (&p), audioProcessor (p)
+//==============================================================================
+//  The knob table and its tooltip text.
+//
+//  Both used to be locals of the editor's constructor, 500 lines into it. They are
+//  DATA - one row per knob, one sentence per parameter - so they live at file
+//  scope now, next to the other tables this file keeps, and the constructor reads
+//  them instead of holding them.
+//
+//  ControlSpec's table is the checksum of the whole panel: an id that is not the
+//  parameter's, a caption that disagrees with the host's, a default that is not the
+//  parameter's default. It is read by setUpControlStrip() and cross-checked against
+//  tabSpecs there, in a debug build.
+//==============================================================================
+namespace
 {
-    setResizable (true, true);
-
-    // The editor is deliberately sized in LOGICAL units and the DPI scale is NOT applied
-    // here. JUCE already handles display scaling for plugin editors: component coordinates
-    // are logical, and the host (or JUCE on the desktop) multiplies them by the display
-    // scale when it maps them to physical pixels. Multiplying setSize() by the display
-    // scale as well applies it a second time, which is why the window opened far too large
-    // - on a 150 % display this asked for 1860 x 1230 physical pixels for a 1240 x 820
-    // panel. The layout code below is all relative to getLocalBounds(), so it needs no
-    // knowledge of DPI at all.
-    //
-    // Sizing has TWO independent jobs, and confusing them is what left the editor unable
-    // to fit on a laptop screen:
-    //
-    //   1. The FLOOR is the layout's own minimum, derived from the fixed furniture in
-    //      getEditorLayout() and the six bands of controls in the deck. The deck needs
-    //      752 px of width, which is 780 px of window once the 14 px outer padding is
-    //      added; vertically it is the header, the deck and the space the knob grid
-    //      needs for its three rows.
-    //
-    //   2. The OPENING size is the preferred size CLAMPED TO THE SCREEN IT OPENS ON.
-    //      A fixed size fits a 27" monitor and nothing smaller, and the host is
-    //      under no obligation to shrink the window for us. So the display the editor
-    //      lands on decides: the preferred size when there is room, and the work area
-    //      minus a frame allowance when there is not, centred so the whole panel is
-    //      reachable instead of hanging off the bottom edge.
-    //
-    //   3. The FLOOR IS ALSO CLAMPED TO THE SCREEN, which is the part that was
-    //      missing and the reason the window stopped fitting. Clamping the OPENING
-    //      size was never enough: setResizeLimits is what the host reads when IT
-    //      sizes the window, and what the user cannot drag below afterwards. So a
-    //      768 px laptop - a work area of roughly 1366 x 728 - was handed a floor
-    //      of 816, and a window that could not be made small enough to live on the
-    //      screen no matter which of the two rules was applied. A window you cannot
-    //      see is worse than a tight one, so the floor yields: below the layout's
-    //      own minimum the panel gets cramped, which it is written to survive, and
-    //      above it nothing changes at all.
-    // The height is 664 because the layout adds up to exactly that: 28 of outer
-    // padding, the 84 px header, an 8 px gap, the deck at its 236 px minimum,
-    // another 8 px gap, and the control grid's own 300. It was 772, and the
-    // hundred and eight came almost entirely from the deck refusing to be
-    // shorter than its preferred 278 - which is what left a 1366x768 laptop,
-    // with a work area of about 728 and 664 usable after the frame allowance,
-    // unable to open the window at all. Every one of those terms is now a real
-    // minimum something needs rather than a number that was written once.
-    constexpr int minEditorWidth = 780;
-    constexpr int minEditorHeight = 664;
-    constexpr int preferredEditorWidth = 1060;
-    constexpr int preferredEditorHeight = 916;
-
-    // The horizontal margin keeps the frame off the edge of the display. The vertical
-    // one covers a decorated window's title bar and border, which sit OUTSIDE the size
-    // requested here - on Windows and GNOME that is another 30-45 px of screen the
-    // work area has to have room for, and over-reserving it is how a window that
-    // "fits" ends up smaller than it needs to be. It was 48 a side, which spent 96 px
-    // of a 728 px work area on margins the frame does not actually use.
-    constexpr int screenMarginX = 16;
-    constexpr int screenMarginY = 32;
-
-    const auto& displays = juce::Desktop::getInstance().getDisplays();
-    juce::Rectangle<int> workArea;
-
-    // The display under the mouse is the one the user is looking at, and the host will
-    // almost certainly put the editor near it. The other two cases are the mouse sitting
-    // outside every known display (a KVM switch, a locked session) and a headless build
-    // with no displays at all - in both of them there is nothing sensible to clamp to, so
-    // the preferred size is used unchanged.
-    // The Point<float> overload: the Point<int> one is deprecated, and Clang says so on
-    // every macOS build. Same screen, same result - only the coordinate type differs.
-    if (const auto* display = displays.getDisplayForPoint (juce::Desktop::getMousePosition().toFloat()))
-        workArea = display->userBounds.toNearestInt();
-    else if (const auto* primary = displays.getPrimaryDisplay())
-        workArea = primary->userBounds.toNearestInt();
-    else
-        workArea = displays.getTotalBounds (true);
-
-    if (workArea.isEmpty())
-    {
-        setResizeLimits (minEditorWidth, minEditorHeight, 1500, 1180);
-        setSize (preferredEditorWidth, preferredEditorHeight);
-    }
-    else
-    {
-        // toNearestInt() above already rounded, so subtracting the margin afterwards
-        // cannot leave the window half a pixel - or a whole one - over the edge.
-        const auto fittingWidth = workArea.getWidth() - 2 * screenMarginX;
-        const auto fittingHeight = workArea.getHeight() - 2 * screenMarginY;
-
-        // The floor this screen can actually honour, and the size it opens at. Both
-        // read from the same two numbers, so the window cannot open at a size its
-        // own limits would refuse - the version of this that clamped only the
-        // opening size and left the floor alone was the bug, not a near miss of it.
-        const auto floorWidth = juce::jmin (minEditorWidth, fittingWidth);
-        const auto floorHeight = juce::jmin (minEditorHeight, fittingHeight);
-        const auto openingWidth = juce::jlimit (floorWidth, fittingWidth, preferredEditorWidth);
-        const auto openingHeight = juce::jlimit (floorHeight, fittingHeight, preferredEditorHeight);
-
-        setResizeLimits (floorWidth, floorHeight, 1500, 1180);
-        setSize (openingWidth, openingHeight);
-
-        // Centred only when the screen forced a smaller window. At the preferred size the
-        // host decides where the editor goes, and re-centring it here would fight the
-        // DAW's own window management.
-        if (openingWidth != preferredEditorWidth || openingHeight != preferredEditorHeight)
-            centreWithSize (openingWidth, openingHeight);
-    }
-
-#if JUCE_DEBUG
-    // The Melatonin component inspector, debug builds only. It is created after
-    // the whole panel exists so it can walk the finished component tree; it
-    // opens lazily and stays invisible unless asked for.
-    inspector = std::make_unique<melatonin::Inspector> (*this, false);
-#endif
-
-    // ---------------------------------------------------------------------
-    //  The language selector.
-    //
-    //  A ComboBox bound straight to the "language" parameter, so choosing a
-    //  language is an ordinary parameter change: it is saved with the session,
-    //  restored with it, and undone with everything else. There is no separate
-    //  preferences file to keep in step with the host's idea of the project.
-    //
-    //  The listener is what makes the change take effect immediately. The
-    //  parameter is what makes it survive a restart; the two are different jobs
-    //  and either alone would be wrong - a parameter with no listener would
-    //  store the choice and never act on it, and a listener with no parameter
-    //  would apply it and forget it.
-    // ---------------------------------------------------------------------
-    languageBox.addItem (xlat ("LANGUAGE_ENGLISH"), 1);
-    languageBox.addItem (xlat ("LANGUAGE_UKRAINIAN"), 2);
-    languageBox.setLookAndFeel (&customLookAndFeel);
-    languageLabel.setVisible (false);
-    languageBox.setVisible (false);
-
-    languageAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
-        (audioProcessor.parameters, "language", languageBox);
-
-    // The stored value arrives AFTER the constructor on a session load, so the
-    // language is applied here from the parameter rather than assumed to be
-    // English - otherwise a session saved in Ukrainian would open with
-    // Ukrainian in the parameter and English on screen.
-    if (auto* languageParameter = dynamic_cast<juce::AudioParameterChoice*> (
-            audioProcessor.parameters.getParameter ("language")))
-    {
-        applyLanguage (languageParameter->getIndex());
-    }
-    else
-    {
-        applyLanguage (0);
-    }
-
-    languageBox.onChange = [this]
-    {
-        if (auto* languageParam = dynamic_cast<juce::AudioParameterChoice*> (
-                audioProcessor.parameters.getParameter ("language")))
-            applyLanguage (languageParam->getIndex());
-    };
-
-    // The caption is an all-caps engraving like every other caption on the panel,
-    // while the keyed string carries ordinary words ("Language"); the case is
-    // applied here rather than in the table, which keeps the lookup key stable
-    // and the translation readable.
-    styleLabel (languageLabel, xlat ("LANGUAGE_CAPTION").toUpperCase(), 10.0f,
-                paletteFor (false).secondary, true, juce::Justification::left);
-    addAndMakeVisible (languageLabel);
-    addAndMakeVisible (languageBox);
-
-    // SETUP musical controls: key selection is independent of the UI language,
-    // while autotune remains opt-in and its amount is continuously automatable.
-    tuningTonicBox.addItemList (juce::StringArray { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 1);
-    tuningModeBox.addItemList (juce::StringArray { "Chromatic", "Major", "Minor", "Dorian", "Pentatonic Major", "Pentatonic Minor" }, 1);
-    tuningTonicBox.setLookAndFeel (&inlineLookAndFeel);
-    tuningModeBox.setLookAndFeel (&inlineLookAndFeel);
-    tuningTonicAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
-        (audioProcessor.parameters, "tuning_tonic", tuningTonicBox);
-    tuningModeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
-        (audioProcessor.parameters, "tuning_mode", tuningModeBox);
-    autoTuneButton.setLookAndFeel (&inlineLookAndFeel);
-    autoTuneAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
-        (audioProcessor.parameters, "autotune", autoTuneButton);
-    // A rotary, laid out by the knob strip like every other page's controls - see
-    // the AUTOTUNE branch in resized(). As a LinearHorizontal bar this was the
-    // one control on the panel the toolkit drew for itself (J37LookAndFeel
-    // overrides the rotary, the switch and the toggle, and inherits JUCE's stock
-    // slider art), and the band it rode was 30 px tall: the toolkit kept a 15 px
-    // value box out of that and handed the art a paint area three pixels deep, so
-    // the page's only knob was a two-pixel bead beside a stock grey track.
-    autoTuneAmountSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
-    // 16 px for the readout, as on the deck's knobs - see the note there.
-    autoTuneAmountSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 78, 16);
-    autoTuneAmountSlider.setRange (0.0, 1.0, 0.001);
-    // The readout reads "50 %", the way the panel's other fraction knobs read (see
-    // the transient shaper's two amounts, the same pair of functions): the
-    // parameter IS a fraction and its unit IS percent, so the toolkit's own
-    // 0.500-with-a-percent-sign was the wrong number WITH a percent sign after
-    // it. The unit rides inside the text function rather than in
-    // setTextValueSuffix, so it cannot be written twice.
-    autoTuneAmountSlider.textFromValueFunction = [] (double value)
-    {
-        return juce::String (juce::roundToInt (value * 100.0)) + " %";
-    };
-    autoTuneAmountSlider.valueFromTextFunction = [] (const juce::String& text)
-    {
-        return juce::jlimit (0.0, 1.0, text.getDoubleValue() / 100.0);
-    };
-    autoTuneAmountSlider.setLookAndFeel (&customLookAndFeel);
-    autoTuneAmountAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>
-        (audioProcessor.parameters, "autotune_amount", autoTuneAmountSlider);
-    styleLabel (tuningTonicLabel, "TONIC", 9.0f, paletteFor (false).secondary, true, juce::Justification::left);
-    styleLabel (tuningModeLabel, "MODE", 9.0f, paletteFor (false).secondary, true, juce::Justification::left);
-    // Centred, and click-through, because this caption is now a knob page's - the
-    // strip places it in the tile's caption band like every other page's label,
-    // and a left-aligned caption over a centred knob reads as a stray word.
-    styleLabel (autoTuneAmountLabel, "TUNE AMOUNT", 9.0f, paletteFor (false).secondary, true, juce::Justification::centred);
-    autoTuneAmountLabel.setInterceptsMouseClicks (false, false);
-    addAndMakeVisible (tuningTonicLabel);
-    addAndMakeVisible (tuningModeLabel);
-    addAndMakeVisible (tuningTonicBox);
-    addAndMakeVisible (tuningModeBox);
-    addAndMakeVisible (autoTuneButton);
-    addAndMakeVisible (autoTuneAmountLabel);
-    addAndMakeVisible (autoTuneAmountSlider);
-
-    // Tooltips appear after a third of a second of hover: quick enough to be
-    // discoverable, slow enough not to flash while the user sweeps the panel.
-    tooltipWindow->setMillisecondsBeforeTipAppears (350);
-    createDecorativePhysics();
-
-    styleLabel (brandLabel, "NONLIN ANALOG", 9.0f, paletteFor (false).accent, true, juce::Justification::left);
-    titleLabel.setText ("Saturator", juce::dontSendNotification);
-
-    // Serif display face with a cross-platform fallback chain. "Georgia" only exists on
-    // Windows, so naming it alone made the title fall back to an arbitrary face (and an
-    // unpredictable width) on macOS and Linux. FontOptions accepts a comma-separated
-    // list and uses the first family that resolves, ending in a generic fallback.
-    titleLabel.setFont (juce::Font (juce::FontOptions ("Georgia, Times New Roman, Times, serif",
-                                                       30.0f, juce::Font::bold)));
-    titleLabel.setJustificationType (juce::Justification::left);
-    titleLabel.setInterceptsMouseClicks (false, false);
-    styleLabel (subtitleLabel, "NONLINEAR ANALOG MACHINE  /  SATURATION", 10.0f,
-                paletteFor (false).secondary, true, juce::Justification::left);
-    styleLabel (statusLabel, "STEREO / REAL TIME", 9.0f,
-                paletteFor (false).status, true, juce::Justification::centred);
-    styleLabel (deckHeadingLabel, "Deck", 10.0f, paletteFor (false).accent,
-                true, juce::Justification::left);
-
-    // Build identity, printed on the deck's heading strip. CMake resolves
-    // J37_BUILD_COMMIT from `git rev-parse --short=8 HEAD` at configure time and marks
-    // a dirty tree with a trailing "+"; when the sources are built outside a git
-    // checkout the definition still exists and reads "unknown", so this line can never
-    // be empty and the two cases are always distinguishable at a glance.
-#ifdef J37_BUILD_COMMIT
-    const juce::String buildId (J37_BUILD_COMMIT);
-#else
-    const juce::String buildId ("unknown");
-#endif
-    styleLabel (buildLabel, "BUILD " + buildId, 8.0f, paletteFor (false).secondary,
-                true, juce::Justification::centredRight);
-    styleLabel (tapeTypeLabel, "TAPE", 9.0f, paletteFor (false).secondary,
-                true, juce::Justification::left);
-    styleLabel (valveTypeLabel, "VALVE", 9.0f, paletteFor (false).secondary,
-                true, juce::Justification::left);
-    styleLabel (ampTypeLabel, "AMP", 9.0f, paletteFor (false).secondary,
-                true, juce::Justification::left);
-    styleLabel (transformerTypeLabel, "XFMR", 9.0f, paletteFor (false).secondary,
-                true, juce::Justification::left);
-    styleLabel (digitalTypeLabel, "DIGITAL", 9.0f, paletteFor (false).secondary,
-                true, juce::Justification::left);
-    styleLabel (vinylTypeLabel, "VINYL", 9.0f, paletteFor (false).secondary,
-                true, juce::Justification::left);
-    // The second selector of the six-type row is the turntable's motor speed; it
-    // had a layout slot and a combo but was never given a caption, so "33 RPM"
-    // sat under an empty label. RPM is what the box itself shows (33 / 45 / 78).
-    styleLabel (vinylSpeedLabel, "RPM", 9.0f, paletteFor (false).secondary,
-                true, juce::Justification::left);
-    styleLabel (speedLabel, "SPEED", 9.0f, paletteFor (false).secondary,
-                true, juce::Justification::left);
-    styleLabel (deckHintLabel, "PLAY / AT SPEED", 9.0f,
-                paletteFor (false).secondary, false, juce::Justification::centredLeft);
-    styleLabel (controlsHeadingLabel, "TABS", 10.0f, paletteFor (false).accent,
-                true, juce::Justification::left);
-    // The section caption. Its text is not set here: setCurrentTab writes the
-    // active page's own subject into it on every page change, and the constructor
-    // calls setCurrentTab before the first paint, so anything set now would be
-    // overwritten a few lines later. It is styled here only.
-    styleLabel (sectionCaptionLabel, "-", 9.0f, paletteFor (false).secondary,
-                false, juce::Justification::left);
-    styleLabel (controlsHintLabel, "Shift = fine tune", 9.0f,
-                paletteFor (false).secondary, false, juce::Justification::right);
-    styleLabel (bpmLabel, "BPM", 9.0f, paletteFor (false).secondary,
-                true, juce::Justification::left);
-    styleLabel (bpmReadout, xlat ("-"), 9.0f, paletteFor (false).secondary,
-                false, juce::Justification::centredLeft);
-    styleLabel (metersHeadingLabel, "LEVELS", 10.0f, paletteFor (false).accent,
-                true, juce::Justification::left);
-    styleLabel (metersHintLabel, "dBFS / PEAK + RMS", 8.0f, paletteFor (false).secondary,
-                true, juce::Justification::left);
-    styleLabel (compressorLabel, "GLUE x2", 10.0f, paletteFor (false).accent,
-                true, juce::Justification::right);
-    styleLabel (compressorReadout, "one meter per stage", 8.0f, paletteFor (false).secondary,
-                false, juce::Justification::right);
-    // The three readout pairs share one alignment discipline: the caption is
-    // centred over its value, and every pair uses the SAME scheme. BPM read
-    // left while these three read right, so a caption sat over the right half
-    // of its number while BPM's sat over nothing - the four looked staggered
-    // against each other even though each pair was internally consistent.
-    styleLabel (harmonicsLabel, "HARMONICS", 10.0f, paletteFor (false).accent,
-                true, juce::Justification::centredLeft);
-    styleLabel (harmonicsReadout, xlat ("even / odd"), 8.0f, paletteFor (false).secondary,
-                false, juce::Justification::centredLeft);
-    styleLabel (subfundLabel, "SUBFUND TRACK", 10.0f, paletteFor (false).accent,
-                true, juce::Justification::centredLeft);
-    styleLabel (subfundReadout, xlat ("idle"), 8.0f, paletteFor (false).secondary,
-                false, juce::Justification::centredLeft);
-    styleLabel (antiPhaseLabel, "ANTI-PHASE", 10.0f, paletteFor (false).accent,
-                true, juce::Justification::centredLeft);
-    styleLabel (antiPhaseReadout, xlat ("clean"), 8.0f, paletteFor (false).secondary,
-                false, juce::Justification::centredLeft);
-    addAndMakeVisible (antiPhaseLabel);
-    addAndMakeVisible (antiPhaseReadout);
-
-    addAndMakeVisible (brandLabel);
-    addAndMakeVisible (titleLabel);
-    addAndMakeVisible (subtitleLabel);
-    addAndMakeVisible (statusLabel);
-    addAndMakeVisible (deckHeadingLabel);
-    addAndMakeVisible (buildLabel);
-    addAndMakeVisible (tapeTypeLabel);
-    addAndMakeVisible (valveTypeLabel);
-    addAndMakeVisible (ampTypeLabel);
-    addAndMakeVisible (transformerTypeLabel);
-    addAndMakeVisible (digitalTypeLabel);
-    addAndMakeVisible (vinylTypeLabel);
-    addAndMakeVisible (vinylSpeedLabel);
-    addAndMakeVisible (speedLabel);
-    addAndMakeVisible (deckHintLabel);
-    addAndMakeVisible (controlsHeadingLabel);
-    addAndMakeVisible (sectionCaptionLabel);
-    addAndMakeVisible (controlsHintLabel);
-    // The MIX page's bar rides the member band, which resized() sizes and
-    // positions; adding it visible here is what lets the first paint see it.
-    addAndMakeVisible (mixBar);
-    addAndMakeVisible (metersHeadingLabel);
-    addAndMakeVisible (metersHintLabel);
-    addAndMakeVisible (compressorLabel);
-    addAndMakeVisible (compressorReadout);
-    addAndMakeVisible (harmonicsLabel);
-    addAndMakeVisible (harmonicsReadout);
-    addAndMakeVisible (bpmLabel);
-    addAndMakeVisible (bpmReadout);
-    addAndMakeVisible (subfundLabel);
-    addAndMakeVisible (subfundReadout);
-
     // These two lists are the grid's vocabulary, not its layout: their order no longer
     // decides which row anything sits on, or even whether it is on screen. tabSpecs
     // above says which tab each control belongs to and in which order it is drawn, and
@@ -4174,8 +3833,844 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         { "ir_mix",          "IR MIX",     0.0,   "SHAPERS"   }
     } };
 
-    // The three arrays the constructor below works from, DERIVED from the table
-    // above so they cannot disagree with it. Each is sized by controlCount, so a
+    // A tooltip for EVERY parameter - this is what shows when the user hovers.
+    // The per-name text explains what the control does and its default, and the
+    // generic interaction hints ride along on every knob.
+    //
+    // The function returns the ENGLISH sentence, untranslated on purpose:
+    // setTip stores this exact string for the language switch and shows the
+    // translation. It used to return xlat (...) + translated hints, so the
+    // stored English was already Ukrainian on a Ukrainian panel - and the
+    // replay's translate(already-translated) could never hit the table,
+    // which is why the knob tooltips stayed English (or half-switched) after
+    // a language change.
+juce::String parameterTooltipText (const juce::String& id)
+    {
+        if (id == "input")
+            return "INPUT - output-stages the signal into the machine before the "
+                   "tape. Positive pushes the tape harder for more saturation, "
+                   "negative cleans up. Range -32 to +32 dB, default 0 dB.";
+        if (id == "drive")
+            return "DRIVE - the amount of magnetic saturation. At 0 percent the "
+                   "machine is clean; higher settings bend the signal like tape "
+                   "and add harmonics. Default 30 percent.";
+        if (id == "bias")
+            return "BIAS - the record head's ultra-sonic offset. It shapes the "
+                   "even harmonics: low bias is edgy and thin, higher bias is "
+                   "warmer and fuller. Default 42 percent.";
+        if (id == "tone")
+            return "BRIGHTNESS - a true tilt around the 1.6 kHz pivot: "
+                   "low settings darken the machine (highs dip, lows lift), high "
+                   "settings open it up (highs lift, lows pull back), +/-12 dB at "
+                   "the extremes. 50 percent is the neutral pivot, so the spectral "
+                   "balance passes through untouched. Default 50 percent.";
+        if (id == "character")
+            return "TONE - the machine-state macro. It crossfades the whole deck "
+                   "between the classic slow machine (soft head gap, relaxed "
+                   "flutter) and the fast hot machine (open top end, tight "
+                   "flutter). Default 50 percent.";
+        if (id == "wow")
+            return "WOW - slow pitch wander of the transport, like a slightly "
+                   "loose capstan. 0 percent is a perfectly steady machine. "
+                   "Default 14 percent.";
+        if (id == "flutter")
+            return "FLUTTER - fast shimmer of the transport, like the tape "
+                   "brushing the heads. 0 percent is perfectly steady. "
+                   "Default 18 percent.";
+        if (id == "mix")
+            return "MIX - dry/wet crossfade. 0 percent is the untouched signal, "
+                   "100 percent is fully through the tape. Default 50 percent.";
+        if (id == "output")
+            return "OUTPUT - calibrated output trim after the whole chain. "
+                   "Range -32 to +32 dB, default 0 dB.";
+        if (id == "stereo_width")
+            return "WIDTH - stereo image after the tape. 0 percent is mono, "
+                   "50 percent is the natural stereo width, 100 percent is extra "
+                   "wide. Default 50 percent.";
+        if (id == "subfund")
+            return "SUBFUND - subharmonics. "
+                   "Generates up to 8 undertones (1/2 through 1/9) "
+                   "below the note when signal frequency permits, adding deep multi-layered "
+                   "weight and warmth that regular saturation cannot reach. They fall away in a "
+                   "staircase as they divide further, so the octave below is the strongest and "
+                   "1/9 is 42 dB under it. Stages falling "
+                   "below audible sub-bass (< 14-22 Hz) are smoothly attenuated to prevent DC "
+                   "rumble, and the whole series stops with the note rather than continuing to "
+                   "sound under it. They are added to the signal after the tape's own "
+                   "saturation, so they stay clean partials instead of feeding it and coming "
+                   "back out as a harmonic series. Default 0 percent - "
+                   "it is a colour, not a correction.";
+        if (id == "delay_time")
+            return "DELAY - the spacing of a second playback head, in "
+                   "milliseconds. The tape takes time to travel between the record and "
+                   "playback gaps, so the signal returns as a slap rather than a dub "
+                   "echo: real head spacings give tens of milliseconds, and 250 ms is "
+                   "already the far end of the travel. The repeat is taken AFTER the "
+                   "tape, so it inherits the machine's own bandwidth and saturation. "
+                   "Default 0 ms - no second head engaged.";
+        if (id == "delay_feedback")
+            return "DLY LVL - how loud the second head's output is. At 0 "
+                   "percent the delay is inaudible even with a time set, so TIME says "
+                   "where the head is and DLY LVL says how much of it you hear. Each "
+                   "pass round the tape loses top end, the way a real repeat does. "
+                   "Default 0 percent.";
+        if (id == "st_offset")
+            return "ST OFFSET - the time offset between the two channels, "
+                   "in microseconds. On a real stereo deck the two tracks are recorded "
+                   "by separate head gaps a fraction of a millimetre apart and the tape "
+                   "skews slightly across them, so the channels are never perfectly "
+                   "aligned. Positive lags the right channel, negative the left. This "
+                   "is a large part of why a tape bounce sounds wide rather than "
+                   "merely equalised wide. Default 0 us.";
+        if (id == "noise")
+            return "NOISE MIX - how much of the noise SECTION is in the "
+                   "output, exactly as MIX is how much of the tape section is. The "
+                   "section it governs is every noise source at once: the tape "
+                   "hiss floor, the vinyl crackle, the rumble and the groove "
+                   "surface. The loaded tape formula's own character is "
+                   "untouched - the formula sets the floor's shape, this sets how "
+                   "much of it you hear. It is gated by the transport, so a "
+                   "machine at rest is silent. Default 50 percent - the neutral "
+                   "position, not a change.";
+        if (id == "noise_lvl")
+            return "NOISE LVL - the level of the noise SOURCES "
+                   "themselves, tape and vinyl together. NOISE MIX is how much of "
+                   "the noise section sits in the output; this is how loud what is "
+                   "in that section actually runs, so it answers for every noise "
+                   "source the machine makes, including the vinyl ones the old "
+                   "NOISE control never reached. 100 percent is the calibrated "
+                   "level the formulas and the record types were voiced at. "
+                   "Default 100 percent.";
+        if (id == "tape_source")
+            return "TAPE - how much of the mix is the magnetic tape "
+                   "machine: hysteresis with memory, gentle and warm, the "
+                   "principle this plugin was calibrated as. Default 100 "
+                   "percent.";
+        if (id == "valve_source")
+            return "VALVE - how much of the mix is the thermionic stage: "
+                   "soft asymmetric compression, even-harmonic warmth. Shares "
+                   "the mix with the other sources - the shares are "
+                   "normalised, so the character changes without the level "
+                   "moving. Default 0 percent.";
+        if (id == "cassette_source")
+            return "CASSETTE - how much of the mix is the compact cassette: "
+                   "a hard early knee on narrow tape, small and loud. Default "
+                   "0 percent.";
+        if (id == "vinyl_source")
+            return "VINYL - how much of the mix is the cutting lathe: the "
+                   "gentlest tracing distortion of the seven, a soft "
+                   "level-dependent knee like the groove rounding under the "
+                   "stylus. Default 0 percent.";
+        if (id == "amp_source")
+            return "AMP - how much of the mix is the guitar amplifier's "
+                   "input stage: hard, odd-harmonic, the one that bites. "
+                   "Default 0 percent.";
+        if (id == "transformer_source")
+            return "TRANSFORMER - how much of the mix is the passive input "
+                   "transformer: pure analogue but no machine, the only "
+                   "principle that bends the low end first. Default 0 "
+                   "percent.";
+        if (id == "digital_source")
+            return "DIGITAL - how much of the mix is the converter: a hard "
+                   "ceiling with a held code, where the machines stop and the "
+                   "conversion begins. Default 0 percent.";
+        if (id == "amp_bias")
+            return "AMP BIAS - the input valve's DC operating point, "
+                   "which is the single most effective control on a real amp's "
+                   "character. Cold (low) is tight and slightly crossover-distorted; "
+                   "hot (high) is fat, compressed and soft. 50 percent is the "
+                   "neutral centre, so it is a character sweep rather than a "
+                   "one-way effect. Only audible in proportion to how much AMP is "
+                   "in the blend.";
+        if (id == "sag")
+            return "SAG - how much the amplifier's power supply droops "
+                   "under sustained demand. This is why a real amp 'gives' under a "
+                   "held chord and why the attack feels spongy: the supply sags, "
+                   "the gain falls a little, and then it recovers. 0 percent is a "
+                   "stiff, regulated supply with no give at all; high settings are "
+                   "a small amp being leaned on hard. Short transients never move "
+                   "it - only sustained programme does. Default 0 percent.";
+        if (id == "presence")
+            return "PRESENCE - the negative-feedback network's top-end "
+                   "lift, the upper-mid bite that makes an amp cut through. It sits "
+                   "AFTER the clipping, so it sharpens harmonics already present "
+                   "rather than generating new ones. 50 percent is the flat, "
+                   "neutral position; above it sharpens, below it darkens the way "
+                   "a low presence setting does. Default 50 percent.";
+        if (id == "cabinet")
+            return "CABINET - the speaker and its box. A resonant "
+                   "low-pass, not a plain one: a peak around 110 Hz from the "
+                   "cabinet's tuning and a roll-off from the cone's mass. Without "
+                   "it a clipped signal is fizzy; with it, it reads as a speaker "
+                   "rather than a circuit. The voicing fades in with however much "
+                   "AMP is in the blend, so a pure tape setting is untouched. "
+                   "Default 0 percent - a DI, the raw amp output.";
+        if (id == "preamp")
+            return "PREAMP - a valve input stage in FRONT of the "
+                   "machine, the way a real chain has a microphone preamp before "
+                   "the recorder. It is a STAGE, not a gain: driving it adds a "
+                   "gentle soft clip, a transformer's low-cut and a slight top-end "
+                   "lift, so it changes the colour as much as the level. It is "
+                   "level-matched internally, so INPUT remains the control that "
+                   "sets the operating level. Default 0 percent - no preamp.";
+        if (id == "distortion")
+            return "DISTORT - a diode clipper in front of the tape. "
+                   "Where the saturation core BENDS, this BREAKS: a hard knee with "
+                   "a pre-gain, deliberately abrupt. It sits ahead of the machine "
+                   "on purpose - a distorted signal recorded to tape sounds like a "
+                   "record rather than a pedal precisely because the tape smooths "
+                   "what the pedal produced. Default 0 percent - off.";
+        if (id == "flux")
+            return "FLUX - how deep into the oxide the record head "
+                   "magnetises. More flux is more low end, a stronger hysteresis "
+                   "memory and a quieter floor; less is thin and bright. It is a "
+                   "different axis from DRIVE: DRIVE is how hard the signal is "
+                   "pushed into the curve, FLUX is how much of the medium's depth "
+                   "is used. 50 percent is the calibrated, neutral flux.";
+        if (id == "wear")
+            return "WEAR - the state of the heads and the tape. A "
+                   "used machine is not a broken one: the head gap has rounded "
+                   "slightly and the oxide has lost some of its edge, so the top "
+                   "end softens and the contact adds a little noise. It should "
+                   "read as an old machine, not as a fault. Default 0 percent - "
+                   "a fresh head and new tape.";
+        if (id == "mechanics")
+            return "MECHANICS - the state of the transport's moving "
+                   "parts. WOW and FLUTTER set how much pitch modulation there is; "
+                   "this sets how WELL the mechanism holds it. At 0 the capstan, "
+                   "pinch roller and reel motors are in good order, so the "
+                   "modulation is smooth and periodic. Higher settings are dry "
+                   "bearings and a slack belt: irregular drift and the occasional "
+                   "slip. Default 0 percent.";
+        if (id == "reverb")
+            return "REVERB - the room the machine is in. Tape "
+                   "machines lived in rooms, and the room is part of the sound of "
+                   "a recording made on one. This is a plate/room hybrid placed "
+                   "AFTER the machine, so the reverb is of the processed signal "
+                   "rather than feeding back into the saturation - which keeps it "
+                   "clean and predictable. Default 0 percent - dry.";
+        if (id == "reverb_size")
+            return "RVB SIZE - how long the reverb's tail runs, and "
+                   "how dark it is: a bigger room absorbs more top end per pass, "
+                   "so a long tail is a darker one. That is what stops a large "
+                   "setting from sounding like a metal tank. Decay and level are "
+                   "separate decisions on a real reverb, which is why this is not "
+                   "folded into REVERB. Default 40 percent.";
+        if (id == "vinyl")
+            return "VINYL - the record-playing end of the chain. A "
+                   "turntable adds three things nothing else here does: surface "
+                   "crackle, bearing rumble and the RIAA playback curve's low-end "
+                   "lift and top-end softness. This is the overall amount; at 0 "
+                   "the whole stage is bypassed. Default 0 percent.";
+        if (id == "vinyl_crackle")
+            return "CRACKLE - surface noise, and specifically "
+                   "IMPULSES rather than hiss. A record surface is ticks, caused "
+                   "by dust and by the stylus crossing the groove's "
+                   "imperfections, so the generator produces sparse impulses with "
+                   "a fast decay instead of continuous noise. That is the "
+                   "difference between a record and a noisy tape. Default 50 "
+                   "percent.";
+        if (id == "vinyl_rumble")
+            return "RUMBLE - the turntable's low-frequency thump, "
+                   "from the bearing and the motor. It is why vinyl has a "
+                   "bottom-end floor that a CD does not. It is a different noise "
+                   "from the crackle and is scaled separately, because a worn "
+                   "bearing and a dusty record are independent faults. Default "
+                   "35 percent.";
+        if (id == "vinyl_speed")
+            return "VINYL SPEED - the speed of the turntable's motor, "
+                   "not of the record: the VINYL TYPE describes the disc, this "
+                   "describes what drives it. Each speed carries its own wow rate "
+                   "and depth, so the same record wanders differently at 33 and "
+                   "45, and a 78's wind-up motor wobbles hardest. 33 RPM is the "
+                   "default.";
+        if (id == "vinyl_dust")
+            return "DUST - fine particulate in the groove. Unlike "
+                   "CRACKLE's random ticks, dust is a CONTINUOUS granular "
+                   "texture, band-limited high so it sits on top of the "
+                   "music as grit. It follows the programme: a loud passage "
+                   "sounds dirtier than a quiet one, because dust only makes "
+                   "a sound when there is modulation in the groove to "
+                   "disturb it. A little dust is a worn record; a lot is a "
+                   "record that has been left out of its sleeve. "
+                   "Default 0 percent.";
+        if (id == "vinyl_scratch")
+            return "SCRATCH - a deep groove wound, not dust. Where "
+                   "a dust tick is random, a scratch is PERIODIC: the stylus "
+                   "crosses the same damage every turn, so it arrives at the "
+                   "platter rate and is heard as a repeating thud rather "
+                   "than as a hiss. The rate follows VINYL SPEED, so the same "
+                   "scratch repeats faster on a 45 than on a 33. "
+                   "Default 0 percent.";
+        if (id == "vinyl_warp")
+            return "WARP - the record is not flat. A warped disc "
+                   "makes the stylus ride up and down once per revolution, "
+                   "so the tracking force - and therefore the output level - "
+                   "breathes at the platter rate. It is a slow, cyclic "
+                   "throb, which is what makes a warped record sound like it "
+                   "is struggling rather than merely noisy. It modulates "
+                   "what the stage passes rather than what it adds, so at 0 "
+                   "percent it is exactly unity. Default 0 percent.";
+        if (id == "vinyl_electrical")
+            return "ELECTRICAL - the cartridge, the cable and the "
+                   "earth loop. Two faults at once: MAINS HUM at the supply "
+                   "frequency plus its second harmonic, which is what an "
+                   "unearthed cartridge picks up from the motor and the "
+                   "transformer; and EARTH STATIC, the broadband crackle of "
+                   "a bad ground. The hum's two sides are deliberately not "
+                   "identical - the second harmonic is in anti-phase across "
+                   "the pair - which is exactly how a real earth loop "
+                   "behaves. Default 0 percent.";
+        if (id == "in_low")
+            return "IN LO - the input equaliser's low shelf, a "
+                   "low-pass split at 200 Hz with the bottom band gained. "
+                   "Because it sits BEFORE the tape, lifting it drives the "
+                   "saturation curve and the glue compressors harder, so it "
+                   "changes what the machine DOES rather than merely the "
+                   "balance. Range -12 to +12 dB, flat at 0 dB.";
+        if (id == "in_mid")
+            return "IN MID - the input equaliser's bell, centred at "
+                   "1 kHz inside the 200 Hz - 4 kHz band. A bell rather than a "
+                   "shelf, so it acts on its own pass band and leaves the two "
+                   "ends where they were. Range -12 to +12 dB, flat at 0 dB.";
+        if (id == "in_high")
+            return "IN HI - the input equaliser's high shelf, "
+                   "everything above 4 kHz. Feed the machine the top end you "
+                   "want it to saturate on, rather than fixing it afterwards. "
+                   "Range -12 to +12 dB, flat at 0 dB.";
+        if (id == "out_low")
+            return "OUT LO - the output equaliser's low shelf at "
+                   "200 Hz. It sits AFTER everything the machine does and "
+                   "before the output trim, so nothing downstream responds to "
+                   "it: this is the neutral EQ you use to place the finished "
+                   "sound. Range -12 to +12 dB, flat at 0 dB.";
+        if (id == "out_mid")
+            return "OUT MID - the output equaliser's bell at "
+                   "1 kHz. Presence or hollow, depending which way you go, "
+                   "with both ends left alone. Range -12 to +12 dB, flat at "
+                   "0 dB.";
+        if (id == "out_high")
+            return "OUT HI - the output equaliser's high shelf "
+                   "above 4 kHz. Air, or the lack of it, applied to the "
+                   "finished machine. Range -12 to +12 dB, flat at 0 dB.";
+        if (id == "vinyl_clicks")
+            return "CLICKS - the sharp, discrete groove faults. "
+                   "CRACKLE is fine surface texture and DUST is grit in the "
+                   "groove; a CLICK is an actual ridge or pit that the stylus "
+                   "hits as a single hard transient - a fast bipolar impact "
+                   "with almost no ring, which is why it reads as a click "
+                   "rather than as more crackle. Above half the travel a "
+                   "fraction of the clicks becomes PERIODIC, locked to the "
+                   "platter, so a badly pressed record ticks in time rather "
+                   "than at random. Default 0 percent.";
+        if (id == "transient_attack")
+            return "ATK - the leading edge of each event. The transient "
+                   "shaper looks at the signal's ENVELOPE rather than its "
+                   "waveform, so it can make a hit sharper without adding a "
+                   "harmonic: positive sharpens the attack (punch, snap, "
+                   "click), negative softens it (rounder, less percussive). "
+                   "Range -100 to +100 percent, neutral at 0.";
+        if (id == "transient_sustain")
+            return "SUS - what follows the attack: the body, the ring, "
+                   "the room. Positive lengthens it (fuller, more sustain), "
+                   "negative shortens it (tighter, more staccato). Like ATK "
+                   "it moves the envelope's level rather than the waveform, "
+                   "so the harmonics the machine produced are untouched. "
+                   "Range -100 to +100 percent, neutral at 0.";
+        if (id == "transient_mix")
+            return "TR MIX - how much of the transient-shaped signal "
+                   "reaches the output. At 0 the stage is absent and the "
+                   "signal passes untouched; at 100 it is the fully shaped "
+                   "one. In between the two are crossfaded, so the amount of "
+                   "shaping can be dialled in rather than switched. "
+                   "Default 0 percent.";
+        if (id == "neural_mix")
+            return "NEURAL - the wet/dry position of the optional "
+                   "learned model. The model is not a knob: it is a file "
+                   "loaded with LOAD MODEL on the CHARACTER tab, and the "
+                   "network itself (a Dense net, an LSTM, a GRU) is whatever "
+                   "the file describes. This control blends the model's "
+                   "output with the untouched signal, so it is always a "
+                   "crossfade. At 0, or with no model loaded, the stage is "
+                   "transparent. Default 0 percent.";
+        if (id == "ir_mix")
+            return "IR MIX - how much of the convolved signal is blended "
+                   "into the finished one. The impulse response itself is "
+                   "not a knob: it is a file loaded with LOAD IR on the "
+                   "CHARACTER tab, and it can be a cabinet, a room or any "
+                   "other space. At 0, or with no IR loaded, the stage is "
+                   "transparent. Default 0 percent.";
+        // The eleven knobs that were falling through to an empty sentence:
+        // they showed the shared interaction hint only, which the user read
+        // as "tooltip is missing". One branch each, same shape as the rest.
+        if (id == "di")
+            return "DI - the instrument input's direct-injection stage in "
+                   "FRONT of the machine: a high-impedance buffer that keeps "
+                   "a guitar or synth pickup from loading down, plus the pad, "
+                   "load and transformer that follow it. Default 0 percent - "
+                   "the plain input path.";
+        if (id == "di_load")
+            return "DI LOAD - the input impedance the instrument sees in "
+                   "the DI stage. A pickup is a reactive source: 1 M keeps "
+                   "a guitar bright and open, 220 k tames a hot active bass, "
+                   "and lower still tightens a synth's output stage. Default "
+                   "0 percent.";
+        if (id == "di_transformer")
+            return "DI XFMR - the DI's output transformer. OFF is a clean "
+                   "electronic path; the transformer adds its iron colour, "
+                   "a gentle low cut and the slight phase smear a real direct "
+                   "box gives. Default 0 percent - off.";
+        if (id == "st_link")
+            return "ST LINK - gangs the stereo pair's shared controls so one "
+                   "knob sets both channels. Off splits the machine into two "
+                   "independent sides for separate left/right settings. "
+                   "Default linked.";
+        if (id == "delay_pingpong")
+            return "PING-PONG - bounces the second head's repeats between "
+                   "the left and right output instead of doubling them in "
+                   "both channels. Off, every repeat lands centred. Default "
+                   "0 percent - off.";
+        if (id == "in_eq_q")
+            return "IN Q - the input equaliser's corner resonance, shared "
+                   "by its bell and the shoulders of its shelves. 0.7 is the "
+                   "flat Butterworth corner; higher sharpens the bell's "
+                   "shoulder and rings slightly at the corner frequency. "
+                   "Default 0.7.";
+        if (id == "out_eq_q")
+            return "OUT Q - the output equaliser's corner resonance, shared "
+                   "by its bell and the shoulders of its shelves. Same curve "
+                   "as the input Q, applied AFTER the machine, where it shapes "
+                   "the result rather than the drive. Default 0.7.";
+        if (id == "in_hp_freq")
+            return "IN HP - the input equaliser's high-pass corner. "
+                   "Everything below it is removed BEFORE the machine, so a "
+                   "bass-heavy source can be kept from flapping the tape's "
+                   "low end. 20 Hz is effectively out of the way.";
+        if (id == "in_lp_freq")
+            return "IN LP - the input equaliser's low-pass corner. "
+                   "Everything above it is removed BEFORE the machine, the "
+                   "way a deck's record electronics roll the top off. "
+                   "20 kHz is effectively out of the way.";
+        if (id == "out_hp_freq")
+            return "OUT HP - the output equaliser's high-pass corner. "
+                   "Everything below it is removed AFTER the machine, on the "
+                   "finished sound, where nothing downstream responds to it. "
+                   "20 Hz is effectively out of the way.";
+        if (id == "out_lp_freq")
+            return "OUT LP - the output equaliser's low-pass corner. "
+                   "Everything above it is removed AFTER the machine, on the "
+                   "finished sound, where nothing downstream responds to it. "
+                   "20 kHz is effectively out of the way.";
+        return {};
+}
+} // namespace
+
+FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
+    : AudioProcessorEditor (&p), audioProcessor (p)
+{
+    // One call per phase, in the order the panel has always been built in. The
+    // window and its size come first because setSize() runs resized(), which is why
+    // the tab build below can rely on the editor already having a size; the
+    // attachments and handlers follow the controls they belong to, and the render
+    // context and the timer come last. Each phase is declared in PluginEditor.h -
+    // see the note there.
+    setUpWindowAndSize();
+    createDebugInspector();
+    setUpLanguageAndTuning();
+    setUpTooltipsAndPhysics();
+    stylePanelLabels();
+    setUpControlStrip();
+    setUpTabButtons();
+    setUpDeckSelectors();
+    setUpTopSwitches();
+    setUpOversamplingAndInstrument();
+    setUpVinylSelectors();
+    setUpTransportRow();
+    setUpDelayRow();
+    setUpModeAndGlSwitches();
+    setUpSettingsSwitches();
+    setUpModelButtons();
+    setUpInlineLists();
+    setUpEqCornerSwitches();
+    setUpPresetBar();
+    addDeckControlsToPanel();
+    setUpSceneAndMeters();
+    setUpOpenGlRendering();
+    finishConstruction();
+}
+
+void FirstAudioProcessorEditor::setUpWindowAndSize()
+{
+    setResizable (true, true);
+
+    // The editor is deliberately sized in LOGICAL units and the DPI scale is NOT applied
+    // here. JUCE already handles display scaling for plugin editors: component coordinates
+    // are logical, and the host (or JUCE on the desktop) multiplies them by the display
+    // scale when it maps them to physical pixels. Multiplying setSize() by the display
+    // scale as well applies it a second time, which is why the window opened far too large
+    // - on a 150 % display this asked for 1860 x 1230 physical pixels for a 1240 x 820
+    // panel. The layout code below is all relative to getLocalBounds(), so it needs no
+    // knowledge of DPI at all.
+    //
+    // Sizing has TWO independent jobs, and confusing them is what left the editor unable
+    // to fit on a laptop screen:
+    //
+    //   1. The FLOOR is the layout's own minimum, derived from the fixed furniture in
+    //      getEditorLayout() and the six bands of controls in the deck. The deck needs
+    //      752 px of width, which is 780 px of window once the 14 px outer padding is
+    //      added; vertically it is the header, the deck and the space the knob grid
+    //      needs for its three rows.
+    //
+    //   2. The OPENING size is the preferred size CLAMPED TO THE SCREEN IT OPENS ON.
+    //      A fixed size fits a 27" monitor and nothing smaller, and the host is
+    //      under no obligation to shrink the window for us. So the display the editor
+    //      lands on decides: the preferred size when there is room, and the work area
+    //      minus a frame allowance when there is not, centred so the whole panel is
+    //      reachable instead of hanging off the bottom edge.
+    //
+    //   3. The FLOOR IS ALSO CLAMPED TO THE SCREEN, which is the part that was
+    //      missing and the reason the window stopped fitting. Clamping the OPENING
+    //      size was never enough: setResizeLimits is what the host reads when IT
+    //      sizes the window, and what the user cannot drag below afterwards. So a
+    //      768 px laptop - a work area of roughly 1366 x 728 - was handed a floor
+    //      of 816, and a window that could not be made small enough to live on the
+    //      screen no matter which of the two rules was applied. A window you cannot
+    //      see is worse than a tight one, so the floor yields: below the layout's
+    //      own minimum the panel gets cramped, which it is written to survive, and
+    //      above it nothing changes at all.
+    // The height is 664 because the layout adds up to exactly that: 28 of outer
+    // padding, the 84 px header, an 8 px gap, the deck at its 236 px minimum,
+    // another 8 px gap, and the control grid's own 300. It was 772, and the
+    // hundred and eight came almost entirely from the deck refusing to be
+    // shorter than its preferred 278 - which is what left a 1366x768 laptop,
+    // with a work area of about 728 and 664 usable after the frame allowance,
+    // unable to open the window at all. Every one of those terms is now a real
+    // minimum something needs rather than a number that was written once.
+    constexpr int minEditorWidth = 780;
+    constexpr int minEditorHeight = 664;
+    constexpr int preferredEditorWidth = 1060;
+    constexpr int preferredEditorHeight = 916;
+
+    // The horizontal margin keeps the frame off the edge of the display. The vertical
+    // one covers a decorated window's title bar and border, which sit OUTSIDE the size
+    // requested here - on Windows and GNOME that is another 30-45 px of screen the
+    // work area has to have room for, and over-reserving it is how a window that
+    // "fits" ends up smaller than it needs to be. It was 48 a side, which spent 96 px
+    // of a 728 px work area on margins the frame does not actually use.
+    constexpr int screenMarginX = 16;
+    constexpr int screenMarginY = 32;
+
+    const auto& displays = juce::Desktop::getInstance().getDisplays();
+    juce::Rectangle<int> workArea;
+
+    // The display under the mouse is the one the user is looking at, and the host will
+    // almost certainly put the editor near it. The other two cases are the mouse sitting
+    // outside every known display (a KVM switch, a locked session) and a headless build
+    // with no displays at all - in both of them there is nothing sensible to clamp to, so
+    // the preferred size is used unchanged.
+    // The Point<float> overload: the Point<int> one is deprecated, and Clang says so on
+    // every macOS build. Same screen, same result - only the coordinate type differs.
+    if (const auto* display = displays.getDisplayForPoint (juce::Desktop::getMousePosition().toFloat()))
+        workArea = display->userBounds.toNearestInt();
+    else if (const auto* primary = displays.getPrimaryDisplay())
+        workArea = primary->userBounds.toNearestInt();
+    else
+        workArea = displays.getTotalBounds (true);
+
+    if (workArea.isEmpty())
+    {
+        setResizeLimits (minEditorWidth, minEditorHeight, 1500, 1180);
+        setSize (preferredEditorWidth, preferredEditorHeight);
+    }
+    else
+    {
+        // toNearestInt() above already rounded, so subtracting the margin afterwards
+        // cannot leave the window half a pixel - or a whole one - over the edge.
+        const auto fittingWidth = workArea.getWidth() - 2 * screenMarginX;
+        const auto fittingHeight = workArea.getHeight() - 2 * screenMarginY;
+
+        // The floor this screen can actually honour, and the size it opens at. Both
+        // read from the same two numbers, so the window cannot open at a size its
+        // own limits would refuse - the version of this that clamped only the
+        // opening size and left the floor alone was the bug, not a near miss of it.
+        const auto floorWidth = juce::jmin (minEditorWidth, fittingWidth);
+        const auto floorHeight = juce::jmin (minEditorHeight, fittingHeight);
+        const auto openingWidth = juce::jlimit (floorWidth, fittingWidth, preferredEditorWidth);
+        const auto openingHeight = juce::jlimit (floorHeight, fittingHeight, preferredEditorHeight);
+
+        setResizeLimits (floorWidth, floorHeight, 1500, 1180);
+        setSize (openingWidth, openingHeight);
+
+        // Centred only when the screen forced a smaller window. At the preferred size the
+        // host decides where the editor goes, and re-centring it here would fight the
+        // DAW's own window management.
+        if (openingWidth != preferredEditorWidth || openingHeight != preferredEditorHeight)
+            centreWithSize (openingWidth, openingHeight);
+    }
+}
+
+void FirstAudioProcessorEditor::createDebugInspector()
+{
+#if JUCE_DEBUG
+    // The Melatonin component inspector, debug builds only. It is created after
+    // the whole panel exists so it can walk the finished component tree; it
+    // opens lazily and stays invisible unless asked for.
+    inspector = std::make_unique<melatonin::Inspector> (*this, false);
+#endif
+}
+
+void FirstAudioProcessorEditor::setUpLanguageAndTuning()
+{
+    // ---------------------------------------------------------------------
+    //  The language selector.
+    //
+    //  A ComboBox bound straight to the "language" parameter, so choosing a
+    //  language is an ordinary parameter change: it is saved with the session,
+    //  restored with it, and undone with everything else. There is no separate
+    //  preferences file to keep in step with the host's idea of the project.
+    //
+    //  The listener is what makes the change take effect immediately. The
+    //  parameter is what makes it survive a restart; the two are different jobs
+    //  and either alone would be wrong - a parameter with no listener would
+    //  store the choice and never act on it, and a listener with no parameter
+    //  would apply it and forget it.
+    // ---------------------------------------------------------------------
+    languageBox.addItem (xlat ("LANGUAGE_ENGLISH"), 1);
+    languageBox.addItem (xlat ("LANGUAGE_UKRAINIAN"), 2);
+    languageBox.setLookAndFeel (&customLookAndFeel);
+    languageLabel.setVisible (false);
+    languageBox.setVisible (false);
+
+    languageAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "language", languageBox);
+
+    // The stored value arrives AFTER the constructor on a session load, so the
+    // language is applied here from the parameter rather than assumed to be
+    // English - otherwise a session saved in Ukrainian would open with
+    // Ukrainian in the parameter and English on screen.
+    if (auto* languageParameter = dynamic_cast<juce::AudioParameterChoice*> (
+            audioProcessor.parameters.getParameter ("language")))
+    {
+        applyLanguage (languageParameter->getIndex());
+    }
+    else
+    {
+        applyLanguage (0);
+    }
+
+    languageBox.onChange = [this]
+    {
+        if (auto* languageParam = dynamic_cast<juce::AudioParameterChoice*> (
+                audioProcessor.parameters.getParameter ("language")))
+            applyLanguage (languageParam->getIndex());
+    };
+
+    // The caption is an all-caps engraving like every other caption on the panel,
+    // while the keyed string carries ordinary words ("Language"); the case is
+    // applied here rather than in the table, which keeps the lookup key stable
+    // and the translation readable.
+    styleLabel (languageLabel, xlat ("LANGUAGE_CAPTION").toUpperCase(), 10.0f,
+                paletteFor (false).secondary, true, juce::Justification::left);
+    addAndMakeVisible (languageLabel);
+    addAndMakeVisible (languageBox);
+
+    // SETUP musical controls: key selection is independent of the UI language,
+    // while autotune remains opt-in and its amount is continuously automatable.
+    tuningTonicBox.addItemList (juce::StringArray { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 1);
+    tuningModeBox.addItemList (juce::StringArray { "Chromatic", "Major", "Minor", "Dorian", "Pentatonic Major", "Pentatonic Minor" }, 1);
+    tuningTonicBox.setLookAndFeel (&inlineLookAndFeel);
+    tuningModeBox.setLookAndFeel (&inlineLookAndFeel);
+    tuningTonicAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "tuning_tonic", tuningTonicBox);
+    tuningModeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "tuning_mode", tuningModeBox);
+    autoTuneButton.setLookAndFeel (&inlineLookAndFeel);
+    autoTuneAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
+        (audioProcessor.parameters, "autotune", autoTuneButton);
+    // A rotary, laid out by the knob strip like every other page's controls - see
+    // the AUTOTUNE branch in resized(). As a LinearHorizontal bar this was the
+    // one control on the panel the toolkit drew for itself (J37LookAndFeel
+    // overrides the rotary, the switch and the toggle, and inherits JUCE's stock
+    // slider art), and the band it rode was 30 px tall: the toolkit kept a 15 px
+    // value box out of that and handed the art a paint area three pixels deep, so
+    // the page's only knob was a two-pixel bead beside a stock grey track.
+    autoTuneAmountSlider.setSliderStyle (juce::Slider::RotaryHorizontalVerticalDrag);
+    // 16 px for the readout, as on the deck's knobs - see the note there.
+    autoTuneAmountSlider.setTextBoxStyle (juce::Slider::TextBoxBelow, false, 78, 16);
+    autoTuneAmountSlider.setRange (0.0, 1.0, 0.001);
+    // The readout reads "50 %", the way the panel's other fraction knobs read (see
+    // the transient shaper's two amounts, the same pair of functions): the
+    // parameter IS a fraction and its unit IS percent, so the toolkit's own
+    // 0.500-with-a-percent-sign was the wrong number WITH a percent sign after
+    // it. The unit rides inside the text function rather than in
+    // setTextValueSuffix, so it cannot be written twice.
+    autoTuneAmountSlider.textFromValueFunction = [] (double value)
+    {
+        return juce::String (juce::roundToInt (value * 100.0)) + " %";
+    };
+    autoTuneAmountSlider.valueFromTextFunction = [] (const juce::String& text)
+    {
+        return juce::jlimit (0.0, 1.0, text.getDoubleValue() / 100.0);
+    };
+    autoTuneAmountSlider.setLookAndFeel (&customLookAndFeel);
+    autoTuneAmountAttachment = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>
+        (audioProcessor.parameters, "autotune_amount", autoTuneAmountSlider);
+    styleLabel (tuningTonicLabel, "TONIC", 9.0f, paletteFor (false).secondary, true, juce::Justification::left);
+    styleLabel (tuningModeLabel, "MODE", 9.0f, paletteFor (false).secondary, true, juce::Justification::left);
+    // Centred, and click-through, because this caption is now a knob page's - the
+    // strip places it in the tile's caption band like every other page's label,
+    // and a left-aligned caption over a centred knob reads as a stray word.
+    styleLabel (autoTuneAmountLabel, "TUNE AMOUNT", 9.0f, paletteFor (false).secondary, true, juce::Justification::centred);
+    autoTuneAmountLabel.setInterceptsMouseClicks (false, false);
+    addAndMakeVisible (tuningTonicLabel);
+    addAndMakeVisible (tuningModeLabel);
+    addAndMakeVisible (tuningTonicBox);
+    addAndMakeVisible (tuningModeBox);
+    addAndMakeVisible (autoTuneButton);
+    addAndMakeVisible (autoTuneAmountLabel);
+    addAndMakeVisible (autoTuneAmountSlider);
+}
+
+void FirstAudioProcessorEditor::setUpTooltipsAndPhysics()
+{
+    // Tooltips appear after a third of a second of hover: quick enough to be
+    // discoverable, slow enough not to flash while the user sweeps the panel.
+    tooltipWindow->setMillisecondsBeforeTipAppears (350);
+    createDecorativePhysics();
+}
+
+void FirstAudioProcessorEditor::stylePanelLabels()
+{
+    styleLabel (brandLabel, "NONLIN ANALOG", 9.0f, paletteFor (false).accent, true, juce::Justification::left);
+    titleLabel.setText ("Saturator", juce::dontSendNotification);
+
+    // Serif display face with a cross-platform fallback chain. "Georgia" only exists on
+    // Windows, so naming it alone made the title fall back to an arbitrary face (and an
+    // unpredictable width) on macOS and Linux. FontOptions accepts a comma-separated
+    // list and uses the first family that resolves, ending in a generic fallback.
+    titleLabel.setFont (juce::Font (juce::FontOptions ("Georgia, Times New Roman, Times, serif",
+                                                       30.0f, juce::Font::bold)));
+    titleLabel.setJustificationType (juce::Justification::left);
+    titleLabel.setInterceptsMouseClicks (false, false);
+    styleLabel (subtitleLabel, "NONLINEAR ANALOG MACHINE  /  SATURATION", 10.0f,
+                paletteFor (false).secondary, true, juce::Justification::left);
+    styleLabel (statusLabel, "STEREO / REAL TIME", 9.0f,
+                paletteFor (false).status, true, juce::Justification::centred);
+    styleLabel (deckHeadingLabel, "Deck", 10.0f, paletteFor (false).accent,
+                true, juce::Justification::left);
+
+    // Build identity, printed on the deck's heading strip. CMake resolves
+    // J37_BUILD_COMMIT from `git rev-parse --short=8 HEAD` at configure time and marks
+    // a dirty tree with a trailing "+"; when the sources are built outside a git
+    // checkout the definition still exists and reads "unknown", so this line can never
+    // be empty and the two cases are always distinguishable at a glance.
+#ifdef J37_BUILD_COMMIT
+    const juce::String buildId (J37_BUILD_COMMIT);
+#else
+    const juce::String buildId ("unknown");
+#endif
+    styleLabel (buildLabel, "BUILD " + buildId, 8.0f, paletteFor (false).secondary,
+                true, juce::Justification::centredRight);
+    styleLabel (tapeTypeLabel, "TAPE", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (valveTypeLabel, "VALVE", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (ampTypeLabel, "AMP", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (transformerTypeLabel, "XFMR", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (digitalTypeLabel, "DIGITAL", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (vinylTypeLabel, "VINYL", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    // The second selector of the six-type row is the turntable's motor speed; it
+    // had a layout slot and a combo but was never given a caption, so "33 RPM"
+    // sat under an empty label. RPM is what the box itself shows (33 / 45 / 78).
+    styleLabel (vinylSpeedLabel, "RPM", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (speedLabel, "SPEED", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (deckHintLabel, "PLAY / AT SPEED", 9.0f,
+                paletteFor (false).secondary, false, juce::Justification::centredLeft);
+    styleLabel (controlsHeadingLabel, "TABS", 10.0f, paletteFor (false).accent,
+                true, juce::Justification::left);
+    // The section caption. Its text is not set here: setCurrentTab writes the
+    // active page's own subject into it on every page change, and the constructor
+    // calls setCurrentTab before the first paint, so anything set now would be
+    // overwritten a few lines later. It is styled here only.
+    styleLabel (sectionCaptionLabel, "-", 9.0f, paletteFor (false).secondary,
+                false, juce::Justification::left);
+    styleLabel (controlsHintLabel, "Shift = fine tune", 9.0f,
+                paletteFor (false).secondary, false, juce::Justification::right);
+    styleLabel (bpmLabel, "BPM", 9.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (bpmReadout, xlat ("-"), 9.0f, paletteFor (false).secondary,
+                false, juce::Justification::centredLeft);
+    styleLabel (metersHeadingLabel, "LEVELS", 10.0f, paletteFor (false).accent,
+                true, juce::Justification::left);
+    styleLabel (metersHintLabel, "dBFS / PEAK + RMS", 8.0f, paletteFor (false).secondary,
+                true, juce::Justification::left);
+    styleLabel (compressorLabel, "GLUE x2", 10.0f, paletteFor (false).accent,
+                true, juce::Justification::right);
+    styleLabel (compressorReadout, "one meter per stage", 8.0f, paletteFor (false).secondary,
+                false, juce::Justification::right);
+    // The three readout pairs share one alignment discipline: the caption is
+    // centred over its value, and every pair uses the SAME scheme. BPM read
+    // left while these three read right, so a caption sat over the right half
+    // of its number while BPM's sat over nothing - the four looked staggered
+    // against each other even though each pair was internally consistent.
+    styleLabel (harmonicsLabel, "HARMONICS", 10.0f, paletteFor (false).accent,
+                true, juce::Justification::centredLeft);
+    styleLabel (harmonicsReadout, xlat ("even / odd"), 8.0f, paletteFor (false).secondary,
+                false, juce::Justification::centredLeft);
+    styleLabel (subfundLabel, "SUBFUND TRACK", 10.0f, paletteFor (false).accent,
+                true, juce::Justification::centredLeft);
+    styleLabel (subfundReadout, xlat ("idle"), 8.0f, paletteFor (false).secondary,
+                false, juce::Justification::centredLeft);
+    styleLabel (antiPhaseLabel, "ANTI-PHASE", 10.0f, paletteFor (false).accent,
+                true, juce::Justification::centredLeft);
+    styleLabel (antiPhaseReadout, xlat ("clean"), 8.0f, paletteFor (false).secondary,
+                false, juce::Justification::centredLeft);
+    addAndMakeVisible (antiPhaseLabel);
+    addAndMakeVisible (antiPhaseReadout);
+
+    addAndMakeVisible (brandLabel);
+    addAndMakeVisible (titleLabel);
+    addAndMakeVisible (subtitleLabel);
+    addAndMakeVisible (statusLabel);
+    addAndMakeVisible (deckHeadingLabel);
+    addAndMakeVisible (buildLabel);
+    addAndMakeVisible (tapeTypeLabel);
+    addAndMakeVisible (valveTypeLabel);
+    addAndMakeVisible (ampTypeLabel);
+    addAndMakeVisible (transformerTypeLabel);
+    addAndMakeVisible (digitalTypeLabel);
+    addAndMakeVisible (vinylTypeLabel);
+    addAndMakeVisible (vinylSpeedLabel);
+    addAndMakeVisible (speedLabel);
+    addAndMakeVisible (deckHintLabel);
+    addAndMakeVisible (controlsHeadingLabel);
+    addAndMakeVisible (sectionCaptionLabel);
+    addAndMakeVisible (controlsHintLabel);
+    // The MIX page's bar rides the member band, which resized() sizes and
+    // positions; adding it visible here is what lets the first paint see it.
+    addAndMakeVisible (mixBar);
+    addAndMakeVisible (metersHeadingLabel);
+    addAndMakeVisible (metersHintLabel);
+    addAndMakeVisible (compressorLabel);
+    addAndMakeVisible (compressorReadout);
+    addAndMakeVisible (harmonicsLabel);
+    addAndMakeVisible (harmonicsReadout);
+    addAndMakeVisible (bpmLabel);
+    addAndMakeVisible (bpmReadout);
+    addAndMakeVisible (subfundLabel);
+    addAndMakeVisible (subfundReadout);
+}
+
+void FirstAudioProcessorEditor::setUpControlStrip()
+{
+    // The three arrays the strip below works from, DERIVED from the table above
+    // so they cannot disagree with it. Each is sized by controlCount, so a
     // table that is too short or too long is a compile error rather than a silent
     // out-of-bounds read.
     juce::StringArray controlIds;
@@ -4201,7 +4696,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     //
     // This runs once, at construction, in a debug build only - the same discipline
     // the parameter/preset audit follows. It is the one place both tables are in
-    // scope: controlSpecs is local to this constructor and tabSpecs is a namespace
+    // scope: controlSpecs is a file-scope table and tabSpecs is a namespace
     // constant, so a static_assert cannot span them.
     for (std::size_t i = 0; i < controlCount; ++i)
     {
@@ -4266,437 +4761,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         if (principle >= 0)
             customLookAndFeel.registerPrincipleKnob (slider, principle);
 
-        // A tooltip for EVERY parameter - this is what shows when the user hovers.
-        // The per-name text explains what the control does and its default, and the
-        // generic interaction hints ride along on every knob.
-        //
-        // The lambda returns the ENGLISH sentence, untranslated on purpose:
-        // setTip stores this exact string for the language switch and shows the
-        // translation. It used to return xlat (...) + translated hints, so the
-        // stored English was already Ukrainian on a Ukrainian panel - and the
-        // replay's translate(already-translated) could never hit the table,
-        // which is why the knob tooltips stayed English (or half-switched) after
-        // a language change.
-        const auto parameterTooltip = [&] (const juce::String& id) -> juce::String
-        {
-            if (id == "input")
-                return "INPUT - output-stages the signal into the machine before the "
-                       "tape. Positive pushes the tape harder for more saturation, "
-                       "negative cleans up. Range -32 to +32 dB, default 0 dB.";
-            if (id == "drive")
-                return "DRIVE - the amount of magnetic saturation. At 0 percent the "
-                       "machine is clean; higher settings bend the signal like tape "
-                       "and add harmonics. Default 30 percent.";
-            if (id == "bias")
-                return "BIAS - the record head's ultra-sonic offset. It shapes the "
-                       "even harmonics: low bias is edgy and thin, higher bias is "
-                       "warmer and fuller. Default 42 percent.";
-            if (id == "tone")
-                return "BRIGHTNESS - a true tilt around the 1.6 kHz pivot: "
-                       "low settings darken the machine (highs dip, lows lift), high "
-                       "settings open it up (highs lift, lows pull back), +/-12 dB at "
-                       "the extremes. 50 percent is the neutral pivot, so the spectral "
-                       "balance passes through untouched. Default 50 percent.";
-            if (id == "character")
-                return "TONE - the machine-state macro. It crossfades the whole deck "
-                       "between the classic slow machine (soft head gap, relaxed "
-                       "flutter) and the fast hot machine (open top end, tight "
-                       "flutter). Default 50 percent.";
-            if (id == "wow")
-                return "WOW - slow pitch wander of the transport, like a slightly "
-                       "loose capstan. 0 percent is a perfectly steady machine. "
-                       "Default 14 percent.";
-            if (id == "flutter")
-                return "FLUTTER - fast shimmer of the transport, like the tape "
-                       "brushing the heads. 0 percent is perfectly steady. "
-                       "Default 18 percent.";
-            if (id == "mix")
-                return "MIX - dry/wet crossfade. 0 percent is the untouched signal, "
-                       "100 percent is fully through the tape. Default 50 percent.";
-            if (id == "output")
-                return "OUTPUT - calibrated output trim after the whole chain. "
-                       "Range -32 to +32 dB, default 0 dB.";
-            if (id == "stereo_width")
-                return "WIDTH - stereo image after the tape. 0 percent is mono, "
-                       "50 percent is the natural stereo width, 100 percent is extra "
-                       "wide. Default 50 percent.";
-            if (id == "subfund")
-                return "SUBFUND - subharmonics. "
-                       "Generates up to 8 undertones (1/2 through 1/9) "
-                       "below the note when signal frequency permits, adding deep multi-layered "
-                       "weight and warmth that regular saturation cannot reach. They fall away in a "
-                       "staircase as they divide further, so the octave below is the strongest and "
-                       "1/9 is 42 dB under it. Stages falling "
-                       "below audible sub-bass (< 14-22 Hz) are smoothly attenuated to prevent DC "
-                       "rumble, and the whole series stops with the note rather than continuing to "
-                       "sound under it. They are added to the signal after the tape's own "
-                       "saturation, so they stay clean partials instead of feeding it and coming "
-                       "back out as a harmonic series. Default 0 percent - "
-                       "it is a colour, not a correction.";
-            if (id == "delay_time")
-                return "DELAY - the spacing of a second playback head, in "
-                       "milliseconds. The tape takes time to travel between the record and "
-                       "playback gaps, so the signal returns as a slap rather than a dub "
-                       "echo: real head spacings give tens of milliseconds, and 250 ms is "
-                       "already the far end of the travel. The repeat is taken AFTER the "
-                       "tape, so it inherits the machine's own bandwidth and saturation. "
-                       "Default 0 ms - no second head engaged.";
-            if (id == "delay_feedback")
-                return "DLY LVL - how loud the second head's output is. At 0 "
-                       "percent the delay is inaudible even with a time set, so TIME says "
-                       "where the head is and DLY LVL says how much of it you hear. Each "
-                       "pass round the tape loses top end, the way a real repeat does. "
-                       "Default 0 percent.";
-            if (id == "st_offset")
-                return "ST OFFSET - the time offset between the two channels, "
-                       "in microseconds. On a real stereo deck the two tracks are recorded "
-                       "by separate head gaps a fraction of a millimetre apart and the tape "
-                       "skews slightly across them, so the channels are never perfectly "
-                       "aligned. Positive lags the right channel, negative the left. This "
-                       "is a large part of why a tape bounce sounds wide rather than "
-                       "merely equalised wide. Default 0 us.";
-            if (id == "noise")
-                return "NOISE MIX - how much of the noise SECTION is in the "
-                       "output, exactly as MIX is how much of the tape section is. The "
-                       "section it governs is every noise source at once: the tape "
-                       "hiss floor, the vinyl crackle, the rumble and the groove "
-                       "surface. The loaded tape formula's own character is "
-                       "untouched - the formula sets the floor's shape, this sets how "
-                       "much of it you hear. It is gated by the transport, so a "
-                       "machine at rest is silent. Default 50 percent - the neutral "
-                       "position, not a change.";
-            if (id == "noise_lvl")
-                return "NOISE LVL - the level of the noise SOURCES "
-                       "themselves, tape and vinyl together. NOISE MIX is how much of "
-                       "the noise section sits in the output; this is how loud what is "
-                       "in that section actually runs, so it answers for every noise "
-                       "source the machine makes, including the vinyl ones the old "
-                       "NOISE control never reached. 100 percent is the calibrated "
-                       "level the formulas and the record types were voiced at. "
-                       "Default 100 percent.";
-            if (id == "tape_source")
-                return "TAPE - how much of the mix is the magnetic tape "
-                       "machine: hysteresis with memory, gentle and warm, the "
-                       "principle this plugin was calibrated as. Default 100 "
-                       "percent.";
-            if (id == "valve_source")
-                return "VALVE - how much of the mix is the thermionic stage: "
-                       "soft asymmetric compression, even-harmonic warmth. Shares "
-                       "the mix with the other sources - the shares are "
-                       "normalised, so the character changes without the level "
-                       "moving. Default 0 percent.";
-            if (id == "cassette_source")
-                return "CASSETTE - how much of the mix is the compact cassette: "
-                       "a hard early knee on narrow tape, small and loud. Default "
-                       "0 percent.";
-            if (id == "vinyl_source")
-                return "VINYL - how much of the mix is the cutting lathe: the "
-                       "gentlest tracing distortion of the seven, a soft "
-                       "level-dependent knee like the groove rounding under the "
-                       "stylus. Default 0 percent.";
-            if (id == "amp_source")
-                return "AMP - how much of the mix is the guitar amplifier's "
-                       "input stage: hard, odd-harmonic, the one that bites. "
-                       "Default 0 percent.";
-            if (id == "transformer_source")
-                return "TRANSFORMER - how much of the mix is the passive input "
-                       "transformer: pure analogue but no machine, the only "
-                       "principle that bends the low end first. Default 0 "
-                       "percent.";
-            if (id == "digital_source")
-                return "DIGITAL - how much of the mix is the converter: a hard "
-                       "ceiling with a held code, where the machines stop and the "
-                       "conversion begins. Default 0 percent.";
-            if (id == "amp_bias")
-                return "AMP BIAS - the input valve's DC operating point, "
-                       "which is the single most effective control on a real amp's "
-                       "character. Cold (low) is tight and slightly crossover-distorted; "
-                       "hot (high) is fat, compressed and soft. 50 percent is the "
-                       "neutral centre, so it is a character sweep rather than a "
-                       "one-way effect. Only audible in proportion to how much AMP is "
-                       "in the blend.";
-            if (id == "sag")
-                return "SAG - how much the amplifier's power supply droops "
-                       "under sustained demand. This is why a real amp 'gives' under a "
-                       "held chord and why the attack feels spongy: the supply sags, "
-                       "the gain falls a little, and then it recovers. 0 percent is a "
-                       "stiff, regulated supply with no give at all; high settings are "
-                       "a small amp being leaned on hard. Short transients never move "
-                       "it - only sustained programme does. Default 0 percent.";
-            if (id == "presence")
-                return "PRESENCE - the negative-feedback network's top-end "
-                       "lift, the upper-mid bite that makes an amp cut through. It sits "
-                       "AFTER the clipping, so it sharpens harmonics already present "
-                       "rather than generating new ones. 50 percent is the flat, "
-                       "neutral position; above it sharpens, below it darkens the way "
-                       "a low presence setting does. Default 50 percent.";
-            if (id == "cabinet")
-                return "CABINET - the speaker and its box. A resonant "
-                       "low-pass, not a plain one: a peak around 110 Hz from the "
-                       "cabinet's tuning and a roll-off from the cone's mass. Without "
-                       "it a clipped signal is fizzy; with it, it reads as a speaker "
-                       "rather than a circuit. The voicing fades in with however much "
-                       "AMP is in the blend, so a pure tape setting is untouched. "
-                       "Default 0 percent - a DI, the raw amp output.";
-            if (id == "preamp")
-                return "PREAMP - a valve input stage in FRONT of the "
-                       "machine, the way a real chain has a microphone preamp before "
-                       "the recorder. It is a STAGE, not a gain: driving it adds a "
-                       "gentle soft clip, a transformer's low-cut and a slight top-end "
-                       "lift, so it changes the colour as much as the level. It is "
-                       "level-matched internally, so INPUT remains the control that "
-                       "sets the operating level. Default 0 percent - no preamp.";
-            if (id == "distortion")
-                return "DISTORT - a diode clipper in front of the tape. "
-                       "Where the saturation core BENDS, this BREAKS: a hard knee with "
-                       "a pre-gain, deliberately abrupt. It sits ahead of the machine "
-                       "on purpose - a distorted signal recorded to tape sounds like a "
-                       "record rather than a pedal precisely because the tape smooths "
-                       "what the pedal produced. Default 0 percent - off.";
-            if (id == "flux")
-                return "FLUX - how deep into the oxide the record head "
-                       "magnetises. More flux is more low end, a stronger hysteresis "
-                       "memory and a quieter floor; less is thin and bright. It is a "
-                       "different axis from DRIVE: DRIVE is how hard the signal is "
-                       "pushed into the curve, FLUX is how much of the medium's depth "
-                       "is used. 50 percent is the calibrated, neutral flux.";
-            if (id == "wear")
-                return "WEAR - the state of the heads and the tape. A "
-                       "used machine is not a broken one: the head gap has rounded "
-                       "slightly and the oxide has lost some of its edge, so the top "
-                       "end softens and the contact adds a little noise. It should "
-                       "read as an old machine, not as a fault. Default 0 percent - "
-                       "a fresh head and new tape.";
-            if (id == "mechanics")
-                return "MECHANICS - the state of the transport's moving "
-                       "parts. WOW and FLUTTER set how much pitch modulation there is; "
-                       "this sets how WELL the mechanism holds it. At 0 the capstan, "
-                       "pinch roller and reel motors are in good order, so the "
-                       "modulation is smooth and periodic. Higher settings are dry "
-                       "bearings and a slack belt: irregular drift and the occasional "
-                       "slip. Default 0 percent.";
-            if (id == "reverb")
-                return "REVERB - the room the machine is in. Tape "
-                       "machines lived in rooms, and the room is part of the sound of "
-                       "a recording made on one. This is a plate/room hybrid placed "
-                       "AFTER the machine, so the reverb is of the processed signal "
-                       "rather than feeding back into the saturation - which keeps it "
-                       "clean and predictable. Default 0 percent - dry.";
-            if (id == "reverb_size")
-                return "RVB SIZE - how long the reverb's tail runs, and "
-                       "how dark it is: a bigger room absorbs more top end per pass, "
-                       "so a long tail is a darker one. That is what stops a large "
-                       "setting from sounding like a metal tank. Decay and level are "
-                       "separate decisions on a real reverb, which is why this is not "
-                       "folded into REVERB. Default 40 percent.";
-            if (id == "vinyl")
-                return "VINYL - the record-playing end of the chain. A "
-                       "turntable adds three things nothing else here does: surface "
-                       "crackle, bearing rumble and the RIAA playback curve's low-end "
-                       "lift and top-end softness. This is the overall amount; at 0 "
-                       "the whole stage is bypassed. Default 0 percent.";
-            if (id == "vinyl_crackle")
-                return "CRACKLE - surface noise, and specifically "
-                       "IMPULSES rather than hiss. A record surface is ticks, caused "
-                       "by dust and by the stylus crossing the groove's "
-                       "imperfections, so the generator produces sparse impulses with "
-                       "a fast decay instead of continuous noise. That is the "
-                       "difference between a record and a noisy tape. Default 50 "
-                       "percent.";
-            if (id == "vinyl_rumble")
-                return "RUMBLE - the turntable's low-frequency thump, "
-                       "from the bearing and the motor. It is why vinyl has a "
-                       "bottom-end floor that a CD does not. It is a different noise "
-                       "from the crackle and is scaled separately, because a worn "
-                       "bearing and a dusty record are independent faults. Default "
-                       "35 percent.";
-            if (id == "vinyl_speed")
-                return "VINYL SPEED - the speed of the turntable's motor, "
-                       "not of the record: the VINYL TYPE describes the disc, this "
-                       "describes what drives it. Each speed carries its own wow rate "
-                       "and depth, so the same record wanders differently at 33 and "
-                       "45, and a 78's wind-up motor wobbles hardest. 33 RPM is the "
-                       "default.";
-            if (id == "vinyl_dust")
-                return "DUST - fine particulate in the groove. Unlike "
-                       "CRACKLE's random ticks, dust is a CONTINUOUS granular "
-                       "texture, band-limited high so it sits on top of the "
-                       "music as grit. It follows the programme: a loud passage "
-                       "sounds dirtier than a quiet one, because dust only makes "
-                       "a sound when there is modulation in the groove to "
-                       "disturb it. A little dust is a worn record; a lot is a "
-                       "record that has been left out of its sleeve. "
-                       "Default 0 percent.";
-            if (id == "vinyl_scratch")
-                return "SCRATCH - a deep groove wound, not dust. Where "
-                       "a dust tick is random, a scratch is PERIODIC: the stylus "
-                       "crosses the same damage every turn, so it arrives at the "
-                       "platter rate and is heard as a repeating thud rather "
-                       "than as a hiss. The rate follows VINYL SPEED, so the same "
-                       "scratch repeats faster on a 45 than on a 33. "
-                       "Default 0 percent.";
-            if (id == "vinyl_warp")
-                return "WARP - the record is not flat. A warped disc "
-                       "makes the stylus ride up and down once per revolution, "
-                       "so the tracking force - and therefore the output level - "
-                       "breathes at the platter rate. It is a slow, cyclic "
-                       "throb, which is what makes a warped record sound like it "
-                       "is struggling rather than merely noisy. It modulates "
-                       "what the stage passes rather than what it adds, so at 0 "
-                       "percent it is exactly unity. Default 0 percent.";
-            if (id == "vinyl_electrical")
-                return "ELECTRICAL - the cartridge, the cable and the "
-                       "earth loop. Two faults at once: MAINS HUM at the supply "
-                       "frequency plus its second harmonic, which is what an "
-                       "unearthed cartridge picks up from the motor and the "
-                       "transformer; and EARTH STATIC, the broadband crackle of "
-                       "a bad ground. The hum's two sides are deliberately not "
-                       "identical - the second harmonic is in anti-phase across "
-                       "the pair - which is exactly how a real earth loop "
-                       "behaves. Default 0 percent.";
-            if (id == "in_low")
-                return "IN LO - the input equaliser's low shelf, a "
-                       "low-pass split at 200 Hz with the bottom band gained. "
-                       "Because it sits BEFORE the tape, lifting it drives the "
-                       "saturation curve and the glue compressors harder, so it "
-                       "changes what the machine DOES rather than merely the "
-                       "balance. Range -12 to +12 dB, flat at 0 dB.";
-            if (id == "in_mid")
-                return "IN MID - the input equaliser's bell, centred at "
-                       "1 kHz inside the 200 Hz - 4 kHz band. A bell rather than a "
-                       "shelf, so it acts on its own pass band and leaves the two "
-                       "ends where they were. Range -12 to +12 dB, flat at 0 dB.";
-            if (id == "in_high")
-                return "IN HI - the input equaliser's high shelf, "
-                       "everything above 4 kHz. Feed the machine the top end you "
-                       "want it to saturate on, rather than fixing it afterwards. "
-                       "Range -12 to +12 dB, flat at 0 dB.";
-            if (id == "out_low")
-                return "OUT LO - the output equaliser's low shelf at "
-                       "200 Hz. It sits AFTER everything the machine does and "
-                       "before the output trim, so nothing downstream responds to "
-                       "it: this is the neutral EQ you use to place the finished "
-                       "sound. Range -12 to +12 dB, flat at 0 dB.";
-            if (id == "out_mid")
-                return "OUT MID - the output equaliser's bell at "
-                       "1 kHz. Presence or hollow, depending which way you go, "
-                       "with both ends left alone. Range -12 to +12 dB, flat at "
-                       "0 dB.";
-            if (id == "out_high")
-                return "OUT HI - the output equaliser's high shelf "
-                       "above 4 kHz. Air, or the lack of it, applied to the "
-                       "finished machine. Range -12 to +12 dB, flat at 0 dB.";
-            if (id == "vinyl_clicks")
-                return "CLICKS - the sharp, discrete groove faults. "
-                       "CRACKLE is fine surface texture and DUST is grit in the "
-                       "groove; a CLICK is an actual ridge or pit that the stylus "
-                       "hits as a single hard transient - a fast bipolar impact "
-                       "with almost no ring, which is why it reads as a click "
-                       "rather than as more crackle. Above half the travel a "
-                       "fraction of the clicks becomes PERIODIC, locked to the "
-                       "platter, so a badly pressed record ticks in time rather "
-                       "than at random. Default 0 percent.";
-            if (id == "transient_attack")
-                return "ATK - the leading edge of each event. The transient "
-                       "shaper looks at the signal's ENVELOPE rather than its "
-                       "waveform, so it can make a hit sharper without adding a "
-                       "harmonic: positive sharpens the attack (punch, snap, "
-                       "click), negative softens it (rounder, less percussive). "
-                       "Range -100 to +100 percent, neutral at 0.";
-            if (id == "transient_sustain")
-                return "SUS - what follows the attack: the body, the ring, "
-                       "the room. Positive lengthens it (fuller, more sustain), "
-                       "negative shortens it (tighter, more staccato). Like ATK "
-                       "it moves the envelope's level rather than the waveform, "
-                       "so the harmonics the machine produced are untouched. "
-                       "Range -100 to +100 percent, neutral at 0.";
-            if (id == "transient_mix")
-                return "TR MIX - how much of the transient-shaped signal "
-                       "reaches the output. At 0 the stage is absent and the "
-                       "signal passes untouched; at 100 it is the fully shaped "
-                       "one. In between the two are crossfaded, so the amount of "
-                       "shaping can be dialled in rather than switched. "
-                       "Default 0 percent.";
-            if (id == "neural_mix")
-                return "NEURAL - the wet/dry position of the optional "
-                       "learned model. The model is not a knob: it is a file "
-                       "loaded with LOAD MODEL on the CHARACTER tab, and the "
-                       "network itself (a Dense net, an LSTM, a GRU) is whatever "
-                       "the file describes. This control blends the model's "
-                       "output with the untouched signal, so it is always a "
-                       "crossfade. At 0, or with no model loaded, the stage is "
-                       "transparent. Default 0 percent.";
-            if (id == "ir_mix")
-                return "IR MIX - how much of the convolved signal is blended "
-                       "into the finished one. The impulse response itself is "
-                       "not a knob: it is a file loaded with LOAD IR on the "
-                       "CHARACTER tab, and it can be a cabinet, a room or any "
-                       "other space. At 0, or with no IR loaded, the stage is "
-                       "transparent. Default 0 percent.";
-            // The eleven knobs that were falling through to an empty sentence:
-            // they showed the shared interaction hint only, which the user read
-            // as "tooltip is missing". One branch each, same shape as the rest.
-            if (id == "di")
-                return "DI - the instrument input's direct-injection stage in "
-                       "FRONT of the machine: a high-impedance buffer that keeps "
-                       "a guitar or synth pickup from loading down, plus the pad, "
-                       "load and transformer that follow it. Default 0 percent - "
-                       "the plain input path.";
-            if (id == "di_load")
-                return "DI LOAD - the input impedance the instrument sees in "
-                       "the DI stage. A pickup is a reactive source: 1 M keeps "
-                       "a guitar bright and open, 220 k tames a hot active bass, "
-                       "and lower still tightens a synth's output stage. Default "
-                       "0 percent.";
-            if (id == "di_transformer")
-                return "DI XFMR - the DI's output transformer. OFF is a clean "
-                       "electronic path; the transformer adds its iron colour, "
-                       "a gentle low cut and the slight phase smear a real direct "
-                       "box gives. Default 0 percent - off.";
-            if (id == "st_link")
-                return "ST LINK - gangs the stereo pair's shared controls so one "
-                       "knob sets both channels. Off splits the machine into two "
-                       "independent sides for separate left/right settings. "
-                       "Default linked.";
-            if (id == "delay_pingpong")
-                return "PING-PONG - bounces the second head's repeats between "
-                       "the left and right output instead of doubling them in "
-                       "both channels. Off, every repeat lands centred. Default "
-                       "0 percent - off.";
-            if (id == "in_eq_q")
-                return "IN Q - the input equaliser's corner resonance, shared "
-                       "by its bell and the shoulders of its shelves. 0.7 is the "
-                       "flat Butterworth corner; higher sharpens the bell's "
-                       "shoulder and rings slightly at the corner frequency. "
-                       "Default 0.7.";
-            if (id == "out_eq_q")
-                return "OUT Q - the output equaliser's corner resonance, shared "
-                       "by its bell and the shoulders of its shelves. Same curve "
-                       "as the input Q, applied AFTER the machine, where it shapes "
-                       "the result rather than the drive. Default 0.7.";
-            if (id == "in_hp_freq")
-                return "IN HP - the input equaliser's high-pass corner. "
-                       "Everything below it is removed BEFORE the machine, so a "
-                       "bass-heavy source can be kept from flapping the tape's "
-                       "low end. 20 Hz is effectively out of the way.";
-            if (id == "in_lp_freq")
-                return "IN LP - the input equaliser's low-pass corner. "
-                       "Everything above it is removed BEFORE the machine, the "
-                       "way a deck's record electronics roll the top off. "
-                       "20 kHz is effectively out of the way.";
-            if (id == "out_hp_freq")
-                return "OUT HP - the output equaliser's high-pass corner. "
-                       "Everything below it is removed AFTER the machine, on the "
-                       "finished sound, where nothing downstream responds to it. "
-                       "20 Hz is effectively out of the way.";
-            if (id == "out_lp_freq")
-                return "OUT LP - the output equaliser's low-pass corner. "
-                       "Everything above it is removed AFTER the machine, on the "
-                       "finished sound, where nothing downstream responds to it. "
-                       "20 kHz is effectively out of the way.";
-            return {};
-        };
-        setTippedSentence (slider, parameterTooltip (controlIds[static_cast<int> (i)]),
+        setTippedSentence (slider, parameterTooltipText (controlIds[static_cast<int> (i)]),
                            " Hold Shift for fine control, mouse wheel for small "
                            "steps, double-click to reset.");
 
@@ -4841,7 +4906,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         controlAttachments[i] = std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>
             (audioProcessor.parameters, controlIds[static_cast<int> (i)], slider);
     }
+}
 
+void FirstAudioProcessorEditor::setUpTabButtons()
+{
     // The three tabs the knob grid is split across. Only the active tab's knobs are on
     // screen: the other thirteen used to be laid out underneath it, invisible but still
     // sitting in the panel, and crowding the grid is what the captions were there to
@@ -4886,7 +4954,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // any page but the first landed in the wrong family's bar.
     const auto initialTab = juce::jlimit (0, numTabs - 1, currentTab);
     setTabFamily (tabSpecs[static_cast<std::size_t> (initialTab)].family);
+}
 
+void FirstAudioProcessorEditor::setUpDeckSelectors()
+{
     // The same tapeStockNameList() the choice parameter is built from, so the panel
     // cannot offer a stock the parameter would refuse to select. It did once: the
     // panel drew twelve and the parameter accepted eight, so the last four were
@@ -4980,7 +5051,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     vinylTypeBox.setLookAndFeel (&customLookAndFeel);
     vinylSpeedBox.setLookAndFeel (&customLookAndFeel);
     speedBox.setLookAndFeel (&customLookAndFeel);
+}
 
+void FirstAudioProcessorEditor::setUpTopSwitches()
+{
     bypassButton.setClickingTogglesState (true);
     bypassButton.setButtonText ("BYPASS");
     bypassButton.setLookAndFeel (&customLookAndFeel);
@@ -5051,7 +5125,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     autoGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
         (audioProcessor.parameters, "auto_gain", autoGainButton);
     addAndMakeVisible (autoGainButton);
+}
 
+void FirstAudioProcessorEditor::setUpOversamplingAndInstrument()
+{
     // ---------------------------------------------------------------
     //  Oversampling switch on the panel. The parameter has always been
     //  host-visible; without a control it could only be reached from the
@@ -5086,7 +5163,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     instrumentAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "instrument", instrumentBox);
     addAndMakeVisible (instrumentBox);
+}
 
+void FirstAudioProcessorEditor::setUpVinylSelectors()
+{
     // ---------------------------------------------------------------
     //  The three vinyl selectors: what was cut, what plays it, what reads it.
     //
@@ -5164,7 +5244,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         (audioProcessor.parameters, "vinyl_turntable", vinylTurntableBox);
     vinylCartridgeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "vinyl_cartridge", vinylCartridgeBox);
+}
 
+void FirstAudioProcessorEditor::setUpTransportRow()
+{
     // ---------------------------------------------------------------
     //  Transport: STOP / PLAY / START, plus the momentary SPINDOWN hold.
     //
@@ -5233,7 +5316,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         styleSpindownButton();
     };
     addAndMakeVisible (spindownButton);
+}
 
+void FirstAudioProcessorEditor::setUpDelayRow()
+{
     // ---------------------------------------------------------------
     //  DELAY TYPE - which machine the second head behaves as.
     //
@@ -5313,7 +5399,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     delayRateAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "delay_rate", delayRateBox);
     addAndMakeVisible (delayRateBox);
+}
 
+void FirstAudioProcessorEditor::setUpModeAndGlSwitches()
+{
     // ---------------------------------------------------------------
     //  The two whole-machine modes.
     //
@@ -5372,7 +5461,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     glButton.setLookAndFeel (&customLookAndFeel);
     addAndMakeVisible (glButton);
     addAndMakeVisible (glLabel);
+}
 
+void FirstAudioProcessorEditor::setUpSettingsSwitches()
+{
     // ---------------------------------------------------------------
     //  UI SOUNDS - the panel's own interface clicks.
     //
@@ -5429,7 +5521,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     styleLabel (antiPhaseGuardLabel, "ANTI-PHASE", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
     addAndMakeVisible (antiPhaseGuardLabel);
+}
 
+void FirstAudioProcessorEditor::setUpModelButtons()
+{
     // ---------------------------------------------------------------
     //  The neural model picker, on the DYNAMICS tab beside the NEURAL knob.
     //  It has no parameter and no attachment: a model is data read from a file,
@@ -5509,7 +5604,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     styleLabel (irStatusLabel, "NO IR", 8.5f, paletteFor (false).secondary,
                 false, juce::Justification::centred);
     addAndMakeVisible (irStatusLabel);
+}
 
+void FirstAudioProcessorEditor::setUpInlineLists()
+{
     // ---------------------------------------------------------------
     //  The remaining choice lists: the DI pad, the track layout and the two
     //  EQ orders. All four are lists rather than knobs because their values are
@@ -5616,6 +5714,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     //  end stop, and then cannot tell the filter from one sitting at its
     //  bypass. These are the explicit answer, and they are pill switches
     //  because they are state, like GL and the mode button.
+}
+
+void FirstAudioProcessorEditor::setUpEqCornerSwitches()
+{
     const auto setUpEqCornerSwitch = [this] (juce::ToggleButton& button,
                                              const juce::String& which,
                                              const juce::String& corner)
@@ -5645,7 +5747,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         (audioProcessor.parameters, "out_hp_on", outputEqHpButton);
     outputEqLpAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>
         (audioProcessor.parameters, "out_lp_on", outputEqLpButton);
+}
 
+void FirstAudioProcessorEditor::setUpPresetBar()
+{
     // ---------------------------------------------------------------
     //  Premium workflow bar.
     // ---------------------------------------------------------------
@@ -5812,7 +5917,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     styleLabel (compareBadgeLabel, "", 8.5f, paletteFor (false).accent,
                 true, juce::Justification::centred);
     addAndMakeVisible (compareBadgeLabel);
+}
 
+void FirstAudioProcessorEditor::addDeckControlsToPanel()
+{
     addAndMakeVisible (tapeTypeBox);
     addAndMakeVisible (valveTypeBox);
     addAndMakeVisible (ampTypeBox);
@@ -5838,6 +5946,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     vinylSpeedAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         (audioProcessor.parameters, "vinyl_speed", vinylSpeedBox);
     speedAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+}
+
+void FirstAudioProcessorEditor::setUpSceneAndMeters()
+{
         (audioProcessor.parameters, "speed", speedBox);
 
     // The 3D transport goes in FIRST, so it is the bottom-most child. It is a
@@ -5852,7 +5964,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     addAndMakeVisible (compressorMeterIn);
     addAndMakeVisible (compressorMeterOut);
     applyTheme();
+}
 
+void FirstAudioProcessorEditor::setUpOpenGlRendering()
+{
     // The selected backend is compile-time. OpenGL is only an optimisation for
     // the animated panel, and it is the least portable part of the UI: some
     // Windows drivers, remote sessions, virtual machines and headless hosts
@@ -5928,7 +6043,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
         // on while the software renderer is drawing the panel.
         syncGlSwitchState();
     };
+}
 
+void FirstAudioProcessorEditor::finishConstruction()
+{
     // The interface sounds are attached LAST, after every control they watch
     // exists AND after every existing onClick handler has been installed - so a
     // control's own handler is always the one that runs first and the sound
@@ -5938,6 +6056,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 
     startTimerHz (30);
 }
+
+
 
 FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
 {
