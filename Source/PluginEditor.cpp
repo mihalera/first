@@ -3625,9 +3625,12 @@ void FirstAudioProcessorEditor::openStageMix (const juce::String& parameterId)
     // The blend is opened to full ONLY while it is still fully closed, so a user
     // who has dialled a partial blend keeps it, and the change goes through the
     // parameter rather than the atomic so the host records it, the knob's
-    // attachment follows, and Undo can take it back.
+    // attachment follows, and Undo can take it back. The test is against
+    // "closed" rather than "not already full" on purpose: the second one is a
+    // different sentence - it would override a blend the user set - and it is the
+    // one the comment above would have been lying about.
     if (auto* parameter = audioProcessor.parameters.getParameter (parameterId))
-        if (parameter->getValue() < 1.0f)
+        if (parameter->getValue() <= 1.0e-6f)
         {
             parameter->beginChangeGesture();
             parameter->setValueNotifyingHost (1.0f);
@@ -4274,7 +4277,7 @@ namespace
         if (id == "neural_mix")
             return "NEURAL - the wet/dry position of the optional "
                    "learned model. The model is not a knob: it is a file "
-                   "loaded with LOAD MODEL on the CHARACTER tab, and the "
+                   "loaded with LOAD MODEL on the SHAPERS tab, and the "
                    "network itself (a Dense net, an LSTM, a GRU) is whatever "
                    "the file describes. This control blends the model's "
                    "output with the untouched signal, so it is always a "
@@ -4284,7 +4287,7 @@ namespace
             return "IR MIX - how much of the convolved signal is blended "
                    "into the finished one. The impulse response itself is "
                    "not a knob: it is a file loaded with LOAD IR on the "
-                   "CHARACTER tab, and it can be a cabinet, a room or any "
+                   "SHAPERS tab, and it can be a cabinet, a room or any "
                    "other space. At 0, or with no IR loaded, the stage is "
                    "transparent. Default 0 percent.";
         // The eleven knobs that were falling through to an empty sentence:
@@ -4616,6 +4619,43 @@ void FirstAudioProcessorEditor::setUpLanguageAndTuning()
     addAndMakeVisible (autoTuneButton);
     addAndMakeVisible (autoTuneAmountLabel);
     addAndMakeVisible (autoTuneAmountSlider);
+
+    // The four tuning controls are the one group on the panel that had no
+    // tooltips at all, which is why the page read as unexplained: two of them
+    // (TONIC, MODE) only mean something together, and the corrector's own two
+    // are the pair a user has to understand before turning either on. Keyed on
+    // the English sentence like every other tip, so a translation is one line in
+    // the table.
+    setTip (tuningTonicBox, "TONIC - the key the scale is built on: the note the "
+                            "corrector treats as home when MODE is anything but "
+                            "CHROMATIC. On CHROMATIC it changes nothing, because "
+                            "every semitone is already in the scale. Default C.");
+    setTip (tuningModeBox, "MODE - which notes the corrector is allowed to land on. "
+                           "CHROMATIC is every semitone and is the default: a note is "
+                           "pulled to the nearest one and nowhere else. MAJOR, MINOR, "
+                           "DORIAN and the two pentatonics let a reading travel up to "
+                           "a semitone to the nearest note the chosen scale contains, "
+                           "so the correction follows the key rather than the grid. "
+                           "Default Chromatic.");
+    setTip (autoTuneButton, "AUTO TUNE - switches the corrector in. The stage reads "
+                            "the note that is playing with a period detector, decides "
+                            "the nearest note the key allows, and moves the audio onto "
+                            "it by RE-READING the signal at the correction ratio out "
+                            "of a delay line, spliced a whole period apart so the join "
+                            "is inaudible. Below its gate - silence, noise, a chord, or "
+                            "a note outside 45 Hz to 1.4 kHz - it glides back to unity "
+                            "and passes the signal untouched rather than chasing a "
+                            "number it cannot trust. While it runs the stage adds a "
+                            "period of the tracked note as delay, and at full TUNE "
+                            "AMOUNT the correction is a snap. Default off.");
+    setTip (autoTuneAmountSlider, "TUNE AMOUNT - how far and how fast the correction is "
+                                  "allowed to travel: half the amount is half the pull "
+                                  "at about twice the time constant, which is the "
+                                  "difference between a note being nudged and a note "
+                                  "being snapped onto the grid. At full amount a note "
+                                  "lands within a few milliseconds; at 0 the stage is "
+                                  "out of the path entirely, detector included, and "
+                                  "the signal is bit-for-bit the one that arrived.");
 }
 
 void FirstAudioProcessorEditor::setUpTooltipsAndPhysics()
@@ -5620,7 +5660,7 @@ void FirstAudioProcessorEditor::setUpSettingsSwitches()
 void FirstAudioProcessorEditor::setUpModelButtons()
 {
     // ---------------------------------------------------------------
-    //  The neural model picker, on the DYNAMICS tab beside the NEURAL knob.
+    //  The neural model picker, on the SHAPERS tab beside the NEURAL knob.
     //  It has no parameter and no attachment: a model is data read from a file,
     //  not a value a session or a preset carries, so the two buttons drive the
     //  processor directly and the status label reports what the stage holds.
@@ -5670,9 +5710,9 @@ void FirstAudioProcessorEditor::setUpModelButtons()
     addAndMakeVisible (neuralStatusLabel);
 
     // ---------------------------------------------------------------
-    //  The IR picker rides the DYNAMICS page's member band, under the IR MIX
+    //  The IR picker rides the SHAPERS page's member band, under the IR MIX
     //  knob it belongs to: LOAD IR / CLEAR IR / status, styled and tipped
-    //  exactly like the model picker on CHARACTER. An IR is data read from a
+    //  exactly like the model picker beside it. An IR is data read from a
     //  file for the same reason a model is - no parameter, no attachment.
     // ---------------------------------------------------------------
     loadIrButton.setLookAndFeel (&inlineLookAndFeel);

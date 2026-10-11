@@ -82,6 +82,21 @@ jobs:
       - name: Run the transport harness
         run: bash tests/transport/run.sh
 
+      # The pitch stage - the autotune's detector and its shifter. Autotune was
+      # reported as doing nothing, and both reasons were properties of the signal
+      # rather than of the code as written: a detector that counted zero crossings
+      # reads a guitar's second harmonic an octave high (so the correction landed
+      # where the note already was) and reports a confident pitch for pure noise;
+      # a shifter whose head is re-seated against a neighbour that has not moved yet
+      # this frame creeps forward by a frame per grain, which is a few cents of
+      # permanent detune and a grain-rate wobble on top. Neither is visible by
+      # reading the source - one is a number on rendered audio, the other is an
+      # ordering of two loops - so this harness cuts both structs out of the header
+      # and measures the reading and the splice on generated signal. Same shape as
+      # the harnesses above: no JUCE, no host, a few seconds.
+      - name: Run the pitch harness
+        run: bash tests/pitch/run.sh
+
       # The factory presets cannot fail at runtime - a name list that is a row
       # short, or a parameter with no column in the table, both just quietly
       # load the wrong sound - so they are checked against the source instead.
@@ -254,11 +269,12 @@ jobs:
 
       # The one thing a Debug build proves that Release hides is what the
       # sanitizers can see, and this job is the only place a Debug toolchain is
-      # already paid for. The four harnesses are seconds of work each and need
+      # already paid for. The five harnesses are seconds of work each and need
       # no toolkit, no host and no submodules, so they run here a second time
       # with ASan and UBSan turned on: the shipped DSP generator, the knob
-      # strip's arithmetic, the state writer/reader and the transport rig,
-      # executed as compiled out of Source/ rather than as a copy of it.
+      # strip's arithmetic, the state writer/reader, the transport rig and the
+      # pitch stage's delay line, executed as compiled out of Source/ rather
+      # than as a copy of it.
       # -fno-sanitize-recover=all makes any finding fail the step instead of
       # printing and carrying on.
       - name: Run the harnesses under ASan and UBSan
@@ -267,6 +283,7 @@ jobs:
           J37_SANITIZE=address,undefined bash tests/layout/run.sh
           J37_SANITIZE=address,undefined bash tests/state/run.sh
           J37_SANITIZE=address,undefined bash tests/transport/run.sh
+          J37_SANITIZE=address,undefined bash tests/pitch/run.sh
 
       - name: Configure CMake (Debug)
         run: |

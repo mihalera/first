@@ -1672,9 +1672,12 @@ namespace
         //
         //  What the transport moves is the machine's LEVEL, its modulation and its
         //  speed response (the same character mapping the SPEED control uses), all
-        //  following one number - the platter's speed. It does not repitch the
-        //  programme: this plugin has no repitch stage, so STOP is a coast to
-        //  silence rather than a DJ-style pitch bend.
+        //  following one number - the platter's speed - and the programme's PITCH
+        //  moves with it, because the repitch stage reads the finished frame back
+        //  at that same number: a coast walks the material down through the
+        //  octaves and a spin-up walks it back. STOP is still a coast to silence,
+        //  since the gate is what stops the sound, but it is a DJ-style bend on
+        //  the way there rather than the fade it used to be.
         // -------------------------------------------------------------------------
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "transport", 1 }, "Transport",
                                                                 juce::StringArray { "Stop", "Play", "Start" },
@@ -3246,8 +3249,10 @@ const std::array<int, 12>& FirstAudioProcessor::scaleOffsetsForMode (int modeInd
 
     TUNE AMOUNT is the gate's partner rather than its rival: it sets how much of
     the correction is asked for AND how fast the request travels - half the amount
-    is half the pull at about ten times the glide, which is the difference between
-    a note being nudged and a note being snapped onto the grid.
+    is half the pull at about twice the time constant, which is the difference
+    between a note being nudged and a note being snapped onto the grid. At zero the
+    stage is out of the path entirely, the detector with it, and the signal is
+    bit-for-bit the one that arrived.
 */
 void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, float rate) noexcept
 {
@@ -3265,11 +3270,12 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
     const auto& offsets = scaleOffsetsForMode (mode);
     const auto stageRate = rate > 1.0f ? rate : 48000.0f;
 
-    // How fast the correction is allowed to travel, in frames of this stage's
-    // rate: a tenth of the way to the target in about 8 ms at full amount, which
-    // is a corrector's snap, and about 80 ms at a third of it, which is a
-    // listener's glide. Below that the tune follows the voice rather than
-    // replacing it.
+    // How fast the correction is allowed to travel, as the share of the way to the
+    // target the smoothed ratio covers per frame. This is called once per FRAME,
+    // so full amount is a time constant of 80 frames - 1.7 ms at 48 kHz, the snap
+    // the control promises - and a third of the amount is 222 frames, 4.6 ms. Both
+    // are one gesture rather than two notes, which is the point: what the control
+    // mostly moves is the DEPTH of the pull below, and the glide rides along.
     const auto glide = 0.0005f + 0.012f * amount;
 
     for (int channel = 0; channel < juce::jlimit (0, 2, channels); ++channel)
@@ -4771,9 +4777,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // reported as "STOP just makes it quieter". At this exponent the level is 0.77
     // at nine tenths of speed, 0.18 at half speed and -35 dB at a fifth of it, so
     // the audible part of a coast is its last third. The trade the shape makes is on
-    // the way back up: a spin-up with no repitch stage to glide brings the machine's
-    // sound in concentrated in its last third instead of fading it in early, which
-    // is the honest reading of a machine engaging.
+    // the way back up: a spin-up brings the machine's sound in concentrated in its
+    // last third instead of fading it in early, which is the honest reading of a
+    // machine engaging - and it is only a trade in LEVEL now, because the repitch
+    // stage underneath it glides the pitch back up through the whole ramp rather
+    // than letting it snap.
     constexpr float platterGateExponent = 2.5f;
 
     // A hard-driven machine also runs its transport more loosely: pushing a deck
@@ -5261,13 +5269,14 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         // fade-out, and it is why the exponent has to be ABOVE 1: below 1 the
         // machine would go slack the instant the button went down.
         //
-        // What this deliberately does NOT do is move the programme's PITCH. A DJ
-        // stop bends the material down as the record slows, and this plugin has no
-        // repitch stage to bend it with: its transport moves the level, the
-        // modulation and the speed response, and the coast is what stops the
-        // sound. A repitch is a stage of its own - a buffer read at the platter's
-        // rate, with a resync when the platter comes back to speed - and it is not
-        // claimed here.
+        // What this deliberately does NOT do is move the programme's PITCH. That is
+        // not this block's job and never was: everything here is a GAIN on one
+        // number, the platter's speed, and a multiplier cannot bend a pitch - it
+        // can only make the signal smaller. The bend belongs to the repitch stage
+        // at the end of the chain, which reads the finished frame back at that
+        // same number and is the one place the FORMAT of the output changes rather
+        // than its level. Keeping the two apart is what lets this gate stop the
+        // sound outright without the bend having to be undone first.
         const float pitchedPlatter = std::pow (platterSpeed, platterPitchExponent);
         const float speedError = (1.0f - (1.0f - pitchedPlatter) * 0.7f)
                                * (1.0f - loadInducedSpeedError);

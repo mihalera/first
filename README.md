@@ -147,26 +147,40 @@ makes it safe to run **after** the tape stage: a shaper there would re-distort t
 signal the machine just coloured, whereas an envelope shaper only moves its level, so
 the tape's character survives intact.
 
-## Neural stage (RTNeural)
+## Neural stage and IR (RTNeural and a convolver)
 
-The other stage on the DYN tab is optional and inert by default. Where every other
-curve in this plugin is hand-written from physics, a **neural model** is *learned* from
-measurements of a real device, and RTNeural runs it fast enough to sit inside the
-per-sample loop.
+The two file-fed stages on the **SHAPERS** tab are optional and inert by default. Where
+every other curve in this plugin is hand-written from physics, a **neural model** is
+*learned* from measurements of a real device and an **impulse response** is a
+*measurement* of a space; RTNeural and the convolver each run fast enough to sit inside
+the per-sample loop.
 
-- The model is a **file**, not a parameter: it is loaded with **LOAD MODEL** on the DYN
-  tab, and the network it describes (a Dense net, an LSTM, a GRU) is whatever the file
-  says. It is **not** saved with the session or with a preset, because it is data
-  rather than a setting.
-- It runs **per channel**, after the tape stage and before the transient shaper, so it
-acts as one more nonlinearity alongside the hand-written ones - and the shaper can still
-sharpen whatever it produces.
-- **NEURAL** is the wet/dry position. At 0 %, or with no model loaded, the stage is a
-bit-for-bit pass-through, so a build with no model is exactly the plugin it was before
-the stage existed.
-- With RTNeural not fetched (or compiling the DSP harness), every member of the stage
-reduces to that same pass-through: the guard is honest, and the plugin never depends on
-a model being present to sound right.
+- Both are **files**, not parameters: the model is loaded with **LOAD MODEL** and the
+  capture with **LOAD IR**. The network is whatever the file describes (a Dense net, an
+  LSTM, a GRU) and the IR is any WAV or AIFF capture of a cabinet or a room. Neither is
+  saved with the session or with a preset, because they are data rather than settings.
+- A picker that **succeeds** opens its own mix - NEURAL or IR MIX - while that mix is
+  still fully closed, so the file that was just chosen is heard at once instead of
+  waiting for a knob to be found. A mix the user has already dialled is left alone.
+- A picker that **fails** says why, in the status line beside the button, and leaves the
+  stage exactly as it was: the format is not one this build reads, the file is not there
+  any more, or the model is a WaveNet or a Feather network, which this build refuses by
+  name. The previous model keeps playing, and the readout outranks the stage's own state
+  so a refusal cannot read as "no model".
+- Both pickers **reopen in the folder the last file came from**, remembered per picker in
+  the plugin's own settings file. It is a convenience of *using* the plugin rather than
+  part of the sound, so it lives in that file and not in the session: a saved project
+  cannot carry it, and a preset cannot move it.
+- The model runs **per channel**, after the tape stage and before the transient shaper, so
+it acts as one more nonlinearity alongside the hand-written ones - and the shaper can still
+sharpen whatever it produces. The IR crossfades into the finished signal, ahead of the
+reverb and the vinyl stage.
+- **NEURAL** and **IR MIX** are the wet/dry positions. At 0 %, or with nothing loaded,
+each stage is a bit-for-bit pass-through, so a build with no file loaded is exactly the
+plugin it was before the stage existed.
+- With RTNeural not fetched (or compiling the DSP harness), every member of the neural
+stage reduces to that same pass-through: the guard is honest, and the plugin never depends
+on a model being present to sound right.
 
 ## Tape condition: flux, wear, mechanics
 
@@ -364,7 +378,11 @@ reverb (SPACE) -> vinyl (VINYL).
 The transport state (STOP / PLAY / START) gates what the machine passes and scales the
 transport modulation with it, so STOP is the machine coming to rest rather than a mute
 on the output. Both sides of the MIX crossfade carry that gate, the dry leg included:
-a stopped machine passes nothing at all, whatever MIX is set to.
+a stopped machine passes nothing at all, whatever MIX is set to. The
+[repitch stage](#repitch-the-platters-own-pitch-bend) then reads the frame that crossfade
+produced, so the platter's speed reaches the ear as a pitch bend underneath the gate
+rather than as an effect after it, and it sits before every gain that follows, so the
+machine's own level, the compensator and the limiter all see the bent signal.
 
 The two DYN stages sit at the **end of the wet path** deliberately. The neural stage is
 one more nonlinearity and belongs with the machine; the transient shaper moves the
@@ -454,21 +472,104 @@ carrying the number - `stopCoastSeconds`, `startSpinUpSeconds`, `playRelockSecon
 `vinylSpeedScales` and `tempoScaleFor()` carrying what the deck's settings multiply
 them by.
 
-What the transport moves is the machine's level, its modulation depth and its speed
-response (the same character mapping the SPEED control uses) - all following one number,
-the platter's speed. It does **not** repitch the programme: a DJ stop bends the material
-down as the record slows, and this plugin has no repitch stage to bend it with. STOP is
-therefore a coast to silence - and the level gate holds the machine's output through the
-coast and collapses it at the end (a linear gate is a fader, which is what STOP used to
-sound like) - rather than a pitch bend. A varispeed stage is a project of its own: a
-buffer read at the platter's rate, with a resync when the platter comes back up.
+What the transport moves is the machine's level, its modulation depth, its speed response
+(the same character mapping the SPEED control uses) - and, through the
+[repitch stage](#repitch-the-platters-own-pitch-bend), the programme's **pitch** with them:
+a coast walks the material down through the octaves the way a hand on a platter does, and
+a START walks it back up. STOP is still a coast to silence - the level gate holds the
+machine's output through the coast and collapses it at the end, because a linear gate is a
+fader and a fader is what STOP used to sound like - but the bend happens underneath that
+fade, which is the difference between a deck coming to rest and a deck being muted.
 
-`tests/transport/` drives the shipping `TransportRig` frame by frame and checks each of
-these gestures against the duration its own name claims and against the scale the deck's
-settings put on it - one machine per tape speed, per turntable speed and per tempo, plus
-the corner where all three are at once - so the defects this section used to describe
-(a STOP that only made the machine quieter, a START that braked first, and gestures that
-ignored the deck) cannot come back quietly.
+`tests/transport/` drives the shipping `TransportRig` and the shipping `RepitchStage`
+frame by frame: each gesture is checked against the duration its own name claims and
+against the scale the deck's settings put on it - one machine per tape speed, per
+turntable speed and per tempo, plus the corner where all three are at once - and the stage
+is checked as the identity at speed, as a bend that follows the platter while it falls,
+and as a read that never runs past its own write head. So the defects this section used to
+describe (a STOP that only made the machine quieter, a START that braked first, gestures
+that ignored the deck, and a pitch that never moved while the speed did) cannot come back
+quietly.
+
+## Repitch: the platter's own pitch bend
+
+A deck whose transport slows does not merely get quieter - the programme comes out
+**lower**, because the tape crosses the playback head more slowly. Everything the transport
+did before this stage was a **gain** on one number, the platter's speed, and a multiplier
+cannot bend a pitch: it can only make the signal smaller. STOP therefore had to be a coast
+to silence, and the two gestures the panel's tips describe - the pitch going first on a
+spindown, a start lifting back up to speed - were unanswerable.
+
+The repitch stage is a delay line with two heads, and it is the one place in the chain
+where the **format** of the signal changes rather than its level:
+
+- The **write** head records the machine's finished frame - the frame the MIX crossfade
+  produced, so a dry leg is bent with the wet one, exactly as the transport's gate treats
+  the two legs.
+- The **read** head plays the buffer back at the platter's own speed. At speed the two
+  heads move together, the read standing two frames behind the write, so the stage is the
+  identity: no bend, and no latency to report. While the platter slows the read falls
+  behind, and that falling-behind **is** the pitch - read at 0.5 and the frame comes out an
+  octave down, read at 0.25 and it is two octaves down, which is where a spindown's 1.6 s
+  run-down coasts to.
+
+The stage is deliberately bounded, and the bounds are the design:
+
+| Bound | Value | Why |
+| --- | --- | --- |
+| Min lag | 2 frames | The floor the servo pulls to, and the whole of this stage's added latency. A lag is latency added to a live input, and this one is meant to be nothing at all |
+| Below the gate | under `platter^2.5` | At a quarter speed the machine's own gate is already 30 dB down and still falling, and there the read stops being a playback head and becomes the machine putting itself back together: it runs **ahead** of the platter and eats the delay a coast left, scaled by how far below the threshold the platter is, so the pitch glides into it instead of stepping. The whole glide sits at the bottom of a fade that is already 30 dB down |
+| The servo | up to +0.15 (2.4 semitones) | With the platter back at speed, and only there: what a gesture spent while it was audible is slid back with a small spearhead of extra speed rather than left as latency for the rest of the session. A spin-up spends about a third of a second of slack, and the servo needs a few seconds to take it back at a rate nobody would call a pitch |
+| The cap | 1.0 s | A slack no gesture can justify stops growing: past the cap the read tracks the write and the material that would have queued up is let go - at zero gain, so what is let go is silence |
+
+The stage has no gain, no gate and no dry/wet of its own: the engine's platter gate is
+already the machine's level and already sits upstream of it, so STOP still fades the way it
+did and this stage only bends what the fade is fading. It runs **once per frame**, like the
+transport's own advance, because its two heads move once per frame and the two channels are
+one tape.
+
+## Autotune: the corrector
+
+AUTO TUNE is opt-in, off by default, and inert at TUNE AMOUNT 0 - at zero the stage is out
+of the path entirely, detector included, and the signal is bit-for-bit the one that arrived.
+Switched in, the page's four controls are the whole of it: **TONIC** and **MODE** say which
+notes are legal, **AUTO TUNE** switches the stage in, and **TUNE AMOUNT** sets how far and
+how fast the correction is allowed to travel.
+
+Two pieces of signal processing, and both were rebuilt for one reason, which is the report
+the panel carried: *autotune does nothing*.
+
+**The detector** is YIN's - a period detector, not a crossing counter. The old stage counted
+zero crossings and called their rate a frequency, which fails on real material in two
+opposite directions: a guitar's second harmonic supplies the crossings, so the reading sits
+an octave high and the "correction" lands where the note already was, and on noise it reports
+a confident frequency that is nothing but hiss. YIN's normalised difference function keeps
+the reading on the fundamental and reports how confident it is, which is what the gate uses:
+below it - silence, noise, a chord, a note outside 45 Hz to 1.4 kHz - the correction glides
+back to unity and the signal passes untouched, because correcting towards a number the
+detector made up out of a cymbal is audible only as wrongness.
+
+**The shifter** moves the audio onto the note by re-reading it at the correction ratio out of
+a delay line. It has two read heads half a grain apart whose Hann windows sum to one, and the
+grain is the period the detector reported - so the head that is fading out and the head that
+is fading in land a whole period apart on a periodic signal, and are therefore the *same
+waveform*. That is what makes the join inaudible: the splice is phase-locked rather than
+merely crossfaded, and the note comes out as a tone rather than as grains. Each new grain is
+seated at a delay that differs from the other head's by a whole number of periods, folded
+into `[runway, runway + one period)`, so a head reading fast (a note being pulled **up**) is
+moved back before it reaches the write head, a head reading slow (a note being pulled
+**down**) does not creep towards a line of latency, and the stage's own delay never leaves
+about two periods of the tracked note. With no period to splice on, the fallback grain is
+used, and at unity the two heads ride the same delay, so the stage is the identity plus its
+one period of latency.
+
+Both halves are measured by `tests/pitch/`, on generated signal rather than on the source:
+the reading is checked against a set of real notes at four session rates, with a strong
+octave partial riding on it, buried in noise, and on silence and noise alone - where the
+answer has to be *unknown* rather than a number. The shifter is checked to move a tone by
+exactly the ratio it is given, to keep it a tone (granular residue more than 20 dB down), to
+be transparent at unity, and to keep both heads behind the write head at every ratio from
+0.5 to 2, which is the one failure a pitch measurement cannot see.
 
 ## Noise floor level
 
@@ -499,6 +600,10 @@ rest stays silent.
 | Noise | 0 to 100 % | A trim on top of whatever floor the loaded tape formula sets. The formula's own character is untouched, so the floor can be lifted for a dirty bounce or pulled to a clinical black without changing stock. Gated by the transport. Default 50 % (neutral) |
 | Transport | Stop / Play / Start | The machine's three states. STOP brakes the capstan to rest in 0.75 s - no hiss, no wow, no delay tail: true silence, not a mute - and pressing it again spins the machine back up. START is the spin-up and nothing else: 1.1 s from rest, it catches a coasting machine and brings it back up at the same rate, it settles on PLAY by itself, and it never brakes first. PLAY is normal running, and a re-lock from a partial ramp takes 0.25 s. TAPE SPEED scales the three capstan gestures, VINYL SPEED scales the run-down, and the host tempo scales them all - see [Transport](#transport-start-play-stop) |
 | Spindown | on/off (momentary in the panel) | Hold to cut the platter's power: the machine coasts down over 1.6 s (2.46 s on a 78 rpm platter) and comes back up in 0.9 s when released. A hold also brings the platter up if the machine was stopped, and releasing a hold leaves the machine running. As a parameter it survives in the state and can be automated. Default off |
+| Tuning Tonic (TONIC) | C to B | The key the scale is built on: the note the corrector treats as home. No effect on CHROMATIC, which already contains every semitone. Default C |
+| Tuning Mode (MODE) | Chromatic / Major / Minor / Dorian / Pentatonic Major / Pentatonic Minor | Which notes the corrector may land on. CHROMATIC pulls a note to the nearest semitone and nowhere else; a scale lets the reading travel up to a semitone to the nearest note the key contains, so the correction follows the key rather than the grid. Default Chromatic |
+| Auto Tune | on/off | Switches the corrector in: a period detector reads the note, the key decides where it may land, and the shifter re-reads the signal onto it. Below its gate (silence, noise, a chord, 45 Hz to 1.4 kHz) it glides back to unity and passes the signal untouched. Off by default |
+| Auto Tune Amount (TUNE AMOUNT) | 0 to 100 % | How far and how fast the correction travels: half the amount is half the pull at about twice the time constant, so a low setting nudges a note and a high one snaps it onto the grid. At 0 % the stage is out of the path entirely, detector included. Default 0 % |
 | Output | -32 to +32 dB | Calibrated output trim in dB |
 | Width | 0 to 100 % | Mono through natural to extra wide |
 | Bypass | on/off | Ramps the whole tape engine out without clicking |
@@ -511,8 +616,10 @@ rest stays silent.
 | Transient Sustain (SUS) | -100 to +100 % | What follows the attack - body, ring, room: positive lengthens it (fuller), negative shortens it (tighter, more staccato). Neutral at 0 % |
 | Transient Mix (TR MIX) | 0 to 100 % | How much of the transient-shaped signal reaches the output. At 0 % the shaper is absent. Default 0 % |
 | Neural Mix (NEURAL) | 0 to 100 % | Wet/dry position of the optional learned model. At 0 %, or with no model loaded, the stage is transparent. Default 0 % |
-| Load Model | file | Reads an RTNeural model (its JSON description) and installs it as an optional per-channel nonlinearity, after the tape. Not saved with the session |
+| Load Model | file | Reads a neural model - RTNeural's own JSON or a NeuralAmpModeler `.nam` - and installs it as an optional per-channel nonlinearity after the tape. A load that succeeds opens NEURAL while it is still closed, so the model is heard at once; the picker reopens in the folder the last one came from. Not saved with the session |
 | Clear | - | Releases the loaded model, returning the NEURAL stage to its pass-through |
+| Load IR | file | Reads an impulse response (a WAV or AIFF capture of a cabinet, a room or any other space) and crossfades it into the finished signal, ahead of the reverb and the vinyl stage. A load that succeeds opens IR MIX while it is still closed; the picker reopens in the folder the last one came from. Not saved with the session |
+| Clear IR | - | Releases the loaded impulse response, returning the IR stage to its pass-through |
 | Presets | 29 factory | Loaded from the preset box; each application is one undoable step |
 | User presets | unlimited | SAVE stores the whole machine state as a `.nonlinpreset` file in the user's application-data directory; DEL removes the selected file; recall is one undoable step |
 | A/B compare | two slots | COPY A / COPY B store states, A/B swaps them live; an EDITED badge shows when the sides differ |

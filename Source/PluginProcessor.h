@@ -5021,27 +5021,51 @@ struct RealtimePitchShifter
         const auto window = [] (float phase) noexcept
         { return 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * phase); };
 
-        auto output = 0.0f;
+        auto output = read (tapPosition[0]) * window (tapPhase[0])
+                    + read (tapPosition[1]) * window (tapPhase[1]);
 
+        // One clock drives both heads. They sit half a grain apart, so their
+        // windows are the two halves of a single Hann and advance by the same
+        // increment; two independent accumulators would round apart over a
+        // session and leave a ripple where the halves stop summing to one, so
+        // the second phase is DERIVED from the first rather than accumulated.
+        auto closing = -1;
+
+        tapPhase[0] += 1.0f / static_cast<float> (period);
+
+        if (tapPhase[0] >= 1.0f)
+        {
+            tapPhase[0] -= 1.0f;
+            closing = 0;
+        }
+
+        tapPhase[1] = tapPhase[0] + 0.5f;
+
+        if (tapPhase[1] >= 1.0f)
+        {
+            tapPhase[1] -= 1.0f;
+            closing = 1;
+        }
+
+        // Both heads move BEFORE the one that just closed its window is put
+        // back. That order is the whole point: restartPosition() measures the
+        // head it aligns to through delayOf(), and a head that has not advanced
+        // yet this frame reads one frame further back than the head doing the
+        // measuring - so the pair crept forward by a frame on every grain. At
+        // 220 grains a second that is a few cents of permanent detune and a
+        // grain-rate wobble on top of it, which is exactly what "autotune does
+        // nothing / sounds broken" was.
         for (int tap = 0; tap < 2; ++tap)
         {
             const auto index = static_cast<std::size_t> (tap);
-            output += read (tapPosition[index]) * window (tapPhase[index]);
-
-            tapPhase[index] += 1.0f / static_cast<float> (period);
             tapPosition[index] += ratio;
-
-            if (tapPhase[index] >= 1.0f)
-            {
-                tapPhase[index] -= 1.0f;
-                tapPosition[index] = restartPosition (tap == 0 ? 1 : 0);
-            }
 
             if (tapPosition[index] >= static_cast<float> (bufferSize))
                 tapPosition[index] -= static_cast<float> (bufferSize);
-            else if (tapPosition[index] < 0.0f)
-                tapPosition[index] += static_cast<float> (bufferSize);
         }
+
+        if (closing >= 0)
+            tapPosition[static_cast<std::size_t> (closing)] = restartPosition (1 - closing);
 
         return output;
     }
@@ -5065,26 +5089,32 @@ private:
     {
         const auto otherDelay = delayOf (other);
 
-        // Room for this head's own window at the ratio it is reading at: at a
-        // ratio of 2 the head advances two frames per frame, so its whole grain
-        // has to start at least two grains behind the write head.
-        const auto runway = static_cast<float> (period) * juce::jmax (1.0f, ratio)
-                          + static_cast<float> (period);
+        // Room for this head's own window at the ratio it is reading at. The head
+        // advances `ratio` frames per frame while the write head advances one, so
+        // its delay SHORTENS by (ratio - 1) per frame and a whole grain takes
+        // that much off the delay it came in with: it has to start a period plus
+        // that saving behind the write head to still be behind it - and not
+        // skating along the sample just written - when the grain ends. One period
+        // is also the floor at unity, which is the whole of this stage's latency
+        // when nothing is being corrected.
+        const auto runway = static_cast<float> (period) * juce::jmax (1.0f, ratio);
 
         // Phase-locked to the OTHER head: the same delay plus a whole number of
-        // periods, chosen so the result clears the runway. For a periodic signal
-        // those two positions are the same waveform, which is what makes the
-        // crossfade a crossfade rather than a splice.
-        auto delay = otherDelay;
-
-        if (delay < runway)
-            delay += static_cast<float> (period)
-                   * std::ceil ((runway - delay) / static_cast<float> (period));
-
-        // And it has to stay inside the line: past half the ring the grain's own
-        // tail would meet the write head from the other side.
-        while (delay > static_cast<float> (bufferSize) * 0.5f)
-            delay -= static_cast<float> (period);
+        // periods. For a periodic signal those two positions are the same
+        // waveform, which is what makes the crossfade a crossfade rather than a
+        // splice - so the number of periods is free to choose, and it is chosen
+        // to put the head in [runway, runway + one period).
+        //
+        // The fold matters as much as the lift. A head reading faster than the
+        // write head (a ratio above one) catches up with it and has to be moved
+        // back; one reading slower FALLS BEHIND a little more every grain, and
+        // without folding that down again the stage would creep towards a whole
+        // line of latency and sit there - a monitor delay nobody asked for, and
+        // the second half of "autotune does something strange". Either way the
+        // result is inside half the ring, so no second clamp is needed: the
+        // period is at most maxPeriod and the runway at most two of them.
+        const auto span = static_cast<float> (period);
+        const auto delay = otherDelay + span * std::ceil ((runway - otherDelay) / span);
 
         auto position = static_cast<float> (writePosition) - delay;
 

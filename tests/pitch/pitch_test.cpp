@@ -40,6 +40,7 @@
 #include <cmath>
 #include <cstddef>
 #include <cstdio>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -208,6 +209,46 @@ std::vector<float> renderShifter (double sampleRate, double inputFrequency,
     }
 
     return output;
+}
+
+/** How the shifter's own delay behaved over a render: the two things that make a
+    reading of "it sounds wrong" concrete. A delay that reaches zero means a head
+    read the write head - a splice running off the end of the line is the click.
+    A delay that grows without bound means the stage is adding latency nobody
+    asked for, which is a performer hearing themselves late. */
+struct Footing
+{
+    float minimum = 0.0f;
+    float maximum = 0.0f;
+};
+
+Footing measureFooting (double sampleRate, float ratio, int periodHint, double seconds)
+{
+    RealtimePitchShifter shifter;
+    shifter.reset();
+
+    Footing footing { std::numeric_limits<float>::max(), 0.0f };
+    const auto frames = static_cast<int> (seconds * sampleRate);
+
+    for (int n = 0; n < frames; ++n)
+    {
+        const auto t = static_cast<double> (n) / sampleRate;
+        const auto input = static_cast<float> (0.5 * std::sin (kTwoPi * 220.0 * t));
+        shifter.process (input, ratio, periodHint);
+
+        // The first frames are the line filling up, before any head has been set.
+        if (n < static_cast<int> (sampleRate * 0.1))
+            continue;
+
+        for (int tap = 0; tap < 2; ++tap)
+        {
+            const auto delay = shifter.delayOf (tap);
+            footing.minimum = std::min (footing.minimum, delay);
+            footing.maximum = std::max (footing.maximum, delay);
+        }
+    }
+
+    return footing;
 }
 
 double cents (double measured, double expected)
@@ -402,6 +443,47 @@ void testUnityIsTransparent()
            "and the unity splice leaves " + std::to_string (residueDb) + " dB of residue");
 }
 
+void testShifterKeepsItsFooting()
+{
+    std::printf ("\nthe read heads stay behind the write head at every ratio\n");
+
+    const auto input = 220.0;
+    const auto hint = static_cast<int> (std::lround (48000.0 / input));
+
+    for (const auto ratio : { 0.5f, 1.0f, 1.029302f, 1.5f, 2.0f })
+    {
+        const auto footing = measureFooting (48000.0, ratio, hint, 2.0);
+
+        // A head that reaches the write head reads silence next block and a
+        // half-written sample now: that is the splice click, and it is the one
+        // failure this design can have that a pitch measurement cannot see.
+        check (footing.minimum > 1.0f,
+               "at ratio " + std::to_string (ratio) + " the closest a head came to the write head was "
+                   + std::to_string (footing.minimum) + " frames");
+
+        // The delay is bounded by the period and the reading ratio, and the bound
+        // is the whole latency story of this stage: a runway of one period (more
+        // when the head reads fast), the period the seam folds in, and - below
+        // unity, where a head falls behind instead of catching up - one more
+        // period of drift before the next fold takes it back. Anything larger
+        // than that is latency the stage invented, heard as a late monitor.
+        const auto ceiling = static_cast<float> (hint)
+                                 * (juce::jmax (1.0f, ratio) + 1.0f + juce::jmax (0.0f, 1.0f - ratio))
+                           + 1.0f;
+        check (footing.maximum <= ceiling,
+               "  ... and its delay stayed at " + std::to_string (footing.maximum)
+                   + " frames, inside the " + std::to_string (ceiling) + " its grain allows");
+    }
+
+    // No reading at all: the fallback grain is long, which is the case that would
+    // quietly double the stage's latency if the runway were written as two
+    // periods instead of one.
+    const auto idle = measureFooting (48000.0, 1.0f, 0, 1.0);
+    check (idle.maximum <= static_cast<float> (RealtimePitchShifter::fallbackPeriod) + 1.0f,
+           "with no pitch reading the stage idles at " + std::to_string (idle.maximum)
+               + " frames of delay, one fallback grain");
+}
+
 void printDiagnostics()
 {
     std::printf ("\n   Diagnostic: the detector's reading for a set of real notes, at 48 kHz\\n");
@@ -429,6 +511,7 @@ int main()
     testShifterMovesThePitch();
     testSpliceResidueIsBounded();
     testUnityIsTransparent();
+    testShifterKeepsItsFooting();
     printDiagnostics();
 
     std::printf ("\n%s (%d failure%s)\n", gFailures == 0 ? "PITCH CHECK PASSED" : "FAILURES PRESENT",
