@@ -3558,6 +3558,83 @@ void FirstAudioProcessorEditor::setTabFamily (int newFamily)
         resized();
 }
 
+//==============================================================================
+//  The two file pickers' shared ground: where they OPEN, and what happens to the
+//  stage's blend when a load SUCCEEDS.
+//==============================================================================
+namespace
+{
+    // The folder each picker starts in, remembered across sessions.
+    //
+    // The chooser used to open on the user's Documents folder every single time,
+    // so a user who keeps their models and their impulse responses somewhere else
+    // walked back to that place on every load. The memory is machine-wide (a
+    // settings file beside the plugin's other user data) rather than session
+    // state on purpose: it is a convenience of USING the plugin, not part of the
+    // sound, so a saved session must not carry the folder a file was picked from
+    // and a preset must not be able to move it.
+    //
+    // One file for the whole plugin and one KEY per picker, so the two stages
+    // never fight over a single "last folder" - models and IRs live in different
+    // places and each picker returns to its own.
+    juce::PropertiesFile& folderMemory()
+    {
+        static juce::PropertiesFile settings ([] {
+            juce::PropertiesFile::Options options;
+            options.applicationName      = "Nonlin Analog Saturator";
+            options.folderName           = "Nonlin Analog Saturator";
+            options.filenameSuffix       = "settings";
+            options.osxLibrarySubFolder  = "Application Support";
+            options.commonToAllUsers     = false;
+            options.ignoreCaseOfKeyNames = true;
+            return options;
+        }());
+        return settings;
+    }
+
+    juce::File rememberedFolder (const juce::String& key)
+    {
+        const auto remembered = juce::File (folderMemory().getValue (key));
+
+        // A remembered folder that has since been moved or unmounted falls back
+        // to Documents rather than opening the chooser on a path that is gone.
+        return remembered.isDirectory() ? remembered
+                                        : juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
+    }
+
+    void rememberFolder (const juce::String& key, const juce::File& chosen)
+    {
+        const auto folder = chosen.isDirectory() ? chosen : chosen.getParentDirectory();
+        if (! folder.isDirectory())
+            return;
+
+        folderMemory().setValue (key, folder.getFullPathName());
+        folderMemory().saveIfNeeded();
+    }
+}
+
+void FirstAudioProcessorEditor::openStageMix (const juce::String& parameterId)
+{
+    // Loading a file is a request to HEAR the file. Both file-fed stages default
+    // their MIX to 0 - a stage with nothing loaded is a bypass, and a session that
+    // unexpectedly carries a model must still load to the sound an earlier build
+    // made - so a picker that installed the model and left the blend shut changed
+    // nothing audible, which is exactly what "LOAD MODEL / LOAD IR does nothing"
+    // was reporting.
+    //
+    // The blend is opened to full ONLY while it is still fully closed, so a user
+    // who has dialled a partial blend keeps it, and the change goes through the
+    // parameter rather than the atomic so the host records it, the knob's
+    // attachment follows, and Undo can take it back.
+    if (auto* parameter = audioProcessor.parameters.getParameter (parameterId))
+        if (parameter->getValue() < 1.0f)
+        {
+            parameter->beginChangeGesture();
+            parameter->setValueNotifyingHost (1.0f);
+            parameter->endChangeGesture();
+        }
+}
+
 void FirstAudioProcessorEditor::loadNeuralModelFromFile()
 {
     // A model is chosen from a file, so a plain asynchronous file chooser is the
@@ -3571,7 +3648,7 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
     // processor's own two entry points below.
     auto chooser = std::make_shared<juce::FileChooser> (
         "Load a neural model",
-        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+        rememberedFolder ("lastModelFolder"),
         "*.json;*.rtn;*.nam;*");
 
     // browserFlags, not `flags`: a local name that shadows nothing is cheaper
@@ -3593,21 +3670,23 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
         const bool loaded = isNam ? audioProcessor.loadNamModel (text)
                                   : audioProcessor.loadNeuralModel (text);
 
-        if (loaded)
+        if (! loaded)
         {
-            loadedNeuralName = file.getFileNameWithoutExtension();
-        }
-        else
-        {
-            // A bad file leaves whatever was loaded before in place, and the
-            // readout says so rather than silently showing the old name.
-            loadedNeuralName = {};
-            neuralStatusLabel.setText ("INVALID MODEL", juce::dontSendNotification);
-            lastShownNeuralStatus = "INVALID MODEL";
+            // A refused file leaves whatever was loaded before in place, and the
+            // readout says WHY this one was refused - a .nam that needs the LSTM
+            // architecture is a different download, not a corrupt file, and the
+            // reason is the one thing the user can act on.
+            neuralStatusReason = audioProcessor.lastLoadError();
+            lastShownNeuralStatus = {};   // force the next refresh to repaint the label
+            refreshNeuralStatus();
             return;
         }
 
+        loadedNeuralName = file.getFileNameWithoutExtension();
+        neuralStatusReason = {};
+        rememberFolder ("lastModelFolder", file);
         lastShownNeuralStatus = {};   // force the next refresh to repaint the label
+        openStageMix ("neural_mix");
         refreshNeuralStatus();
     });
 }
@@ -3616,21 +3695,25 @@ void FirstAudioProcessorEditor::refreshNeuralStatus()
 {
     // The processor is the source of truth, not the label: a model can be
     // cleared from either button, so the readout follows whatever the stage
-    // actually holds. It reports in two states only - "NO MODEL" when the stage
-    // is inert, and the loaded file's name when it is not - because those are
-    // the two things the NEURAL knob cannot say by itself.
-    const auto status = audioProcessor.hasNeuralModel() && loadedNeuralName.isNotEmpty()
-                            ? loadedNeuralName
-                            : juce::String ("NO MODEL");
+    // actually holds. It reports in THREE states: the loaded file's name while
+    // the stage runs, "NO MODEL" while it is inert, and the refused file's
+    // reason after a load that failed - which outranks the stage's own state,
+    // because the stage may well still hold the previous model. That third
+    // state is what the old two-state readout got wrong: a refused .nam read as
+    // "no model" even though the previous one was still playing.
+    const auto status = neuralStatusReason.isNotEmpty()
+                            ? xlat ("INVALID MODEL") + " (" + neuralStatusReason + ")"
+                            : audioProcessor.hasNeuralModel() && loadedNeuralName.isNotEmpty()
+                                  ? loadedNeuralName
+                                  : xlat ("NO MODEL");
 
     if (status == lastShownNeuralStatus)
         return;
 
     lastShownNeuralStatus = status;
-    // The two state words go through the table so the picker reads in the
-    // panel's language; a model FILE NAME is data, not a sentence, and shows
-    // as loaded regardless of language.
-    neuralStatusLabel.setText (xlat (status), juce::dontSendNotification);
+    // The file's name and the reason are DATA, not sentences, so they are not
+    // looked up: the two state words around them are (see the note above xlat).
+    neuralStatusLabel.setText (status, juce::dontSendNotification);
     neuralStatusLabel.setColour (juce::Label::textColourId,
                                  audioProcessor.hasNeuralModel()
                                      ? paletteFor (false).accent
@@ -3645,7 +3728,7 @@ void FirstAudioProcessorEditor::loadIrFromFile()
     // file JUCE's registered decoders can open selectable.
     auto chooser = std::make_shared<juce::FileChooser> (
         "Load an impulse response",
-        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+        rememberedFolder ("lastIrFolder"),
         "*.wav;*.aif*;*");
 
     const auto browserFlags = juce::FileBrowserComponent::openMode
@@ -3657,21 +3740,22 @@ void FirstAudioProcessorEditor::loadIrFromFile()
         if (! file.existsAsFile())
             return;
 
-        if (audioProcessor.loadIrFile (file))
-        {
-            loadedIrName = file.getFileNameWithoutExtension();
-            lastShownIrStatus = {};      // force the next refresh to repaint
-            refreshIrStatus();
-        }
-        else
+        if (! audioProcessor.loadIrFile (file))
         {
             // A file that would not decode leaves the previous IR in place and
-            // says so - the same honesty the INVALID MODEL state gives the
-            // model picker, for the same reason.
-            loadedIrName = {};
-            irStatusLabel.setText ("INVALID IR", juce::dontSendNotification);
-            lastShownIrStatus = "INVALID IR";
+            // says WHICH failure it was, in the same shape the model picker uses.
+            irStatusReason = audioProcessor.lastLoadError();
+            lastShownIrStatus = {};      // force the next refresh to repaint
+            refreshIrStatus();
+            return;
         }
+
+        loadedIrName = file.getFileNameWithoutExtension();
+        irStatusReason = {};
+        rememberFolder ("lastIrFolder", file);
+        lastShownIrStatus = {};      // force the next refresh to repaint
+        openStageMix ("ir_mix");
+        refreshIrStatus();
     });
 }
 
@@ -3680,15 +3764,17 @@ void FirstAudioProcessorEditor::refreshIrStatus()
     // The processor is the source of truth, exactly as with the model status:
     // the stage can be cleared from either button, so the readout follows
     // whatever the convolvers actually hold.
-    const auto status = audioProcessor.hasIr() && loadedIrName.isNotEmpty()
-                            ? loadedIrName
-                            : juce::String ("NO IR");
+    const auto status = irStatusReason.isNotEmpty()
+                            ? xlat ("INVALID IR") + " (" + irStatusReason + ")"
+                            : audioProcessor.hasIr() && loadedIrName.isNotEmpty()
+                                  ? loadedIrName
+                                  : xlat ("NO IR");
 
     if (status == lastShownIrStatus)
         return;
 
     lastShownIrStatus = status;
-    irStatusLabel.setText (xlat (status), juce::dontSendNotification);
+    irStatusLabel.setText (status, juce::dontSendNotification);
     irStatusLabel.setColour (juce::Label::textColourId,
                              audioProcessor.hasIr()
                                  ? paletteFor (false).accent
@@ -5552,14 +5638,18 @@ void FirstAudioProcessorEditor::setUpModelButtons()
     clearNeuralButton.setColour (juce::TextButton::buttonColourId, paletteFor (false).raised);
     clearNeuralButton.setColour (juce::TextButton::textColourOffId, paletteFor (false).text);
     clearNeuralButton.setColour (juce::TextButton::buttonOnColourId, paletteFor (false).raised.darker (0.15f));
-    setTip (loadNeuralButton, "LOAD MODEL - reads an RTNeural model file (its JSON "
-                                 "description) and installs it as the plugin's optional "
-                                 "learned nonlinearity. The network is whatever the file "
-                                 "describes - a Dense net, an LSTM, a GRU - and it runs "
-                                 "per channel, after the tape stage. NEURAL sets how much "
-                                 "of its output reaches the signal; at 0 it is silent. "
-                                 "Loading a model does not change any parameter and is "
-                                 "not saved with the session.");
+    setTip (loadNeuralButton, "LOAD MODEL - reads a neural model and installs it as "
+                                 "the plugin's optional learned nonlinearity. Both wire "
+                                 "formats are read: RTNeural's own JSON and the .nam files "
+                                 "NeuralAmpModeler writes, of which the LSTM models are "
+                                 "played and the WaveNet and Feather ones are refused by "
+                                 "name. The network runs per channel, after the tape "
+                                 "stage. NEURAL sets how much of its output reaches the "
+                                 "signal, and a load that succeeds opens NEURAL to full "
+                                 "while it is still closed, so the new model is heard at "
+                                 "once. The picker reopens in the folder the last model "
+                                 "came from. Loading a model does not change any other "
+                                 "parameter and is not saved with the session.");
     setTip (clearNeuralButton, "CLEAR - releases the loaded model, returning the NEURAL "
                                   "stage to its transparent pass-through.");
     loadNeuralButton.onClick = [this] { loadNeuralModelFromFile(); };
@@ -5567,6 +5657,9 @@ void FirstAudioProcessorEditor::setUpModelButtons()
     {
         audioProcessor.clearNeuralModel();
         loadedNeuralName = {};
+        // A refusal belongs to the file that was refused, so clearing the stage
+        // clears the reason with it: "NO MODEL" is the truth again afterwards.
+        neuralStatusReason = {};
         refreshNeuralStatus();
     };
     addAndMakeVisible (loadNeuralButton);
@@ -5593,9 +5686,12 @@ void FirstAudioProcessorEditor::setUpModelButtons()
     setTip (loadIrButton, "LOAD IR - reads an impulse response (a WAV or AIFF "
                              "capture of a cabinet, a room or any other space) and "
                              "convolves the finished signal with it. IR MIX sets how "
-                             "much of the convolved signal is blended in; at 0 the "
-                             "stage is silent. Loading an IR does not change any "
-                             "parameter and is not saved with the session.");
+                             "much of the convolved signal is blended in, and a load "
+                             "that succeeds opens IR MIX to full while it is still "
+                             "closed, so the capture is heard at once. The picker "
+                             "reopens in the folder the last impulse response came "
+                             "from. Loading an IR does not change any other parameter "
+                             "and is not saved with the session.");
     setTip (clearIrButton, "CLEAR IR - releases the loaded impulse response, "
                               "returning the IR stage to its transparent "
                               "pass-through.");
@@ -5604,6 +5700,7 @@ void FirstAudioProcessorEditor::setUpModelButtons()
     {
         audioProcessor.clearIr();
         loadedIrName = {};
+        irStatusReason = {};
         refreshIrStatus();
     };
     addAndMakeVisible (loadIrButton);

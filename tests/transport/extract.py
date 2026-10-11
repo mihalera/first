@@ -27,7 +27,41 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 HEADER = REPO / "Source" / "PluginProcessor.h"
 IMPL = REPO / "Source" / "PluginProcessor.cpp"
 
-DECLARATION = "struct TransportRig"
+DECLARATIONS = [
+    "struct TransportRig",
+    # The repitch stage is cut out for the same reason the rig is: the harness has
+    # to drive the real one. It is the stage that turns the platter's speed into
+    # a PITCH - the rig says where the transport goes, this says what the machine
+    # sounds like while it goes there - and neither can be checked against a copy.
+    "struct RepitchStage",
+]
+
+# The slice of the toolkit the extracted stages reach for. The harness has no
+# JUCE on its include path, so juce::jmin/jmax/jlimit are provided here with the
+# semantics of the real ones; both stages are otherwise plain C++.
+PREAMBLE = (
+    "#include <algorithm>\n"
+    "#include <array>\n"
+    "#include <cmath>\n"
+    "#include <vector>\n"
+    "\n"
+    "namespace juce\n"
+    "{\n"
+    "template <typename Type> constexpr Type jmin (Type a, Type b) noexcept { return a < b ? a : b; }\n"
+    "template <typename Type> constexpr Type jmax (Type a, Type b) noexcept { return a > b ? a : b; }\n"
+    "template <typename Type> constexpr Type jlimit (Type lower, Type upper, Type value) noexcept\n"
+    "{ return value < lower ? lower : (value > upper ? upper : value); }\n"
+    "}\n"
+    "\n"
+)
+
+# The engine-side half of the repitch promise: the stage has to be a MEMBER, it
+# has to be prepared at the engine's rate, and it has to be handed the frame the
+# wet/dry crossfade produced together with the platter's speed. Written as text
+# because that call lives in a 3,500-line function that cannot be compiled
+# without JUCE - and a stage that is extracted, tested and then never called in
+# the audio path is exactly the class of bug this file exists to catch.
+REPITCH_CALL = re.compile(r"repitchStage\.processFrame \(([^;]*)\);")
 
 # The engine-side half of the transport's promise, checked as text because it lives
 # in a 3,400-line function that cannot be compiled without JUCE. The MIX crossfade
@@ -108,6 +142,39 @@ def check_engine_gate() -> list[str]:
     return problems
 
 
+def check_engine_repitch() -> list[str]:
+    """Returns the reasons the engine does not run the repitch stage."""
+    impl = IMPL.read_text()
+    header = HEADER.read_text()
+    problems: list[str] = []
+
+    calls = REPITCH_CALL.findall(impl)
+
+    if len(calls) != 1:
+        problems.append(f"`repitchStage.processFrame` appears {len(calls)} times in {IMPL.name}: "
+                        f"the stage is advanced once per frame or it is not advanced at all")
+    else:
+        arguments = calls[0]
+
+        if "tapeOutput" not in arguments:
+            problems.append("the repitch stage is handed something other than the frame the "
+                            f"wet/dry crossfade produced: {arguments.strip()}")
+
+        if not re.search(r"\bplatterSpeed\b", arguments):
+            problems.append("the repitch stage is not handed the platter's speed, so it has "
+                            f"nothing to follow: {arguments.strip()}")
+
+    if "RepitchStage repitchStage;" not in header:
+        problems.append(f"{HEADER.name} does not declare a `RepitchStage repitchStage;` member, "
+                        f"so the engine cannot be calling the stage it is calling")
+
+    if not re.search(r"repitchStage\.prepare \(([^;]*)\);", impl):
+        problems.append(f"{IMPL.name} never prepares the repitch stage, so its line would be "
+                        f"sized for no rate at all")
+
+    return problems
+
+
 def brace_end(text: str, start: int) -> int:
     """The index just past the brace that closes the block starting at or after
     `start`, skipping comments and string/char literals in one pass."""
@@ -148,7 +215,7 @@ def main() -> int:
     destination = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "extracted_transport.inc")
     header = HEADER.read_text()
 
-    problems = check_engine_gate()
+    problems = check_engine_gate() + check_engine_repitch()
     if problems:
         for problem in problems:
             print(f"extract.py: {problem}", file=sys.stderr)
@@ -156,17 +223,24 @@ def main() -> int:
 
     print("gate: both MIX legs carry a platter curve above linear, so STOP is the machine"
           " stopping rather than a fade")
+    print("repitch: the engine advances one stage per frame, on the machine's own frame,"
+          " followed by the platter's speed")
 
-    if header.count(DECLARATION) != 1:
-        raise SystemExit(f"extract.py: `{DECLARATION}` appears {header.count(DECLARATION)} times in "
-                         f"{HEADER.name}; the transport harness cannot tell them apart.")
+    bodies: list[str] = []
 
-    start = header.index(DECLARATION)
-    end = brace_end(header, start)
-    while end < len(header) and header[end] != "\n":
-        end += 1                       # keep the trailing newline, not the next line
-    body = header[start:end]
-    body = body.rstrip()
+    for declaration in DECLARATIONS:
+        if header.count(declaration) != 1:
+            raise SystemExit(f"extract.py: `{declaration}` appears {header.count(declaration)} times "
+                             f"in {HEADER.name}; the transport harness cannot tell them apart.")
+
+        start = header.index(declaration)
+        end = brace_end(header, start)
+        while end < len(header) and header[end] != "\n":
+            end += 1                   # keep the trailing newline, not the next line
+        body = header[start:end]
+        bodies.append(body.rstrip())
+
+    body = bodies[0]
     if not body.endswith("};"):
         body += ";"
 
@@ -182,12 +256,21 @@ def main() -> int:
         raise SystemExit(f"extract.py: only {len(seconds)} `...Seconds` constants found in "
                          f"TransportRig; its gestures are stated in seconds.")
 
-    destination.write_text(
-        "// GENERATED FILE - do not edit. Cut verbatim out of Source/PluginProcessor.h by\n"
-        "// tests/transport/extract.py: the shipping transport, as the engine compiles it.\n"
-        + body + "\n")
+    parts = ["// GENERATED FILE - do not edit. Cut verbatim out of Source/PluginProcessor.h by\n"
+             "// tests/transport/extract.py: the shipping transport and repitch stage, as the\n"
+             "// engine compiles them.\n"]
 
-    print(f"wrote {destination} ({len(body.splitlines())} lines)")
+    parts.append(PREAMBLE)
+
+    for index, extracted in enumerate(bodies):
+        if index == 0 and not extracted.endswith("};"):
+            extracted += ";"
+        parts.append(extracted + "\n")
+
+    destination.write_text("\n".join(parts))
+
+    print(f"wrote {destination} ({len(body.splitlines())} + "
+          f"{len(bodies[1].splitlines())} lines)")
     print("gestures: " + ", ".join(f"{name} = {value}s" for name, value in seconds))
     print("scales:   " + ", ".join(f"{name} = [{values.strip()}]" for name, values in scales))
     return 0

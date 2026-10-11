@@ -1,0 +1,437 @@
+// =============================================================================
+//  Regression harness for the pitch stage: the autotune's detector and shifter.
+//
+//  Autotune was reported as doing nothing audible. The two reasons were both
+//  properties of the SIGNAL, not of the code as written, so both are measured
+//  here on signal:
+//
+//    1. The detector counted zero crossings and called their rate a frequency.
+//       On a signal with strong harmonics it locks onto whichever overtone
+//       supplies the crossings, so a guitar's second harmonic reads an octave
+//       high and the "correction" leaves the note exactly where it was; on NOISE
+//       it reports a confident frequency that is nothing but hiss. A corrector
+//       built on it therefore chased the wrong number, or a number that was not
+//       a pitch at all - which is heard as "nothing happened".
+//
+//    2. The shifter applied its grain restart correction to BOTH read heads at
+//       once, so the head that was at full window took the whole correction as a
+//       step - a click, once per grain - and it restarted at a fixed offset, so
+//       the two halves of the crossfade were not the same waveform. That is the
+//       granular flutter the old stage had, and it is why it could not be tuned
+//       by ear.
+//
+//  So this file asserts, on rendered audio:
+//
+//    * a note is detected as a note, at the right pitch, at every session rate;
+//    * a strong octave partial does not move the reading an octave;
+//    * noise and silence are reported as UNKNOWN rather than as a pitch;
+//    * the shifter moves a tone by the ratio it is given, and the tone comes out
+//      as a tone - the granular residue is bounded, not just present;
+//    * at unity the shifter is as transparent as its design allows.
+//
+//  Both structs are cut out of Source/ by tests/pitch/extract.py and #included
+//  below, so this harness always measures the shipping code rather than a copy of
+//  it that can drift. Every control value below is the plugin's own.
+// =============================================================================
+
+#include "shim.h"
+
+#include <algorithm>
+#include <cmath>
+#include <cstddef>
+#include <cstdio>
+#include <string>
+#include <vector>
+
+#include "extracted_pitch.inc"
+
+namespace
+{
+constexpr double kTwoPi = 6.283185307179586;
+int gFailures = 0;
+
+void check (bool condition, const std::string& what)
+{
+    std::printf ("%s %s\n", condition ? "  ok  " : "FAILED", what.c_str());
+
+    if (! condition)
+        ++gFailures;
+}
+
+/** A deterministic noise source, so a failure is reproducible. */
+struct Noise
+{
+    explicit Noise (std::uint32_t seed) : state (seed) {}
+
+    float next() noexcept
+    {
+        state ^= state << 13;
+        state ^= state >> 17;
+        state ^= state << 5;
+        return static_cast<float> (static_cast<std::int32_t> (state)) / 2147483648.0f;
+    }
+
+    std::uint32_t state;
+};
+
+/** Amplitude of a sinusoid at `frequency` over a window of `signal`.
+
+    Hann-windowed, because none of the frequencies under test lands on a window
+    boundary, and an unwindowed measurement of those is off by a leak factor
+    rather than by a rounding error. Normalised by the window's coherent gain, so
+    the result is the amplitude of the partial itself.
+*/
+double toneAmplitude (const std::vector<float>& signal, std::size_t start,
+                      std::size_t length, double frequency, double sampleRate)
+{
+    if (length < 4 || start + length > signal.size())
+        return 0.0;
+
+    double real = 0.0, imaginary = 0.0, windowSum = 0.0;
+    const auto n = static_cast<double> (length - 1);
+
+    for (std::size_t i = 0; i < length; ++i)
+    {
+        const double w = 0.5 * (1.0 - std::cos (kTwoPi * static_cast<double> (i) / n));
+        windowSum += w;
+        const double phase = kTwoPi * frequency * static_cast<double> (i) / sampleRate;
+        const double sample = static_cast<double> (signal[start + i]);
+        real += w * sample * std::cos (phase);
+        imaginary -= w * sample * std::sin (phase);
+    }
+
+    if (windowSum <= 0.0)
+        return 0.0;
+
+    return 2.0 * std::sqrt (real * real + imaginary * imaginary) / windowSum;
+}
+
+double rms (const std::vector<float>& signal, std::size_t start, std::size_t length)
+{
+    if (length == 0 || start + length > signal.size())
+        return 0.0;
+
+    double sum = 0.0;
+
+    for (std::size_t i = 0; i < length; ++i)
+    {
+        const double sample = static_cast<double> (signal[start + i]);
+        sum += sample * sample;
+    }
+
+    return std::sqrt (sum / static_cast<double> (length));
+}
+
+/** The frequency carrying the most energy in `[low, high]`, by a coarse scan and
+    then a finer one on the winner's neighbourhood. The scan is deliberately
+    crude: what the harness needs is the peak's LOCATION to within a percent, and
+    a parabola on three sampled points then pins it. */
+double dominantFrequency (const std::vector<float>& signal, std::size_t start,
+                          std::size_t length, double sampleRate,
+                          double low, double high)
+{
+    auto best = low;
+    auto bestAmplitude = -1.0;
+
+    const auto scan = [&] (double from, double to, int steps)
+    {
+        for (int i = 0; i <= steps; ++i)
+        {
+            const auto frequency = from + (to - from) * static_cast<double> (i) / steps;
+            const auto amplitude = toneAmplitude (signal, start, length, frequency, sampleRate);
+
+            if (amplitude > bestAmplitude)
+            {
+                bestAmplitude = amplitude;
+                best = frequency;
+            }
+        }
+    };
+
+    scan (low, high, 400);
+    const auto resolution = (high - low) / 100.0;
+    scan (std::max (low, best - resolution), std::min (high, best + resolution), 200);
+    return best;
+}
+
+/** One note through the tracker, decayed to a reading. */
+struct TrackerReading
+{
+    float frequency = 0.0f;
+    float confidence = 0.0f;
+    float periodFrames = 0.0f;
+};
+
+TrackerReading readNote (double sampleRate, double frequency, double seconds,
+                         double secondsOfNoise = 0.0, double partialGain = 0.0,
+                         double partialFrequency = 0.0, std::uint32_t seed = 1,
+                         double level = 0.5)
+{
+    PitchTracker tracker;
+    tracker.prepare (sampleRate);
+
+    Noise noise (seed);
+    const auto frames = static_cast<int> (seconds * sampleRate);
+
+    for (int n = 0; n < frames; ++n)
+    {
+        const auto t = static_cast<double> (n) / sampleRate;
+        double sample = level * std::sin (kTwoPi * frequency * t);
+
+        if (partialGain > 0.0)
+            sample += level * partialGain * std::sin (kTwoPi * partialFrequency * t);
+
+        if (secondsOfNoise > 0.0)
+            sample += secondsOfNoise * noise.next();
+
+        tracker.push (static_cast<float> (sample));
+    }
+
+    return { tracker.frequency(), tracker.confidence(), tracker.periodFrames() };
+}
+
+std::vector<float> renderShifter (double sampleRate, double inputFrequency,
+                                  float ratio, int periodHint, double seconds,
+                                  double level = 0.5)
+{
+    RealtimePitchShifter shifter;
+    shifter.reset();
+
+    const auto frames = static_cast<int> (seconds * sampleRate);
+    std::vector<float> output (static_cast<std::size_t> (frames), 0.0f);
+
+    for (int n = 0; n < frames; ++n)
+    {
+        const auto t = static_cast<double> (n) / sampleRate;
+        const auto input = static_cast<float> (level * std::sin (kTwoPi * inputFrequency * t));
+        output[static_cast<std::size_t> (n)] = shifter.process (input, ratio, periodHint);
+    }
+
+    return output;
+}
+
+double cents (double measured, double expected)
+{
+    return 1200.0 * std::log2 (measured / expected);
+}
+
+void testTrackerFollowsNotes()
+{
+    std::printf ("\nthe detector reads the note that is playing\n");
+
+    for (const auto frequency : { 55.0, 82.407, 110.0, 220.0, 440.0, 880.0 })
+    {
+        const auto reading = readNote (48000.0, frequency, 1.5);
+        const auto error = std::abs (cents (reading.frequency, frequency));
+
+        check (error < 20.0,
+               "a " + std::to_string (frequency) + " Hz tone reads "
+                   + std::to_string (reading.frequency) + " Hz ("
+                   + std::to_string (static_cast<int> (error)) + " cents off, confidence "
+                   + std::to_string (reading.confidence) + ")");
+        check (reading.confidence > 0.7f, "  ... and it is confident about it");
+    }
+}
+
+void testTrackerIsRateIndependent()
+{
+    std::printf ("\nthe reading does not move with the session rate\n");
+
+    for (const auto sampleRate : { 44100.0, 48000.0, 88200.0, 96000.0 })
+    {
+        const auto reading = readNote (sampleRate, 220.0, 1.5);
+        const auto error = std::abs (cents (reading.frequency, 220.0));
+
+        check (error < 20.0,
+               "220 Hz at " + std::to_string (static_cast<int> (sampleRate)) + " Hz reads "
+                   + std::to_string (reading.frequency) + " Hz ("
+                   + std::to_string (static_cast<int> (error)) + " cents off)");
+    }
+}
+
+void testTrackerHoldsTheOctave()
+{
+    std::printf ("\na strong octave partial does not move the reading an octave\n");
+
+    // A tone whose second harmonic is nearly as loud as its fundamental - the
+    // reed and the guitar string the crossing counter used to read an octave
+    // high. YIN's normalisation is what keeps it on the note.
+    const auto reading = readNote (48000.0, 220.0, 1.5, 0.0, 0.8, 440.0);
+    const auto error = std::abs (cents (reading.frequency, 220.0));
+
+    check (error < 40.0,
+           "220 Hz with an 0.8x 440 Hz partial reads " + std::to_string (reading.frequency)
+               + " Hz (" + std::to_string (static_cast<int> (error)) + " cents off)");
+}
+
+void testTrackerRejectsNoise()
+{
+    std::printf ("\nnoise and silence are reported as unknown, not as a pitch\n");
+
+    PitchTracker silent;
+    silent.prepare (48000.0);
+
+    for (int n = 0; n < 96000; ++n)
+        silent.push (0.0f);
+
+    check (silent.confidence() < 1.0e-3f,
+           "silence reports no confidence at all (" + std::to_string (silent.confidence()) + ")");
+
+    // Half a second of noise in, half a second of a note after it: the detector
+    // has to have said nothing during the noise and to find the note after it.
+    PitchTracker tracker;
+    tracker.prepare (48000.0);
+    Noise noise (7);
+
+    auto worstDuringNoise = 0.0f;
+
+    for (int n = 0; n < 192000; ++n)
+    {
+        const auto t = static_cast<double> (n) / 48000.0;
+        const auto sample = n < 96000 ? 0.3f * noise.next()
+                                      : static_cast<float> (0.5 * std::sin (kTwoPi * 330.0 * t));
+        tracker.push (sample);
+
+        if (n > 24000 && n < 96000)
+            worstDuringNoise = std::max (worstDuringNoise, tracker.confidence());
+    }
+
+    check (worstDuringNoise < 0.5f,
+           "white noise never reaches the correction gate (peak confidence "
+               + std::to_string (worstDuringNoise) + ")");
+    check (std::abs (cents (tracker.frequency(), 330.0)) < 20.0,
+           "the note after the noise reads " + std::to_string (tracker.frequency()) + " Hz");
+}
+
+void testTrackerFollowsThroughNoise()
+{
+    std::printf ("\na note is still found when it is riding on noise\n");
+
+    // 10 dB SNR: a breathy voice or a distorted guitar. The reading may wander,
+    // the note has to stay the note.
+    const auto reading = readNote (48000.0, 440.0, 1.5, 0.15, 0.0, 0.0, 3);
+    const auto error = std::abs (cents (reading.frequency, 440.0));
+
+    check (error < 40.0,
+           "440 Hz at 10 dB SNR reads " + std::to_string (reading.frequency) + " Hz ("
+               + std::to_string (static_cast<int> (error)) + " cents off, confidence "
+               + std::to_string (reading.confidence) + ")");
+}
+
+void testShifterMovesThePitch()
+{
+    std::printf ("\nthe shifter moves a tone by the ratio it is given\n");
+
+    for (const auto ratio : { 1.029302f, 0.971532f, 1.059463f })
+    {
+        const auto input = 220.0;
+        const auto expected = input * ratio;
+        const auto hint = static_cast<int> (std::lround (48000.0 / input));
+        const auto rendered = renderShifter (48000.0, input, ratio, hint, 2.0);
+
+        const auto window = static_cast<std::size_t> (48000.0);
+        const auto start = rendered.size() - window;
+        const auto measured = dominantFrequency (rendered, start, window, 48000.0,
+                                                 expected * 0.9, expected * 1.1);
+        const auto error = std::abs (cents (measured, expected));
+
+        check (error < 20.0,
+               "a 220 Hz tone at ratio " + std::to_string (ratio) + " reads "
+                   + std::to_string (measured) + " Hz (expected "
+                   + std::to_string (expected) + ", "
+                   + std::to_string (static_cast<int> (error)) + " cents off)");
+    }
+}
+
+void testSpliceResidueIsBounded()
+{
+    std::printf ("\nthe shifted tone comes out as a tone, not as grains\n");
+
+    const auto input = 220.0;
+    const auto ratio = 1.029302f;
+    const auto expected = input * ratio;
+    const auto hint = static_cast<int> (std::lround (48000.0 / input));
+    const auto rendered = renderShifter (48000.0, input, ratio, hint, 2.0);
+
+    const auto window = static_cast<std::size_t> (48000.0);
+    const auto start = rendered.size() - window;
+    const auto total = rms (rendered, start, window);
+    const auto carrier = toneAmplitude (rendered, start, window, expected, 48000.0) / std::sqrt (2.0);
+
+    // Whatever is in the output that is not the shifted tone is the granular
+    // residue: grain-rate amplitude modulation, sidebands from a splice that is
+    // not phase-locked, clicks. It is reported in dB below the tone, which is
+    // the only form of the number a listener can be asked to agree with.
+    const auto residue = std::sqrt (std::max (0.0, total * total - carrier * carrier));
+    const auto residueDb = total > 0.0 ? 20.0 * std::log10 (std::max (1.0e-9, residue / total)) : 0.0;
+
+    check (residueDb < -20.0,
+           "granular residue sits " + std::to_string (residueDb) + " dB below the shifted tone");
+
+    const auto expectedLevel = 0.5 / std::sqrt (2.0);
+    check (std::abs (20.0 * std::log10 (std::max (1.0e-9, total / expectedLevel))) < 1.5,
+           "and the tone keeps its level through the shifter ("
+               + std::to_string (20.0 * std::log10 (total / expectedLevel)) + " dB)");
+}
+
+void testUnityIsTransparent()
+{
+    std::printf ("\nat unity the shifter is as transparent as its design allows\n");
+
+    const auto input = 220.0;
+    const auto hint = static_cast<int> (std::lround (48000.0 / input));
+    const auto rendered = renderShifter (48000.0, input, 1.0f, hint, 2.0);
+
+    const auto window = static_cast<std::size_t> (48000.0);
+    const auto start = rendered.size() - window;
+    const auto total = rms (rendered, start, window);
+    const auto expectedLevel = 0.5 / std::sqrt (2.0);
+
+    check (std::abs (20.0 * std::log10 (std::max (1.0e-9, total / expectedLevel))) < 0.5,
+           "a unity-ratio sine keeps its level (" + std::to_string (20.0 * std::log10 (total / expectedLevel))
+               + " dB)");
+
+    // With a whole-period splice there is no grain-rate modulation to hear: what
+    // is left is the interpolation error at the join. A ratio well inside one
+    // cent is what "inaudible" means for a stationary tone.
+    const auto carrier = toneAmplitude (rendered, start, window, input, 48000.0) / std::sqrt (2.0);
+    const auto residue = std::sqrt (std::max (0.0, total * total - carrier * carrier));
+    const auto residueDb = 20.0 * std::log10 (std::max (1.0e-9, residue / total));
+
+    check (residueDb < -25.0,
+           "and the unity splice leaves " + std::to_string (residueDb) + " dB of residue");
+}
+
+void printDiagnostics()
+{
+    std::printf ("\n   Diagnostic: the detector's reading for a set of real notes, at 48 kHz\\n");
+
+    for (const auto frequency : { 55.0, 110.0, 146.832, 196.0, 246.942, 329.628, 440.0, 659.255 })
+    {
+        const auto reading = readNote (48000.0, frequency, 1.5);
+        std::printf ("       %8.3f Hz  ->  %8.3f Hz  %6.1f cents  conf %.2f\n", frequency,
+                     static_cast<double> (reading.frequency),
+                     cents (reading.frequency, frequency),
+                     static_cast<double> (reading.confidence));
+    }
+}
+} // namespace
+
+int main()
+{
+    std::printf ("pitch stage harness (autotune detector and shifter)\n");
+
+    testTrackerFollowsNotes();
+    testTrackerIsRateIndependent();
+    testTrackerHoldsTheOctave();
+    testTrackerRejectsNoise();
+    testTrackerFollowsThroughNoise();
+    testShifterMovesThePitch();
+    testSpliceResidueIsBounded();
+    testUnityIsTransparent();
+    printDiagnostics();
+
+    std::printf ("\n%s (%d failure%s)\n", gFailures == 0 ? "PITCH CHECK PASSED" : "FAILURES PRESENT",
+                 gFailures, gFailures == 1 ? "" : "s");
+    return gFailures == 0 ? 0 : 1;
+}

@@ -761,6 +761,374 @@ void testDurationsAndScalesAreSane()
     }
 }
 
+// =============================================================================
+//  THE REPITCH STAGE.
+//
+//  The rig above says where the transport goes. This says what the machine
+//  SOUNDS like while it goes there: the stage the engine runs on the finished
+//  frame, reading it back at the platter's own speed. Three claims are worth
+//  checking, and each one is what a listener would hear if it broke:
+//
+//    1. at speed nothing changes. The stage is a delay line, so a fault here is
+//       heard as latency or as a doubled signal rather than as a pitch;
+//    2. a gesture bends the pitch BY the platter's speed - a coast is the
+//       platter's own curve read as a pitch - and the bend is deep enough to be
+//       the gesture rather than a colour;
+//    3. the delay a bend costs is bounded, and the servo gives it back, so the
+//       plugin does not sit a quarter of a second behind the host afterwards.
+//
+//  All three are read off the shipped struct, driven frame by frame with the
+//  same `platter()` the engine hands it - so this is the machine's pitch, not a
+//  restatement of it.
+// =============================================================================
+
+/** A sine at the harness rate, with its own phase, so the frequency of the
+    OUTPUT can be MEASURED by its crossings rather than assumed to be the
+    input's. */
+struct Sine
+{
+    double phase = 0.0;
+    double step = 0.0;
+
+    explicit Sine (double hz, double rate = kRate) : step (hz / rate) {}
+
+    float next() noexcept
+    {
+        phase += step;
+        if (phase >= 1.0)
+            phase -= 1.0;
+
+        return static_cast<float> (std::sin (phase * 2.0 * 3.14159265358979323846));
+    }
+};
+
+/** Positive-going crossings over the frames it has been fed, as a frequency.
+    The window is the measurement: a coast is a moving pitch, so a count says
+    what the pitch was over that span - which is why the expectations below are
+    built from the platter's own average over the same span. */
+struct Crossings
+{
+    int frames = 0;
+    int crossings = 0;
+    float previous = 0.0f;
+
+    void push (float sample) noexcept
+    {
+        ++frames;
+
+        if (previous <= 0.0f && sample > 0.0f)
+            ++crossings;
+
+        previous = sample;
+    }
+
+    double hz (double rate = kRate) const noexcept
+    {
+        return frames > 0 ? crossings * rate / frames : 0.0;
+    }
+};
+
+void testRepitchIsIdentityAtSpeed()
+{
+    std::printf ("at speed the repitch stage is the identity, frame for frame\n");
+
+    RepitchStage stage;
+    stage.prepare (kRate);
+
+    std::vector<float> input, output;
+    Sine sine (220.0);
+
+    for (int frame = 0; frame < 9600; ++frame)
+    {
+        const auto sample = sine.next();
+        input.push_back (sample);
+
+        std::array<float, 2> frameData { sample, sample * 0.5f };
+        stage.processFrame (frameData, 2, 1.0f);
+        output.push_back (frameData[0]);
+    }
+
+    int mismatches = 0;
+    for (std::size_t index = 0; index < output.size(); ++index)
+        if (output[index] != input[index])
+            ++mismatches;
+
+    check (mismatches == 0,
+           "a machine at speed passes every frame through untouched, with no shift at all");
+    check (stage.slackFrames() <= 1.5f,
+           "and the read head stands one frame behind the write head, not a line's worth: "
+               + std::to_string (stage.slackFrames()) + " frames");
+
+    // The second channel rides the same heads on its own buffer.
+    RepitchStage stereo;
+    stereo.prepare (kRate);
+    Sine left (220.0), right (330.0);
+    float worstRight = 0.0f;
+
+    for (int frame = 0; frame < 4800; ++frame)
+    {
+        const auto leftSample = left.next();
+        const auto rightSample = right.next();
+        std::array<float, 2> frameData { leftSample, rightSample };
+        stereo.processFrame (frameData, 2, 1.0f);
+
+        if (frame > 100)
+            worstRight = std::max (worstRight, std::abs (frameData[1] - rightSample));
+    }
+
+    check (worstRight == 0.0f, "and the right channel is not reading the left channel's tape");
+}
+
+void testRepitchBendsByThePlatter()
+{
+    std::printf ("a coast bends the pitch down by the platter's own speed\n");
+
+    Drive drive (Drive::play);
+    drive.advanceSeconds (0.25);
+
+    RepitchStage stage;
+    stage.prepare (kRate);
+
+    Sine sine (220.0);
+
+    // A quarter of a second of PLAY first, so the stage is settled, and then a
+    // third of the STOP coast - which is the part the engine's gate still
+    // passes. The expected pitch is the platter's AVERAGE over exactly those
+    // frames: read rate and platter are the same number, so the pitch is the
+    // platter's own curve, not a curve of this stage's invention.
+    for (int frame = 0; frame < static_cast<int> (kRate * 0.25); ++frame)
+    {
+        drive.advance (1);
+        const auto sample = sine.next();
+        std::array<float, 2> frameData { sample, sample };
+        stage.processFrame (frameData, 2, drive.rig.platter());
+    }
+
+    drive.block (Drive::stop);
+
+    Crossings crossings;
+    double platterSum = 0.0;
+    const int window = static_cast<int> (kRate * 0.35);
+
+    for (int frame = 0; frame < window; ++frame)
+    {
+        drive.advance (1);
+        const auto platter = drive.rig.platter();
+        platterSum += platter;
+
+        const auto sample = sine.next();
+        std::array<float, 2> frameData { sample, sample };
+        stage.processFrame (frameData, 2, platter);
+        crossings.push (frameData[0]);
+    }
+
+    const auto expected = 220.0 * platterSum / window;
+    const auto measured = crossings.hz();
+
+    check (std::abs (measured - expected) <= expected * 0.04,
+           "the coast's pitch is the platter's average speed: expected " + std::to_string (expected)
+               + " Hz, heard " + std::to_string (measured) + " Hz");
+    check (measured < 205.0,
+           "and the bend is real: the coast is already below the input's 220 Hz ("
+               + std::to_string (measured) + " Hz)");
+
+    // The slack the bend spent is the delay it now owes - and it has to be
+    // THERE, or the stage was not reading slower than the write head at all.
+    const auto slack = stage.slackFrames();
+    check (slack > static_cast<float> (kRate) * 0.05f,
+           "a coast that slow leaves the read head behind the write head: "
+               + seconds (static_cast<int> (slack)));
+    check (slack < static_cast<float> (kRate) * RepitchStage::hardCapSeconds,
+           "and the slack stays inside the stage's own cap");
+}
+
+void testRepitchSpindownBendsDeep()
+{
+    std::printf ("a spindown walks the programme down through the octaves\n");
+
+    Drive drive (Drive::play);
+    drive.advanceSeconds (0.25);
+    drive.block (Drive::play, true);          // the power cut, held
+
+    RepitchStage stage;
+    stage.prepare (kRate);
+
+    Sine sine (220.0);
+
+    // Run the run-down until the platter is at a third of speed, then measure over
+    // the next tenth of a second - a third of 220 Hz is 73, an octave and a half
+    // down, and it is still inside the range where the read follows the platter
+    // rather than eating the slack under the gate.
+    const int guard = static_cast<int> (kRate * 4.0);
+    int frames = 0;
+
+    while (frames < guard && drive.rig.platter() > 0.35f)
+    {
+        drive.advance (1);
+        ++frames;
+
+        const auto sample = sine.next();
+        std::array<float, 2> frameData { sample, sample };
+        stage.processFrame (frameData, 2, drive.rig.platter());
+    }
+
+    check (frames < guard, "a held spindown reaches a quarter speed within its own gesture");
+
+    Crossings crossings;
+    double platterSum = 0.0;
+    const int window = static_cast<int> (kRate * 0.10);
+
+    for (int frame = 0; frame < window; ++frame)
+    {
+        drive.advance (1);
+        const auto platter = drive.rig.platter();
+        platterSum += platter;
+
+        const auto sample = sine.next();
+        std::array<float, 2> frameData { sample, sample };
+        stage.processFrame (frameData, 2, platter);
+        crossings.push (frameData[0]);
+    }
+
+    const auto expected = 220.0 * platterSum / window;
+    const auto measured = crossings.hz();
+
+    check (expected < 90.0, "an octave and a half down, the expectation is under 90 Hz: "
+                                + std::to_string (expected) + " Hz");
+    check (std::abs (measured - expected) <= expected * 0.15,
+           "and the spindown's pitch is the platter's speed there too: expected "
+               + std::to_string (expected) + " Hz, heard " + std::to_string (measured) + " Hz");
+    check (measured > 0.0, "the tape is still moving that slowly, so it still makes a pitch");
+}
+
+void testRepitchReturnsToSyncAfterAGesture()
+{
+    std::printf ("a gesture's delay is bounded, and the servo gives it back\n");
+
+    // A full cycle: PLAY, STOP to rest, START again, and then let it run. Nothing
+    // here is exotic - it is the sequence the panel's own keys invite - and what
+    // it costs is a delay, which is the one thing this stage must not keep.
+    Drive drive (Drive::play);
+    drive.advanceSeconds (0.25);
+
+    RepitchStage stage;
+    stage.prepare (kRate);
+
+    Sine sine (220.0);
+    float worstSlack = 0.0f;
+    float worstStep = 0.0f;
+    float previousRate = stage.rate;
+    bool rateInRange = true;
+
+    const auto run = [&] (double seconds)
+    {
+        const int count = static_cast<int> (seconds * kRate);
+
+        for (int frame = 0; frame < count; ++frame)
+        {
+            drive.advance (1);
+            worstSlack = std::max (worstSlack, stage.slackFrames());
+
+            const auto sample = sine.next();
+            std::array<float, 2> frameData { sample, sample };
+            stage.processFrame (frameData, 2, drive.rig.platter());
+
+            const auto step = std::abs (stage.rate - previousRate);
+            worstStep = std::max (worstStep, step);
+            previousRate = stage.rate;
+
+            if (stage.rate < 0.0f || stage.rate > 1.0f + RepitchStage::maxPullUp + 1.0e-4f)
+                rateInRange = false;
+        }
+    };
+
+    run (0.25);                    // settle at speed
+    drive.block (Drive::stop);
+    run (1.0);                     // coast to rest and sit there
+    drive.block (Drive::start);
+    run (1.5);                     // spin up; the rig settles into PLAY
+
+    // The servo's own deadline. What a spin-up spends is around four tenths of
+    // a second of slack, and the pull is a small one - over a second of it the
+    // residue must be most of the way gone, not creeping.
+    const auto afterTheSpinUp = stage.slackFrames();
+    run (4.0);
+    const auto afterThePull = stage.slackFrames();
+
+    check (afterTheSpinUp > static_cast<float> (kRate) * 0.1f,
+           "a spin-up really does spend the slack (the bend is the delay): "
+               + seconds (static_cast<int> (afterTheSpinUp)));
+    check (afterThePull < afterTheSpinUp * 0.2f,
+           "and four seconds of servo takes four fifths of it back: "
+               + seconds (static_cast<int> (afterThePull)) + " from "
+               + seconds (static_cast<int> (afterTheSpinUp)));
+
+    run (10.0);                    // the exponential tail of the pull, to the frame
+
+    check (rateInRange, "the read head never runs backwards and never past its own pull-up limit");
+    check (worstSlack <= static_cast<float> (kRate) * RepitchStage::hardCapSeconds + 1.0f,
+           "the slack stays under the stage's cap through a whole cycle: "
+               + seconds (static_cast<int> (worstSlack)));
+    // The rate's one pole is 15 ms, so the largest rate change the stage can make
+    // in one frame - a full 1.4 of travel, from the silent eat to a bend - is
+    // about 0.002. A rate that STEPPED would land its whole travel in one frame,
+    // which is the fault this reads for.
+    check (worstStep <= 0.0025f,
+           "and the read rate is a glide rather than a step (worst step per frame: "
+               + std::to_string (worstStep) + ")");
+
+    const auto slack = stage.slackFrames();
+    check (slack <= static_cast<float> (kRate) * 0.005f,
+           "after the gesture the read head is back within 5 ms of the write head: "
+               + seconds (static_cast<int> (slack)));
+    check (std::abs (stage.rate - 1.0f) < 1.0e-3f,
+           "and the read is at speed, not still pulling: " + std::to_string (stage.rate));
+
+    // The identity is the whole point of the servo: once the slack is back, at
+    // speed the stage must be transparent again - a plugin that stayed slightly
+    // fast for the rest of the session would be worse than the delay it fixed.
+    // The output is checked against the input DELAYED by whatever the stage still
+    // owes, because a frame or two of slack is the interpolation's own floor: a
+    // lingering PITCH would show up as a mismatch at every lag, and a lingering
+    // pull as an output that is sharp of 220 Hz.
+    const auto owed = static_cast<int> (std::lround (slack));
+    std::vector<float> input;
+    std::vector<float> output;
+    Sine settled (220.0);
+
+    for (int frame = 0; frame < static_cast<int> (kRate * 0.5); ++frame)
+    {
+        const auto sample = settled.next();
+        input.push_back (sample);
+
+        std::array<float, 2> frameData { sample, sample };
+        stage.processFrame (frameData, 2, drive.rig.platter());
+        output.push_back (frameData[0]);
+    }
+
+    // The tolerance is the interpolator's own business: the read stands at a
+    // fractional frame, so it reads between two samples, which is a fixed phase
+    // and a fixed few percent of the top octave - not a pitch. A LINGERING PITCH
+    // would show up two orders of magnitude larger than this over half a second,
+    // because the phase error accumulates; a lingering delay as a growing
+    // mismatch at every frame.
+    float worst = 0.0f;
+    for (std::size_t index = static_cast<std::size_t> (juce::jmax (0, owed)); index < output.size(); ++index)
+        worst = std::max (worst, std::abs (output[index]
+                                           - input[index - static_cast<std::size_t> (juce::jmax (0, owed))]));
+
+    check (worst <= 0.01f,
+           "and with the slack back in, at speed the stage is transparent again (worst sample: "
+               + std::to_string (worst) + ")");
+
+    Crossings settledCrossings;
+    for (const auto sample : output)
+        settledCrossings.push (sample);
+
+    check (std::abs (settledCrossings.hz() - 220.0) < 1.0,
+           "with no pitch of its own left: " + std::to_string (settledCrossings.hz()) + " Hz");
+}
+
 int run()
 {
     testPlayIsSteady();
@@ -777,6 +1145,10 @@ int run()
     testTheSettingsCompose();
     testEngineFacingProperties();
     testDurationsAndScalesAreSane();
+    testRepitchIsIdentityAtSpeed();
+    testRepitchBendsByThePlatter();
+    testRepitchSpindownBendsDeep();
+    testRepitchReturnsToSyncAfterAGesture();
 
     if (failures == 0)
         std::printf ("TRANSPORT CHECK PASSED (0 failures)\n");

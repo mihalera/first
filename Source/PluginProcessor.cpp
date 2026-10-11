@@ -2611,14 +2611,13 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     preDriveGain = 1.0f;
     flutterScale = 1.0f;
 
-    autoTunePhase.fill (0.0f);
-    autoTuneFrequency.fill (440.0f);
-    autoTuneEnvelope.fill (0.0f);
-    autoTunePreviousSample.fill (0.0f);
-    autoTuneSampleCounter.fill (0.0f);
-    autoTuneZeroCrossings.fill (0.0f);
+    autoTuneCorrectionSmoothed.fill (1.0f);
+    // The trackers are TOLD the rate rather than left at their default: their
+    // decimation is what makes a lag mean the same frequency at every session
+    // rate, so a rate change has to rebuild it. The shifters hold no rate of
+    // their own - their grains are in frames - so a reset is all they need.
+    for (auto& tracker : autoTuneTrackers) tracker.prepare (sampleRate);
     for (auto& shifter : autoTuneShifters) shifter.reset();
-    autoTuneProcessStride = juce::jmax (1, juce::roundToInt (sampleRate / 200.0f));
 
     // The sample rate changed, so every time-domain constant has to be rebuilt.
     // The tone filters are cached rather than recomputed per block, and their
@@ -2671,6 +2670,11 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // rate is the ENGINE's, because the ramps advance per engine frame and the
     // gesture durations are wall-clock seconds.
     transport.prepare (static_cast<double> (sampleRate) * oversamplingRateFactor);
+
+    // The repitch stage is prepared at the ENGINE's rate for the same reason the
+    // rig is: it advances once per engine frame, so its seconds and its samples
+    // belong to the oversampled rate, not the host's.
+    repitchStage.prepare (static_cast<double> (sampleRate) * oversamplingRateFactor);
     if (spindownParam != nullptr)
         spindownHeld.store (spindownParam->load() >= 0.5f, std::memory_order_relaxed);
 
@@ -3220,55 +3224,90 @@ const std::array<int, 12>& FirstAudioProcessor::scaleOffsetsForMode (int modeInd
     return scales[static_cast<std::size_t> (juce::jlimit (0, 5, modeIndex))];
 }
 
+/**
+    The optional pitch correction, one frame at a time.
+
+    Where the reading comes from, and what it is trusted for, is the whole of what
+    changed here. The estimate is YIN's (see PitchTracker: a period detector, not
+    a crossing counter), and the stage only corrects while that detector is
+    actually CONFIDENT. Below the confidence gate the correction glides back to
+    unity and the shifter is told to read at unity with a phase-locked splice, so
+    the note passes through untouched and unclicked; the alternative - correcting
+    towards a number the detector made up out of a cymbal or a breath - is the
+    failure the panel used to call "does nothing", because what it did do was
+    audible only as wrongness.
+
+    The shifter is handed the detected PERIOD on every frame rather than a fixed
+    grain. That is what makes the crossfade a crossfade: its two read heads land
+    a whole period apart on a periodic signal, so the fading halves are the same
+    waveform and the splice is inaudible. A smooth pad, a chord and a noisy
+    fret-release all have readings the detector withholds, and those are exactly
+    the frames where the fallback grain is used.
+
+    TUNE AMOUNT is the gate's partner rather than its rival: it sets how much of
+    the correction is asked for AND how fast the request travels - half the amount
+    is half the pull at about ten times the glide, which is the difference between
+    a note being nudged and a note being snapped onto the grid.
+*/
 void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, float rate) noexcept
 {
     if (samples == nullptr || autoTuneParam == nullptr || autoTuneParam->load() < 0.5f)
         return;
+
     const auto amount = juce::jlimit (0.0f, 1.0f,
                                       autoTuneAmountParam != nullptr ? autoTuneAmountParam->load() : 0.0f);
-    if (amount <= 1.0e-5f) return;
+
+    if (amount <= 1.0e-5f)
+        return;
+
     const auto tonic = tuningTonicParam != nullptr ? static_cast<int> (tuningTonicParam->load()) : 0;
     const auto mode = tuningModeParam != nullptr ? static_cast<int> (tuningModeParam->load()) : 0;
     const auto& offsets = scaleOffsetsForMode (mode);
+    const auto stageRate = rate > 1.0f ? rate : 48000.0f;
+
+    // How fast the correction is allowed to travel, in frames of this stage's
+    // rate: a tenth of the way to the target in about 8 ms at full amount, which
+    // is a corrector's snap, and about 80 ms at a third of it, which is a
+    // listener's glide. Below that the tune follows the voice rather than
+    // replacing it.
+    const auto glide = 0.0005f + 0.012f * amount;
 
     for (int channel = 0; channel < juce::jlimit (0, 2, channels); ++channel)
     {
         const auto i = static_cast<std::size_t> (channel);
         const auto input = samples[i];
-        ++autoTuneSampleCounter[i];
-        if (autoTunePreviousSample[i] <= 0.0f && input > 0.0f && std::abs (input) > 1.0e-4f)
+        auto& tracker = autoTuneTrackers[i];
+        auto& shifter = autoTuneShifters[i];
+
+        tracker.push (input);
+
+        const auto detected = tracker.frequency();
+        const auto confidence = tracker.confidence();
+
+        // Below the gate the stage is transparent: unity ratio, and a splice
+        // length of zero tells the shifter to use its fixed fallback grain.
+        if (confidence < 0.5f || detected < 45.0f || detected > 1400.0f)
         {
-            const auto period = autoTuneSampleCounter[i];
-            const auto hz = rate / juce::jmax (1.0f, period);
-            if (period > 1.0f && hz >= 45.0f && hz <= 1400.0f)
-            {
-                autoTuneFrequency[i] += (hz - autoTuneFrequency[i]) * 0.08f;
-                autoTuneZeroCrossings[i] = juce::jmin (8.0f, autoTuneZeroCrossings[i] + 1.0f);
-            }
-            autoTuneSampleCounter[i] = 0.0f;
-        }
-        autoTunePreviousSample[i] = input;
-        autoTuneEnvelope[i] += (std::abs (input) - autoTuneEnvelope[i])
-                             * (std::abs (input) > autoTuneEnvelope[i] ? 0.08f : 0.001f);
-        autoTuneZeroCrossings[i] = juce::jmax (0.0f, autoTuneZeroCrossings[i] - 0.00003f);
-        const auto confidence = juce::jlimit (0.0f, 1.0f, (autoTuneZeroCrossings[i] - 2.0f) / 4.0f)
-                              * juce::jlimit (0.0f, 1.0f, autoTuneEnvelope[i] / 0.01f);
-        if (confidence < 0.05f)
-        {
-            autoTuneCorrectionSmoothed[i] += (1.0f - autoTuneCorrectionSmoothed[i]) * 0.002f;
-            samples[i] = autoTuneShifters[i].process (input, 1.0f, 0.0f);
+            autoTuneCorrectionSmoothed[i] += (1.0f - autoTuneCorrectionSmoothed[i]) * glide;
+            samples[i] = shifter.process (input, autoTuneCorrectionSmoothed[i], 0);
             continue;
         }
 
-        const auto midi = 69.0f + 12.0f * std::log2 (juce::jmax (1.0f, autoTuneFrequency[i]) / 440.0f);
+        // The note the reading lands closest to, and then the nearest note the
+        // chosen key actually contains. CHROMATIC is every semitone, so the
+        // second step is a no-op there and the first one is the whole of it.
+        const auto midi = 69.0f + 12.0f * std::log2 (juce::jmax (1.0f, detected) / 440.0f);
         const auto nearest = juce::roundToInt (midi);
         auto target = nearest;
+
         if (mode != 0)
         {
             auto best = std::numeric_limits<int>::max();
+
             for (int candidate = nearest - 12; candidate <= nearest + 12; ++candidate)
             {
                 const auto pitchClass = ((candidate - tonic) % 12 + 12) % 12;
+
                 if (std::find (offsets.begin(), offsets.end(), pitchClass) != offsets.end()
                     && std::abs (candidate - nearest) < best)
                 {
@@ -3277,10 +3316,30 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
                 }
             }
         }
+
         const auto targetHz = 440.0f * std::pow (2.0f, (static_cast<float> (target) - 69.0f) / 12.0f);
-        const auto ratio = juce::jlimit (0.94f, 1.06f, targetHz / juce::jmax (1.0f, autoTuneFrequency[i]));
-        autoTuneCorrectionSmoothed[i] += (ratio - autoTuneCorrectionSmoothed[i]) * 0.003f * amount;
-        samples[i] = autoTuneShifters[i].process (input, autoTuneCorrectionSmoothed[i], amount * confidence);
+
+        // A semitone either way: a corrector pulls a note ONTO the grid, it does
+        // not transpose. A wider grip would chase a reading the detector is
+        // reporting an octave away and take the performance with it.
+        const auto ideal = juce::jlimit (0.94f, 1.06f, targetHz / juce::jmax (1.0f, detected));
+
+        // TUNE AMOUNT is a DEPTH as well as a speed. Half the amount is half the
+        // pull - a note a hair sharp lands, a note a quarter-tone flat is only
+        // nudged - which is the setting a singer reaches for when they want the
+        // corrector felt rather than heard. At full amount the pull is the whole
+        // semitone and the glide is 8 ms, which is the snap the control promises.
+        const auto ratio = 1.0f + (ideal - 1.0f) * amount;
+
+        autoTuneCorrectionSmoothed[i] += (ratio - autoTuneCorrectionSmoothed[i]) * glide;
+
+        // The splice length is the period of the material in frames of the
+        // SHIFTER's rate. The tracker measured it at its own decimated rate, so
+        // it is rescaled here - the one place that knows both rates.
+        const auto stagePeriod = tracker.periodFrames() * stageRate / tracker.analysisRateHz();
+        const auto periodHint = stagePeriod > 0.0f ? juce::roundToInt (stagePeriod) : 0;
+
+        samples[i] = shifter.process (input, autoTuneCorrectionSmoothed[i], periodHint);
     }
 }
 
@@ -6034,6 +6093,28 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         }
 
         // ------------------------------------------------------------------
+        //  THE REPITCH STAGE - the pitch of the transport.
+        //
+        //  Everything above this line reads the platter's speed as a GAIN: the
+        //  level, the modulation depth, the heads' speed response and the gate
+        //  that shapes STOP. None of those can bend a pitch, and a deck slowing
+        //  down is first of all a pitch. This stage is the one place the format
+        //  of the machine's output changes rather than its level: the finished
+        //  frame is recorded into a delay line and read back out at the
+        //  platter's own speed, so a coast walks the programme down through the
+        //  octaves and a spin-up walks it back.
+        //
+        //  It sits AFTER the crossfade, on the frame both legs made, because the
+        //  transport governs both legs - a stopped deck passes nothing, whatever
+        //  its MIX is set to - and it sits BEFORE every gain that follows, so the
+        //  machine's own level, the compensator and the limiter all see the
+        //  pitch-bent signal rather than the other way round. One call per FRAME,
+        //  like the transport's own advance: the delay line's two heads move once
+        //  per frame and the two channels are one tape.
+        // ------------------------------------------------------------------
+        repitchStage.processFrame (tapeOutput, activeChannels, platterSpeed);
+
+        // ------------------------------------------------------------------
         //  Subharmonic anti-phase protection.
         //
         //  Runs once per FRAME, after both channels have generated their
@@ -6904,6 +6985,14 @@ bool FirstAudioProcessor::loadNeuralModel (const juce::String& modelJson)
 {
     // Each stage keeps replaced models alive until teardown, so this installation
     // cannot invalidate a model pointer already captured by process().
+    lastLoadErrorMessage = {};
+
+    if (modelJson.isEmpty())
+    {
+        lastLoadErrorMessage = "EMPTY FILE";
+        return false;
+    }
+
     const bool loadedLeft = neuralL.loadFromJson (modelJson);
     const bool loadedRight = neuralR.loadFromJson (modelJson);
     if (loadedLeft != loadedRight)
@@ -6911,6 +7000,10 @@ bool FirstAudioProcessor::loadNeuralModel (const juce::String& modelJson)
         neuralL.clear();
         neuralR.clear();
     }
+
+    if (! (loadedLeft && loadedRight))
+        lastLoadErrorMessage = "NOT A MODEL FILE";
+
     return loadedLeft && loadedRight;
 }
 
@@ -6920,17 +7013,41 @@ bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
     // .nam converter: the shared model pointer must not end up describing two
     // different networks on the two sides of the image.
 #if J37_HAS_RTNEURAL
+    lastLoadErrorMessage = {};
+
+    if (namJson.isEmpty())
+    {
+        lastLoadErrorMessage = "EMPTY FILE";
+        return false;
+    }
+
     bool loadedLeft = false;
     bool loadedRight = false;
 
     try
     {
         const auto parsed = nlohmann::json::parse (namJson.toStdString());
+
+        // The architecture is checked HERE rather than left to the converter, so
+        // the panel can say which kind of file arrived. WaveNet and the
+        // convolutional "Feather" nets are NAM's other two architectures and
+        // between them account for most models on the model-sharing sites, so
+        // "NEEDS AN LSTM MODEL" is the one failure a user is most likely to
+        // meet - and a bare "INVALID MODEL" would send them looking for a
+        // corrupt file rather than a different download.
+        if (! parsed.contains ("architecture") || ! parsed["architecture"].is_string()
+            || parsed["architecture"].get<std::string>() != "LSTM")
+        {
+            lastLoadErrorMessage = "NEEDS LSTM";
+            return false;
+        }
+
         loadedLeft = neuralL.buildFromNam (parsed);
         loadedRight = neuralR.buildFromNam (parsed);
     }
     catch (...)
     {
+        lastLoadErrorMessage = "NOT JSON";
         loadedLeft = false;
         loadedRight = false;
     }
@@ -6940,6 +7057,10 @@ bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
         neuralL.clear();
         neuralR.clear();
     }
+
+    if (! (loadedLeft && loadedRight) && lastLoadErrorMessage.isEmpty())
+        lastLoadErrorMessage = "BAD SHAPE";
+
     return loadedLeft && loadedRight;
 #else
     juce::ignoreUnused (namJson);
@@ -6949,7 +7070,22 @@ bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
 
 bool FirstAudioProcessor::loadIrFile (const juce::File& irFile)
 {
-    return irStage.loadFromFile (irFile);
+    lastLoadErrorMessage = {};
+
+    if (! irFile.existsAsFile())
+    {
+        lastLoadErrorMessage = "NO SUCH FILE";
+        return false;
+    }
+
+    if (irStage.loadFromFile (irFile))
+        return true;
+
+    // The one way a real WAV gets here is a header JUCE will not decode (an
+    // unsupported codec, or a file that is not audio at all). The reason is
+    // about THIS file, not about the stage.
+    lastLoadErrorMessage = "NOT AUDIO";
+    return false;
 }
 
 void FirstAudioProcessor::clearIr()
