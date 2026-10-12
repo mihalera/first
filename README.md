@@ -1418,6 +1418,7 @@ Source/          the plugin: PluginProcessor, PluginEditor, and DSP
 JUCE/            JUCE 9.0.3, pinned as a git submodule
 .github/         CI: builds VST3 on Windows, VST3 + AU + AUv3 on macOS
 tests/           harnesses that need no JUCE: DSP, transport, knob layout, saved state
+                 plus two source checks - the factory preset table and the theme wiring
 SPLITTING-BIG-FILES.md   how far the long files can be split, and what it costs
 ```
 

@@ -3336,6 +3336,9 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
     static_assert (tabSubtitles.size() == tabSpecs.size(),
                    "every tab page needs its own section caption");
 
+    // Read before the assignment: the page's own painted furniture has to be
+    // invalidated with the page (see the repaint at the foot of this function).
+    const auto previousTab = currentTab;
     currentTab = juce::jlimit (0, numTabs - 1, newTab);
     // The section caption: the active page's own one-line subject, from the same
     // index the page itself came from, so the two can never name different pages.
@@ -3371,6 +3374,17 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
     // styleTabButtons() the selected tab never took its selected colours.
     styleTabButtons();
     resized();
+
+    // A page's own painted furniture has to leave with the page. The SHAPERS
+    // card behind the model picker is drawn by THIS component's paint(), not by
+    // the picker's widgets - and the 30 Hz timer only repaints the knobs, the
+    // switches, the lamp and the deck (see repaintAnimatedSurfaces), which is why
+    // hiding the picker was not enough: its own cells were restored and the card
+    // around and behind them stayed, as the phantom squares on every other page.
+    // The controls panel is the only band paint() varies by tab, so that is the
+    // region, and only when the page actually changed.
+    if (previousTab != currentTab)
+        repaint (getEditorLayout().controls);
 }
 
 //==============================================================================
@@ -6525,6 +6539,17 @@ void FirstAudioProcessorEditor::applyTheme()
     for (auto& label : controlLabels)
         label.setColour (juce::Label::textColourId, palette.secondary);
 
+    // The COMP page's six captions are the same captions as the strip's - the same
+    // 9 pt bold font, the same centred caption band, the same job - but they are a
+    // separate array, and the constructor that builds them sets their text and
+    // their font and never their ink. Unstyled, a juce::Label reads
+    // Label::textColourId off the Look and Feel, which is LookAndFeel_V4's DARK
+    // colour scheme whatever panel is showing: THRESH, RATIO, ATTACK, RELEASE,
+    // MAKEUP and MIX were six white captions on an ivory panel, which is the
+    // "font is not connected to the theme" on the COMP page.
+    for (auto& label : compressorControlLabels)
+        label.setColour (juce::Label::textColourId, palette.secondary);
+
     // Three captions the constructor inked and nothing re-inked: TUNE AMOUNT is a
     // knob page's caption now (the loop above places it in the knob strip), and the
     // TONIC and MODE captions are its peers - the two pages used to share one tab.
@@ -6568,13 +6593,29 @@ void FirstAudioProcessorEditor::applyTheme()
     // so the selected tab keeps its accent highlight across a theme switch.
     styleTabButtons();
 
-    for (auto& slider : controls)
+    // Every knob on the panel, not just the knob strip's. The COMP page's six and
+    // the AUTOTUNE page's TUNE AMOUNT are their own arrays - they carry their own
+    // parameter ids, ranges and text formatting - so a loop over `controls` alone
+    // left their READOUTS unstyled, and an unstyled juce::Slider text box takes its
+    // ink from the Look and Feel's colour scheme, which is V4's dark one on every
+    // panel: those two pages printed their values in the same white as the labels
+    // around them. One dose over all three groups, so the two cannot drift apart
+    // again - and the AUTOTUNE and COMP pages read like the rest of the deck.
+    const auto inkKnob = [&palette] (juce::Slider& slider)
     {
         slider.setColour (juce::Slider::textBoxTextColourId, palette.text);
         slider.setColour (juce::Slider::textBoxBackgroundColourId, palette.readout);
         slider.setColour (juce::Slider::textBoxOutlineColourId, palette.border);
         slider.setColour (juce::Slider::thumbColourId, palette.accent);
-    }
+    };
+
+    for (auto& slider : controls)
+        inkKnob (slider);
+
+    for (auto& slider : compressorControls)
+        inkKnob (slider);
+
+    inkKnob (autoTuneAmountSlider);
 
     const auto styleCombo = [&palette] (juce::ComboBox& box)
     {
@@ -6623,6 +6664,20 @@ void FirstAudioProcessorEditor::applyTheme()
     stylePopupMenu (customLookAndFeel);
     stylePopupMenu (inlineLookAndFeel);
 
+    // The nothing-selected placeholder - the "Factory..." and "User..." the two
+    // preset lists show before anything has been chosen - is drawn by
+    // LookAndFeel_V2::drawComboBoxTextWhenNothingSelected, which reads
+    // ComboBox::textColourId off the LOOK AND FEEL's own colour map and never off
+    // the box it is drawing, so no per-box setColour can reach it. Unstyled it
+    // followed V4's dark scheme and printed those two captions white: on the ivory
+    // panel they were the first words a user reads and the ones they could not
+    // read. Same reasoning as the popup menu above it - style the Look and Feel,
+    // because there is no component to style. Set by NAME, on each of the two,
+    // because tests/theme/check_theme_wiring.py reads exactly this statement to
+    // hold the two in step.
+    customLookAndFeel.setColour (juce::ComboBox::textColourId, palette.text);
+    inlineLookAndFeel.setColour (juce::ComboBox::textColourId, palette.text);
+
     const auto styleWorkflowButton = [&palette] (juce::TextButton& button, bool emphasised)
     {
         button.setColour (juce::TextButton::buttonColourId, palette.raised);
@@ -6634,6 +6689,23 @@ void FirstAudioProcessorEditor::applyTheme()
     // bypassButton is a ToggleButton drawn by J37LookAndFeel::drawToggleButton.
     themeButton.setColour (juce::TextButton::buttonColourId, palette.raised);
     themeButton.setColour (juce::TextButton::textColourOffId, palette.text);
+
+    // The model and IR pickers' four buttons. Their constructor says it re-inks
+    // them per theme "in applyTheme()" and nothing here did, so on charcoal and
+    // metal they kept the ivory panel's raised face and its dark ink - a light pill
+    // with dark text on a black panel, on the one page whose whole point is that
+    // the two pickers read as devices rather than as unstyled widgets. They carry
+    // the same raised-face pill the workflow buttons do, from the same palette.
+    const auto stylePickerButton = [&palette] (juce::TextButton& button)
+    {
+        button.setColour (juce::TextButton::buttonColourId, palette.raised);
+        button.setColour (juce::TextButton::textColourOffId, palette.text);
+        button.setColour (juce::TextButton::buttonOnColourId, palette.raised.darker (0.15f));
+    };
+    stylePickerButton (loadNeuralButton);
+    stylePickerButton (clearNeuralButton);
+    stylePickerButton (loadIrButton);
+    stylePickerButton (clearIrButton);
 
     styleCombo (oversamplingBox);
     styleCombo (instrumentBox);

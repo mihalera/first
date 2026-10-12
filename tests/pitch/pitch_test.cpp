@@ -37,6 +37,14 @@
 #include "shim.h"
 
 #include <algorithm>
+// <array> explicitly: the extracted structs hold their analysis window, their
+// difference tables, the shifter's delay line and its two read heads as
+// std::array, and whether the headers above happen to pull <array> in is a
+// property of the TOOLCHAIN rather than of this harness - it did on the machine
+// this was written on and did NOT on the CI runner's, where every one of those
+// members came out as "field has incomplete type 'std::array<float, N>'" and the
+// harness did not build at all.
+#include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdio>

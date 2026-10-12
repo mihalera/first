@@ -109,6 +109,23 @@ jobs:
       - name: Check the factory preset table
         run: python3 tests/presets/check_presets.py
 
+      # The theme is one palette read through one funnel, and every failure it
+      # has produced on this panel was the same shape: a widget inked once in the
+      # constructor with paletteFor (false) - the IVORY panel's colours - and
+      # never re-inked by applyTheme(), or never inked at all, in which case a
+      # juce::Slider text box, a juce::Label and a juce::ComboBox value all fall
+      # back to the Look and Feel's own colour scheme, which is V4's DARK one
+      # whatever panel is showing. Nothing warns and nothing fails to build; the
+      # control is simply white on an ivory panel, or ivory-backed on charcoal.
+      # Every one of those came from a screenshot report. So the wiring is read out of the
+      # source: every widget member in the header has to be reached by
+      # applyTheme(), and every Look and Feel the editor owns has to carry the
+      # combo placeholder colour - the one drawn from the Look and Feel's own map
+      # rather than the box's, which is why "FACTORY..." and "USER..." stayed
+      # white for as long as they did.
+      - name: Check the theme wiring
+        run: python3 tests/theme/check_theme_wiring.py
+
   # ============================================================================
   #  DSP micro-benchmarks - measurement, never a gate
   #
