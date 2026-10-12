@@ -1669,12 +1669,22 @@ namespace
         //            TransportRig, with the reason they are durations rather than
         //            one-pole time constants, and with the TAPE SPEED / VINYL SPEED
         //            / tempo scales that move them with the deck's own settings.
+        //            Pressed while the HOST's transport is parked it ARMS the key
+        //            instead of running it - the machine waits at rest until the
+        //            DAW rolls - because a take belongs to the DAW and a spin-up
+        //            spent on a pause is a spin-up wasted. The state stays START
+        //            while it waits, which is what keeps the key lit; the engine
+        //            publishes the arm beside it so the panel can say so (see
+        //            armedForHost in TransportRig).
         //
         //  What the transport moves is the machine's LEVEL, its modulation and its
         //  speed response (the same character mapping the SPEED control uses), all
-        //  following one number - the platter's speed. It does not repitch the
-        //  programme: this plugin has no repitch stage, so STOP is a coast to
-        //  silence rather than a DJ-style pitch bend.
+        //  following one number - the platter's speed - and the programme's PITCH
+        //  moves with it, because the repitch stage reads the finished frame back
+        //  at that same number: a coast walks the material down through the
+        //  octaves and a spin-up walks it back. STOP is still a coast to silence,
+        //  since the gate is what stops the sound, but it is a DJ-style bend on
+        //  the way there rather than the fade it used to be.
         // -------------------------------------------------------------------------
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "transport", 1 }, "Transport",
                                                                 juce::StringArray { "Stop", "Play", "Start" },
@@ -2611,14 +2621,13 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     preDriveGain = 1.0f;
     flutterScale = 1.0f;
 
-    autoTunePhase.fill (0.0f);
-    autoTuneFrequency.fill (440.0f);
-    autoTuneEnvelope.fill (0.0f);
-    autoTunePreviousSample.fill (0.0f);
-    autoTuneSampleCounter.fill (0.0f);
-    autoTuneZeroCrossings.fill (0.0f);
+    autoTuneCorrectionSmoothed.fill (1.0f);
+    // The trackers are TOLD the rate rather than left at their default: their
+    // decimation is what makes a lag mean the same frequency at every session
+    // rate, so a rate change has to rebuild it. The shifters hold no rate of
+    // their own - their grains are in frames - so a reset is all they need.
+    for (auto& tracker : autoTuneTrackers) tracker.prepare (sampleRate);
     for (auto& shifter : autoTuneShifters) shifter.reset();
-    autoTuneProcessStride = juce::jmax (1, juce::roundToInt (sampleRate / 200.0f));
 
     // The sample rate changed, so every time-domain constant has to be rebuilt.
     // The tone filters are cached rather than recomputed per block, and their
@@ -2671,6 +2680,11 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // rate is the ENGINE's, because the ramps advance per engine frame and the
     // gesture durations are wall-clock seconds.
     transport.prepare (static_cast<double> (sampleRate) * oversamplingRateFactor);
+
+    // The repitch stage is prepared at the ENGINE's rate for the same reason the
+    // rig is: it advances once per engine frame, so its seconds and its samples
+    // belong to the oversampled rate, not the host's.
+    repitchStage.prepare (static_cast<double> (sampleRate) * oversamplingRateFactor);
     if (spindownParam != nullptr)
         spindownHeld.store (spindownParam->load() >= 0.5f, std::memory_order_relaxed);
 
@@ -2933,6 +2947,32 @@ void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int 
     }
 
     currentOversampling = clamped;
+
+    // The engine's rate just moved, so a loaded model's conversion has to move
+    // with it: a model trained at 48 kHz is run at 48 kHz from a 96 kHz engine
+    // and from a 384 kHz one alike (see RateBridge). Cheap - it publishes two
+    // numbers and the stages latch them - which matters, because this is also
+    // reached from the audio thread when the OVERSAMPLING parameter changes.
+    updateNeuralSampleRates();
+}
+
+void FirstAudioProcessor::updateNeuralSampleRates()
+{
+    // The rate the engine is running at: the session's rate times the oversampling
+    // factor, which is the rate every stage inside the engine sees and therefore
+    // the rate a model would be run at if it were not carried to its own.
+    //
+    // The model's rate may be 0, which means unknown - the RTNeural JSON format
+    // carries no rate, and no model at all is the same case. Unknowable is not a
+    // reason to guess: 0 leaves the model on the engine's samples, which is the
+    // behaviour every build before the bridge had.
+    const auto engineRate = static_cast<double> (
+        juce::jmax (1.0f, sampleRate * oversamplingRateFactor));
+    neuralEngineRate.store (engineRate, std::memory_order_relaxed);
+
+    const auto modelRate = neuralModelRate.load (std::memory_order_relaxed);
+    neuralL.setSampleRates (modelRate, engineRate);
+    neuralR.setSampleRates (modelRate, engineRate);
 }
 
 void FirstAudioProcessor::updateToneCoefficients (float toneValue, float engineSampleRate)
@@ -3220,55 +3260,93 @@ const std::array<int, 12>& FirstAudioProcessor::scaleOffsetsForMode (int modeInd
     return scales[static_cast<std::size_t> (juce::jlimit (0, 5, modeIndex))];
 }
 
+/**
+    The optional pitch correction, one frame at a time.
+
+    Where the reading comes from, and what it is trusted for, is the whole of what
+    changed here. The estimate is YIN's (see PitchTracker: a period detector, not
+    a crossing counter), and the stage only corrects while that detector is
+    actually CONFIDENT. Below the confidence gate the correction glides back to
+    unity and the shifter is told to read at unity with a phase-locked splice, so
+    the note passes through untouched and unclicked; the alternative - correcting
+    towards a number the detector made up out of a cymbal or a breath - is the
+    failure the panel used to call "does nothing", because what it did do was
+    audible only as wrongness.
+
+    The shifter is handed the detected PERIOD on every frame rather than a fixed
+    grain. That is what makes the crossfade a crossfade: its two read heads land
+    a whole period apart on a periodic signal, so the fading halves are the same
+    waveform and the splice is inaudible. A smooth pad, a chord and a noisy
+    fret-release all have readings the detector withholds, and those are exactly
+    the frames where the fallback grain is used.
+
+    TUNE AMOUNT is the gate's partner rather than its rival: it sets how much of
+    the correction is asked for AND how fast the request travels - half the amount
+    is half the pull at about twice the time constant, which is the difference
+    between a note being nudged and a note being snapped onto the grid. At zero the
+    stage is out of the path entirely, the detector with it, and the signal is
+    bit-for-bit the one that arrived.
+*/
 void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, float rate) noexcept
 {
     if (samples == nullptr || autoTuneParam == nullptr || autoTuneParam->load() < 0.5f)
         return;
+
     const auto amount = juce::jlimit (0.0f, 1.0f,
                                       autoTuneAmountParam != nullptr ? autoTuneAmountParam->load() : 0.0f);
-    if (amount <= 1.0e-5f) return;
+
+    if (amount <= 1.0e-5f)
+        return;
+
     const auto tonic = tuningTonicParam != nullptr ? static_cast<int> (tuningTonicParam->load()) : 0;
     const auto mode = tuningModeParam != nullptr ? static_cast<int> (tuningModeParam->load()) : 0;
     const auto& offsets = scaleOffsetsForMode (mode);
+    const auto stageRate = rate > 1.0f ? rate : 48000.0f;
+
+    // How fast the correction is allowed to travel, as the share of the way to the
+    // target the smoothed ratio covers per frame. This is called once per FRAME,
+    // so full amount is a time constant of 80 frames - 1.7 ms at 48 kHz, the snap
+    // the control promises - and a third of the amount is 222 frames, 4.6 ms. Both
+    // are one gesture rather than two notes, which is the point: what the control
+    // mostly moves is the DEPTH of the pull below, and the glide rides along.
+    const auto glide = 0.0005f + 0.012f * amount;
 
     for (int channel = 0; channel < juce::jlimit (0, 2, channels); ++channel)
     {
         const auto i = static_cast<std::size_t> (channel);
         const auto input = samples[i];
-        ++autoTuneSampleCounter[i];
-        if (autoTunePreviousSample[i] <= 0.0f && input > 0.0f && std::abs (input) > 1.0e-4f)
+        auto& tracker = autoTuneTrackers[i];
+        auto& shifter = autoTuneShifters[i];
+
+        tracker.push (input);
+
+        const auto detected = tracker.frequency();
+        const auto confidence = tracker.confidence();
+
+        // Below the gate the stage is transparent: unity ratio, and a splice
+        // length of zero tells the shifter to use its fixed fallback grain.
+        if (confidence < 0.5f || detected < 45.0f || detected > 1400.0f)
         {
-            const auto period = autoTuneSampleCounter[i];
-            const auto hz = rate / juce::jmax (1.0f, period);
-            if (period > 1.0f && hz >= 45.0f && hz <= 1400.0f)
-            {
-                autoTuneFrequency[i] += (hz - autoTuneFrequency[i]) * 0.08f;
-                autoTuneZeroCrossings[i] = juce::jmin (8.0f, autoTuneZeroCrossings[i] + 1.0f);
-            }
-            autoTuneSampleCounter[i] = 0.0f;
-        }
-        autoTunePreviousSample[i] = input;
-        autoTuneEnvelope[i] += (std::abs (input) - autoTuneEnvelope[i])
-                             * (std::abs (input) > autoTuneEnvelope[i] ? 0.08f : 0.001f);
-        autoTuneZeroCrossings[i] = juce::jmax (0.0f, autoTuneZeroCrossings[i] - 0.00003f);
-        const auto confidence = juce::jlimit (0.0f, 1.0f, (autoTuneZeroCrossings[i] - 2.0f) / 4.0f)
-                              * juce::jlimit (0.0f, 1.0f, autoTuneEnvelope[i] / 0.01f);
-        if (confidence < 0.05f)
-        {
-            autoTuneCorrectionSmoothed[i] += (1.0f - autoTuneCorrectionSmoothed[i]) * 0.002f;
-            samples[i] = autoTuneShifters[i].process (input, 1.0f, 0.0f);
+            autoTuneCorrectionSmoothed[i] += (1.0f - autoTuneCorrectionSmoothed[i]) * glide;
+            samples[i] = shifter.process (input, autoTuneCorrectionSmoothed[i], 0);
             continue;
         }
 
-        const auto midi = 69.0f + 12.0f * std::log2 (juce::jmax (1.0f, autoTuneFrequency[i]) / 440.0f);
+        // The note the reading lands closest to, and then the nearest note the
+        // chosen key actually contains. CHROMATIC is every semitone, so the
+        // second step is a no-op there and the first one is the whole of it.
+        const auto midi = 69.0f + 12.0f * std::log2 (juce::jmax (1.0f, detected) / 440.0f);
         const auto nearest = juce::roundToInt (midi);
         auto target = nearest;
+
         if (mode != 0)
         {
             auto best = std::numeric_limits<int>::max();
+
             for (int candidate = nearest - 12; candidate <= nearest + 12; ++candidate)
             {
                 const auto pitchClass = ((candidate - tonic) % 12 + 12) % 12;
+
                 if (std::find (offsets.begin(), offsets.end(), pitchClass) != offsets.end()
                     && std::abs (candidate - nearest) < best)
                 {
@@ -3277,10 +3355,30 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
                 }
             }
         }
+
         const auto targetHz = 440.0f * std::pow (2.0f, (static_cast<float> (target) - 69.0f) / 12.0f);
-        const auto ratio = juce::jlimit (0.94f, 1.06f, targetHz / juce::jmax (1.0f, autoTuneFrequency[i]));
-        autoTuneCorrectionSmoothed[i] += (ratio - autoTuneCorrectionSmoothed[i]) * 0.003f * amount;
-        samples[i] = autoTuneShifters[i].process (input, autoTuneCorrectionSmoothed[i], amount * confidence);
+
+        // A semitone either way: a corrector pulls a note ONTO the grid, it does
+        // not transpose. A wider grip would chase a reading the detector is
+        // reporting an octave away and take the performance with it.
+        const auto ideal = juce::jlimit (0.94f, 1.06f, targetHz / juce::jmax (1.0f, detected));
+
+        // TUNE AMOUNT is a DEPTH as well as a speed. Half the amount is half the
+        // pull - a note a hair sharp lands, a note a quarter-tone flat is only
+        // nudged - which is the setting a singer reaches for when they want the
+        // corrector felt rather than heard. At full amount the pull is the whole
+        // semitone and the glide is 8 ms, which is the snap the control promises.
+        const auto ratio = 1.0f + (ideal - 1.0f) * amount;
+
+        autoTuneCorrectionSmoothed[i] += (ratio - autoTuneCorrectionSmoothed[i]) * glide;
+
+        // The splice length is the period of the material in frames of the
+        // SHIFTER's rate. The tracker measured it at its own decimated rate, so
+        // it is rescaled here - the one place that knows both rates.
+        const auto stagePeriod = tracker.periodFrames() * stageRate / tracker.analysisRateHz();
+        const auto periodHint = stagePeriod > 0.0f ? juce::roundToInt (stagePeriod) : 0;
+
+        samples[i] = shifter.process (input, autoTuneCorrectionSmoothed[i], periodHint);
     }
 }
 
@@ -3642,7 +3740,18 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //  getPosition() is called ONCE here rather than per parameter read, because
     //  it is a virtual call into the host and hosts are entitled to make it
     //  expensive.
+    //
+    //  The same call also answers the other question the playhead is asked -
+    //  whether the host's transport is ROLLING - because START is armed on it
+    //  (see the arm in TransportRig). It defaults to rolling, and it takes a
+    //  POSITION for the host to be believed at all: JUCE carries the transport
+    //  state as a flag inside this same struct and reports `false` for a host
+    //  that never set one, so an unanswered playhead and a parked one are the
+    //  same reading - and a key that refused to engage on a host that does not
+    //  report would be a worse fault than the one the arm fixes.
     // -----------------------------------------------------------------------
+    bool hostRolling = true;
+
     if (auto* hostPlayHead = getPlayHead())
     {
         if (auto position = hostPlayHead->getPosition())
@@ -3657,6 +3766,16 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                     hostTempoValid = true;
                 }
             }
+
+            // A position is what makes the playhead's own answer worth reading:
+            // every format JUCE supports sets the transport state from the host's
+            // own, so a host that supplies timing supplies this too, and a host
+            // that supplies nothing keeps the rolling default above rather than
+            // being read as parked.
+            if (! position->getIsPlaying()
+                && (position->getTimeInSamples().hasValue()
+                    || position->getPpqPosition().hasValue()))
+                hostRolling = false;
         }
     }
 
@@ -4280,6 +4399,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //  runs down for longer, and a take at 60 BPM moves twice as slowly as one at
     //  120. A host that offers no tempo leaves the rig on its 120 BPM anchor.
     //
+    //  It is handed the host's TRANSPORT STATE as well. That is the one input
+    //  to the transport that is not the deck's own: START pressed on a parked
+    //  DAW arms the key rather than spinning the machine up, so a take begins
+    //  with the machine engaging as the host rolls instead of a second and a
+    //  half before it.
+    //
     //  The state the rig settles on (START arriving at speed, or a hold released
     //  on a stopped machine) comes back as a request rather than as a host call:
     //  the atomics here are flushed to the parameter by the editor's timer, so no
@@ -4288,8 +4413,15 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const bool spindownNow = spindownHeld.load (std::memory_order_relaxed);
     const auto vinylSpeedChoice = vinylSpeedParam != nullptr
                                       ? static_cast<int> (vinylSpeedParam->load()) : 0;
-    transport.beginBlock (transportState, spindownNow, engineSampleRate,
+    transport.beginBlock (transportState, spindownNow, hostRolling, engineSampleRate,
                           speed, vinylSpeedChoice, hostTempoBpm);
+
+    // The arm is published with the request rather than inside the per-frame loop:
+    // it is block-granular state (the host rolls or it does not, for the whole
+    // block), and the panel reads it to tell a START that is WAITING FOR THE DAW
+    // from the two ways the machine can be at rest. Relaxed store, like the ramps
+    // beside it: this is an advisory UI value.
+    transportArmedPublished.store (transport.armedForHost, std::memory_order_relaxed);
 
     if (const auto requestedTransportState = transport.takeRequestedState();
         requestedTransportState >= 0)
@@ -4709,9 +4841,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // reported as "STOP just makes it quieter". At this exponent the level is 0.77
     // at nine tenths of speed, 0.18 at half speed and -35 dB at a fifth of it, so
     // the audible part of a coast is its last third. The trade the shape makes is on
-    // the way back up: a spin-up with no repitch stage to glide brings the machine's
-    // sound in concentrated in its last third instead of fading it in early, which
-    // is the honest reading of a machine engaging.
+    // the way back up: a spin-up brings the machine's sound in concentrated in its
+    // last third instead of fading it in early, which is the honest reading of a
+    // machine engaging - and it is only a trade in LEVEL now, because the repitch
+    // stage underneath it glides the pitch back up through the whole ramp rather
+    // than letting it snap.
     constexpr float platterGateExponent = 2.5f;
 
     // A hard-driven machine also runs its transport more loosely: pushing a deck
@@ -5156,13 +5290,14 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         // fade-out, and it is why the exponent has to be ABOVE 1: below 1 the
         // machine would go slack the instant the button went down.
         //
-        // What this deliberately does NOT do is move the programme's PITCH. A DJ
-        // stop bends the material down as the record slows, and this plugin has no
-        // repitch stage to bend it with: its transport moves the level, the
-        // modulation and the speed response, and the coast is what stops the
-        // sound. A repitch is a stage of its own - a buffer read at the platter's
-        // rate, with a resync when the platter comes back to speed - and it is not
-        // claimed here.
+        // What this deliberately does NOT do is move the programme's PITCH. That is
+        // not this block's job and never was: everything here is a GAIN on one
+        // number, the platter's speed, and a multiplier cannot bend a pitch - it
+        // can only make the signal smaller. The bend belongs to the repitch stage
+        // at the end of the chain, which reads the finished frame back at that
+        // same number and is the one place the FORMAT of the output changes rather
+        // than its level. Keeping the two apart is what lets this gate stop the
+        // sound outright without the bend having to be undone first.
         const float pitchedPlatter = std::pow (platterSpeed, platterPitchExponent);
         const float speedError = (1.0f - (1.0f - pitchedPlatter) * 0.7f)
                                * (1.0f - loadInducedSpeedError);
@@ -5982,6 +6117,28 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                * dryGain * platterGate;
             tapeOutput[static_cast<std::size_t> (channel)] = dryMix + wetMix;
         }
+
+        // ------------------------------------------------------------------
+        //  THE REPITCH STAGE - the pitch of the transport.
+        //
+        //  Everything above this line reads the platter's speed as a GAIN: the
+        //  level, the modulation depth, the heads' speed response and the gate
+        //  that shapes STOP. None of those can bend a pitch, and a deck slowing
+        //  down is first of all a pitch. This stage is the one place the format
+        //  of the machine's output changes rather than its level: the finished
+        //  frame is recorded into a delay line and read back out at the
+        //  platter's own speed, so a coast walks the programme down through the
+        //  octaves and a spin-up walks it back.
+        //
+        //  It sits AFTER the crossfade, on the frame both legs made, because the
+        //  transport governs both legs - a stopped deck passes nothing, whatever
+        //  its MIX is set to - and it sits BEFORE every gain that follows, so the
+        //  machine's own level, the compensator and the limiter all see the
+        //  pitch-bent signal rather than the other way round. One call per FRAME,
+        //  like the transport's own advance: the delay line's two heads move once
+        //  per frame and the two channels are one tape.
+        // ------------------------------------------------------------------
+        repitchStage.processFrame (tapeOutput, activeChannels, platterSpeed);
 
         // ------------------------------------------------------------------
         //  Subharmonic anti-phase protection.
@@ -6850,6 +7007,14 @@ bool FirstAudioProcessor::loadNeuralModel (const juce::String& modelJson)
 {
     // Each stage keeps replaced models alive until teardown, so this installation
     // cannot invalidate a model pointer already captured by process().
+    lastLoadErrorMessage = {};
+
+    if (modelJson.isEmpty())
+    {
+        lastLoadErrorMessage = "EMPTY FILE";
+        return false;
+    }
+
     const bool loadedLeft = neuralL.loadFromJson (modelJson);
     const bool loadedRight = neuralR.loadFromJson (modelJson);
     if (loadedLeft != loadedRight)
@@ -6857,6 +7022,21 @@ bool FirstAudioProcessor::loadNeuralModel (const juce::String& modelJson)
         neuralL.clear();
         neuralR.clear();
     }
+
+    if (! (loadedLeft && loadedRight))
+        lastLoadErrorMessage = "NOT A MODEL FILE";
+
+    // RTNeural's own JSON carries no rate - the model's topology is all it
+    // describes - so this model has no rate to be run at and keeps the engine's,
+    // which is what every build before the bridge did. A rate left over from a
+    // .nam model must NOT survive here: it would be that file's rate applied to
+    // this one.
+    if (loadedLeft && loadedRight)
+    {
+        neuralModelRate.store (0.0, std::memory_order_relaxed);
+        updateNeuralSampleRates();
+    }
+
     return loadedLeft && loadedRight;
 }
 
@@ -6866,17 +7046,60 @@ bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
     // .nam converter: the shared model pointer must not end up describing two
     // different networks on the two sides of the image.
 #if J37_HAS_RTNEURAL
+    lastLoadErrorMessage = {};
+
+    if (namJson.isEmpty())
+    {
+        lastLoadErrorMessage = "EMPTY FILE";
+        return false;
+    }
+
     bool loadedLeft = false;
     bool loadedRight = false;
 
     try
     {
         const auto parsed = nlohmann::json::parse (namJson.toStdString());
+
+        // The architecture is checked HERE rather than left to the converter, so
+        // the panel can say which kind of file arrived. WaveNet and the
+        // convolutional "Feather" nets are NAM's other two architectures and
+        // between them account for most models on the model-sharing sites, so
+        // "NEEDS AN LSTM MODEL" is the one failure a user is most likely to
+        // meet - and a bare "INVALID MODEL" would send them looking for a
+        // corrupt file rather than a different download.
+        if (! parsed.contains ("architecture") || ! parsed["architecture"].is_string()
+            || parsed["architecture"].get<std::string>() != "LSTM")
+        {
+            lastLoadErrorMessage = "NEEDS LSTM";
+            return false;
+        }
+
+        // The rate the model was TRAINED at. It is the one thing in a .nam file
+        // the converter has no use for and the ENGINE does: a neural net's memory
+        // is counted in samples rather than seconds, so a 48 kHz model run on a
+        // 192 kHz engine is a different network rather than a brighter one (see
+        // RateBridge).
+        //
+        // `sample_rate` is OPTIONAL in the format, and the format's own
+        // documentation says to assume 48 kHz when it is absent - which is also
+        // the rate every .nam model this build is likely to meet was trained at,
+        // so that is the assumption, and it only ever changes the model's sound
+        // where the engine is NOT already running at 48 kHz.
+        auto modelRate = 48000.0;
+        if (const auto rate = parsed.find ("sample_rate");
+            rate != parsed.end() && rate->is_number())
+            modelRate = rate->get<double>();
+
         loadedLeft = neuralL.buildFromNam (parsed);
         loadedRight = neuralR.buildFromNam (parsed);
+
+        if (loadedLeft && loadedRight)
+            neuralModelRate.store (modelRate, std::memory_order_relaxed);
     }
     catch (...)
     {
+        lastLoadErrorMessage = "NOT JSON";
         loadedLeft = false;
         loadedRight = false;
     }
@@ -6886,6 +7109,16 @@ bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
         neuralL.clear();
         neuralR.clear();
     }
+
+    if (! (loadedLeft && loadedRight) && lastLoadErrorMessage.isEmpty())
+        lastLoadErrorMessage = "BAD SHAPE";
+
+    // The model's own rate reaches the stages here, after the load rather than
+    // before it: the stages latch the pair on their next inference, so the bridge
+    // is prepared for the model that is actually installed.
+    if (loadedLeft && loadedRight)
+        updateNeuralSampleRates();
+
     return loadedLeft && loadedRight;
 #else
     juce::ignoreUnused (namJson);
@@ -6895,7 +7128,22 @@ bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
 
 bool FirstAudioProcessor::loadIrFile (const juce::File& irFile)
 {
-    return irStage.loadFromFile (irFile);
+    lastLoadErrorMessage = {};
+
+    if (! irFile.existsAsFile())
+    {
+        lastLoadErrorMessage = "NO SUCH FILE";
+        return false;
+    }
+
+    if (irStage.loadFromFile (irFile))
+        return true;
+
+    // The one way a real WAV gets here is a header JUCE will not decode (an
+    // unsupported codec, or a file that is not audio at all). The reason is
+    // about THIS file, not about the stage.
+    lastLoadErrorMessage = "NOT AUDIO";
+    return false;
 }
 
 void FirstAudioProcessor::clearIr()

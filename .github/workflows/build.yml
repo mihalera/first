@@ -82,6 +82,31 @@ jobs:
       - name: Run the transport harness
         run: bash tests/transport/run.sh
 
+      # The pitch stage - the autotune's detector and its shifter. Autotune was
+      # reported as doing nothing, and both reasons were properties of the signal
+      # rather than of the code as written: a detector that counted zero crossings
+      # reads a guitar's second harmonic an octave high (so the correction landed
+      # where the note already was) and reports a confident pitch for pure noise;
+      # a shifter whose head is re-seated against a neighbour that has not moved yet
+      # this frame creeps forward by a frame per grain, which is a few cents of
+      # permanent detune and a grain-rate wobble on top. Neither is visible by
+      # reading the source - one is a number on rendered audio, the other is an
+      # ordering of two loops - so this harness cuts both structs out of the header
+      # and measures the reading and the splice on generated signal. Same shape as
+      # the harnesses above: no JUCE, no host, a few seconds.
+      - name: Run the pitch harness
+        run: bash tests/pitch/run.sh
+
+      # The neural stage's rate conversion. A .nam model carries the rate it was
+      # TRAINED at and the engine runs at the session's rate times its oversampling
+      # factor, and a network's memory is counted in samples rather than seconds -
+      # so a model driven at the wrong rate is not a brighter version of itself but
+      # a different network. Nothing about that shows up in a build or on the panel,
+      # so the bridge is driven on generated signal at every rate pair the engine
+      # can produce, and what is measured is the sequence the MODEL is handed.
+      - name: Run the neural rate harness
+        run: bash tests/neural/run.sh
+
       # The factory presets cannot fail at runtime - a name list that is a row
       # short, or a parameter with no column in the table, both just quietly
       # load the wrong sound - so they are checked against the source instead.
@@ -93,6 +118,34 @@ jobs:
       # what was loaded before it.
       - name: Check the factory preset table
         run: python3 tests/presets/check_presets.py
+
+      # The theme is one palette read through one funnel, and every failure it
+      # has produced on this panel was the same shape: a widget inked once in the
+      # constructor with paletteFor (false) - the IVORY panel's colours - and
+      # never re-inked by applyTheme(), or never inked at all, in which case a
+      # juce::Slider text box, a juce::Label and a juce::ComboBox value all fall
+      # back to the Look and Feel's own colour scheme, which is V4's DARK one
+      # whatever panel is showing. Nothing warns and nothing fails to build; the
+      # control is simply white on an ivory panel, or ivory-backed on charcoal.
+      # Every one of those came from a screenshot report. So the wiring is read out of the
+      # source: every widget member in the header has to be reached by
+      # applyTheme(), and every Look and Feel the editor owns has to carry the
+      # combo placeholder colour - the one drawn from the Look and Feel's own map
+      # rather than the box's, which is why "FACTORY..." and "USER..." stayed
+      # white for as long as they did.
+      - name: Check the theme wiring
+        run: python3 tests/theme/check_theme_wiring.py
+
+      # The English IS the translation key (see xlat() in PluginEditor.cpp), so
+      # nothing keeps a table and the tooltip it translates in step: reword the
+      # sentence and its translation stays behind, and from then on that one
+      # control shows English in a translated panel. No build log says so and no
+      # screenshot shows it. It found seventeen entries that way when it was
+      # added - the transport keys, seven page tooltips and the two saturation
+      # controls of a revision the panel no longer has - all of them live in
+      # Ukrainian again now.
+      - name: Check the translation tables
+        run: python3 tests/translations/check_translations.py
 
   # ============================================================================
   #  DSP micro-benchmarks - measurement, never a gate
@@ -254,11 +307,12 @@ jobs:
 
       # The one thing a Debug build proves that Release hides is what the
       # sanitizers can see, and this job is the only place a Debug toolchain is
-      # already paid for. The four harnesses are seconds of work each and need
+      # already paid for. The five harnesses are seconds of work each and need
       # no toolkit, no host and no submodules, so they run here a second time
       # with ASan and UBSan turned on: the shipped DSP generator, the knob
-      # strip's arithmetic, the state writer/reader and the transport rig,
-      # executed as compiled out of Source/ rather than as a copy of it.
+      # strip's arithmetic, the state writer/reader, the transport rig and the
+      # pitch stage's delay line, executed as compiled out of Source/ rather
+      # than as a copy of it.
       # -fno-sanitize-recover=all makes any finding fail the step instead of
       # printing and carrying on.
       - name: Run the harnesses under ASan and UBSan
@@ -267,6 +321,8 @@ jobs:
           J37_SANITIZE=address,undefined bash tests/layout/run.sh
           J37_SANITIZE=address,undefined bash tests/state/run.sh
           J37_SANITIZE=address,undefined bash tests/transport/run.sh
+          J37_SANITIZE=address,undefined bash tests/pitch/run.sh
+          J37_SANITIZE=address,undefined bash tests/neural/run.sh
 
       - name: Configure CMake (Debug)
         run: |

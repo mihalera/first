@@ -36,3 +36,17 @@ fi
     "${HERE}/subfund_test.cpp" -o "${BUILD}/subfund_test"
 
 "${BUILD}/subfund_test"
+
+# The loudness meter, in its own binary against the same extracted source. It is
+# the number the panel's INPUT and OUTPUT LUFS readouts are - the ground truth a
+# user mixes against - and a meter that reads wrong is invisible until somebody
+# has already taken the session to the desk. (AUTO GAIN does not read it: that
+# compensator measures block power on the signal itself.) Separate binary rather
+# than one more section of the harness above so a failure names the meter in the
+# log line that carries the exit code.
+"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+    "${sanitize_flags[@]}" \
+    -I "${HERE}" -I "${BUILD}" \
+    "${HERE}/loudness_test.cpp" -o "${BUILD}/loudness_test"
+
+"${BUILD}/loudness_test"

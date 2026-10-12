@@ -3336,6 +3336,9 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
     static_assert (tabSubtitles.size() == tabSpecs.size(),
                    "every tab page needs its own section caption");
 
+    // Read before the assignment: the page's own painted furniture has to be
+    // invalidated with the page (see the repaint at the foot of this function).
+    const auto previousTab = currentTab;
     currentTab = juce::jlimit (0, numTabs - 1, newTab);
     // The section caption: the active page's own one-line subject, from the same
     // index the page itself came from, so the two can never name different pages.
@@ -3371,6 +3374,17 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
     // styleTabButtons() the selected tab never took its selected colours.
     styleTabButtons();
     resized();
+
+    // A page's own painted furniture has to leave with the page. The SHAPERS
+    // card behind the model picker is drawn by THIS component's paint(), not by
+    // the picker's widgets - and the 30 Hz timer only repaints the knobs, the
+    // switches, the lamp and the deck (see repaintAnimatedSurfaces), which is why
+    // hiding the picker was not enough: its own cells were restored and the card
+    // around and behind them stayed, as the phantom squares on every other page.
+    // The controls panel is the only band paint() varies by tab, so that is the
+    // region, and only when the page actually changed.
+    if (previousTab != currentTab)
+        repaint (getEditorLayout().controls);
 }
 
 //==============================================================================
@@ -3558,6 +3572,86 @@ void FirstAudioProcessorEditor::setTabFamily (int newFamily)
         resized();
 }
 
+//==============================================================================
+//  The two file pickers' shared ground: where they OPEN, and what happens to the
+//  stage's blend when a load SUCCEEDS.
+//==============================================================================
+namespace
+{
+    // The folder each picker starts in, remembered across sessions.
+    //
+    // The chooser used to open on the user's Documents folder every single time,
+    // so a user who keeps their models and their impulse responses somewhere else
+    // walked back to that place on every load. The memory is machine-wide (a
+    // settings file beside the plugin's other user data) rather than session
+    // state on purpose: it is a convenience of USING the plugin, not part of the
+    // sound, so a saved session must not carry the folder a file was picked from
+    // and a preset must not be able to move it.
+    //
+    // One file for the whole plugin and one KEY per picker, so the two stages
+    // never fight over a single "last folder" - models and IRs live in different
+    // places and each picker returns to its own.
+    juce::PropertiesFile& folderMemory()
+    {
+        static juce::PropertiesFile settings ([] {
+            juce::PropertiesFile::Options options;
+            options.applicationName      = "Nonlin Analog Saturator";
+            options.folderName           = "Nonlin Analog Saturator";
+            options.filenameSuffix       = "settings";
+            options.osxLibrarySubFolder  = "Application Support";
+            options.commonToAllUsers     = false;
+            options.ignoreCaseOfKeyNames = true;
+            return options;
+        }());
+        return settings;
+    }
+
+    juce::File rememberedFolder (const juce::String& key)
+    {
+        const auto remembered = juce::File (folderMemory().getValue (key));
+
+        // A remembered folder that has since been moved or unmounted falls back
+        // to Documents rather than opening the chooser on a path that is gone.
+        return remembered.isDirectory() ? remembered
+                                        : juce::File::getSpecialLocation (juce::File::userDocumentsDirectory);
+    }
+
+    void rememberFolder (const juce::String& key, const juce::File& chosen)
+    {
+        const auto folder = chosen.isDirectory() ? chosen : chosen.getParentDirectory();
+        if (! folder.isDirectory())
+            return;
+
+        folderMemory().setValue (key, folder.getFullPathName());
+        folderMemory().saveIfNeeded();
+    }
+}
+
+void FirstAudioProcessorEditor::openStageMix (const juce::String& parameterId)
+{
+    // Loading a file is a request to HEAR the file. Both file-fed stages default
+    // their MIX to 0 - a stage with nothing loaded is a bypass, and a session that
+    // unexpectedly carries a model must still load to the sound an earlier build
+    // made - so a picker that installed the model and left the blend shut changed
+    // nothing audible, which is exactly what "LOAD MODEL / LOAD IR does nothing"
+    // was reporting.
+    //
+    // The blend is opened to full ONLY while it is still fully closed, so a user
+    // who has dialled a partial blend keeps it, and the change goes through the
+    // parameter rather than the atomic so the host records it, the knob's
+    // attachment follows, and Undo can take it back. The test is against
+    // "closed" rather than "not already full" on purpose: the second one is a
+    // different sentence - it would override a blend the user set - and it is the
+    // one the comment above would have been lying about.
+    if (auto* parameter = audioProcessor.parameters.getParameter (parameterId))
+        if (parameter->getValue() <= 1.0e-6f)
+        {
+            parameter->beginChangeGesture();
+            parameter->setValueNotifyingHost (1.0f);
+            parameter->endChangeGesture();
+        }
+}
+
 void FirstAudioProcessorEditor::loadNeuralModelFromFile()
 {
     // A model is chosen from a file, so a plain asynchronous file chooser is the
@@ -3571,7 +3665,7 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
     // processor's own two entry points below.
     auto chooser = std::make_shared<juce::FileChooser> (
         "Load a neural model",
-        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+        rememberedFolder ("lastModelFolder"),
         "*.json;*.rtn;*.nam;*");
 
     // browserFlags, not `flags`: a local name that shadows nothing is cheaper
@@ -3593,21 +3687,23 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
         const bool loaded = isNam ? audioProcessor.loadNamModel (text)
                                   : audioProcessor.loadNeuralModel (text);
 
-        if (loaded)
+        if (! loaded)
         {
-            loadedNeuralName = file.getFileNameWithoutExtension();
-        }
-        else
-        {
-            // A bad file leaves whatever was loaded before in place, and the
-            // readout says so rather than silently showing the old name.
-            loadedNeuralName = {};
-            neuralStatusLabel.setText ("INVALID MODEL", juce::dontSendNotification);
-            lastShownNeuralStatus = "INVALID MODEL";
+            // A refused file leaves whatever was loaded before in place, and the
+            // readout says WHY this one was refused - a .nam that needs the LSTM
+            // architecture is a different download, not a corrupt file, and the
+            // reason is the one thing the user can act on.
+            neuralStatusReason = audioProcessor.lastLoadError();
+            lastShownNeuralStatus = {};   // force the next refresh to repaint the label
+            refreshNeuralStatus();
             return;
         }
 
+        loadedNeuralName = file.getFileNameWithoutExtension();
+        neuralStatusReason = {};
+        rememberFolder ("lastModelFolder", file);
         lastShownNeuralStatus = {};   // force the next refresh to repaint the label
+        openStageMix ("neural_mix");
         refreshNeuralStatus();
     });
 }
@@ -3616,21 +3712,38 @@ void FirstAudioProcessorEditor::refreshNeuralStatus()
 {
     // The processor is the source of truth, not the label: a model can be
     // cleared from either button, so the readout follows whatever the stage
-    // actually holds. It reports in two states only - "NO MODEL" when the stage
-    // is inert, and the loaded file's name when it is not - because those are
-    // the two things the NEURAL knob cannot say by itself.
-    const auto status = audioProcessor.hasNeuralModel() && loadedNeuralName.isNotEmpty()
-                            ? loadedNeuralName
-                            : juce::String ("NO MODEL");
+    // actually holds. It reports in THREE states: the loaded file's name while
+    // the stage runs, "NO MODEL" while it is inert, and the refused file's
+    // reason after a load that failed - which outranks the stage's own state,
+    // because the stage may well still hold the previous model. That third
+    // state is what the old two-state readout got wrong: a refused .nam read as
+    // "no model" even though the previous one was still playing.
+    // A model is run at the rate it was TRAINED at whatever rate the engine is
+    // running at (a net's memory is counted in samples, so the rate is part of
+    // what it sounds like), and that rate is the one fact about this stage the
+    // user cannot infer from the panel. It is named only when the two rates
+    // actually differ, so a session that needs no conversion says nothing extra -
+    // and a session that DOES need one can see that it is happening.
+    const auto modelRate = audioProcessor.getNeuralModelRate();
+    const auto engineRate = audioProcessor.getEngineSampleRate();
+    const auto modelKilo = juce::roundToInt (modelRate / 1000.0);
+    const auto rateTag = modelRate > 1.0 && std::abs (modelRate - engineRate) > 1.0
+                             ? juce::String (" @ ") + juce::String (modelKilo) + "K"
+                             : juce::String();
+
+    const auto status = neuralStatusReason.isNotEmpty()
+                            ? xlat ("INVALID MODEL") + " (" + neuralStatusReason + ")"
+                            : audioProcessor.hasNeuralModel() && loadedNeuralName.isNotEmpty()
+                                  ? loadedNeuralName + rateTag
+                                  : xlat ("NO MODEL");
 
     if (status == lastShownNeuralStatus)
         return;
 
     lastShownNeuralStatus = status;
-    // The two state words go through the table so the picker reads in the
-    // panel's language; a model FILE NAME is data, not a sentence, and shows
-    // as loaded regardless of language.
-    neuralStatusLabel.setText (xlat (status), juce::dontSendNotification);
+    // The file's name and the reason are DATA, not sentences, so they are not
+    // looked up: the two state words around them are (see the note above xlat).
+    neuralStatusLabel.setText (status, juce::dontSendNotification);
     neuralStatusLabel.setColour (juce::Label::textColourId,
                                  audioProcessor.hasNeuralModel()
                                      ? paletteFor (false).accent
@@ -3645,7 +3758,7 @@ void FirstAudioProcessorEditor::loadIrFromFile()
     // file JUCE's registered decoders can open selectable.
     auto chooser = std::make_shared<juce::FileChooser> (
         "Load an impulse response",
-        juce::File::getSpecialLocation (juce::File::userDocumentsDirectory),
+        rememberedFolder ("lastIrFolder"),
         "*.wav;*.aif*;*");
 
     const auto browserFlags = juce::FileBrowserComponent::openMode
@@ -3657,21 +3770,22 @@ void FirstAudioProcessorEditor::loadIrFromFile()
         if (! file.existsAsFile())
             return;
 
-        if (audioProcessor.loadIrFile (file))
-        {
-            loadedIrName = file.getFileNameWithoutExtension();
-            lastShownIrStatus = {};      // force the next refresh to repaint
-            refreshIrStatus();
-        }
-        else
+        if (! audioProcessor.loadIrFile (file))
         {
             // A file that would not decode leaves the previous IR in place and
-            // says so - the same honesty the INVALID MODEL state gives the
-            // model picker, for the same reason.
-            loadedIrName = {};
-            irStatusLabel.setText ("INVALID IR", juce::dontSendNotification);
-            lastShownIrStatus = "INVALID IR";
+            // says WHICH failure it was, in the same shape the model picker uses.
+            irStatusReason = audioProcessor.lastLoadError();
+            lastShownIrStatus = {};      // force the next refresh to repaint
+            refreshIrStatus();
+            return;
         }
+
+        loadedIrName = file.getFileNameWithoutExtension();
+        irStatusReason = {};
+        rememberFolder ("lastIrFolder", file);
+        lastShownIrStatus = {};      // force the next refresh to repaint
+        openStageMix ("ir_mix");
+        refreshIrStatus();
     });
 }
 
@@ -3680,15 +3794,17 @@ void FirstAudioProcessorEditor::refreshIrStatus()
     // The processor is the source of truth, exactly as with the model status:
     // the stage can be cleared from either button, so the readout follows
     // whatever the convolvers actually hold.
-    const auto status = audioProcessor.hasIr() && loadedIrName.isNotEmpty()
-                            ? loadedIrName
-                            : juce::String ("NO IR");
+    const auto status = irStatusReason.isNotEmpty()
+                            ? xlat ("INVALID IR") + " (" + irStatusReason + ")"
+                            : audioProcessor.hasIr() && loadedIrName.isNotEmpty()
+                                  ? loadedIrName
+                                  : xlat ("NO IR");
 
     if (status == lastShownIrStatus)
         return;
 
     lastShownIrStatus = status;
-    irStatusLabel.setText (xlat (status), juce::dontSendNotification);
+    irStatusLabel.setText (status, juce::dontSendNotification);
     irStatusLabel.setColour (juce::Label::textColourId,
                              audioProcessor.hasIr()
                                  ? paletteFor (false).accent
@@ -4188,7 +4304,7 @@ namespace
         if (id == "neural_mix")
             return "NEURAL - the wet/dry position of the optional "
                    "learned model. The model is not a knob: it is a file "
-                   "loaded with LOAD MODEL on the CHARACTER tab, and the "
+                   "loaded with LOAD MODEL on the SHAPERS tab, and the "
                    "network itself (a Dense net, an LSTM, a GRU) is whatever "
                    "the file describes. This control blends the model's "
                    "output with the untouched signal, so it is always a "
@@ -4198,7 +4314,7 @@ namespace
             return "IR MIX - how much of the convolved signal is blended "
                    "into the finished one. The impulse response itself is "
                    "not a knob: it is a file loaded with LOAD IR on the "
-                   "CHARACTER tab, and it can be a cabinet, a room or any "
+                   "SHAPERS tab, and it can be a cabinet, a room or any "
                    "other space. At 0, or with no IR loaded, the stage is "
                    "transparent. Default 0 percent.";
         // The eleven knobs that were falling through to an empty sentence:
@@ -4530,6 +4646,43 @@ void FirstAudioProcessorEditor::setUpLanguageAndTuning()
     addAndMakeVisible (autoTuneButton);
     addAndMakeVisible (autoTuneAmountLabel);
     addAndMakeVisible (autoTuneAmountSlider);
+
+    // The four tuning controls are the one group on the panel that had no
+    // tooltips at all, which is why the page read as unexplained: two of them
+    // (TONIC, MODE) only mean something together, and the corrector's own two
+    // are the pair a user has to understand before turning either on. Keyed on
+    // the English sentence like every other tip, so a translation is one line in
+    // the table.
+    setTip (tuningTonicBox, "TONIC - the key the scale is built on: the note the "
+                            "corrector treats as home when MODE is anything but "
+                            "CHROMATIC. On CHROMATIC it changes nothing, because "
+                            "every semitone is already in the scale. Default C.");
+    setTip (tuningModeBox, "MODE - which notes the corrector is allowed to land on. "
+                           "CHROMATIC is every semitone and is the default: a note is "
+                           "pulled to the nearest one and nowhere else. MAJOR, MINOR, "
+                           "DORIAN and the two pentatonics let a reading travel up to "
+                           "a semitone to the nearest note the chosen scale contains, "
+                           "so the correction follows the key rather than the grid. "
+                           "Default Chromatic.");
+    setTip (autoTuneButton, "AUTO TUNE - switches the corrector in. The stage reads "
+                            "the note that is playing with a period detector, decides "
+                            "the nearest note the key allows, and moves the audio onto "
+                            "it by RE-READING the signal at the correction ratio out "
+                            "of a delay line, spliced a whole period apart so the join "
+                            "is inaudible. Below its gate - silence, noise, a chord, or "
+                            "a note outside 45 Hz to 1.4 kHz - it glides back to unity "
+                            "and passes the signal untouched rather than chasing a "
+                            "number it cannot trust. While it runs the stage adds a "
+                            "period of the tracked note as delay, and at full TUNE "
+                            "AMOUNT the correction is a snap. Default off.");
+    setTip (autoTuneAmountSlider, "TUNE AMOUNT - how far and how fast the correction is "
+                                  "allowed to travel: half the amount is half the pull "
+                                  "at about twice the time constant, which is the "
+                                  "difference between a note being nudged and a note "
+                                  "being snapped onto the grid. At full amount a note "
+                                  "lands within a few milliseconds; at 0 the stage is "
+                                  "out of the path entirely, detector included, and "
+                                  "the signal is bit-for-bit the one that arrived.");
 }
 
 void FirstAudioProcessorEditor::setUpTooltipsAndPhysics()
@@ -5282,7 +5435,13 @@ void FirstAudioProcessorEditor::setUpTransportRow()
                                       "it back up, and on a machine already running there is "
                                       "nothing left to engage, so it lands on PLAY. Its "
                                       "timing follows the deck: tape speed, turntable speed "
-                                      "for the run-down, and the session's tempo.");
+                                      "for the run-down, and the session's tempo.\n\n"
+                                      "Pressed while the DAW is not rolling it is ARMED "
+                                      "instead: the machine winds down and waits, and the "
+                                      "take engages the moment the host rolls - so pressing "
+                                      "START before the DAW starts does not spend the "
+                                      "spin-up on a pause. Press PLAY or STOP to take the "
+                                      "key back.");
 
     for (auto* button : { &transportStopButton, &transportPlayButton, &transportStartButton })
     {
@@ -5534,7 +5693,7 @@ void FirstAudioProcessorEditor::setUpSettingsSwitches()
 void FirstAudioProcessorEditor::setUpModelButtons()
 {
     // ---------------------------------------------------------------
-    //  The neural model picker, on the DYNAMICS tab beside the NEURAL knob.
+    //  The neural model picker, on the SHAPERS tab beside the NEURAL knob.
     //  It has no parameter and no attachment: a model is data read from a file,
     //  not a value a session or a preset carries, so the two buttons drive the
     //  processor directly and the status label reports what the stage holds.
@@ -5552,14 +5711,18 @@ void FirstAudioProcessorEditor::setUpModelButtons()
     clearNeuralButton.setColour (juce::TextButton::buttonColourId, paletteFor (false).raised);
     clearNeuralButton.setColour (juce::TextButton::textColourOffId, paletteFor (false).text);
     clearNeuralButton.setColour (juce::TextButton::buttonOnColourId, paletteFor (false).raised.darker (0.15f));
-    setTip (loadNeuralButton, "LOAD MODEL - reads an RTNeural model file (its JSON "
-                                 "description) and installs it as the plugin's optional "
-                                 "learned nonlinearity. The network is whatever the file "
-                                 "describes - a Dense net, an LSTM, a GRU - and it runs "
-                                 "per channel, after the tape stage. NEURAL sets how much "
-                                 "of its output reaches the signal; at 0 it is silent. "
-                                 "Loading a model does not change any parameter and is "
-                                 "not saved with the session.");
+    setTip (loadNeuralButton, "LOAD MODEL - reads a neural model and installs it as "
+                                 "the plugin's optional learned nonlinearity. Both wire "
+                                 "formats are read: RTNeural's own JSON and the .nam files "
+                                 "NeuralAmpModeler writes, of which the LSTM models are "
+                                 "played and the WaveNet and Feather ones are refused by "
+                                 "name. The network runs per channel, after the tape "
+                                 "stage. NEURAL sets how much of its output reaches the "
+                                 "signal, and a load that succeeds opens NEURAL to full "
+                                 "while it is still closed, so the new model is heard at "
+                                 "once. The picker reopens in the folder the last model "
+                                 "came from. Loading a model does not change any other "
+                                 "parameter and is not saved with the session.");
     setTip (clearNeuralButton, "CLEAR - releases the loaded model, returning the NEURAL "
                                   "stage to its transparent pass-through.");
     loadNeuralButton.onClick = [this] { loadNeuralModelFromFile(); };
@@ -5567,6 +5730,9 @@ void FirstAudioProcessorEditor::setUpModelButtons()
     {
         audioProcessor.clearNeuralModel();
         loadedNeuralName = {};
+        // A refusal belongs to the file that was refused, so clearing the stage
+        // clears the reason with it: "NO MODEL" is the truth again afterwards.
+        neuralStatusReason = {};
         refreshNeuralStatus();
     };
     addAndMakeVisible (loadNeuralButton);
@@ -5577,9 +5743,9 @@ void FirstAudioProcessorEditor::setUpModelButtons()
     addAndMakeVisible (neuralStatusLabel);
 
     // ---------------------------------------------------------------
-    //  The IR picker rides the DYNAMICS page's member band, under the IR MIX
+    //  The IR picker rides the SHAPERS page's member band, under the IR MIX
     //  knob it belongs to: LOAD IR / CLEAR IR / status, styled and tipped
-    //  exactly like the model picker on CHARACTER. An IR is data read from a
+    //  exactly like the model picker beside it. An IR is data read from a
     //  file for the same reason a model is - no parameter, no attachment.
     // ---------------------------------------------------------------
     loadIrButton.setLookAndFeel (&inlineLookAndFeel);
@@ -5593,9 +5759,12 @@ void FirstAudioProcessorEditor::setUpModelButtons()
     setTip (loadIrButton, "LOAD IR - reads an impulse response (a WAV or AIFF "
                              "capture of a cabinet, a room or any other space) and "
                              "convolves the finished signal with it. IR MIX sets how "
-                             "much of the convolved signal is blended in; at 0 the "
-                             "stage is silent. Loading an IR does not change any "
-                             "parameter and is not saved with the session.");
+                             "much of the convolved signal is blended in, and a load "
+                             "that succeeds opens IR MIX to full while it is still "
+                             "closed, so the capture is heard at once. The picker "
+                             "reopens in the folder the last impulse response came "
+                             "from. Loading an IR does not change any other parameter "
+                             "and is not saved with the session.");
     setTip (clearIrButton, "CLEAR IR - releases the loaded impulse response, "
                               "returning the IR stage to its transparent "
                               "pass-through.");
@@ -5604,6 +5773,7 @@ void FirstAudioProcessorEditor::setUpModelButtons()
     {
         audioProcessor.clearIr();
         loadedIrName = {};
+        irStatusReason = {};
         refreshIrStatus();
     };
     addAndMakeVisible (loadIrButton);
@@ -6388,6 +6558,17 @@ void FirstAudioProcessorEditor::applyTheme()
     for (auto& label : controlLabels)
         label.setColour (juce::Label::textColourId, palette.secondary);
 
+    // The COMP page's six captions are the same captions as the strip's - the same
+    // 9 pt bold font, the same centred caption band, the same job - but they are a
+    // separate array, and the constructor that builds them sets their text and
+    // their font and never their ink. Unstyled, a juce::Label reads
+    // Label::textColourId off the Look and Feel, which is LookAndFeel_V4's DARK
+    // colour scheme whatever panel is showing: THRESH, RATIO, ATTACK, RELEASE,
+    // MAKEUP and MIX were six white captions on an ivory panel, which is the
+    // "font is not connected to the theme" on the COMP page.
+    for (auto& label : compressorControlLabels)
+        label.setColour (juce::Label::textColourId, palette.secondary);
+
     // Three captions the constructor inked and nothing re-inked: TUNE AMOUNT is a
     // knob page's caption now (the loop above places it in the knob strip), and the
     // TONIC and MODE captions are its peers - the two pages used to share one tab.
@@ -6431,13 +6612,29 @@ void FirstAudioProcessorEditor::applyTheme()
     // so the selected tab keeps its accent highlight across a theme switch.
     styleTabButtons();
 
-    for (auto& slider : controls)
+    // Every knob on the panel, not just the knob strip's. The COMP page's six and
+    // the AUTOTUNE page's TUNE AMOUNT are their own arrays - they carry their own
+    // parameter ids, ranges and text formatting - so a loop over `controls` alone
+    // left their READOUTS unstyled, and an unstyled juce::Slider text box takes its
+    // ink from the Look and Feel's colour scheme, which is V4's dark one on every
+    // panel: those two pages printed their values in the same white as the labels
+    // around them. One dose over all three groups, so the two cannot drift apart
+    // again - and the AUTOTUNE and COMP pages read like the rest of the deck.
+    const auto inkKnob = [&palette] (juce::Slider& slider)
     {
         slider.setColour (juce::Slider::textBoxTextColourId, palette.text);
         slider.setColour (juce::Slider::textBoxBackgroundColourId, palette.readout);
         slider.setColour (juce::Slider::textBoxOutlineColourId, palette.border);
         slider.setColour (juce::Slider::thumbColourId, palette.accent);
-    }
+    };
+
+    for (auto& slider : controls)
+        inkKnob (slider);
+
+    for (auto& slider : compressorControls)
+        inkKnob (slider);
+
+    inkKnob (autoTuneAmountSlider);
 
     const auto styleCombo = [&palette] (juce::ComboBox& box)
     {
@@ -6486,6 +6683,20 @@ void FirstAudioProcessorEditor::applyTheme()
     stylePopupMenu (customLookAndFeel);
     stylePopupMenu (inlineLookAndFeel);
 
+    // The nothing-selected placeholder - the "Factory..." and "User..." the two
+    // preset lists show before anything has been chosen - is drawn by
+    // LookAndFeel_V2::drawComboBoxTextWhenNothingSelected, which reads
+    // ComboBox::textColourId off the LOOK AND FEEL's own colour map and never off
+    // the box it is drawing, so no per-box setColour can reach it. Unstyled it
+    // followed V4's dark scheme and printed those two captions white: on the ivory
+    // panel they were the first words a user reads and the ones they could not
+    // read. Same reasoning as the popup menu above it - style the Look and Feel,
+    // because there is no component to style. Set by NAME, on each of the two,
+    // because tests/theme/check_theme_wiring.py reads exactly this statement to
+    // hold the two in step.
+    customLookAndFeel.setColour (juce::ComboBox::textColourId, palette.text);
+    inlineLookAndFeel.setColour (juce::ComboBox::textColourId, palette.text);
+
     const auto styleWorkflowButton = [&palette] (juce::TextButton& button, bool emphasised)
     {
         button.setColour (juce::TextButton::buttonColourId, palette.raised);
@@ -6497,6 +6708,23 @@ void FirstAudioProcessorEditor::applyTheme()
     // bypassButton is a ToggleButton drawn by J37LookAndFeel::drawToggleButton.
     themeButton.setColour (juce::TextButton::buttonColourId, palette.raised);
     themeButton.setColour (juce::TextButton::textColourOffId, palette.text);
+
+    // The model and IR pickers' four buttons. Their constructor says it re-inks
+    // them per theme "in applyTheme()" and nothing here did, so on charcoal and
+    // metal they kept the ivory panel's raised face and its dark ink - a light pill
+    // with dark text on a black panel, on the one page whose whole point is that
+    // the two pickers read as devices rather than as unstyled widgets. They carry
+    // the same raised-face pill the workflow buttons do, from the same palette.
+    const auto stylePickerButton = [&palette] (juce::TextButton& button)
+    {
+        button.setColour (juce::TextButton::buttonColourId, palette.raised);
+        button.setColour (juce::TextButton::textColourOffId, palette.text);
+        button.setColour (juce::TextButton::buttonOnColourId, palette.raised.darker (0.15f));
+    };
+    stylePickerButton (loadNeuralButton);
+    stylePickerButton (clearNeuralButton);
+    stylePickerButton (loadIrButton);
+    stylePickerButton (clearIrButton);
 
     styleCombo (oversamplingBox);
     styleCombo (instrumentBox);
@@ -7410,9 +7638,14 @@ void FirstAudioProcessorEditor::timerCallback()
 
     // The deck hint reads the machine's actual state rather than a fixed caption,
     // so the panel answers "what is the transport doing" in words as well as with
-    // the key lamps and the reels. The four states are the ones the engine can be
-    // in, and the spindown takes priority because it is the momentary one.
+    // the key lamps and the reels. The five states are the ones the engine can be
+    // in, and they are read in this order: the spindown takes priority because it
+    // is the momentary one, and the ARM comes next because a START that is waiting
+    // for the DAW reads as START in the parameter (that is what keeps the key lit)
+    // and is only distinguishable from a spin-up by asking the engine.
+    const auto waitingForHost = audioProcessor.isTransportArmedForHost();
     const auto machineStateText = spindownNow ? "SPINDOWN / POWER CUT"
+                                    : waitingForHost ? "START / WAITING FOR DAW"
                                     : transportNow == 0 ? "STOPPED / AT REST"
                                     : transportNow == 2 ? "START / SPINNING UP"
                                                         : "PLAY / AT SPEED";
@@ -7428,7 +7661,7 @@ void FirstAudioProcessorEditor::timerCallback()
         lastShownMachineState = machineStateText;
         deckHintLabel.setText (machineStateText, juce::dontSendNotification);
         deckHintLabel.setColour (juce::Label::textColourId,
-                                 spindownNow ? paletteFor (darkTheme).needle
+                                 spindownNow || waitingForHost ? paletteFor (darkTheme).needle
                                  : transportNow == 0 ? paletteFor (darkTheme).secondary
                                                      : paletteFor (darkTheme).status);
     }

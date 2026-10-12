@@ -746,6 +746,11 @@ private:
     void loadNeuralModelFromFile();
     void refreshNeuralStatus();
     juce::String lastShownNeuralStatus;
+    // Non-empty while the last load was REFUSED: the reason the processor gave,
+    // held here so the readout keeps showing it. The 30 Hz refresh repaints the
+    // label from the stage's own state, and without this hold a refused file
+    // would read as a plain "NO MODEL" one frame after the picker said why.
+    juce::String neuralStatusReason;
 
     // The IR cabinet's picker: LOAD IR reads a WAV/AIFF impulse response into
     // the processor's convolvers, CLEAR IR releases it, and the status label
@@ -757,6 +762,11 @@ private:
     void loadIrFromFile();
     void refreshIrStatus();
     juce::String lastShownIrStatus;
+    juce::String irStatusReason;      // see neuralStatusReason above
+
+    // Opens a file-fed stage's MIX to full after a load that succeeded, but only
+    // while the blend is still fully closed; see the note on the definition.
+    void openStageMix (const juce::String& parameterId);
     // The loaded model's filename, kept so the readout can name it after a
     // reload or a refresh. Empty when the stage holds no model.
     juce::String loadedNeuralName;

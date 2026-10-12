@@ -1553,6 +1553,241 @@ struct TransientShaper
 
 //==============================================================================
 /**
+    RateBridge - carries a signal from the ENGINE's rate to a MODEL's own rate and
+    back, so a model is run at the rate it was trained at rather than the one the
+    engine happens to be running at.
+
+    A .nam file is trained at one rate - almost always 48 kHz - and the engine runs
+    at the session's rate times its oversampling factor, so a 48 kHz session with
+    4x oversampling hands the model 192 000 samples a second. A neural net is not a
+    set of coefficients that mean the same thing at every rate the way a filter's
+    do: its layers hold DELAYS and recurrences counted in samples, so running it
+    four times too fast does not make it four times brighter, it makes it a
+    different network - every cell's feedback four times tighter, every state four
+    times shorter. Before this existed the stage ran the model at whatever rate the
+    engine was at and said nothing about it.
+
+    So the signal is carried across: the engine's samples are interpolated at the
+    MODEL's own instants on the way in, and the model's output samples are
+    interpolated at the ENGINE's instants on the way out, both with a four-tap
+    cubic (Catmull-Rom) kernel. That kernel is a fractional-delay interpolator and
+    not an antialias filter - the engine's own oversampling is what band-limits the
+    programme, and this bridge moves it between two rates of the same signal rather
+    than protecting either - which is the honest reading of what a rate conversion
+    here can claim.
+
+    A fractional delay is not causal, so the bridge reads a little way into the
+    past: a model sample is taken two ENGINE samples after its own instant, and the
+    engine's output is reconstructed two engine samples plus two model spacings
+    behind. Every sample the bridge emits is therefore `delay()` engine samples
+    late, and the DRY leg is read through the same interpolation at the same age -
+    so the wet/dry crossfade the stage applies stays in phase and the conversion
+    costs the stage nothing but its own delay. At 4x oversampling of a 48 kHz
+    session that delay is ten engine samples, about fifty microseconds.
+
+    When the two rates agree the bridge is not merely skipped, it is ABSENT: the
+    model is handed the sample it was given, the dry leg is that same sample, and
+    the stage is bit-for-bit what it was before the bridge existed. That is the
+    path a session takes whenever its model was trained at the rate the engine is
+    running at.
+*/
+struct RateBridge
+{
+    /** Two rates this close are the same rate. They arrive as doubles - one from a
+        file, one from a host's buffer size - so the test cannot be equality; a
+        millionth of a rate is a hundredth of a cent over a five-minute take. */
+    static constexpr double sameRate = 1.0e-6;
+
+    /** Engine samples the input kernel reads AHEAD of the instant it wants: the
+        cubic is centred on its point, so two samples either side of it. */
+    static constexpr int lookahead = 2;
+
+    /** The engine-side history. It has to hold the whole of the delay the bridge
+        works at - `lookahead` plus two model spacings - and a model spacing is
+        the engine's rate divided by the model's: at the widest ratio this build
+        can produce (8x oversampling of a 192 kHz session against a 44.1 kHz
+        model) that is 34.8 engine samples, so the delay runs to about 72 and 128
+        slots cover it with room to spare. A fixed array rather than a vector
+        because a rate change can arrive from the audio thread - the oversampling
+        switch is a host parameter - and nothing on that path may allocate. */
+    static constexpr int xSize = 128;
+    static constexpr int xMask = xSize - 1;
+
+    /** The model-side history. The output kernel is centred on the model's grid,
+        so it reads two samples either side of its point; eight slots are five
+        with room for the rounding. */
+    static constexpr int vSize = 8;
+    static constexpr int vMask = vSize - 1;
+
+    /** Model samples the output kernel needs before it has anything to say. */
+    static constexpr int ready = 5;
+
+    /** Model samples per engine sample. 1 means the two rates agree. */
+    double step = 1.0;
+
+    /** Engine samples per model sample - the reciprocal, kept because it is what
+        the conversion advances by and a division per model sample is not free. */
+    double spacing = 1.0;
+
+    /** True when the two rates differ and the conversion is actually running. */
+    bool active = false;
+
+    /** What one engine sample of conversion comes to: the model's answer, and the
+        dry signal delayed to sit beside it. */
+    struct Converted
+    {
+        float wet = 0.0f;
+        float dry = 0.0f;
+    };
+
+    /** Prepares for a model's rate and the engine's. Called whenever either can
+        have changed - a model load, a session rate change, or a change of
+        oversampling factor - and never per block. Allocates nothing, so the audio
+        thread may call it. */
+    void prepare (double modelRate, double engineRate) noexcept
+    {
+        const auto known = modelRate > 1.0 && engineRate > 1.0;
+        step = known ? modelRate / engineRate : 1.0;
+        spacing = 1.0 / step;
+        active = known && std::abs (step - 1.0) > sameRate;
+        reset();
+    }
+
+    void reset() noexcept
+    {
+        xHistory.fill (0.0f);
+        vHistory.fill (0.0f);
+        xWrite = 0;
+        vWrite = 0;
+        engineSamples = 0;
+        modelSamples = 0;
+        nextModelAt = 0.0;
+        newestModelAt = 0.0;
+    }
+
+    /** How far behind the sample it was handed the bridge emits, in ENGINE
+        samples: the input kernel's lookahead plus the two model spacings the
+        output kernel needs. Zero when the two rates agree. */
+    double delay() const noexcept
+    {
+        return active ? static_cast<double> (lookahead) + 2.0 * spacing : 0.0;
+    }
+
+    /** One engine sample in, one out, with the model stepped as many times as
+        falls due at its own rate.
+
+        `model` is called with the model's own input sample and must return the
+        model's output for it. The bridge knows nothing about what is behind it,
+        which is what lets it be exercised on its own - and the caller is the one
+        that owns the model's lifetime guards and its reset.
+
+        Not const and not re-entrant: the history is the conversion's own state,
+        and it belongs to the audio thread. */
+    template <typename Model>
+    Converted process (float x, Model&& model) noexcept
+    {
+        // Rates that agree are not converted at all. This is the path every
+        // session whose model matches the engine takes, and it is why a model
+        // loaded at the engine's own rate is bit-for-bit what it was before this
+        // struct existed.
+        if (! active)
+            return { model (x), x };
+
+        xWrite = (xWrite + 1) & xMask;
+        xHistory[static_cast<std::size_t> (xWrite)] = x;
+
+        const auto now = static_cast<double> (engineSamples++);
+
+        // The model's own instants, in order. One is taken once its instant has
+        // arrived AND its kernel is fully behind the newest engine sample, which
+        // is the two samples `lookahead` names.
+        while (nextModelAt <= now - static_cast<double> (lookahead))
+        {
+            vWrite = (vWrite + 1) & vMask;
+            vHistory[static_cast<std::size_t> (vWrite)] = model (xAtAge (now - nextModelAt));
+
+            newestModelAt = nextModelAt;
+            modelSamples = juce::jmin (modelSamples + 1, vSize);
+            nextModelAt += spacing;
+        }
+
+        // Everything the bridge emits is this far behind the sample it was
+        // handed, the dry leg included: a crossfade between a converted wet leg
+        // and an unconverted dry one would be two signals a fraction of a
+        // millisecond apart, which is a comb rather than a blend.
+        const auto outputAge = delay();
+        const auto dry = xAtAge (outputAge);
+
+        // Until the model has answered enough times for the output kernel's
+        // window there is nothing to reconstruct, and what the bridge owes is the
+        // delayed dry signal - a pass-through with the right phase, so the model
+        // fades in rather than arriving as a step.
+        if (modelSamples < ready)
+            return { dry, dry };
+
+        // The model's output, reconstructed at the engine's own instants. The
+        // taps are the model's grid, which is uniform, so the point is an offset
+        // in MODEL samples rather than a position in the engine's - and that
+        // offset is bounded by the two model spacings the output delay carries,
+        // so the taps always sit inside the (much shorter) model-side history.
+        const auto f = juce::jlimit (1.0, static_cast<double> (vSize - 3),
+                                     (newestModelAt - (now - outputAge)) * step);
+        const auto tap = static_cast<int> (std::floor (f));
+        const auto fraction = static_cast<float> (f - static_cast<double> (tap));
+
+        return { cubic (vAt (tap - 1), vAt (tap), vAt (tap + 1), vAt (tap + 2), fraction),
+                 dry };
+    }
+
+private:
+    /** The cubic through four samples at the fraction `u` past the second of
+        them - Catmull-Rom, which is the four-point interpolator whose slope at
+        each sample is the one the samples either side imply, and the reason the
+        conversion is smooth rather than piecewise linear. */
+    static float cubic (float y0, float y1, float y2, float y3, float u) noexcept
+    {
+        return 0.5f * (2.0f * y1
+                       + (-y0 + y2) * u
+                       + (2.0f * y0 - 5.0f * y1 + 4.0f * y2 - y3) * u * u
+                       + (-y0 + 3.0f * y1 - 3.0f * y2 + y3) * u * u * u);
+    }
+
+    /** The engine signal `age` samples ago - the newest sample is age 0 - 
+        interpolated between the four samples that bracket it. The whole of the
+        bridge's delay arithmetic is in the ages its callers ask for, all of which
+        are inside the history by construction (see `xSize`). */
+    float xAtAge (double age) const noexcept
+    {
+        const auto whole = static_cast<int> (std::floor (age));
+        const auto fraction = static_cast<float> (age - static_cast<double> (whole));
+        return cubic (xAt (whole - 1), xAt (whole),
+                      xAt (whole + 1), xAt (whole + 2), fraction);
+    }
+
+    /** `age` samples ago, by ring index: the newest sample is age 0, and the
+        buffer is its own ring so a push costs one store rather than a shift. */
+    float xAt (int age) const noexcept
+    {
+        return xHistory[static_cast<std::size_t> ((xWrite - age) & xMask)];
+    }
+
+    float vAt (int age) const noexcept
+    {
+        return vHistory[static_cast<std::size_t> ((vWrite - age) & vMask)];
+    }
+
+    std::array<float, xSize> xHistory {};
+    std::array<float, vSize> vHistory {};
+    int xWrite = 0;
+    int vWrite = 0;
+    long long engineSamples = 0;    ///< engine samples handed in so far
+    int modelSamples = 0;           ///< model samples taken so far, saturated at vSize
+    double nextModelAt = 0.0;       ///< engine instant of the next model sample
+    double newestModelAt = 0.0;     ///< ... and of the one taken most recently
+};
+
+//==============================================================================
+/**
     NeuralStage - an optional RTNeural model run as a per-channel nonlinearity.
 
     The other stages in this plugin are hand-written curves, each chosen because
@@ -1609,6 +1844,22 @@ struct NeuralStage
     std::atomic<ModelType*> activeModel { nullptr };
     std::atomic<bool> clearRequested { false };
     std::atomic<bool> resetRequested { false };
+
+    // The conversion, for a model whose own rate is not the engine's (see
+    // RateBridge). With the two rates equal the bridge is a single branch and
+    // the stage is exactly what it was before it existed.
+    RateBridge bridge;
+
+    // The two rates, and whether the bridge has been told about them yet. They
+    // arrive from whoever knows: a model load on the MESSAGE thread, a session
+    // rate or an oversampling change from either thread - and the oversampling
+    // switch really is made from the audio thread, because it is a host
+    // parameter. The bridge itself is audio-thread state, so it is prepared on
+    // the audio thread's next inference instead - the same discipline the model
+    // pointer above follows.
+    std::atomic<double> wantedModelRate { 0.0 };
+    std::atomic<double> wantedEngineRate { 0.0 };
+    std::atomic<bool> ratesPending { false };
 
     /** The model's input frame. RTNeural's forward() takes a pointer to a
         float[inSize] and RETURNS the single output sample by value, so one
@@ -1677,6 +1928,27 @@ struct NeuralStage
         juce::ignoreUnused (json);
         return false;
     #endif
+    }
+
+    /** Tells the stage the rate the MODEL was trained at - 0 means unknown, which
+        keeps the model on the engine's own samples, exactly the behaviour every
+        build had before the bridge existed - and the rate the ENGINE is running
+        at, so a model trained at 48 kHz is run at 48 kHz whatever the engine is
+        doing (see RateBridge).
+
+        Called whenever either rate can have changed: a model load, a session rate
+        change, or a change of oversampling factor. Realtime-safe - it writes three
+        atomics and nothing else - because the oversampling switch arrives on the
+        audio thread. */
+    void setSampleRates (double modelRate, double engineRate) noexcept
+    {
+#if J37_HAS_RTNEURAL
+        wantedModelRate.store (modelRate, std::memory_order_relaxed);
+        wantedEngineRate.store (engineRate, std::memory_order_relaxed);
+        ratesPending.store (true, std::memory_order_release);
+#else
+        juce::ignoreUnused (modelRate, engineRate);
+#endif
     }
 
     /** Releases the model, returning the stage to the pass-through. */
@@ -1914,14 +2186,43 @@ struct NeuralStage
         if (activeModel.load (std::memory_order_acquire) != active
             || clearRequested.load (std::memory_order_acquire))
             return x;
+
+        // The rates, latched here rather than written into the bridge by the
+        // thread that knows them: see `setSampleRates`. Checked per sample, which
+        // is one relaxed load against the two the guards above already make, and
+        // it has to be here rather than per block because this stage is called
+        // per sample.
+        if (ratesPending.load (std::memory_order_acquire))
+        {
+            bridge.prepare (wantedModelRate.load (std::memory_order_relaxed),
+                            wantedEngineRate.load (std::memory_order_relaxed));
+            ratesPending.store (false, std::memory_order_release);
+        }
+
         if (resetRequested.exchange (false, std::memory_order_acq_rel))
+        {
             active->reset();
 
-        inputFrame[0] = x;
+            // The model's own memory is gone, so the conversion's is too: what the
+            // bridge is holding are that model's answers.
+            bridge.reset();
+        }
 
-        // RTNeural's Model<T>::forward(const T*) returns the single output value.
-        const float wet = active->forward (inputFrame);
-        return x + (wet - x) * juce::jlimit (0.0f, 1.0f, amount);
+        // The frame the model is handed: the sample itself when the two rates
+        // agree, and the signal carried to the model's own rate when they do not.
+        // Either way the stage's crossfade runs between the bridge's two legs,
+        // which are in phase with each other.
+        const auto converted = bridge.process (x, [active, this] (float input) noexcept
+        {
+            inputFrame[0] = input;
+
+            // RTNeural's Model<T>::forward(const T*) returns the single output
+            // value.
+            return active->forward (inputFrame);
+        });
+
+        return converted.dry
+             + (converted.wet - converted.dry) * juce::jlimit (0.0f, 1.0f, amount);
 #else
         juce::ignoreUnused (amount);
         return x;
@@ -3791,6 +4092,16 @@ struct StandardCompressor
     prepare(), so the reading is correct at every supported rate: 44.1, 48, 88.2,
     96, 176.4 and 192 kHz. The coefficients come from tan(pi * f0 / rate), which is
     exact at any rate, so no additional scaling is needed for a 192 kHz session.
+
+    Each channel carries its own filter history. The two channels of a frame are
+    two signals, and a biquad's state is part of the signal, not part of the
+    curve: run the right channel through the coefficients that the left channel
+    just left behind and the right is filtered by the left's tail rather than by
+    its own past. That is what a single pair of state variables did, and it made
+    the meter read high on a mono signal (the second pass responded to the first
+    channel's history, so the one signal was counted about twice) and read the
+    stereo sum as 0.57 LU instead of 3 - a meter that is fed both channels and
+    reports something that is neither of them.
 */
 struct LoudnessMeter
 {
@@ -3832,10 +4143,22 @@ struct LoudnessMeter
         }
     }
 
+    /**
+        Clears the filter history and the running mean square, and leaves the
+        rate-dependent coefficients exactly as prepare() built them.
+
+        Both halves of that matter. The engine calls prepare() and then reset(),
+        in that order, so a reset that also zeroed the coefficients would drop the
+        K-weighting back to a flat pass-through for the rest of the session - which
+        is what `shelf = {}` did: a meter reading 0.69 dB low on every project,
+        with nothing on screen to say so. A reset that left the history in place
+        would instead carry the previous session's signal into a freshly prepared
+        one.
+    */
     void reset() noexcept
     {
-        shelf = {};
-        highPass = {};
+        shelf.clearState();
+        highPass.clearState();
         meanSquare = 0.0f;
     }
 
@@ -3855,8 +4178,8 @@ struct LoudnessMeter
     /** Feeds one stereo frame and returns the current loudness in LUFS. */
     float processFrame (float left, float right, float windowCoefficient) noexcept
     {
-        const auto weightedLeft = highPass.process (shelf.process (left));
-        const auto weightedRight = highPass.process (shelf.process (right));
+        const auto weightedLeft = highPass.process (shelf.process (left, 0), 0);
+        const auto weightedRight = highPass.process (shelf.process (right, 1), 1);
 
         // BS.1770 sums the per-channel mean squares; the channels here are already
         // gain-weighted equally, so it is a plain sum.
@@ -3873,17 +4196,30 @@ struct LoudnessMeter
     }
 
 private:
+    /** One biquad's coefficients with one history per channel (0 = left, 1 = right).
+        The coefficients are shared because both channels carry the same curve; the
+        history is not, because the two channels are different signals. */
     struct Biquad
     {
         float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f, a1 = 0.0f, a2 = 0.0f;
-        float x1 = 0.0f, x2 = 0.0f, y1 = 0.0f, y2 = 0.0f;
 
-        float process (float x) noexcept
+        float x1[2] {}, x2[2] {}, y1[2] {}, y2[2] {};
+
+        float process (float x, int channel) noexcept
         {
-            const auto y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-            x2 = x1; x1 = x;
-            y2 = y1; y1 = y;
+            const auto y = b0 * x + b1 * x1[channel] + b2 * x2[channel]
+                         - a1 * y1[channel] - a2 * y2[channel];
+            x2[channel] = x1[channel];
+            x1[channel] = x;
+            y2[channel] = y1[channel];
+            y1[channel] = y;
             return y;
+        }
+
+        void clearState() noexcept
+        {
+            for (int channel = 0; channel < 2; ++channel)
+                x1[channel] = x2[channel] = y1[channel] = y2[channel] = 0.0f;
         }
     };
 
@@ -4647,55 +4983,479 @@ private:
 };
 
 //==============================================================================
-/** Realtime granular pitch shifter used by the optional autotune stage. */
+//==============================================================================
+/**
+    The pitch the autotune stage corrects towards, measured by YIN.
+
+    What this replaces counted ZERO CROSSINGS of the input and inferred a
+    frequency from their rate. That is a rate detector, not a pitch detector: on
+    a signal with strong harmonics it locks onto whichever overtone supplies the
+    crossings (a guitar's second harmonic reads an octave high, which is how a
+    "corrector" can leave a note exactly where it was), and on NOISE - which has
+    as many crossings as it has samples - it reports a confident frequency that
+    is nothing but hiss, so the correction chased the noise floor instead of the
+    note. Both of those were reported, in one sentence, as "autotune does
+    nothing": it moved the pitch towards the wrong number, or towards a number
+    that was not a pitch at all.
+
+    YIN is a PERIOD detector, and it answers both: it looks for the lag at which
+    the waveform best predicts itself (the difference function), normalises that
+    difference by the mean difference over every shorter lag - which is what
+    removes the octave errors a bare autocorrelation makes - and reports the
+    first lag that falls under a threshold, with a confidence of one minus the
+    normalised difference there. A noise floor has no such lag and reports no
+    confidence, and the caller reads that as leave this alone.
+
+    The analysis runs at a FIXED rate: the input is decimated by whatever integer
+    takes the session rate nearest to 12 kHz, so the lag range means the same
+    frequencies (47 Hz to 1.5 kHz) at every sample rate and the cost per second
+    is the same too. The estimate is refreshed every 256 analysis frames - about
+    20 ms - which is fast enough to follow a note and slow enough that the
+    difference function is a few percent of one core, and it is only ever paid
+    while the stage is switched on.
+*/
+struct PitchTracker
+{
+    // A 512-frame analysis window gives the difference function 256 frames of
+    // overlap for lags up to 256 frames: 47 Hz at the 12 kHz analysis rate.
+    static constexpr int analysisSize = 512;
+    static constexpr int maxTau = 256;
+    static constexpr int minTau = 8;
+    static constexpr int tauCount = maxTau;
+    static constexpr int differenceSize = analysisSize - maxTau;
+    static constexpr float analysisTargetRate = 12000.0f;
+    static constexpr float threshold = 0.15f;
+    static constexpr float silentRms = 1.0e-4f;
+    static constexpr float octaveGuardLog2 = 0.15f;
+
+    /** Prepares the decimation for a rate. Called from prepareToPlay. */
+    void prepare (double sampleRateIn)
+    {
+        const auto sampleRate = sampleRateIn > 1.0 ? sampleRateIn : 48000.0;
+        decimation = juce::jmax (1, juce::roundToInt (sampleRate / analysisTargetRate));
+        analysisRate = static_cast<float> (sampleRate) / static_cast<float> (decimation);
+        reset();
+    }
+
+    void reset() noexcept
+    {
+        window.fill (0.0f);
+        writeIndex = 0;
+        sinceAnalysis = 0;
+        framesSinceReset = 0;
+        decimationCounter = 0;
+        decimationSum = 0.0f;
+        frequencyValue = 0.0f;
+        periodValue = 0.0f;
+        confidenceValue = 0.0f;
+        lastFrequency = 0.0f;
+        lastConfidence = 0.0f;
+        for (auto& value : difference) value = 0.0f;
+        for (auto& value : normalised) value = 0.0f;
+    }
+
+    /** One input frame of the signal to be tracked (the mono sum of the pair). */
+    void push (float sample) noexcept
+    {
+        // The decimation is a box average: a cheap low-pass whose passband
+        // covers everything the analysis cares about and whose stopband is what
+        // keeps the lag search from confusing the top octave.
+        decimationSum += sample;
+
+        if (++decimationCounter < decimation)
+            return;
+
+        window[static_cast<std::size_t> (writeIndex)] = decimationSum
+                                                       / static_cast<float> (decimation);
+        decimationCounter = 0;
+        decimationSum = 0.0f;
+        writeIndex = (writeIndex + 1) % analysisSize;
+        ++framesSinceReset;
+
+        if (++sinceAnalysis >= maxTau)
+        {
+            sinceAnalysis = 0;
+            analyse();
+        }
+    }
+
+    /** The detected fundamental in Hz, held between analyses. Zero until a
+        reading exists. */
+    float frequency() const noexcept { return frequencyValue; }
+
+    /** The period of that fundamental in frames of the rate it was pushed at -
+        what the shifter's grains are measured in. Zero with no reading. */
+    float periodFrames() const noexcept { return periodValue; }
+
+    /** One minus the normalised difference at the chosen lag: 1 is a perfectly
+        periodic signal, 0 is noise or silence. */
+    float confidence() const noexcept { return confidenceValue; }
+
+    /** The decimated rate the lag search runs at. The caller needs it because
+        `periodFrames()` is measured in frames of THIS rate, while the shifter it
+        drives runs at the session rate: one is a multiple of the other. */
+    float analysisRateHz() const noexcept { return analysisRate; }
+
+private:
+    void analyse() noexcept
+    {
+        // A reading needs a full window behind it: until that many decimated
+        // frames have gone in, part of what the difference function reads is
+        // still zeros, and a difference against zeros reads as a very confident
+        // pitch at the length of the gap.
+        if (framesSinceReset < analysisSize)
+        {
+            confidenceValue = 0.0f;
+            return;
+        }
+
+        const auto at = [this] (int index) noexcept
+        {
+            return window[static_cast<std::size_t> ((writeIndex + index) % analysisSize)];
+        };
+
+        auto energy = 0.0f;
+        for (int frame = 0; frame < differenceSize; ++frame)
+        {
+            const auto value = at (frame);
+            energy += value * value;
+        }
+
+        if (std::sqrt (energy / static_cast<float> (differenceSize)) < silentRms)
+        {
+            confidenceValue = 0.0f;          // silence has no pitch; hold the last
+            return;
+        }
+
+        // The difference function, over every lag the normalisation needs - 
+        // including the very short ones, because it is the MEAN over all shorter
+        // lags that makes the normalisation mean what it means.
+        for (int tau = 1; tau <= maxTau; ++tau)
+        {
+            auto sum = 0.0f;
+            for (int frame = 0; frame < differenceSize; ++frame)
+            {
+                const auto delta = at (frame) - at (frame + tau);
+                sum += delta * delta;
+            }
+
+            difference[static_cast<std::size_t> (tau - 1)] = sum;
+        }
+
+        // Cumulative mean normalisation: d'(tau) = d(tau) * tau / sum(d(1..tau)).
+        auto running = 0.0f;
+        for (int tau = 1; tau <= maxTau; ++tau)
+        {
+            const auto index = static_cast<std::size_t> (tau - 1);
+            running += difference[index];
+            normalised[index] = running > 0.0f
+                                    ? difference[index] * static_cast<float> (tau) / running
+                                    : 1.0f;
+        }
+
+        // The first lag under the threshold, walked on to its own minimum: that
+        // is YIN's rule, and the walking is what keeps the estimate on the true
+        // period rather than on the first lag that squeaked under the line.
+        auto tau = -1;
+
+        for (int candidate = minTau; candidate <= maxTau; ++candidate)
+        {
+            const auto index = static_cast<std::size_t> (candidate - 1);
+
+            if (normalised[index] < threshold)
+            {
+                while (candidate < maxTau
+                       && normalised[static_cast<std::size_t> (candidate)] < normalised[index])
+                    ++candidate;
+
+                tau = candidate;
+                break;
+            }
+        }
+
+        auto confidence = 0.0f;
+
+        if (tau < 0)
+        {
+            // Nothing under the threshold: the deepest minimum is the only
+            // candidate left, and it is only a pitch if it is deep at all.
+            auto deepest = minTau;
+
+            for (int candidate = minTau; candidate <= maxTau; ++candidate)
+                if (normalised[static_cast<std::size_t> (candidate - 1)]
+                        < normalised[static_cast<std::size_t> (deepest - 1)])
+                    deepest = candidate;
+
+            if (normalised[static_cast<std::size_t> (deepest - 1)] < 0.5f)
+                tau = deepest;
+        }
+
+        if (tau < 0)
+        {
+            confidenceValue = 0.0f;
+            return;
+        }
+
+        confidence = juce::jlimit (0.0f, 1.0f, 1.0f - normalised[static_cast<std::size_t> (tau - 1)]);
+
+        // Parabolic interpolation between the chosen lag and its neighbours, on
+        // the NORMALISED difference: the refinement is what makes the estimate
+        // accurate enough to hear, and using d' rather than d keeps it on the
+        // same curve the choice was made on.
+        auto refined = static_cast<float> (tau);
+
+        if (tau > minTau && tau < maxTau)
+        {
+            const auto before = normalised[static_cast<std::size_t> (tau - 2)];
+            const auto here = normalised[static_cast<std::size_t> (tau - 1)];
+            const auto after = normalised[static_cast<std::size_t> (tau)];
+            const auto denominator = 2.0f * (2.0f * here - before - after);
+
+            if (std::abs (denominator) > 1.0e-9f)
+                refined += (after - before) / denominator;
+        }
+
+        auto hz = analysisRate / refined;
+
+        // The octave guard. A period detector's one characteristic failure is a
+        // strong second harmonic reading an octave high, and it is recognisable:
+        // the reading is near-exactly an octave away AND less confident than the
+        // note it is replacing. Staying on the note the voice was singing is
+        // right in that case, and one refresh of latency on a genuine octave jump
+        // is not something a corrector can be heard to have.
+        if (lastFrequency > 0.0f && confidence < lastConfidence - 0.2f)
+        {
+            auto best = hz;
+            auto bestError = std::abs (std::log2 (hz / lastFrequency));
+
+            for (const auto candidate : { hz * 0.5f, hz * 2.0f })
+            {
+                const auto error = std::abs (std::log2 (candidate / lastFrequency));
+
+                // Only an octave move is a candidate, and only if it actually
+                // lands closer to what was last heard - so a genuine leap to a
+                // fifth is left alone, and a wrong octave is not.
+                if (std::abs (error - 1.0f) < octaveGuardLog2 && error < bestError)
+                {
+                    best = candidate;
+                    bestError = error;
+                }
+            }
+
+            hz = best;
+        }
+
+        frequencyValue = hz;
+        periodValue = analysisRate > 0.0f ? analysisRate / hz : 0.0f;
+        confidenceValue = confidence;
+        lastFrequency = hz;
+        lastConfidence = confidence;
+    }
+
+    std::array<float, analysisSize> window {};
+    std::array<float, tauCount> difference {};
+    std::array<float, tauCount> normalised {};
+    int writeIndex = 0;
+    int sinceAnalysis = 0;
+    int framesSinceReset = 0;
+    int decimation = 4;
+    int decimationCounter = 0;
+    float decimationSum = 0.0f;
+    float analysisRate = 12000.0f;
+    float frequencyValue = 0.0f;
+    float periodValue = 0.0f;
+    float confidenceValue = 0.0f;
+    float lastFrequency = 0.0f;
+    float lastConfidence = 0.0f;
+};
+
+//==============================================================================
+/**
+    Realtime granular pitch shifter used by the optional autotune stage.
+
+    Two read heads over a delay line, each with its own raised-cosine window, half
+    a window apart, so exactly one of them is at full window at any moment and
+    their windows sum to the input. Each head advances at the pitch ratio and
+    restarts - SPLICES - when its own window reaches zero, which is the one moment
+    a head contributes nothing and can therefore jump to a new position unheard.
+
+    Where it restarts is this shifter's whole quality, and the earlier version got
+    both halves of it wrong:
+
+      * it applied the restart correction to BOTH heads at once, so the head that
+        was at FULL window took a step the size of the correction - a click, once
+        per grain, on every note; and
+
+      * it restarted at a fixed offset from wherever the head happened to be, so a
+        pitched signal came back as two segments that were not phase-aligned. That
+        is the granular flutter of the old stage, and it is why a corrector built
+        on it could not be tuned by ear.
+
+    The restart here is PHASE-LOCKED: a head comes back at a delay that differs
+    from the OTHER head's by a whole number of periods of the material (when the
+    caller knows the period), so the half of the crossfade that is fading out and
+    the half that is fading in are the same waveform. The delay is also kept far
+    enough behind the write head to survive the head's own window at whatever
+    ratio it is reading at, so a splice can never run off the end of the line.
+*/
 struct RealtimePitchShifter
 {
-    static constexpr int bufferSize = 16384;
-    static constexpr int grainSize = 1024;
-    static_assert (bufferSize > grainSize * 4);
+    static constexpr int bufferSize = 8192;          // 170 ms at 48 kHz
+    static constexpr int fallbackPeriod = 512;       // no pitch known: the old grain
+    static constexpr int minPeriod = 48;
+    static constexpr int maxPeriod = 1024;
+    static constexpr float ratioSmoothing = 0.0025f;
+
     std::array<float, bufferSize> buffer {};
     int writePosition = 0;
-    float readPositionA = 0.0f;
-    float readPositionB = static_cast<float> (grainSize / 2);
-    float phase = 0.0f;
+    std::array<float, 2> tapPosition {};
+    std::array<float, 2> tapPhase { 0.0f, 0.5f };
+    int period = fallbackPeriod;
     float ratio = 1.0f;
 
     void reset() noexcept
     {
-        buffer.fill (0.0f); writePosition = 0;
-        readPositionA = 0.0f; readPositionB = static_cast<float> (grainSize / 2);
-        phase = 0.0f; ratio = 1.0f;
+        buffer.fill (0.0f);
+        writePosition = 0;
+        tapPosition = { 0.0f, 0.0f };
+        tapPhase = { 0.0f, 0.5f };
+        period = fallbackPeriod;
+        ratio = 1.0f;
     }
 
-    float process (float input, float targetRatio, float amount) noexcept
+    /** One frame through the shifter.
+
+        `targetRatio` is the pitch to read at (1 is the input's own pitch),
+        `periodHint` the period of the material in frames - 0 when the caller has
+        no reading, in which case the fallback grain is used.
+    */
+    float process (float input, float targetRatio, int periodHint) noexcept
     {
         buffer[static_cast<std::size_t> (writePosition)] = input;
         writePosition = (writePosition + 1) % bufferSize;
-        const auto safeAmount = juce::jlimit (0.0f, 1.0f, amount);
-        ratio += (juce::jlimit (0.5f, 2.0f, targetRatio) - ratio) * 0.0025f * safeAmount;
-        const auto read = [&] (float position)
+
+        period = juce::jlimit (minPeriod, maxPeriod,
+                               periodHint > 0 ? periodHint : fallbackPeriod);
+        ratio += (juce::jlimit (0.5f, 2.0f, targetRatio) - ratio) * ratioSmoothing;
+
+        const auto read = [&] (float position) noexcept
         {
             while (position < 0.0f) position += static_cast<float> (bufferSize);
-            while (position >= bufferSize) position -= static_cast<float> (bufferSize);
+            while (position >= static_cast<float> (bufferSize)) position -= static_cast<float> (bufferSize);
+
             const auto index = static_cast<int> (position);
             const auto next = (index + 1) % bufferSize;
             const auto fraction = position - static_cast<float> (index);
+
             return buffer[static_cast<std::size_t> (index)]
-                 + (buffer[static_cast<std::size_t> (next)] - buffer[static_cast<std::size_t> (index)]) * fraction;
+                 + (buffer[static_cast<std::size_t> (next)]
+                    - buffer[static_cast<std::size_t> (index)]) * fraction;
         };
-        const auto window = [] (float x) noexcept
-        { return 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * x); };
-        const auto output = read (readPositionA) * window (phase)
-                          + read (readPositionB) * window (std::fmod (phase + 0.5f, 1.0f));
-        readPositionA += ratio; readPositionB += ratio;
-        phase += 1.0f / static_cast<float> (grainSize / 2);
-        if (phase >= 1.0f)
+
+        const auto window = [] (float phase) noexcept
+        { return 0.5f - 0.5f * std::cos (juce::MathConstants<float>::twoPi * phase); };
+
+        auto output = read (tapPosition[0]) * window (tapPhase[0])
+                    + read (tapPosition[1]) * window (tapPhase[1]);
+
+        // One clock drives both heads. They sit half a grain apart, so their
+        // windows are the two halves of a single Hann and advance by the same
+        // increment; two independent accumulators would round apart over a
+        // session and leave a ripple where the halves stop summing to one, so
+        // the second phase is DERIVED from the first rather than accumulated.
+        auto closing = -1;
+
+        tapPhase[0] += 1.0f / static_cast<float> (period);
+
+        if (tapPhase[0] >= 1.0f)
         {
-            phase -= 1.0f;
-            readPositionA += static_cast<float> (grainSize / 2) * (1.0f - ratio);
-            readPositionB += static_cast<float> (grainSize / 2) * (1.0f - ratio);
+            tapPhase[0] -= 1.0f;
+            closing = 0;
         }
-        return safeAmount > 1.0e-5f ? output : input;
+
+        tapPhase[1] = tapPhase[0] + 0.5f;
+
+        if (tapPhase[1] >= 1.0f)
+        {
+            tapPhase[1] -= 1.0f;
+            closing = 1;
+        }
+
+        // Both heads move BEFORE the one that just closed its window is put
+        // back. That order is the whole point: restartPosition() measures the
+        // head it aligns to through delayOf(), and a head that has not advanced
+        // yet this frame reads one frame further back than the head doing the
+        // measuring - so the pair crept forward by a frame on every grain. At
+        // 220 grains a second that is a few cents of permanent detune and a
+        // grain-rate wobble on top of it, which is exactly what "autotune does
+        // nothing / sounds broken" was.
+        for (int tap = 0; tap < 2; ++tap)
+        {
+            const auto index = static_cast<std::size_t> (tap);
+            tapPosition[index] += ratio;
+
+            if (tapPosition[index] >= static_cast<float> (bufferSize))
+                tapPosition[index] -= static_cast<float> (bufferSize);
+        }
+
+        if (closing >= 0)
+            tapPosition[static_cast<std::size_t> (closing)] = restartPosition (1 - closing);
+
+        return output;
+    }
+
+    /** How far behind the write head a given head is reading, in frames. Public
+        because the harnesses measure the shifter's own delay through it. */
+    float delayOf (int tap) const noexcept
+    {
+        auto delay = static_cast<float> (writePosition) - tapPosition[static_cast<std::size_t> (tap)];
+
+        if (delay < 0.0f)
+            delay += static_cast<float> (bufferSize);
+
+        return delay;
+    }
+
+private:
+    /** Where the head that just closed its window comes back - see the note on
+        the struct for both halves of the rule. */
+    float restartPosition (int other) const noexcept
+    {
+        const auto otherDelay = delayOf (other);
+
+        // Room for this head's own window at the ratio it is reading at. The head
+        // advances `ratio` frames per frame while the write head advances one, so
+        // its delay SHORTENS by (ratio - 1) per frame and a whole grain takes
+        // that much off the delay it came in with: it has to start a period plus
+        // that saving behind the write head to still be behind it - and not
+        // skating along the sample just written - when the grain ends. One period
+        // is also the floor at unity, which is the whole of this stage's latency
+        // when nothing is being corrected.
+        const auto runway = static_cast<float> (period) * juce::jmax (1.0f, ratio);
+
+        // Phase-locked to the OTHER head: the same delay plus a whole number of
+        // periods. For a periodic signal those two positions are the same
+        // waveform, which is what makes the crossfade a crossfade rather than a
+        // splice - so the number of periods is free to choose, and it is chosen
+        // to put the head in [runway, runway + one period).
+        //
+        // The fold matters as much as the lift. A head reading faster than the
+        // write head (a ratio above one) catches up with it and has to be moved
+        // back; one reading slower FALLS BEHIND a little more every grain, and
+        // without folding that down again the stage would creep towards a whole
+        // line of latency and sit there - a monitor delay nobody asked for, and
+        // the second half of "autotune does something strange". Either way the
+        // result is inside half the ring, so no second clamp is needed: the
+        // period is at most maxPeriod and the runway at most two of them.
+        const auto span = static_cast<float> (period);
+        const auto delay = otherDelay + span * std::ceil ((runway - otherDelay) / span);
+
+        auto position = static_cast<float> (writePosition) - delay;
+
+        if (position < 0.0f)
+            position += static_cast<float> (bufferSize);
+
+        return position;
     }
 };
 
@@ -4754,6 +5514,12 @@ struct RealtimePitchShifter
     time constants, so the old "about a second" spin-up was really a seven-second
     creep that never settled into PLAY during a take, and the old "350 ms" stop
     needed about four seconds to reach rest. A transport gesture is a duration.
+
+    One more thing the deck answers to, and it is not its own: the HOST. START
+    pressed on a DAW whose transport is parked ARMS the key instead of performing
+    it - see `armedForHost` - so a take begins with the machine engaging as the
+    DAW rolls rather than a second and a half before it. `beginBlock()` is handed
+    that one bit along with everything else.
 */
 struct TransportRig
 {
@@ -4814,6 +5580,14 @@ struct TransportRig
     // parameter catches up when the editor's timer writes it back.
     int state = static_cast<int> (State::play);
 
+    /** True while START is being HELD FOR THE HOST - the key was pressed on a DAW
+        whose transport is not rolling - so the machine is at rest waiting for it
+        rather than spinning up. Public because the panel reads it (that is how it
+        can say "waiting for the DAW" rather than "stopped" while the parameter
+        still says START), and because the harness reads it to tell the two
+        rest-states apart. */
+    bool armedForHost = false;
+
     /** 0..1 - what the rest of the machine follows. */
     float platter() const noexcept { return ramp * spindown; }
 
@@ -4847,17 +5621,20 @@ struct TransportRig
         spinningUp = false;
         advancedToPlay = false;
         lastHeld = false;
+        armedForHost = false;
         requestedState = -1;
     }
 
     /** Once per block: the `transport` parameter's own value, the momentary hold
-        (an atomic written by the panel), the rate the ENGINE is running at - the
-        oversampled rate, because the ramps advance once per engine frame and the
-        durations above are wall-clock seconds - and the deck's own settings: the
-        TAPE SPEED and VINYL SPEED choice indices, which scale the gestures (see
-        the tables above), and the tempo they are scaled to.
+        (an atomic written by the panel), whether the HOST'S transport is rolling
+        (read from the playhead by the engine, and true when the host will not
+        say), the rate the ENGINE is running at - the oversampled rate, because
+        the ramps advance once per engine frame and the durations above are
+        wall-clock seconds - and the deck's own settings: the TAPE SPEED and VINYL
+        SPEED choice indices, which scale the gestures (see the tables above), and
+        the tempo they are scaled to.
     */
-    void beginBlock (int stateIndex, bool held, double engineRate,
+    void beginBlock (int stateIndex, bool held, bool hostRolling, double engineRate,
                      int tapeSpeed, int vinylSpeed, double tempoBpm) noexcept
     {
         if (engineRate > 1.0)
@@ -4896,26 +5673,63 @@ struct TransportRig
         if (parameterState != static_cast<int> (State::start))
             advancedToPlay = false;
 
+        // -------------------------------------------------------------------
+        //  THE ARM: START waits for the HOST.
+        //
+        //  START is a request to the MACHINE, and the machine's take belongs to
+        //  the DAW. Pressing START while the host's transport is parked therefore
+        //  ARMS the key instead of running it: the machine coasts to rest and
+        //  waits - nothing turns and nothing sounds - and the state follows the
+        //  host, so the moment it rolls, the parameter (which still reads START)
+        //  drives the ordinary spin-up below, from rest or from wherever a coast
+        //  the key caught had left the capstan.
+        //
+        //  What the machine does while it waits is STOP's, because that is what
+        //  is being done to it: the capstan is braked to rest. What differs is
+        //  the REASON, and the reason is what `armedForHost` publishes - the
+        //  panel reads it and says the key is waiting for the DAW rather than
+        //  that the machine is stopped.
+        //
+        //  A host that will not answer - no playhead, or a playhead with no
+        //  position - counts as ROLLING. The other reading, unknown means parked,
+        //  would leave the key dead on every host that cannot answer, which is a
+        //  worse fault than the one this exists to fix. A held SPINDOWN also
+        //  counts as rolling: the hold is a hand on the machine rather than a
+        //  transport request, and a manual power cut keeps its gesture whether or
+        //  not the DAW is running.
+        // -------------------------------------------------------------------
+        armedForHost = requested == static_cast<int> (State::start) && ! hostRolling && ! held;
+
+        if (armedForHost)
+            requested = static_cast<int> (State::stop);
+
         state = requested;
 
-        // The release edge of a spindown hold. A hold forces the platter to run,
-        // so releasing it on a stopped machine leaves the machine RUNNING: the
-        // gesture put the platter in motion and cutting the power does not brake
-        // it. The state follows, through the same request the auto-advance uses.
-        if (lastHeld && ! held && state == static_cast<int> (State::stop))
+        // The two hold rules, and neither runs while the key is armed: the arm
+        // yields to the hold entirely (see `! held` above) rather than trading
+        // one gesture against the other, and a waiting machine that its own
+        // released hold could spin up would not be waiting for anything.
+        if (! armedForHost)
         {
-            state = static_cast<int> (State::play);
-            lastState = -1;                 // re-arm: the PLAY case spins it up
-            requestedState = state;
-        }
+            // The release edge of a spindown hold. A hold forces the platter to run,
+            // so releasing it on a stopped machine leaves the machine RUNNING: the
+            // gesture put the platter in motion and cutting the power does not brake
+            // it. The state follows, through the same request the auto-advance uses.
+            if (lastHeld && ! held && state == static_cast<int> (State::stop))
+            {
+                state = static_cast<int> (State::play);
+                lastState = -1;                 // re-arm: the PLAY case spins it up
+                requestedState = state;
+            }
 
-        // A hold pressed on a STOPPED machine brings the platter up first - the
-        // cut has to have something to cut. The engine side only: the parameter
-        // follows on release, which is when the gesture has an answer.
-        if (held && state == static_cast<int> (State::stop))
-        {
-            state = static_cast<int> (State::play);
-            lastState = -1;
+            // A hold pressed on a STOPPED machine brings the platter up first - the
+            // cut has to have something to cut. The engine side only: the parameter
+            // follows on release, which is when the gesture has an answer.
+            if (held && state == static_cast<int> (State::stop))
+            {
+                state = static_cast<int> (State::play);
+                lastState = -1;
+            }
         }
 
         lastHeld = held;
@@ -5037,6 +5851,244 @@ private:
     bool spinningUp = false;
     bool advancedToPlay = false;
     bool lastHeld = false;
+};
+
+//==============================================================================
+/**
+    The repitch stage: what the machine made, played back at the platter's speed.
+
+    A deck whose transport slows does not merely get quieter - the programme on
+    the tape comes out LOWER, because the tape crosses the playback head more
+    slowly. Until this stage existed the plugin could not do that at all: the
+    transport scaled the machine's level, its modulation and its speed response
+    and then stopped the sound, so the gestures the panel's tips describe (the
+    pitch going first on a spindown, a start lifting back up to speed) were
+    unanswerable - the signal was never being READ at the platter's speed, it was
+    being MULTIPLIED by it, and a multiplier cannot bend a pitch.
+
+    So this is a delay line with two heads. The WRITE head records the machine's
+    finished frame at the session rate, and the READ head plays the buffer back
+    at the platter's own speed. At speed the two heads move together - the read
+    standing exactly one frame behind the write, which is the sample it has just
+    seen recorded - so the stage is the identity, with no latency to report and
+    no pitch of its own. While the platter slows, the read head falls behind the
+    write head, and that falling-behind IS the pitch. Read at 0.5 and the frame
+    comes out an octave down, read at 0.25 and it is two octaves down - which is
+    where a spindown coasts to, since its 1.6 s run-down walks the read head down
+    through the octaves exactly the way a hand on a platter does.
+
+    The stage is deliberately bounded, and the bounds are the design:
+
+      * minLag, 2 frames - the floor the servo pulls to, and the whole of this
+        stage's added latency. It sits just above the one frame the write head's
+        own advance puts between the heads, because a lag is latency added to a
+        live input and this one is meant to be nothing at all.
+
+      * below the gate, the read EATS the slack. The machine's own gate is
+        `platter^2.5`, so at a quarter speed it is 0.031 - 30 dB down and still
+        falling - and below that the machine is gone by any reading. There the
+        read stops being a playback head and becomes the machine putting itself
+        back together: it runs AHEAD of the platter and consumes the delay a
+        coast left, because nobody can hear it happen. The gain is scaled by how
+        far below the threshold the platter is, so the pitch glides into it
+        instead of stepping, and the whole glide sits at the bottom of a fade
+        that is already 30 dB down when the glide starts.
+
+      * a servo of up to +0.15 (2.4 semitones) - WITH THE PLATTER BACK AT SPEED,
+        and only there: what a gesture spent while it was audible is slid back
+        with a small spearhead of extra speed rather than left as latency for the
+        rest of the session. The pull scales with the slack and starts at zero
+        with it, so it has no edge to hear and no dead band to park in, and it
+        never touches the bend: while the machine is between the two regimes the
+        read is the platter's speed and nothing else, which is the entire effect.
+        The cost of that fidelity is the tail: a spin-up spends about a third of
+        a second of slack, and the servo needs a few seconds to take it back at a
+        rate nobody would call a pitch.
+
+      * the hard cap, 1.0 s - a slack no gesture can justify stops growing: past
+        the cap the read tracks the write and the material that would have
+        queued up is let go. The gate is at zero there, so what is let go is
+        silence.
+
+    The stage has no gain of its own, no gate and no dry/wet - the engine's
+    platter gate is already the machine's level and already sits upstream of it,
+    so STOP still fades as it did and this stage only bends what the fade is
+    fading. It runs on the frame the wet/dry crossfade produced, so a MIX 0 dry
+    leg is repitched with the machine's own signal, exactly as the transport's
+    gate treats the two legs.
+*/
+struct RepitchStage
+{
+    // The gestures, in seconds, and the servo that keeps the slack from
+    // becoming latency. See the block comment above for what each one buys.
+    static constexpr float minLagSamples    = 2.0f;
+    static constexpr float bufferSeconds    = 1.5f;
+    static constexpr float silentPlatter    = 0.25f;
+    static constexpr float consumeRate      = 0.50f;
+    static constexpr float pullUpSeconds    = 0.10f;
+    static constexpr float hardCapSeconds   = 1.0f;
+    static constexpr float maxPullUp        = 0.15f;
+    static constexpr float ratePoleSeconds  = 0.015f;
+
+    /** The read head's own clock, in frames per frame. 1 at rest, 0 with the
+        platter stopped, and never above 1 + maxPullUp. */
+    float rate = 1.0f;
+
+    /** Prepares the ring for the engine's rate. Called from prepareToPlay, so
+        nothing here allocates on the audio thread. */
+    void prepare (double sampleRateIn)
+    {
+        const auto sampleRate = sampleRateIn > 1.0 ? sampleRateIn : 48000.0;
+        const auto wanted = static_cast<int> (sampleRate * bufferSeconds);
+
+        if (wanted != length)
+        {
+            length = juce::jmax (64, wanted);
+            left.assign (static_cast<std::size_t> (length), 0.0f);
+            right.assign (static_cast<std::size_t> (length), 0.0f);
+        }
+
+        pullUpSpanSamples  = static_cast<float> (sampleRate) * pullUpSeconds;
+        hardCapSamples     = static_cast<float> (sampleRate) * hardCapSeconds;
+        rateCoefficient    = 1.0f - std::exp (-1.0f / (static_cast<float> (sampleRate) * ratePoleSeconds));
+
+        reset();
+    }
+
+    /** Drops the programme and puts both heads at the same place. */
+    void reset() noexcept
+    {
+        std::fill (left.begin(), left.end(), 0.0f);
+        std::fill (right.begin(), right.end(), 0.0f);
+        writePosition = 0;
+        readPosition = 0.0f;
+        rate = 1.0f;
+    }
+
+    /** One frame of the machine's output, played back at `speed` - the platter,
+        the one number the whole transport follows. Reads and writes in place. */
+    void processFrame (std::array<float, 2>& frame, int channels, float speed) noexcept
+    {
+        if (length <= 1)
+            return;
+
+        // Record the frame under the write head, then advance it. The lag below
+        // is measured from the NEW position, so a read that has not moved has
+        // fallen a frame further behind.
+        left[static_cast<std::size_t> (writePosition)] = frame[0];
+        if (channels > 1)
+            right[static_cast<std::size_t> (writePosition)] = frame[1];
+
+        writePosition = (writePosition + 1) % length;
+
+        // How far the read head trails the write head, in frames. Both positions
+        // sit in [0, length), so one wrap correction is all this needs.
+        const auto writeAsFloat = static_cast<float> (writePosition);
+        auto lag = writeAsFloat - readPosition;
+        if (lag < 0.0f)
+            lag += static_cast<float> (length);
+
+        // What the read head turns at, in the three regimes the platter moves
+        // through - and the order of these branches is the design:
+        //
+        //   * AT SPEED - the platter is 1, so the pitch is the platter's and the
+        //     only question left is whether a gesture left the read behind:
+        //     past its budget, the servo slides it home.
+        //   * BENDING - the platter's own speed and NOTHING added to it. This is
+        //     the effect itself: the pitch the user hears is the number the
+        //     transport follows, exactly, for the whole of the gesture.
+        //   * BELOW THE GATE - silent, so the read may eat the slack instead of
+        //     reading at the platter's speed. It is the one moment a delay can
+        //     be spent without anyone hearing it, and spending it there is what
+        //     keeps a stop from costing the rest of the session a quarter of a
+        //     second.
+        //
+        // The third regime's gain is scaled by how far below the threshold the
+        // platter is, so the pitch glides into it rather than stepping - and the
+        // glide lives under a 46 dB fade.
+        auto target = speed;
+
+        if (speed < silentPlatter)
+        {
+            const auto depth = juce::jlimit (0.0f, 1.0f,
+                                             (silentPlatter - speed) / silentPlatter);
+            target = 1.0f + consumeRate * depth * depth;
+        }
+        else if (speed >= 0.999f)
+        {
+            const auto surplus = lag - minLagSamples;
+
+            if (surplus > 0.0f)
+            {
+                const auto pull = juce::jmin (1.0f, surplus / pullUpSpanSamples);
+                target = juce::jmax (speed, 1.0f + maxPullUp * pull);
+            }
+        }
+
+        if (lag > hardCapSamples)
+            target = juce::jmax (target, 1.0f);
+
+        // One pole on the read rate, so the platter's own linear ramps arrive as
+        // a glide in the pitch rather than as steps - and so the servo cannot
+        // switch on with an edge of its own.
+        rate += (target - rate) * rateCoefficient;
+        rate = juce::jlimit (0.0f, 1.0f + maxPullUp, rate);
+
+        // PLAY FIRST, THEN MOVE. A head reads the tape under it and only then
+        // crosses to the next sample, which is also what makes the stage the
+        // identity at speed: the read stands where the write stood one frame ago.
+        const auto index = static_cast<int> (readPosition);
+        const auto next = (index + 1) % length;
+        const auto fraction = readPosition - static_cast<float> (index);
+
+        const auto headLeft = left[static_cast<std::size_t> (index)];
+        frame[0] = headLeft + (left[static_cast<std::size_t> (next)] - headLeft) * fraction;
+
+        if (channels > 1)
+        {
+            const auto headRight = right[static_cast<std::size_t> (index)];
+            frame[1] = headRight + (right[static_cast<std::size_t> (next)] - headRight) * fraction;
+        }
+
+        readPosition += rate;
+
+        // A tape cannot play what has not been recorded yet: a read that has
+        // crossed the write head (the wrapped lag goes past half the ring) is
+        // held exactly on it instead.
+        auto lagAfter = writeAsFloat - readPosition;
+        if (lagAfter < 0.0f)
+            lagAfter += static_cast<float> (length);
+
+        if (lagAfter > static_cast<float> (length) * 0.5f)
+            readPosition = writeAsFloat;
+
+        if (readPosition >= static_cast<float> (length))
+            readPosition -= static_cast<float> (length);
+    }
+
+    /** What the read head trails the write head by, in frames - the stage's own
+        latency. Read by the harnesses (and by nothing in the audio path). */
+    float slackFrames() const noexcept
+    {
+        if (length <= 0)
+            return 0.0f;
+
+        auto lag = static_cast<float> (writePosition) - readPosition;
+        if (lag < 0.0f)
+            lag += static_cast<float> (length);
+        return lag;
+    }
+
+private:
+    std::vector<float> left;
+    std::vector<float> right;
+    int length = 0;
+    int writePosition = 0;
+    float readPosition = 0.0f;
+
+    float pullUpSpanSamples = 0.0f;
+    float hardCapSamples = 0.0f;
+    float rateCoefficient = 0.0f;
 };
 
 //==============================================================================
@@ -5344,6 +6396,16 @@ public:
         spin its reels at the real speed rather than at a guess. */
     float getTransportRamp() const noexcept { return transportRampPublished.load (std::memory_order_relaxed); }
 
+    /** True while the START key is armed against the host: it was pressed on a DAW
+        whose transport was not rolling, so the machine is at rest WAITING for it
+        rather than spinning up. The parameter still reads START while this is
+        true, which is what makes the flag necessary - without it the panel could
+        not tell a waiting key from a machine that is simply stopped. */
+    bool isTransportArmedForHost() const noexcept
+    {
+        return transportArmedPublished.load (std::memory_order_relaxed);
+    }
+
     /** The spindown run-down alone, 0..1, 1 = at speed. Lets the panel show the
         pitch falling away during a hold even while the transport itself is Play. */
     float getSpindownRamp() const noexcept { return spindownRampPublished.load (std::memory_order_relaxed); }
@@ -5402,8 +6464,33 @@ public:
     /** Releases any installed model, returning the stage to the pass-through. */
     void clearNeuralModel();
 
+    /** The rate the loaded model was trained at, in Hz - 0 when that is unknown,
+        which is the case for every RTNeural JSON model (the format carries no
+        rate) and for no model at all. A .nam file carries it, and the stage runs
+        such a model at THIS rate whatever the engine is doing; see RateBridge. */
+    double getNeuralModelRate() const noexcept
+    {
+        return neuralModelRate.load (std::memory_order_relaxed);
+    }
+
+    /** The rate the ENGINE is running at: the session's rate times the
+        oversampling factor. Published because it is the rate a model would be run
+        at if it were not being converted to its own, which is the comparison the
+        panel makes when it says which rate a model is playing at. */
+    double getEngineSampleRate() const noexcept
+    {
+        return neuralEngineRate.load (std::memory_order_relaxed);
+    }
+
     /** True when a model is installed and the stage can run it. */
     bool hasNeuralModel() const noexcept { return neuralL.isActive(); }
+
+    /** Why the last load FAILED, in the few words the panel's readout can put
+        after "INVALID". Empty after a successful load and before the first
+        attempt. Written and read on the MESSAGE thread - the picker's callback
+        is the only caller of the three loaders - so a plain String is enough
+        and nothing here is visible to the audio thread. */
+    const juce::String& lastLoadError() const noexcept { return lastLoadErrorMessage; }
 
     //==============================================================================
     //  Audio -> UI telemetry.
@@ -5953,15 +7040,13 @@ private:
     std::array<GlueCompressor, 2> outputCompressorChannels;
     std::array<StandardCompressor, 2> standardCompressors;
     std::array<RealtimePitchShifter, 2> autoTuneShifters;
+    // One YIN tracker per channel: the estimate a corrector needs is the pitch of
+    // the note in THIS channel, and a stereo mix's two notes are not the same
+    // note. The tracker is only fed while the stage is switched on - see
+    // processAutoTuneSample, which is the only caller.
+    std::array<PitchTracker, 2> autoTuneTrackers;
     std::array<float, 2> autoTuneCorrectionSmoothed { 1.0f, 1.0f };
     juce::AudioBuffer<float> postFxScratch;
-    std::array<float, 2> autoTunePhase { 0.0f, 0.0f };
-    std::array<float, 2> autoTuneFrequency { 440.0f, 440.0f };
-    std::array<float, 2> autoTuneEnvelope {};
-    std::array<float, 2> autoTunePreviousSample {};
-    std::array<float, 2> autoTuneSampleCounter {};
-    std::array<float, 2> autoTuneZeroCrossings {};
-    int autoTuneProcessStride = 1;
 
     // Measures the harmonics the tape shaper is actually producing, separating even from
     // odd. This is the observable signature of the analogue character and drives the
@@ -6181,6 +7266,14 @@ private:
     // telemetry on this class.
     std::atomic<float> transportRampPublished { 1.0f };
     std::atomic<float> spindownRampPublished { 1.0f };
+
+    // True while the START key is armed against the host (see the arm in
+    // TransportRig). Written once per block by the audio thread, beside the
+    // request it publishes, and read with a relaxed load by the panel's deck
+    // readout. While the engine is bypassed nothing writes it, so it holds the
+    // last block's answer - which is the honest UI reading of a machine that is
+    // not being run at all.
+    std::atomic<bool> transportArmedPublished { false };
 
     // Noise floor trim, smoothed like every other control-derived gain so moving
     // the NOISE knob cannot step the hiss level.
@@ -6470,6 +7563,24 @@ private:
     NeuralStage neuralR;
     SampleSmoother neuralMixSmoothed { sampleClock, false, false, 0.0f };
 
+    //  The rate the loaded model was trained at, and the rate the engine runs at.
+    //  Atomics because either can be set from either thread - a model is loaded on
+    //  the message thread, and the oversampling factor that moves the engine's
+    //  rate is switched from the audio thread when its host parameter changes -
+    //  and both are pushed to the stages by updateNeuralSampleRates(), which the
+    //  stages then latch on the audio thread.
+    std::atomic<double> neuralModelRate { 0.0 };
+    // Seeded at the rate a session that has not been prepared yet is assumed to be
+    // at, rather than at zero: the panel compares this against a loaded model's own
+    // rate to decide whether to say anything, and a zero here would make every
+    // model look like it was being converted until the first prepare.
+    std::atomic<double> neuralEngineRate { 48000.0 };
+
+    /** Hands the two rates to both neural stages. Called from the three places
+        either number can have changed: a model load, prepareToPlay, and a change
+        of oversampling factor. */
+    void updateNeuralSampleRates();
+
     //  The IR cabinet stage: one convolution per channel against a user-loaded
     //  impulse response, blended by IR MIX (ir_mix) exactly the way NEURAL
     //  blends the model. The convolutions run on the FINISHED block after the
@@ -6477,6 +7588,17 @@ private:
     //  note there explains why a stage with a tail cannot live in that loop.
     IrStage irStage;
     SampleSmoother irMixSmoothed { sampleClock, false, false, 0.0f };
+
+    //  The repitch stage: the one place the transport's speed changes the PITCH
+    //  rather than the level. Prepared at the ENGINE rate, advanced once per
+    //  frame; see the stage's own note above for what it does and why it is
+    //  bounded the way it is.
+    RepitchStage repitchStage;
+
+    //  The reason the last file load failed, so the picker can say WHAT was
+    //  wrong with the file instead of only that something was. Message thread
+    //  only; see the accessor above for why no guard is needed.
+    juce::String lastLoadErrorMessage;
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessor)

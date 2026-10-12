@@ -26,8 +26,53 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parents[2]
 HEADER = REPO / "Source" / "PluginProcessor.h"
 IMPL = REPO / "Source" / "PluginProcessor.cpp"
+# The panel is read for ONE thing - that it asks whether START is armed - because
+# the arm is invisible on the machine and a flag nobody reads is not a feature.
+EDITOR = REPO / "Source" / "PluginEditor.cpp"
 
-DECLARATION = "struct TransportRig"
+DECLARATIONS = [
+    "struct TransportRig",
+    # The repitch stage is cut out for the same reason the rig is: the harness has
+    # to drive the real one. It is the stage that turns the platter's speed into
+    # a PITCH - the rig says where the transport goes, this says what the machine
+    # sounds like while it goes there - and neither can be checked against a copy.
+    "struct RepitchStage",
+]
+
+# The slice of the toolkit the extracted stages reach for. The harness has no
+# JUCE on its include path, so juce::jmin/jmax/jlimit are provided here with the
+# semantics of the real ones; both stages are otherwise plain C++.
+PREAMBLE = (
+    "#include <algorithm>\n"
+    "#include <array>\n"
+    "#include <cmath>\n"
+    "#include <vector>\n"
+    "\n"
+    "namespace juce\n"
+    "{\n"
+    "template <typename Type> constexpr Type jmin (Type a, Type b) noexcept { return a < b ? a : b; }\n"
+    "template <typename Type> constexpr Type jmax (Type a, Type b) noexcept { return a > b ? a : b; }\n"
+    "template <typename Type> constexpr Type jlimit (Type lower, Type upper, Type value) noexcept\n"
+    "{ return value < lower ? lower : (value > upper ? upper : value); }\n"
+    "}\n"
+    "\n"
+)
+
+# The engine-side half of the repitch promise: the stage has to be a MEMBER, it
+# has to be prepared at the engine's rate, and it has to be handed the frame the
+# wet/dry crossfade produced together with the platter's speed. Written as text
+# because that call lives in a 3,500-line function that cannot be compiled
+# without JUCE - and a stage that is extracted, tested and then never called in
+# the audio path is exactly the class of bug this file exists to catch.
+REPITCH_CALL = re.compile(r"repitchStage\.processFrame \(([^;]*)\);")
+
+# The engine-side half of the ARM: START waits for the host, and the host's
+# answer is a bit the engine has to read off the playhead and hand to the rig.
+# The rig half is driven directly below; this is the half that could be missing
+# while the rig still passes - a rig that is never told whether the DAW is
+# rolling would simply never arm, and an engine that arms but never publishes the
+# flag would leave the panel saying "stopped" over a key that is waiting.
+ARM_CALL = re.compile(r"transport\.beginBlock \(([^;]*)\);")
 
 # The engine-side half of the transport's promise, checked as text because it lives
 # in a 3,400-line function that cannot be compiled without JUCE. The MIX crossfade
@@ -108,6 +153,100 @@ def check_engine_gate() -> list[str]:
     return problems
 
 
+def check_engine_repitch() -> list[str]:
+    """Returns the reasons the engine does not run the repitch stage."""
+    impl = IMPL.read_text()
+    header = HEADER.read_text()
+    problems: list[str] = []
+
+    calls = REPITCH_CALL.findall(impl)
+
+    if len(calls) != 1:
+        problems.append(f"`repitchStage.processFrame` appears {len(calls)} times in {IMPL.name}: "
+                        f"the stage is advanced once per frame or it is not advanced at all")
+    else:
+        arguments = calls[0]
+
+        if "tapeOutput" not in arguments:
+            problems.append("the repitch stage is handed something other than the frame the "
+                            f"wet/dry crossfade produced: {arguments.strip()}")
+
+        if not re.search(r"\bplatterSpeed\b", arguments):
+            problems.append("the repitch stage is not handed the platter's speed, so it has "
+                            f"nothing to follow: {arguments.strip()}")
+
+    if "RepitchStage repitchStage;" not in header:
+        problems.append(f"{HEADER.name} does not declare a `RepitchStage repitchStage;` member, "
+                        f"so the engine cannot be calling the stage it is calling")
+
+    if not re.search(r"repitchStage\.prepare \(([^;]*)\);", impl):
+        problems.append(f"{IMPL.name} never prepares the repitch stage, so its line would be "
+                        f"sized for no rate at all")
+
+    return problems
+
+
+def check_engine_arm() -> list[str]:
+    """Returns the reasons the engine does not arm START against the host."""
+    impl = IMPL.read_text()
+    header = HEADER.read_text()
+    editor = EDITOR.read_text()
+    problems: list[str] = []
+
+    # 1. The host's play state has to be READ, and it has to be read as an optional
+    #    with a ROLLING default. A host with no playhead, or a playhead that will
+    #    not say, must leave the key working: the arm is the only thing this bit
+    #    drives, and "unknown means parked" would leave START dead on every host
+    #    that cannot answer.
+    if "getIsPlaying" not in impl:
+        problems.append(f"{IMPL.name} never asks the playhead whether the host is "
+                        f"playing, so nothing can arm START against it")
+
+    if not re.search(r"(?<!\bconst )\bbool hostRolling = true;", impl):
+        problems.append(f"{IMPL.name} reads the host's play state without a rolling "
+                        f"default: a host that will not answer would leave START dead")
+
+    # ... and it has to keep it. JUCE reports the transport state as a flag inside
+    # the playhead's own position and answers `false` for a host that never set it,
+    # so a plugin that takes "not playing" at face value arms the key on every host
+    # that does not report one - a standalone build among them - and the machine
+    # then waits for a DAW that is never going to answer. Reading that answer as
+    # PARKED requires the host to have supplied timing at all.
+    if re.search(r"hostRolling\s*=\s*\*?\w*[Pp]laying", impl):
+        problems.append("the engine takes the playhead's own answer as the host's transport "
+                        "state, which is `false` for a host that never set it: an unanswered "
+                        "playhead would leave START waiting forever")
+
+    # 2. It has to reach the rig, in the call the rig is driven by.
+    calls = ARM_CALL.findall(impl)
+
+    if len(calls) != 1:
+        problems.append(f"`transport.beginBlock` appears {len(calls)} times in {IMPL.name}: "
+                        f"the engine drives the rig once per block or it does not drive it")
+    elif not re.search(r"\bhostRolling\b", calls[0]):
+        problems.append("the engine does not hand the rig the host's play state, so the "
+                        f"arm can never fire: {calls[0].strip()}")
+
+    # 3. The rig has to have the arm, and it has to be driven by the KEY rather
+    #    than by the machine: armed means the parameter says START, the host is
+    #    parked, and no finger is on SPINDOWN.
+    if "bool armedForHost = false;" not in header:
+        problems.append(f"{HEADER.name} does not declare `armedForHost`, so the panel "
+                        f"cannot tell a waiting key from a stopped machine")
+
+    if not re.search(r"armedForHost = requested == static_cast<int> \(State::start\)", header):
+        problems.append(f"{HEADER.name} does not arm the key off the transport "
+                        f"parameter's own START, so the arm and the lit key can disagree")
+
+    # 4. And the panel has to be able to say so. A flag nothing reads is the same
+    #    fault as no flag at all, and it is one the build cannot see either.
+    if "isTransportArmedForHost" not in editor:
+        problems.append(f"{EDITOR.name} never asks whether the key is armed, so the deck "
+                        f"readout calls a waiting machine a stopped one")
+
+    return problems
+
+
 def brace_end(text: str, start: int) -> int:
     """The index just past the brace that closes the block starting at or after
     `start`, skipping comments and string/char literals in one pass."""
@@ -148,7 +287,7 @@ def main() -> int:
     destination = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "extracted_transport.inc")
     header = HEADER.read_text()
 
-    problems = check_engine_gate()
+    problems = check_engine_gate() + check_engine_repitch() + check_engine_arm()
     if problems:
         for problem in problems:
             print(f"extract.py: {problem}", file=sys.stderr)
@@ -156,17 +295,26 @@ def main() -> int:
 
     print("gate: both MIX legs carry a platter curve above linear, so STOP is the machine"
           " stopping rather than a fade")
+    print("repitch: the engine advances one stage per frame, on the machine's own frame,"
+          " followed by the platter's speed")
+    print("arm: the engine reads the host's play state off the playhead, defaults an"
+          " unanswered host to rolling, and hands it to the rig")
 
-    if header.count(DECLARATION) != 1:
-        raise SystemExit(f"extract.py: `{DECLARATION}` appears {header.count(DECLARATION)} times in "
-                         f"{HEADER.name}; the transport harness cannot tell them apart.")
+    bodies: list[str] = []
 
-    start = header.index(DECLARATION)
-    end = brace_end(header, start)
-    while end < len(header) and header[end] != "\n":
-        end += 1                       # keep the trailing newline, not the next line
-    body = header[start:end]
-    body = body.rstrip()
+    for declaration in DECLARATIONS:
+        if header.count(declaration) != 1:
+            raise SystemExit(f"extract.py: `{declaration}` appears {header.count(declaration)} times "
+                             f"in {HEADER.name}; the transport harness cannot tell them apart.")
+
+        start = header.index(declaration)
+        end = brace_end(header, start)
+        while end < len(header) and header[end] != "\n":
+            end += 1                   # keep the trailing newline, not the next line
+        body = header[start:end]
+        bodies.append(body.rstrip())
+
+    body = bodies[0]
     if not body.endswith("};"):
         body += ";"
 
@@ -182,12 +330,21 @@ def main() -> int:
         raise SystemExit(f"extract.py: only {len(seconds)} `...Seconds` constants found in "
                          f"TransportRig; its gestures are stated in seconds.")
 
-    destination.write_text(
-        "// GENERATED FILE - do not edit. Cut verbatim out of Source/PluginProcessor.h by\n"
-        "// tests/transport/extract.py: the shipping transport, as the engine compiles it.\n"
-        + body + "\n")
+    parts = ["// GENERATED FILE - do not edit. Cut verbatim out of Source/PluginProcessor.h by\n"
+             "// tests/transport/extract.py: the shipping transport and repitch stage, as the\n"
+             "// engine compiles them.\n"]
 
-    print(f"wrote {destination} ({len(body.splitlines())} lines)")
+    parts.append(PREAMBLE)
+
+    for index, extracted in enumerate(bodies):
+        if index == 0 and not extracted.endswith("};"):
+            extracted += ";"
+        parts.append(extracted + "\n")
+
+    destination.write_text("\n".join(parts))
+
+    print(f"wrote {destination} ({len(body.splitlines())} + "
+          f"{len(bodies[1].splitlines())} lines)")
     print("gestures: " + ", ".join(f"{name} = {value}s" for name, value in seconds))
     print("scales:   " + ", ".join(f"{name} = [{values.strip()}]" for name, values in scales))
     return 0
