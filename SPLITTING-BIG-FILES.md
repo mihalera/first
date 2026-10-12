@@ -265,11 +265,23 @@ because the recipe is what the rest of them follow:
   and written to the new header by the same text, so a typo fails the move rather than
   changing the stage.
 
-`PluginProcessor.h` went from 7,605 lines to 7,162. The more useful result is in the
-harness: `tests/dsp/extract.py` no longer cuts those four out by string span. It emits
-`#include "DSP/..."` lines (`SOURCE_HEADERS`) and the harness then compiles the
+`PluginProcessor.h` went from 7,605 lines to 6,932 (`RateBridge`, 194 lines, was the
+fifth and last of this first pass). The more useful result is in the harness:
+`tests/dsp/extract.py` no longer cuts those out by string span. It emits
+`#include "DSP/..."` lines (`SOURCE_HEADERS`), and the harness then compiles the
 shipping header itself, so there is one fewer place for a test copy and the plugin to
 drift apart. What is still cut below that list in the extractor is what has not moved.
+
+The move also needed a new guard, because it changes what the harness's green light
+means. The harnesses compile these headers against their own stand-in for `juce::`,
+and until the stages moved, every `juce::` name in them had already been compiled by
+the plugin. Now a header can satisfy the stand-in and fail the plugin: the stand-in
+declares what a stage touches, which is not the same as real JUCE declaring it.
+`tests/dsp/check_headers_juce.sh` (a step in the `dsp-tests` job) compiles the same
+headers against `juce_audio_basics` itself - the module that owns `jmin`, `jmax`,
+`jlimit`, `MathConstants`, `Decibels` and `SmoothedValue` - instantiates each stage's
+public surface, and takes its header list from `SOURCE_HEADERS` so the two cannot
+drift. It is `-fsyntax-only`: no window, no device, no JUCE build, two seconds.
 
 **The one trap still ahead** is constraint 3. A stage compiled under different macros -
 `NeuralStage` above all, whose members reduce to pass-throughs when `RTNeural` is
