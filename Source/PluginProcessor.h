@@ -1812,7 +1812,7 @@ private:
       - It is guarded. J37_HAS_RTNEURAL is 0 under the DSP harness and where the
         library was not fetched, and every member below then reduces to the
         pass-through. The class compiles either way, so no call site needs an
-        #if around it.
+        conditional guards around it.
 
     A 1-in/1-out model is deliberate: the stage sits IN the mono per-channel
     chain, so a stereo pair is two instances of the same model rather than one
@@ -1836,14 +1836,14 @@ struct NeuralStage
     using ModelType = RTNeural::Model<float>;
 
     std::unique_ptr<ModelType> model;
-    // The processor/control thread owns model storage and retains replaced models
-    // until teardown. Audio processing loads only the atomic raw snapshot.
+    // Old model objects are kept alive until stage destruction. Model replacement
+    // is rare; retaining them avoids deallocation while an audio callback may be
+    // finishing inference with a previously loaded pointer.
     std::vector<std::unique_ptr<ModelType>> retiredModels;
     std::mutex controlMutex;
     std::atomic<ModelType*> activeModel { nullptr };
     std::atomic<bool> clearRequested { false };
     std::atomic<bool> resetRequested { false };
-    std::atomic<unsigned int> readers { 0 };
 
     // The conversion, for a model whose own rate is not the engine's (see
     // RateBridge). With the two rates equal the bridge is a single branch and
@@ -1914,8 +1914,9 @@ struct NeuralStage
         }
 
         std::lock_guard<std::mutex> lock (controlMutex);
-        // Old model lifetimes extend until processor destruction. This makes the
-        // atomic pointer hand-off safe even if inference already captured it.
+        // Retain the previous model until teardown. Audio threads may still hold
+        // the pointer they loaded before publication of the replacement.
+        clearRequested.store (true, std::memory_order_release);
         if (model != nullptr)
             retiredModels.push_back (std::move (model));
         model = std::move (parsedModel);
@@ -1955,14 +1956,10 @@ struct NeuralStage
     {
 #if J37_HAS_RTNEURAL
         std::lock_guard<std::mutex> lock (controlMutex);
-        activeModel.store (nullptr, std::memory_order_release);
         clearRequested.store (true, std::memory_order_release);
-        // Wait off the audio thread for any block already using the previous
-        // snapshot, then reclaim model memory here, never in process().
-        while (readers.load (std::memory_order_acquire) != 0)
-            std::this_thread::yield();
-        model.reset();
-        retiredModels.clear();
+        activeModel.store (nullptr, std::memory_order_release);
+        if (model != nullptr)
+            retiredModels.push_back (std::move (model));
         resetRequested.store (true, std::memory_order_release);
 #endif
     }
@@ -2006,10 +2003,12 @@ struct NeuralStage
             return false;
 
         std::unique_ptr<ModelType> parsedModel;
-        const auto& config = namJson.at ("config");
-        const auto numLayers = config.at ("num_layers").get<int>();
-        const auto inputSize = config.at ("input_size").get<int>();
-        const auto hiddenSize = config.at ("hidden_size").get<int>();
+        try
+        {
+            const auto& config = namJson.at ("config");
+            const auto numLayers = config.at ("num_layers").get<int>();
+            const auto inputSize = config.at ("input_size").get<int>();
+            const auto hiddenSize = config.at ("hidden_size").get<int>();
 
         // A .nam file's weights array is 1-D JSON. Anything else is not a
         // shape this converter understands.
@@ -2139,8 +2138,7 @@ struct NeuralStage
         }
 
         std::lock_guard<std::mutex> lock (controlMutex);
-        while (readers.load (std::memory_order_acquire) != 0)
-            std::this_thread::yield();
+        clearRequested.store (true, std::memory_order_release);
         if (model != nullptr)
             retiredModels.push_back (std::move (model));
         model = std::move (parsedModel);
@@ -2148,6 +2146,11 @@ struct NeuralStage
         clearRequested.store (false, std::memory_order_release);
         resetRequested.store (true, std::memory_order_release);
         return true;
+        }
+        catch (...)
+        {
+            return false;
+        }
     }
 #endif
     /** The model's own recurrent state, let go of on a rate change or a model
@@ -2180,13 +2183,10 @@ struct NeuralStage
         if (active == nullptr || clearRequested.load (std::memory_order_acquire))
             return x;
 
-        readers.fetch_add (1, std::memory_order_acq_rel);
         if (activeModel.load (std::memory_order_acquire) != active
             || clearRequested.load (std::memory_order_acquire))
-        {
-            readers.fetch_sub (1, std::memory_order_release);
             return x;
-        }
+
         // The rates, latched here rather than written into the bridge by the
         // thread that knows them: see `setSampleRates`. Checked per sample, which
         // is one relaxed load against the two the guards above already make, and
@@ -2221,7 +2221,6 @@ struct NeuralStage
             return active->forward (inputFrame);
         });
 
-        readers.fetch_sub (1, std::memory_order_release);
         return converted.dry
              + (converted.wet - converted.dry) * juce::jlimit (0.0f, 1.0f, amount);
 #else
