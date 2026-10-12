@@ -136,6 +136,17 @@ jobs:
       - name: Check the theme wiring
         run: python3 tests/theme/check_theme_wiring.py
 
+      # The English IS the translation key (see xlat() in PluginEditor.cpp), so
+      # nothing keeps a table and the tooltip it translates in step: reword the
+      # sentence and its translation stays behind, and from then on that one
+      # control shows English in a translated panel. No build log says so and no
+      # screenshot shows it. It found seventeen entries that way when it was
+      # added - the transport keys, seven page tooltips and the two saturation
+      # controls of a revision the panel no longer has - all of them live in
+      # Ukrainian again now.
+      - name: Check the translation tables
+        run: python3 tests/translations/check_translations.py
+
   # ============================================================================
   #  DSP micro-benchmarks - measurement, never a gate
   #

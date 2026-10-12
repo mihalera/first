@@ -1,13 +1,16 @@
 // =============================================================================
 //  Regression harness for the K-weighted loudness meter.
 //
-//  The meter is not a display detail. The engine's AUTO GAIN reads it and folds
-//  the reading back into the output level, so a meter calibrated wrong is not a
-//  number on a panel - it is the machine walking its own output level somewhere
-//  the user did not ask for, on every project with AUTO GAIN switched on. None
-//  of that fails to build and none of it looks wrong: a meter reading 3 LU high
-//  is exactly as plausible on screen as one reading right, and the only place
-//  the difference shows is in a session somebody has already mixed.
+//  The meter feeds the INPUT and OUTPUT LUFS readouts (PluginEditor.cpp),
+//  and - to be exact about it - nothing else: AUTO GAIN does not read it. The
+//  compensator measures block power itself, on the signal, a few hundred lines
+//  further down processBlock, so a wrong meter is a wrong NUMBER rather than a
+//  wrong LEVEL. That is still worth a harness, because the number is what a user
+//  sets levels by and what the panel claims the machine is doing: the ground
+//  truth a mix is judged against. None of it fails to build and none of it looks
+//  wrong - a meter reading 3 LU high is exactly as plausible on screen as one
+//  reading right, and the only place it shows is in a session somebody has
+//  already taken to the desk.
 //
 //  So the claims the meter's own doc comment makes are measured here, on signal,
 //  against the standard it names (ITU-R BS.1770: the K-weighting curve, the
@@ -24,11 +27,13 @@
 //       constant is built from the rate the meter was prepared for rather than
 //       frozen at whichever rate it was written at.
 //    4. THE CHANNELS SUM. The same signal in both channels reads 3.01 LU above
-//       one channel alone, because BS.1770 sums channel mean squares. AUTO GAIN
-//       depends on that sum being the sum: a stereo machine is not 3 LU louder
-//       than a mono one by accident, and a meter that averaged instead of summed
-//       would walk the output level by 3 LU the moment a user went from mono to
-//       stereo - or the moment the plugin was instantiated as a mono instance.
+//       one channel alone, because BS.1770 sums channel mean squares. That is what
+//       makes the readout comparable with every other meter a user has: a plugin
+//       whose reading was 3 LU off the standard the moment it was instantiated in
+//       stereo is a plugin whose number cannot be compared with the master it is
+//       being matched to. It is also the claim that caught the shared filter
+//       state - with the right channel filtered by the left channel's history, the
+//       sum read 0.57 LU and neither channel was measurably itself.
 //    5. A MACHINE AT REST MEASURES THE FLOOR. A fresh meter fed silence reads
 //       its floor, and a meter that has been reading a tone comes back to it -
 //       the 400 ms window has to be a window and not a memory. A meter that
@@ -42,11 +47,14 @@
 //       the BS.1770 offset, and invisible on screen.
 //
 //  Each of these was measured on the shipping struct, and two of them failed when
-//  the harness was written: the two K-weighting biquads shared one pair of state
-//  variables between the channels, so a mono signal was counted about twice (+2.4
-//  dB high) and the stereo sum read 0.57 LU instead of 3.01; and reset() zeroed the
-//  coefficients, so the shipped meter ran unweighted after every prepare. Both are
-//  fixed in Source/PluginProcessor.h, and claims 4 and 6 are what keeps them fixed.
+//  the harness was written - both on the code the CI was running at the time: the
+//  two K-weighting biquads shared one pair of state variables between the
+//  channels, so a mono signal was counted about twice (+2.4 dB high, -18.28 LUFS
+//  for a -20 dBFS reference) and the stereo sum read 0.57 LU instead of 3.01; and
+//  reset() zeroed the coefficients as well as the history, so the meter the engine
+//  prepares and clears ran as a flat pass-through, 0.69 LU low, from the first
+//  block of every session. Both are fixed in Source/PluginProcessor.h, and claims
+//  4 and 6 are what keeps them fixed.
 //
 //  The meter is cut out of Source/PluginProcessor.h by tests/dsp/extract.py and
 //  #included below, so this harness measures the shipping struct rather than a

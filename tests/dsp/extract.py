@@ -248,12 +248,108 @@ def check_neural_rate_wiring(header: str, impl: str) -> list[str]:
     return problems
 
 
+# The AUTO GAIN compensator. It is the one gain stage in the chain that nothing
+# else measures - the loudness meter does not read it, and it does not read the
+# loudness meter: it is block power in, up to 12 dB of programme-level correction
+# out, applied to the signal that leaves the plugin - and it lives inline in
+# processBlock's per-sample loop, in the thousands of lines that cannot be
+# compiled without JUCE. So its invariants are checked as text, exactly like the
+# neural rate wiring above: each of them is a sentence in the code's own comment,
+# and each of them is a level error on every project if an edit drops it.
+COMPENSATION_GATE = "if (autoGainEnabled && transport.atSpeed() && referenceBlockPower > 0.0f)"
+COMPENSATION_CLAMP = "juce::jlimit (0.0f, 12.0f, levelRatioDb)"
+COMPENSATION_SMOOTHING = ("smoothedCompensationDb += (targetCompensationDb - smoothedCompensationDb)")
+COMPENSATION_TIME_MS = "onePoleCoefficient (450.0f, engineSampleRate)"
+
+
+def compensation_block(impl: str) -> str | None:
+    """The `if` that folds the correction in, cut through its closing brace."""
+    if COMPENSATION_GATE not in impl:
+        return None
+
+    start = impl.index(COMPENSATION_GATE)
+    end = impl.index("\n        }\n", start) + len("\n        }\n")
+    return impl[start:end]
+
+
+def check_auto_gain_compensation(impl: str) -> list[str]:
+    """Returns the reasons the AUTO GAIN correction could be wrong on signal."""
+    problems: list[str] = []
+
+    # 1. It must not try to correct a machine that is not running. With STOP
+    #    gating the output the measurement collapses, the compensator ramps to
+    #    its +12 dB limit while the platter sits still, and START then comes back
+    #    loud before the correction relaxes.
+    if COMPENSATION_GATE not in impl:
+        problems.append("the compensation is not gated on AUTO GAIN being on, the platter being at "
+                        "speed and a live reference level, so a stopped machine is corrected as if "
+                        "it were silent output")
+        return problems
+
+    block = compensation_block(impl)
+    assert block is not None
+
+    # 2. The measurement is the signal BEFORE the correction is folded in.
+    #    Measuring the compensated output makes the correction chase its own tail.
+    measured = re.search(r"const auto signal = ([^;]*);", block, re.S)
+
+    if measured is None or "tapeOutput[" not in measured.group(1) \
+            or "stageGainPerChannel[" not in measured.group(1):
+        problems.append("the compensated level is not measured on the signal as it leaves the "
+                        "compressors and tape stage, so the amount being corrected is not the "
+                        "amount the chain lost")
+    elif "compensationGain" in measured.group(1):
+        problems.append("the compensated level is measured AFTER the compensation is folded in, so "
+                        "the correction chases its own tail")
+
+    # 3. Restore only, never exaggerate. The correction may pay back a loss and
+    #    must not become a boost stage of its own.
+    if COMPENSATION_CLAMP not in block:
+        problems.append("the correction is not clamped to 0 .. 12 dB, so AUTO GAIN can act as a "
+                        "boost stage of its own rather than restoring what the chain lost")
+
+    # 4. Programme level, not sample level: a correction that moved at the rate of
+    #    the signal would pump it. The smoother is 450 ms, and it is a one-pole
+    #    towards the target rather than a step.
+    if COMPENSATION_SMOOTHING not in block or "* compensationCoefficient;" not in block:
+        problems.append("the correction is not smoothed towards its target, so it steps the output "
+                        "level rather than riding the programme")
+
+    if COMPENSATION_TIME_MS not in impl:
+        problems.append("the correction's time constant is not built from the engine's rate, so the "
+                        "smoothing is not the same duration at every sample rate")
+
+    # 5. It starts from unity, so the first block of a session is not nudged by a
+    #    correction left over from a previous one or a previous sample rate.
+    resets = impl.count("smoothedCompensationDb = 0.0f;")
+
+    if resets != 1:
+        problems.append(f"`smoothedCompensationDb = 0.0f` appears {resets} times in {IMPL.name}: the "
+                        f"correction has to start from unity exactly once per prepare")
+
+    # 6. Both legs of the MIX crossfade carry it. DELTA subtracts the dry leg from
+    #    the wet one, so a correction applied to one of them and not the other
+    #    reads as character the machine did not add - the exact fault the two
+    #    comments above these lines describe.
+    for leg, pattern in (("outputSignal", r"outputSignal\[index\] = ([^;]*);"),
+                         ("machineDry", r"machineDry\[index\] = ([^;]*);")):
+        expression = re.search(pattern, impl, re.S)
+
+        if expression is None or "compensationGain" not in expression.group(1):
+            problems.append(f"`{leg}` does not carry the compensation, so the MIX 0 leg and the "
+                            f"machine leg differ by the whole correction and DELTA monitors it as "
+                            f"character")
+
+    return problems
+
+
 def main() -> int:
     destination = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "extracted_dsp.inc")
     header = HEADER.read_text()
     impl = IMPL.read_text()
 
     problems = check_neural_rate_wiring(header, impl)
+    problems += check_auto_gain_compensation(impl)
     if problems:
         for problem in problems:
             print(f"extract.py: {problem}", file=sys.stderr)
@@ -261,6 +357,8 @@ def main() -> int:
 
     print("neural rates: the .nam file's own rate reaches both stages, beside the engine's "
           "session rate times its oversampling factor")
+    print("auto gain: the compensator measures before it corrects, only ever restores, holds its "
+          "correction on a stopped machine, and rides both legs of the MIX crossfade")
 
     chunks = ["// GENERATED FILE - do not edit.",
               "// Cut verbatim out of Source/ by tests/dsp/extract.py.",
