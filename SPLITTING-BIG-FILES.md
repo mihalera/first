@@ -245,3 +245,43 @@ Each step is independently revertable and ends with the same checks green.
 After every step: `bash tests/dsp/run.sh`, `bash tests/layout/run.sh`,
 `bash tests/state/run.sh`, `python3 tests/presets/check_presets.py`, and the three
 harnesses once with `J37_SANITIZE=address,undefined`.
+
+---
+
+## 7. Progress
+
+Four pieces of **D** are in, and what matters is the recipe rather than the pieces,
+because the recipe is what the rest of them follow:
+
+- `Source/DSP/J37Math.h` - the scalar math bridge every stage calls, and the file that
+  states the conventions of the directory: one concern per header, the header includes
+  what it needs so it can be compiled on its own, and it must not pull JUCE in. The
+  harnesses compile these headers against their own stand-in for the `juce::` names a
+  stage touches; a header that included `JuceHeader.h` could not be compiled there at
+  all.
+- `Source/DSP/LoudnessMeter.h`, `Source/DSP/TransientShaper.h`,
+  `Source/DSP/GlueCompressor.h` - one stage each, with their prose, moved whole. Not
+  retyped: the block was deleted from `PluginProcessor.h` by matching its exact text
+  and written to the new header by the same text, so a typo fails the move rather than
+  changing the stage.
+
+`PluginProcessor.h` went from 7,605 lines to 7,162. The more useful result is in the
+harness: `tests/dsp/extract.py` no longer cuts those four out by string span. It emits
+`#include "DSP/..."` lines (`SOURCE_HEADERS`) and the harness then compiles the
+shipping header itself, so there is one fewer place for a test copy and the plugin to
+drift apart. What is still cut below that list in the extractor is what has not moved.
+
+**The one trap still ahead** is constraint 3. A stage compiled under different macros -
+`NeuralStage` above all, whose members reduce to pass-throughs when `RTNeural` is
+absent - needs the `__has_include` probe block that currently sits at the top of
+`PluginProcessor.h`. Before that stage moves, the probe belongs in a header of its own
+(`Source/DSP/OptionalLibraries.h`, included first by both the plugin header and the
+harness), or the moved stage compiles in the plugin and not in CI.
+
+Still to move, same recipe, one header per commit with the harness in hand:
+`SaturationCore` (861 lines), `VinylStage` (567), `SubharmonicGenerator` (560),
+`NeuralStage` (380), `ThreeBandEq` (292), `InputStage` (244), `HarmonicAnalyser` (194),
+`PlateReverb` (193), plus the smaller ones the DSP and transport harnesses cut today -
+`RateBridge`, `IrStage`, `TapeCondition`, `StandardCompressor`, `SampleClock` and
+`SampleSmoother`, `PitchTracker` and `RealtimePitchShifter`, `TransportRig` and
+`RepitchStage`.

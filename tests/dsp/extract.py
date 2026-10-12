@@ -6,6 +6,14 @@ SubharmonicGenerator struct, the GlueCompressor struct and the inline helpers ar
 cut verbatim out of Source/ at build time, so a change to the plugin cannot leave
 the test measuring a stale copy of it.
 
+This file is on its way to doing almost nothing. A stage that lives in its own
+header under Source/DSP/ is INCLUDED by the generated file - the same header the
+plugin compiles - so it needs no string-span extraction at all, and the fragile
+half of this script (find a declaration by text, read to the next `\n};`, and get
+the order right) disappears with it. SOURCE_HEADERS below lists what has moved;
+the pieces still cut further down are the ones that have not. When the header is
+empty enough to read, the last thing to go is this script.
+
 Usage:  python3 tests/dsp/extract.py <output.inc>
 """
 
@@ -29,13 +37,20 @@ IMPL = REPO / "Source" / "PluginProcessor.cpp"
 MIX_SMOOTHER = re.compile(
     r"SampleSmoother\s+mixSmoothed\s*\{([^}]*)\}")
 
-# The scalar math bridge the DSP blocks call. It sits in its own guarded namespace
-# block in the header, so it is cut out by span rather than by the struct rule.
-# Under the harness J37_HAS_CHOWDSP_MATH is 0, so what gets extracted is the
-# std:: fallback - the harness always measures the exact reference math, never
-# the chowdsp approximation, which is what lets the benchmark compare the two.
-MATH_BRIDGE_START = "#if J37_HAS_CHOWDSP_MATH\nnamespace j37math"
-MATH_BRIDGE_END = "#endif\n"
+# The stages that have already moved into Source/DSP/, in the order they have to
+# be included in - the header's own order, which is the only order that works for
+# a stage that holds another one by value.
+#
+# J37Math.h carries the bridge the DSP blocks call. Under the harness
+# J37_HAS_CHOWDSP_MATH is 0 (undefined), so what compiles is the std:: fallback:
+# the harness always measures the exact reference math, never the chowdsp
+# approximation, which is what lets the benchmark compare the two.
+SOURCE_HEADERS = [
+    "DSP/J37Math.h",
+    "DSP/LoudnessMeter.h",
+    "DSP/TransientShaper.h",
+    "DSP/GlueCompressor.h",
+]
 
 # The namespace-level constants SaturationCore's set<Family>Voice methods
 # reference. The struct extraction cuts only the struct's own text, and these
@@ -50,8 +65,6 @@ CONSTANT_PIECES = [
 ]
 
 HEADER_PIECES = [
-    ("GlueCompressor", "struct GlueCompressor"),
-    ("LoudnessMeter", "struct LoudnessMeter"),
     ("SaturationCore", "struct SaturationCore"),
     ("SubharmonicGenerator", "struct SubharmonicGenerator"),
     # The vinyl stage is extracted for the same reason the saturation core is:
@@ -63,7 +76,6 @@ HEADER_PIECES = [
     # pass-through, and that a positive attack amount makes an edge sharper while
     # a negative one rounds it. Under the harness it compiles exactly as shipped -
     # it reaches for nothing the harness does not already provide.
-    ("TransientShaper", "struct TransientShaper"),
     # The neural stage is extracted too, which is what proves the guard is honest:
     # with J37_HAS_RTNEURAL 0 (the harness case) every member reduces to the
     # pass-through, so the struct still compiles and still renders the input
@@ -131,21 +143,6 @@ def mix_inverts(header: str) -> bool:
         return False
 
     return arguments[1].lower() == "true"
-
-
-def extract_math_bridge(header: str) -> str:
-    """Cuts the j37math namespace block out of the header.
-
-    The bridge is two guarded namespace blocks; the harness only wants the second
-    one (the std:: fallback), because it never has chowdsp on its include path.
-    Extracting the SHIPPING text rather than retyping it means the harness cannot
-    drift from what the plugin actually compiles.
-    """
-    start = header.index(MATH_BRIDGE_START)
-    # The fallback block is the `#else ... #endif` half.
-    else_at = header.index("\n#else\n", start)
-    end = header.index(MATH_BRIDGE_END, else_at) + len(MATH_BRIDGE_END)
-    return header[start:end]
 
 
 # The wiring the neural rate conversion depends on, checked as TEXT because it
@@ -366,8 +363,13 @@ def main() -> int:
               f"#define SUBFUND_MIX_INVERTS {1 if mix_inverts(header) else 0}",
               ""]
 
-    chunks.append("// ---- j37math bridge (PluginProcessor.h) " + "-" * 34)
-    chunks.append(extract_math_bridge(header))
+    # The stages that live in their own headers are included, in header order,
+    # before anything that is still cut: a cut stage may hold one of them.
+    chunks.append("// ---- Source/DSP/ headers, included rather than cut " + "-" * 18)
+
+    for header_name in SOURCE_HEADERS:
+        chunks.append(f'#include "{header_name}"')
+
     chunks.append("")
     chunks.append("")
 

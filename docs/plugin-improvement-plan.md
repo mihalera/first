@@ -61,6 +61,19 @@ Suggested order: the DSP structs first (they are already used by the harnesses, 
 the split is verifiable by the suite itself), then the editor's panel/theme types,
 then `processBlock`'s stages if it is still unmanageable.
 
+**Progress, and a correction to the paragraph above.** Four pieces have moved - the
+scalar math bridge and then `LoudnessMeter`, `TransientShaper` and `GlueCompressor`,
+one header each, with their prose - and `tests/dsp/extract.py` now *includes* those
+headers instead of cutting their text out of `PluginProcessor.h`. That is the first
+payoff above, delivered; `SPLITTING-BIG-FILES.md` section 7 records the recipe and
+what is left. The second payoff - build time - is **not** delivered by moving a header
+on its own, and this plan claimed it was: `PluginProcessor.cpp` and `PluginEditor.cpp`
+both include `PluginProcessor.h`, so both still parse every stage wherever it lives.
+The moves are what makes the fix possible (the editor is the translation unit with the
+least to do with any of these stages), but the build-time win needs the stage
+implementations in per-stage `.cpp` files, or the editor's DSP access behind an opaque
+aggregate, and that is a separate and much riskier step.
+
 ### 2. A fast compile gate, and ccache
 
 The one failure class that has cost the most on this repository is the cheapest to

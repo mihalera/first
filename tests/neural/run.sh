@@ -32,6 +32,12 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD="${TMPDIR:-/tmp}/j37-neural-test"
 CXX="${CXX:-g++}"
 
+# The stages extracted by the DSP harness that already live in their own headers
+# under Source/DSP/ are included from there rather than cut out of
+# PluginProcessor.h, so Source/ has to be on the include path - the same reason
+# tests/dsp/run.sh puts it there.
+SOURCE="${HERE}/../../Source"
+
 mkdir -p "${BUILD}"
 
 # The DSP harness's extractor, which cuts RateBridge out with the rest of the
@@ -48,7 +54,7 @@ fi
 
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
-    -I "${HERE}/../dsp" -I "${BUILD}" \
+    -I "${HERE}/../dsp" -I "${BUILD}" -I "${SOURCE}" \
     "${HERE}/rate_test.cpp" -o "${BUILD}/rate_test"
 
 "${BUILD}/rate_test"
@@ -62,7 +68,7 @@ fi
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
     -DJ37_HAS_RTNEURAL=1 \
-    -I "${HERE}/../dsp" -I "${BUILD}" \
+    -I "${HERE}/../dsp" -I "${BUILD}" -I "${SOURCE}" \
     -I "${HERE}/../../ThirdParty/nlohmann_json/single_include" \
     "${HERE}/stage_test.cpp" -o "${BUILD}/stage_test"
 
