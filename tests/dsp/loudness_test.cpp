@@ -34,6 +34,19 @@
 //       the 400 ms window has to be a window and not a memory. A meter that
 //       keeps reporting a faded copy of the last tone is a gain compensator that
 //       keeps turning the output down on a stopped machine.
+//    6. THE ORDER THE ENGINE PREPARES IT IN. Every meter here is driven exactly the
+//       way the engine drives one: prepare(), which builds the K-weighting for the
+//       session's rate, and then reset(), which clears it. A reset that clears the
+//       COEFFICIENTS as well as the history leaves the meter a flat pass-through
+//       for the rest of the session - 0.69 dB low, which is precisely the width of
+//       the BS.1770 offset, and invisible on screen.
+//
+//  Each of these was measured on the shipping struct, and two of them failed when
+//  the harness was written: the two K-weighting biquads shared one pair of state
+//  variables between the channels, so a mono signal was counted about twice (+2.4
+//  dB high) and the stereo sum read 0.57 LU instead of 3.01; and reset() zeroed the
+//  coefficients, so the shipped meter ran unweighted after every prepare. Both are
+//  fixed in Source/PluginProcessor.h, and claims 4 and 6 are what keeps them fixed.
 //
 //  The meter is cut out of Source/PluginProcessor.h by tests/dsp/extract.py and
 //  #included below, so this harness measures the shipping struct rather than a
@@ -82,7 +95,10 @@ std::string format2 (const char* pattern, double a, double b)
 
 /** A meter and the coefficient its caller builds for it, driven frame by frame
     exactly the way the engine drives it: the window coefficient is a function of
-    the rate alone (LoudnessMeter::makeWindowCoefficient) and is built once. */
+    the rate alone (LoudnessMeter::makeWindowCoefficient) and is built once, and a
+    fresh meter is prepared and then cleared, in that order (see the engine's
+    prepare call, where `outputLoudness.prepare (rate)` is followed by
+    `outputLoudness.reset()`), so the reading below is the reading the engine has. */
 struct MeterRun
 {
     explicit MeterRun (double sampleRate)
@@ -90,6 +106,7 @@ struct MeterRun
           window (LoudnessMeter::makeWindowCoefficient (static_cast<float> (sampleRate)))
     {
         meter.prepare (sampleRate);
+        meter.reset();
     }
 
     /**
@@ -156,8 +173,13 @@ void testCalibration()
 {
     std::printf ("\n1. A 1 kHz sine at -20 dBFS RMS reads -20.0 LUFS\n");
 
+    // -20.0498 is the analytic value: BS.1770's -0.691 dB offset against the
+    // K-weighting's own +0.641 dB at 1 kHz (the shelf reads 1.079814, the high-pass
+    // 0.997055). A meter with the offset but no curve reads -20.691 instead, which
+    // is outside the tolerance below - that is the point of taking this reading
+    // through the engine's own prepare-then-reset order rather than in isolation.
     const auto reading = settledReading (48000.0, -20.0);
-    std::printf ("       measured %.3f LUFS (want -20.0, the point BS.1770's offset exists to place)\n",
+    std::printf ("       measured %.3f LUFS (want -20.05, the point BS.1770's offset exists to place)\n",
                  static_cast<double> (reading));
 
     check (std::abs (static_cast<double> (reading) + 20.0) <= 0.6,
@@ -258,6 +280,57 @@ void testStereoSum()
 }
 
 // -----------------------------------------------------------------------------
+//  6. The order the engine prepares it in
+// -----------------------------------------------------------------------------
+void testPrepareThenReset()
+{
+    std::printf ("\n6. prepare() then reset() leaves the K-weighting in place\n");
+
+    // The meter the engine gets: prepared for 48 kHz, then cleared. It has to carry
+    // the K-weighting curve after both, or the reading below is the unweighted
+    // -20.691 and the meter is 0.64 dB out for the session.
+    MeterRun prepared (48000.0);
+    const auto weighted = prepared.feedTone (kReferenceFrequency, -20.0, kSettlingSeconds);
+    std::printf ("       prepared and cleared: %.3f LUFS (unweighted would be -20.691)\n",
+                 static_cast<double> (weighted));
+
+    check (std::abs (static_cast<double> (weighted) + 20.0498) <= 0.15,
+           format ("after prepare() then reset() the meter still reads %.3f LUFS, the weighted value",
+                   static_cast<double> (weighted)));
+
+    // ... and the same meter prepared WITHOUT the reset reads the same, so what is
+    // pinned above is the weighting surviving the clear, not the clear being what
+    // makes the reading land there.
+    LoudnessMeter bare;
+    bare.prepare (48000.0);
+    const auto preparedWindow = LoudnessMeter::makeWindowCoefficient (48000.0f);
+    auto bareReading = kFloor;
+    for (std::size_t i = 0, count = prepared.frames (kSettlingSeconds); i < count; ++i)
+    {
+        const auto x = static_cast<float> (std::pow (10.0, -20.0 / 20.0) * std::sqrt (2.0)
+                                           * std::sin (kTwoPi * kReferenceFrequency
+                                                       * static_cast<double> (i) / 48000.0));
+        bareReading = bare.processFrame (x, 0.0f, preparedWindow);
+    }
+
+    check (std::abs (static_cast<double> (bareReading) - static_cast<double> (weighted)) <= 0.001,
+           format2 ("prepare alone reads %.3f LUFS against %.3f for prepare then reset",
+                    static_cast<double> (bareReading), static_cast<double> (weighted)));
+
+    // The other half of the clear: the history goes with the coefficients staying.
+    // A meter that has just been driven hard and is then reset must read the floor
+    // on its next frame, not a faded copy of the tone it was reading.
+    MeterRun reused (48000.0);
+    reused.feedTone (kReferenceFrequency, -6.0, kSettlingSeconds);
+    reused.meter.reset();
+    const auto afterReset = reused.meter.processFrame (0.0f, 0.0f, reused.window);
+
+    check (afterReset <= kFloor + 0.01f,
+           format ("a meter reset mid-session reads %.3f LUFS on its next silent frame",
+                   static_cast<double> (afterReset)));
+}
+
+// -----------------------------------------------------------------------------
 //  5. A machine at rest measures the floor
 // -----------------------------------------------------------------------------
 void testReturnToTheFloor()
@@ -298,6 +371,7 @@ int main()
     testRateIndependence();
     testStereoSum();
     testReturnToTheFloor();
+    testPrepareThenReset();
 
     std::printf ("\n%s (%d failure%s)\n", gFailures == 0 ? "ALL CHECKS PASSED" : "FAILURES PRESENT",
                  gFailures, gFailures == 1 ? "" : "s");

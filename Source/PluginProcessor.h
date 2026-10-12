@@ -4092,6 +4092,16 @@ struct StandardCompressor
     prepare(), so the reading is correct at every supported rate: 44.1, 48, 88.2,
     96, 176.4 and 192 kHz. The coefficients come from tan(pi * f0 / rate), which is
     exact at any rate, so no additional scaling is needed for a 192 kHz session.
+
+    Each channel carries its own filter history. The two channels of a frame are
+    two signals, and a biquad's state is part of the signal, not part of the
+    curve: run the right channel through the coefficients that the left channel
+    just left behind and the right is filtered by the left's tail rather than by
+    its own past. That is what a single pair of state variables did, and it made
+    the meter read high on a mono signal (the second pass responded to the first
+    channel's history, so the one signal was counted about twice) and read the
+    stereo sum as 0.57 LU instead of 3 - a meter that is fed both channels and
+    reports something that is neither of them.
 */
 struct LoudnessMeter
 {
@@ -4133,10 +4143,22 @@ struct LoudnessMeter
         }
     }
 
+    /**
+        Clears the filter history and the running mean square, and leaves the
+        rate-dependent coefficients exactly as prepare() built them.
+
+        Both halves of that matter. The engine calls prepare() and then reset(),
+        in that order, so a reset that also zeroed the coefficients would drop the
+        K-weighting back to a flat pass-through for the rest of the session - which
+        is what `shelf = {}` did: a meter reading 0.69 dB low on every project,
+        with nothing on screen to say so. A reset that left the history in place
+        would instead carry the previous session's signal into a freshly prepared
+        one.
+    */
     void reset() noexcept
     {
-        shelf = {};
-        highPass = {};
+        shelf.clearState();
+        highPass.clearState();
         meanSquare = 0.0f;
     }
 
@@ -4156,8 +4178,8 @@ struct LoudnessMeter
     /** Feeds one stereo frame and returns the current loudness in LUFS. */
     float processFrame (float left, float right, float windowCoefficient) noexcept
     {
-        const auto weightedLeft = highPass.process (shelf.process (left));
-        const auto weightedRight = highPass.process (shelf.process (right));
+        const auto weightedLeft = highPass.process (shelf.process (left, 0), 0);
+        const auto weightedRight = highPass.process (shelf.process (right, 1), 1);
 
         // BS.1770 sums the per-channel mean squares; the channels here are already
         // gain-weighted equally, so it is a plain sum.
@@ -4174,17 +4196,30 @@ struct LoudnessMeter
     }
 
 private:
+    /** One biquad's coefficients with one history per channel (0 = left, 1 = right).
+        The coefficients are shared because both channels carry the same curve; the
+        history is not, because the two channels are different signals. */
     struct Biquad
     {
         float b0 = 1.0f, b1 = 0.0f, b2 = 0.0f, a1 = 0.0f, a2 = 0.0f;
-        float x1 = 0.0f, x2 = 0.0f, y1 = 0.0f, y2 = 0.0f;
 
-        float process (float x) noexcept
+        float x1[2] {}, x2[2] {}, y1[2] {}, y2[2] {};
+
+        float process (float x, int channel) noexcept
         {
-            const auto y = b0 * x + b1 * x1 + b2 * x2 - a1 * y1 - a2 * y2;
-            x2 = x1; x1 = x;
-            y2 = y1; y1 = y;
+            const auto y = b0 * x + b1 * x1[channel] + b2 * x2[channel]
+                         - a1 * y1[channel] - a2 * y2[channel];
+            x2[channel] = x1[channel];
+            x1[channel] = x;
+            y2[channel] = y1[channel];
+            y1[channel] = y;
             return y;
+        }
+
+        void clearState() noexcept
+        {
+            for (int channel = 0; channel < 2; ++channel)
+                x1[channel] = x2[channel] = y1[channel] = y2[channel] = 0.0f;
         }
     };
 
