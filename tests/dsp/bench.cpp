@@ -46,6 +46,15 @@
 
 #include "shim.h"
 
+// <array> is spelled out rather than left to luck. The extracted engine holds
+// std::array members - RateBridge's two conversion histories, the neural stage's
+// input frame - and whether <vector> or <cstdio> happens to pull <array> in is a
+// property of the TOOLCHAIN, not of this file. The regression harness next door
+// (subfund_test.cpp) says the same thing for the same reason; this benchmark did
+// not, and the benchmark job found it the moment RateBridge joined the
+// extraction: `field 'vHistory' has incomplete type 'std::array<float, 8>'`.
+// A benchmark that does not build measures nothing.
+#include <array>
 #include <cmath>
 #include <cstdio>
 #include <ctime>
