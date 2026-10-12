@@ -26,6 +26,9 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parents[2]
 HEADER = REPO / "Source" / "PluginProcessor.h"
 IMPL = REPO / "Source" / "PluginProcessor.cpp"
+# The panel is read for ONE thing - that it asks whether START is armed - because
+# the arm is invisible on the machine and a flag nobody reads is not a feature.
+EDITOR = REPO / "Source" / "PluginEditor.cpp"
 
 DECLARATIONS = [
     "struct TransportRig",
@@ -62,6 +65,14 @@ PREAMBLE = (
 # without JUCE - and a stage that is extracted, tested and then never called in
 # the audio path is exactly the class of bug this file exists to catch.
 REPITCH_CALL = re.compile(r"repitchStage\.processFrame \(([^;]*)\);")
+
+# The engine-side half of the ARM: START waits for the host, and the host's
+# answer is a bit the engine has to read off the playhead and hand to the rig.
+# The rig half is driven directly below; this is the half that could be missing
+# while the rig still passes - a rig that is never told whether the DAW is
+# rolling would simply never arm, and an engine that arms but never publishes the
+# flag would leave the panel saying "stopped" over a key that is waiting.
+ARM_CALL = re.compile(r"transport\.beginBlock \(([^;]*)\);")
 
 # The engine-side half of the transport's promise, checked as text because it lives
 # in a 3,400-line function that cannot be compiled without JUCE. The MIX crossfade
@@ -175,6 +186,67 @@ def check_engine_repitch() -> list[str]:
     return problems
 
 
+def check_engine_arm() -> list[str]:
+    """Returns the reasons the engine does not arm START against the host."""
+    impl = IMPL.read_text()
+    header = HEADER.read_text()
+    editor = EDITOR.read_text()
+    problems: list[str] = []
+
+    # 1. The host's play state has to be READ, and it has to be read as an optional
+    #    with a ROLLING default. A host with no playhead, or a playhead that will
+    #    not say, must leave the key working: the arm is the only thing this bit
+    #    drives, and "unknown means parked" would leave START dead on every host
+    #    that cannot answer.
+    if "getIsPlaying" not in impl:
+        problems.append(f"{IMPL.name} never asks the playhead whether the host is "
+                        f"playing, so nothing can arm START against it")
+
+    if not re.search(r"(?<!\bconst )\bbool hostRolling = true;", impl):
+        problems.append(f"{IMPL.name} reads the host's play state without a rolling "
+                        f"default: a host that will not answer would leave START dead")
+
+    # ... and it has to keep it. JUCE reports the transport state as a flag inside
+    # the playhead's own position and answers `false` for a host that never set it,
+    # so a plugin that takes "not playing" at face value arms the key on every host
+    # that does not report one - a standalone build among them - and the machine
+    # then waits for a DAW that is never going to answer. Reading that answer as
+    # PARKED requires the host to have supplied timing at all.
+    if re.search(r"hostRolling\s*=\s*\*?\w*[Pp]laying", impl):
+        problems.append("the engine takes the playhead's own answer as the host's transport "
+                        "state, which is `false` for a host that never set it: an unanswered "
+                        "playhead would leave START waiting forever")
+
+    # 2. It has to reach the rig, in the call the rig is driven by.
+    calls = ARM_CALL.findall(impl)
+
+    if len(calls) != 1:
+        problems.append(f"`transport.beginBlock` appears {len(calls)} times in {IMPL.name}: "
+                        f"the engine drives the rig once per block or it does not drive it")
+    elif not re.search(r"\bhostRolling\b", calls[0]):
+        problems.append("the engine does not hand the rig the host's play state, so the "
+                        f"arm can never fire: {calls[0].strip()}")
+
+    # 3. The rig has to have the arm, and it has to be driven by the KEY rather
+    #    than by the machine: armed means the parameter says START, the host is
+    #    parked, and no finger is on SPINDOWN.
+    if "bool armedForHost = false;" not in header:
+        problems.append(f"{HEADER.name} does not declare `armedForHost`, so the panel "
+                        f"cannot tell a waiting key from a stopped machine")
+
+    if not re.search(r"armedForHost = requested == static_cast<int> \(State::start\)", header):
+        problems.append(f"{HEADER.name} does not arm the key off the transport "
+                        f"parameter's own START, so the arm and the lit key can disagree")
+
+    # 4. And the panel has to be able to say so. A flag nothing reads is the same
+    #    fault as no flag at all, and it is one the build cannot see either.
+    if "isTransportArmedForHost" not in editor:
+        problems.append(f"{EDITOR.name} never asks whether the key is armed, so the deck "
+                        f"readout calls a waiting machine a stopped one")
+
+    return problems
+
+
 def brace_end(text: str, start: int) -> int:
     """The index just past the brace that closes the block starting at or after
     `start`, skipping comments and string/char literals in one pass."""
@@ -215,7 +287,7 @@ def main() -> int:
     destination = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "extracted_transport.inc")
     header = HEADER.read_text()
 
-    problems = check_engine_gate() + check_engine_repitch()
+    problems = check_engine_gate() + check_engine_repitch() + check_engine_arm()
     if problems:
         for problem in problems:
             print(f"extract.py: {problem}", file=sys.stderr)
@@ -225,6 +297,8 @@ def main() -> int:
           " stopping rather than a fade")
     print("repitch: the engine advances one stage per frame, on the machine's own frame,"
           " followed by the platter's speed")
+    print("arm: the engine reads the host's play state off the playhead, defaults an"
+          " unanswered host to rolling, and hands it to the rig")
 
     bodies: list[str] = []
 

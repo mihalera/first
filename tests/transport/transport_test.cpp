@@ -22,6 +22,12 @@
 //  that stops the deck before starting it is a different gesture wearing START's
 //  name.
 //
+//  A fourth reading is the deck's answer to the HOST: START pressed on a DAW whose
+//  transport is parked ARMS the key - the machine winds down and waits, and the
+//  spin-up happens as the DAW rolls rather than a second and a half before it - so
+//  a take starts with the machine engaging instead of with a pause's worth of
+//  already-spent spin-up.
+//
 //  All of it is a property of the gesture over time, so it is checked by driving
 //  the real rig frame by frame and watching `platter()` - the one number the
 //  engine follows, and the multiplier on the machine's output. The struct is cut
@@ -90,7 +96,16 @@ struct Drive
     int vinyl = vinyl33;
     double tempo = tempo120;
 
-    explicit Drive (int state, bool held = false, double sampleRate = kRate,
+    // What the panel's keys currently say, whether the momentary SPINDOWN is under
+    // a finger, and whether the HOST's transport is rolling - the one input to the
+    // rig that does not come from the deck. All three are remembered, because a
+    // block is re-sent whenever one of them moves (see hostRolls below), which is
+    // exactly what a parked DAW does to a machine nobody has touched.
+    int state = play;
+    bool held = false;
+    bool hostRolling = true;
+
+    explicit Drive (int stateToUse, bool heldNow = false, double sampleRate = kRate,
                     int tapeSpeed = tape15, int vinylSpeed = vinyl33,
                     double bpm = tempo120)
     {
@@ -99,11 +114,24 @@ struct Drive
         vinyl = vinylSpeed;
         tempo = bpm;
         rig.prepare (sampleRate);
-        block (state, held);
+        block (stateToUse, heldNow);
     }
 
-    void block (int state, bool held = false)
-    { rig.beginBlock (state, held, rate, tape, vinyl, tempo); }
+    void block (int stateNow, bool heldNow = false)
+    {
+        state = stateNow;
+        held = heldNow;
+        rig.beginBlock (state, held, hostRolling, rate, tape, vinyl, tempo);
+    }
+
+    /** The host's transport rolls, or parks. The block is re-sent with whatever the
+        keys currently say, because that is what the engine does every block: the
+        DAW's state is read afresh and the panel's keys are read afresh beside it. */
+    void hostRolls (bool rolling)
+    {
+        hostRolling = rolling;
+        rig.beginBlock (state, held, hostRolling, rate, tape, vinyl, tempo);
+    }
 
     void advance (int count)
     {
@@ -340,6 +368,195 @@ void testStartCatchesACoast()
                + std::to_string ((1.0f - platterAtPress) * TransportRig::startSpinUpSeconds) + " s");
     check (drive.rig.state == Drive::play, "and the state arrives at PLAY");
     check (drive.rig.takeRequestedState() == Drive::play, "with the host told once");
+}
+
+// -----------------------------------------------------------------------------
+//  START waits for the HOST.
+//
+//  A take begins when the DAW rolls, so START pressed on a parked transport is
+//  the key being HELD FOR it: the machine winds down to rest and waits, the lit
+//  key stays on START, and nothing is published to the host until the DAW moves
+//  and the ordinary spin-up runs. The whole gesture is invisible in the source -
+//  it is what the machine does over the seconds either side of the host starting
+//  - which is why it is checked here rather than read.
+// -----------------------------------------------------------------------------
+void testStartArmsOnAParkedDaw()
+{
+    std::printf ("START on a parked DAW arms the key instead of spinning up\n");
+
+    Drive drive (Drive::play);
+    drive.hostRolls (false);
+    drive.advanceSeconds (1.0);
+    check (drive.rig.atSpeed(), "the machine is running when the key is pressed");
+
+    drive.block (Drive::start);
+
+    // The coast to rest is STOP's, because stopping is what is being done to the
+    // machine; the reason differs, and that is what the flag carries.
+    const int coasted = drive.advanceUntil (2.0, [] (const TransportRig& rig)
+                                            { return rig.platter() <= 0.0f; });
+    check (coasted >= 0, "the armed machine comes to rest");
+    check (isGesture (coasted, TransportRig::stopCoastSeconds),
+           "at STOP's own rate, because that is the gesture being performed on it: "
+               + seconds (coasted));
+    check (drive.rig.armedForHost, "and the key is armed for the host");
+
+    drive.advanceSeconds (5.0);
+    check (drive.rig.platter() == 0.0f, "it WAITS there: the arm does not time out");
+    check (drive.rig.state == Drive::stop,
+           "the machine is at rest, which is what the capstan is doing");
+    check (drive.rig.takeRequestedState() == -1,
+           "an armed key asks the host for nothing - the parameter already says START");
+
+    // The DAW rolls. The key was never released, so this is the press.
+    drive.hostRolls (true);
+
+    const int spinUp = drive.advanceUntil (3.0, [] (const TransportRig& rig)
+                                           { return rig.platter() >= 1.0f; });
+    check (spinUp >= 0, "the DAW rolling runs the START the key was holding");
+    check (isGesture (spinUp, TransportRig::startSpinUpSeconds),
+           "and it is the documented spin-up, not a fast catch-up: " + seconds (spinUp));
+    check (! drive.rig.armedForHost, "the arm is spent once the machine is up");
+    check (drive.rig.state == Drive::play, "and the transport settles on PLAY");
+    check (drive.rig.takeRequestedState() == Drive::play,
+           "the armed START publishes PLAY like any other START");
+}
+
+void testArmedStartResumesWhereTheCoastStopped()
+{
+    std::printf ("an armed START whose host rolls mid-coast comes back from where it got to\n");
+
+    Drive drive (Drive::play);
+    drive.hostRolls (false);
+    drive.advanceSeconds (1.0);
+    drive.block (Drive::start);
+
+    const int half = drive.advanceUntil (2.0, [] (const TransportRig& rig)
+                                         { return rig.platter() <= 0.5f; });
+    check (half >= 0, "the parked key brakes the machine");
+
+    drive.hostRolls (true);
+
+    // The spin-up is a RATE, so a machine caught at half speed arrives in half
+    // the documented time - the same arithmetic a START that catches a coast does.
+    const int back = drive.advanceUntil (3.0, [] (const TransportRig& rig)
+                                         { return rig.platter() >= 1.0f; });
+    check (back >= 0, "the host rolling brings it back up");
+    check (isGesture (back, TransportRig::startSpinUpSeconds * 0.5f),
+           "from the platter the coast had reached, at the spin-up's own rate: "
+               + seconds (back));
+    check (drive.rig.state == Drive::play, "and it arrives at PLAY");
+}
+
+void testArmedStartFollowsTheHostBackDown()
+{
+    std::printf ("a host that parks again during the arm's spin-up is waited for again\n");
+
+    Drive drive (Drive::play);
+    drive.hostRolls (false);
+    drive.block (Drive::stop);
+    drive.advanceUntil (2.0, [] (const TransportRig& rig) { return rig.platter() <= 0.0f; });
+    drive.block (Drive::start);
+    check (drive.rig.armedForHost, "START waits on a parked DAW even from rest");
+
+    drive.hostRolls (true);
+
+    const int climbing = drive.advanceUntil (3.0, [] (const TransportRig& rig)
+                                             { return rig.platter() >= 0.3f; });
+    check (climbing >= 0, "the host rolling starts the spin-up");
+
+    drive.hostRolls (false);
+
+    const int down = drive.advanceUntil (2.0, [] (const TransportRig& rig)
+                                         { return rig.platter() <= 0.0f; });
+    check (down >= 0, "and the host parking takes the machine back down");
+    check (drive.rig.armedForHost, "the key is waiting again rather than running it out");
+    check (drive.rig.state != Drive::play, "and it is not sitting on PLAY with the machine stopped");
+    check (drive.rig.takeRequestedState() == -1,
+           "nor was the host ever told the take had started");
+}
+
+void testAParkedHostOnlyHoldsStart()
+{
+    std::printf ("only START waits for the host: PLAY and STOP mean what they always did\n");
+
+    // STOP on a parked DAW is still STOP - and a second press is still the spin-up
+    // this machine's one transport key does. The arm is START's own behaviour.
+    Drive stopped (Drive::play);
+    stopped.hostRolls (false);
+    stopped.block (Drive::stop);
+    stopped.advanceUntil (2.0, [] (const TransportRig& rig) { return rig.platter() <= 0.0f; });
+    check (! stopped.rig.armedForHost, "STOP is not an arm");
+    stopped.block (Drive::start);
+    check (stopped.rig.armedForHost, "and the START it toggles into IS one, with the DAW parked");
+
+    // PLAY takes the key back and runs the machine: it is not a request to the DAW
+    // but a statement about the deck.
+    Drive played (Drive::play);
+    played.hostRolls (false);
+    played.block (Drive::start);
+    played.advanceUntil (2.0, [] (const TransportRig& rig) { return rig.platter() <= 0.0f; });
+    check (played.rig.armedForHost, "START is armed");
+
+    played.block (Drive::play);
+    check (! played.rig.armedForHost, "PLAY takes the key back");
+
+    const int up = played.advanceUntil (2.0, [] (const TransportRig& rig)
+                                        { return rig.platter() >= 1.0f; });
+    check (up >= 0, "and runs the machine without waiting for the host");
+    check (isGesture (up, TransportRig::playRelockSeconds),
+           "at PLAY's own re-lock rate: " + seconds (up));
+
+    Drive stoppedAgain (Drive::play);
+    stoppedAgain.hostRolls (false);
+    stoppedAgain.block (Drive::start);
+    stoppedAgain.advanceUntil (2.0, [] (const TransportRig& rig) { return rig.platter() <= 0.0f; });
+    stoppedAgain.block (Drive::stop);
+    check (! stoppedAgain.rig.armedForHost, "STOP takes the key back too");
+    stoppedAgain.advanceSeconds (3.0);
+    check (stoppedAgain.rig.platter() == 0.0f, "and leaves the machine at rest");
+}
+
+void testAHeldSpindownOutranksTheArm()
+{
+    std::printf ("a held SPINDOWN is a hand on the machine and keeps its gesture while armed\n");
+
+    Drive drive (Drive::play);
+    drive.hostRolls (false);
+    drive.block (Drive::start);
+    drive.advanceUntil (2.0, [] (const TransportRig& rig) { return rig.platter() <= 0.0f; });
+    check (drive.rig.armedForHost, "START is waiting for the host");
+
+    // The finger goes on. A hold is a manual power cut rather than a transport
+    // request, so it takes the machine over: the key the DAW was holding is driven
+    // instead, the platter comes up, and the cut has something to cut.
+    drive.block (Drive::start, true);
+    check (! drive.rig.armedForHost, "a held SPINDOWN takes the machine over");
+
+    const int up = drive.advanceUntil (3.0, [] (const TransportRig& rig)
+                                        { return rig.platter() >= 1.0f; });
+    check (up >= 0, "and brings the platter up, exactly as it does from STOP");
+
+    // Driving the key is driving it for real, so the take announces itself as PLAY
+    // - and the editor's timer writes that back to the parameter, which is what
+    // the harness does here. Without that the key would read as still-starting for
+    // the rest of the run, which is not what a session does.
+    check (drive.rig.takeRequestedState() == Drive::play,
+           "the take it drove announces itself as PLAY");
+    drive.block (Drive::play, true);
+
+    const int down = drive.advanceUntil (6.0, [] (const TransportRig& rig)
+                                          { return rig.platter() <= 0.0f; });
+    check (down >= 0, "then the cut runs the platter down, because that is the gesture");
+
+    // The finger comes off, and the machine does what releasing a hold does from
+    // STOP: comes back up. The arm is gone for good by then - the parameter is PLAY
+    // and the take has been announced.
+    drive.block (Drive::play, false);
+    const int back = drive.advanceUntil (3.0, [] (const TransportRig& rig)
+                                          { return rig.platter() >= 1.0f; });
+    check (back >= 0, "releasing the hold brings the platter back up, as it always did");
+    check (! drive.rig.armedForHost, "with no arm left over once the key has been driven");
 }
 
 // -----------------------------------------------------------------------------
@@ -1137,6 +1354,11 @@ int run()
     testStartFromRest();
     testStartOnRunningMachine();
     testStartCatchesACoast();
+    testStartArmsOnAParkedDaw();
+    testArmedStartResumesWhereTheCoastStopped();
+    testArmedStartFollowsTheHostBackDown();
+    testAParkedHostOnlyHoldsStart();
+    testAHeldSpindownOutranksTheArm();
     testSpindownRunsThePlatterDown();
     testSpindownFromStopBringsItUp();
     testTapeSpeedScalesTheCapstan();

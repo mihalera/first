@@ -3718,10 +3718,23 @@ void FirstAudioProcessorEditor::refreshNeuralStatus()
     // because the stage may well still hold the previous model. That third
     // state is what the old two-state readout got wrong: a refused .nam read as
     // "no model" even though the previous one was still playing.
+    // A model is run at the rate it was TRAINED at whatever rate the engine is
+    // running at (a net's memory is counted in samples, so the rate is part of
+    // what it sounds like), and that rate is the one fact about this stage the
+    // user cannot infer from the panel. It is named only when the two rates
+    // actually differ, so a session that needs no conversion says nothing extra -
+    // and a session that DOES need one can see that it is happening.
+    const auto modelRate = audioProcessor.getNeuralModelRate();
+    const auto engineRate = audioProcessor.getEngineSampleRate();
+    const auto modelKilo = juce::roundToInt (modelRate / 1000.0);
+    const auto rateTag = modelRate > 1.0 && std::abs (modelRate - engineRate) > 1.0
+                             ? juce::String (" @ ") + juce::String (modelKilo) + "K"
+                             : juce::String();
+
     const auto status = neuralStatusReason.isNotEmpty()
                             ? xlat ("INVALID MODEL") + " (" + neuralStatusReason + ")"
                             : audioProcessor.hasNeuralModel() && loadedNeuralName.isNotEmpty()
-                                  ? loadedNeuralName
+                                  ? loadedNeuralName + rateTag
                                   : xlat ("NO MODEL");
 
     if (status == lastShownNeuralStatus)
@@ -5422,7 +5435,13 @@ void FirstAudioProcessorEditor::setUpTransportRow()
                                       "it back up, and on a machine already running there is "
                                       "nothing left to engage, so it lands on PLAY. Its "
                                       "timing follows the deck: tape speed, turntable speed "
-                                      "for the run-down, and the session's tempo.");
+                                      "for the run-down, and the session's tempo.\n\n"
+                                      "Pressed while the DAW is not rolling it is ARMED "
+                                      "instead: the machine winds down and waits, and the "
+                                      "take engages the moment the host rolls - so pressing "
+                                      "START before the DAW starts does not spend the "
+                                      "spin-up on a pause. Press PLAY or STOP to take the "
+                                      "key back.");
 
     for (auto* button : { &transportStopButton, &transportPlayButton, &transportStartButton })
     {
@@ -7619,9 +7638,14 @@ void FirstAudioProcessorEditor::timerCallback()
 
     // The deck hint reads the machine's actual state rather than a fixed caption,
     // so the panel answers "what is the transport doing" in words as well as with
-    // the key lamps and the reels. The four states are the ones the engine can be
-    // in, and the spindown takes priority because it is the momentary one.
+    // the key lamps and the reels. The five states are the ones the engine can be
+    // in, and they are read in this order: the spindown takes priority because it
+    // is the momentary one, and the ARM comes next because a START that is waiting
+    // for the DAW reads as START in the parameter (that is what keeps the key lit)
+    // and is only distinguishable from a spin-up by asking the engine.
+    const auto waitingForHost = audioProcessor.isTransportArmedForHost();
     const auto machineStateText = spindownNow ? "SPINDOWN / POWER CUT"
+                                    : waitingForHost ? "START / WAITING FOR DAW"
                                     : transportNow == 0 ? "STOPPED / AT REST"
                                     : transportNow == 2 ? "START / SPINNING UP"
                                                         : "PLAY / AT SPEED";
@@ -7637,7 +7661,7 @@ void FirstAudioProcessorEditor::timerCallback()
         lastShownMachineState = machineStateText;
         deckHintLabel.setText (machineStateText, juce::dontSendNotification);
         deckHintLabel.setColour (juce::Label::textColourId,
-                                 spindownNow ? paletteFor (darkTheme).needle
+                                 spindownNow || waitingForHost ? paletteFor (darkTheme).needle
                                  : transportNow == 0 ? paletteFor (darkTheme).secondary
                                                      : paletteFor (darkTheme).status);
     }

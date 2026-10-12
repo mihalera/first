@@ -1553,6 +1553,241 @@ struct TransientShaper
 
 //==============================================================================
 /**
+    RateBridge - carries a signal from the ENGINE's rate to a MODEL's own rate and
+    back, so a model is run at the rate it was trained at rather than the one the
+    engine happens to be running at.
+
+    A .nam file is trained at one rate - almost always 48 kHz - and the engine runs
+    at the session's rate times its oversampling factor, so a 48 kHz session with
+    4x oversampling hands the model 192 000 samples a second. A neural net is not a
+    set of coefficients that mean the same thing at every rate the way a filter's
+    do: its layers hold DELAYS and recurrences counted in samples, so running it
+    four times too fast does not make it four times brighter, it makes it a
+    different network - every cell's feedback four times tighter, every state four
+    times shorter. Before this existed the stage ran the model at whatever rate the
+    engine was at and said nothing about it.
+
+    So the signal is carried across: the engine's samples are interpolated at the
+    MODEL's own instants on the way in, and the model's output samples are
+    interpolated at the ENGINE's instants on the way out, both with a four-tap
+    cubic (Catmull-Rom) kernel. That kernel is a fractional-delay interpolator and
+    not an antialias filter - the engine's own oversampling is what band-limits the
+    programme, and this bridge moves it between two rates of the same signal rather
+    than protecting either - which is the honest reading of what a rate conversion
+    here can claim.
+
+    A fractional delay is not causal, so the bridge reads a little way into the
+    past: a model sample is taken two ENGINE samples after its own instant, and the
+    engine's output is reconstructed two engine samples plus two model spacings
+    behind. Every sample the bridge emits is therefore `delay()` engine samples
+    late, and the DRY leg is read through the same interpolation at the same age -
+    so the wet/dry crossfade the stage applies stays in phase and the conversion
+    costs the stage nothing but its own delay. At 4x oversampling of a 48 kHz
+    session that delay is ten engine samples, about fifty microseconds.
+
+    When the two rates agree the bridge is not merely skipped, it is ABSENT: the
+    model is handed the sample it was given, the dry leg is that same sample, and
+    the stage is bit-for-bit what it was before the bridge existed. That is the
+    path a session takes whenever its model was trained at the rate the engine is
+    running at.
+*/
+struct RateBridge
+{
+    /** Two rates this close are the same rate. They arrive as doubles - one from a
+        file, one from a host's buffer size - so the test cannot be equality; a
+        millionth of a rate is a hundredth of a cent over a five-minute take. */
+    static constexpr double sameRate = 1.0e-6;
+
+    /** Engine samples the input kernel reads AHEAD of the instant it wants: the
+        cubic is centred on its point, so two samples either side of it. */
+    static constexpr int lookahead = 2;
+
+    /** The engine-side history. It has to hold the whole of the delay the bridge
+        works at - `lookahead` plus two model spacings - and a model spacing is
+        the engine's rate divided by the model's: at the widest ratio this build
+        can produce (8x oversampling of a 192 kHz session against a 44.1 kHz
+        model) that is 34.8 engine samples, so the delay runs to about 72 and 128
+        slots cover it with room to spare. A fixed array rather than a vector
+        because a rate change can arrive from the audio thread - the oversampling
+        switch is a host parameter - and nothing on that path may allocate. */
+    static constexpr int xSize = 128;
+    static constexpr int xMask = xSize - 1;
+
+    /** The model-side history. The output kernel is centred on the model's grid,
+        so it reads two samples either side of its point; eight slots are five
+        with room for the rounding. */
+    static constexpr int vSize = 8;
+    static constexpr int vMask = vSize - 1;
+
+    /** Model samples the output kernel needs before it has anything to say. */
+    static constexpr int ready = 5;
+
+    /** Model samples per engine sample. 1 means the two rates agree. */
+    double step = 1.0;
+
+    /** Engine samples per model sample - the reciprocal, kept because it is what
+        the conversion advances by and a division per model sample is not free. */
+    double spacing = 1.0;
+
+    /** True when the two rates differ and the conversion is actually running. */
+    bool active = false;
+
+    /** What one engine sample of conversion comes to: the model's answer, and the
+        dry signal delayed to sit beside it. */
+    struct Converted
+    {
+        float wet = 0.0f;
+        float dry = 0.0f;
+    };
+
+    /** Prepares for a model's rate and the engine's. Called whenever either can
+        have changed - a model load, a session rate change, or a change of
+        oversampling factor - and never per block. Allocates nothing, so the audio
+        thread may call it. */
+    void prepare (double modelRate, double engineRate) noexcept
+    {
+        const auto known = modelRate > 1.0 && engineRate > 1.0;
+        step = known ? modelRate / engineRate : 1.0;
+        spacing = 1.0 / step;
+        active = known && std::abs (step - 1.0) > sameRate;
+        reset();
+    }
+
+    void reset() noexcept
+    {
+        xHistory.fill (0.0f);
+        vHistory.fill (0.0f);
+        xWrite = 0;
+        vWrite = 0;
+        engineSamples = 0;
+        modelSamples = 0;
+        nextModelAt = 0.0;
+        newestModelAt = 0.0;
+    }
+
+    /** How far behind the sample it was handed the bridge emits, in ENGINE
+        samples: the input kernel's lookahead plus the two model spacings the
+        output kernel needs. Zero when the two rates agree. */
+    double delay() const noexcept
+    {
+        return active ? static_cast<double> (lookahead) + 2.0 * spacing : 0.0;
+    }
+
+    /** One engine sample in, one out, with the model stepped as many times as
+        falls due at its own rate.
+
+        `model` is called with the model's own input sample and must return the
+        model's output for it. The bridge knows nothing about what is behind it,
+        which is what lets it be exercised on its own - and the caller is the one
+        that owns the model's lifetime guards and its reset.
+
+        Not const and not re-entrant: the history is the conversion's own state,
+        and it belongs to the audio thread. */
+    template <typename Model>
+    Converted process (float x, Model&& model) noexcept
+    {
+        // Rates that agree are not converted at all. This is the path every
+        // session whose model matches the engine takes, and it is why a model
+        // loaded at the engine's own rate is bit-for-bit what it was before this
+        // struct existed.
+        if (! active)
+            return { model (x), x };
+
+        xWrite = (xWrite + 1) & xMask;
+        xHistory[static_cast<std::size_t> (xWrite)] = x;
+
+        const auto now = static_cast<double> (engineSamples++);
+
+        // The model's own instants, in order. One is taken once its instant has
+        // arrived AND its kernel is fully behind the newest engine sample, which
+        // is the two samples `lookahead` names.
+        while (nextModelAt <= now - static_cast<double> (lookahead))
+        {
+            vWrite = (vWrite + 1) & vMask;
+            vHistory[static_cast<std::size_t> (vWrite)] = model (xAtAge (now - nextModelAt));
+
+            newestModelAt = nextModelAt;
+            modelSamples = juce::jmin (modelSamples + 1, vSize);
+            nextModelAt += spacing;
+        }
+
+        // Everything the bridge emits is this far behind the sample it was
+        // handed, the dry leg included: a crossfade between a converted wet leg
+        // and an unconverted dry one would be two signals a fraction of a
+        // millisecond apart, which is a comb rather than a blend.
+        const auto outputAge = delay();
+        const auto dry = xAtAge (outputAge);
+
+        // Until the model has answered enough times for the output kernel's
+        // window there is nothing to reconstruct, and what the bridge owes is the
+        // delayed dry signal - a pass-through with the right phase, so the model
+        // fades in rather than arriving as a step.
+        if (modelSamples < ready)
+            return { dry, dry };
+
+        // The model's output, reconstructed at the engine's own instants. The
+        // taps are the model's grid, which is uniform, so the point is an offset
+        // in MODEL samples rather than a position in the engine's - and that
+        // offset is bounded by the two model spacings the output delay carries,
+        // so the taps always sit inside the (much shorter) model-side history.
+        const auto f = juce::jlimit (1.0, static_cast<double> (vSize - 3),
+                                     (newestModelAt - (now - outputAge)) * step);
+        const auto tap = static_cast<int> (std::floor (f));
+        const auto fraction = static_cast<float> (f - static_cast<double> (tap));
+
+        return { cubic (vAt (tap - 1), vAt (tap), vAt (tap + 1), vAt (tap + 2), fraction),
+                 dry };
+    }
+
+private:
+    /** The cubic through four samples at the fraction `u` past the second of
+        them - Catmull-Rom, which is the four-point interpolator whose slope at
+        each sample is the one the samples either side imply, and the reason the
+        conversion is smooth rather than piecewise linear. */
+    static float cubic (float y0, float y1, float y2, float y3, float u) noexcept
+    {
+        return 0.5f * (2.0f * y1
+                       + (-y0 + y2) * u
+                       + (2.0f * y0 - 5.0f * y1 + 4.0f * y2 - y3) * u * u
+                       + (-y0 + 3.0f * y1 - 3.0f * y2 + y3) * u * u * u);
+    }
+
+    /** The engine signal `age` samples ago - the newest sample is age 0 - 
+        interpolated between the four samples that bracket it. The whole of the
+        bridge's delay arithmetic is in the ages its callers ask for, all of which
+        are inside the history by construction (see `xSize`). */
+    float xAtAge (double age) const noexcept
+    {
+        const auto whole = static_cast<int> (std::floor (age));
+        const auto fraction = static_cast<float> (age - static_cast<double> (whole));
+        return cubic (xAt (whole - 1), xAt (whole),
+                      xAt (whole + 1), xAt (whole + 2), fraction);
+    }
+
+    /** `age` samples ago, by ring index: the newest sample is age 0, and the
+        buffer is its own ring so a push costs one store rather than a shift. */
+    float xAt (int age) const noexcept
+    {
+        return xHistory[static_cast<std::size_t> ((xWrite - age) & xMask)];
+    }
+
+    float vAt (int age) const noexcept
+    {
+        return vHistory[static_cast<std::size_t> ((vWrite - age) & vMask)];
+    }
+
+    std::array<float, xSize> xHistory {};
+    std::array<float, vSize> vHistory {};
+    int xWrite = 0;
+    int vWrite = 0;
+    long long engineSamples = 0;    ///< engine samples handed in so far
+    int modelSamples = 0;           ///< model samples taken so far, saturated at vSize
+    double nextModelAt = 0.0;       ///< engine instant of the next model sample
+    double newestModelAt = 0.0;     ///< ... and of the one taken most recently
+};
+
+//==============================================================================
+/**
     NeuralStage - an optional RTNeural model run as a per-channel nonlinearity.
 
     The other stages in this plugin are hand-written curves, each chosen because
@@ -1609,6 +1844,22 @@ struct NeuralStage
     std::atomic<bool> clearRequested { false };
     std::atomic<bool> resetRequested { false };
     std::atomic<unsigned int> readers { 0 };
+
+    // The conversion, for a model whose own rate is not the engine's (see
+    // RateBridge). With the two rates equal the bridge is a single branch and
+    // the stage is exactly what it was before it existed.
+    RateBridge bridge;
+
+    // The two rates, and whether the bridge has been told about them yet. They
+    // arrive from whoever knows: a model load on the MESSAGE thread, a session
+    // rate or an oversampling change from either thread - and the oversampling
+    // switch really is made from the audio thread, because it is a host
+    // parameter. The bridge itself is audio-thread state, so it is prepared on
+    // the audio thread's next inference instead - the same discipline the model
+    // pointer above follows.
+    std::atomic<double> wantedModelRate { 0.0 };
+    std::atomic<double> wantedEngineRate { 0.0 };
+    std::atomic<bool> ratesPending { false };
 
     /** The model's input frame. RTNeural's forward() takes a pointer to a
         float[inSize] and RETURNS the single output sample by value, so one
@@ -1676,6 +1927,27 @@ struct NeuralStage
         juce::ignoreUnused (json);
         return false;
     #endif
+    }
+
+    /** Tells the stage the rate the MODEL was trained at - 0 means unknown, which
+        keeps the model on the engine's own samples, exactly the behaviour every
+        build had before the bridge existed - and the rate the ENGINE is running
+        at, so a model trained at 48 kHz is run at 48 kHz whatever the engine is
+        doing (see RateBridge).
+
+        Called whenever either rate can have changed: a model load, a session rate
+        change, or a change of oversampling factor. Realtime-safe - it writes three
+        atomics and nothing else - because the oversampling switch arrives on the
+        audio thread. */
+    void setSampleRates (double modelRate, double engineRate) noexcept
+    {
+#if J37_HAS_RTNEURAL
+        wantedModelRate.store (modelRate, std::memory_order_relaxed);
+        wantedEngineRate.store (engineRate, std::memory_order_relaxed);
+        ratesPending.store (true, std::memory_order_release);
+#else
+        juce::ignoreUnused (modelRate, engineRate);
+#endif
     }
 
     /** Releases the model, returning the stage to the pass-through. */
@@ -1915,15 +2187,43 @@ struct NeuralStage
             readers.fetch_sub (1, std::memory_order_release);
             return x;
         }
+        // The rates, latched here rather than written into the bridge by the
+        // thread that knows them: see `setSampleRates`. Checked per sample, which
+        // is one relaxed load against the two the guards above already make, and
+        // it has to be here rather than per block because this stage is called
+        // per sample.
+        if (ratesPending.load (std::memory_order_acquire))
+        {
+            bridge.prepare (wantedModelRate.load (std::memory_order_relaxed),
+                            wantedEngineRate.load (std::memory_order_relaxed));
+            ratesPending.store (false, std::memory_order_release);
+        }
+
         if (resetRequested.exchange (false, std::memory_order_acq_rel))
+        {
             active->reset();
 
-        inputFrame[0] = x;
+            // The model's own memory is gone, so the conversion's is too: what the
+            // bridge is holding are that model's answers.
+            bridge.reset();
+        }
 
-        // RTNeural's Model<T>::forward(const T*) returns the single output value.
-        const float wet = active->forward (inputFrame);
+        // The frame the model is handed: the sample itself when the two rates
+        // agree, and the signal carried to the model's own rate when they do not.
+        // Either way the stage's crossfade runs between the bridge's two legs,
+        // which are in phase with each other.
+        const auto converted = bridge.process (x, [active, this] (float input) noexcept
+        {
+            inputFrame[0] = input;
+
+            // RTNeural's Model<T>::forward(const T*) returns the single output
+            // value.
+            return active->forward (inputFrame);
+        });
+
         readers.fetch_sub (1, std::memory_order_release);
-        return x + (wet - x) * juce::jlimit (0.0f, 1.0f, amount);
+        return converted.dry
+             + (converted.wet - converted.dry) * juce::jlimit (0.0f, 1.0f, amount);
 #else
         juce::ignoreUnused (amount);
         return x;
@@ -5180,6 +5480,12 @@ private:
     time constants, so the old "about a second" spin-up was really a seven-second
     creep that never settled into PLAY during a take, and the old "350 ms" stop
     needed about four seconds to reach rest. A transport gesture is a duration.
+
+    One more thing the deck answers to, and it is not its own: the HOST. START
+    pressed on a DAW whose transport is parked ARMS the key instead of performing
+    it - see `armedForHost` - so a take begins with the machine engaging as the
+    DAW rolls rather than a second and a half before it. `beginBlock()` is handed
+    that one bit along with everything else.
 */
 struct TransportRig
 {
@@ -5240,6 +5546,14 @@ struct TransportRig
     // parameter catches up when the editor's timer writes it back.
     int state = static_cast<int> (State::play);
 
+    /** True while START is being HELD FOR THE HOST - the key was pressed on a DAW
+        whose transport is not rolling - so the machine is at rest waiting for it
+        rather than spinning up. Public because the panel reads it (that is how it
+        can say "waiting for the DAW" rather than "stopped" while the parameter
+        still says START), and because the harness reads it to tell the two
+        rest-states apart. */
+    bool armedForHost = false;
+
     /** 0..1 - what the rest of the machine follows. */
     float platter() const noexcept { return ramp * spindown; }
 
@@ -5273,17 +5587,20 @@ struct TransportRig
         spinningUp = false;
         advancedToPlay = false;
         lastHeld = false;
+        armedForHost = false;
         requestedState = -1;
     }
 
     /** Once per block: the `transport` parameter's own value, the momentary hold
-        (an atomic written by the panel), the rate the ENGINE is running at - the
-        oversampled rate, because the ramps advance once per engine frame and the
-        durations above are wall-clock seconds - and the deck's own settings: the
-        TAPE SPEED and VINYL SPEED choice indices, which scale the gestures (see
-        the tables above), and the tempo they are scaled to.
+        (an atomic written by the panel), whether the HOST'S transport is rolling
+        (read from the playhead by the engine, and true when the host will not
+        say), the rate the ENGINE is running at - the oversampled rate, because
+        the ramps advance once per engine frame and the durations above are
+        wall-clock seconds - and the deck's own settings: the TAPE SPEED and VINYL
+        SPEED choice indices, which scale the gestures (see the tables above), and
+        the tempo they are scaled to.
     */
-    void beginBlock (int stateIndex, bool held, double engineRate,
+    void beginBlock (int stateIndex, bool held, bool hostRolling, double engineRate,
                      int tapeSpeed, int vinylSpeed, double tempoBpm) noexcept
     {
         if (engineRate > 1.0)
@@ -5322,26 +5639,63 @@ struct TransportRig
         if (parameterState != static_cast<int> (State::start))
             advancedToPlay = false;
 
+        // -------------------------------------------------------------------
+        //  THE ARM: START waits for the HOST.
+        //
+        //  START is a request to the MACHINE, and the machine's take belongs to
+        //  the DAW. Pressing START while the host's transport is parked therefore
+        //  ARMS the key instead of running it: the machine coasts to rest and
+        //  waits - nothing turns and nothing sounds - and the state follows the
+        //  host, so the moment it rolls, the parameter (which still reads START)
+        //  drives the ordinary spin-up below, from rest or from wherever a coast
+        //  the key caught had left the capstan.
+        //
+        //  What the machine does while it waits is STOP's, because that is what
+        //  is being done to it: the capstan is braked to rest. What differs is
+        //  the REASON, and the reason is what `armedForHost` publishes - the
+        //  panel reads it and says the key is waiting for the DAW rather than
+        //  that the machine is stopped.
+        //
+        //  A host that will not answer - no playhead, or a playhead with no
+        //  position - counts as ROLLING. The other reading, unknown means parked,
+        //  would leave the key dead on every host that cannot answer, which is a
+        //  worse fault than the one this exists to fix. A held SPINDOWN also
+        //  counts as rolling: the hold is a hand on the machine rather than a
+        //  transport request, and a manual power cut keeps its gesture whether or
+        //  not the DAW is running.
+        // -------------------------------------------------------------------
+        armedForHost = requested == static_cast<int> (State::start) && ! hostRolling && ! held;
+
+        if (armedForHost)
+            requested = static_cast<int> (State::stop);
+
         state = requested;
 
-        // The release edge of a spindown hold. A hold forces the platter to run,
-        // so releasing it on a stopped machine leaves the machine RUNNING: the
-        // gesture put the platter in motion and cutting the power does not brake
-        // it. The state follows, through the same request the auto-advance uses.
-        if (lastHeld && ! held && state == static_cast<int> (State::stop))
+        // The two hold rules, and neither runs while the key is armed: the arm
+        // yields to the hold entirely (see `! held` above) rather than trading
+        // one gesture against the other, and a waiting machine that its own
+        // released hold could spin up would not be waiting for anything.
+        if (! armedForHost)
         {
-            state = static_cast<int> (State::play);
-            lastState = -1;                 // re-arm: the PLAY case spins it up
-            requestedState = state;
-        }
+            // The release edge of a spindown hold. A hold forces the platter to run,
+            // so releasing it on a stopped machine leaves the machine RUNNING: the
+            // gesture put the platter in motion and cutting the power does not brake
+            // it. The state follows, through the same request the auto-advance uses.
+            if (lastHeld && ! held && state == static_cast<int> (State::stop))
+            {
+                state = static_cast<int> (State::play);
+                lastState = -1;                 // re-arm: the PLAY case spins it up
+                requestedState = state;
+            }
 
-        // A hold pressed on a STOPPED machine brings the platter up first - the
-        // cut has to have something to cut. The engine side only: the parameter
-        // follows on release, which is when the gesture has an answer.
-        if (held && state == static_cast<int> (State::stop))
-        {
-            state = static_cast<int> (State::play);
-            lastState = -1;
+            // A hold pressed on a STOPPED machine brings the platter up first - the
+            // cut has to have something to cut. The engine side only: the parameter
+            // follows on release, which is when the gesture has an answer.
+            if (held && state == static_cast<int> (State::stop))
+            {
+                state = static_cast<int> (State::play);
+                lastState = -1;
+            }
         }
 
         lastHeld = held;
@@ -6008,6 +6362,16 @@ public:
         spin its reels at the real speed rather than at a guess. */
     float getTransportRamp() const noexcept { return transportRampPublished.load (std::memory_order_relaxed); }
 
+    /** True while the START key is armed against the host: it was pressed on a DAW
+        whose transport was not rolling, so the machine is at rest WAITING for it
+        rather than spinning up. The parameter still reads START while this is
+        true, which is what makes the flag necessary - without it the panel could
+        not tell a waiting key from a machine that is simply stopped. */
+    bool isTransportArmedForHost() const noexcept
+    {
+        return transportArmedPublished.load (std::memory_order_relaxed);
+    }
+
     /** The spindown run-down alone, 0..1, 1 = at speed. Lets the panel show the
         pitch falling away during a hold even while the transport itself is Play. */
     float getSpindownRamp() const noexcept { return spindownRampPublished.load (std::memory_order_relaxed); }
@@ -6065,6 +6429,24 @@ public:
 
     /** Releases any installed model, returning the stage to the pass-through. */
     void clearNeuralModel();
+
+    /** The rate the loaded model was trained at, in Hz - 0 when that is unknown,
+        which is the case for every RTNeural JSON model (the format carries no
+        rate) and for no model at all. A .nam file carries it, and the stage runs
+        such a model at THIS rate whatever the engine is doing; see RateBridge. */
+    double getNeuralModelRate() const noexcept
+    {
+        return neuralModelRate.load (std::memory_order_relaxed);
+    }
+
+    /** The rate the ENGINE is running at: the session's rate times the
+        oversampling factor. Published because it is the rate a model would be run
+        at if it were not being converted to its own, which is the comparison the
+        panel makes when it says which rate a model is playing at. */
+    double getEngineSampleRate() const noexcept
+    {
+        return neuralEngineRate.load (std::memory_order_relaxed);
+    }
 
     /** True when a model is installed and the stage can run it. */
     bool hasNeuralModel() const noexcept { return neuralL.isActive(); }
@@ -6851,6 +7233,14 @@ private:
     std::atomic<float> transportRampPublished { 1.0f };
     std::atomic<float> spindownRampPublished { 1.0f };
 
+    // True while the START key is armed against the host (see the arm in
+    // TransportRig). Written once per block by the audio thread, beside the
+    // request it publishes, and read with a relaxed load by the panel's deck
+    // readout. While the engine is bypassed nothing writes it, so it holds the
+    // last block's answer - which is the honest UI reading of a machine that is
+    // not being run at all.
+    std::atomic<bool> transportArmedPublished { false };
+
     // Noise floor trim, smoothed like every other control-derived gain so moving
     // the NOISE knob cannot step the hiss level.
     SampleSmoother noiseTrimSmoothed { sampleClock, false, false, 1.0f };
@@ -7138,6 +7528,24 @@ private:
     NeuralStage neuralL;
     NeuralStage neuralR;
     SampleSmoother neuralMixSmoothed { sampleClock, false, false, 0.0f };
+
+    //  The rate the loaded model was trained at, and the rate the engine runs at.
+    //  Atomics because either can be set from either thread - a model is loaded on
+    //  the message thread, and the oversampling factor that moves the engine's
+    //  rate is switched from the audio thread when its host parameter changes -
+    //  and both are pushed to the stages by updateNeuralSampleRates(), which the
+    //  stages then latch on the audio thread.
+    std::atomic<double> neuralModelRate { 0.0 };
+    // Seeded at the rate a session that has not been prepared yet is assumed to be
+    // at, rather than at zero: the panel compares this against a loaded model's own
+    // rate to decide whether to say anything, and a zero here would make every
+    // model look like it was being converted until the first prepare.
+    std::atomic<double> neuralEngineRate { 48000.0 };
+
+    /** Hands the two rates to both neural stages. Called from the three places
+        either number can have changed: a model load, prepareToPlay, and a change
+        of oversampling factor. */
+    void updateNeuralSampleRates();
 
     //  The IR cabinet stage: one convolution per channel against a user-loaded
     //  impulse response, blended by IR MIX (ir_mix) exactly the way NEURAL

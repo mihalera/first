@@ -97,6 +97,16 @@ jobs:
       - name: Run the pitch harness
         run: bash tests/pitch/run.sh
 
+      # The neural stage's rate conversion. A .nam model carries the rate it was
+      # TRAINED at and the engine runs at the session's rate times its oversampling
+      # factor, and a network's memory is counted in samples rather than seconds -
+      # so a model driven at the wrong rate is not a brighter version of itself but
+      # a different network. Nothing about that shows up in a build or on the panel,
+      # so the bridge is driven on generated signal at every rate pair the engine
+      # can produce, and what is measured is the sequence the MODEL is handed.
+      - name: Run the neural rate harness
+        run: bash tests/neural/run.sh
+
       # The factory presets cannot fail at runtime - a name list that is a row
       # short, or a parameter with no column in the table, both just quietly
       # load the wrong sound - so they are checked against the source instead.
@@ -301,6 +311,7 @@ jobs:
           J37_SANITIZE=address,undefined bash tests/state/run.sh
           J37_SANITIZE=address,undefined bash tests/transport/run.sh
           J37_SANITIZE=address,undefined bash tests/pitch/run.sh
+          J37_SANITIZE=address,undefined bash tests/neural/run.sh
 
       - name: Configure CMake (Debug)
         run: |

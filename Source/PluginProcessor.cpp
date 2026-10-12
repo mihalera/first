@@ -1669,6 +1669,13 @@ namespace
         //            TransportRig, with the reason they are durations rather than
         //            one-pole time constants, and with the TAPE SPEED / VINYL SPEED
         //            / tempo scales that move them with the deck's own settings.
+        //            Pressed while the HOST's transport is parked it ARMS the key
+        //            instead of running it - the machine waits at rest until the
+        //            DAW rolls - because a take belongs to the DAW and a spin-up
+        //            spent on a pause is a spin-up wasted. The state stays START
+        //            while it waits, which is what keeps the key lit; the engine
+        //            publishes the arm beside it so the panel can say so (see
+        //            armedForHost in TransportRig).
         //
         //  What the transport moves is the machine's LEVEL, its modulation and its
         //  speed response (the same character mapping the SPEED control uses), all
@@ -2940,6 +2947,32 @@ void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int 
     }
 
     currentOversampling = clamped;
+
+    // The engine's rate just moved, so a loaded model's conversion has to move
+    // with it: a model trained at 48 kHz is run at 48 kHz from a 96 kHz engine
+    // and from a 384 kHz one alike (see RateBridge). Cheap - it publishes two
+    // numbers and the stages latch them - which matters, because this is also
+    // reached from the audio thread when the OVERSAMPLING parameter changes.
+    updateNeuralSampleRates();
+}
+
+void FirstAudioProcessor::updateNeuralSampleRates()
+{
+    // The rate the engine is running at: the session's rate times the oversampling
+    // factor, which is the rate every stage inside the engine sees and therefore
+    // the rate a model would be run at if it were not carried to its own.
+    //
+    // The model's rate may be 0, which means unknown - the RTNeural JSON format
+    // carries no rate, and no model at all is the same case. Unknowable is not a
+    // reason to guess: 0 leaves the model on the engine's samples, which is the
+    // behaviour every build before the bridge had.
+    const auto engineRate = static_cast<double> (
+        juce::jmax (1.0f, sampleRate * oversamplingRateFactor));
+    neuralEngineRate.store (engineRate, std::memory_order_relaxed);
+
+    const auto modelRate = neuralModelRate.load (std::memory_order_relaxed);
+    neuralL.setSampleRates (modelRate, engineRate);
+    neuralR.setSampleRates (modelRate, engineRate);
 }
 
 void FirstAudioProcessor::updateToneCoefficients (float toneValue, float engineSampleRate)
@@ -3710,7 +3743,18 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //  getPosition() is called ONCE here rather than per parameter read, because
     //  it is a virtual call into the host and hosts are entitled to make it
     //  expensive.
+    //
+    //  The same call also answers the other question the playhead is asked -
+    //  whether the host's transport is ROLLING - because START is armed on it
+    //  (see the arm in TransportRig). It defaults to rolling, and it takes a
+    //  POSITION for the host to be believed at all: JUCE carries the transport
+    //  state as a flag inside this same struct and reports `false` for a host
+    //  that never set one, so an unanswered playhead and a parked one are the
+    //  same reading - and a key that refused to engage on a host that does not
+    //  report would be a worse fault than the one the arm fixes.
     // -----------------------------------------------------------------------
+    bool hostRolling = true;
+
     if (auto* hostPlayHead = getPlayHead())
     {
         if (auto position = hostPlayHead->getPosition())
@@ -3725,6 +3769,16 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                     hostTempoValid = true;
                 }
             }
+
+            // A position is what makes the playhead's own answer worth reading:
+            // every format JUCE supports sets the transport state from the host's
+            // own, so a host that supplies timing supplies this too, and a host
+            // that supplies nothing keeps the rolling default above rather than
+            // being read as parked.
+            if (! position->getIsPlaying()
+                && (position->getTimeInSamples().hasValue()
+                    || position->getPpqPosition().hasValue()))
+                hostRolling = false;
         }
     }
 
@@ -4348,6 +4402,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //  runs down for longer, and a take at 60 BPM moves twice as slowly as one at
     //  120. A host that offers no tempo leaves the rig on its 120 BPM anchor.
     //
+    //  It is handed the host's TRANSPORT STATE as well. That is the one input
+    //  to the transport that is not the deck's own: START pressed on a parked
+    //  DAW arms the key rather than spinning the machine up, so a take begins
+    //  with the machine engaging as the host rolls instead of a second and a
+    //  half before it.
+    //
     //  The state the rig settles on (START arriving at speed, or a hold released
     //  on a stopped machine) comes back as a request rather than as a host call:
     //  the atomics here are flushed to the parameter by the editor's timer, so no
@@ -4356,8 +4416,15 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const bool spindownNow = spindownHeld.load (std::memory_order_relaxed);
     const auto vinylSpeedChoice = vinylSpeedParam != nullptr
                                       ? static_cast<int> (vinylSpeedParam->load()) : 0;
-    transport.beginBlock (transportState, spindownNow, engineSampleRate,
+    transport.beginBlock (transportState, spindownNow, hostRolling, engineSampleRate,
                           speed, vinylSpeedChoice, hostTempoBpm);
+
+    // The arm is published with the request rather than inside the per-frame loop:
+    // it is block-granular state (the host rolls or it does not, for the whole
+    // block), and the panel reads it to tell a START that is WAITING FOR THE DAW
+    // from the two ways the machine can be at rest. Relaxed store, like the ramps
+    // beside it: this is an advisory UI value.
+    transportArmedPublished.store (transport.armedForHost, std::memory_order_relaxed);
 
     if (const auto requestedTransportState = transport.takeRequestedState();
         requestedTransportState >= 0)
@@ -7013,6 +7080,17 @@ bool FirstAudioProcessor::loadNeuralModel (const juce::String& modelJson)
     if (! (loadedLeft && loadedRight))
         lastLoadErrorMessage = "NOT A MODEL FILE";
 
+    // RTNeural's own JSON carries no rate - the model's topology is all it
+    // describes - so this model has no rate to be run at and keeps the engine's,
+    // which is what every build before the bridge did. A rate left over from a
+    // .nam model must NOT survive here: it would be that file's rate applied to
+    // this one.
+    if (loadedLeft && loadedRight)
+    {
+        neuralModelRate.store (0.0, std::memory_order_relaxed);
+        updateNeuralSampleRates();
+    }
+
     return loadedLeft && loadedRight;
 }
 
@@ -7051,8 +7129,27 @@ bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
             return false;
         }
 
+        // The rate the model was TRAINED at. It is the one thing in a .nam file
+        // the converter has no use for and the ENGINE does: a neural net's memory
+        // is counted in samples rather than seconds, so a 48 kHz model run on a
+        // 192 kHz engine is a different network rather than a brighter one (see
+        // RateBridge).
+        //
+        // `sample_rate` is OPTIONAL in the format, and the format's own
+        // documentation says to assume 48 kHz when it is absent - which is also
+        // the rate every .nam model this build is likely to meet was trained at,
+        // so that is the assumption, and it only ever changes the model's sound
+        // where the engine is NOT already running at 48 kHz.
+        auto modelRate = 48000.0;
+        if (const auto rate = parsed.find ("sample_rate");
+            rate != parsed.end() && rate->is_number())
+            modelRate = rate->get<double>();
+
         loadedLeft = neuralL.buildFromNam (parsed);
         loadedRight = neuralR.buildFromNam (parsed);
+
+        if (loadedLeft && loadedRight)
+            neuralModelRate.store (modelRate, std::memory_order_relaxed);
     }
     catch (...)
     {
@@ -7069,6 +7166,12 @@ bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
 
     if (! (loadedLeft && loadedRight) && lastLoadErrorMessage.isEmpty())
         lastLoadErrorMessage = "BAD SHAPE";
+
+    // The model's own rate reaches the stages here, after the load rather than
+    // before it: the stages latch the pair on their next inference, so the bridge
+    // is prepared for the model that is actually installed.
+    if (loadedLeft && loadedRight)
+        updateNeuralSampleRates();
 
     return loadedLeft && loadedRight;
 #else

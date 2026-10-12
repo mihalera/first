@@ -178,9 +178,16 @@ reverb and the vinyl stage.
 - **NEURAL** and **IR MIX** are the wet/dry positions. At 0 %, or with nothing loaded,
 each stage is a bit-for-bit pass-through, so a build with no file loaded is exactly the
 plugin it was before the stage existed.
-- With RTNeural not fetched (or compiling the DSP harness), every member of the neural
-stage reduces to that same pass-through: the guard is honest, and the plugin never depends
-on a model being present to sound right.
+- A `.nam` model is run at **the rate it was trained at**, which is the rate its file
+carries and which the engine's rate usually is not: the engine runs at the session's rate
+times its oversampling factor, so a 48 kHz session at 4x hands the model 192 000 samples a
+second. A network's memory is counted in **samples** rather than seconds, so a model driven
+at the wrong rate is not a brighter version of itself but a different network - every cell's
+feedback tighter and every state shorter. The stage therefore carries the signal to the
+model's own rate on the way in and back to the engine's on the way out, and the status line
+names that rate - `@ 48K` - whenever it differs from the engine's, because the conversion is
+invisible otherwise. RTNeural's own JSON carries no rate at all, and such a model keeps the
+engine's, which is what every earlier build did.
 
 ## Tape condition: flux, wear, mechanics
 
@@ -431,6 +438,17 @@ A tape machine has three states and the middle one is not "stopped":
 | **Play** | Normal running. Everything the panel describes is active. This is the default and what every earlier build did |
 | **Start** | The moment of engagement: the capstan is driven **up** from wherever it is - 1.1 s from rest - and the control settles on PLAY by itself when the platter reaches speed. It is a spin-up and nothing else. Catching the machine mid-coast it brings it back up at the same rate, and a machine already at speed has nothing left to engage, so there the key simply lands on PLAY. It never brakes first: a key that stopped the deck before starting it would be a re-cue, not a start |
 
+**START waits for the host.** Pressing it while the DAW's transport is parked ARMS the key
+instead of running it: the machine coasts to rest and waits - at rest, and therefore silent -
+and the spin-up happens the moment the DAW rolls, so a take begins with the machine engaging
+rather than with a second and a half of spin-up spent on a pause. The lit key stays on START
+and the deck hint reads **START / WAITING FOR DAW** while it waits; PLAY or STOP takes the
+key back, and a held SPINDOWN is a hand on the machine rather than a transport request, so it
+keeps its gesture either way. A host that will not answer - no playhead, or a playhead with
+no position - counts as **rolling**, so the key never goes dead on a host that cannot answer
+it, and neither does the rest of the plugin change: a fresh instance rests on PLAY whatever
+the DAW is doing.
+
 **SPINDOWN** is the other half of the transport: a momentary hold, not a fourth state.
 Held, it cuts the platter's power and the machine coasts down over 1.6 s; released, it
 comes back up in 0.9 s. A hold on a stopped machine brings the platter up first and cuts
@@ -486,10 +504,12 @@ frame by frame: each gesture is checked against the duration its own name claims
 against the scale the deck's settings put on it - one machine per tape speed, per
 turntable speed and per tempo, plus the corner where all three are at once - and the stage
 is checked as the identity at speed, as a bend that follows the platter while it falls,
-and as a read that never runs past its own write head. So the defects this section used to
-describe (a STOP that only made the machine quieter, a START that braked first, gestures
-that ignored the deck, and a pitch that never moved while the speed did) cannot come back
-quietly.
+and as a read that never runs past its own write head. The arm is checked there too, because
+it is a property of the same gesture over time: a parked DAW has to leave the machine at
+rest with the key held, and its rolling has to run the spin-up the key was holding. So the
+defects this section used to describe (a STOP that only made the machine quieter, a START
+that braked first, gestures that ignored the deck, and a pitch that never moved while the
+speed did) cannot come back quietly.
 
 ## Repitch: the platter's own pitch bend
 
@@ -598,7 +618,7 @@ rest stays silent.
 | Delay Level | 0 to 100 % | How loud the second head's output is. Each pass round the tape loses top end, the way a real repeat does. Default 0 % |
 | ST Offset | -500 to +500 us | Inter-channel time offset. Real stereo decks record the two tracks with separate head gaps a fraction of a millimetre apart and the tape skews across them, so the channels are never perfectly aligned. Positive lags the right channel. Default 0 us |
 | Noise | 0 to 100 % | A trim on top of whatever floor the loaded tape formula sets. The formula's own character is untouched, so the floor can be lifted for a dirty bounce or pulled to a clinical black without changing stock. Gated by the transport. Default 50 % (neutral) |
-| Transport | Stop / Play / Start | The machine's three states. STOP brakes the capstan to rest in 0.75 s - no hiss, no wow, no delay tail: true silence, not a mute - and pressing it again spins the machine back up. START is the spin-up and nothing else: 1.1 s from rest, it catches a coasting machine and brings it back up at the same rate, it settles on PLAY by itself, and it never brakes first. PLAY is normal running, and a re-lock from a partial ramp takes 0.25 s. TAPE SPEED scales the three capstan gestures, VINYL SPEED scales the run-down, and the host tempo scales them all - see [Transport](#transport-start-play-stop) |
+| Transport | Stop / Play / Start | The machine's three states. STOP brakes the capstan to rest in 0.75 s - no hiss, no wow, no delay tail: true silence, not a mute - and pressing it again spins the machine back up. START is the spin-up and nothing else: 1.1 s from rest, it catches a coasting machine and brings it back up at the same rate, it settles on PLAY by itself, and it never brakes first; pressed while the DAW is parked it is ARMED instead, and the machine waits at rest until the host rolls. PLAY is normal running, and a re-lock from a partial ramp takes 0.25 s. TAPE SPEED scales the three capstan gestures, VINYL SPEED scales the run-down, and the host tempo scales them all - see [Transport](#transport-start-play-stop) |
 | Spindown | on/off (momentary in the panel) | Hold to cut the platter's power: the machine coasts down over 1.6 s (2.46 s on a 78 rpm platter) and comes back up in 0.9 s when released. A hold also brings the platter up if the machine was stopped, and releasing a hold leaves the machine running. As a parameter it survives in the state and can be automated. Default off |
 | Tuning Tonic (TONIC) | C to B | The key the scale is built on: the note the corrector treats as home. No effect on CHROMATIC, which already contains every semitone. Default C |
 | Tuning Mode (MODE) | Chromatic / Major / Minor / Dorian / Pentatonic Major / Pentatonic Minor | Which notes the corrector may land on. CHROMATIC pulls a note to the nearest semitone and nowhere else; a scale lets the reading travel up to a semitone to the nearest note the key contains, so the correction follows the key rather than the grid. Default Chromatic |
@@ -1417,8 +1437,9 @@ CMakeLists.txt   the build, and the only place build settings live
 Source/          the plugin: PluginProcessor, PluginEditor, and DSP
 JUCE/            JUCE 9.0.3, pinned as a git submodule
 .github/         CI: builds VST3 on Windows, VST3 + AU + AUv3 on macOS
-tests/           harnesses that need no JUCE: DSP, transport, knob layout, saved state
-                 plus two source checks - the factory preset table and the theme wiring
+tests/           harnesses that need no JUCE: DSP, transport, pitch, neural rate,
+                 knob layout, saved state - plus two source checks, the factory
+                 preset table and the theme wiring
 SPLITTING-BIG-FILES.md   how far the long files can be split, and what it costs
 ```
 
