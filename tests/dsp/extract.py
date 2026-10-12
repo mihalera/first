@@ -50,6 +50,7 @@ SOURCE_HEADERS = [
     "DSP/LoudnessMeter.h",
     "DSP/TransientShaper.h",
     "DSP/GlueCompressor.h",
+    "DSP/RateBridge.h",
 ]
 
 # The namespace-level constants SaturationCore's set<Family>Voice methods
@@ -80,17 +81,11 @@ HEADER_PIECES = [
     # with J37_HAS_RTNEURAL 0 (the harness case) every member reduces to the
     # pass-through, so the struct still compiles and still renders the input
     # unchanged. A source that only compiled WITH the library would fail here.
-    # The rate bridge is extracted because it is the one part of the neural stage
-    # that is plain arithmetic: it carries a signal between the engine's rate and a
-    # model's own, and whether it does that correctly - the model driven at ITS
-    # rate, the two legs of the stage's crossfade in phase, and a matching model
-    # bit-for-bit untouched - is measurable on a signal without a model present.
-    #
-    # BEFORE the stage, in this list as in the header: the stage HOLDS one, so an
-    # extraction that emitted it afterwards would compile a member of an incomplete
-    # type. The order here is the header's order, which is the only order that
-    # works.
-    ("RateBridge", "struct RateBridge"),
+    # The rate bridge used to be cut here, before NeuralStage, because the stage
+    # HOLDS one: it now comes from Source/DSP/RateBridge.h, which SOURCE_HEADERS
+    # includes above and ahead of everything in this list, so the member's type is
+    # complete by the time the stage below is compiled. The order rule has not
+    # gone away - it has moved into that list.
     ("NeuralStage", "struct NeuralStage"),
 ]
 
