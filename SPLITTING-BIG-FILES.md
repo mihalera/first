@@ -250,7 +250,7 @@ harnesses once with `J37_SANITIZE=address,undefined`.
 
 ## 7. Progress
 
-Six headers are out, and what matters is the recipe rather than the pieces,
+Eight headers are out, and what matters is the recipe rather than the pieces,
 because the recipe is what the rest of them follow:
 
 - `Source/DSP/J37Math.h` - the scalar math bridge every stage calls, and the file that
@@ -264,6 +264,20 @@ because the recipe is what the rest of them follow:
   their prose, moved whole. Not retyped: the block was deleted from
   `PluginProcessor.h` by matching its exact text and written to the new header by
   the same text, so a typo fails the move rather than changing the stage.
+- `Source/DSP/VinylStage.h` - 581 lines of header for 566 of the file. The stage
+  holds nothing but its own state and reaches for `juce::jlimit` and the std:: math,
+  so this is what a move costs when nothing has to travel with it: the include is the
+  whole plugin-side change. It is also the one that says something about the harness
+  rather than the plugin - nothing in `tests/dsp/subfund_test.cpp` names `VinylStage`
+  any more (the extraction was kept for the noise tab's controls, and whatever check
+  that was drives the chain rather than the struct), so the entry became a plain
+  include. A check that wants the stage again finds the shipping text.
+- `Source/DSP/SubharmonicGenerator.h` - 573 lines of header for 559 of the file, and
+  the last stage the DSP harness drives to move. `tests/dsp/subfund_test.cpp` renders
+  it (the divider series, the undertone ordering, the mix direction, and that
+  silence stays silent), so this is the move that turns the harness's most-driven
+  stage from a cut copy into the shipping header - with the same `SOURCE_HEADERS`
+  include and one line out of `HEADER_PIECES`.
 - `Source/DSP/SaturationCore.h` - the largest piece so far, 1,001 lines of header
   for an 860-line struct, and the first move that had to take something else with
   it: the four type lists (`valveTypeNames`, `ampTypeNames`, `transformerTypeNames`,
@@ -274,8 +288,9 @@ because the recipe is what the rest of them follow:
   `PluginProcessor.h`) and fail in every harness. The fifth list, `vinylTypeNames`,
   stayed behind: it voices `VinylStage` rather than the core.
 
-`PluginProcessor.h` went from 7,605 lines to 6,932 in the first pass
-(`RateBridge`, 194 lines, closed it) and to 5,951 with `SaturationCore`. The more
+`PluginProcessor.h` went from 7,605 lines to 6,932 in the first pass (`RateBridge`,
+194 lines, closed it), to 5,951 with `SaturationCore`, and to 4,835 with `VinylStage`
+and `SubharmonicGenerator` - four moves, 2,770 lines, in eight headers. The more
 useful result is in the harness:
 `tests/dsp/extract.py` no longer cuts those out by string span. It emits
 `#include "DSP/..."` lines (`SOURCE_HEADERS`), and the harness then compiles the
@@ -322,16 +337,22 @@ job now takes the submodule (`submodules: recursive`, a depth-1 fetch of the one
 submodule, seconds). Worth writing down because it is the class of cost this split
 carries: every new include path is a new place for a build to look somewhere else.
 
-**The one trap still ahead** is constraint 3. A stage compiled under different macros -
-`NeuralStage` above all, whose members reduce to pass-throughs when `RTNeural` is
-absent - needs the `__has_include` probe block that currently sits at the top of
-`PluginProcessor.h`. Before that stage moves, the probe belongs in a header of its own
-(`Source/DSP/OptionalLibraries.h`, included first by both the plugin header and the
-harness), or the moved stage compiles in the plugin and not in CI.
+**What is left in the DSP extractor is one entry.** `HEADER_PIECES` holds `NeuralStage`
+and nothing else, and it is the trap that was recorded here before the move: the stage
+is compiled under different macros, its members reduce to pass-throughs when
+`RTNeural` is absent, and it needs the `__has_include` probe block that currently sits
+at the top of `PluginProcessor.h`. Before that stage moves, the probe belongs in a
+header of its own (`Source/DSP/OptionalLibraries.h`, included first by both the plugin
+header and the harness), or the moved stage compiles in the plugin and not in CI. When
+it moves, `tests/dsp/extract.py` cuts no header text at all - the half of the
+extraction the docstring has been pointing at since the first header moved. What is
+left after that is `IMPL_PIECES`: the five inline shapers (`j37Tanh`, `softClip`,
+`softKneeReductionDb` and the two one-pole coefficient helpers) still cut out of
+`PluginProcessor.cpp`, which is the same recipe applied to the .cpp side.
 
-Still to move, same recipe, one header per commit with the harness in hand: `VinylStage`
-(567 lines), `SubharmonicGenerator` (560), `NeuralStage` (380), `ThreeBandEq` (292),
-`InputStage` (244), `HarmonicAnalyser` (194), `PlateReverb` (193), plus the smaller ones
-the DSP and transport harnesses cut today - `IrStage`, `TapeCondition`,
-`StandardCompressor`, `SampleClock` and `SampleSmoother`, `PitchTracker` and
-`RealtimePitchShifter`, `TransportRig` and `RepitchStage`.
+Still to move, same recipe, one header per commit with the harness in hand: `NeuralStage`
+(380 lines, with the probe first), `ThreeBandEq` (292), `InputStage` (244),
+`HarmonicAnalyser` (194), `PlateReverb` (193), plus the smaller ones the DSP and
+transport harnesses cut today - `IrStage`, `TapeCondition`, `StandardCompressor`,
+`SampleClock` and `SampleSmoother`, `PitchTracker` and `RealtimePitchShifter`,
+`TransportRig` and `RepitchStage`.

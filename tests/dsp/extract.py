@@ -2,9 +2,10 @@
 """Extracts the shipping DSP under test into an include the harness compiles.
 
 The point of the harness is that it never retypes the plugin's code: a stage is
-cut verbatim out of Source/ at build time (SubharmonicGenerator, NeuralStage) or
-included from the header the plugin itself compiles (SOURCE_HEADERS), so a change
-to the plugin cannot leave the test measuring a stale copy of it.
+either included from the header the plugin itself compiles (SOURCE_HEADERS, which
+is now everything but NeuralStage) or cut verbatim out of Source/ at build time
+(NeuralStage, which cannot move until the macro probe it is compiled under does),
+so a change to the plugin cannot leave the test measuring a stale copy of it.
 
 This file is on its way to doing almost nothing. A stage that lives in its own
 header under Source/DSP/ is INCLUDED by the generated file - the same header the
@@ -54,6 +55,7 @@ SOURCE_HEADERS = [
     "DSP/J37Math.h",
     "DSP/SaturationCore.h",
     "DSP/VinylStage.h",
+    "DSP/SubharmonicGenerator.h",
     "DSP/LoudnessMeter.h",
     "DSP/TransientShaper.h",
     "DSP/GlueCompressor.h",
@@ -69,7 +71,11 @@ SOURCE_HEADERS = [
 # they now come in by include. A constant that goes back to being cut alone is a
 # compile failure here rather than a silent zero.
 HEADER_PIECES = [
-    ("SubharmonicGenerator", "struct SubharmonicGenerator"),
+    # The subharmonic generator used to be cut here, which is the last of the
+    # stages this harness drives to have moved: it is Source/DSP/SubharmonicGenerator.h
+    # now, so the include above hands the test the shipping struct. What is left in
+    # this list is NeuralStage, which cannot move until the __has_include probe it is
+    # compiled under moves out of PluginProcessor.h (see SPLITTING-BIG-FILES.md, 7).
     # The vinyl stage used to be cut here. It lives in Source/DSP/VinylStage.h now,
     # so the include above puts it in this file the same way it puts the saturation
     # core, the transient shaper and the glue compressor in - and it is worth

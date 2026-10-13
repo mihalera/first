@@ -61,14 +61,16 @@ Suggested order: the DSP structs first (they are already used by the harnesses, 
 the split is verifiable by the suite itself), then the editor's panel/theme types,
 then `processBlock`'s stages if it is still unmanageable.
 
-**Progress, and a correction to the paragraph above.** Six headers have moved - the
+**Progress, and a correction to the paragraph above.** Eight headers have moved - the
 scalar math bridge, then `LoudnessMeter`, `TransientShaper`, `GlueCompressor`,
-`RateBridge` and `SaturationCore`, one header each (the last of them 1,001 lines,
-including the four voice lists that have to travel with the struct), with their prose -
-and `tests/dsp/extract.py` now *includes* those headers instead of cutting their text
-out of `PluginProcessor.h`. `PluginProcessor.h` itself is 5,951 lines, down from
-7,605. The state harness, whose parameter table reads the same six model lists, now
-looks each list up in a short list of header files rather than assuming it is in
+`RateBridge`, `SaturationCore` (the largest, 1,001 lines, including the four voice
+lists that have to travel with the struct), `VinylStage` and `SubharmonicGenerator` -
+one header each, with their prose, and `tests/dsp/extract.py` now *includes* those
+headers instead of cutting their text out of `PluginProcessor.h`. `PluginProcessor.h`
+itself is 4,835 lines, down from 7,605. What is left in that extractor's header list is
+`NeuralStage` alone, which cannot move until the `__has_include` probe it is compiled
+under does. The state harness, whose parameter table reads the same six model lists,
+now looks each list up in a short list of header files rather than assuming it is in
 `PluginProcessor.h` - the two-file version of the same rule. That is the first
 payoff above, delivered; `SPLITTING-BIG-FILES.md` section 7 records the recipe and
 what is left. The second payoff - build time - is **not** delivered by moving a header

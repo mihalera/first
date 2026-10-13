@@ -115,6 +115,12 @@ TU="${BUILD}/header_check.cpp"
     x += static_cast<float> (valveTypeNameList().size() + ampTypeNameList().size()
                            + transformerTypeNameList().size() + digitalTypeNameList().size());
 
+    SubharmonicGenerator sub;
+    sub.updateSampleRate (48000.0f);
+    sub.nudgeMasterPhase (0.01f);
+    x = sub.process (x, 0.5f, 0.5f, 48000.0f);
+    x += sub.getTrackedFrequency (48000.0f) * 1.0e-3f;
+
     VinylStage vinyl;
     vinyl.riaaAmount = 0.5f;
     std::uint32_t random = 0x12345678u;
