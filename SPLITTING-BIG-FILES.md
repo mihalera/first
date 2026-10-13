@@ -392,7 +392,13 @@ left after that is `IMPL_PIECES`: the five inline shapers (`j37Tanh`, `softClip`
 Still to move, same recipe, one header per commit: `NeuralStage` (380 lines, with the
 probe first, and the only entry left in the DSP extractor), then the smaller ones nothing
 measures - `IrStage`, `TapeCondition`, `StandardCompressor`, `SampleClock` and
-`SampleSmoother`. `SampleSmoother` is the one to think about before moving:
+`SampleSmoother`. `IrStage` is the one that will need something extra: it reaches for
+`juce::AudioFormatManager`, `juce::dsp` and `juce::File`, which live in
+`juce_audio_formats` and `juce_dsp` rather than in the `juce_audio_basics` the check
+compiles against - so the check has to grow those two modules, and its comment about
+which module owns what has to say so. The glob is what makes that visible instead of
+surprising: the header moves in, the check fails on the module, and the answer is the
+module rather than a smaller list. `SampleSmoother` is the one to think about before moving:
 `tests/dsp/extract.py` reads the MIX smoother's inversion flag out of
 `PluginProcessor.h` by regex, so its header has to be where that regex looks - the same
 lesson the transport's `armedForHost` check just taught, learned in advance.
