@@ -12,11 +12,27 @@
 # stops being proof that real JUCE provides it. The failure is one-directional and
 # silent until the platform builds run: harness green, plugin red.
 #
-# So this compiles the same headers against juce_audio_basics itself (and juce_core
-# through it), which is the module that owns jmin / jmax / jlimit / MathConstants /
-# Decibels / SmoothedValue - the whole of what Source/DSP/ asks for. It is
-# -fsyntax-only: no object files, no link, no JUCE build system, and it needs the
-# JUCE submodule that the checkout already has.
+# So this compiles the same headers against the real JUCE modules instead, and it
+# compiles EACH header's public surface rather than parsing it. What those modules
+# are is the directory's own answer, and it is written down here because it changed
+# once the IR stage moved in:
+#
+#   juce_audio_basics   (and juce_core through it) owns jmin / jmax / jlimit /
+#                       MathConstants / Decibels / SmoothedValue / StringArray -
+#                       everything every other header in Source/DSP/ asks for.
+#   juce_audio_formats  owns AudioFormatManager and AudioFormatReader, which the IR
+#                       stage opens an impulse-response file with.
+#   juce_dsp            owns Convolution, ProcessSpec, AudioBlock and
+#                       ProcessContextReplacing, which that stage convolves with.
+#
+# The two extra modules arrived with Source/DSP/IrStage.h, and the way they arrived
+# is the point of reading the DIRECTORY rather than a list: nothing had to remember
+# to add it. An IR stage that could not be compiled here would have failed on
+# `juce::dsp::Convolution` below, and the answer to that is the module, not a smaller
+# header list.
+#
+# It is -fsyntax-only: no object files, no link, no JUCE build system, and it needs
+# the JUCE submodule that the checkout already has.
 #
 # The list under test is the DIRECTORY: every header in Source/DSP/. It began as the
 # extractors' own SOURCE_HEADERS lists, which left one way to miss something - a stage
@@ -64,7 +80,13 @@ TU="${BUILD}/header_check.cpp"
     echo "// The stages that have moved into Source/DSP/, compiled against real JUCE"
     echo "// declarations and then USED, so a declaration that only the harness's"
     echo "// stand-in satisfies fails here rather than in the platform builds."
+    echo "//"
+    echo "// These three are what the directory asks for, and they are included BEFORE the"
+    echo "// headers: none of them includes JUCE itself (see Source/DSP/J37Math.h), so the"
+    echo "// names they use have to be declared by whoever includes them - here, this file."
     echo "#include <juce_audio_basics/juce_audio_basics.h>"
+    echo "#include <juce_audio_formats/juce_audio_formats.h>"
+    echo "#include <juce_dsp/juce_dsp.h>"
     echo ""
 
     for header in "${HEADERS[@]}"; do
@@ -107,6 +129,26 @@ TU="${BUILD}/header_check.cpp"
     // both methods that reduce to nothing without the library. (juce::jlimit, the
     // third name the stage uses, is in the crossfade inside the guarded half, so
     // this build never reaches it.)
+    // The IR stage, which no harness renders and which therefore has this as its
+    // only automated look. It is also the one header in the directory that needs
+    // more than juce_audio_basics, so it is what the two module includes above are
+    // for: AudioFormatManager and AudioFormatReader from juce_audio_formats,
+    // Convolution / ProcessSpec / AudioBlock / ProcessContextReplacing from juce_dsp.
+    // Nothing here touches a file or runs an FFT - the block below is passed
+    // through, because no IR has been loaded - it is the SURFACE that is under test.
+    IrStage ir;
+    juce::dsp::ProcessSpec spec;
+    spec.sampleRate = 48000.0;
+    spec.maximumBlockSize = 512;
+    spec.numChannels = 2;
+    ir.prepare (spec);
+    juce::AudioBuffer<float> irBuffer (2, 512);
+    ir.process (irBuffer, 2, true);
+    x += ir.hasIr ? 1.0f : 0.0f;
+    x += ir.loadFromFile (juce::File()) ? 1.0f : 0.0f;
+    ir.clear();
+    ir.reset();
+
     NeuralStage neural;
     neural.setSampleRates (48000.0, 192000.0);
     x = neural.process (x, 0.5f)
@@ -203,10 +245,14 @@ EOF
     -I "${REPO}/Source" -I "${JUCE_MODULES}" \
     -DJUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1 \
     -DJUCE_MODULE_AVAILABLE_juce_core=1 \
+    -DJUCE_MODULE_AVAILABLE_juce_events=1 \
     -DJUCE_MODULE_AVAILABLE_juce_audio_basics=1 \
+    -DJUCE_MODULE_AVAILABLE_juce_audio_formats=1 \
+    -DJUCE_MODULE_AVAILABLE_juce_dsp=1 \
     -DJUCE_DISPLAY_SPLASH_SCREEN=0 \
     -DJUCE_WEB_BROWSER=0 \
     "${TU}"
 
 echo "check_headers_juce: ${#HEADERS[@]} header(s) from Source/DSP/ compile against" \
-     "juce_audio_basics and their public surface instantiates"
+     "juce_audio_basics, juce_audio_formats and juce_dsp, and their public surface" \
+     "instantiates"

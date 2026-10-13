@@ -61,14 +61,14 @@ Suggested order: the DSP structs first (they are already used by the harnesses, 
 the split is verifiable by the suite itself), then the editor's panel/theme types,
 then `processBlock`'s stages if it is still unmanageable.
 
-**Progress, and a correction to the paragraph above.** Eighteen headers have moved - the
+**Progress, and a correction to the paragraph above.** Nineteen headers have moved - the
 scalar math bridge, then `LoudnessMeter`, `TransientShaper`, `GlueCompressor`,
 `RateBridge`, `SaturationCore` (the largest, 1,000 lines, including the four voice
 lists that have to travel with the struct), `VinylStage`, `SubharmonicGenerator`, the
 pitch pair `PitchTracker` / `RealtimePitchShifter`, the transport pair `TransportRig`
 / `RepitchStage`, the four stages nothing measures (`InputStage`, `PlateReverb`,
-`ThreeBandEq`, `HarmonicAnalyser`), then `OptionalLibraries.h` and `NeuralStage.h` -
-one header each, with their prose, and **three**
+`ThreeBandEq`, `HarmonicAnalyser`), then `OptionalLibraries.h`, `NeuralStage.h` and
+`IrStage.h` - one header each, with their prose, and **three**
 extractors
 (`tests/dsp/`, `tests/pitch/`, `tests/transport/`) now *include* those headers instead
 of cutting their text out of `PluginProcessor.h`. That is the payoff delivered three
@@ -77,7 +77,7 @@ and now they compile the shipping code. It is also where the split's one silent-
 mode showed up for real: the transport extractor reads `armedForHost` out of
 `PluginProcessor.h` as text, the flag moved with the rig, and the check failed with the
 file it had searched named in the message - the right outcome, and the reason each of
-those checks names its file. `PluginProcessor.h` itself is 2,262 lines, down from 7,605,
+those checks names its file. `PluginProcessor.h` itself is 2,130 lines, down from 7,605,
 and the DSP extractor's header list is EMPTY: its last entry, `NeuralStage`, moved as
 soon as the optional-library probe it is compiled under had a header of its own,
 `Source/DSP/OptionalLibraries.h` - which is the rule this plan's own paragraph above

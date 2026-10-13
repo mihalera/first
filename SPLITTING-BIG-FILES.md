@@ -340,13 +340,24 @@ because the recipe is what the rest of them follow:
   gone on passing while measuring the pass-through. The other three probes are
   unchanged - same `__has_include` chain, same macros, and under a harness with none of
   those libraries on the path, the same all-zero outcome as before.
+- `Source/DSP/IrStage.h` - 138 lines of the file into 169 of header, and the first move
+  where the cost landed on the JUCE check rather than on the plugin. This is the header
+  that leans hardest on the directory's second convention (a header here does not
+  include JUCE itself, because a harness compiles it against a stand-in with no JUCE on
+  its include path): what it uses is `juce::dsp::Convolution`, `ProcessSpec`,
+  `AudioBlock` and `ProcessContextReplacing`, plus `AudioFormatManager` /
+  `AudioFormatReader`, `File` and `AudioBuffer` - so its includer has to provide
+  juce_dsp and juce_audio_formats, which inside the plugin is `JuceHeader.h` and under
+  the check is now the script's own module includes. No harness renders this stage, so
+  the check is its only automated look, and the glob is what made the requirement show
+  up as a compile error rather than as a surprise in a platform build.
 
 `PluginProcessor.h` went from 7,605 lines to 6,932 in the first pass (`RateBridge`,
 194 lines, closed it), to 5,951 with `SaturationCore`, to 4,835 with `VinylStage` and
 `SubharmonicGenerator`, to 4,368 with the pitch pair, to 3,744 with the transport pair,
-to 2,838 with the four stages nothing measures, and to 2,262 with the neural stage and
-the probe block that had to travel in front of it - eight moves, 5,362 lines, in
-eighteen headers. The more useful result is in the harness:
+to 2,838 with the four stages nothing measures, to 2,262 with the neural stage and
+the probe block that had to travel in front of it, and to 2,130 with the IR stage -
+nine moves, 5,500 lines, in nineteen headers. The more useful result is in the harness:
 `tests/dsp/extract.py` no longer cuts those out by string span. It emits
 `#include "DSP/..."` lines (`SOURCE_HEADERS`), and the harness then compiles the
 shipping header itself, so there is one fewer place for a test copy and the plugin to
@@ -358,10 +369,13 @@ and until the stages moved, every `juce::` name in them had already been compile
 the plugin. Now a header can satisfy the stand-in and fail the plugin: the stand-in
 declares what a stage touches, which is not the same as real JUCE declaring it.
 `tests/dsp/check_headers_juce.sh` (a step in the `dsp-tests` job) compiles the same
-headers against `juce_audio_basics` itself - the module that owns `jmin`, `jmax`,
-`jlimit`, `MathConstants`, `Decibels` and `SmoothedValue` - instantiates each stage's
-public surface, and takes its header list from `SOURCE_HEADERS` so the two cannot
-drift. It is `-fsyntax-only`: no window, no device, no JUCE build, two seconds.
+headers against real JUCE - `juce_audio_basics` (and `juce_core` through it) for the
+scalar helpers, `jmin`, `jmax`, `jlimit`, `MathConstants`, `Decibels`, `SmoothedValue`
+and `StringArray`; `juce_audio_formats` for the IR stage's `AudioFormatManager` and
+`AudioFormatReader`; and `juce_dsp` for its `Convolution`, `ProcessSpec`, `AudioBlock`
+and `ProcessContextReplacing` - instantiates each stage's public surface, and reads its
+header list from the directory. It is `-fsyntax-only`: no window, no device, no JUCE
+build, two seconds.
 
 **Its list is the directory, not a list.** It began by reading the harnesses' own
 `SOURCE_HEADERS` lists, which had one hole: a header that moved into `Source/DSP/` with
@@ -369,7 +383,14 @@ no harness that includes it - which is what `InputStage`, `PlateReverb`, `ThreeB
 and `HarmonicAnalyser` were - would have been compiled against real JUCE by nobody. It
 now compiles every `*.h` in the directory, so the check follows the convention (state
 your concern in a header, include what you need) rather than a registry, and a header
-that moves in is covered on the next run without being named anywhere.
+that moves in is covered on the next run without being named anywhere. `IrStage` is
+that rule paying off a second time: it moved in, its surface needed two modules the
+check did not have, and the answer was the two modules (`juce_dsp`, `juce_audio_formats`)
+rather than a shorter header list. The negative side is checked the same way the other
+headers' is - with the `juce_dsp` include removed from the generated translation unit,
+the compile fails on `Source/DSP/IrStage.h`'s own declarations (`'dsp' in namespace
+'juce' does not name a type`), so the module is doing real work and the stage is
+really being compiled.
 
 Three more things the `SaturationCore` move changed, all of them in the direction of
 the checks covering the shipping text rather than a restatement of it:
@@ -417,14 +438,10 @@ What is left in the extractor is `IMPL_PIECES`: the five inline shapers (`j37Tan
 of `PluginProcessor.cpp`, which is the same recipe applied to the .cpp side.
 
 Still to move, same recipe, one header per commit, and none of them is cut by an
-extractor any more: `IrStage`, `TapeCondition`, `StandardCompressor`, `SampleClock` and
-`SampleSmoother`. `IrStage` is the one that will need something extra: it reaches for
-`juce::AudioFormatManager`, `juce::dsp` and `juce::File`, which live in
-`juce_audio_formats` and `juce_dsp` rather than in the `juce_audio_basics` the check
-compiles against - so the check has to grow those two modules, and its comment about
-which module owns what has to say so. The glob is what makes that visible instead of
-surprising: the header moves in, the check fails on the module, and the answer is the
-module rather than a smaller list. `SampleSmoother` is the one to think about before moving:
+extractor any more: `TapeCondition`, `StandardCompressor`, `SampleClock` and
+`SampleSmoother`. None of them needs anything the check does not already have - the two
+modules `IrStage` asked for are in it now, and they arrive the same way the header did:
+by the header moving in and the compile saying so. `SampleSmoother` is the one to think about before moving:
 `tests/dsp/extract.py` reads the MIX smoother's inversion flag out of
 `PluginProcessor.h` by regex, so its header has to be where that regex looks - the same
 lesson the transport's `armedForHost` check taught, and the neural stage's own state just
