@@ -2,10 +2,9 @@
 """Extracts the shipping DSP under test into an include the harness compiles.
 
 The point of the harness is that it never retypes the plugin's code: a stage is
-cut verbatim out of Source/ at build time (SubharmonicGenerator, VinylStage,
-NeuralStage) or included from the header the plugin itself compiles
-(SOURCE_HEADERS), so a change to the plugin cannot leave the test measuring a
-stale copy of it.
+cut verbatim out of Source/ at build time (SubharmonicGenerator, NeuralStage) or
+included from the header the plugin itself compiles (SOURCE_HEADERS), so a change
+to the plugin cannot leave the test measuring a stale copy of it.
 
 This file is on its way to doing almost nothing. A stage that lives in its own
 header under Source/DSP/ is INCLUDED by the generated file - the same header the
@@ -54,6 +53,7 @@ MIX_SMOOTHER = re.compile(
 SOURCE_HEADERS = [
     "DSP/J37Math.h",
     "DSP/SaturationCore.h",
+    "DSP/VinylStage.h",
     "DSP/LoudnessMeter.h",
     "DSP/TransientShaper.h",
     "DSP/GlueCompressor.h",
@@ -70,16 +70,20 @@ SOURCE_HEADERS = [
 # compile failure here rather than a silent zero.
 HEADER_PIECES = [
     ("SubharmonicGenerator", "struct SubharmonicGenerator"),
-    # The vinyl stage is extracted because the noise tab's controls act on it:
-    # a check that the NOISE trims and the VINYL SPEED do what they claim has to
-    # run the shipping stage, not a copy.
-    ("VinylStage", "struct VinylStage"),
-    # The transient shaper is extracted so its two claims can be measured rather
-    # than asserted in a comment: that at both amounts zero it is a bit-for-bit
-    # pass-through, and that a positive attack amount makes an edge sharper while
-    # a negative one rounds it. Under the harness it compiles exactly as shipped -
-    # it reaches for nothing the harness does not already provide.
-    # The neural stage is extracted too, which is what proves the guard is honest:
+    # The vinyl stage used to be cut here. It lives in Source/DSP/VinylStage.h now,
+    # so the include above puts it in this file the same way it puts the saturation
+    # core, the transient shaper and the glue compressor in - and it is worth
+    # saying that nothing in this harness names it any more: the entry was kept
+    # because the noise tab's controls act on the stage, and whatever check that
+    # was now drives the chain rather than the struct. The include costs nothing
+    # and means a check that wants it again finds the shipping text.
+    # The transient shaper used to be cut here as well, and it moved for the same
+    # reason: it now comes from Source/DSP/TransientShaper.h. Its two claims are
+    # still measured - that at both amounts zero it is a bit-for-bit pass-through,
+    # and that a positive attack amount makes an edge sharper while a negative one
+    # rounds it - but measured on the shipping header rather than on a cut copy of
+    # it, which is the whole point of SOURCE_HEADERS.
+    # The neural stage is extracted, which is what proves the guard is honest:
     # with J37_HAS_RTNEURAL 0 (the harness case) every member reduces to the
     # pass-through, so the struct still compiles and still renders the input
     # unchanged. A source that only compiled WITH the library would fail here.

@@ -115,6 +115,11 @@ TU="${BUILD}/header_check.cpp"
     x += static_cast<float> (valveTypeNameList().size() + ampTypeNameList().size()
                            + transformerTypeNameList().size() + digitalTypeNameList().size());
 
+    VinylStage vinyl;
+    vinyl.riaaAmount = 0.5f;
+    std::uint32_t random = 0x12345678u;
+    x = vinyl.process (x, 0, 0.2f, 0.2f, 0.5f, 0.001f, 0.001f, random);
+
     return x + j37math::exp (1.0f) + j37math::log10 (2.0f) + j37math::sqrt (3.0f);
 }
 
