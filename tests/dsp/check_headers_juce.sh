@@ -18,12 +18,14 @@
 # -fsyntax-only: no object files, no link, no JUCE build system, and it needs the
 # JUCE submodule that the checkout already has.
 #
-# The header list is READ OUT OF the extractors' own SOURCE_HEADERS lists -
-# tests/dsp/extract.py and tests/pitch/extract.py - rather than repeated here, so
-# the two cannot drift: a stage added to either list is checked here on the next
-# run, with no second place to remember. A header named in neither list is not
-# checked at all, which is the one way to miss something: an extractor that moves a
-# stage without listing it also stops compiling it, so the harness fails first.
+# The list under test is the DIRECTORY: every header in Source/DSP/. It began as the
+# extractors' own SOURCE_HEADERS lists, which left one way to miss something - a stage
+# that moved into the directory that no harness includes (and no harness cuts any more
+# either) would be checked by nobody at all. The directory is the convention, stated in
+# Source/DSP/J37Math.h: one concern per header, self-contained, and no JUCE pulled in.
+# So anything that moves in is compiled here on the next run without being named
+# anywhere, and the probe below is what turns parsing into USE for the stages it has a
+# line for.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -38,32 +40,18 @@ if [ ! -d "${JUCE_MODULES}/juce_audio_basics" ]; then
     exit 1
 fi
 
-mapfile -t HEADERS < <(python3 - "${HERE}/extract.py" "${HERE}/../pitch/extract.py" \
-                              "${HERE}/../transport/extract.py" <<'PY'
+mapfile -t HEADERS < <(python3 - "${HERE}/../../Source/DSP" <<'PY'
 import pathlib
-import re
 import sys
 
-# The list under test, taken from the extractors rather than retyped: these are
-# the headers the harnesses include instead of cutting their text out of
-# PluginProcessor.h.
-seen: list[str] = []
-
-for path in sys.argv[1:]:
-    text = pathlib.Path(path).read_text(encoding="utf-8")
-    block = text.split("SOURCE_HEADERS = [", 1)[1].split("]", 1)[0]
-
-    for name in re.findall(r'"([^"]+)"', block):
-        if name not in seen:
-            seen.append(name)
-
-print("\n".join(seen))
+# Every header in the directory, as the include line the TU below uses.
+for path in sorted(pathlib.Path(sys.argv[1]).glob("*.h")):
+    print(f"DSP/{path.name}")
 PY
 )
 
 if [ "${#HEADERS[@]}" -eq 0 ]; then
-    echo "check_headers_juce: no headers in SOURCE_HEADERS (tests/dsp/extract.py,"
-         "tests/pitch/extract.py, tests/transport/extract.py)" >&2
+    echo "check_headers_juce: no headers in Source/DSP/" >&2
     exit 1
 fi
 
@@ -131,6 +119,23 @@ TU="${BUILD}/header_check.cpp"
     sub.nudgeMasterPhase (0.01f);
     x = sub.process (x, 0.5f, 0.5f, 48000.0f);
     x += sub.getTrackedFrequency (48000.0f) * 1.0e-3f;
+
+    InputStage input;
+    x = input.processPreamp (x, 0.5f, 0.01f)
+      + input.processDistortion (x, 0.2f)
+      + input.processDiBox (x, 0.1f, 0.5f, -6.0f, 0.2f, 0.01f, 0.01f, 1.0f);
+
+    PlateReverb plate;
+    plate.prepare (48000.0);
+    x = plate.process (x, 0, 0.5f, 0.2f);
+
+    ThreeBandEq tone;
+    tone.prepare (48000.0f);
+    tone.prepareFilters (48000.0f, 30.0f, 18000.0f, 12.0f, 0.7f);
+    x = tone.process (x, 0, tone.midBandCoefficient (48000.0f));
+
+    HarmonicAnalyser analyser;
+    x += analyser.analyse (x, x * 0.5f, 48000.0f) ? 1.0f : 0.0f;
 
     TransportRig rig;
     rig.prepare (48000.0);

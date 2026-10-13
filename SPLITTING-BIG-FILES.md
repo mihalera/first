@@ -250,7 +250,7 @@ harnesses once with `J37_SANITIZE=address,undefined`.
 
 ## 7. Progress
 
-Twelve headers are out, and what matters is the recipe rather than the pieces,
+Sixteen headers are out, and what matters is the recipe rather than the pieces,
 because the recipe is what the rest of them follow:
 
 - `Source/DSP/J37Math.h` - the scalar math bridge every stage calls, and the file that
@@ -264,6 +264,14 @@ because the recipe is what the rest of them follow:
   their prose, moved whole. Not retyped: the block was deleted from
   `PluginProcessor.h` by matching its exact text and written to the new header by
   the same text, so a typo fails the move rather than changing the stage.
+- `Source/DSP/InputStage.h`, `Source/DSP/PlateReverb.h`, `Source/DSP/ThreeBandEq.h` and
+  `Source/DSP/HarmonicAnalyser.h` - 243, 192, 291 and 193 lines of the file into 254,
+  204, 304 and 204 of header, all four self-contained (juce's scalar helpers, `Decibels`
+  and `AudioBuffer`, plus the std:: math). These are the first moves that no harness
+  pays for: nothing cuts them, nothing includes them, and nothing would have noticed
+  them rotting in the monolith either. What they earn is the file and the convention -
+  each header now holds the stage and the note explaining it - and, because of the
+  change below, a compile against real JUCE that they did not have before.
 - `Source/DSP/TransportRig.h` and `Source/DSP/RepitchStage.h` - 393 and 237 lines of
   the file into 403 and 252 of header, the transport harness's pair, and the second
   move that takes a harness with it: `tests/transport/extract.py` cut both structs by
@@ -312,9 +320,9 @@ because the recipe is what the rest of them follow:
 
 `PluginProcessor.h` went from 7,605 lines to 6,932 in the first pass (`RateBridge`,
 194 lines, closed it), to 5,951 with `SaturationCore`, to 4,835 with `VinylStage` and
-`SubharmonicGenerator`, to 4,368 with the pitch pair, and to 3,744 with the transport
-pair - six moves, 3,861 lines, in twelve headers. The more useful result is in the
-harness:
+`SubharmonicGenerator`, to 4,368 with the pitch pair, to 3,744 with the transport pair,
+and to 2,838 with the four stages nothing measures - seven moves, 4,780 lines, in
+sixteen headers. The more useful result is in the harness:
 `tests/dsp/extract.py` no longer cuts those out by string span. It emits
 `#include "DSP/..."` lines (`SOURCE_HEADERS`), and the harness then compiles the
 shipping header itself, so there is one fewer place for a test copy and the plugin to
@@ -330,6 +338,14 @@ headers against `juce_audio_basics` itself - the module that owns `jmin`, `jmax`
 `jlimit`, `MathConstants`, `Decibels` and `SmoothedValue` - instantiates each stage's
 public surface, and takes its header list from `SOURCE_HEADERS` so the two cannot
 drift. It is `-fsyntax-only`: no window, no device, no JUCE build, two seconds.
+
+**Its list is the directory, not a list.** It began by reading the harnesses' own
+`SOURCE_HEADERS` lists, which had one hole: a header that moved into `Source/DSP/` with
+no harness that includes it - which is what `InputStage`, `PlateReverb`, `ThreeBandEq`
+and `HarmonicAnalyser` were - would have been compiled against real JUCE by nobody. It
+now compiles every `*.h` in the directory, so the check follows the convention (state
+your concern in a header, include what you need) rather than a registry, and a header
+that moves in is covered on the next run without being named anywhere.
 
 Three more things the `SaturationCore` move changed, all of them in the direction of
 the checks covering the shipping text rather than a restatement of it:
@@ -374,12 +390,9 @@ left after that is `IMPL_PIECES`: the five inline shapers (`j37Tanh`, `softClip`
 `PluginProcessor.cpp`, which is the same recipe applied to the .cpp side.
 
 Still to move, same recipe, one header per commit: `NeuralStage` (380 lines, with the
-probe first, and the only entry left in the DSP extractor), `ThreeBandEq` (292),
-`InputStage` (244), `HarmonicAnalyser` (194), `PlateReverb` (193), and the smaller ones
-nothing measures yet - `IrStage`, `TapeCondition`, `StandardCompressor`, `SampleClock`
-and `SampleSmoother`. None of those pays into a harness any more, which changes what
-the move is worth: for them the win is the file that gets smaller and the include that
-gets a name, not a test that stops cutting text. `SampleSmoother` is the one to think
-about before moving: `tests/dsp/extract.py` reads the MIX smoother's inversion flag out
-of `PluginProcessor.h` by regex, so its header has to be where that regex looks - the
-same lesson the transport's `armedForHost` check just taught, learned in advance.
+probe first, and the only entry left in the DSP extractor), then the smaller ones nothing
+measures - `IrStage`, `TapeCondition`, `StandardCompressor`, `SampleClock` and
+`SampleSmoother`. `SampleSmoother` is the one to think about before moving:
+`tests/dsp/extract.py` reads the MIX smoother's inversion flag out of
+`PluginProcessor.h` by regex, so its header has to be where that regex looks - the same
+lesson the transport's `armedForHost` check just taught, learned in advance.
