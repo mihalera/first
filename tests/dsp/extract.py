@@ -1,10 +1,11 @@
 #!/usr/bin/env python3
 """Extracts the shipping DSP under test into an include the harness compiles.
 
-The point of the harness is that it never retypes the plugin's code: the
-SubharmonicGenerator struct, the GlueCompressor struct and the inline helpers are
-cut verbatim out of Source/ at build time, so a change to the plugin cannot leave
-the test measuring a stale copy of it.
+The point of the harness is that it never retypes the plugin's code: a stage is
+cut verbatim out of Source/ at build time (SubharmonicGenerator, VinylStage,
+NeuralStage) or included from the header the plugin itself compiles
+(SOURCE_HEADERS), so a change to the plugin cannot leave the test measuring a
+stale copy of it.
 
 This file is on its way to doing almost nothing. A stage that lives in its own
 header under Source/DSP/ is INCLUDED by the generated file - the same header the
@@ -45,32 +46,33 @@ MIX_SMOOTHER = re.compile(
 # J37_HAS_CHOWDSP_MATH is 0 (undefined), so what compiles is the std:: fallback:
 # the harness always measures the exact reference math, never the chowdsp
 # approximation, which is what lets the benchmark compare the two.
+#
+# SaturationCore.h carries the struct AND the four type lists it voices
+# (`valveTypeNames` and its three siblings), which is what retired the constant
+# cutting that used to sit below: the counts those lists are built from now
+# arrive with the struct instead of being pasted in ahead of it.
 SOURCE_HEADERS = [
     "DSP/J37Math.h",
+    "DSP/SaturationCore.h",
     "DSP/LoudnessMeter.h",
     "DSP/TransientShaper.h",
     "DSP/GlueCompressor.h",
     "DSP/RateBridge.h",
 ]
 
-# The namespace-level constants SaturationCore's set<Family>Voice methods
-# reference. The struct extraction cuts only the struct's own text, and these
-# live at namespace scope above it - so without this list the harness compiles
-# against constants that do not exist (exactly how adc23c9's new DIGITAL voice
-# broke it: the method text arrived, the constant it reads did not).
-CONSTANT_PIECES = [
-    "inline constexpr int valveTypeCount",
-    "inline constexpr int ampTypeCount",
-    "inline constexpr int transformerTypeCount",
-    "inline constexpr int digitalTypeCount",
-]
-
+# There is no CONSTANT_PIECES any more. It existed for the four type counts
+# SaturationCore's set<Family>Voice methods read (`valveTypeCount` and its three
+# siblings), which live at namespace scope: cutting the struct alone delivered a
+# method that read a constant which had not arrived - exactly how adc23c9's new
+# DIGITAL voice broke the harness. The counts, their name arrays and their
+# completeness checks moved into Source/DSP/SaturationCore.h with the struct, so
+# they now come in by include. A constant that goes back to being cut alone is a
+# compile failure here rather than a silent zero.
 HEADER_PIECES = [
-    ("SaturationCore", "struct SaturationCore"),
     ("SubharmonicGenerator", "struct SubharmonicGenerator"),
-    # The vinyl stage is extracted for the same reason the saturation core is:
-    # the noise tab's controls act on it, so a check that the NOISE trims and the
-    # VINYL SPEED do what they claim has to run the shipping stage, not a copy.
+    # The vinyl stage is extracted because the noise tab's controls act on it:
+    # a check that the NOISE trims and the VINYL SPEED do what they claim has to
+    # run the shipping stage, not a copy.
     ("VinylStage", "struct VinylStage"),
     # The transient shaper is extracted so its two claims can be measured rather
     # than asserted in a comment: that at both amounts zero it is a bit-for-bit
@@ -367,14 +369,6 @@ def main() -> int:
 
     chunks.append("")
     chunks.append("")
-
-    # Namespace constants first: the structs below reference them.
-    for declaration in CONSTANT_PIECES:
-        line_start = header.index(declaration)
-        end = header.index("\n", line_start) + 1
-        chunks.append("// ---- constant (PluginProcessor.h) " + "-" * 38)
-        chunks.append(header[line_start:end])
-        chunks.append("")
 
     for name, declaration in HEADER_PIECES:
         chunks.append(f"// ---- {name} (PluginProcessor.h) " + "-" * 40)

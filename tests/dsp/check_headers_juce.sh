@@ -98,6 +98,23 @@ TU="${BUILD}/header_check.cpp"
     x = converted.wet + converted.dry + static_cast<float> (bridge.delay());
     bridge.reset();
 
+    SaturationCore core;
+    core.setWeights (0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f);
+    core.setValveVoice (0);
+    core.setAmpVoice (0);
+    core.setTransformerVoice (0);
+    core.setDigitalVoice (0);
+    x = core.process (x, 3.0f, 0.2f);
+    x += core.isIdle() ? 0.0f : 1.0f;
+    core.reset();
+
+    // The four voice lists are the reason the DSP shim grew a StringArray, so the
+    // header that holds them built against the REAL one belongs in this probe: the
+    // shim cannot tell a juce::StringArray that takes an add() from one that does
+    // not, and the plugin compiles these four in its own translation unit.
+    x += static_cast<float> (valveTypeNameList().size() + ampTypeNameList().size()
+                           + transformerTypeNameList().size() + digitalTypeNameList().size());
+
     return x + j37math::exp (1.0f) + j37math::log10 (2.0f) + j37math::sqrt (3.0f);
 }
 

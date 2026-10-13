@@ -62,6 +62,21 @@ public:
     std::string toStdString() const { return {}; }
 };
 
+// A minimal stand-in for the list type the four saturation voice lists build.
+// Like String above it is deliberately not the real thing: the harness has to
+// type check the list builders (SaturationCore.h holds them beside the struct),
+// never to call them, and a container that could actually be called would tempt
+// the harness into depending on JUCE's semantics. What the real StringArray is
+// asked to prove is checked by tests/dsp/check_headers_juce.sh instead.
+class StringArray
+{
+public:
+    void add (const String&) {}
+    void add (const char*) {}
+
+    int size() const noexcept { return 0; }
+};
+
 /** The harness compiles the extracted text with warnings as errors in places, so
     the innocuous ignoreUnused the shipping code uses must resolve here too. */
 template <typename... Ts>

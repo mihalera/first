@@ -9,8 +9,9 @@ parameter table would agree with a copy of the migration by construction - so
 every line the harness runs is cut out of Source/ at build time:
 
     extracted_preamble.inc   the parameter table's own constants, the six model
-                             name lists from the header, the saved-state format
-                             helpers, and the group functions
+                             name lists from Source/ (four of them now beside
+                             SaturationCore in Source/DSP/), the saved-state
+                             format helpers, and the group functions
                              createParameterLayout() is built from
     extracted_members.inc    createParameterLayout() itself, plus the four
                              processor functions the round trip runs through
@@ -34,6 +35,16 @@ import re
 REPO = pathlib.Path(__file__).resolve().parents[2]
 PROCESSOR = REPO / "Source" / "PluginProcessor.cpp"
 HEADER = REPO / "Source" / "PluginProcessor.h"
+
+# Where a header piece is looked for. Most of what this harness cuts is still in
+# PluginProcessor.h; the four non-tape saturation voice lists moved into
+# Source/DSP/SaturationCore.h when their struct did (see SPLITTING-BIG-FILES.md),
+# and the fifth - the vinyl list, which voices VinylStage rather than
+# SaturationCore - stayed behind. So each piece is looked for in every file here
+# and taken from the one that has it: a piece in NEITHER file, or in both, stops
+# the build with the piece named, rather than measuring a list that has quietly
+# stopped being the shipping one.
+HEADER_SOURCES = [HEADER, REPO / "Source" / "DSP" / "SaturationCore.h"]
 
 # The float constants the parameter table's ranges are built from. Each is one
 # line at file scope in the processor's own anonymous namespace.
@@ -125,6 +136,27 @@ def cut_line(text: str, anchor: str) -> str:
     return matches[0].strip()
 
 
+def header_source(anchor: str) -> tuple[pathlib.Path, str]:
+    """The header source that contains `anchor`, and its text.
+
+    The count is a LINE count, the test cut_line applies below, rather than a
+    count of occurrences - otherwise the two would disagree about what
+    "exactly one" means and the same doubled piece would be reported twice, once
+    per end.
+    """
+    def lines(text: str) -> int:
+        return sum(1 for line in text.split("\n") if line.strip().startswith(anchor))
+
+    found = [(path, path.read_text()) for path in HEADER_SOURCES if lines(path.read_text())]
+
+    if len(found) != 1:
+        searched = ", ".join(str(path.relative_to(REPO)) for path in HEADER_SOURCES)
+        raise SystemExit(f"extract.py: `{anchor}` is in {len(found)} of the header sources "
+                         f"({searched}); the state harness cannot tell them apart.")
+
+    return found[0]
+
+
 def cut_banner_block(text: str, title: str) -> int:
     """Where the banner comment that introduces a section begins.
 
@@ -181,12 +213,15 @@ def main() -> int:
     preamble.append("")
 
     for name in NAME_LISTS:
-        preamble.append(f"// ---- the {name} model list (PluginProcessor.h) ----")
-        preamble.append(cut_line(header, f"inline constexpr int {name}Count"))
-        preamble.append(cut_block(header,
+        # The count anchors the trio: the array is sized by it and the StringArray
+        # conversion follows it, so all three are in the file the count is in.
+        path, text = header_source(f"inline constexpr int {name}Count")
+        preamble.append(f"// ---- the {name} model list ({path.relative_to(REPO)}) ----")
+        preamble.append(cut_line(text, f"inline constexpr int {name}Count"))
+        preamble.append(cut_block(text,
                                   f"inline constexpr std::array<const char*, {name}Count> {name}Names",
                                   trailing_semicolon=True))
-        preamble.append(cut_block(header, f"inline juce::StringArray {name}NameList()"))
+        preamble.append(cut_block(text, f"inline juce::StringArray {name}NameList()"))
         preamble.append("")
 
     # The saved-state format: its property name, its version, the migration and

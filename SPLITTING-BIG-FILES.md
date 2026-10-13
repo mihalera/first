@@ -250,7 +250,7 @@ harnesses once with `J37_SANITIZE=address,undefined`.
 
 ## 7. Progress
 
-Four pieces of **D** are in, and what matters is the recipe rather than the pieces,
+Six headers are out, and what matters is the recipe rather than the pieces,
 because the recipe is what the rest of them follow:
 
 - `Source/DSP/J37Math.h` - the scalar math bridge every stage calls, and the file that
@@ -260,13 +260,23 @@ because the recipe is what the rest of them follow:
   stage touches; a header that included `JuceHeader.h` could not be compiled there at
   all.
 - `Source/DSP/LoudnessMeter.h`, `Source/DSP/TransientShaper.h`,
-  `Source/DSP/GlueCompressor.h` - one stage each, with their prose, moved whole. Not
-  retyped: the block was deleted from `PluginProcessor.h` by matching its exact text
-  and written to the new header by the same text, so a typo fails the move rather than
-  changing the stage.
+  `Source/DSP/GlueCompressor.h`, `Source/DSP/RateBridge.h` - one stage each, with
+  their prose, moved whole. Not retyped: the block was deleted from
+  `PluginProcessor.h` by matching its exact text and written to the new header by
+  the same text, so a typo fails the move rather than changing the stage.
+- `Source/DSP/SaturationCore.h` - the largest piece so far, 1,001 lines of header
+  for an 860-line struct, and the first move that had to take something else with
+  it: the four type lists (`valveTypeNames`, `ampTypeNames`, `transformerTypeNames`,
+  `digitalTypeNames`) that voice its non-tape principles. They are not decoration,
+  they are the reason the struct can compile at all - `setValveVoice` and its three
+  siblings read the counts those lists are built from, and a header that left them
+  behind would compile in the plugin (where they still live above it in
+  `PluginProcessor.h`) and fail in every harness. The fifth list, `vinylTypeNames`,
+  stayed behind: it voices `VinylStage` rather than the core.
 
-`PluginProcessor.h` went from 7,605 lines to 6,932 (`RateBridge`, 194 lines, was the
-fifth and last of this first pass). The more useful result is in the harness:
+`PluginProcessor.h` went from 7,605 lines to 6,932 in the first pass
+(`RateBridge`, 194 lines, closed it) and to 5,951 with `SaturationCore`. The more
+useful result is in the harness:
 `tests/dsp/extract.py` no longer cuts those out by string span. It emits
 `#include "DSP/..."` lines (`SOURCE_HEADERS`), and the harness then compiles the
 shipping header itself, so there is one fewer place for a test copy and the plugin to
@@ -283,6 +293,35 @@ headers against `juce_audio_basics` itself - the module that owns `jmin`, `jmax`
 public surface, and takes its header list from `SOURCE_HEADERS` so the two cannot
 drift. It is `-fsyntax-only`: no window, no device, no JUCE build, two seconds.
 
+Three more things the `SaturationCore` move changed, all of them in the direction of
+the checks covering the shipping text rather than a restatement of it:
+
+- **`CONSTANT_PIECES` is gone.** `tests/dsp/extract.py` used to paste the four type
+  counts in ahead of the struct, because cutting the struct alone delivered a method
+  that read a constant which had not arrived (that is how a new DIGITAL voice broke
+  the harness once). The counts travel with the struct now, so a constant that goes
+  back to being cut alone is a compile failure instead of a silent zero.
+- **The state harness searches two files.** `tests/state/extract.py` cuts the six
+  model lists, and four of them moved. Each is looked for in every file of a short
+  list - `PluginProcessor.h` and `Source/DSP/SaturationCore.h` - and taken from the
+  one that has it, with that file named in the generated preamble. A piece found in
+  neither file, or in both, stops the build with the piece named.
+- **The DSP shim grew a `StringArray`.** The four lists build one
+  (`...TypeNameList()`), and an inline function's body is compiled whether or not
+  anything calls it. It is a stand-in that cannot be called meaningfully, which is
+  exactly why the JUCE check above now instantiates the four lists against the real
+  `juce::StringArray` - the shim can no longer be the only thing that has seen them.
+
+**The wiring cost something, and the first CI run said so.** Two failures, neither of
+them in the moved code: `tests/dsp/run_bench.sh` compiled the extracted include without
+`-I Source`, so the benchmark could not find `DSP/J37Math.h` (`7:10: fatal error` in job
+`115341904730`), and the JUCE header check ran in the `dsp-tests` job, which checked out
+without submodules and therefore had no `JUCE/modules` to compile against. Both are
+fixed - the benchmark gets the include path the other harnesses already had, and that
+job now takes the submodule (`submodules: recursive`, a depth-1 fetch of the one
+submodule, seconds). Worth writing down because it is the class of cost this split
+carries: every new include path is a new place for a build to look somewhere else.
+
 **The one trap still ahead** is constraint 3. A stage compiled under different macros -
 `NeuralStage` above all, whose members reduce to pass-throughs when `RTNeural` is
 absent - needs the `__has_include` probe block that currently sits at the top of
@@ -290,10 +329,9 @@ absent - needs the `__has_include` probe block that currently sits at the top of
 (`Source/DSP/OptionalLibraries.h`, included first by both the plugin header and the
 harness), or the moved stage compiles in the plugin and not in CI.
 
-Still to move, same recipe, one header per commit with the harness in hand:
-`SaturationCore` (861 lines), `VinylStage` (567), `SubharmonicGenerator` (560),
-`NeuralStage` (380), `ThreeBandEq` (292), `InputStage` (244), `HarmonicAnalyser` (194),
-`PlateReverb` (193), plus the smaller ones the DSP and transport harnesses cut today -
-`RateBridge`, `IrStage`, `TapeCondition`, `StandardCompressor`, `SampleClock` and
-`SampleSmoother`, `PitchTracker` and `RealtimePitchShifter`, `TransportRig` and
-`RepitchStage`.
+Still to move, same recipe, one header per commit with the harness in hand: `VinylStage`
+(567 lines), `SubharmonicGenerator` (560), `NeuralStage` (380), `ThreeBandEq` (292),
+`InputStage` (244), `HarmonicAnalyser` (194), `PlateReverb` (193), plus the smaller ones
+the DSP and transport harnesses cut today - `IrStage`, `TapeCondition`,
+`StandardCompressor`, `SampleClock` and `SampleSmoother`, `PitchTracker` and
+`RealtimePitchShifter`, `TransportRig` and `RepitchStage`.

@@ -55,8 +55,14 @@ fi
 echo "nanobench: ${NANOBENCH_INC}"
 echo
 
+# Source/ on the include path for the same reason run.sh puts it there: the
+# extractor emits `#include "DSP/..."` for the stages that have moved into
+# Source/DSP/, so the benchmark measures the plugin's own headers rather than a
+# copy of them. Without it the benchmark fails to build with a missing
+# DSP/J37Math.h - which is exactly what the DSP micro-benchmarks job did until
+# this line was here.
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
-    -I "${HERE}" -I "${BUILD}" -I "${NANOBENCH_INC}" \
+    -I "${HERE}" -I "${BUILD}" -I "${NANOBENCH_INC}" -I "${REPO}/Source" \
     "${HERE}/bench.cpp" -o "${BUILD}/bench"
 
 "${BUILD}/bench"
