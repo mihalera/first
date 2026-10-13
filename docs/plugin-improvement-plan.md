@@ -61,16 +61,21 @@ Suggested order: the DSP structs first (they are already used by the harnesses, 
 the split is verifiable by the suite itself), then the editor's panel/theme types,
 then `processBlock`'s stages if it is still unmanageable.
 
-**Progress, and a correction to the paragraph above.** Ten headers have moved - the
+**Progress, and a correction to the paragraph above.** Twelve headers have moved - the
 scalar math bridge, then `LoudnessMeter`, `TransientShaper`, `GlueCompressor`,
-`RateBridge`, `SaturationCore` (the largest, 1,001 lines, including the four voice
-lists that have to travel with the struct), `VinylStage`, `SubharmonicGenerator` and
-the pitch pair `PitchTracker` / `RealtimePitchShifter` - one header each, with their
-prose, and `tests/dsp/extract.py` and `tests/pitch/extract.py` now *include* those
-headers instead of cutting their text out of `PluginProcessor.h`. The second extractor
-is the one worth noting: the pitch harness's two structs were cut by text, and now it
-compiles the shipping headers, so the payoff is no longer only in the DSP harness.
-`PluginProcessor.h` itself is 4,368 lines, down from 7,605. What is left in that extractor's header list is
+`RateBridge`, `SaturationCore` (the largest, 1,000 lines, including the four voice
+lists that have to travel with the struct), `VinylStage`, `SubharmonicGenerator`, the
+pitch pair `PitchTracker` / `RealtimePitchShifter` and the transport pair `TransportRig`
+/ `RepitchStage` - one header each, with their prose, and **three** extractors
+(`tests/dsp/`, `tests/pitch/`, `tests/transport/`) now *include* those headers instead
+of cutting their text out of `PluginProcessor.h`. That is the payoff delivered three
+times over: the pitch and transport harnesses used to cut the structs they drive by text,
+and now they compile the shipping code. It is also where the split's one silent-failure
+mode showed up for real: the transport extractor reads `armedForHost` out of
+`PluginProcessor.h` as text, the flag moved with the rig, and the check failed with the
+file it had searched named in the message - the right outcome, and the reason each of
+those checks names its file. `PluginProcessor.h` itself is 3,744 lines, down from 7,605,
+and what is left in the DSP extractor's header list is `NeuralStage` alone. What is left in that extractor's header list is
 `NeuralStage` alone, which cannot move until the `__has_include` probe it is compiled
 under does. The state harness, whose parameter table reads the same six model lists,
 now looks each list up in a short list of header files rather than assuming it is in

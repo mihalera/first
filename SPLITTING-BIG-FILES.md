@@ -250,7 +250,7 @@ harnesses once with `J37_SANITIZE=address,undefined`.
 
 ## 7. Progress
 
-Ten headers are out, and what matters is the recipe rather than the pieces,
+Twelve headers are out, and what matters is the recipe rather than the pieces,
 because the recipe is what the rest of them follow:
 
 - `Source/DSP/J37Math.h` - the scalar math bridge every stage calls, and the file that
@@ -264,6 +264,19 @@ because the recipe is what the rest of them follow:
   their prose, moved whole. Not retyped: the block was deleted from
   `PluginProcessor.h` by matching its exact text and written to the new header by
   the same text, so a typo fails the move rather than changing the stage.
+- `Source/DSP/TransportRig.h` and `Source/DSP/RepitchStage.h` - 393 and 237 lines of
+  the file into 403 and 252 of header, the transport harness's pair, and the second
+  move that takes a harness with it: `tests/transport/extract.py` cut both structs by
+  text and now includes them, with `-I Source` in its `run.sh` and the two headers
+  added to `check_headers_juce.sh`'s list (which reads all three extractors now, twelve
+  headers). This one has a wrinkle the others did not: the extractor also reads the
+  rig's `armedForHost` flag and the rule that sets it as TEXT, from `PluginProcessor.h`,
+  because they are half of a promise whose other half is in the engine - and they moved
+  with the rig. The check said so ("PluginProcessor.h does not declare `armedForHost`")
+  the moment the move landed, and it now reads them out of `Source/DSP/TransportRig.h`
+  instead. A text check that silently passes because its subject moved away is the
+  failure this is worth guarding against, which is exactly why it names the file it
+  read.
 - `Source/DSP/PitchTracker.h` and `Source/DSP/RealtimePitchShifter.h` - 285 and 189
   lines of the file into 301 and 205 of header, the pair the pitch harness drives. They
   are the first move to take a second harness with it: `tests/pitch/extract.py` cut
@@ -299,8 +312,9 @@ because the recipe is what the rest of them follow:
 
 `PluginProcessor.h` went from 7,605 lines to 6,932 in the first pass (`RateBridge`,
 194 lines, closed it), to 5,951 with `SaturationCore`, to 4,835 with `VinylStage` and
-`SubharmonicGenerator`, and to 4,368 with the pitch pair - five moves, 3,237 lines,
-in ten headers. The more useful result is in the harness:
+`SubharmonicGenerator`, to 4,368 with the pitch pair, and to 3,744 with the transport
+pair - six moves, 3,861 lines, in twelve headers. The more useful result is in the
+harness:
 `tests/dsp/extract.py` no longer cuts those out by string span. It emits
 `#include "DSP/..."` lines (`SOURCE_HEADERS`), and the harness then compiles the
 shipping header itself, so there is one fewer place for a test copy and the plugin to
@@ -359,12 +373,13 @@ left after that is `IMPL_PIECES`: the five inline shapers (`j37Tanh`, `softClip`
 `softKneeReductionDb` and the two one-pole coefficient helpers) still cut out of
 `PluginProcessor.cpp`, which is the same recipe applied to the .cpp side.
 
-Still to move, same recipe, one header per commit with the harness in hand: `NeuralStage`
-(380 lines, with the probe first), `ThreeBandEq` (292), `InputStage` (244),
-`HarmonicAnalyser` (194), `PlateReverb` (193), plus the smaller ones the DSP and
-transport harnesses cut today - `IrStage`, `TapeCondition`, `StandardCompressor`,
-`SampleClock` and `SampleSmoother`, `TransportRig` and `RepitchStage`. The transport
-pair is the next one that pays into a harness rather than only into the file, and it
-needs the same two lines the pitch pair took: a `SOURCE_HEADERS` list in
-`tests/transport/extract.py`, `-I Source` in its `run.sh`, and that list named in
-`check_headers_juce.sh`.
+Still to move, same recipe, one header per commit: `NeuralStage` (380 lines, with the
+probe first, and the only entry left in the DSP extractor), `ThreeBandEq` (292),
+`InputStage` (244), `HarmonicAnalyser` (194), `PlateReverb` (193), and the smaller ones
+nothing measures yet - `IrStage`, `TapeCondition`, `StandardCompressor`, `SampleClock`
+and `SampleSmoother`. None of those pays into a harness any more, which changes what
+the move is worth: for them the win is the file that gets smaller and the include that
+gets a name, not a test that stops cutting text. `SampleSmoother` is the one to think
+about before moving: `tests/dsp/extract.py` reads the MIX smoother's inversion flag out
+of `PluginProcessor.h` by regex, so its header has to be where that regex looks - the
+same lesson the transport's `armedForHost` check just taught, learned in advance.

@@ -38,7 +38,8 @@ if [ ! -d "${JUCE_MODULES}/juce_audio_basics" ]; then
     exit 1
 fi
 
-mapfile -t HEADERS < <(python3 - "${HERE}/extract.py" "${HERE}/../pitch/extract.py" <<'PY'
+mapfile -t HEADERS < <(python3 - "${HERE}/extract.py" "${HERE}/../pitch/extract.py" \
+                              "${HERE}/../transport/extract.py" <<'PY'
 import pathlib
 import re
 import sys
@@ -62,7 +63,7 @@ PY
 
 if [ "${#HEADERS[@]}" -eq 0 ]; then
     echo "check_headers_juce: no headers in SOURCE_HEADERS (tests/dsp/extract.py,"
-         "tests/pitch/extract.py)" >&2
+         "tests/pitch/extract.py, tests/transport/extract.py)" >&2
     exit 1
 fi
 
@@ -130,6 +131,18 @@ TU="${BUILD}/header_check.cpp"
     sub.nudgeMasterPhase (0.01f);
     x = sub.process (x, 0.5f, 0.5f, 48000.0f);
     x += sub.getTrackedFrequency (48000.0f) * 1.0e-3f;
+
+    TransportRig rig;
+    rig.prepare (48000.0);
+    rig.beginBlock (0, false, true, 48000.0, 0, 0, 120.0);
+    x = rig.platter() + (rig.atSpeed() ? 1.0f : 0.0f);
+
+    RepitchStage repitch;
+    repitch.prepare (48000.0);
+    std::array<float, 2> frame { x, x };
+    repitch.processFrame (frame, 2, 1.0f);
+    x = frame[0];
+    repitch.reset();
 
     PitchTracker tracker;
     tracker.prepare (48000.0);

@@ -4,9 +4,9 @@
 The harness checks the transport's GESTURE - what the three keys do, how long
 each of them takes, and what the platter speed is while they do it - and none of
 that can be checked against a copy of the code: a copy would agree with itself.
-So `struct TransportRig` is cut out of Source/PluginProcessor.h verbatim, exactly
-as tests/dsp/extract.py cuts the DSP stages, and the harness drives the real
-object.
+Both structs have moved into Source/DSP/, so this script INCLUDES them - the same
+headers the plugin compiles, exactly as tests/dsp/extract.py includes its stages -
+and the harness drives the real objects.
 
 The struct is the whole transport: the three states, the durations, the scales
 the deck's own settings put on them (tape speed, turntable speed, tempo), the
@@ -30,14 +30,23 @@ IMPL = REPO / "Source" / "PluginProcessor.cpp"
 # the arm is invisible on the machine and a flag nobody reads is not a feature.
 EDITOR = REPO / "Source" / "PluginEditor.cpp"
 
-DECLARATIONS = [
-    "struct TransportRig",
-    # The repitch stage is cut out for the same reason the rig is: the harness has
-    # to drive the real one. It is the stage that turns the platter's speed into
-    # a PITCH - the rig says where the transport goes, this says what the machine
-    # sounds like while it goes there - and neither can be checked against a copy.
-    "struct RepitchStage",
+# The stages that have moved into Source/DSP/, in the order they have to be included
+# in. Both are driven by the harness below: the rig says where the transport goes, the
+# repitch stage says what the machine sounds like while it goes there, and neither can
+# be checked against a copy of the code.
+#
+# The list is also read by tests/dsp/check_headers_juce.sh, which compiles every header
+# named here against real JUCE - so a stage added to it is checked there on the next
+# run, with no second place to remember.
+SOURCE_HEADERS = [
+    "DSP/TransportRig.h",
+    "DSP/RepitchStage.h",
 ]
+
+# Where the rig's gestures live now. The report at the end of main() reads the seconds
+# and the scale tables out of the shipping header, so a gesture that is documented for
+# one second and implemented as seven still shows up in the log.
+RIG_HEADER = REPO / "Source" / "DSP" / "TransportRig.h"
 
 # The slice of the toolkit the extracted stages reach for. The harness has no
 # JUCE on its include path, so juce::jmin/jmax/jlimit are provided here with the
@@ -187,9 +196,17 @@ def check_engine_repitch() -> list[str]:
 
 
 def check_engine_arm() -> list[str]:
-    """Returns the reasons the engine does not arm START against the host."""
+    """Returns the reasons the engine does not arm START against the host.
+
+    The arm has two halves and they live in different files now: the rig holds the
+    flag and the rule that sets it (read out of Source/DSP/TransportRig.h, which is
+    the shipping header rather than a copy of it), and the engine is what reads the
+    host's play state and hands that half of the decision to the rig. Reading the
+    flag out of PluginProcessor.h after the rig moved would have found nothing and
+    said so - which is how this was noticed.
+    """
     impl = IMPL.read_text()
-    header = HEADER.read_text()
+    rig = RIG_HEADER.read_text()
     editor = EDITOR.read_text()
     problems: list[str] = []
 
@@ -230,12 +247,12 @@ def check_engine_arm() -> list[str]:
     # 3. The rig has to have the arm, and it has to be driven by the KEY rather
     #    than by the machine: armed means the parameter says START, the host is
     #    parked, and no finger is on SPINDOWN.
-    if "bool armedForHost = false;" not in header:
-        problems.append(f"{HEADER.name} does not declare `armedForHost`, so the panel "
+    if "bool armedForHost = false;" not in rig:
+        problems.append(f"{RIG_HEADER.name} does not declare `armedForHost`, so the panel "
                         f"cannot tell a waiting key from a stopped machine")
 
-    if not re.search(r"armedForHost = requested == static_cast<int> \(State::start\)", header):
-        problems.append(f"{HEADER.name} does not arm the key off the transport "
+    if not re.search(r"armedForHost = requested == static_cast<int> \(State::start\)", rig):
+        problems.append(f"{RIG_HEADER.name} does not arm the key off the transport "
                         f"parameter's own START, so the arm and the lit key can disagree")
 
     # 4. And the panel has to be able to say so. A flag nothing reads is the same
@@ -247,45 +264,8 @@ def check_engine_arm() -> list[str]:
     return problems
 
 
-def brace_end(text: str, start: int) -> int:
-    """The index just past the brace that closes the block starting at or after
-    `start`, skipping comments and string/char literals in one pass."""
-    depth = 0
-    seen = False
-    i = start
-    n = len(text)
-
-    while i < n:
-        c = text[i]
-
-        if c == "/" and i + 1 < n and text[i + 1] == "/":
-            j = text.find("\n", i)
-            i = n if j < 0 else j + 1
-        elif c == "/" and i + 1 < n and text[i + 1] == "*":
-            j = text.find("*/", i + 2)
-            i = n if j < 0 else j + 2
-        elif c in "\"'":
-            quote = c
-            i += 1
-            while i < n and text[i] != quote:
-                i += 2 if text[i] == "\\" else 1
-            i += 1
-        else:
-            if c == "{":
-                depth += 1
-                seen = True
-            elif c == "}":
-                depth -= 1
-                if seen and depth == 0:
-                    return i + 1
-            i += 1
-
-    raise SystemExit("extract.py: the transport struct was opened but never closed")
-
-
 def main() -> int:
     destination = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "extracted_transport.inc")
-    header = HEADER.read_text()
 
     problems = check_engine_gate() + check_engine_repitch() + check_engine_arm()
     if problems:
@@ -300,51 +280,32 @@ def main() -> int:
     print("arm: the engine reads the host's play state off the playhead, defaults an"
           " unanswered host to rolling, and hands it to the rig")
 
-    bodies: list[str] = []
-
-    for declaration in DECLARATIONS:
-        if header.count(declaration) != 1:
-            raise SystemExit(f"extract.py: `{declaration}` appears {header.count(declaration)} times "
-                             f"in {HEADER.name}; the transport harness cannot tell them apart.")
-
-        start = header.index(declaration)
-        end = brace_end(header, start)
-        while end < len(header) and header[end] != "\n":
-            end += 1                   # keep the trailing newline, not the next line
-        body = header[start:end]
-        bodies.append(body.rstrip())
-
-    body = bodies[0]
-    if not body.endswith("};"):
-        body += ";"
-
-    # The durations the harness reasons about are named constants in the struct,
-    # so they are read back here and reported: a gesture that is documented for
-    # one second and implemented as seven is the failure mode this exists for,
-    # and seeing the numbers in the log is how a reviewer notices. The scale
-    # tables are reported with them, because they are what turns those seconds
+    # The durations the harness reasons about are named constants in the rig, so
+    # they are read back out of the SHIPPING header and reported: a gesture that is
+    # documented for one second and implemented as seven is the failure mode this
+    # exists for, and seeing the numbers in the log is how a reviewer notices. The
+    # scale tables are reported with them, because they are what turns those seconds
     # into the gesture a given machine performs.
-    seconds = re.findall(r"static constexpr float (\w+Seconds)\s*=\s*([0-9.]+)f;", body)
-    scales = re.findall(r"static constexpr float (\w+Scales)\[3\]\s*\{([^}]*)\};", body)
+    rig = RIG_HEADER.read_text()
+    seconds = re.findall(r"static constexpr float (\w+Seconds)\s*=\s*([0-9.]+)f;", rig)
+    scales = re.findall(r"static constexpr float (\w+Scales)\[3\]\s*\{([^}]*)\};", rig)
     if len(seconds) < 4:
         raise SystemExit(f"extract.py: only {len(seconds)} `...Seconds` constants found in "
-                         f"TransportRig; its gestures are stated in seconds.")
+                         f"{RIG_HEADER.name}; its gestures are stated in seconds.")
 
-    parts = ["// GENERATED FILE - do not edit. Cut verbatim out of Source/PluginProcessor.h by\n"
-             "// tests/transport/extract.py: the shipping transport and repitch stage, as the\n"
-             "// engine compiles them.\n"]
+    parts = ["// GENERATED FILE - do not edit. Includes the shipping transport and repitch\n"
+             "// stage out of Source/DSP/, by tests/transport/extract.py, as the engine\n"
+             "// compiles them. The stand-in for juce below has to come first: the headers\n"
+             "// reach for those three helpers from whoever includes them.\n"]
 
     parts.append(PREAMBLE)
 
-    for index, extracted in enumerate(bodies):
-        if index == 0 and not extracted.endswith("};"):
-            extracted += ";"
-        parts.append(extracted + "\n")
+    for header_name in SOURCE_HEADERS:
+        parts.append(f'#include "{header_name}"\n')
 
     destination.write_text("\n".join(parts))
 
-    print(f"wrote {destination} ({len(body.splitlines())} + "
-          f"{len(bodies[1].splitlines())} lines)")
+    print(f"wrote {destination} ({len(SOURCE_HEADERS)} header(s) from Source/DSP/)")
     print("gestures: " + ", ".join(f"{name} = {value}s" for name, value in seconds))
     print("scales:   " + ", ".join(f"{name} = [{values.strip()}]" for name, values in scales))
     return 0
