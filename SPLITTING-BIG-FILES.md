@@ -250,7 +250,7 @@ harnesses once with `J37_SANITIZE=address,undefined`.
 
 ## 7. Progress
 
-Eight headers are out, and what matters is the recipe rather than the pieces,
+Ten headers are out, and what matters is the recipe rather than the pieces,
 because the recipe is what the rest of them follow:
 
 - `Source/DSP/J37Math.h` - the scalar math bridge every stage calls, and the file that
@@ -264,6 +264,15 @@ because the recipe is what the rest of them follow:
   their prose, moved whole. Not retyped: the block was deleted from
   `PluginProcessor.h` by matching its exact text and written to the new header by
   the same text, so a typo fails the move rather than changing the stage.
+- `Source/DSP/PitchTracker.h` and `Source/DSP/RealtimePitchShifter.h` - 285 and 189
+  lines of the file into 301 and 205 of header, the pair the pitch harness drives. They
+  are the first move to take a second harness with it: `tests/pitch/extract.py` cut
+  both structs by text and now emits `#include "DSP/..."` instead (its own
+  `SOURCE_HEADERS`, and `tests/pitch/run.sh` gained the `-I Source` that makes those
+  includes resolve), so the harness that measures the detector and the shifter
+  measures the shipping headers. `tests/dsp/check_headers_juce.sh` now reads both
+  extractors' lists - which is why it went from eight headers to ten without anyone
+  adding them twice.
 - `Source/DSP/VinylStage.h` - 581 lines of header for 566 of the file. The stage
   holds nothing but its own state and reaches for `juce::jlimit` and the std:: math,
   so this is what a move costs when nothing has to travel with it: the include is the
@@ -289,9 +298,9 @@ because the recipe is what the rest of them follow:
   stayed behind: it voices `VinylStage` rather than the core.
 
 `PluginProcessor.h` went from 7,605 lines to 6,932 in the first pass (`RateBridge`,
-194 lines, closed it), to 5,951 with `SaturationCore`, and to 4,835 with `VinylStage`
-and `SubharmonicGenerator` - four moves, 2,770 lines, in eight headers. The more
-useful result is in the harness:
+194 lines, closed it), to 5,951 with `SaturationCore`, to 4,835 with `VinylStage` and
+`SubharmonicGenerator`, and to 4,368 with the pitch pair - five moves, 3,237 lines,
+in ten headers. The more useful result is in the harness:
 `tests/dsp/extract.py` no longer cuts those out by string span. It emits
 `#include "DSP/..."` lines (`SOURCE_HEADERS`), and the harness then compiles the
 shipping header itself, so there is one fewer place for a test copy and the plugin to
@@ -354,5 +363,8 @@ Still to move, same recipe, one header per commit with the harness in hand: `Neu
 (380 lines, with the probe first), `ThreeBandEq` (292), `InputStage` (244),
 `HarmonicAnalyser` (194), `PlateReverb` (193), plus the smaller ones the DSP and
 transport harnesses cut today - `IrStage`, `TapeCondition`, `StandardCompressor`,
-`SampleClock` and `SampleSmoother`, `PitchTracker` and `RealtimePitchShifter`,
-`TransportRig` and `RepitchStage`.
+`SampleClock` and `SampleSmoother`, `TransportRig` and `RepitchStage`. The transport
+pair is the next one that pays into a harness rather than only into the file, and it
+needs the same two lines the pitch pair took: a `SOURCE_HEADERS` list in
+`tests/transport/extract.py`, `-I Source` in its `run.sh`, and that list named in
+`check_headers_juce.sh`.

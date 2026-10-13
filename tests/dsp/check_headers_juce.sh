@@ -18,9 +18,12 @@
 # -fsyntax-only: no object files, no link, no JUCE build system, and it needs the
 # JUCE submodule that the checkout already has.
 #
-# The header list is READ OUT OF tests/dsp/extract.py (SOURCE_HEADERS) rather than
-# repeated here, so the two cannot drift: a stage added to that list is checked
-# here on the next run, with no second place to remember.
+# The header list is READ OUT OF the extractors' own SOURCE_HEADERS lists -
+# tests/dsp/extract.py and tests/pitch/extract.py - rather than repeated here, so
+# the two cannot drift: a stage added to either list is checked here on the next
+# run, with no second place to remember. A header named in neither list is not
+# checked at all, which is the one way to miss something: an extractor that moves a
+# stage without listing it also stops compiling it, so the harness fails first.
 set -euo pipefail
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
@@ -35,24 +38,31 @@ if [ ! -d "${JUCE_MODULES}/juce_audio_basics" ]; then
     exit 1
 fi
 
-mapfile -t HEADERS < <(python3 - "${HERE}/extract.py" <<'PY'
+mapfile -t HEADERS < <(python3 - "${HERE}/extract.py" "${HERE}/../pitch/extract.py" <<'PY'
 import pathlib
 import re
 import sys
 
-# The list under test, taken from the extractor rather than retyped: these are the
-# headers the harnesses include instead of cutting their text out of
+# The list under test, taken from the extractors rather than retyped: these are
+# the headers the harnesses include instead of cutting their text out of
 # PluginProcessor.h.
-text = pathlib.Path(sys.argv[1]).read_text(encoding="utf-8")
-block = text.split("SOURCE_HEADERS = [", 1)[1].split("]", 1)[0]
+seen: list[str] = []
 
-for name in re.findall(r'"([^"]+)"', block):
-    print(name)
+for path in sys.argv[1:]:
+    text = pathlib.Path(path).read_text(encoding="utf-8")
+    block = text.split("SOURCE_HEADERS = [", 1)[1].split("]", 1)[0]
+
+    for name in re.findall(r'"([^"]+)"', block):
+        if name not in seen:
+            seen.append(name)
+
+print("\n".join(seen))
 PY
 )
 
 if [ "${#HEADERS[@]}" -eq 0 ]; then
-    echo "check_headers_juce: no headers in SOURCE_HEADERS (tests/dsp/extract.py)" >&2
+    echo "check_headers_juce: no headers in SOURCE_HEADERS (tests/dsp/extract.py,"
+         "tests/pitch/extract.py)" >&2
     exit 1
 fi
 
@@ -120,6 +130,20 @@ TU="${BUILD}/header_check.cpp"
     sub.nudgeMasterPhase (0.01f);
     x = sub.process (x, 0.5f, 0.5f, 48000.0f);
     x += sub.getTrackedFrequency (48000.0f) * 1.0e-3f;
+
+    PitchTracker tracker;
+    tracker.prepare (48000.0);
+
+    for (int n = 0; n < 8; ++n)
+        tracker.push (x);
+
+    x += static_cast<float> (tracker.frequency() + tracker.confidence())
+       + static_cast<float> (tracker.periodFrames());
+
+    RealtimePitchShifter shifter;
+    shifter.reset();
+    x = shifter.process (x, 1.05f, 128);
+    x += shifter.delayOf (0);
 
     VinylStage vinyl;
     vinyl.riaaAmount = 0.5f;

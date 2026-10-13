@@ -4,9 +4,14 @@
 The pitch harness measures two structs that only ever run together in the plugin:
 PitchTracker, which says what note is playing, and RealtimePitchShifter, which
 moves the audio onto it. Neither is retyped here - both are cut verbatim out of
-Source/PluginProcessor.h at build time, so a change to the plugin cannot leave
-the harness measuring a stale copy of it. A rename or a move makes this script
-fail loudly rather than silently measuring nothing.
+Source/ at build time or included from the header the plugin itself compiles, so a
+change to the plugin cannot leave the harness measuring a stale copy of it.
+
+Both of them have now moved into Source/DSP/, so this script does what the DSP
+extractor does for its stages: it emits the includes rather than the text. That is
+the whole of it - the two headers are the shipping ones, and `run.sh` puts Source/
+on the include path for exactly this. The cut-by-text half is gone rather than kept
+as a fallback, because a fallback is a second way to measure the wrong thing.
 
 Usage:  python3 tests/pitch/extract.py <output.inc>
 """
@@ -16,40 +21,32 @@ from __future__ import annotations
 import pathlib
 import sys
 
-REPO = pathlib.Path(__file__).resolve().parents[2]
-HEADER = REPO / "Source" / "PluginProcessor.h"
-
-# Both structs are self-contained: the tracker reaches for std:: and the juce::
-# scalar helpers the shim provides, and so does the shifter. Neither touches a
-# member of the processor, which is what makes them measurable in isolation.
-PIECES = [
-    ("PitchTracker", "struct PitchTracker"),
-    ("RealtimePitchShifter", "struct RealtimePitchShifter"),
+# The stages that have moved into Source/DSP/, in the order they have to be included
+# in - which is the header's own order, and the only order that works for a stage
+# that holds another one by value (the shifter reads what the tracker found, but as
+# an argument rather than as a member, so today the order is simply reading order).
+# The list is also read by tests/dsp/check_headers_juce.sh, which compiles every
+# header named here against real JUCE - so a stage added to it is checked there on
+# the next run, with no second place to remember.
+SOURCE_HEADERS = [
+    "DSP/PitchTracker.h",
+    "DSP/RealtimePitchShifter.h",
 ]
-
-
-def extract_struct(text: str, declaration: str) -> str:
-    """Cuts `declaration` out of `text` through its matching closing brace."""
-    start = text.index(declaration)
-    end = text.index("\n};", start) + len("\n};")
-    return text[start:end]
 
 
 def main() -> int:
     destination = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "extracted_pitch.inc")
-    header = HEADER.read_text()
 
     chunks = ["// GENERATED FILE - do not edit.",
-              "// Cut verbatim out of Source/ by tests/pitch/extract.py.",
+              "// Includes the shipping pitch stage out of Source/, by tests/pitch/extract.py.",
               ""]
 
-    for name, declaration in PIECES:
-        chunks.append(f"// ---- {name} (PluginProcessor.h) " + "-" * 40)
-        chunks.append(extract_struct(header, declaration))
-        chunks.append("")
+    for header in SOURCE_HEADERS:
+        chunks.append(f'#include "{header}"')
 
-    destination.write_text("\n".join(chunks))
-    print(f"wrote {destination} ({destination.stat().st_size} bytes)")
+    destination.write_text("\n".join(chunks) + "\n")
+    print(f"wrote {destination} ({destination.stat().st_size} bytes, "
+          f"{len(SOURCE_HEADERS)} header(s) from Source/DSP/)")
     return 0
 
 
