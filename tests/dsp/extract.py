@@ -1,19 +1,24 @@
 #!/usr/bin/env python3
 """Extracts the shipping DSP under test into an include the harness compiles.
 
-The point of the harness is that it never retypes the plugin's code: a stage is
-either included from the header the plugin itself compiles (SOURCE_HEADERS, which
-is now everything but NeuralStage) or cut verbatim out of Source/ at build time
-(NeuralStage, which cannot move until the macro probe it is compiled under does),
-so a change to the plugin cannot leave the test measuring a stale copy of it.
+The point of the harness is that it never retypes the plugin's code: every stage
+is INCLUDED from the header the plugin itself compiles (SOURCE_HEADERS below), so
+a change to the plugin cannot leave the test measuring a stale copy of it.
 
-This file is on its way to doing almost nothing. A stage that lives in its own
-header under Source/DSP/ is INCLUDED by the generated file - the same header the
-plugin compiles - so it needs no string-span extraction at all, and the fragile
-half of this script (find a declaration by text, read to the next `\n};`, and get
-the order right) disappears with it. SOURCE_HEADERS below lists what has moved;
-the pieces still cut further down are the ones that have not. When the header is
-empty enough to read, the last thing to go is this script.
+The half of this script that cut those stages out of PluginProcessor.h is gone,
+which is what the first header to move was aiming at: a stage used to be found by
+text (`struct NeuralStage`), read to the next `\n};` and pasted in, in an order
+that had to mirror the plugin header's own. Every one of them is a file under
+Source/DSP/ now - NeuralStage was the last, and it could not move until the macro
+probe it is compiled under had a header of its own, Source/DSP/OptionalLibraries.h
+- so what is left to CUT is the .cpp half only: the five inline shapers the stages
+call.
+
+What is still checked here as TEXT is the wiring no harness can compile: the two
+facts that live in the engine's thousands of lines rather than in a stage (the
+neural rate conversion, and the AUTO GAIN compensator that a stage is not yet),
+plus the MIX smoother's own inversion flag, which is read out of the real
+declaration and handed to the harness rather than restated here.
 
 Usage:  python3 tests/dsp/extract.py <output.inc>
 """
@@ -27,6 +32,13 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parents[2]
 HEADER = REPO / "Source" / "PluginProcessor.h"
 IMPL = REPO / "Source" / "PluginProcessor.cpp"
+# Where the neural stage keeps the two rates it is handed. They used to be read
+# out of PluginProcessor.h, and they moved with the stage - which is why this is a
+# path of its own and why the check that reads them NAMES THE FILE it read. A text
+# check that passes because its subject moved away is the failure worth naming the
+# file to prevent: the transport harness learned the same lesson the hard way when
+# the rig's `armedForHost` flag left PluginProcessor.h (tests/transport/extract.py).
+STAGE_HEADER = REPO / "Source" / "DSP" / "NeuralStage.h"
 
 # The MIX crossfade is a two-part fact: the formula in the .cpp and an inversion
 # flag on the smoother in the .h. Each was correct on its own once, and the pair
@@ -60,46 +72,38 @@ SOURCE_HEADERS = [
     "DSP/TransientShaper.h",
     "DSP/GlueCompressor.h",
     "DSP/RateBridge.h",
+    "DSP/NeuralStage.h",
 ]
 
-# There is no CONSTANT_PIECES any more. It existed for the four type counts
-# SaturationCore's set<Family>Voice methods read (`valveTypeCount` and its three
-# siblings), which live at namespace scope: cutting the struct alone delivered a
-# method that read a constant which had not arrived - exactly how adc23c9's new
-# DIGITAL voice broke the harness. The counts, their name arrays and their
-# completeness checks moved into Source/DSP/SaturationCore.h with the struct, so
-# they now come in by include. A constant that goes back to being cut alone is a
-# compile failure here rather than a silent zero.
-HEADER_PIECES = [
-    # The subharmonic generator used to be cut here, which is the last of the
-    # stages this harness drives to have moved: it is Source/DSP/SubharmonicGenerator.h
-    # now, so the include above hands the test the shipping struct. What is left in
-    # this list is NeuralStage, which cannot move until the __has_include probe it is
-    # compiled under moves out of PluginProcessor.h (see SPLITTING-BIG-FILES.md, 7).
-    # The vinyl stage used to be cut here. It lives in Source/DSP/VinylStage.h now,
-    # so the include above puts it in this file the same way it puts the saturation
-    # core, the transient shaper and the glue compressor in - and it is worth
-    # saying that nothing in this harness names it any more: the entry was kept
-    # because the noise tab's controls act on the stage, and whatever check that
-    # was now drives the chain rather than the struct. The include costs nothing
-    # and means a check that wants it again finds the shipping text.
-    # The transient shaper used to be cut here as well, and it moved for the same
-    # reason: it now comes from Source/DSP/TransientShaper.h. Its two claims are
-    # still measured - that at both amounts zero it is a bit-for-bit pass-through,
-    # and that a positive attack amount makes an edge sharper while a negative one
-    # rounds it - but measured on the shipping header rather than on a cut copy of
-    # it, which is the whole point of SOURCE_HEADERS.
-    # The neural stage is extracted, which is what proves the guard is honest:
-    # with J37_HAS_RTNEURAL 0 (the harness case) every member reduces to the
-    # pass-through, so the struct still compiles and still renders the input
-    # unchanged. A source that only compiled WITH the library would fail here.
-    # The rate bridge used to be cut here, before NeuralStage, because the stage
-    # HOLDS one: it now comes from Source/DSP/RateBridge.h, which SOURCE_HEADERS
-    # includes above and ahead of everything in this list, so the member's type is
-    # complete by the time the stage below is compiled. The order rule has not
-    # gone away - it has moved into that list.
-    ("NeuralStage", "struct NeuralStage"),
-]
+# That is the last stage the plugin holds, and with it the last thing this file
+# ever had to cut out of PluginProcessor.h. NeuralStage is the one that needed
+# another header to move first: it is compiled in two shapes, chosen by
+# J37_HAS_RTNEURAL, and a build may decide that macro itself (tests/neural does,
+# with RTNeural's API stood in for) - so the probe left PluginProcessor.h for
+# Source/DSP/OptionalLibraries.h, which this header includes. Under the harness
+# the macro is 0 and every member reduces to the pass-through, which is the
+# build subfund_test.cpp renders.
+
+# There is no HEADER_PIECES any more, and there is no CONSTANT_PIECES either -
+# both were lists of text this file cut out of PluginProcessor.h, and both are
+# empty because there is nothing left in it that a stage owns.
+#
+# HEADER_PIECES was the list of structs found by declaration text (`struct
+# NeuralStage`) and read to the next `\n};`. It had three ways to go wrong: an
+# anchor that stopped matching, an order that had to mirror the plugin header's
+# own, and - the one that matters - a copy that could drift from the code the
+# plugin compiles while still passing. NeuralStage was its last entry, and it is
+# Source/DSP/NeuralStage.h now, included by the list above. Every stage the list
+# ever held is a header under Source/DSP/, so a stage that goes back to being cut
+# here is a stage that stopped being readable on its own.
+#
+# CONSTANT_PIECES pasted the four type counts SaturationCore's set<Family>Voice
+# methods read (`valveTypeCount` and its three siblings) in ahead of the struct,
+# because cutting the struct alone delivered a method that read a constant which
+# had not arrived - exactly how adc23c9's new DIGITAL voice broke the harness.
+# The counts, their name arrays and their completeness checks moved into
+# Source/DSP/SaturationCore.h with the struct, so a constant that goes back to
+# being cut alone is a compile failure here rather than a silent zero.
 
 IMPL_PIECES = [
     # j37Tanh is still extracted because SaturationCore's curves may call it, and
@@ -118,14 +122,6 @@ IMPL_PIECES = [
     ("onePoleCoefficient", "inline float onePoleCoefficient"),
     ("onePoleCoefficientHz", "inline float onePoleCoefficientHz"),
 ]
-
-
-def extract_struct(text: str, declaration: str) -> str:
-    """Cuts `declaration` out of `text` through its matching closing brace."""
-    start = text.index(declaration)
-    # A struct ends at the first "\n};" at column 0 after the declaration.
-    end = text.index("\n};", start) + len("\n};")
-    return text[start:end]
 
 
 def extract_function(text: str, signature: str) -> str:
@@ -163,7 +159,7 @@ RATE_DECLARATION = "void updateNeuralSampleRates();"
 RATE_DEFINITION = "void FirstAudioProcessor::updateNeuralSampleRates()"
 
 
-def check_neural_rate_wiring(header: str, impl: str) -> list[str]:
+def check_neural_rate_wiring(header: str, impl: str, stage: str) -> list[str]:
     """Returns the reasons a model's own sample rate never reaches the bridge."""
     problems: list[str] = []
 
@@ -241,13 +237,15 @@ def check_neural_rate_wiring(header: str, impl: str) -> list[str]:
 
     # 6. And the stage has to actually keep the pair it is given. The stage latches
     #    it on the audio thread (the bridge is audio-thread state, and a model is
-    #    loaded on the message thread), so what it keeps are the three atomics.
+    #    loaded on the message thread), so what it keeps are the three atomics -
+    #    and they live in the stage's own header, which is read here rather than
+    #    PluginProcessor.h.
     for kept, name in (("wantedModelRate.store (", "the model's rate"),
                        ("wantedEngineRate.store (", "the engine's rate"),
                        ("ratesPending.store (true", "a pending-rate flag")):
-        if kept not in header:
-            problems.append(f"the stage keeps no {name}, so what it is handed never reaches "
-                            f"the bridge")
+        if kept not in stage:
+            problems.append(f"{STAGE_HEADER.name} keeps no {name}, so what it is handed never "
+                            f"reaches the bridge")
 
     return problems
 
@@ -351,8 +349,9 @@ def main() -> int:
     destination = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "extracted_dsp.inc")
     header = HEADER.read_text()
     impl = IMPL.read_text()
+    stage = STAGE_HEADER.read_text()
 
-    problems = check_neural_rate_wiring(header, impl)
+    problems = check_neural_rate_wiring(header, impl, stage)
     problems += check_auto_gain_compensation(impl)
     if problems:
         for problem in problems:
@@ -365,13 +364,13 @@ def main() -> int:
           "correction on a stopped machine, and rides both legs of the MIX crossfade")
 
     chunks = ["// GENERATED FILE - do not edit.",
-              "// Cut verbatim out of Source/ by tests/dsp/extract.py.",
+              "// Built out of Source/ by tests/dsp/extract.py: the DSP stages are",
+              "// included from their own headers, the inline shapers are cut.",
               "",
               f"#define SUBFUND_MIX_INVERTS {1 if mix_inverts(header) else 0}",
               ""]
 
-    # The stages that live in their own headers are included, in header order,
-    # before anything that is still cut: a cut stage may hold one of them.
+    # The stages, all of them, in the order the plugin's own header includes them.
     chunks.append("// ---- Source/DSP/ headers, included rather than cut " + "-" * 18)
 
     for header_name in SOURCE_HEADERS:
@@ -379,11 +378,6 @@ def main() -> int:
 
     chunks.append("")
     chunks.append("")
-
-    for name, declaration in HEADER_PIECES:
-        chunks.append(f"// ---- {name} (PluginProcessor.h) " + "-" * 40)
-        chunks.append(extract_struct(header, declaration))
-        chunks.append("")
 
     for name, signature in IMPL_PIECES:
         chunks.append(f"// ---- {name} (PluginProcessor.cpp) " + "-" * 38)

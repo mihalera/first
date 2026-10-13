@@ -97,6 +97,24 @@ TU="${BUILD}/header_check.cpp"
     x = converted.wet + converted.dry + static_cast<float> (bridge.delay());
     bridge.reset();
 
+    // The neural stage in the shape a build WITHOUT RTNeural compiles. Its whole
+    // guarded half - the model, the .nam converter, the bridge it drives - lives
+    // inside `#if J37_HAS_RTNEURAL` and is compiled by tests/neural/stage_test.cpp
+    // against a stand-in for RTNeural's API, not here. What this instantiates is
+    // the shape every build without the library has, and it is the one that asks
+    // the real JUCE for the two names the harness's shim has been answering so
+    // far: juce::String in the loader's own signature, and juce::ignoreUnused in
+    // both methods that reduce to nothing without the library. (juce::jlimit, the
+    // third name the stage uses, is in the crossfade inside the guarded half, so
+    // this build never reaches it.)
+    NeuralStage neural;
+    neural.setSampleRates (48000.0, 192000.0);
+    x = neural.process (x, 0.5f)
+      + (neural.isActive() ? 1.0f : 0.0f)
+      + (neural.loadFromJson (juce::String()) ? 1.0f : 0.0f);
+    neural.clear();
+    neural.reset();
+
     SaturationCore core;
     core.setWeights (0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f, 0.25f);
     core.setValveVoice (0);

@@ -119,8 +119,9 @@ header-only structs. Five of the nine (`SaturationCore`, `VinylStage`,
 `SubharmonicGenerator`, `NeuralStage`, `GlueCompressor`) are compiled by the DSP
 harness today, so a broken move there fails in CI rather than in a session; the other
 four are covered only by the plugin build, which is a reason to start with the five.
-Costs: constraint 3 above (the probe block must travel or be shared), and
-`tests/dsp/extract.py`'s `HEADER_PIECES` must name the new files. Do them **one
+Costs: constraint 3 above (the probe block must travel or be shared - which is what
+`Source/DSP/OptionalLibraries.h` ended up being for), and `tests/dsp/extract.py`'s
+`SOURCE_HEADERS` must name the new file. Do them **one
 struct per commit**, harness in hand. Risk: low mechanically, but this is the
 most-edited header in the project, so keep the diffs pure moves.
 
@@ -317,12 +318,35 @@ because the recipe is what the rest of them follow:
   behind would compile in the plugin (where they still live above it in
   `PluginProcessor.h`) and fail in every harness. The fifth list, `vinylTypeNames`,
   stayed behind: it voices `VinylStage` rather than the core.
+- `Source/DSP/NeuralStage.h`, with `Source/DSP/OptionalLibraries.h` in front of it -
+  595 lines of the file into headers of 480 and 183, and the move that finally emptied
+  the extractor's header list. It needed the probe first, exactly as recorded above: the
+  stage is compiled in two shapes under `J37_HAS_RTNEURAL`, and that macro was decided
+  by a `__has_include` block at the top of `PluginProcessor.h` - so a header could not
+  read it, because a header cannot depend on its includer having got there first. The
+  whole optional-dependency block therefore left the plugin header: chowdsp's two
+  probes, RTNeural's, xsimd's, and the four third-party utilities' (ReaderWriterQueue,
+  farbot, signalsmith-stretch, SoundTouch), all of them now in one file whose concern is
+  "which of these does this build have". It is included first by `PluginProcessor.h`, and
+  directly by the stage that needs one of its answers - which is also the only way a
+  harness with none of those libraries on its include path can compile that stage.
+
+  One guard changed with the move, and the reason is worth keeping: the RTNeural probe
+  now yields to a macro that is ALREADY defined. `tests/neural/run.sh` passes
+  `-DJ37_HAS_RTNEURAL=1` and stands RTNeural's own API in itself, which is the only way
+  the guarded half of the stage is compiled on a machine without the library. Before the
+  move that define met no probe at all; after it, a probe that insisted would have
+  switched off the very half that harness exists to compile, and the harness would have
+  gone on passing while measuring the pass-through. The other three probes are
+  unchanged - same `__has_include` chain, same macros, and under a harness with none of
+  those libraries on the path, the same all-zero outcome as before.
 
 `PluginProcessor.h` went from 7,605 lines to 6,932 in the first pass (`RateBridge`,
 194 lines, closed it), to 5,951 with `SaturationCore`, to 4,835 with `VinylStage` and
 `SubharmonicGenerator`, to 4,368 with the pitch pair, to 3,744 with the transport pair,
-and to 2,838 with the four stages nothing measures - seven moves, 4,780 lines, in
-sixteen headers. The more useful result is in the harness:
+to 2,838 with the four stages nothing measures, and to 2,262 with the neural stage and
+the probe block that had to travel in front of it - eight moves, 5,362 lines, in
+eighteen headers. The more useful result is in the harness:
 `tests/dsp/extract.py` no longer cuts those out by string span. It emits
 `#include "DSP/..."` lines (`SOURCE_HEADERS`), and the harness then compiles the
 shipping header itself, so there is one fewer place for a test copy and the plugin to
@@ -376,22 +400,24 @@ job now takes the submodule (`submodules: recursive`, a depth-1 fetch of the one
 submodule, seconds). Worth writing down because it is the class of cost this split
 carries: every new include path is a new place for a build to look somewhere else.
 
-**What is left in the DSP extractor is one entry.** `HEADER_PIECES` holds `NeuralStage`
-and nothing else, and it is the trap that was recorded here before the move: the stage
-is compiled under different macros, its members reduce to pass-throughs when
-`RTNeural` is absent, and it needs the `__has_include` probe block that currently sits
-at the top of `PluginProcessor.h`. Before that stage moves, the probe belongs in a
-header of its own (`Source/DSP/OptionalLibraries.h`, included first by both the plugin
-header and the harness), or the moved stage compiles in the plugin and not in CI. When
-it moves, `tests/dsp/extract.py` cuts no header text at all - the half of the
-extraction the docstring has been pointing at since the first header moved. What is
-left after that is `IMPL_PIECES`: the five inline shapers (`j37Tanh`, `softClip`,
-`softKneeReductionDb` and the two one-pole coefficient helpers) still cut out of
-`PluginProcessor.cpp`, which is the same recipe applied to the .cpp side.
+**The DSP extractor cuts no header text at all.** `HEADER_PIECES` went with its last
+entry, which is the goal its docstring stated when the first header moved; what it used
+to do is one line per stage in `SOURCE_HEADERS` now. The check that reads the stage's own
+state went with it, the way the transport's `armedForHost` check had to: the three
+atomics the rate bridge is handed (`wantedModelRate`, `wantedEngineRate`, `ratesPending`)
+live in `Source/DSP/NeuralStage.h`, so `tests/dsp/extract.py` reads that file now -
+through a named constant, `STAGE_HEADER` - and says WHICH file it read when it finds
+nothing. It failed the moment the stage moved and the check was still pointed at
+`PluginProcessor.h`, which is the behaviour that makes it worth having: a text check
+that passes because its subject moved away is the failure this guards against, and it is
+the second time this branch has hit it.
 
-Still to move, same recipe, one header per commit: `NeuralStage` (380 lines, with the
-probe first, and the only entry left in the DSP extractor), then the smaller ones nothing
-measures - `IrStage`, `TapeCondition`, `StandardCompressor`, `SampleClock` and
+What is left in the extractor is `IMPL_PIECES`: the five inline shapers (`j37Tanh`,
+`softClip`, `softKneeReductionDb` and the two one-pole coefficient helpers) still cut out
+of `PluginProcessor.cpp`, which is the same recipe applied to the .cpp side.
+
+Still to move, same recipe, one header per commit, and none of them is cut by an
+extractor any more: `IrStage`, `TapeCondition`, `StandardCompressor`, `SampleClock` and
 `SampleSmoother`. `IrStage` is the one that will need something extra: it reaches for
 `juce::AudioFormatManager`, `juce::dsp` and `juce::File`, which live in
 `juce_audio_formats` and `juce_dsp` rather than in the `juce_audio_basics` the check
@@ -401,4 +427,5 @@ surprising: the header moves in, the check fails on the module, and the answer i
 module rather than a smaller list. `SampleSmoother` is the one to think about before moving:
 `tests/dsp/extract.py` reads the MIX smoother's inversion flag out of
 `PluginProcessor.h` by regex, so its header has to be where that regex looks - the same
-lesson the transport's `armedForHost` check just taught, learned in advance.
+lesson the transport's `armedForHost` check taught, and the neural stage's own state just
+taught again.

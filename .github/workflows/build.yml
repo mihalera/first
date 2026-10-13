@@ -24,8 +24,8 @@ jobs:
   #  Nothing short of rendering them catches a regression, and the three
   #  platform builds below take far too long to be the place to find out.
   #
-  #  The harness needs no JUCE, no audio backend and no host: it cuts the
-  #  shipping generator out of Source/ at build time and compiles it against a
+  #  The harness needs no JUCE, no audio backend and no host: it includes the
+  #  shipping stages out of Source/ at build time and compiles them against a
   #  small shim, so it cannot end up measuring a stale copy of the code. The one
   #  step here that does look at JUCE is the last one, which compiles the moved
   #  Source/DSP/ headers against juce_audio_basics instead of that shim - a name
@@ -81,8 +81,8 @@ jobs:
       # machine as written looked right, START did nothing on a machine that was
       # already running, and STOP approached rest asymptotically instead of
       # arriving, so a "stopped" machine was still passing a faded copy of its
-      # input. This harness cuts the shipping TransportRig out of the header and
-      # drives it frame by frame, checking each key against the duration its own
+      # input. This harness includes the shipping TransportRig and drives it
+      # frame by frame, checking each key against the duration its own
       # note claims and the platter the engine actually follows - including the
       # one multiplication that makes STOP silence rather than lower. Same shape as
       # the harnesses above: no JUCE, no host, a few seconds.
@@ -98,8 +98,8 @@ jobs:
       # this frame creeps forward by a frame per grain, which is a few cents of
       # permanent detune and a grain-rate wobble on top. Neither is visible by
       # reading the source - one is a number on rendered audio, the other is an
-      # ordering of two loops - so this harness cuts both structs out of the header
-      # and measures the reading and the splice on generated signal. Same shape as
+      # ordering of two loops - so this harness includes both stages and measures
+      # the reading and the splice on generated signal. Same shape as
       # the harnesses above: no JUCE, no host, a few seconds.
       - name: Run the pitch harness
         run: bash tests/pitch/run.sh
@@ -160,8 +160,9 @@ jobs:
       # JUCE provides it, and the moment a stage moves into a header of its own is
       # exactly when that stops being a safe assumption. Harness green and plugin
       # red would be a fifteen-minute discovery in the platform builds; this makes
-      # it a two-second one here. The header list is read out of extract.py, so a
-      # stage added there is checked here on the next run. It reads the JUCE
+      # it a two-second one here. What it compiles is the DIRECTORY - every *.h in
+      # Source/DSP/ - so a stage that moves in is checked here on the next run
+      # without being named anywhere. It reads the JUCE
       # submodule, which is what the checkout above fetches and why it does: an
       # empty JUCE/ is a setup fault, and the script says so by name.
       - name: Check the moved DSP headers against JUCE
