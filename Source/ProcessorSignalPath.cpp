@@ -20,7 +20,10 @@
 //    scaleOffsetsForMode()       the twelve scale degrees autotune snaps to
 //    processAutoTuneSample()     the optional pitch correction, one frame at a time
 //    publishBlockTelemetry()     what the panel's meters read, published per block
-//    processTapeEngine()         the machine: 3,366 lines of the tape model
+//    processTapeEngine()         the machine: the block's own setup, and the loop that
+//                                runs it
+//    processOneSample()          one sample of that block, which is where the audio is
+//                                touched
 //
 //  Nothing was retyped. The spans came out of PluginProcessor.cpp by matching their
 //  exact bytes and went in unchanged, so every comment that explains why a stage is
@@ -33,11 +36,12 @@
 //  loop increments and the processor's telemetry readout inspects. Both say in their
 //  own banners why they had to stop being file-local.
 //
-//  processTapeEngine() is still one function, and that is deliberate rather than left
-//  over: splitting it into named stages is the change that would most improve this
-//  project's readability, and it is also the one no harness covers today - see
-//  SPLITTING-BIG-FILES.md, section F. Moving it to a file of its own is the part that
-//  needs no new measurement.
+//  The machine is two pieces, and where the line between them is drawn is the whole point:
+//  what one block is SET UP AS is a type (TapeBlockState, declared in PluginProcessor.h)
+//  and what happens to one sample is a function of its own (processOneSample below). The
+//  ~1,570 lines of coefficients between them are still inside processTapeEngine() - one
+//  group of them leaves at a time, the way the block-rate coefficients and the wander
+//  already did. See SPLITTING-BIG-FILES.md, section F.
 // =============================================================================
 #include "PluginProcessor.h"
 
@@ -2230,7 +2234,7 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     //
     //  Every control that the hot path depends on is read ONCE per sample
     //  from a single advancing sample clock, in the order below. The block-
-    //  rate feed points live above this lambda; this lambda only READS, it
+    //  rate feed points live above this function; this function only READS, it
     //  never feeds a target. That split is the rule: block rate sets up the
     //  ramp, sample rate consumes it. If a control is read here it must be
     //  read from the same per-sample value everywhere else in the frame.

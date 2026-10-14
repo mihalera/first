@@ -280,11 +280,16 @@ Each step is independently revertable and ends with the same checks green.
    splitting it into named stages is what is left, and it is the one change in this
    document that no harness compiles.
 
-   **F's first two stages are in** (section 7): the machine's block-rate coefficients and
-   its wander (the four shaping curves, the SPEED/platter scale and the two LFO rates)
-   left the function for `Source/DSP/BlockRateCoefficients.h` and
-   `Source/DSP/TapeModulation.h`, and both are checked by the DSP harness rather than
-   only compiled by it. What is left is the three parts below.
+   **F's first two stages are in, and then its third** (section 7): the machine's
+   block-rate coefficients and its wander (the four shaping curves, the SPEED/platter
+   scale and the two LFO rates) left the function for
+   `Source/DSP/BlockRateCoefficients.h` and `Source/DSP/TapeModulation.h`, both checked by
+   the DSP harness rather than only compiled by it; and the map's parts 1-3 are one TYPE
+   and one FUNCTION now - `TapeBlockState` holds the 68 names the sample loop read by
+   capture, and that loop is `processOneSample (TapeBlockState&, int)`. What is left of F
+   is the map's part 2: cutting the ~1,570 lines of derivations into named stages of
+   their own, which is the move the two stages above already made and can now be done one
+   group at a time.
 
    **F's map, measured off the function rather than guessed** - so the next pass starts
    from the numbers instead of from reading 3,307 lines. The map was taken before either
@@ -308,6 +313,13 @@ Each step is independently revertable and ends with the same checks green.
    ~1,600 lines of block constants above it by CAPTURE rather than by argument. Cutting
    the derivations out first is what turns that capture list into a type, and until that
    exists there is nothing for a harness to compile the lambda against.
+
+   **The map, re-measured after the three moves** (every range above was taken before any
+   of them): `processTapeEngine()` is 1,639 lines (was 3,367), `processOneSample` is a
+   1,670-line member function of the processor (was the lambda at 2,203-3,872), and the
+   ~1,570 lines of part 2 are still inside the function but now write into
+   `TapeBlockState`'s 68 fields instead of into locals. Part 4 - the block loop and the
+   measurement/telemetry tail - is unchanged.
 
 After every step: `bash tests/dsp/run.sh`, `bash tests/layout/run.sh`,
 `bash tests/state/run.sh`, `python3 tests/presets/check_presets.py`, and the three
@@ -815,20 +827,88 @@ them more than moves:
   `HotPathMath.h`, which is what puts the shipping stages in the harness's include and
   lets the checks above be about the code the plugin runs.
 
-**What is left is one thing.** The processor is done as a MOVE - `PluginProcessor.cpp`
-is 1,325 lines of lifecycle, the table and the presets and the state are files of their
-own, and the signal path is `Source/ProcessorSignalPath.cpp` (3,858). What is left there
-is not a move: `processTapeEngine()` is still 3,307 lines (1,336 of them code) inside
-that file, and taking the REST of it apart into named stages is the part of step F that
-remains. It is the last thing in this document that no harness compiles - and the first
-stage above is the demonstration of what has to happen before a piece of it can move:
-the block-rate coefficients could go because they are a function of the rate and one
-control, so a harness can call them; ~40 parameter reads and 1,570 lines of coefficients
-captured by a 1,669-line lambda need the struct that turns those captures into arguments
-first, which is the order the map in section 6 sets out.
+**The third move is the one the first two were preparing: the machine's state and its loop
+have names.** `processTapeEngine()` is 3,367 lines before it and 1,639 after, and what left
+the function is not a stage but the boundary the function never had. Its middle was
+`const auto processOneSample = [&] (int sample) noexcept` - 1,669 lines that read 68 of the
+function's own locals by CAPTURE, so nothing distinguished "what this block is set up as"
+from "what happens to one sample" but a capture list that meant all of it. Those 68 names
+are the fields of `TapeBlockState` now (82 lines of declaration in `PluginProcessor.h`,
+grouped by what they are), the declarations that created them are assignments into it, and
+the loop is `FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample)
+noexcept`, a 1,670-line member function whose body reaches through `state.` 157 times.
 
-The two moves this section adds are re-runnable the same way as the three before them
+Nothing was retyped, and that is the property to keep: every statement is the same
+statement, in the same order, and the only text that changed is what had to - a name
+becoming a member of the state, and a declaration becoming an assignment:
+
+    const float tapeCurve = blend (slowMachineCurve, fastMachineCurve);
+    state.tapeCurve = blend (slowMachineCurve, fastMachineCurve);
+
+That is what `tools/split_tape_engine.py` does, from a field list it asserts against the
+function itself before it writes a byte. Four of its refusals are the reason this was a
+script and not a long afternoon:
+
+- **The field list has to be EXACTLY the set of function-scope names the loop reads** (plus
+  `nextNoise`, accounted for separately - see below). A name that is read but is not a
+  field fails at link; a field the loop never reads would be filled in and never used.
+- **A name used BEFORE its own declaration line is refused.** In C++ that use is a member of
+  the same name rather than the local, so renaming it would point the code at a different
+  object - and it would still compile.
+- **A name declared AGAIN inside the function is refused** for that same reason: inside the
+  inner scope the name is a different variable and a text rewrite cannot tell the two
+  apart. (`index` is the only such name, and it is not a field.)
+- **Only code is rewritten.** Comments and string literals are masked out first, so a name
+  in prose - and this file is half prose - is left exactly as it is.
+
+One thing moved rather than changed shape. `nextNoise` is a lambda that takes its own PRNG
+state by reference and touches nothing else of the block's, and the loop calls it once per
+sample, so it is a file-local function now: a field holding it as a `std::function` would
+have turned the hiss into an indirect call per sample.
+
+What the move bought is a boundary the COMPILER enforces rather than one a reader has to
+remember. The loop cannot reach a local of the block's setup any more, so that setup is a
+type and the loop is a function that takes it. That is what turns the rest of part 2 from
+"rewrite a 1,669-line capture list" into "move a group of statements out of one function" -
+the recipe `BlockRateCoefficients.h` and `TapeModulation.h` already follow, with the harness
+checking the relationships between the numbers in each group.
+
+Two things in `tests/` had to follow it, and both are the checks doing their job. The AUTO
+GAIN compensation gate and its 450 ms coefficient are read as TEXT out of the signal path,
+and both halves name the state now (`state.autoGainEnabled`,
+`state.compensationCoefficient`, `onePoleCoefficient (450.0f, state.engineSampleRate)`) -
+the extractor accepts the `state.` as optional on purpose, because the check is about the
+gate's SHAPE and a gate that lost one of its three terms is the fault whether or not the
+split is undone. And the block that check reads is found by COUNTING braces: its anchor used
+to be the gate's own indentation, which was eight spaces inside the lambda and is four
+inside a function, so the old `\n    }\n` would have cut the block short.
+
+**What is left of F is part 2, and it is a move now rather than a rewrite.** The ~1,570
+lines of derivations ("read once per block": tape geometry, tempo, delay time, mix and
+voicing, transient/neural, preamp/condition/reverb/vinyl, both equalisers' coefficients,
+MODERN mode, the guard, the transfer curves, the couplings and the glue's operating points)
+are still inside `processTapeEngine()`, still in the order the single body had them - but
+they are a function of the parameter snapshot and the rate, they write into
+`TapeBlockState`, and each group of them can leave the function the way the two stages above
+did, one at a time, with the DSP harness checking what it produces. That, and nothing else
+in this document, is the remaining work.
+
+The moves this section adds are re-runnable the same way as the three before them
 (`tools/split_editor_build.py` and `tools/split_editor_resized.py`, alongside
-`split_tapescene_shaders.py`): each asserts that every anchor matches exactly once, and
-`split_editor_resized.py` refuses to run at all until `ControlGeometry` is declared in
-the editor's header, so the geometry the bands hand on cannot go missing quietly.
+`split_tapescene_shaders.py`, and `split_tape_engine.py` for the state and the loop): each
+asserts that every anchor matches exactly once, and `split_editor_resized.py` refuses to run
+at all until `ControlGeometry` is declared in the editor's header, so the geometry the bands
+hand on cannot go missing quietly.
+
+**The evidence, for the move together with the two stages before it.** All six harnesses
+pass (`dsp`, `transport`, `pitch`, `state`, `layout`, `neural` - the last four under
+`J37_SANITIZE=address,undefined` in CI's debug job as well), the three text checks pass
+(`check_presets` 29 presets / 101 of 109 parameters set, `check_theme_wiring` 109 widgets /
+94 bodies / 2 look-and-feels, `check_translations` 153 entries / 1,014 distinct strings in
+62 source files), and both compile checks pass: `check_headers_juce.sh` 26 headers from
+`Source/DSP/` against real JUCE, and `check_editor_juce.sh` 13 translation units plus the
+13 plugin headers each on its own. CI, on the commit that carries the move: `build-windows`,
+`build-macos`, `build-android`, the DSP regression harness and the micro-benchmarks all
+green, and the two Linux jobs stopped by the RUNNER (exit 143, "the runner has received a
+shutdown signal") rather than by a compile error - the same two jobs are green on the
+revision before, and this commit re-runs them.
