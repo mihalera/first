@@ -448,6 +448,33 @@ private:
         juce::Rectangle<int> meters;
     };
 
+    /** What the knob strip's solve hands the bands that come after it: the grid the
+        live page's knobs were laid out in, the member band's own cell width and top
+        edge, and which page is live - the flags the member band, the visibility pass
+        and the mix bar all read.
+
+        It is a struct because those three used to be one body's LOCALS, so the knob
+        strip's arithmetic was reachable from a place where the strip had not run yet.
+        Passing the solved geometry is what makes that order a thing the compiler
+        checks instead of a thing a comment promises. */
+    struct ControlGeometry
+    {
+        juce::Rectangle<int> grid;
+        int cellWidth = 0;
+        int memberRowY = 0;
+        bool settingsTab = false;
+        bool autotuneTab = false;
+        bool delayTab = false;
+        bool characterTab = false;
+        bool frontEndTab = false;
+        bool shapersTab = false;
+        bool inEqTab = false;
+        bool outEqTab = false;
+        bool machineTab = false;
+        bool mixTab = false;
+        bool compressorTab = false;
+    };
+
     // Sixty-four controls, split across sixteen tab pages of at most one row
     // of seven, in signal-flow order: consecutive slices of one chain, read
     // left to right. The page map lives in tabSpecs in the .cpp, and the three
@@ -489,6 +516,51 @@ private:
     void createDecorativePhysics();
     void applyTheme();
     EditorLayout getEditorLayout() const;
+
+    // -------------------------------------------------------------------------
+    //  The bands resized() places, in the order it calls them.
+    //
+    //  resized() was one 1,561-line body: the header's grid, the deck's seven bands,
+    //  the tab bar, the knob strip's solve, the member band, the visibility pass, the
+    //  meters and the DEBUG overlap sweep, with every local visible to all of them.
+    //  It is one call per band now, and each band is a function handed what it reads -
+    //  the rectangle it owns, or the geometry the strip solved - so a band can be read
+    //  on its own and an edit to one cannot reach another's locals.
+    //
+    //  The order is the order the single body had, and two of those steps are load
+    //  bearing rather than incidental:
+    //
+    //    * placeHeader() runs before placeTabMembers(): the header's grid places the
+    //      LANGUAGE caption right-aligned, and the SETTINGS page's own branch puts it
+    //      back to the left, which only means anything in that order.
+    //    * verifyPanelHasNoOverlaps() runs LAST, on the bounds every band above has
+    //      just written - see its own note.
+    //
+    //  Nothing was retyped on the way out: each band's statements are the same
+    //  statements in the same order, which is what keeps the layout harness's seven
+    //  cut fragments the panel's own arithmetic.
+    // -------------------------------------------------------------------------
+    void placeHeader (juce::Rectangle<int> header);
+    void placeDeck (juce::Rectangle<int> deck);
+    void placeControls (const EditorLayout& layout);
+    void placeTabBar (const juce::Rectangle<int>& controlsPanel);
+
+    /** Lays the live page's knob strip out and returns the geometry the bands below
+        measure in. The one band that hands anything on. */
+    ControlGeometry placeControlStrip (const EditorLayout& layout);
+
+    void updateTabVisibility (const ControlGeometry& geometry);
+    void placeTabMembers (const ControlGeometry& geometry);
+
+    /** A tab member - a combo or a pill that is not a knob - in the member band's own
+        cell arithmetic (the four columns above). It was a lambda inside resized(),
+        which is why it is still called what that lambda was called. */
+    void placeDeckSwitch (const ControlGeometry& geometry, juce::Label& label,
+                          juce::Component& box, int column, int columnsWide,
+                          const juce::String& caption);
+
+    void placeMeters (const EditorLayout& layout);
+    void verifyPanelHasNoOverlaps() const;
 
     // -------------------------------------------------------------------------
     //  The constructor's phases, in the order it calls them.

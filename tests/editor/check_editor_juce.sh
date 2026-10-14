@@ -174,6 +174,38 @@ if [ "${#TUS[@]}" -eq 0 ]; then
     exit 1
 fi
 
+# Every one of those translation units also has to be BUILT by the plugin. The list above
+# is read from the tree; `target_sources` in CMakeLists.txt is written by hand - so the two
+# can disagree, and the way they disagree is silent in exactly the wrong direction: a file
+# the plugin no longer compiles still passes everything here, and the link fails later with
+# the symbols it defined reported as missing. That is not hypothetical, it is what this
+# guard was written for: splitting the editor into its build, its theme, its paint and its
+# tick left all four out of target_sources, this check compiled all four happily, and the
+# plugin's own source list still named only PluginEditor.cpp.
+python3 - "${REPO}" "${TUS[@]}" <<'PY'
+import pathlib
+import re
+import sys
+
+repo = pathlib.Path(sys.argv[1])
+wanted = list(sys.argv[2:])
+
+# The plugin's target is `first`, and its sources are the blocks CMakeLists.txt opens with
+# `target_sources(first PRIVATE` - one, plus a platform one for Metal (.mm).
+cmake = (repo / "CMakeLists.txt").read_text()
+blocks = re.findall(r"target_sources\(\s*first\b([^)]*)\)", cmake)
+listed = [path for block in blocks
+          for path in re.findall(r"Source/[\w/]+\.(?:cpp|mm)", block)]
+
+missing = [path for path in wanted if path not in listed]
+if missing:
+    raise SystemExit("check_editor_juce: these translation units compile here but are not in "
+                     "target_sources in CMakeLists.txt, so the plugin never links them:\n  - "
+                     + "\n  - ".join(missing))
+
+print(f"  ok  {len(wanted)} translation unit(s) are in CMakeLists.txt's target_sources")
+PY
+
 # The include paths, in the order the compiler is given them. The vendored
 # third-party checkouts are the ones CMakeLists.txt declares as header-only.
 INCLUDES=(

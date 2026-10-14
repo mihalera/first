@@ -89,6 +89,17 @@ MIX_SMOOTHER = re.compile(
 SOURCE_HEADERS = [
     "DSP/J37Math.h",
     "DSP/HotPathMath.h",
+    # The first stage of processTapeEngine() to leave that function: the machine's
+    # block-rate coefficients (the cabinet's poles, the SAG pair, the limiter's four
+    # and its ceiling, the anti-phase guard's pole). It names only the two builders
+    # above, so it sits directly under them, and the harness checks the relationships
+    # between those numbers - which are the behaviour, not decoration.
+    "DSP/BlockRateCoefficients.h",
+    # The second stage out of processTapeEngine(): the machine's shaping curves, the
+    # SPEED/platter scale and the two wander rates, as a pure function of seven
+    # numbers. It names `juce::jlimit` and `juce::MathConstants`, which the shim
+    # declares for the builder above it already.
+    "DSP/TapeModulation.h",
     "DSP/SaturationCore.h",
     "DSP/VinylStage.h",
     "DSP/SubharmonicGenerator.h",
@@ -299,20 +310,69 @@ def check_neural_rate_wiring(header: str, impl: str, stage: str) -> list[str]:
 # compiled without JUCE. So its invariants are checked as text, exactly like the
 # neural rate wiring above: each of them is a sentence in the code's own comment,
 # and each of them is a level error on every project if an edit drops it.
-COMPENSATION_GATE = "if (autoGainEnabled && transport.atSpeed() && referenceBlockPower > 0.0f)"
+# The two of these that name something processTapeEngine works out once per block read it
+# through the state the sample loop is handed, because that loop is a function of its own
+# since the TapeBlockState split (see SPLITTING-BIG-FILES.md, step F): the gate is
+# `state.autoGainEnabled && transport.atSpeed() && state.referenceBlockPower > 0.0f`. The
+# `state.` is optional in the pattern on purpose - the check is about the gate's SHAPE, and
+# a gate that lost one of its three terms is the fault whether or not the split is undone.
+COMPENSATION_GATE = re.compile(r"if \((?:state\.)?autoGainEnabled && transport\.atSpeed\(\)"
+                               r" && (?:state\.)?referenceBlockPower > 0\.0f\)")
 COMPENSATION_CLAMP = "juce::jlimit (0.0f, 12.0f, levelRatioDb)"
 COMPENSATION_SMOOTHING = ("smoothedCompensationDb += (targetCompensationDb - smoothedCompensationDb)")
-COMPENSATION_TIME_MS = "onePoleCoefficient (450.0f, engineSampleRate)"
+# ... and the coefficient it rides is the block's own 450 ms pole, read through the state
+# since the split.
+COMPENSATION_RATE = re.compile(r"\* (?:state\.)?compensationCoefficient;")
+COMPENSATION_TIME_MS = re.compile(r"onePoleCoefficient \(450\.0f, (?:state\.)?engineSampleRate\)")
+
+
+def matching_brace(text: str, start: int) -> int:
+    """The index just past the `}` that closes the block opened at or after `start`.
+
+    Counted rather than found as `\n    }\n`, which is what this used to do: that anchor was
+    the gate's own indentation, and the indentation of the block is a fact about how deeply
+    it is nested (it was eight spaces inside a lambda and is four inside a function since the
+    TapeBlockState split). The cut has to be the block itself, or a check about what the
+    block contains starts measuring whatever brace comes next. Comments and literals are
+    skipped so a brace in prose cannot be counted.
+    """
+    depth = 0
+    index = text.index("{", start)
+
+    while index < len(text):
+        c = text[index]
+        if c == "/" and text[index + 1:index + 2] == "/":
+            newline = text.find("\n", index)
+            index = len(text) if newline < 0 else newline
+            continue
+        if c == "/" and text[index + 1:index + 2] == "*":
+            close = text.find("*/", index + 2)
+            index = len(text) if close < 0 else close + 2
+            continue
+        if c == '"':
+            index += 1
+            while index < len(text) and text[index] != '"':
+                index += 2 if text[index] == "\\" else 1
+            index += 1
+            continue
+        if c == "{":
+            depth += 1
+        elif c == "}":
+            depth -= 1
+            if depth == 0:
+                return index + 1
+        index += 1
+
+    raise SystemExit("extract.py: the compensation's gate is never closed")
 
 
 def compensation_block(impl: str) -> str | None:
     """The `if` that folds the correction in, cut through its closing brace."""
-    if COMPENSATION_GATE not in impl:
+    gate = COMPENSATION_GATE.search(impl)
+    if gate is None:
         return None
 
-    start = impl.index(COMPENSATION_GATE)
-    end = impl.index("\n        }\n", start) + len("\n        }\n")
-    return impl[start:end]
+    return impl[gate.start():matching_brace(impl, gate.start())]
 
 
 def check_auto_gain_compensation(impl: str) -> list[str]:
@@ -323,7 +383,7 @@ def check_auto_gain_compensation(impl: str) -> list[str]:
     #    gating the output the measurement collapses, the compensator ramps to
     #    its +12 dB limit while the platter sits still, and START then comes back
     #    loud before the correction relaxes.
-    if COMPENSATION_GATE not in impl:
+    if COMPENSATION_GATE.search(impl) is None:
         problems.append("the compensation is not gated on AUTO GAIN being on, the platter being at "
                         "speed and a live reference level, so a stopped machine is corrected as if "
                         "it were silent output")
@@ -354,11 +414,11 @@ def check_auto_gain_compensation(impl: str) -> list[str]:
     # 4. Programme level, not sample level: a correction that moved at the rate of
     #    the signal would pump it. The smoother is 450 ms, and it is a one-pole
     #    towards the target rather than a step.
-    if COMPENSATION_SMOOTHING not in block or "* compensationCoefficient;" not in block:
+    if COMPENSATION_SMOOTHING not in block or COMPENSATION_RATE.search(block) is None:
         problems.append("the correction is not smoothed towards its target, so it steps the output "
                         "level rather than riding the programme")
 
-    if COMPENSATION_TIME_MS not in impl:
+    if COMPENSATION_TIME_MS.search(impl) is None:
         problems.append("the correction's time constant is not built from the engine's rate, so the "
                         "smoothing is not the same duration at every sample rate")
 

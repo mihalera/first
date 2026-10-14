@@ -56,7 +56,35 @@ def processor_impl() -> str:
     return "\n".join(chunks)
 # The panel is read for ONE thing - that it asks whether START is armed - because
 # the arm is invisible on the machine and a flag nobody reads is not a feature.
-EDITOR = REPO / "Source" / "PluginEditor.cpp"
+#
+# The panel's own source is five files since the constructor's build, the theme, the
+# paint and the tick moved out beside it, and the readout that asks is in the tick
+# (Source/GUI/EditorTimer.cpp). This check failed the moment that move landed - the
+# message named PluginEditor.cpp and said what it could not find there, which is the
+# failure mode worth keeping. So the five are read AS ONE TEXT, each under a marker
+# naming it, the same way the processor's two are above: a name that turns up in two
+# of them stops the harness rather than matching whichever it read first.
+EDITOR_SOURCES = [
+    REPO / "Source" / "PluginEditor.cpp",
+    REPO / "Source" / "GUI" / "EditorSetup.cpp",
+    REPO / "Source" / "GUI" / "EditorTheme.cpp",
+    REPO / "Source" / "GUI" / "EditorPaint.cpp",
+    REPO / "Source" / "GUI" / "EditorTimer.cpp",
+]
+EDITOR_NAMES = " + ".join(path.name for path in EDITOR_SOURCES)
+
+
+def editor_source() -> str:
+    """The editor's own source as one text, each file under a marker naming it."""
+    chunks = []
+
+    for path in EDITOR_SOURCES:
+        if not path.exists():
+            raise SystemExit(f"extract.py: {path.relative_to(REPO)} is missing; the panel's "
+                             f"half of the transport promise is read out of it.")
+        chunks.append(f"// ---- {path.relative_to(REPO).as_posix()} ----\n" + path.read_text())
+
+    return "\n".join(chunks)
 
 # The stages that have moved into Source/DSP/, in the order they have to be included
 # in. Both are driven by the harness below: the rig says where the transport goes, the
@@ -123,7 +151,11 @@ GATE_LEGS = [
     ("wet", r"const float wetMix = ([^;]*);"),
     ("dry", r"const float dryMix = ([^;]*);"),
 ]
-GATE_DEFINITION = re.compile(r"const float (\w+) = std::pow \(platterSpeed, (\w+)\)")
+# The exponent is one of the values processTapeEngine works out once per block, so it is
+# read through the state the sample loop is handed since the TapeBlockState split
+# (`state.platterGateExponent`). The qualification is optional in the pattern: what this
+# reads back is the SHAPE, and which object the number hangs off is not the shape.
+GATE_DEFINITION = re.compile(r"const float (\w+) = std::pow \(platterSpeed, (?:state\.)?(\w+)\)")
 
 
 def check_engine_gate() -> list[str]:
@@ -172,7 +204,13 @@ def check_engine_gate() -> list[str]:
         if exponent_name in exponents:
             continue
 
-        exponent = re.search(rf"constexpr float {exponent_name} = ([0-9.]+)f;", impl)
+        # The exponent is a named value, and it is read where it is GIVEN its value: a
+        # `constexpr` in the engine before the split, a field of the block's state now
+        # (`state.platterGateExponent = 0.62f;`), whose name and type are on the struct.
+        # Either way it is one named number with one value, which is what makes the shape
+        # auditable - a bare `std::pow (platterSpeed, 0.62f)` would not be.
+        exponent = re.search(rf"(?:constexpr float {exponent_name}|state\.{exponent_name})"
+                             rf" = ([0-9.]+)f;", impl)
 
         if exponent is None:
             problems.append(f"`{exponent_name}` shapes the output gate but is not a named"
@@ -235,7 +273,7 @@ def check_engine_arm() -> list[str]:
     """
     impl = processor_impl()
     rig = RIG_HEADER.read_text()
-    editor = EDITOR.read_text()
+    editor = editor_source()
     problems: list[str] = []
 
     # 1. The host's play state has to be READ, and it has to be read as an optional
@@ -286,7 +324,7 @@ def check_engine_arm() -> list[str]:
     # 4. And the panel has to be able to say so. A flag nothing reads is the same
     #    fault as no flag at all, and it is one the build cannot see either.
     if "isTransportArmedForHost" not in editor:
-        problems.append(f"{EDITOR.name} never asks whether the key is armed, so the deck "
+        problems.append(f"{EDITOR_NAMES} never asks whether the key is armed, so the deck "
                         f"readout calls a waiting machine a stopped one")
 
     return problems

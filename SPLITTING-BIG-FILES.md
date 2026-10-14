@@ -31,10 +31,10 @@ Measured, not eyeballed (`wc -l`, and a comment/code count that ignores blank li
 | File | Was | Now | What left it |
 | --- | ---: | ---: | --- |
 | `Source/PluginProcessor.h` | 6,177 | 1,787 | thirteen stages plus the engine's own plumbing - 23 headers |
-| `Source/PluginEditor.cpp` | 9,441 | 6,078 | the paint kit, the page table, the knob table, the look-and-feels, the meters, the interface-sound engine |
-| `Source/PluginEditor.h` | 1,256 | 1,231 | the two counts and the theme choice, to the headers that use them |
+| `Source/PluginEditor.cpp` | 9,441 | 2,615 | the paint kit, the page table, the knob table, the look-and-feels, the meters, the interface-sound engine, the build/theme/paint/tick, and `resized()`'s bands |
+| `Source/PluginEditor.h` | 1,256 | 1,303 | the two counts and the theme choice, to the headers that use them - and back come the ten band declarations and the geometry they hand on |
 | `Source/PluginProcessor.cpp` | 7,220 | 1,325 | the parameter table, the preset/state code, and the whole signal path (section 7) |
-| `Source/GUI/TapeScene.cpp` | 2,860 | 2,860 | nothing yet: the shader sources are step 5 |
+| `Source/GUI/TapeScene.cpp` | 2,860 | 2,494 | the 335 lines of GLSL string literals, to `Source/GUI/TapeSceneShaders.h` (405) |
 
 Four files came out of `PluginProcessor.cpp` and none of them is a fragment of it: the
 processor is now its lifecycle in one file, `Source/ParameterTable.cpp` (1,357), the
@@ -88,10 +88,13 @@ Four constraints, in the order they bite:
 4. **The audio path is not covered.** `processTapeEngine()` is not compiled by any
    harness; the DSP harness renders the *stages* it cuts and builds its detector
    coefficients "the way `processTapeEngine` builds them", i.e. a replica.
-   `resized()` is better off - the layout harness cuts four spans out of it and
-   compiles them - but the rest of the function is checked by looking at the window.
-   Any split of those two functions is therefore a change with no measurement behind
-   it, and should be treated that way.
+   `resized()` was better off - the layout harness cuts ten spans out of the editor's
+   own text and compiles them, so its arithmetic is measured at four window sizes - but
+   the rest of the function was checked by looking at the window. That asymmetry is
+   what step G's split was built on (section 7): the spans it cuts are the reason the
+   bands had to move as TEXT rather than be retyped, and the ten byte-identical `.inc`
+   files are what says they did. `processTapeEngine()` has no such fragment to stand
+   on, which is why it is still whole.
 
 ---
 
@@ -263,12 +266,48 @@ Each step is independently revertable and ends with the same checks green.
 4. ~~**D - the DSP structs**~~ - done: thirteen stages and the engine's own plumbing
    are headers under `Source/DSP/`, and nothing is left in `PluginProcessor.h` for a
    harness to cut. Verify: DSP harness and the JUCE header check after each.
-5. **E - the shaders**, if `TapeScene.cpp` is being touched anyway. Not done.
+5. ~~**E - the shaders**~~ - done, and it is the cheapest move in the document: the 335
+   lines of GLSL string literals left `Source/GUI/TapeScene.cpp` for
+   `Source/GUI/TapeSceneShaders.h` (`tools/split_tapescene_shaders.py`). They are data -
+   nothing cuts them, nothing includes them but the scene, and no harness has to move.
+   Verify: the editor JUCE check, which compiles `TapeScene.cpp` as a whole translation
+   unit, which is the one check that sees the GLSL at all.
 6. **F and G - the long functions**, last, one stage per commit, and only with the
-   harnesses extended to compile the stage that moves. F is HALF done and the easy
-   half: `processTapeEngine()` is in a file of its own (step 2), still one function,
-   which is the part that needed no new measurement - splitting it into stages is
-   what is left. G (`resized()`) not started.
+   harnesses extended to compile the stage that moves. **G is done** (section 7):
+   `resized()` is 22 lines and the bands it was made of are member functions. **F is
+   HALF done and the easy half**: `processTapeEngine()` is in a file of its own (step 2),
+   still one 3,367-line function, which is the part that needed no new measurement -
+   splitting it into named stages is what is left, and it is the one change in this
+   document that no harness compiles.
+
+   **F's first two stages are in** (section 7): the machine's block-rate coefficients and
+   its wander (the four shaping curves, the SPEED/platter scale and the two LFO rates)
+   left the function for `Source/DSP/BlockRateCoefficients.h` and
+   `Source/DSP/TapeModulation.h`, and both are checked by the DSP harness rather than
+   only compiled by it. What is left is the three parts below.
+
+   **F's map, measured off the function rather than guessed** - so the next pass starts
+   from the numbers instead of from reading 3,307 lines. The map was taken before either
+   stage left, so its ranges run high. The function has 1,050 lines at its own indent
+   level, and it is four parts, not seven:
+
+   | Lines | What it is | Why it is a stage |
+   | ---: | --- | --- |
+   | 551-623 | the per-block parameter reads: ~40 `const auto` scalars from the parameter tree, each with the default a missing parameter means | one block, one snapshot: nothing below changes them, and every stage reads them |
+   | 624-2,200 | the derivations "read once per block": tape geometry, tempo, delay time, mix and voicing, transient/neural, preamp/condition/reverb/vinyl, both equalisers' coefficients, MODERN mode, the guard, the transfer curves, the couplings and the glue's operating points | ~1,570 lines of coefficients, all consumed by the sample loop and by nothing else |
+   | 2,203-3,872 | `processOneSample`, a lambda 1,669 lines long | the machine itself: one sample in, one sample out, and the only code that touches the audio |
+   | 3,874-3,916 | the block loop, then the measurement and telemetry tail | one loop over the lambda, and one publish |
+
+   Two things about that shape matter more than the line counts. First, the file already
+   has the recipe for the parameters: `BlockContext { numSamples, activeInputChannels,
+   engineSampleRate }` is built at the top and handed to `processBypassedBlock`,
+   `processPostMachineStages` and `publishBlockTelemetry` - so parts 1, 2 and 4 are a
+   struct with more members, not a new invention, and `processPostMachineStages` is a
+   stage that has already been cut out of this very function. Second, the lambda is the
+   hard half and the reason F is last: it captures `[&]`, so its 1,669 lines read the
+   ~1,600 lines of block constants above it by CAPTURE rather than by argument. Cutting
+   the derivations out first is what turns that capture list into a type, and until that
+   exists there is nothing for a harness to compile the lambda against.
 
 After every step: `bash tests/dsp/run.sh`, `bash tests/layout/run.sh`,
 `bash tests/state/run.sh`, `python3 tests/presets/check_presets.py`, and the three
@@ -624,12 +663,172 @@ parameter table, the presets and the state format, `tools/split_processor_path.p
 matches exactly once - so the way to check the claim is to run them and diff. They were
 run against the parent revision a second time and reproduce the working tree.
 
-**What is left.** The processor is done as a MOVE: `PluginProcessor.cpp` is 1,325 lines
-of lifecycle, the table and the presets and the state are files of their own, and the
-signal path is `Source/ProcessorSignalPath.cpp`. What is left there is not a move -
-`processTapeEngine()` is 3,366 lines inside that file, and taking IT apart into named
-stages is step F, which needs a harness pointed at the stages first. `PluginEditor.cpp`
-is 6,078 lines and its remaining bulk is its constructor and its phases - 23 of them,
-already guarded by the layout harness - plus `resized()` (step G), which is also a
-split in place rather than a move. `Source/GUI/TapeScene.cpp` is untouched and its 335
-lines of GLSL are the one piece of pure data left in a big file (step E).
+**The editor's build, theme, paint and tick left next, and `resized()` was then taken
+apart in place.** `PluginEditor.cpp` went from 6,078 lines to 2,615 in two more moves,
+each a pure move of bytes with every replacement asserted to apply exactly once
+(`tools/split_editor_build.py`, `tools/split_tapescene_shaders.py`):
+
+| New file | Lines | What it holds |
+| --- | ---: | --- |
+| `Source/GUI/EditorSetup.cpp` | 1,913 | the constructor's 23 phases: the panel's whole build, one function per part of it |
+| `Source/GUI/EditorTimer.cpp` | 831 | `timerCallback()` - the telemetry it publishes and the surfaces it invalidates |
+| `Source/GUI/EditorTheme.cpp` | 535 | `applyTheme()`, the palettes' application and the panel's label styling |
+| `Source/GUI/EditorPaint.cpp` | 498 | `paint()` and the furniture it draws |
+| `Source/GUI/TapeSceneShaders.h` | 405 | the GLSL the tape scene compiles, as data - step E, moved out of `TapeScene.cpp` |
+
+Two harnesses had to be re-pointed with these moves, and both were made to say which
+file they read rather than to go quiet:
+
+- **`tests/theme/check_theme_wiring.py`** started from `applyTheme()` in
+  `PluginEditor.cpp` and walked its widgets from there. It now reads the editor's own
+  source as a LIST of files - `PluginEditor.cpp` and the four that came out of it, each
+  under a marker naming it - which is the same shape the four extractors under `tests/`
+  had already been given for exactly this reason. The widget count did not move (109
+  widgets, 2 look-and-feels, 109 of 109 following the theme), which is the point: a
+  re-point that changed what it measured would show up here as a number that moved.
+- **`tests/layout/extract.py`** is now the one that reads the editor across files: the
+  constructor's phases are DECLARED in `PluginEditor.h` and DEFINED in
+  `Source/GUI/EditorSetup.cpp`, so the guard - every phase declared, defined exactly
+  once, called exactly once, in the declared order - reads all five files as one text
+  and fails if a phase is defined twice rather than measuring whichever copy it found
+  first. What it still cuts by span (the strip's arithmetic) is still in
+  `PluginEditor.cpp`, which is why the two halves had to be stated separately.
+- **`tests/transport/extract.py` failed, loudly, and was re-pointed.** It reads the
+  panel for one thing - that it asks whether START is armed
+  (`isTransportArmedForHost`) - and that read is in the tick now, so
+  `Source/GUI/EditorTimer.cpp`. The check did not go quiet when the text left
+  `PluginEditor.cpp`: it stops the harness with the sentence that says a waiting machine
+  would be called a stopped one. It reads the editor's five files as one text now, names
+  all five in the failure, and was verified by running a copy with `EditorTimer.cpp`
+  removed from its list - it fails on the same sentence, naming the four files it did
+  read.
+
+**The split found a real defect, and it was one the checks could not see.** The four new
+`.cpp` files were left out of `target_sources(first ...)` in `CMakeLists.txt`: the plugin
+target still named `PluginEditor.cpp` alone, which defines none of the build, the theme,
+the paint or the tick any more - so the plugin would have failed to LINK, on the symbols
+that file no longer defines. Nothing in `tests/` could see it, because
+`check_editor_juce.sh` finds its translation units by RULE (every `.cpp` under `Source/`
+that includes the processor's, the editor's or the tape scene's header), and that rule
+compiled all four happily. The list is written by hand and the check's is read from the
+tree, so the two can disagree - silently, in the direction that matters. The fix is the
+four names; the guard is that the check now READS `target_sources` and fails, before it
+compiles anything, if a translation unit it is about to compile is not in it. Verified by
+putting the defect back (removing `Source/GUI/EditorTheme.cpp` from the list): the check
+stops with `these translation units compile here but are not in target_sources in
+CMakeLists.txt, so the plugin never links them: Source/GUI/EditorTheme.cpp`, and nothing
+else is compiled.
+
+**`resized()` went from 1,561 lines to 22, and the bands it was made of are functions.**
+It is one call per band now - `placeHeader`, `placeDeck`, `placeControls`, `placeTabBar`,
+`placeControlStrip`, `updateTabVisibility`, `placeTabMembers`, `placeMeters` - in the
+order the single body had, with `verifyPanelHasNoOverlaps()` (the DEBUG sweep that used
+to be its tail) still last, on the bounds every band above has just written. Three
+things about it are worth keeping:
+
+- **The layout harness's ten fragments are byte-identical before and after.** Six of them
+  are cut out of the text this moved, so the way to tell a pure move from a retyped one
+  is to run the extractor on both revisions and diff: `band.inc`, `band_height.inc`,
+  `combo_text.inc`, `constants.inc`, `editor_layout.inc`, `grid.inc`, `knob_count.inc`,
+  `member_row.inc`, `placement.inc`, `solver.inc` - all ten identical, and the harness's
+  own numbers come out unchanged (`COMP knobs 6 cols 3 rows 2 tile 329x322 | disc 151.9
+  (was 81.7) +86%`, `LISTS list inset 9 px (field 30, panel 1180) | 2 call site(s)`, 0
+  failures). That is the check this step needed: the fragments are the panel's own
+  arithmetic, and a split that retyped them would keep compiling while measuring a copy.
+- **One thing changed shape rather than moving, and it is the interesting one.**
+  `placeDeckSwitch` - the member band's cell arithmetic (label band 17 px, a 30 px
+  control band under it) - was a LAMBDA inside `resized()`, so if it had simply moved it
+  would have taken the whole function with it: every caller had to be in that one body.
+  It is a member function now, and what it measures in (the strip's grid, its cell
+  width, the member band's top edge) plus the page flags travel to the three bands after
+  it as a `ControlGeometry` - the same idiom `EditorLayout` already used. The point is
+  not tidiness: the flags and the cell width used to be locals of the same body the
+  solve ran in, so nothing stopped a reader from using them above the solve.
+- **The comments travelled with the code they explain.** Twenty-odd of them name
+  `resized()` or `placeDeckSwitch` from other files (`PluginEditor.h`, `PanelTabs.h`,
+  `EditorSetup.cpp`, `EditorPaint.cpp`, `EditorTimer.cpp`), and every one of those is
+  still true after the split: the phases are still phases, `resized()` still runs from
+  `setSize()` before some widgets had a parent, and `placeDeckSwitch` is still what the
+  member band's SETTINGS branch fills. A split that renamed its way out of the prose
+  would have been a bigger edit than the one that moved the code.
+
+**The evidence, for the two moves together.** `tests/layout` (0 failures, and the ten
+fragments byte-identical), `tests/theme` (109 widgets, 94 bodies, 2 look-and-feels),
+`tests/presets` (29 presets, 101 of 109 parameters set, 12 excluded), `tests/dsp`,
+`tests/state` (39 checks), `tests/transport` (after the re-point), `tests/pitch`,
+`tests/neural` and `tests/translations` (1012 strings in 60 source files) - all passed.
+The two compile checks: `check_editor_juce.sh` 13 translation units, 1 of them again with
+the probe flag on, and 13 of the plugin's own headers each compiled on its own - up from
+8 and 11, because the four new files are translation units and their headers are on the
+glob; and `check_headers_juce.sh` 24 headers from `Source/DSP/`. The editor check is also
+where the CMake guard above lives, so the 13 it compiles are now the 13 the plugin builds.
+
+**Step F's first two stages are in, and they are what turns a comment into a check.**
+`processTapeEngine()` went from 3,367 lines to 3,307 in two moves, each of them a stage the
+DSP harness now CALLS:
+
+| New header | Lines | What left the function |
+| --- | ---: | --- |
+| `Source/DSP/BlockRateCoefficients.h` | 125 | the cabinet's two poles, the SAG envelope's pair, the safety limiter's four and its ceiling, and the anti-phase guard's pole - every number the function's own comments say was rebuilt per sample rather than per block |
+| `Source/DSP/TapeModulation.h` | 114 | the drive, bias, wow and flutter shaping curves, the SPEED control's scale on the platter, and the two LFO rates - the tempo lock, the anchor's clamp and the speed mapping, which are the most-checkable prose in the engine |
+
+Both are JUCE-free and neither needed a new CMake entry (they are headers), a harness
+list beyond `SOURCE_HEADERS`, or a change to anything the plugin links. Four things make
+them more than moves:
+
+- **The function's own comments said why it had to be a stage.** Two of them say the
+  same thing about different coefficients - rebuilding the SAG pair inside the loop was
+  "two `std::exp` per sample per channel" and the limiter's four were another four - so
+  the stage is a block-rate thing, and the header makes that a property of the code
+  rather than a fact about where lines happen to sit in a loop's preamble.
+- **The relationships between those numbers ARE the behaviour, so the harness checks
+  them.** Eight checks in `tests/dsp/subfund_test.cpp` ("9. The block-rate coefficients
+  the machine's dynamics stages run on"): a coefficient is `1 - exp(-1/(tau * rate))`, so
+  the SAG envelope's release must be SMALLER than its attack (slower - that asymmetry is
+  what makes sag read as *give* rather than as a pump), the limiter must catch faster
+  than it recovers, the anti-phase guard must be the slowest pole in the machine (a
+  guard that reacted as fast as the limiter would rotate on a hard-panned transient,
+  which is the fault it exists to prevent), the cabinet's resonance pole must be slower
+  than its roll-off, halving the rate must move the presence pole without halving it
+  (the difference between a CORNER and a per-sample constant - the unit error this
+  project has already paid for twice), and the limiter's ceiling must sit exactly on
+  `softClip`'s knee, which is the one relationship that ties this stage to the stage
+  after it and would catch either number moving without the other.
+- **The wander's claims are checked one sentence at a time.** Eight more checks in the
+  same harness ("10. The machine's shaping curves and its two wander rates"): the four
+  curves bend BELOW their control (a curve, not a taper) and are monotonic in it; at
+  speed the platter's scale is exactly the SPEED control's own number (0.76 / 1.00 /
+  1.34), which is what makes a running machine unchanged by the mechanism that models it
+  winding down; a platter off its stop lowers that scale; **twice the tempo is twice the
+  wander** and half the tempo is half of it (the tempo lock - the claim that is easiest
+  to break and hardest to hear, because a wow rate that stopped following the tempo
+  sounds merely wrong on faster tracks); the flutter rate does NOT follow the tempo,
+  because the capstan is mechanical; and the tempo anchor's clamp holds at both ends,
+  where a host reporting 1 BPM or 5,000 still leaves the machine wandering instead of
+  stopped or buzzing.
+- **Both are covered by the compile checks by EXISTING, not by being listed.**
+  `check_headers_juce.sh` reads the DIRECTORY, so it went from 24 headers to 26 and both
+  are compiled against real JUCE with their surface USED (the probe builds a coefficient
+  set and a modulation set and sums them) - which matters here because the harness's
+  shim provides the `juce::` scalar helpers and the shim cannot prove that real JUCE
+  does. `tests/dsp/extract.py` names both in `SOURCE_HEADERS`, directly under
+  `HotPathMath.h`, which is what puts the shipping stages in the harness's include and
+  lets the checks above be about the code the plugin runs.
+
+**What is left is one thing.** The processor is done as a MOVE - `PluginProcessor.cpp`
+is 1,325 lines of lifecycle, the table and the presets and the state are files of their
+own, and the signal path is `Source/ProcessorSignalPath.cpp` (3,858). What is left there
+is not a move: `processTapeEngine()` is still 3,307 lines (1,336 of them code) inside
+that file, and taking the REST of it apart into named stages is the part of step F that
+remains. It is the last thing in this document that no harness compiles - and the first
+stage above is the demonstration of what has to happen before a piece of it can move:
+the block-rate coefficients could go because they are a function of the rate and one
+control, so a harness can call them; ~40 parameter reads and 1,570 lines of coefficients
+captured by a 1,669-line lambda need the struct that turns those captures into arguments
+first, which is the order the map in section 6 sets out.
+
+The two moves this section adds are re-runnable the same way as the three before them
+(`tools/split_editor_build.py` and `tools/split_editor_resized.py`, alongside
+`split_tapescene_shaders.py`): each asserts that every anchor matches exactly once, and
+`split_editor_resized.py` refuses to run at all until `ControlGeometry` is declared in
+the editor's header, so the geometry the bands hand on cannot go missing quietly.

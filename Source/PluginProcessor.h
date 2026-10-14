@@ -316,6 +316,123 @@ public:
         int channels = 0;
         float sampleRate = 0.0f;
     };
+
+    /** One block's worth of the tape machine: what processTapeEngine() works out before a
+        sample is touched, and what the per-sample loop then reads and carries.
+
+        This is the boundary that was a capture list. The loop was a 1,669-line lambda
+        inside processTapeEngine() that captured 68 of that function's own locals by
+        reference, so nothing - not a reader, not the compiler - could tell the block's
+        setup from one sample's work; now the setup fills this in and the loop takes it as
+        an argument, and `processOneSample` can be read on its own.
+
+        Three things about it are deliberate:
+
+          * **A field cannot be `const`.** The locals it replaces were mostly declared
+            `const` (a block's coefficients do not change while it runs). What those
+            promises are now is a rule of the split: the setup writes every field, once,
+            before the loop starts, and the loop reads them - except the fifteen
+            accumulators at the end of the struct, which are what the loop carries from
+            sample to sample and are the only fields it writes.
+          * **The fields are grouped by what they are**, not by the order the old
+            declarations happened to be in: the block's frame, the controls the hot path
+            reads, the machine's curves and levels, the two equalisers' mid-band
+            coefficients, the glue pair's operating points, the meters' coefficients, and
+            then the loop's own state.
+          * **It holds values, not references**, so a block's state is one object with one
+            lifetime: processTapeEngine()'s stack frame. Nothing here can outlive the block
+            it describes, which is what makes passing it by reference into the machine
+            safe. */
+    struct TapeBlockState
+    {
+        // The block's own frame.
+        float engineSampleRate = 1.0f;
+        int activeChannels = 0;
+        std::array<float*, 2> channelData {};
+
+        // The controls the hot path reads.
+        bool antiPhaseGuardOn = false;
+        bool autoGainEnabled = false;
+        float autoTuneStrength = 0.0f;
+        float compressorAttack = 0.0f;
+        float compressorMakeup = 0.0f;
+        float compressorMixAmount = 0.0f;
+        float compressorRatio = 0.0f;
+        float compressorRelease = 0.0f;
+        float compressorThreshold = 0.0f;
+        bool offsetRightChannel = false;
+        float polaritySign = 1.0f;
+        int trackBleedDelaySamples = 0;
+        float trackCrosstalk = 0.0f;
+        float trackWidthScale = 1.0f;
+
+        // The machine's curves, its poles and the levels it works between.
+        float dcBlockR = 0.0f;
+        float driveCurve = 0.0f;
+        float finalOutputGain = 1.0f;
+        float flutterDepth = 0.0f;
+        float flutterFreq = 0.0f;
+        float headGapModulationMask = 0.0f;
+        float hissBandLimit = 0.0f;
+        float loadInducedSpeedError = 0.0f;
+        float platterGateExponent = 0.0f;
+        float platterPitchExponent = 0.0f;
+        float speedBias = 0.0f;
+        float tapeCurve = 0.0f;
+        float tapeHiss = 0.0f;
+        bool tapeTypeSwitching = false;
+        float transportActivityGate = 0.0f;
+        float twoPi = 0.0f;
+        float wearWowCoupling = 0.0f;
+        float wowDepth = 0.0f;
+        float wowFreq = 0.0f;
+
+        // The two equalisers' mid-band coefficients.
+        float inputEqMidCoefficient = 0.0f;
+        float outputEqMidCoefficient = 0.0f;
+
+        // The glue pair: their operating points, their coefficients and their makeup.
+        float compensationCoefficient = 0.0f;
+        GlueCompressor::Coefficients inputCompressorCoefficients {};
+        float inputCompressorRatio = 0.0f;
+        float inputKneeDb = 0.0f;
+        float inputMakeupFraction = 0.0f;
+        float inputReductionLimitDb = 0.0f;
+        float inputThresholdDb = 0.0f;
+        GlueCompressor::Coefficients outputCompressorCoefficients {};
+        float outputCompressorRatio = 0.0f;
+        float outputKneeDb = 0.0f;
+        float outputMakeupFraction = 0.0f;
+        float outputReductionLimitDb = 0.0f;
+        float outputThresholdDb = 0.0f;
+
+        // The meters' own coefficients.
+        float inputLoudnessCoefficient = 0.0f;
+        float outputLoudnessCoefficient = 0.0f;
+        float vuBallisticCoefficient = 0.0f;
+
+        // What the loop carries from sample to sample, and what the telemetry tail reads
+        // back after it: the only fields the machine writes.
+        bool clippingThisBlock = false;
+        float currentInputLufs = -70.0f;
+        float currentLufs = -70.0f;
+        float driftAccumulator = 0.0f;
+        std::array<float, 2> inputChainHistory {};
+        bool inputClippingThisBlock = false;
+        float inputEnvelopeActivity = 0.0f;
+        float inputPeak = 0.0f;
+        float inputPeakReductionDb = 0.0f;
+        double inputSquares = 0.0;
+        float outputPeak = 0.0f;
+        double outputSquares = 0.0;
+        float peakReductionDb = 0.0f;
+        float referenceBlockPower = 0.0f;
+    };
+
+    /** The machine: one sample of the block, with everything the block was set up with.
+        It was the 1,669-line lambda inside processTapeEngine() - see TapeBlockState. */
+    void processOneSample (TapeBlockState& state, int sample) noexcept;
+
     bool processBypassedBlock (juce::dsp::AudioBlock<float>&, const BlockContext&);
     void processPostMachineStages (juce::dsp::AudioBlock<float>&, const BlockContext&);
     void processAutoTuneSample (float* stereoSamples, int channels, float rate) noexcept;

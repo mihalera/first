@@ -263,6 +263,28 @@ TU="${BUILD}/header_check.cpp"
     x = compressor.process (x, 48000.0f, -12.0f, 4.0f, 10.0f, 100.0f, 6.0f, 3.0f);
     compressor.reset();
 
+    // The machine's block-rate coefficients - the first stage taken out of
+    // processTapeEngine(), and one no harness renders as audio: what it produces is
+    // time constants, so this probe and tests/dsp/subfund_test.cpp's relationship
+    // checks are its automated look. It asks real JUCE for nothing but the scalar
+    // helpers HotPathMath.h already needed, which is why it is a header of its own in
+    // a directory whose convention is that a stage never pulls JUCE in.
+    const auto blockRate = j37rate::makeBlockRateCoefficients (48000.0f, 0.5f);
+    x += blockRate.cabinetLow + blockRate.cabinetPeak + blockRate.presence
+       + blockRate.sagAttack + blockRate.sagRelease
+       + blockRate.limiterDetectorAttack + blockRate.limiterDetectorRelease
+       + blockRate.limiterCatch + blockRate.limiterRecovery
+       + blockRate.limiterCeiling + blockRate.antiPhase;
+
+    // The machine's rate and its shaping curves, which is the second stage out of
+    // processTapeEngine() and the one with the most prose per line in the engine: it
+    // names juce::jlimit and juce::MathConstants, so the check that matters here is
+    // that REAL juce provides the two helpers the harness's shim has been answering.
+    const auto modulation = j37mod::makeTapeModulation (0.5f, 0.5f, 0.5f, 0.5f, 1, 1.0f, 120.0);
+    x += modulation.driveCurve + modulation.biasCurve + modulation.wowCurve
+       + modulation.flutterCurve + modulation.speedScale
+       + modulation.wowFreq + modulation.flutterFreq;
+
     return x + j37math::exp (1.0f) + j37math::log10 (2.0f) + j37math::sqrt (3.0f);
 }
 

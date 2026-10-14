@@ -910,6 +910,22 @@ FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayo
 
 
 
+//==============================================================================
+//  resized() and the bands it places.
+//
+//  resized() was one 1,561-line body: the header's grid, the deck's seven bands, the
+//  tab bar, the knob strip's solve, the member band, the visibility pass and the
+//  meters, all sharing one scope. It is one call per band now, and each band is a
+//  function handed what it reads - the rectangle it owns, or the geometry the strip
+//  solved. The order of the calls is the order of the old body and is not arbitrary;
+//  see the declaration block in PluginEditor.h.
+//
+//  Every band below is the old body's text, moved - not retyped. The bands that the
+//  layout harness cuts fragments out of (the grid, the band, the knob count, the
+//  solver, the member row and the placement) are the reason it is a move: those
+//  fragments are compiled by tests/layout, so a retyped statement would quietly stop
+//  being the panel's own arithmetic.
+//==============================================================================
 void FirstAudioProcessorEditor::resized()
 {
     // The static texture layers (grain + wear) are sized to the window, so a
@@ -920,12 +936,33 @@ void FirstAudioProcessorEditor::resized()
 
     const auto layout = getEditorLayout();
 
+    placeHeader (layout.header);
+    placeDeck (layout.deck);
+    placeControls (layout);
+    placeTabBar (layout.controls);
+
+    const auto geometry = placeControlStrip (layout);
+    updateTabVisibility (geometry);
+    placeTabMembers (geometry);
+    placeMeters (layout);
+
+    verifyPanelHasNoOverlaps();
+}
+
+//==============================================================================
+//  The header: the brand strip, the title, the subtitle, and the one grid the five
+//  engine switches, THEME, the language pair and the machine-state readout all sit
+//  in - placed by a cursor that consumes each item's own width, which is what keeps
+//  a row from overlapping itself however the panel is resized.
+//==============================================================================
+void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
+{
     // Header captions: the small brand strip sits ABOVE the big title (they used to
     // share the same band and printed over each other), the subtitle starts right of
     // the title box, and all three stay clear of the theme button / status badge.
-    brandLabel.setBounds (layout.header.getX() + 26, layout.header.getY() + 8, 120, 12);
-    titleLabel.setBounds (layout.header.getX() + 25, layout.header.getY() + 24, 96, 46);
-    subtitleLabel.setBounds (layout.header.getX() + 126, layout.header.getY() + 46, 220, 18);
+    brandLabel.setBounds (header.getX() + 26, header.getY() + 8, 120, 12);
+    titleLabel.setBounds (header.getX() + 25, header.getY() + 24, 96, 46);
+    subtitleLabel.setBounds (header.getX() + 126, header.getY() + 46, 220, 18);
     // The engine switches live in the header's right half, two per row - the
     // request was to move BYPASS / DELTA / POLARITY / AUTO GAIN up here, where
     // the theme button already sat. THEME and the status readout keep the
@@ -960,7 +997,7 @@ void FirstAudioProcessorEditor::resized()
     //  and starts at header.right - 314 = x + 438 on a 780 panel, clearing the
     //  title block (ends x + 346) by 92 px at the tightest size and more above it.
     // ------------------------------------------------------------------------------
-    const auto headerRight = layout.header.getRight();
+    const auto headerRight = header.getRight();
     // The grid's own geometry - the column count, the cell width and the gap -
     // is declared ON THE CLASS (see PluginEditor.h), because paint() draws the
     // status pill on the same arithmetic and a second copy of it is exactly how
@@ -977,9 +1014,9 @@ void FirstAudioProcessorEditor::resized()
     // they are already sharing that height three ways; the WIDTH was the one
     // dimension with slack in it.
     // (The width itself lives on the class now: see headerColumnWidth.)
-    const auto headerRowOneY = layout.header.getY() + 10;
-    const auto headerRowTwoY = layout.header.getY() + 36;
-    const auto headerRowThreeY = layout.header.getY() + 62;
+    const auto headerRowOneY = header.getY() + 10;
+    const auto headerRowTwoY = header.getY() + 36;
+    const auto headerRowThreeY = header.getY() + 62;
     constexpr int headerStatusHeight = 18;
     const auto headerGridLeft = headerRight
                               - (headerColumns * headerColumnWidth
@@ -1028,7 +1065,16 @@ void FirstAudioProcessorEditor::resized()
     statusLabel.setJustificationType (juce::Justification::centredLeft);
     statusLabel.setFont (statusLabel.getFont().withHeight (9.0f));
     statusLabel.setBorderSize (juce::BorderSize<int> (0, 26, 0, 0));
+}
 
+//==============================================================================
+//  The deck: six bands whose gaps compress but whose heights never do (see the band
+//  table below), the seven lines inside them, and the window the 3D transport is
+//  framed in - which shares reelCorridor with the rows, and is why it is here rather
+//  than in the controls panel's own function.
+//==============================================================================
+void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
+{
     // ------------------------------------------------------------------
     //  The deck.
     //
@@ -1111,7 +1157,7 @@ void FirstAudioProcessorEditor::resized()
             gapTotal += gap[i - 1];
         }
 
-        const auto shrink = juce::jmax (0, deckReferenceHeight - layout.deck.getHeight());
+        const auto shrink = juce::jmax (0, deckReferenceHeight - deck.getHeight());
         const auto wantedGapTotal = juce::jmax ((bandCount - 1) * minimumBandGap, gapTotal - shrink);
         const auto gapScale = gapTotal > 0 ? static_cast<float> (wantedGapTotal)
                                            / static_cast<float> (gapTotal)
@@ -1126,17 +1172,17 @@ void FirstAudioProcessorEditor::resized()
     // [&] and not [&layout]: the band table is a local array, and a lambda that
     // names one thing in its capture list captures nothing else - so a narrow
     // capture silently leaves deckBands uncaptured.
-    const auto deckTop = [&] (int band) { return layout.deck.getY() + deckBands[band].top; };
+    const auto deckTop = [&] (int band) { return deck.getY() + deckBands[band].top; };
 
-    deckHeadingLabel.setBounds (layout.deck.getX() + 18, deckTop (0), 150, 16);
+    deckHeadingLabel.setBounds (deck.getX() + 18, deckTop (0), 150, 16);
 
     // The build id rides the deck's heading strip, right-aligned and stopping short of
     // the reel (whose left edge is deck.right - 56). This strip is the only full-width
     // band near the top of the panel that is guaranteed empty at the 780 px minimum:
     // the header's equivalent gap shrinks to about 58 px there, and the switches row
     // is reserved for the drifting particles.
-    buildLabel.setBounds (layout.deck.getX() + 190, deckTop (0),
-                          layout.deck.getWidth() - 280, 16);
+    buildLabel.setBounds (deck.getX() + 190, deckTop (0),
+                          deck.getWidth() - 280, 16);
 
     // ------------------------------------------------------------------
     //  Spreading a row across the deck.
@@ -1324,7 +1370,7 @@ void FirstAudioProcessorEditor::resized()
             { &bpmReadout,         0, -1, 15, 13, true  }
         };
 
-        placeDeckRow (row, layout.deck.getX() + 18, layout.deck.getRight() - reelCorridor,
+        placeDeckRow (row, deck.getX() + 18, deck.getRight() - reelCorridor,
                       deckTop (1), 14);
     }
 
@@ -1350,8 +1396,8 @@ void FirstAudioProcessorEditor::resized()
             { &antiPhaseReadout,   0, -1, 15, 13, true  }
         };
 
-        const auto freeGap = placeDeckRow (row, layout.deck.getX() + 18,
-                                           layout.deck.getRight() - deckRightInset,
+        const auto freeGap = placeDeckRow (row, deck.getX() + 18,
+                                           deck.getRight() - deckRightInset,
                                            deckTop (2), 12);
 
         // The readouts are the only deck text whose width now depends on the
@@ -1404,7 +1450,7 @@ void FirstAudioProcessorEditor::resized()
             { &digitalTypeBox,         0, -1, 15, 30, true  }
         };
 
-        placeDeckRow (row, layout.deck.getX() + 18, layout.deck.getRight() - deckRightInset,
+        placeDeckRow (row, deck.getX() + 18, deck.getRight() - deckRightInset,
                       deckTop (3), 14);
     }
 
@@ -1421,7 +1467,7 @@ void FirstAudioProcessorEditor::resized()
 
         const auto transportRowY = deckTop (4) + 13;
 
-        placeDeckRow (row, layout.deck.getX() + 18, layout.deck.getRight() - deckRightInset,
+        placeDeckRow (row, deck.getX() + 18, deck.getRight() - deckRightInset,
                       transportRowY, 14);
 
         // The two transport captions sit ABOVE the key bank rather than beside
@@ -1475,7 +1521,7 @@ void FirstAudioProcessorEditor::resized()
         edge -= width + presetRowGap;
     };
 
-    presetHeadingLabel.setBounds (layout.deck.getX() + 18, deckTop (5) + 9, 46, 16);
+    presetHeadingLabel.setBounds (deck.getX() + 18, deckTop (5) + 9, 46, 16);
 
     {
         // Head, from the left: the factory list, the user list, save, delete.
@@ -1499,14 +1545,14 @@ void FirstAudioProcessorEditor::resized()
         constexpr int userPresetWidth =  94;
         constexpr int headWidths = presetBoxWidth + userPresetWidth + 40 + 38;
         constexpr int tailWidths = 54 + 44 + 44 + 54 + 64 + 64;
-        const auto chainSpan = (layout.deck.getRight() - 14)
-                                   - (layout.deck.getX() + 66);
+        const auto chainSpan = (deck.getRight() - 14)
+                                   - (deck.getX() + 66);
         const auto chainVoid = juce::jmax (0, chainSpan - (headWidths + tailWidths
                                                               + 9 * presetRowGap));
         const auto presetGrowth = juce::jmin (chainVoid * 3 / 5, 160);
         const auto userGrowth   = juce::jmin (chainVoid - presetGrowth, 120);
 
-        int headEdge = layout.deck.getX() + 66;
+        int headEdge = deck.getX() + 66;
         placeForward (headEdge, presetBox,          presetBoxWidth  + presetGrowth);
         placeForward (headEdge, userPresetBox,      userPresetWidth + userGrowth);
         placeForward (headEdge, savePresetButton,  40);
@@ -1515,7 +1561,7 @@ void FirstAudioProcessorEditor::resized()
 
     {
         // Tail, from the right: the badge, REDO, UNDO, COMPARE, A, B.
-        int tailEdge = layout.deck.getRight() - 14;
+        int tailEdge = deck.getRight() - 14;
         placeBackward (tailEdge, compareBadgeLabel, 54);
         placeBackward (tailEdge, redoButton,        44);
         placeBackward (tailEdge, undoButton,        44);
@@ -1538,13 +1584,29 @@ void FirstAudioProcessorEditor::resized()
     // The state readout is back in the header on its drawn pill (see the header
     // grid above), so the badge line is the preset badge's alone again - full
     // band width, the pill painted UNDER this line in paint() needs no cell.
-    presetBadgeLabel.setBounds (layout.deck.getX() + 22, deckTop (6),
-                                layout.deck.getWidth() - 44, 14);
+    presetBadgeLabel.setBounds (deck.getX() + 22, deckTop (6),
+                                deck.getWidth() - 44, 14);
     presetBadgeLabel.setFont (shrinkingFont (presetBadgeLabel.getText(), 8.0f,
                                              juce::Font::plain,
                                              static_cast<float> (presetBadgeLabel.getWidth()) - 4.0f));
+    // The 3D transport's window: the deck's top-right block, which is the one
+    // region resized() keeps free of controls. reelCorridor is 70 px wide and the
+    // heading band starts six px down, so the scene gets a 64 x 58 block that is
+    // the same size at every panel size - which is what lets the scene be laid out
+    // in its own units and framed by the camera rather than by a pixel count.
+    // It stops 8 px short of the switches row below it, so the two never touch.
+    tapeScene.setBounds (deck.getRight() - reelCorridor,
+                         deck.getY() + 6,
+                         reelCorridor - 6,
+                         58);
+}
 
-
+//==============================================================================
+//  The controls panel's heading, its hint and the active page's own section caption -
+//  the three captions above the divider, which the knob strip is laid out under.
+//==============================================================================
+void FirstAudioProcessorEditor::placeControls (const EditorLayout& layout)
+{
     controlsHeadingLabel.setBounds (layout.controls.getX() + 18, layout.controls.getY() + 10, 210, 19);
     // The section caption takes the gap between the heading and the hint, which is
     // where the panel has always had a wide empty stretch: the hint is drawn
@@ -1560,18 +1622,14 @@ void FirstAudioProcessorEditor::resized()
                                    layout.controls.getY() + 11,
                                    juce::jmax (0, controlsHintLeft - controlsHeadingLabel.getRight() - 24),
                                    17);
+}
 
-    // The 3D transport's window: the deck's top-right block, which is the one
-    // region resized() keeps free of controls. reelCorridor is 70 px wide and the
-    // heading band starts six px down, so the scene gets a 64 x 58 block that is
-    // the same size at every panel size - which is what lets the scene be laid out
-    // in its own units and framed by the camera rather than by a pixel count.
-    // It stops 8 px short of the switches row below it, so the two never touch.
-    tapeScene.setBounds (layout.deck.getRight() - reelCorridor,
-                         layout.deck.getY() + 6,
-                         reelCorridor - 6,
-                         58);
-
+//==============================================================================
+//  The tab bar: the two rows of tabs-inside-tabs, re-flowed to the live family's page
+//  count.
+//==============================================================================
+void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& controlsPanel)
+{
     // ------------------------------------------------------------------
     //  The tab bar.
     //
@@ -1589,15 +1647,15 @@ void FirstAudioProcessorEditor::resized()
     //  enough to read, the knobs underneath get a whole grid to themselves, and
     //  only the selected tab's controls are on screen at all.
     // ------------------------------------------------------------------
-    const auto tabBarLeft = layout.controls.getX() + 14;
+    const auto tabBarLeft = controlsPanel.getX() + 14;
     // The two rows of tabs-inside-tabs live between the heading and the divider:
     // FAMILIES on top (the three large buttons), the active family's PAGES under
     // them. The divider (controlsDividerOffset) sits below both, so the knob grid
     // itself never pays a row for either strip.
     constexpr int familyRowHeight = 22;
-    const auto familyRow = juce::Rectangle<int> (layout.controls.getX() + 14,
-                                                 layout.controls.getY() + 34,
-                                                 layout.controls.getWidth() - 28,
+    const auto familyRow = juce::Rectangle<int> (controlsPanel.getX() + 14,
+                                                 controlsPanel.getY() + 34,
+                                                 controlsPanel.getWidth() - 28,
                                                  familyRowHeight);
     const auto familyButtonWidth = (familyRow.getWidth() - 2 * 6) / tabFamilyCount;
     tabFamilyTapeButton.setBounds (familyRow.getX(), familyRow.getY(),
@@ -1609,7 +1667,7 @@ void FirstAudioProcessorEditor::resized()
                                     familyRow.getY(), familyButtonWidth,
                                     familyRow.getHeight());
 
-    const auto tabBarTop = layout.controls.getY() + 60;
+    const auto tabBarTop = controlsPanel.getY() + 60;
     const auto tabBarHeight = 24;
 
     // Pages of the CURRENT family only: the bar re-flows to the family's page
@@ -1621,7 +1679,7 @@ void FirstAudioProcessorEditor::resized()
             ++visibleTabCount;
     visibleTabCount = juce::jmax (1, visibleTabCount);
     const auto tabGap = visibleTabCount <= 5 ? 6 : 4;
-    const auto tabButtonWidth = (layout.controls.getWidth() - 28
+    const auto tabButtonWidth = (controlsPanel.getWidth() - 28
                                  - tabGap * (visibleTabCount - 1)) / visibleTabCount;
 
     int placedTabIndex = 0;
@@ -1645,14 +1703,18 @@ void FirstAudioProcessorEditor::resized()
     tabFamilyTapeButton.setVisible (true);
     tabFamilyFxButton.setVisible (true);
     tabFamilySetupButton.setVisible (true);
-    metersHeadingLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 8, 130, 18);
-    metersHintLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 27, 150, 14);
-    const auto compressorLabelWidth = 120;
-    compressorLabel.setBounds (layout.meters.getRight() - compressorLabelWidth - 14,
-                               layout.meters.getY() + 8, compressorLabelWidth, 18);
-    compressorReadout.setBounds (layout.meters.getRight() - compressorLabelWidth - 14,
-                                 layout.meters.getY() + 27, compressorLabelWidth, 14);
+}
 
+//==============================================================================
+//  The knob strip: the solve, and the one band that hands anything on.
+//
+//  Its grid, the live page's flags, the solved tile and the member band's top edge are
+//  what the member band, the visibility pass and the mix bar measure in, so they leave
+//  here as a ControlGeometry rather than as locals the neighbouring bands could read.
+//==============================================================================
+FirstAudioProcessorEditor::ControlGeometry
+FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
+{
     // The grid starts below the divider paint() drew, with a little air under it. The
     // 14 px undoes the reduced() inset, so the offset is measured from the panel edge
     // that controlsDividerOffset is measured from, not from the inset grid.
@@ -1956,17 +2018,324 @@ void FirstAudioProcessorEditor::resized()
     const auto memberRowY = (memberRows != 0 && knobCount > 0)
                                 ? grid.getBottom() - memberBandHeight
                                 : grid.getY();
+
+    ControlGeometry geometry;
+    geometry.grid = grid;
+    geometry.cellWidth = cellWidth;
+    geometry.memberRowY = memberRowY;
+    geometry.settingsTab = settingsTab;
+    geometry.autotuneTab = autotuneTab;
+    geometry.delayTab = delayTab;
+    geometry.characterTab = characterTab;
+    geometry.frontEndTab = frontEndTab;
+    geometry.shapersTab = shapersTab;
+    geometry.inEqTab = inEqTab;
+    geometry.outEqTab = outEqTab;
+    geometry.machineTab = machineTab;
+    geometry.mixTab = mixTab;
+    geometry.compressorTab = compressorTab;
+
+    return geometry;
+}
+
+//==============================================================================
+//  Which tab members exist. Re-asserted on EVERY resize rather than only on a tab
+//  change: resized() also runs from setSize() in the constructor, before some of these
+//  widgets had a parent, and a show/hide decision made only at tab-switch time left
+//  them permanently visible on tabs that were not theirs.
+//==============================================================================
+void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geometry)
+{
+    // Visibility for the deck switches is re-asserted here rather than only in
+    // setCurrentTab, because resized() also runs from setSize() in the constructor
+    // - BEFORE some of these widgets had a parent - and a show/hide decision made
+    // only at tab-switch time left the switches permanently visible on tabs that
+    // were not theirs. The active tab decides; every resize re-applies it. The
+    // flags themselves are read from the tabSpecs table at the top of the grid
+    // section above, where the member-row arithmetic needs them too.
+
+    // The four new lists follow the same rule as the deck switches: each is a
+    // full member of exactly one tab, so it is visible only while that tab is.
+    diPadLabel.setVisible (geometry.frontEndTab);
+    diPadBox.setVisible (geometry.frontEndTab);
+    tracksLabel.setVisible (geometry.machineTab);
+    tracksBox.setVisible (geometry.machineTab);
+    inputEqOrderLabel.setVisible (geometry.inEqTab);
+    inputEqOrderBox.setVisible (geometry.inEqTab);
+    outputEqOrderLabel.setVisible (geometry.outEqTab);
+    outputEqOrderBox.setVisible (geometry.outEqTab);
+    // The corner switches follow their own equaliser's page, like the ORDER
+    // combo beside them.
+    inputEqHpButton.setVisible (geometry.inEqTab);
+    inputEqLpButton.setVisible (geometry.inEqTab);
+    outputEqHpButton.setVisible (geometry.outEqTab);
+    outputEqLpButton.setVisible (geometry.outEqTab);
+    oversamplingLabel.setVisible (geometry.settingsTab);
+    oversamplingBox.setVisible (geometry.settingsTab);
+    languageLabel.setVisible (geometry.settingsTab);
+    languageBox.setVisible (geometry.settingsTab);
+    tuningTonicLabel.setVisible (geometry.settingsTab);
+    tuningModeLabel.setVisible (geometry.settingsTab);
+    tuningTonicBox.setVisible (geometry.settingsTab);
+    tuningModeBox.setVisible (geometry.settingsTab);
+    autoTuneButton.setVisible (geometry.autotuneTab);
+    autoTuneAmountLabel.setVisible (geometry.autotuneTab);
+    autoTuneAmountSlider.setVisible (geometry.autotuneTab);
+    for (std::size_t i = 0; i < compressorControls.size(); ++i)
+    {
+        compressorControls[i].setVisible (geometry.compressorTab);
+        compressorControlLabels[i].setVisible (geometry.compressorTab);
+    }
+    glButton.setVisible (geometry.settingsTab);
+    glLabel.setVisible (geometry.settingsTab);
+    // The UI-sounds switch is on the same page as GL and OVERSAMPLING - it is the
+    // same kind of engine-level preference - so it follows the same tab.
+    uiSoundsButton.setVisible (geometry.settingsTab);
+    antiPhaseGuardLabel.setVisible (geometry.settingsTab);
+    antiPhaseGuardButton.setVisible (geometry.settingsTab);
+    delayTypeLabel.setVisible (geometry.delayTab);
+    delayTypeBox.setVisible (geometry.delayTab);
+    delayRateLabel.setVisible (geometry.delayTab);
+    delayRateBox.setVisible (geometry.delayTab);
+    delaySyncLabel.setVisible (geometry.delayTab);
+    delaySyncButton.setVisible (geometry.delayTab);
+
+    // The neural model picker follows SHAPERS - under its own NEURAL knob - and
+    // the IR loader follows it for the same reason, beside IR MIX. Each file-fed
+    // stage keeps its loader and its status readout on the page its knob lives on.
+    loadNeuralButton.setVisible (geometry.shapersTab);
+    clearNeuralButton.setVisible (geometry.shapersTab);
+    neuralStatusLabel.setVisible (geometry.shapersTab);
+    loadIrButton.setVisible (geometry.shapersTab);
+    clearIrButton.setVisible (geometry.shapersTab);
+    irStatusLabel.setVisible (geometry.shapersTab);
+
+    // The three vinyl selectors stayed on CHARACTER: they re-voice the whole
+    // vinyl stage, so they live with the machine's other voicing rather than
+    // beside the record's faults (which are on RECORD).
+    vinylGenerationLabel.setVisible (geometry.characterTab);
+    vinylGenerationBox.setVisible (geometry.characterTab);
+    vinylTurntableLabel.setVisible (geometry.characterTab);
+    vinylTurntableBox.setVisible (geometry.characterTab);
+    vinylCartridgeLabel.setVisible (geometry.characterTab);
+    vinylCartridgeBox.setVisible (geometry.characterTab);
+
+    // The mix bar takes the MIX page's whole member band: seven cells across the
+    // full width is the only size at which each machine's name and percentage
+    // both fit, and the band is exactly the strip the geometry above already
+    // reserved for it.
+    mixBar.setVisible (geometry.mixTab);
+}
+
+//==============================================================================
+//  Where the live page's members are: the mix bar's own strip, then one branch per
+//  page that owns combos or pills in the member band.
+//==============================================================================
+void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry)
+{
+    if (geometry.mixTab)
+    {
+        mixBar.setBounds (geometry.grid.getX() + 4, geometry.memberRowY + 3, geometry.grid.getWidth() - 8,
+                          juce::jmax (20, geometry.grid.getBottom() - geometry.memberRowY - 6));
+        mixBar.repaint();
+    }
+
+    if (geometry.frontEndTab)
+    {
+        // FRONT END: the DI's own pad/load selector rides the band under the
+        // knobs - the row the DI feeds. It used to take the fourth cell of the
+        // knob grid's second row; the strip is one full row now, so the band is
+        // the only place on the page a combo can be, and it is where the DI's
+        // own input switch belongs anyway.
+        placeDeckSwitch (geometry, diPadLabel, diPadBox, 0, 1, "DI PAD");
+    }
+    else if (geometry.machineTab)
+    {
+        // MACHINE: the machine's TRACKS selector rides the band at the page's
+        // foot, under its seven knobs.
+        placeDeckSwitch (geometry, tracksLabel, tracksBox, 0, 1, "TRACKS");
+    }
+    else if (geometry.settingsTab)
+    {
+        // SETTINGS: the first band carries the four engine-level selectors - the
+        // two switches and the tuning pair - and the second the two interface
+        // preferences.
+        placeDeckSwitch (geometry, glLabel, glButton, 0, 1, "GL");
+        placeDeckSwitch (geometry, oversamplingLabel, oversamplingBox, 1, 1, "OVER");
+        placeDeckSwitch (geometry, tuningTonicLabel, tuningTonicBox, 2, 1, "TONIC");
+        tuningModeLabel.setBounds (geometry.grid.getX() + 3 * geometry.cellWidth + 5, geometry.memberRowY + 1, geometry.cellWidth - 10, 17);
+        tuningModeBox.setBounds (geometry.grid.getX() + 3 * geometry.cellWidth + 12, geometry.memberRowY + 20, geometry.cellWidth - 24, 30);
+
+        // LANGUAGE keeps the first cell of the second band; UI SOUNDS takes the
+        // second. UI SOUNDS used to be written into the THIRD CELL OF THE FIRST
+        // BAND, which is the rectangle the TONIC combo owns - so the two
+        // controls were given the same bounds, the switch was added later and
+        // therefore sat on top, and the page showed a control labelled
+        // "UI Sounds" under the TONIC caption while the key itself could not be
+        // set at all. One caption band, one control band, two cells nothing
+        // else claims.
+        //
+        // The AUTOTUNE pair no longer takes bounds here at all: those rectangles
+        // were left over from when AUTOTUNE was a sub-page of SETTINGS (the page
+        // has its own tab now - see the autotuneTab branch) and they described
+        // cells that are free on THIS page, which is exactly the belief that
+        // produced the double booking above.
+        languageLabel.setBounds (geometry.grid.getX() + 5, geometry.memberRowY + 56, geometry.cellWidth - 10, 17);
+        languageBox.setBounds (geometry.grid.getX() + 12, geometry.memberRowY + 76, geometry.cellWidth - 24, 30);
+        uiSoundsButton.setBounds (geometry.grid.getX() + geometry.cellWidth + 12, geometry.memberRowY + 76,
+                                  geometry.cellWidth - 24, 30);
+        // The guard's switch takes the THIRD cell of that same band. It is the
+        // one cell on this page nothing else claims - the TONIC pair owns the
+        // third cell of the band ABOVE - and it is where a protection setting
+        // belongs: with GL, OVERSAMPLING and UI SOUNDS, not with the machine's
+        // sound. Same caption band, same control band, same insets as the two
+        // controls beside it, so the row reads as one line of preferences.
+        antiPhaseGuardLabel.setBounds (geometry.grid.getX() + 2 * geometry.cellWidth + 5, geometry.memberRowY + 56,
+                                       geometry.cellWidth - 10, 17);
+        antiPhaseGuardButton.setBounds (geometry.grid.getX() + 2 * geometry.cellWidth + 12, geometry.memberRowY + 76,
+                                        geometry.cellWidth - 24, 30);
+
+        // The caption is put back to the left, where every other caption on the
+        // page sits: the header grid also places this one Label - right-aligned,
+        // beside THEME - and that justification survived into this page, which is
+        // why LANGUAGE was the one caption on SETTINGS that read centred.
+        languageLabel.setJustificationType (juce::Justification::left);
+    }
+    else if (geometry.autotuneTab)
+    {
+        sectionCaptionLabel.setText ("AUTOTUNE", juce::dontSendNotification);
+        // The page's knob is on the strip above, with its caption and its readout
+        // in its own tile (see knobCount), so the band under the strip carries the
+        // control the page has left: the AUTO TUNE pill. It names itself - the
+        // inline look-and-feel draws the button's own text beside its pill - so it
+        // needs no caption band, and it is placed in the band's control row with
+        // the same insets as the switches on every other page's member row.
+        const auto bandHeight = juce::jmin (30, geometry.grid.getBottom() - geometry.memberRowY - 22);
+        autoTuneButton.setBounds (geometry.grid.getX() + 12, geometry.memberRowY + 20,
+                                  geometry.cellWidth - 24, bandHeight);
+    }
+    // The COMP page has no branch here, and that is the point: its six knobs are
+    // laid out by the knob strip above, like every other page's, and the page's
+    // caption comes from its own tabSubtitles entry ("the conventional
+    // compressor, independent of glue") like every other page's. It used to own
+    // a placement of its own - each slider given a cell as tall as the whole
+    // grid, which drew a small cap at the top of that cell and left its readout
+    // a hundred-odd pixels below the knob it belonged to - and a caption of its
+    // own, which is what the uppercase line above this chain used to say.
+    else if (geometry.delayTab)
+    {
+        // SPACE: the delay trio rides the member row under the delay knobs.
+        placeDeckSwitch (geometry, delayTypeLabel, delayTypeBox, 0, 1, "TYPE");
+        placeDeckSwitch (geometry, delaySyncLabel, delaySyncButton, 1, 1, "SYNC DELAY");
+        placeDeckSwitch (geometry, delayRateLabel, delayRateBox, 2, 1, "RATE");
+    }
+    else if (geometry.characterTab)
+    {
+        // CHARACTER: three knobs in one row, so the member band under them
+        // carries the page's three voicing lists - left to right, the order
+        // the record is made in: what was cut, what plays it, what reads it.
+        placeDeckSwitch (geometry, vinylGenerationLabel, vinylGenerationBox, 0, 1, "GENERATION");
+        placeDeckSwitch (geometry, vinylTurntableLabel, vinylTurntableBox, 1, 1, "TURNTABLE");
+        placeDeckSwitch (geometry, vinylCartridgeLabel, vinylCartridgeBox, 2, 1, "CARTRIDGE");
+    }
+    else if (geometry.shapersTab)
+    {
+        // SHAPERS: the two file-fed stages on one page, each with its loader
+        // under its own knob. The NEURAL picker takes the band's FIRST column
+        // - LOAD MODEL on the control line, CLEAR beneath it, the model-status
+        // readout in the caption line above them - and the IR loader takes the
+        // second and third: the status readout as the second column's caption
+        // (the same label-above-control convention the knobs use), the two
+        // buttons on the control line. paint() draws the picker's card behind
+        // this band's first column - the two geometries share the arithmetic
+        // (grid / 4 columns, 50 px band), so they cannot disagree.
+        const auto buttonY = geometry.memberRowY + 20;
+        const auto buttonH = juce::jmin (30, geometry.grid.getBottom() - geometry.memberRowY - 22);
+        // LOAD and CLEAR share the band's ONE control line, side by side. CLEAR
+        // used to sit UNDER LOAD (buttonY + buttonH + 6), which is exactly six
+        // pixels past the band's bottom edge on every panel size - the user's
+        // "Clear falls out of the window". Two buttons across the cell fit with
+        // room to spare: the cell is ~170 px wide, the pair needs ~160.
+        const auto halfButtonWidth = (geometry.cellWidth - 30) / 2;
+        loadNeuralButton.setBounds (geometry.grid.getX() + 12, buttonY,
+                                    halfButtonWidth, buttonH);
+        clearNeuralButton.setBounds (geometry.grid.getX() + 18 + halfButtonWidth, buttonY,
+                                     halfButtonWidth, buttonH);
+        neuralStatusLabel.setBounds (geometry.grid.getX() + 6, geometry.memberRowY - 1,
+                                     geometry.cellWidth - 12, 17);
+        irStatusLabel.setBounds (geometry.grid.getX() + geometry.cellWidth + 5, geometry.memberRowY - 1,
+                                 geometry.cellWidth - 10, 17);
+        loadIrButton.setBounds (geometry.grid.getX() + geometry.cellWidth + 12,
+                                buttonY, geometry.cellWidth - 24, buttonH);
+        clearIrButton.setBounds (geometry.grid.getX() + 2 * geometry.cellWidth + 12,
+                                 buttonY, geometry.cellWidth - 24, buttonH);
+    }
+    else if (geometry.inEqTab || geometry.outEqTab)
+    {
+        // IN EQ / OUT EQ: six knobs fill the first row, so the row below is
+        // where the equaliser's three corner controls go - the slope ORDER
+        // first, then the two on/off switches for the corners whose frequency
+        // knobs are in the row above.
+        //
+        // The switches are placed by the SAME cell arithmetic as everything
+        // else (label band, control band, cell width), through placeEqCorner
+        // below, rather than by hand-placed coordinates: the two switches
+        // share the row with the ORDER combo, and a coordinate written for one
+        // of them would be a guess about the other's.
+        const auto isIn = geometry.inEqTab;
+        placeDeckSwitch (geometry, isIn ? inputEqOrderLabel : outputEqOrderLabel,
+                         isIn ? inputEqOrderBox : outputEqOrderBox, 0, 1, "ORDER");
+
+        const auto placeEqCorner = [&] (juce::Component& button, int column)
+        {
+            auto cell = juce::Rectangle<int> (geometry.grid.getX() + column * geometry.cellWidth,
+                                              geometry.memberRowY,
+                                              geometry.cellWidth, geometry.grid.getBottom() - geometry.memberRowY);
+            button.setBounds (cell.getX() + 12, cell.getY() + 20,
+                              cell.getWidth() - 24,
+                              juce::jmin (30, cell.getHeight() - 22));
+        };
+
+        if (isIn)
+        {
+            placeEqCorner (inputEqHpButton, 1);
+            placeEqCorner (inputEqLpButton, 2);
+        }
+        else
+        {
+            placeEqCorner (outputEqHpButton, 1);
+            placeEqCorner (outputEqLpButton, 2);
+        }
+    }
+}
+
+//==============================================================================
+//  A tab member - a combo or a pill that is not a knob - in the member band's own cell
+//  arithmetic: the same cell the knob above it would have had, a 17 px caption band,
+//  and a 30 px control band centred under it.
+//
+//  This was a lambda inside resized(), which meant every caller had to be in that one
+//  body and the cell arithmetic was only reachable from there; it is a member function
+//  now because the band it measures in arrives as the geometry the strip solved. The
+//  name is the lambda's, minus its capture list.
+//==============================================================================
+void FirstAudioProcessorEditor::placeDeckSwitch (const ControlGeometry& geometry,
+                                                 juce::Label& label,
+                                                 juce::Component& box,
+                                                 int column, int columnsWide,
+                                                 const juce::String& caption)
+{
     const auto placeDeckSwitch = [&] (juce::Label& label, juce::Component& box,
                                       int column, int columnsWide,
                                       const juce::String& caption)
     {
-        auto cell = juce::Rectangle<int> (grid.getX() + column * cellWidth,
-                                          memberRowY,
+        auto cell = juce::Rectangle<int> (geometry.grid.getX() + column * geometry.cellWidth,
+                                          geometry.memberRowY,
                                           columnsWide == tabColumns
-                                              ? grid.getRight() - (grid.getX() + column * cellWidth)
-                                              : columnsWide * cellWidth
-                                                  + (columnsWide - 1) * (cellWidth / columnsWide),
-                                          grid.getBottom() - memberRowY);
+                                              ? geometry.grid.getRight() - (geometry.grid.getX() + column * geometry.cellWidth)
+                                              : columnsWide * geometry.cellWidth
+                                                  + (columnsWide - 1) * (geometry.cellWidth / columnsWide),
+                                          geometry.grid.getBottom() - geometry.memberRowY);
         // This setText() every layout is also why the GL label's constructor
         // emptiness is safe: the caption is re-written here every time its tab is
         // live, so a resize between tab switches can never leave a stale one.
@@ -1994,260 +2363,22 @@ void FirstAudioProcessorEditor::resized()
         box.setBounds (cell.getX() + 12, bandY,
                        cell.getWidth() - 24, bandHeight);
     };
+}
 
-    // Visibility for the deck switches is re-asserted here rather than only in
-    // setCurrentTab, because resized() also runs from setSize() in the constructor
-    // - BEFORE some of these widgets had a parent - and a show/hide decision made
-    // only at tab-switch time left the switches permanently visible on tabs that
-    // were not theirs. The active tab decides; every resize re-applies it. The
-    // flags themselves are read from the tabSpecs table at the top of the grid
-    // section above, where the member-row arithmetic needs them too.
-
-    // The four new lists follow the same rule as the deck switches: each is a
-    // full member of exactly one tab, so it is visible only while that tab is.
-    diPadLabel.setVisible (frontEndTab);
-    diPadBox.setVisible (frontEndTab);
-    tracksLabel.setVisible (machineTab);
-    tracksBox.setVisible (machineTab);
-    inputEqOrderLabel.setVisible (inEqTab);
-    inputEqOrderBox.setVisible (inEqTab);
-    outputEqOrderLabel.setVisible (outEqTab);
-    outputEqOrderBox.setVisible (outEqTab);
-    // The corner switches follow their own equaliser's page, like the ORDER
-    // combo beside them.
-    inputEqHpButton.setVisible (inEqTab);
-    inputEqLpButton.setVisible (inEqTab);
-    outputEqHpButton.setVisible (outEqTab);
-    outputEqLpButton.setVisible (outEqTab);
-    oversamplingLabel.setVisible (settingsTab);
-    oversamplingBox.setVisible (settingsTab);
-    languageLabel.setVisible (settingsTab);
-    languageBox.setVisible (settingsTab);
-    tuningTonicLabel.setVisible (settingsTab);
-    tuningModeLabel.setVisible (settingsTab);
-    tuningTonicBox.setVisible (settingsTab);
-    tuningModeBox.setVisible (settingsTab);
-    autoTuneButton.setVisible (autotuneTab);
-    autoTuneAmountLabel.setVisible (autotuneTab);
-    autoTuneAmountSlider.setVisible (autotuneTab);
-    for (std::size_t i = 0; i < compressorControls.size(); ++i)
-    {
-        compressorControls[i].setVisible (compressorTab);
-        compressorControlLabels[i].setVisible (compressorTab);
-    }
-    glButton.setVisible (settingsTab);
-    glLabel.setVisible (settingsTab);
-    // The UI-sounds switch is on the same page as GL and OVERSAMPLING - it is the
-    // same kind of engine-level preference - so it follows the same tab.
-    uiSoundsButton.setVisible (settingsTab);
-    antiPhaseGuardLabel.setVisible (settingsTab);
-    antiPhaseGuardButton.setVisible (settingsTab);
-    delayTypeLabel.setVisible (delayTab);
-    delayTypeBox.setVisible (delayTab);
-    delayRateLabel.setVisible (delayTab);
-    delayRateBox.setVisible (delayTab);
-    delaySyncLabel.setVisible (delayTab);
-    delaySyncButton.setVisible (delayTab);
-
-    // The neural model picker follows SHAPERS - under its own NEURAL knob - and
-    // the IR loader follows it for the same reason, beside IR MIX. Each file-fed
-    // stage keeps its loader and its status readout on the page its knob lives on.
-    loadNeuralButton.setVisible (shapersTab);
-    clearNeuralButton.setVisible (shapersTab);
-    neuralStatusLabel.setVisible (shapersTab);
-    loadIrButton.setVisible (shapersTab);
-    clearIrButton.setVisible (shapersTab);
-    irStatusLabel.setVisible (shapersTab);
-
-    // The three vinyl selectors stayed on CHARACTER: they re-voice the whole
-    // vinyl stage, so they live with the machine's other voicing rather than
-    // beside the record's faults (which are on RECORD).
-    vinylGenerationLabel.setVisible (characterTab);
-    vinylGenerationBox.setVisible (characterTab);
-    vinylTurntableLabel.setVisible (characterTab);
-    vinylTurntableBox.setVisible (characterTab);
-    vinylCartridgeLabel.setVisible (characterTab);
-    vinylCartridgeBox.setVisible (characterTab);
-
-    // The mix bar takes the MIX page's whole member band: seven cells across the
-    // full width is the only size at which each machine's name and percentage
-    // both fit, and the band is exactly the strip the geometry above already
-    // reserved for it.
-    mixBar.setVisible (mixTab);
-    if (mixTab)
-    {
-        mixBar.setBounds (grid.getX() + 4, memberRowY + 3, grid.getWidth() - 8,
-                          juce::jmax (20, grid.getBottom() - memberRowY - 6));
-        mixBar.repaint();
-    }
-
-    if (frontEndTab)
-    {
-        // FRONT END: the DI's own pad/load selector rides the band under the
-        // knobs - the row the DI feeds. It used to take the fourth cell of the
-        // knob grid's second row; the strip is one full row now, so the band is
-        // the only place on the page a combo can be, and it is where the DI's
-        // own input switch belongs anyway.
-        placeDeckSwitch (diPadLabel, diPadBox, 0, 1, "DI PAD");
-    }
-    else if (machineTab)
-    {
-        // MACHINE: the machine's TRACKS selector rides the band at the page's
-        // foot, under its seven knobs.
-        placeDeckSwitch (tracksLabel, tracksBox, 0, 1, "TRACKS");
-    }
-    else if (settingsTab)
-    {
-        // SETTINGS: the first band carries the four engine-level selectors - the
-        // two switches and the tuning pair - and the second the two interface
-        // preferences.
-        placeDeckSwitch (glLabel, glButton, 0, 1, "GL");
-        placeDeckSwitch (oversamplingLabel, oversamplingBox, 1, 1, "OVER");
-        placeDeckSwitch (tuningTonicLabel, tuningTonicBox, 2, 1, "TONIC");
-        tuningModeLabel.setBounds (grid.getX() + 3 * cellWidth + 5, memberRowY + 1, cellWidth - 10, 17);
-        tuningModeBox.setBounds (grid.getX() + 3 * cellWidth + 12, memberRowY + 20, cellWidth - 24, 30);
-
-        // LANGUAGE keeps the first cell of the second band; UI SOUNDS takes the
-        // second. UI SOUNDS used to be written into the THIRD CELL OF THE FIRST
-        // BAND, which is the rectangle the TONIC combo owns - so the two
-        // controls were given the same bounds, the switch was added later and
-        // therefore sat on top, and the page showed a control labelled
-        // "UI Sounds" under the TONIC caption while the key itself could not be
-        // set at all. One caption band, one control band, two cells nothing
-        // else claims.
-        //
-        // The AUTOTUNE pair no longer takes bounds here at all: those rectangles
-        // were left over from when AUTOTUNE was a sub-page of SETTINGS (the page
-        // has its own tab now - see the autotuneTab branch) and they described
-        // cells that are free on THIS page, which is exactly the belief that
-        // produced the double booking above.
-        languageLabel.setBounds (grid.getX() + 5, memberRowY + 56, cellWidth - 10, 17);
-        languageBox.setBounds (grid.getX() + 12, memberRowY + 76, cellWidth - 24, 30);
-        uiSoundsButton.setBounds (grid.getX() + cellWidth + 12, memberRowY + 76,
-                                  cellWidth - 24, 30);
-        // The guard's switch takes the THIRD cell of that same band. It is the
-        // one cell on this page nothing else claims - the TONIC pair owns the
-        // third cell of the band ABOVE - and it is where a protection setting
-        // belongs: with GL, OVERSAMPLING and UI SOUNDS, not with the machine's
-        // sound. Same caption band, same control band, same insets as the two
-        // controls beside it, so the row reads as one line of preferences.
-        antiPhaseGuardLabel.setBounds (grid.getX() + 2 * cellWidth + 5, memberRowY + 56,
-                                       cellWidth - 10, 17);
-        antiPhaseGuardButton.setBounds (grid.getX() + 2 * cellWidth + 12, memberRowY + 76,
-                                        cellWidth - 24, 30);
-
-        // The caption is put back to the left, where every other caption on the
-        // page sits: the header grid also places this one Label - right-aligned,
-        // beside THEME - and that justification survived into this page, which is
-        // why LANGUAGE was the one caption on SETTINGS that read centred.
-        languageLabel.setJustificationType (juce::Justification::left);
-    }
-    else if (autotuneTab)
-    {
-        sectionCaptionLabel.setText ("AUTOTUNE", juce::dontSendNotification);
-        // The page's knob is on the strip above, with its caption and its readout
-        // in its own tile (see knobCount), so the band under the strip carries the
-        // control the page has left: the AUTO TUNE pill. It names itself - the
-        // inline look-and-feel draws the button's own text beside its pill - so it
-        // needs no caption band, and it is placed in the band's control row with
-        // the same insets as the switches on every other page's member row.
-        const auto bandHeight = juce::jmin (30, grid.getBottom() - memberRowY - 22);
-        autoTuneButton.setBounds (grid.getX() + 12, memberRowY + 20,
-                                  cellWidth - 24, bandHeight);
-    }
-    // The COMP page has no branch here, and that is the point: its six knobs are
-    // laid out by the knob strip above, like every other page's, and the page's
-    // caption comes from its own tabSubtitles entry ("the conventional
-    // compressor, independent of glue") like every other page's. It used to own
-    // a placement of its own - each slider given a cell as tall as the whole
-    // grid, which drew a small cap at the top of that cell and left its readout
-    // a hundred-odd pixels below the knob it belonged to - and a caption of its
-    // own, which is what the uppercase line above this chain used to say.
-    else if (delayTab)
-    {
-        // SPACE: the delay trio rides the member row under the delay knobs.
-        placeDeckSwitch (delayTypeLabel, delayTypeBox, 0, 1, "TYPE");
-        placeDeckSwitch (delaySyncLabel, delaySyncButton, 1, 1, "SYNC DELAY");
-        placeDeckSwitch (delayRateLabel, delayRateBox, 2, 1, "RATE");
-    }
-    else if (characterTab)
-    {
-        // CHARACTER: three knobs in one row, so the member band under them
-        // carries the page's three voicing lists - left to right, the order
-        // the record is made in: what was cut, what plays it, what reads it.
-        placeDeckSwitch (vinylGenerationLabel, vinylGenerationBox, 0, 1, "GENERATION");
-        placeDeckSwitch (vinylTurntableLabel, vinylTurntableBox, 1, 1, "TURNTABLE");
-        placeDeckSwitch (vinylCartridgeLabel, vinylCartridgeBox, 2, 1, "CARTRIDGE");
-    }
-    else if (shapersTab)
-    {
-        // SHAPERS: the two file-fed stages on one page, each with its loader
-        // under its own knob. The NEURAL picker takes the band's FIRST column
-        // - LOAD MODEL on the control line, CLEAR beneath it, the model-status
-        // readout in the caption line above them - and the IR loader takes the
-        // second and third: the status readout as the second column's caption
-        // (the same label-above-control convention the knobs use), the two
-        // buttons on the control line. paint() draws the picker's card behind
-        // this band's first column - the two geometries share the arithmetic
-        // (grid / 4 columns, 50 px band), so they cannot disagree.
-        const auto buttonY = memberRowY + 20;
-        const auto buttonH = juce::jmin (30, grid.getBottom() - memberRowY - 22);
-        // LOAD and CLEAR share the band's ONE control line, side by side. CLEAR
-        // used to sit UNDER LOAD (buttonY + buttonH + 6), which is exactly six
-        // pixels past the band's bottom edge on every panel size - the user's
-        // "Clear falls out of the window". Two buttons across the cell fit with
-        // room to spare: the cell is ~170 px wide, the pair needs ~160.
-        const auto halfButtonWidth = (cellWidth - 30) / 2;
-        loadNeuralButton.setBounds (grid.getX() + 12, buttonY,
-                                    halfButtonWidth, buttonH);
-        clearNeuralButton.setBounds (grid.getX() + 18 + halfButtonWidth, buttonY,
-                                     halfButtonWidth, buttonH);
-        neuralStatusLabel.setBounds (grid.getX() + 6, memberRowY - 1,
-                                     cellWidth - 12, 17);
-        irStatusLabel.setBounds (grid.getX() + cellWidth + 5, memberRowY - 1,
-                                 cellWidth - 10, 17);
-        loadIrButton.setBounds (grid.getX() + cellWidth + 12,
-                                buttonY, cellWidth - 24, buttonH);
-        clearIrButton.setBounds (grid.getX() + 2 * cellWidth + 12,
-                                 buttonY, cellWidth - 24, buttonH);
-    }
-    else if (inEqTab || outEqTab)
-    {
-        // IN EQ / OUT EQ: six knobs fill the first row, so the row below is
-        // where the equaliser's three corner controls go - the slope ORDER
-        // first, then the two on/off switches for the corners whose frequency
-        // knobs are in the row above.
-        //
-        // The switches are placed by the SAME cell arithmetic as everything
-        // else (label band, control band, cell width), through placeEqCorner
-        // below, rather than by hand-placed coordinates: the two switches
-        // share the row with the ORDER combo, and a coordinate written for one
-        // of them would be a guess about the other's.
-        const auto isIn = inEqTab;
-        placeDeckSwitch (isIn ? inputEqOrderLabel : outputEqOrderLabel,
-                         isIn ? inputEqOrderBox : outputEqOrderBox, 0, 1, "ORDER");
-
-        const auto placeEqCorner = [&] (juce::Component& button, int column)
-        {
-            auto cell = juce::Rectangle<int> (grid.getX() + column * cellWidth,
-                                              memberRowY,
-                                              cellWidth, grid.getBottom() - memberRowY);
-            button.setBounds (cell.getX() + 12, cell.getY() + 20,
-                              cell.getWidth() - 24,
-                              juce::jmin (30, cell.getHeight() - 22));
-        };
-
-        if (isIn)
-        {
-            placeEqCorner (inputEqHpButton, 1);
-            placeEqCorner (inputEqLpButton, 2);
-        }
-        else
-        {
-            placeEqCorner (outputEqHpButton, 1);
-            placeEqCorner (outputEqLpButton, 2);
-        }
-    }
+//==============================================================================
+//  The meters panel: its heading, hint and the compressor's readout pair, then the
+//  four dials in a 2 x 2 grid - the rows sharing the available height, so the
+//  arrangement holds at any panel size.
+//==============================================================================
+void FirstAudioProcessorEditor::placeMeters (const EditorLayout& layout)
+{
+    metersHeadingLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 8, 130, 18);
+    metersHintLabel.setBounds (layout.meters.getX() + 16, layout.meters.getY() + 27, 150, 14);
+    const auto compressorLabelWidth = 120;
+    compressorLabel.setBounds (layout.meters.getRight() - compressorLabelWidth - 14,
+                               layout.meters.getY() + 8, compressorLabelWidth, 18);
+    compressorReadout.setBounds (layout.meters.getRight() - compressorLabelWidth - 14,
+                                 layout.meters.getY() + 27, compressorLabelWidth, 14);
 
     // Four meters in a 2 x 2 grid inside the meters panel:
     //   row 1 - INPUT and OUTPUT level VU meters
@@ -2276,7 +2407,19 @@ void FirstAudioProcessorEditor::resized()
     outputMeter.setBounds (rightColumn, topRow, columnWidth, meterRowHeight);
     compressorMeterIn.setBounds (leftColumn, bottomRow, columnWidth, meterRowHeight);
     compressorMeterOut.setBounds (rightColumn, bottomRow, columnWidth, meterRowHeight);
+}
 
+//==============================================================================
+//  The panel's overlap check, DEBUG only - a quadratic sweep on a path that runs
+//  whenever the window moves, which is nothing to pay for in a development build and
+//  nothing at all in a release one.
+//
+//  It runs LAST, on the bounds every band above has just written: a function called
+//  after resized() returns would measure the rectangles of the PREVIOUS resize, which
+//  is a stale rectangle and a collision that is not there.
+//==============================================================================
+void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
+{
 #if DEBUG
     // ------------------------------------------------------------------
     //  The overlap check.
