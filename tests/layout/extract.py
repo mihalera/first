@@ -44,6 +44,37 @@ import re
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 EDITOR = REPO / "Source" / "PluginEditor.cpp"
+
+# The editor's own source is five files since the constructor's build, the theme, the
+# paint routines and the tick moved out beside it, and what this harness reads is
+# spread across them: the constructor's phases are DECLARED in PluginEditor.h and
+# defined in Source/GUI/EditorSetup.cpp, the layout arithmetic this file cuts six spans
+# out of is still in PluginEditor.cpp, and the phase guard has to count definitions
+# wherever they are. So the files are read AS ONE TEXT, each under a marker naming it:
+# every span still has to occur exactly once across all of them, which is what turns a
+# definition that has been duplicated in two files into a failure rather than a run
+# that measured whichever copy it found first.
+EDITOR_SOURCES = [
+    EDITOR,
+    REPO / "Source" / "GUI" / "EditorSetup.cpp",
+    REPO / "Source" / "GUI" / "EditorTheme.cpp",
+    REPO / "Source" / "GUI" / "EditorPaint.cpp",
+    REPO / "Source" / "GUI" / "EditorTimer.cpp",
+]
+EDITOR_NAMES = " + ".join(path.name for path in EDITOR_SOURCES)
+
+
+def editor_source() -> str:
+    """The editor's own source as one text, each file under a marker naming it."""
+    chunks = []
+
+    for path in EDITOR_SOURCES:
+        if not path.exists():
+            raise SystemExit(f"extract.py: {path.relative_to(REPO)} is missing; the layout "
+                             f"harness reads the editor's own source across its files.")
+        chunks.append(f"// ---- {path.relative_to(REPO).as_posix()} ----\n" + path.read_text())
+
+    return "\n".join(chunks)
 HEADER = REPO / "Source" / "PluginEditor.h"
 
 # Where the two things this file reads out of the editor have moved to, each named
@@ -191,9 +222,9 @@ def check_constructor_phases(source: str, header: str) -> list[str]:
         definitions = len(re.findall(r"FirstAudioProcessorEditor::" + re.escape(name) + r"\s*\(\s*\)",
                                      source))
         if definitions == 0:
-            problems.append(f"{name}() is declared but has no definition in {EDITOR.name}")
+            problems.append(f"{name}() is declared but has no definition in {EDITOR_NAMES}")
         elif definitions > 1:
-            problems.append(f"{name}() is defined {definitions} times in {EDITOR.name}")
+            problems.append(f"{name}() is defined {definitions} times in {EDITOR_NAMES}")
 
     for name in calls:
         if name not in declarations:
@@ -221,7 +252,7 @@ def main() -> int:
 
     destination = pathlib.Path(arguments.output_dir)
     destination.mkdir(parents=True, exist_ok=True)
-    source = EDITOR.read_text()
+    source = editor_source()
     # The paint routine and the arithmetic it solves with: both are read out of the
     # file that has them, so "the knob's own numbers" cannot silently become the
     # numbers this file used to carry.

@@ -52,10 +52,31 @@
 # constructor, and the error that produced is how this was found.
 #
 # The list of TUs is not a hand-kept list of the plugin's files: it is every .cpp
-# under Source/ that includes PluginEditor.h or PluginProcessor.h. A file the
-# editor is split into therefore joins the check by existing, and the guard below
-# fails if one of them is missing from the run.
+# under Source/ that includes PluginEditor.h, PluginProcessor.h or TapeScene.h. A
+# file the editor is split into therefore joins the check by existing, and the
+# guard below fails if one of them is missing from the run.
 set -euo pipefail
+
+# Three passes, and the whole check is about three minutes on a single-core machine
+# (thirteen translation units and twelve headers, each one a full JUCE include tree).
+# A named pass can be run on its own for local iteration - `check_editor_juce.sh tu`,
+# `... headers`, `... probe` - and no name is a filter: a pass that is run, is run
+# over every file it finds. With no argument all three run, which is what CI does and
+# what the exit status means.
+RUN_TUS=1
+RUN_PROBE=1
+RUN_HEADERS=1
+
+case "${1:-}" in
+    "") ;;
+    tu)      RUN_PROBE=0; RUN_HEADERS=0 ;;
+    probe)   RUN_TUS=0;   RUN_HEADERS=0 ;;
+    headers) RUN_TUS=0;   RUN_PROBE=0 ;;
+    *)
+        echo "check_editor_juce: usage: $0 [tu|probe|headers]" >&2
+        exit 2
+        ;;
+esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 REPO="${HERE}/../.."
@@ -127,22 +148,29 @@ cat > "${BUILD}/stubs/JuceHeader.h" <<'EOF'
 #include <juce_opengl/juce_opengl.h>
 EOF
 
-# Every .cpp under Source/ that compiles the processor or the editor, which is
-# the set that has to parse. Read from the tree rather than written down.
+# Every .cpp under Source/ that compiles the processor, the editor, or the panel's
+# one hand-written GL component, which is the set that has to parse. Read from the
+# tree rather than written down. TapeScene.h is in that list because TapeScene.cpp
+# is part of the same panel and is built the same way - and because it is the one
+# of the three that no other check touches: the harnesses read extracted spans out
+# of the other files, and nothing extracts GLSL.
 mapfile -t TUS < <(python3 - "${REPO}" <<'PY'
 import pathlib
 import sys
 
 repo = pathlib.Path(sys.argv[1])
+headers = ('PluginEditor.h', 'PluginProcessor.h', 'TapeScene.h')
+
 for path in sorted((repo / "Source").rglob("*.cpp")):
     text = path.read_text(errors="ignore")
-    if '#include "PluginEditor.h"' in text or '#include "PluginProcessor.h"' in text:
+    if any(f'#include "{name}"' in text for name in headers):
         print(path.relative_to(repo).as_posix())
 PY
 )
 
 if [ "${#TUS[@]}" -eq 0 ]; then
-    echo "check_editor_juce: no TU under Source/ includes the processor or the editor" >&2
+    echo "check_editor_juce: no TU under Source/ includes the processor, the editor or " \
+         "the tape scene" >&2
     exit 1
 fi
 
@@ -193,15 +221,63 @@ DEFINES=(
     -DJucePlugin_IsMidiEffect=0
 )
 
+# Each of these is a JUCE header tree, a vendored library or two and the plugin's
+# own includes, so a translation unit is ten to twenty-five seconds of compiler -
+# and the list grows every time a file is split out. They are independent, so they
+# run JOBS at a time; the pass prints one line per file in the order the files are
+# named, and any failure stops the script with that compiler's output above it.
+#
+# J37_JOBS overrides the width. It is a plain fork limit rather than a job server,
+# which is all this needs: the work is two dozen independent compiles.
+JOBS="${J37_JOBS:-4}"
+case "${JOBS}" in
+    ''|*[!0-9]*) echo "check_editor_juce: J37_JOBS must be a number" >&2; exit 2 ;;
+esac
+
+# Runs one command per name, JOBS at a time, and returns 1 if any of them failed.
+# The command is a shell FUNCTION rather than a line of shell text, so the flags
+# below are the arrays this script already built rather than a second, quoted copy
+# of them - the whole reason "compile the same way" stays true.
+run_in_batches() {
+    local runner="$1"
+    shift
+    local -a batch pids
+
+    while [ "$#" -gt 0 ]; do
+        batch=("$@")
+        if [ "${#batch[@]}" -gt "${JOBS}" ]; then
+            batch=("${batch[@]:0:${JOBS}}")
+        fi
+
+        pids=()
+        for item in "${batch[@]}"; do
+            ( "${runner}" "${item}" ) &
+            pids+=("$!")
+        done
+
+        local failed=0
+        for pid in "${pids[@]}"; do
+            wait "${pid}" || failed=1
+        done
+        [ "${failed}" -eq 0 ] || return 1
+
+        shift "${#batch[@]}"
+    done
+}
+
 # -Wno-cpp: RTNeural warns that its alignment default was taken, which is a
 # vendored library's business and not this check's. The source itself is compiled
 # with warnings as errors by the platform builds; that is their job, not this
 # one's - this one answers "does it still parse".
-for tu in "${TUS[@]}"; do
+compile_translation_unit() {
     "${CXX}" -std=c++20 -fsyntax-only -Wno-cpp \
-        "${INCLUDES[@]}" "${DEFINES[@]}" "${REPO}/${tu}"
-    echo "  ok  ${tu}"
-done
+        "${INCLUDES[@]}" "${DEFINES[@]}" "${REPO}/$1" \
+        && echo "  ok  $1"
+}
+
+if [ "${RUN_TUS}" -eq 1 ]; then
+    run_in_batches compile_translation_unit "${TUS[@]}"
+fi
 
 # The opt-in hot-path probe's own branch, compiled. `J37_ENABLE_HOTPATH_PROBE` is a
 # flag no build defines and no CI job sets, so everything behind it is compiled by
@@ -221,11 +297,15 @@ for path in sorted((repo / "Source").rglob("*.cpp")):
 PY
 )
 
-for tu in "${PROBE_TUS[@]}"; do
+compile_probe_unit() {
     "${CXX}" -std=c++20 -fsyntax-only -Wno-cpp \
-        "${INCLUDES[@]}" "${DEFINES[@]}" -DJ37_ENABLE_HOTPATH_PROBE=1 "${REPO}/${tu}"
-    echo "  ok  ${tu} (hot-path probe on)"
-done
+        "${INCLUDES[@]}" "${DEFINES[@]}" -DJ37_ENABLE_HOTPATH_PROBE=1 "${REPO}/$1" \
+        && echo "  ok  $1 (hot-path probe on)"
+}
+
+if [ "${RUN_PROBE}" -eq 1 ]; then
+    run_in_batches compile_probe_unit "${PROBE_TUS[@]}"
+fi
 
 # The plugin's own headers, each compiled ON ITS OWN. This is the half the TU pass
 # above cannot see: a header included by PluginEditor.cpp gets whatever that file
@@ -264,19 +344,28 @@ if [ "${#OWN_HEADERS[@]}" -eq 0 ]; then
     exit 1
 fi
 
-for header in "${OWN_HEADERS[@]}"; do
-    # The plugin's own module header comes first deliberately: a GUI header may rely
-    # on juce:: names its includer has already declared (Source/GUI/KnobMetrics.h does
-    # exactly that, because tests/layout compiles it with no JUCE at all and a stand-in
-    # for the three helpers it asks for - see J37Math.h for the convention). What this
-    # step rules out is a dependency on ANOTHER PROJECT header: one that only compiles
-    # when the editor's header was included first includes nothing itself, and that is
-    # the failure a split produces.
-    printf '#include <JuceHeader.h>\n#include "%s"\n' "${header}" > "${BUILD}/header_alone.cpp"
+# One header, compiled alone. The plugin's own module header comes first deliberately:
+# a panel header may rely on juce:: names its includer has already declared
+# (Source/GUI/KnobMetrics.h does exactly that, because tests/layout compiles it with no
+# JUCE at all and a stand-in for the three helpers it asks for - see J37Math.h for the
+# convention). What this rules out is a dependency on ANOTHER PROJECT header: one that
+# only compiles when the editor's header was included first includes nothing itself, and
+# that is the failure a split produces.
+compile_header_alone() {
+    # The generated translation unit is named after the header it carries: this pass
+    # runs JOBS at a time, and one shared file name would have them overwrite each
+    # other's input - which compiles fine and measures the wrong header.
+    local unit="${BUILD}/header_alone.$(printf '%s' "$1" | tr '/' '_').cpp"
+    printf '#include <JuceHeader.h>\n#include "%s"\n' "$1" > "${unit}"
+
     "${CXX}" -std=c++20 -fsyntax-only -Wno-cpp \
-        "${INCLUDES[@]}" "${DEFINES[@]}" "${BUILD}/header_alone.cpp"
-    echo "  ok  ${header} (on its own)"
-done
+        "${INCLUDES[@]}" "${DEFINES[@]}" "${unit}" \
+        && echo "  ok  $1 (on its own)"
+}
+
+if [ "${RUN_HEADERS}" -eq 1 ]; then
+    run_in_batches compile_header_alone "${OWN_HEADERS[@]}"
+fi
 
 echo "check_editor_juce: ${#TUS[@]} translation unit(s) - the processor, the editor" \
      "and every file they are split into, plus ${#PROBE_TUS[@]} of them again with the" \

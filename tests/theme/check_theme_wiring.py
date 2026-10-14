@@ -56,6 +56,34 @@ ROOT = Path(__file__).resolve().parents[2]
 HEADER = ROOT / "Source" / "PluginEditor.h"
 SOURCE = ROOT / "Source" / "PluginEditor.cpp"
 
+# The widget naming this check reads is spread across the editor's own source since it
+# was split: applyTheme() is Source/GUI/EditorTheme.cpp, the phases that BUILD the
+# widgets are Source/GUI/EditorSetup.cpp, and the tick that refreshes their ink is
+# Source/GUI/EditorTimer.cpp. The reachability graph does not care which file a helper
+# is in - it follows NAMES - so the files are read AS ONE TEXT, each under a marker
+# naming it. That is also what keeps this check honest: a name that appears in two of
+# the files is not "somewhere in the source", it is the same function defined twice.
+SOURCE_FILES = [
+    SOURCE,
+    ROOT / "Source" / "GUI" / "EditorSetup.cpp",
+    ROOT / "Source" / "GUI" / "EditorTheme.cpp",
+    ROOT / "Source" / "GUI" / "EditorPaint.cpp",
+    ROOT / "Source" / "GUI" / "EditorTimer.cpp",
+]
+
+
+def editor_source() -> str:
+    """The editor's own source as one text, each file under a marker naming it."""
+    chunks = []
+
+    for path in SOURCE_FILES:
+        if not path.exists():
+            raise SystemExit(f"check_theme_wiring: {path.relative_to(ROOT)} is missing; the "
+                             f"theme this check follows is defined across the editor's files.")
+        chunks.append(f"// ---- {path.relative_to(ROOT).as_posix()} ----\n" + path.read_text(encoding="utf-8"))
+
+    return "\n".join(chunks)
+
 # The widget types the theme has to reach. A plain data member (an int, a float,
 # a juce::String, an atomic) is not a widget and is skipped; a new editor widget
 # that is one of these types is covered the moment it is declared.
@@ -176,7 +204,8 @@ def words(text: str) -> set[str]:
 def reached_text(bodies: dict[str, str], root: str) -> str:
     """The root function's body plus the body of every helper it reaches."""
     if root not in bodies:
-        raise SystemExit(f"check_theme_wiring: Source/PluginEditor.cpp has no {root}()")
+        raise SystemExit(f"check_theme_wiring: none of the editor's source files has a "
+                         f"{root}() body")
 
     accumulated = bodies[root]
     reached = {root}
@@ -222,7 +251,7 @@ def look_and_feel_members(header: str) -> list[str]:
 
 def main() -> int:
     header = HEADER.read_text(encoding="utf-8")
-    source = SOURCE.read_text(encoding="utf-8")
+    source = editor_source()
 
     bodies = function_bodies(source)
     themed = reached_text(bodies, ROOT_FUNCTION)
