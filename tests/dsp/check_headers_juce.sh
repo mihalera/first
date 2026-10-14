@@ -20,6 +20,9 @@
 #   juce_audio_basics   (and juce_core through it) owns jmin / jmax / jlimit /
 #                       MathConstants / Decibels / SmoothedValue / StringArray -
 #                       everything every other header in Source/DSP/ asks for.
+#                       SmoothedValue is the odd one: it is not a scalar helper but
+#                       the object Source/DSP/SampleSmoother.h adapts, and that
+#                       header relies on this module being declared before it.
 #   juce_audio_formats  owns AudioFormatManager and AudioFormatReader, which the IR
 #                       stage opens an impulse-response file with.
 #   juce_dsp            owns Convolution, ProcessSpec, AudioBlock and
@@ -227,6 +230,38 @@ TU="${BUILD}/header_check.cpp"
     vinyl.riaaAmount = 0.5f;
     std::uint32_t random = 0x12345678u;
     x = vinyl.process (x, 0, 0.2f, 0.2f, 0.5f, 0.001f, 0.001f, random);
+
+    // The engine's own plumbing, which moved into the directory after the stages:
+    // the amplifier's behaviour around its curve, the tape condition, the sample
+    // clock with the smoother that reads it, and the conventional compressor on
+    // the finished signal. None of them is rendered by a harness (nothing cuts
+    // them any more, and no harness includes them), so this probe is their only
+    // automated look - and it is the one that matters most for the smoother,
+    // because that header leans on juce_audio_basics for SmoothedValue itself
+    // rather than for a scalar helper.
+    AmpVoicing amp;
+    x = amp.process (x, 0.3f, 0.5f, 0.2f, 0.1f) + amp.sagGain + amp.sagEnvelope;
+    amp.reset();
+
+    TapeCondition condition;
+    std::uint32_t conditionRandom = 0x12345678u;
+    condition.updateSlowSources (0.2f, 0.1f, 512, conditionRandom);
+    x = condition.processTone (x, 0, 0.5f, 0.5f, 0.2f, 0.2f);
+    condition.reset();
+
+    SampleClock clock;
+    SampleSmoother smoother { clock, true, false, 0.5f };
+    smoother.reset (48000.0, 0.02);
+    smoother.setCurrentAndTargetValue (0.5f);
+    smoother.setTargetValue (0.75f);
+    x = smoother.getNextValue() + smoother.getCurrentValue()
+      + (smoother.isSmoothing() ? 1.0f : 0.0f)
+      + static_cast<float> (clock.sample);
+    smoother.skip (8);
+
+    StandardCompressor compressor;
+    x = compressor.process (x, 48000.0f, -12.0f, 4.0f, 10.0f, 100.0f, 6.0f, 3.0f);
+    compressor.reset();
 
     return x + j37math::exp (1.0f) + j37math::log10 (2.0f) + j37math::sqrt (3.0f);
 }

@@ -19,16 +19,12 @@
 #include <juce_box2d/juce_box2d.h>
 #include <juce_opengl/juce_opengl.h>
 
-// melatonin_blur (fetched by CPM in CMakeLists.txt). Fast shadow and gradient
-// blurring for JUCE Components. Available to the paint routines below, which
-// draw the panel's soft analog shading by hand today; the include is conditional
-// so a build without the module on its include path still compiles.
-#if __has_include (<melatonin_blur/melatonin_blur.h>)
- #include <melatonin_blur/melatonin_blur.h>
- #define J37_HAS_MELATONIN_BLUR 1
-#else
- #define J37_HAS_MELATONIN_BLUR 0
-#endif
+// The panel's paint kit, its page table and the seven principles it paints with
+// live in Source/GUI/PanelPaint.h and Source/GUI/PanelTabs.h, and they arrive
+// here: the classes below count the principles, draw with the palettes and are
+// handed the theme the palettes select on, so the header of the panel's paint
+// kit is the one file the editor's own header has to include.
+#include "GUI/PanelPaint.h"
 
 // foleys_gui_magic (fetched by CPM in CMakeLists.txt). Daniel Walz's declarative
 // GUI framework: the editor's controls can be described in XML and edited live,
@@ -43,38 +39,29 @@
  #define J37_HAS_FOLEYS 0
 #endif
 
-// The seven saturation principles, in the order the SOURCE knobs, the colours
-// and the MIX page's bar all use them: tape, valve, cassette, vinyl, amp,
-// transformer, digital - the same order SaturationCore::setWeights takes them
-// in. Declared once here, ABOVE everything that needs it, because three
-// separate pieces of the panel count the same seven: the LookAndFeel, which
-// paints a knob in its machine's colour and has to hold one pointer per
-// principle; the editor's MixBar, whose strip is a fixed seven cells; and the
-// seven SOURCE registrations themselves. One number, so none of the three can
-// drift from the others.
-inline constexpr int principleCount = 7;
 
 class J37LookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
-    /** The three front panels. A plain int-typed enum so it can be a parameter
-        value, a member and a switch subject without casts. */
-    enum class ThemeChoice { ivory = 0, charcoal = 1, metal = 2 };
+    // j37panel::ThemeChoice is j37panel::ThemeChoice, in Source/GUI/PanelPaint.h: the
+    // palettes select on it, and a palette cannot be nested in the class that
+    // paints with it - which is what every caller below was already reaching
+    // through the class to name.
 
     // The bool entry point is kept because every paint routine in this file calls
     // it and the two DARK themes share every code path - this is the older,
     // coarser question ("is this a dark panel?"). setTheme() is the finer one.
     void setDarkTheme (bool shouldUseDarkTheme) noexcept
     {
-        theme = shouldUseDarkTheme ? ThemeChoice::charcoal : ThemeChoice::ivory;
+        theme = shouldUseDarkTheme ? j37panel::ThemeChoice::charcoal : j37panel::ThemeChoice::ivory;
     }
 
-    void setTheme (ThemeChoice newTheme) noexcept { theme = newTheme; }
-    ThemeChoice getTheme() const noexcept { return theme; }
+    void setTheme (j37panel::ThemeChoice newTheme) noexcept { theme = newTheme; }
+    j37panel::ThemeChoice getTheme() const noexcept { return theme; }
 
     /** True for the two dark panels. Used by every drawing routine, which only
         ever needs to know dark-or-light rather than which dark. */
-    bool isDarkTheme() const noexcept { return theme != ThemeChoice::ivory; }
+    bool isDarkTheme() const noexcept { return theme != j37panel::ThemeChoice::ivory; }
 
     void setActivity (float newActivity) noexcept { activity = newActivity; }
     void setDrift (float newDrift) noexcept { drift = newDrift; }
@@ -234,7 +221,7 @@ private:
         child of the editor. */
     static juce::Point<float> offsetToTopLevel (const juce::Component& component) noexcept;
 
-    ThemeChoice theme = ThemeChoice::ivory;
+    j37panel::ThemeChoice theme = j37panel::ThemeChoice::ivory;
     float activity = 0.0f;   ///< Compressor activity, drives the glow around the knobs.
     juce::Rectangle<float> cameraPanel;   ///< The panel, in its top-level component's space.
     const juce::Component* cameraRoot = nullptr;   ///< The top-level component the camera was measured in.
@@ -291,11 +278,11 @@ private:
 class J37InlineLookAndFeel final : public juce::LookAndFeel_V4
 {
 public:
-    void setTheme (J37LookAndFeel::ThemeChoice newTheme) noexcept { theme = newTheme; }
+    void setTheme (j37panel::ThemeChoice newTheme) noexcept { theme = newTheme; }
     void setDarkTheme (bool shouldUseDarkTheme) noexcept
     {
-        theme = shouldUseDarkTheme ? J37LookAndFeel::ThemeChoice::charcoal
-                                   : J37LookAndFeel::ThemeChoice::ivory;
+        theme = shouldUseDarkTheme ? j37panel::ThemeChoice::charcoal
+                                   : j37panel::ThemeChoice::ivory;
     }
 
     /** The list drawing: a flat recessed field. */
@@ -332,27 +319,15 @@ public:
                            bool shouldDrawButtonAsDown) override;
 
 private:
-    J37LookAndFeel::ThemeChoice theme = J37LookAndFeel::ThemeChoice::ivory;
+    j37panel::ThemeChoice theme = j37panel::ThemeChoice::ivory;
     int panelHeight = 0;   ///< The panel the lists stand on; 0 until the first paint.
 };
 
-// The panel's knob strip as ONE number: sixty-four controls. Declared here,
-// above BOTH of its users, because they no longer live in the same scope: the
-// class below sizes its sliders, labels and attachments from it, and the control
-// table that NAMES those knobs is at file scope in the .cpp (see THE CONTROL
-// TABLE in PluginEditor.cpp) - a constant inside the class is not visible there,
-// which is a build error rather than a warning, and was one.
-//
-// 64: the fifty-nine the panel carried, minus the BLEND/SHAPE pair the user asked
-// to remove, plus the seven SOURCE knobs that replaced them.
-//
-// The count, the controlIds / controlNames lists, the defaultValues array and the
-// tabSpecs table are all views of ONE list and must agree. Sizing the arrays from
-// this name rather than from a literal is what turns a mismatch into a compile
-// error (C2078) instead of a silent out-of-bounds read at run time, and the tab
-// table is checked against this count by a static_assert in setCurrentTab, so a
-// knob that no tab lists is a build error too.
-inline constexpr std::size_t controlCount = 64;
+// The panel's two counts and its text - the knob table and the sentence every
+// parameter shows - are Source/GUI/PanelText.h: `controlCount` and the table that
+// is one row per control are one list seen twice, and this header is included here
+// because the class below sizes its sliders, labels and attachments from the count.
+#include "GUI/PanelText.h"
 
 class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor,
                                         private juce::Timer
@@ -1041,7 +1016,7 @@ private:
     //  dark themes share all of those code paths; the enum is what tells the two
     //  of them apart, in the one place that has to (paletteForTheme).
     // -----------------------------------------------------------------------
-    J37LookAndFeel::ThemeChoice themeChoice = J37LookAndFeel::ThemeChoice::ivory;
+    j37panel::ThemeChoice themeChoice = j37panel::ThemeChoice::ivory;
     bool darkTheme = false;   // true for charcoal AND metal; see the note above
 
     // Transport presentation. `lastShownTransport` is the parameter index the

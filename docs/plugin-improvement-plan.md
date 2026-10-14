@@ -77,7 +77,7 @@ and now they compile the shipping code. It is also where the split's one silent-
 mode showed up for real: the transport extractor reads `armedForHost` out of
 `PluginProcessor.h` as text, the flag moved with the rig, and the check failed with the
 file it had searched named in the message - the right outcome, and the reason each of
-those checks names its file. `PluginProcessor.h` itself is 2,130 lines, down from 7,605,
+those checks names its file. `PluginProcessor.h` itself is 1,787 lines, down from 7,605,
 and the DSP extractor's header list is EMPTY: its last entry, `NeuralStage`, moved as
 soon as the optional-library probe it is compiled under had a header of its own,
 `Source/DSP/OptionalLibraries.h` - which is the rule this plan's own paragraph above
@@ -86,7 +86,26 @@ decides it. The JUCE
 header check compiles **every** file in `Source/DSP/` rather than the harnesses'
 source lists, which is what gave the four stages nothing includes a compile against real
 JUCE at all - coverage by convention rather than by registry. What is left in that
-extractor is the .cpp half alone: the five inline shapers. The state harness, whose parameter table reads the same six model lists,
+extractor is the .cpp half alone: the five inline shapers. The engine's own plumbing - the
+amp's behaviour around its curve, the tape condition, the sample clock and the smoother
+that reads it, and the conventional compressor on the finished signal - has followed it,
+four more headers that no harness renders and that the JUCE header check instantiates
+instead (23 headers in that directory now).
+
+**And the editor has been split, which is the part this plan had not asked for.**
+`PluginEditor.cpp` is 6,078 lines, down from 9,441: the paint kit and the page table
+(`Source/GUI/PanelPaint.h`, `PanelTabs.h`), the knob table and every tooltip sentence
+(`PanelText.h`), both look-and-feels (`J37LookAndFeel.cpp`), the meters
+(`EditorMeters.cpp`), the interface-sound engine (`UiSoundEngine.cpp`) and the knob's
+radial budget (`KnobMetrics.h`), which two files now call and which the layout harness
+compiles as a header rather than cutting as text. Each move is a pure move of bytes,
+with the three adaptations a header requires named in `SPLITTING-BIG-FILES.md` section
+7 - `inline`, the two counts and the theme choice, and the radial budget that had to
+stop being file-local. That section also records the check the split needed and did not
+have: `tests/editor/check_editor_juce.sh` compiles the whole translation units and every
+`Source/GUI/*.h` on its own against real JUCE, because every other harness in this
+repository compiles an extracted span and would not see a moved block with a missing
+include. It caught three real faults on its first run. The state harness, whose parameter table reads the same six model lists,
 now looks each list up in a short list of header files rather than assuming it is in
 `PluginProcessor.h` - the two-file version of the same rule. That is the first
 payoff above, delivered; `SPLITTING-BIG-FILES.md` section 7 records the recipe and
@@ -200,7 +219,7 @@ is an index over it, not a replacement.
 
 ## If you do three things
 
-1. Move the DSP structs out of `PluginProcessor.h` into `Source/DSP/*.h` and let
+1. **[done] Move the DSP structs out of `PluginProcessor.h` into `Source/DSP/*.h`** and let
    the harnesses `#include` them. It deletes the fragile part of the test suite,
    speeds every build, and unblocks items 4 and 6.
 2. Add ccache and a compile-only gate so a missing include is a two-minute failure

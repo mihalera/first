@@ -26,6 +26,16 @@ Measured, not eyeballed (`wc -l`, and a comment/code count that ignores blank li
 | `Source/GUI/TapeScene.cpp` | 2,860 | 604 (21 %) | 1,894 | scene namespace 844 (335 of it GLSL string literals) · `renderOpenGL()` 210 · `drawControlBank()` 166 · `controlIndexAt()` 110 · `paint()` 93 |
 | `Source/PluginEditor.h` | 1,233 | 494 (40 %) | 595 | nothing but declarations and 24 bodies of under 20 lines each |
 
+**Where the five stand now** - the same `wc -l`, after the splits section 7 records:
+
+| File | Was | Now | What left it |
+| --- | ---: | ---: | --- |
+| `Source/PluginProcessor.h` | 6,177 | 1,787 | thirteen stages plus the engine's own plumbing - 23 headers |
+| `Source/PluginEditor.cpp` | 9,441 | 6,078 | the paint kit, the page table, the knob table, the look-and-feels, the meters, the interface-sound engine |
+| `Source/PluginEditor.h` | 1,256 | 1,231 | the two counts and the theme choice, to the headers that use them |
+| `Source/PluginProcessor.cpp` | 7,220 | 7,220 | nothing yet: the parameter table is step 2 of section 6 |
+| `Source/GUI/TapeScene.cpp` | 2,860 | 2,860 | nothing yet: the shader sources are step 5 |
+
 Two facts worth keeping in view. First, **35-46 % of the big files is prose** - the
 notes that explain why the tape model, the layout and the preset format are shaped
 the way they are. A split that keeps that prose with the code it explains does not
@@ -81,7 +91,8 @@ Four constraints, in the order they bite:
 
 ## 3. What can move
 
-Ranked by benefit per unit of risk. Line ranges are from the current tree.
+Ranked by benefit per unit of risk. Line ranges are from the tree the analysis was
+written against; what has since been done is marked, and section 7 has the evidence.
 
 **A. The parameter table -> `Source/ParameterTable.cpp` (low risk, biggest win).**
 `PluginProcessor.cpp:1151-2410` is the namespace holding the 23 group functions
@@ -93,7 +104,7 @@ a list of files - see step 1 of the plan); add one line to `target_sources`. Ris
 low. This is the split already half done: the groups exist, and the state harness
 compiles them and counts the 109 parameters they build.
 
-**B. The tooltip text -> `Source/PanelText.cpp` (low risk, moderate win).**
+**B. The tooltip text -> `Source/GUI/PanelText.h` (DONE - low risk, moderate win).**
 `PluginEditor.cpp:3696-4266`: the `ControlSpec` table (one row per knob) and
 `parameterTooltipText()` (431 lines of sentences). It is read by two call sites and
 by nothing else, it is pure data, and neither the layout nor the DSP harness touches
@@ -101,7 +112,7 @@ it. Costs: one line in `target_sources`; if the `ControlSpec` table moves too, t
 editor's debug cross-check against `tabSpecs` has to see the declaration, so give
 the file a small header or leave the table where it is.
 
-**C. The paint kit -> `Source/GUI/PanelPaint.{h,cpp}` (low risk, moderate win).**
+**C. The paint kit -> `Source/GUI/PanelPaint.h` + `PanelTabs.h` (DONE - low risk).**
 `PluginEditor.cpp:181-1045` is the 865-line anonymous namespace that draws the
 vintage furniture: `UiPalette` and the palette tables, `drawPanel`,
 `fillCylinderBarrel`, `fillLitDome`, `shrinkingFont`, `tabsCoverAllControls`. It is
@@ -110,7 +121,7 @@ not by `PluginEditor.h`, so the header only needs to include whatever the new
 header declares. The radial-budget namespace right after it (line 1046) is cut by
 the layout harness and should stay put. Risk: low.
 
-**D. The DSP structs -> `Source/DSP/*.h`, one per stage (low risk, large win).**
+**D. The DSP structs -> `Source/DSP/*.h`, one per stage (DONE - low risk, large win).**
 `SaturationCore` (861), `VinylStage` (567), `SubharmonicGenerator` (560),
 `NeuralStage` (380), `ThreeBandEq` (292), `InputStage` (244), `HarmonicAnalyser`
 (194), `PlateReverb` (193), `GlueCompressor` (148) - about 3,600 lines of header that
@@ -230,18 +241,22 @@ table). Re-running them takes seconds and needs nothing but `git` and `python3`.
 
 Each step is independently revertable and ends with the same checks green.
 
-1. **Teach the extractors to search a list of files** (`tests/state/`, `tests/dsp/`,
-   `tests/layout/`, `tests/presets/check_presets.py`). Mechanical, no moves; it makes
-   every later step a one-line change and removes the "which file does the harness
-   read" trap. Verify: the four checks below.
+1. ~~**Teach the extractors to search a list of files**~~ - done as the moves needed
+   it (`tests/dsp/`, `tests/state/`, `tests/pitch/`, `tests/transport/`), and
+   `tests/layout/extract.py` is the last one to have been given the same treatment:
+   it reads the paint routine and the radial budget out of the files that have them.
 2. **A - the parameter table** to `Source/ParameterTable.cpp`. Verify: state harness
-   (109 parameters, 39 checks), preset check.
-3. **B and C - tooltip text and the paint kit** out of `PluginEditor.cpp`. Verify:
-   layout harness, then the window itself.
-4. **D - the DSP structs**, one per commit. Verify: DSP harness after each.
-5. **E - the shaders**, if `TapeScene.cpp` is being touched anyway.
+   (109 parameters, 39 checks), preset check. **Not done** - and it is the largest
+   single win left in `PluginProcessor.cpp`.
+3. ~~**B and C - tooltip text and the paint kit** out of `PluginEditor.cpp`~~ - done,
+   as `Source/GUI/PanelText.h`, `PanelPaint.h` and `PanelTabs.h`. Verify: layout
+   harness, plus the new compile check (section 7).
+4. ~~**D - the DSP structs**~~ - done: thirteen stages and the engine's own plumbing
+   are headers under `Source/DSP/`, and nothing is left in `PluginProcessor.h` for a
+   harness to cut. Verify: DSP harness and the JUCE header check after each.
+5. **E - the shaders**, if `TapeScene.cpp` is being touched anyway. Not done.
 6. **F and G - the long functions**, last, one stage per commit, and only with the
-   harnesses extended to compile the stage that moves.
+   harnesses extended to compile the stage that moves. Not started.
 
 After every step: `bash tests/dsp/run.sh`, `bash tests/layout/run.sh`,
 `bash tests/state/run.sh`, `python3 tests/presets/check_presets.py`, and the three
@@ -437,12 +452,90 @@ What is left in the extractor is `IMPL_PIECES`: the five inline shapers (`j37Tan
 `softClip`, `softKneeReductionDb` and the two one-pole coefficient helpers) still cut out
 of `PluginProcessor.cpp`, which is the same recipe applied to the .cpp side.
 
-Still to move, same recipe, one header per commit, and none of them is cut by an
-extractor any more: `TapeCondition`, `StandardCompressor`, `SampleClock` and
-`SampleSmoother`. None of them needs anything the check does not already have - the two
-modules `IrStage` asked for are in it now, and they arrive the same way the header did:
-by the header moving in and the compile saying so. `SampleSmoother` is the one to think about before moving:
-`tests/dsp/extract.py` reads the MIX smoother's inversion flag out of
-`PluginProcessor.h` by regex, so its header has to be where that regex looks - the same
-lesson the transport's `armedForHost` check taught, and the neural stage's own state just
-taught again.
+**The engine's own plumbing followed, and that finished the header.** Four more blocks
+left `PluginProcessor.h`: `Source/DSP/AmpVoicing.h`, `TapeCondition.h`,
+`SampleSmoother.h` (the sample clock and the smoother that reads it, one file because
+they are one mechanism) and `StandardCompressor.h` - 94, 114, 109 and 42 lines of the
+file into 107, 129, 125 and 55 of header. They are not stages, they are the engine's
+furniture - the amp's behaviour around its curve, how worn the machine is, the clock a
+coarse ramp is measured against, and the conventional compressor on the finished signal
+- which is why they were last: none of them is rendered by a harness, so their only
+automated look is the JUCE check, which now instantiates all four (that is what took it
+from nineteen headers to 23). The one thing worth recording is a trap that did **not**
+fire: `tests/dsp/extract.py` reads the MIX smoother's inversion flag by regex from
+`PluginProcessor.h`, and it kept working, because what it reads is the *member's* own
+declaration (`SampleSmoother mixSmoothed { ... }`) and a member of the processor stays
+where the processor is. The flag travelling with the class would have needed the regex
+re-pointed; it did not travel, so nothing was re-pointed, and the check is still reading
+the shipping declaration rather than a restatement of it. `PluginProcessor.h` is **1,787
+lines**, down from 7,605, and has nothing left in it that a stage owns.
+
+**The editor was split next, into six files.** `PluginEditor.cpp` went from 9,441 lines
+to 6,078, and what left it did so in five checked moves, each a pure move of bytes with
+every replacement asserted to apply exactly once:
+
+| New file | Lines | What it holds |
+| --- | ---: | --- |
+| `Source/GUI/PanelPaint.h` | 602 | the three palettes, the drawing helpers, the two formatters, and the melatonin_blur probe they use |
+| `Source/GUI/PanelTabs.h` | 353 | the page table and its three lookups |
+| `Source/GUI/PanelText.h` | 594 | the knob table (`ControlSpec`), the sentence every parameter shows, and `controlCount` |
+| `Source/GUI/J37LookAndFeel.cpp` | 1,213 | both look-and-feels, and the combo inset they share |
+| `Source/GUI/EditorMeters.cpp` | 596 | the two loudness meters, the compressor meter and the MIX bar |
+| `Source/GUI/UiSoundEngine.cpp` | 178 | the interface-sound engine and the four constraints it is designed under |
+| `Source/GUI/KnobMetrics.h` | 82 | the knob's radial budget, which two files now call |
+
+Three kinds of cost showed up, and each is a fact about headers rather than about
+tidiness:
+
+- **`inline`.** Names in the editor's anonymous namespace were one copy per translation
+  unit with internal linkage. In a header that is still legal and quietly wrong:
+  `liveThemeChoice` would be a *different object* in each of them, so the theme a
+  look-and-feel sets would not be the one the panel reads. Every definition in the
+  moved spans gained `inline`, and the two `constexpr` tables that a `static_assert`
+  reads stayed `constexpr` (`inline constexpr`) - a static_assert needs the definition,
+  not a declaration in a .cpp.
+- **Two nested names left the class they were nested in.** `ThemeChoice` moved out of
+  `J37LookAndFeel` to sit beside the palettes that select on it (a palette cannot be
+  nested inside the look-and-feel that paints with it), and `principleCount` and
+  `controlCount` moved into the headers whose tables are sized by them. `ThemeChoice` is
+  `j37panel::ThemeChoice` at every site now.
+- **The radial budget had to stop being file-local,** because two files call it: the
+  editor's own strip solver and `drawRotarySlider`. It is `Source/GUI/KnobMetrics.h`,
+  and it is deliberately JUCE-free - it names `juce::jmin`, `jmax` and `jlimit` and
+  relies on its includer declaring them - because `tests/layout` compiles it with no
+  JUCE at all. That is the convention `Source/DSP/J37Math.h` states, applied to a GUI
+  helper, and it is what let the harness stop cutting text: `metrics.inc` pasted into
+  the harness is now `#include "GUI/KnobMetrics.h"`.
+
+**A new check, because none of the existing ones could see any of this.** The harnesses
+compile extracted *spans* - the knob arithmetic, the transport rig, a saved state -
+never a whole file, so a block that moves to a new .cpp and forgets an include is
+textually perfect and does not compile. `tests/editor/check_editor_juce.sh` compiles the
+whole translation units instead: every `.cpp` under `Source/` that includes the
+processor or the editor (five now, found by that rule rather than listed), plus every
+`*.h` under `Source/GUI/` **on its own** - a header that only compiles when the editor's
+was included first is a header with a hidden dependency, which is exactly what a split
+produces. Real JUCE, `-fsyntax-only`, no CMake, no window, eighteen seconds. It found
+three real faults the moment it ran: the new `.cpp` files were handed `principleCount`
+inside the namespace when it is declared above it, `PanelText.h` needed `controlCount`
+from the editor's header, and a header that names JUCE without including it needed the
+module header in front of it in the generated TU.
+
+**`tests/layout` was re-pointed in the same change, and the numbers are the proof.**
+Everything it used to read out of `PluginEditor.cpp` that moved is read out of the file
+that has it now, each through a named constant: the cap's divisions, the indicator's
+length and paint order, and the lists' text inset from `J37LookAndFeel.cpp`, the grid's
+divider from `PanelTabs.h`, and the radial budget compiled from `KnobMetrics.h`. The
+harness measures the same panel: `COMP knobs 6 cols 3 rows 2 tile 329x322 | disc 151.9
+(was 81.7) +86%` and `LISTS list inset 9 px (field 30, panel 1180) | 2 call site(s)`
+before the move and after it, with the call-site count now asserted rather than only
+printed - a re-point is the moment a harness can quietly start measuring something else,
+so it is the moment to make it louder.
+
+**What is left.** `PluginEditor.cpp` is 6,078 lines and `PluginProcessor.cpp` is still
+7,220, and the two things the analysis above called the real prizes are both in one of
+them: the parameter table (`Source/ParameterTable.cpp`, step 2 of section 6, the largest
+low-risk win left) and the two long functions (`processTapeEngine()` and `resized()`,
+steps F and G, which need a harness pointed at them first). The editor's remaining bulk
+is its constructor and its phases - 23 of them, already guarded by the layout harness -
+and `resized()` inside it. Neither is a move: both have to be split in place.

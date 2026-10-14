@@ -176,100 +176,10 @@ inline juce::StringArray vinylTypeNameList()
 }
 
 
-//==============================================================================
-/**
-    Guitar-amplifier features: the parts of a real amp's behaviour that are not
-    the clipping curve.
-
-    A saturation curve alone does not sound like an amplifier. What does is the
-    behaviour AROUND the curve, and these are the four that matter most:
-
-      SAG         - the supply droops under sustained demand, so the gain falls
-                    a little and then recovers. It is why an amp "gives" under a
-                    held chord and why the attack feels spongy rather than
-                    immediate. Modelled as a slow envelope that pulls the drive
-                    down, with a recovery time long enough to hear.
-      PRESENCE    - the negative-feedback network's top-end lift. A bright,
-                    narrow boost in the upper mids that sits AFTER the clipping,
-                    so it sharpens what is already there rather than adding new
-                    harmonics.
-      CABINET     - the speaker and its box. A resonant low-pass, not a plain
-                    one: a peak around 80-120 Hz from the cabinet tuning and a
-                    roll-off above 4-6 kHz from the cone's mass. Without it a
-                    clipped signal is fizzy; with it, it reads as a speaker.
-      BIAS SHIFT  - the DC operating point of the input stage, which is the single
-                    most effective control on a real amp's character: cold is
-                    tight and crossover-distorted, hot is fat and compressed. It
-                    is the amp's own BIAS, separate from the tape BIAS.
-*/
-struct AmpVoicing
-{
-    // Sag: the supply envelope. `sagEnvelope` follows the signal's demand, and
-    // `sagGain` is the gain reduction it produces.
-    float sagEnvelope = 0.0f;
-    float sagGain = 1.0f;
-
-    // Cabinet: a two-pole resonant low-pass, per channel, plus its own state.
-    float cabinetLow1 = 0.0f;
-    float cabinetLow2 = 0.0f;
-    float cabinetPeak = 0.0f;
-
-    // Presence: a one-pole high-pass taken out of the signal and added back with
-    // gain, which is what the feedback network's lift actually does.
-    float presenceHighState = 0.0f;
-
-    void reset() noexcept
-    {
-        sagEnvelope = 0.0f;
-        sagGain = 1.0f;
-        cabinetLow1 = cabinetLow2 = cabinetPeak = 0.0f;
-        presenceHighState = 0.0f;
-    }
-
-    /**
-        Runs the amplifier behaviour around one sample.
-
-        `x` is the already-shaped signal; the return value is what leaves the amp.
-        All three coefficients are block-rate constants, built by the caller.
-
-        Order matters and follows the hardware: SAG acts on the DRIVE before the
-        curve (it is the supply), so it is applied by the caller to the drive
-        amount; here we run the POST-curve stages - cabinet first (the speaker is
-        the last thing in the amp), then presence (the feedback network taps the
-        output).
-    */
-    float process (float x,
-                   float cabinetLowCoefficient,
-                   float cabinetPeakCoefficient,
-                   float presenceCoefficient,
-                   float presenceAmount) noexcept
-    {
-        // -- Cabinet: a resonant low-pass ------------------------------------
-        // Two cascaded one-poles give the roll-off; the peak term adds the
-        // cabinet's own resonance on top by feeding back a little of the
-        // difference between the two poles, which is where the low-mid thump
-        // comes from.
-        cabinetLow1 += (x - cabinetLow1) * cabinetLowCoefficient;
-        cabinetLow2 += (cabinetLow1 - cabinetLow2) * cabinetLowCoefficient;
-
-        // The resonance is the difference between the two pole outputs: it is
-        // near zero for slow signals and rises where the cabinet's tuning sits.
-        const float resonance = (cabinetLow1 - cabinetLow2);
-        cabinetPeak += (resonance - cabinetPeak) * cabinetPeakCoefficient;
-
-        const float cabinetOut = cabinetLow2 + cabinetPeak * 0.85f;
-
-        // -- Presence: the feedback network's top-end lift ---------------------
-        // A one-pole high-pass: the difference between the signal and its own
-        // low-passed copy. Adding it back with gain is exactly what a presence
-        // control does, and because it sits after the clipping it sharpens the
-        // harmonics already present rather than generating new ones.
-        presenceHighState += (cabinetOut - presenceHighState) * presenceCoefficient;
-        const float highBand = cabinetOut - presenceHighState;
-
-        return cabinetOut + highBand * presenceAmount;
-    }
-};
+// The amplifier's behaviour around the clipping curve - sag, presence, the
+// cabinet and the bias shift. Moved out of this file, prose and all: Source/DSP/
+// is where its code and the note explaining it now live together.
+#include "DSP/AmpVoicing.h"
 
 // The transient designer. Moved out of this file; measured on signal by
 // tests/dsp/subfund_test.cpp, which includes the header directly.
@@ -297,120 +207,10 @@ struct AmpVoicing
 // now live together.
 #include "DSP/InputStage.h"
 
-//==============================================================================
-/**
-    Tape condition: FLUX, WEAR and MECHANICS.
-
-    Three separate physical facts about the machine, and they are genuinely
-    separate rather than three amounts of the same thing:
-
-      FLUX      - how deep into the oxide the record head magnetises. More flux is
-                  more low end, more hysteresis memory and a quieter floor; less is
-                  thin and bright. It is the RECORD head's depth.
-      WEAR      - the state of the heads and the tape. A rounded gap and patchy
-                  oxide lose top end and add contact noise. It is the MEDIUM's
-                  condition.
-      MECHANICS - how well the transport holds its speed. Good order means smooth,
-                  periodic wow and flutter; worn bearings and a slack belt mean
-                  irregular drift and the occasional slip.
-
-    All three are slow, continuous controls with a neutral position, so they read
-    as calibration rather than as effects.
-*/
-struct TapeCondition
-{
-    // WEAR's contact noise: a slow random modulation of the high-frequency loss.
-    float wearNoiseState = 0.0f;
-    float wearNoisePhase = 0.0f;
-
-    // MECHANICS' irregular drift: a slow random walk added to the wow phase.
-    float driftState = 0.0f;
-    float driftTarget = 0.0f;
-    int driftCountdown = 0;
-
-    // The FLUX low shelf, per channel.
-    float fluxLowL = 0.0f;
-    float fluxLowR = 0.0f;
-
-    // The WEAR high-frequency loss, per channel.
-    float wearLowL = 0.0f;
-    float wearLowR = 0.0f;
-
-    void reset() noexcept
-    {
-        wearNoiseState = wearNoisePhase = 0.0f;
-        driftState = driftTarget = 0.0f;
-        driftCountdown = 0;
-        fluxLowL = fluxLowR = 0.0f;
-        wearLowL = wearLowR = 0.0f;
-    }
-
-    /**
-        Advances the slow random sources. Called once per block, not per sample:
-        the drift and the contact noise are both sub-audio, so a block-rate update
-        is not merely adequate, it is the correct rate - a per-sample update would
-        just be a slower way to compute the same number.
-
-        `random` is the caller's noise source, so this stage does not carry a
-        second generator.
-    */
-    void updateSlowSources (float mechanicsAmount, float wearAmount, int numSamples,
-                            std::uint32_t& randomState) noexcept
-    {
-        // -- MECHANICS: the drift target changes every few hundred milliseconds ---
-        driftCountdown -= numSamples;
-        if (driftCountdown <= 0)
-        {
-            // 120 ms between targets. Slow enough to read as a wandering transport
-            // rather than as noise, fast enough that a held note hears it move.
-            driftCountdown = juce::jmax (1, juce::roundToInt (0.12f * 48000.0f));
-
-            randomState = randomState * 1664525u + 1013904223u;
-            const float unit = static_cast<float> ((randomState >> 8) & 0x00ffffffu)
-                             * (1.0f / 8388608.0f) - 1.0f;
-
-            // A worn machine's drift is larger; in good order it is nearly zero.
-            driftTarget = unit * mechanicsAmount;
-        }
-
-        // The drift itself is a one-pole toward the target, so the walk is smooth.
-        driftState += (driftTarget - driftState) * 0.05f;
-
-        // -- WEAR: the contact noise is a slow random modulation -----------------
-        randomState = randomState * 1664525u + 1013904223u;
-        const float wearUnit = static_cast<float> ((randomState >> 8) & 0x00ffffffu)
-                             * (1.0f / 8388608.0f) - 1.0f;
-        wearNoiseState += (wearUnit * wearAmount - wearNoiseState) * 0.02f;
-    }
-
-    /**
-        The FLUX low shelf and the WEAR top-end loss, per sample.
-
-        Both are one-pole splits: FLUX lifts the low band, WEAR takes the high band
-        away. They are separate filters rather than one tilt because they are
-        separate mechanisms - one is the record head, the other is the medium.
-    */
-    float processTone (float x, int channel,
-                       float fluxAmount, float wearAmount,
-                       float fluxCoefficient, float wearCoefficient) noexcept
-    {
-        auto& fluxLow = channel == 0 ? fluxLowL : fluxLowR;
-        auto& wearLow = channel == 0 ? wearLowL : wearLowR;
-
-        // FLUX: the low band is the one-pole's output, the rest is everything above.
-        // Lifting the low band by up to +3 dB is what "more flux" sounds like.
-        fluxLow += (x - fluxLow) * fluxCoefficient;
-        const float fluxHigh = x - fluxLow;
-        const float fluxGain = 1.0f + (fluxAmount - 0.5f) * 0.6f;
-        const float fluxOut = fluxLow * fluxGain + fluxHigh;
-
-        // WEAR: a one-pole low-pass on the whole signal, crossfaded in by the wear
-        // amount. A worn head loses top end, so the more worn it is the more of the
-        // filtered copy is used.
-        wearLow += (fluxOut - wearLow) * wearCoefficient;
-        return fluxOut + (wearLow - fluxOut) * wearAmount;
-    }
-};
+// The tape condition: FLUX, WEAR and MECHANICS, the three slow facts about the
+// machine. Moved out of this file, prose and all: Source/DSP/ is where its code
+// and the note explaining it now live together.
+#include "DSP/TapeCondition.h"
 
 // The plate reverb. Moved out of this file, prose and all: Source/DSP/ is where
 // its code and the note explaining it now live together.
@@ -426,163 +226,20 @@ struct TapeCondition
 // now live together.
 #include "DSP/ThreeBandEq.h"
 
-//==============================================================================
-/**
-    A sample-clock adapter for JUCE's SmoothedValue.
-
-    The engine uses one coefficient pair for both channels, so every ramp must advance
-    once per SAMPLE, not once per channel and not never. JUCE's getCurrentValue() is a
-    peek; it does not advance the ramp. The first smoother in each frame advances the
-    shared clock, and the other smoothers advance lazily on their first read in that
-    frame. This preserves the existing call sites while making their old
-    getCurrentValue() intent explicit and sample-accurate.
-*/
-struct SampleClock
-{
-    std::uint64_t sample = 0;
-};
-
-class SampleSmoother
-{
-public:
-    // The two flag parameters are named `should...` rather than after the fields they
-    // initialise: a constructor parameter with the same name as its field shadows it,
-    // and Clang flags that on macOS (it is how a silent self-assignment hides here).
-    explicit SampleSmoother (SampleClock& clockToUse, bool shouldStartAtSample = false,
-                             bool shouldInvertOutput = false, float initialValue = 0.0f)
-        : clock (clockToUse), startsSample (shouldStartAtSample),
-          invertOutput (shouldInvertOutput), smoother (initialValue)
-    {
-    }
-
-    void reset (double sampleRateToUse, double smoothingSeconds) noexcept
-    {
-        smoother.reset (sampleRateToUse, smoothingSeconds);
-        lastSample = clock.sample;
-        snapNextTarget = true;
-    }
-
-    void setCurrentAndTargetValue (float value) noexcept
-    {
-        smoother.setCurrentAndTargetValue (value);
-        lastSample = clock.sample;
-        snapNextTarget = false;
-    }
-
-    void setTargetValue (float value) noexcept
-    {
-        // The first target after a rate reset is seeded at its exact value. Without
-        // this, a coefficient that starts at zero (notably the playback poles) can
-        // leave the first wet frame silent while its 20 ms ramp is still in progress.
-        if (snapNextTarget)
-        {
-            smoother.setCurrentAndTargetValue (value);
-            snapNextTarget = false;
-        }
-        else
-        {
-            smoother.setTargetValue (value);
-        }
-    }
-
-    float getNextValue() noexcept
-    {
-        if (startsSample)
-        {
-            ++clock.sample;
-            lastSample = clock.sample;
-        }
-        else
-        {
-            lastSample = clock.sample;
-        }
-
-        const auto value = smoother.getNextValue();
-        return invertOutput ? 1.0f - value : value;
-    }
-
-    float getCurrentValue() noexcept
-    {
-        if (lastSample != clock.sample)
-        {
-            lastSample = clock.sample;
-            const auto value = smoother.getNextValue();
-            return invertOutput ? 1.0f - value : value;
-        }
-
-        const auto value = smoother.getCurrentValue();
-        return invertOutput ? 1.0f - value : value;
-    }
-
-    bool isSmoothing() const noexcept
-    {
-        return smoother.isSmoothing();
-    }
-
-    // The processing loop already consumed every sample. Advancing here would apply
-    // the ramp a second time and turn it into a block-rate zipper.
-    void skip (int) noexcept
-    {
-    }
-
-private:
-    using Smoother = juce::SmoothedValue<float, juce::ValueSmoothingTypes::Linear>;
-
-    SampleClock& clock;
-    bool startsSample = false;
-    bool invertOutput = false;
-    Smoother smoother;
-    std::uint64_t lastSample = 0;
-    bool snapNextTarget = true;
-};
+// The sample clock and the smoother that reads it: the one place where JUCE's
+// SmoothedValue has to advance exactly once per SAMPLE rather than once per read.
+// Moved out of this file, prose and all.
+#include "DSP/SampleSmoother.h"
 
 // The glue compressor. Moved out of this file; measured on signal by
 // tests/dsp/subfund_test.cpp, which includes the header directly.
 #include "DSP/GlueCompressor.h"
 
 
-//==============================================================================
-/** A conventional feed-forward compressor for the finished signal. It is
-    deliberately separate from GlueCompressor, including its detector state. */
-struct StandardCompressor
-{
-    float envelope = 0.0f;
-    float gain = 1.0f;
-
-    void reset() noexcept { envelope = 0.0f; gain = 1.0f; }
-
-    float process (float input, float sampleRate, float thresholdDb, float ratio,
-                   float attackMs, float releaseMs, float kneeDb, float makeupDb) noexcept
-    {
-        const auto detector = input * input;
-        const auto coefficientForMs = [sampleRate] (float milliseconds)
-        {
-            const auto seconds = juce::jmax (0.001f, milliseconds * 0.001f);
-            return 1.0f - std::exp (-1.0f / (juce::jmax (1.0f, sampleRate) * seconds));
-        };
-        const auto detectorCoefficient = detector > envelope
-            ? coefficientForMs (attackMs) : coefficientForMs (releaseMs);
-        envelope += (detector - envelope) * detectorCoefficient;
-        const auto envelopeDb = juce::Decibels::gainToDecibels (std::sqrt (juce::jmax (0.0f, envelope)), -100.0f);
-        const auto safeRatio = juce::jmax (1.0f, ratio);
-        const auto halfKnee = juce::jmax (0.01f, kneeDb * 0.5f);
-        const auto over = envelopeDb - thresholdDb;
-        float reductionDb = 0.0f;
-        if (over > halfKnee)
-            reductionDb = -(1.0f - 1.0f / safeRatio) * over;
-        else if (over > -halfKnee)
-        {
-            const auto progress = over + halfKnee;
-            reductionDb = -(1.0f - 1.0f / safeRatio) * progress * progress
-                        / (4.0f * halfKnee);
-        }
-        const auto targetGain = juce::Decibels::decibelsToGain (reductionDb + makeupDb);
-        const auto gainCoefficient = targetGain < gain
-            ? coefficientForMs (attackMs) : coefficientForMs (releaseMs);
-        gain += (targetGain - gain) * gainCoefficient;
-        return input * gain;
-    }
-};
+// The conventional feed-forward compressor on the finished signal, separate
+// from GlueCompressor down to its detector state. Moved out of this file, prose
+// and all.
+#include "DSP/StandardCompressor.h"
 
 // The K-weighted loudness meter. Moved out of this file; measured on signal by
 // tests/dsp/loudness_test.cpp, which includes the header directly.
