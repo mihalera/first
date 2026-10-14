@@ -10,15 +10,24 @@ which is what the first header to move was aiming at: a stage used to be found b
 text (`struct NeuralStage`), read to the next `\n};` and pasted in, in an order
 that had to mirror the plugin header's own. Every one of them is a file under
 Source/DSP/ now - NeuralStage was the last, and it could not move until the macro
-probe it is compiled under had a header of its own, Source/DSP/OptionalLibraries.h
-- so what is left to CUT is the .cpp half only: the five inline shapers the stages
-call.
+probe it is compiled under had a header of its own, Source/DSP/OptionalLibraries.h.
+
+There is nothing left to CUT at all. The five inline shapers were the .cpp half of
+the same recipe - `IMPL_PIECES`, cut out of PluginProcessor.cpp by signature - and
+they are Source/DSP/HotPathMath.h now, included by the list below with the stages.
+They followed the stages out for the same reason the stages left the header: the
+engine's signal path moved to Source/ProcessorSignalPath.cpp and the shapers are
+called from BOTH halves of the processor, so they could not travel with either.
 
 What is still checked here as TEXT is the wiring no harness can compile: the two
 facts that live in the engine's thousands of lines rather than in a stage (the
 neural rate conversion, and the AUTO GAIN compensator that a stage is not yet),
 plus the MIX smoother's own inversion flag, which is read out of the real
-declaration and handed to the harness rather than restated here.
+declaration and handed to the harness rather than restated here. Those reads are
+taken from the processor's own source AS ONE TEXT, across every file it is split
+into, so a fact that moves to another of its files is still found - and a fact that
+ends up in two of them stops this harness rather than measuring whichever came
+first.
 
 Usage:  python3 tests/dsp/extract.py <output.inc>
 """
@@ -32,6 +41,13 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parents[2]
 HEADER = REPO / "Source" / "PluginProcessor.h"
 IMPL = REPO / "Source" / "PluginProcessor.cpp"
+
+# The processor's own source is two files since the signal path moved out, and the
+# text checks below read both: the neural rate wiring is in the processor's
+# preparation code, and the AUTO GAIN compensator is inside processTapeEngine, which
+# is Source/ProcessorSignalPath.cpp now. Each file is read under a marker naming it,
+# so a span cannot be cut across a boundary that no real file has.
+IMPL_SOURCES = [IMPL, REPO / "Source" / "ProcessorSignalPath.cpp"]
 # Where the neural stage keeps the two rates it is handed. They used to be read
 # out of PluginProcessor.h, and they moved with the stage - which is why this is a
 # path of its own and why the check that reads them NAMES THE FILE it read. A text
@@ -63,8 +79,16 @@ MIX_SMOOTHER = re.compile(
 # (`valveTypeNames` and its three siblings), which is what retired the constant
 # cutting that used to sit below: the counts those lists are built from now
 # arrive with the struct instead of being pasted in ahead of it.
+# The engine's own scalar helpers come with them, and they are not one of the
+# stages: Source/DSP/HotPathMath.h is the five inline shapers (j37Tanh, the two
+# one-pole coefficient builders, softClip and the soft-knee gain computer) that
+# everything downstream of this list calls. They are listed where they belong in the
+# include order - after the bridge they build on - rather than where the plugin's
+# header happens to include them, because the plugin's order is the processor's
+# business and this is a directory of independent headers.
 SOURCE_HEADERS = [
     "DSP/J37Math.h",
+    "DSP/HotPathMath.h",
     "DSP/SaturationCore.h",
     "DSP/VinylStage.h",
     "DSP/SubharmonicGenerator.h",
@@ -105,30 +129,46 @@ SOURCE_HEADERS = [
 # Source/DSP/SaturationCore.h with the struct, so a constant that goes back to
 # being cut alone is a compile failure here rather than a silent zero.
 
-IMPL_PIECES = [
-    # j37Tanh is still extracted because SaturationCore's curves may call it, and
-    # under the harness J37_HAS_XSIMD is 0 - so this is the exact std::tanh form
-    # the shipping build uses by default. The harness never measures the SIMD
-    # approximation, which is opt-in and deliberately not the default.
-    #
-    # magneticHysteresis is deliberately NOT extracted any more. The engine moved
-    # to SaturationCore and stopped calling it, and continuing to extract it would
-    # let the harness keep rendering the old curve while the plugin rendered the
-    # new one - which is precisely the drift this file exists to prevent. Leaving
-    # it out means the harness fails to compile if anything still reaches for it.
-    ("j37Tanh", "inline float j37Tanh"),
-    ("softClip", "inline float softClip"),
-    ("softKneeReductionDb", "inline float softKneeReductionDb"),
-    ("onePoleCoefficient", "inline float onePoleCoefficient"),
-    ("onePoleCoefficientHz", "inline float onePoleCoefficientHz"),
-]
+# There is no IMPL_PIECES any more either. It cut five inline functions out of
+# PluginProcessor.cpp by their signature (`[[maybe_unused]] inline float j37Tanh`)
+# and pasted them ahead of the harness, and it was the last text this file cut out
+# of the plugin rather than including. Two things about it were worth keeping in
+# mind now that it is gone:
+#
+#   * j37Tanh was extracted because SaturationCore's curves may call it, and under
+#     the harness J37_HAS_XSIMD is 0 - so what the harness renders is the exact
+#     std::tanh form the shipping build uses by default. That is still true of the
+#     header it lives in now: J37_HAS_XSIMD arrives with the probe, which cannot
+#     answer 1 without xsimd on the include path, which the harness does not have.
+#   * magneticHysteresis was deliberately NOT in the list: the engine moved to
+#     SaturationCore and stopped calling it, and continuing to extract it would have
+#     let the harness keep rendering the old curve while the plugin rendered the new
+#     one. Leaving it out means anything that still reaches for it fails to compile.
 
 
-def extract_function(text: str, signature: str) -> str:
-    """Cuts a top-level inline function out of `text` through its closing brace."""
-    start = text.index(signature)
-    end = text.index("\n    }\n", start) + len("\n    }\n")
-    return text[start:end]
+def processor_impl() -> str:
+    """The processor's source as one text, each file under a marker naming it."""
+    chunks = []
+
+    for path in IMPL_SOURCES:
+        if not path.exists():
+            raise SystemExit(f"extract.py: {path.relative_to(REPO)} is missing; the text checks "
+                             f"below read the processor's own source out of it.")
+        chunks.append(f"// ---- {path.relative_to(REPO).as_posix()} ----\n" + path.read_text())
+
+    return "\n".join(chunks)
+
+
+def impl_source_of(anchor: str) -> str:
+    """Which of the processor's files contains `anchor`, for a message that names it."""
+    found = [path.relative_to(REPO).as_posix()
+             for path in IMPL_SOURCES if anchor in path.read_text()]
+
+    if len(found) != 1:
+        raise SystemExit(f"extract.py: `{anchor}` is in {len(found)} of the processor's files "
+                         f"({', '.join(found)}); the message cannot name it.")
+
+    return found[0]
 
 
 def mix_inverts(header: str) -> bool:
@@ -168,7 +208,7 @@ def check_neural_rate_wiring(header: str, impl: str, stage: str) -> list[str]:
                         f"hands the stages the two rates")
 
     if RATE_DEFINITION not in impl:
-        problems.append(f"{IMPL.name} does not define `updateNeuralSampleRates()`, so the "
+        problems.append(f"the processor's source does not define `updateNeuralSampleRates()`, so the "
                         f"declaration above it leads nowhere")
         return problems
 
@@ -200,7 +240,7 @@ def check_neural_rate_wiring(header: str, impl: str, stage: str) -> list[str]:
         match = re.search(rf"{channel}\.setSampleRates \(([^)]*)\);", impl)
 
         if match is None:
-            problems.append(f"`{channel}.setSampleRates` is never called in {IMPL.name}")
+            problems.append(f"`{channel}.setSampleRates` is never called in the processor's source")
         elif model_rate is not None:
             arguments = [argument.strip() for argument in match.group(1).split(",")]
 
@@ -212,7 +252,7 @@ def check_neural_rate_wiring(header: str, impl: str, stage: str) -> list[str]:
     # 3. The rate has to come from the FILE, on the one path that has one. The
     #    format's own key, read where the file is parsed.
     if impl.count('parsed.find ("sample_rate")') != 1:
-        problems.append(f"{IMPL.name} does not read `sample_rate` out of the .nam file, so a "
+        problems.append(f"the processor's source does not read `sample_rate` out of the .nam file, so a "
                         f"model's own rate is never known and the bridge stays idle")
 
     # 4. And the format that carries no rate must not inherit the last one that
@@ -231,7 +271,8 @@ def check_neural_rate_wiring(header: str, impl: str, stage: str) -> list[str]:
     #    its oversampling keeps converting to the rate it used to run at.
     pushes = impl.count("updateNeuralSampleRates();")
     if pushes < 3:
-        problems.append(f"`updateNeuralSampleRates` is called {pushes} times in {IMPL.name}: "
+        problems.append(f"`updateNeuralSampleRates` is called {pushes} times in the processor's "
+                        f"source: "
                         f"a model load and a change of oversampling factor both move a rate "
                         f"that the conversion follows")
 
@@ -326,8 +367,9 @@ def check_auto_gain_compensation(impl: str) -> list[str]:
     resets = impl.count("smoothedCompensationDb = 0.0f;")
 
     if resets != 1:
-        problems.append(f"`smoothedCompensationDb = 0.0f` appears {resets} times in {IMPL.name}: the "
-                        f"correction has to start from unity exactly once per prepare")
+        problems.append(f"`smoothedCompensationDb = 0.0f` appears {resets} times in "
+                        f"{impl_source_of('smoothedCompensationDb = 0.0f;')}: the correction has to "
+                        f"start from unity exactly once per prepare")
 
     # 6. Both legs of the MIX crossfade carry it. DELTA subtracts the dry leg from
     #    the wet one, so a correction applied to one of them and not the other
@@ -348,7 +390,7 @@ def check_auto_gain_compensation(impl: str) -> list[str]:
 def main() -> int:
     destination = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "extracted_dsp.inc")
     header = HEADER.read_text()
-    impl = IMPL.read_text()
+    impl = processor_impl()
     stage = STAGE_HEADER.read_text()
 
     problems = check_neural_rate_wiring(header, impl, stage)
@@ -364,8 +406,8 @@ def main() -> int:
           "correction on a stopped machine, and rides both legs of the MIX crossfade")
 
     chunks = ["// GENERATED FILE - do not edit.",
-              "// Built out of Source/ by tests/dsp/extract.py: the DSP stages are",
-              "// included from their own headers, the inline shapers are cut.",
+              "// Built out of Source/ by tests/dsp/extract.py: the DSP stages and the",
+              "// engine's inline shapers are included from their own headers.",
               "",
               f"#define SUBFUND_MIX_INVERTS {1 if mix_inverts(header) else 0}",
               ""]
@@ -375,14 +417,6 @@ def main() -> int:
 
     for header_name in SOURCE_HEADERS:
         chunks.append(f'#include "{header_name}"')
-
-    chunks.append("")
-    chunks.append("")
-
-    for name, signature in IMPL_PIECES:
-        chunks.append(f"// ---- {name} (PluginProcessor.cpp) " + "-" * 38)
-        chunks.append(extract_function(impl, signature))
-        chunks.append("")
 
     destination.write_text("\n".join(chunks))
     print(f"wrote {destination} ({destination.stat().st_size} bytes)")

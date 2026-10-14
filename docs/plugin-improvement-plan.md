@@ -117,6 +117,30 @@ least to do with any of these stages), but the build-time win needs the stage
 implementations in per-stage `.cpp` files, or the editor's DSP access behind an opaque
 aggregate, and that is a separate and much riskier step.
 
+**The processor has been split too, and along its own seams rather than by size.**
+`PluginProcessor.cpp` is 1,325 lines, down from 7,220, and what is left in it is the
+processor's LIFECYCLE. Three things left it, and each is a file a reader has a reason
+to open on its own: the parameter table (1,357 lines, `Source/ParameterTable.cpp`),
+the preset/compare code with the saved-state format it writes
+(`Source/ProcessorPresets.cpp` and `.h`, `Source/ProcessorStateFormat.h`), and the
+whole signal path (3,916 lines, `Source/ProcessorSignalPath.cpp`) - including
+`processTapeEngine()`, which is still one 3,366-line function and is now at least in a
+file of its own. Two headers came out of the same move because the signal path and the
+preparation code both call them: the five inline shapers (`Source/DSP/HotPathMath.h`,
+which retired the LAST text `tests/dsp/extract.py` used to cut - that extractor now
+includes every line it compiles) and the hot-path probe
+(`Source/HotPathProbe.h`).
+
+Two facts from that move are worth carrying to the next one. First, **the text checks
+failed by name and the fix rode along with the move**: four extractors read this file by
+anchor, and all four now read the processor's own source as one text across every file
+it is split into, so a fact that moves is found where it went and a fact that ends up in
+two files stops the harness. Second, **compiling the flag nobody compiles found a real
+bug**: `J37_ENABLE_HOTPATH_PROBE`'s branch, turned on for the first time during the move,
+held a copy assignment between two `std::atomic<bool>` - a deleted function - so the
+probe the counters were declared for still did not build. The move fixed it, and
+`tests/editor/check_editor_juce.sh` now compiles that branch on every run.
+
 ### 2. A fast compile gate, and ccache
 
 The one failure class that has cost the most on this repository is the cheapest to
@@ -153,7 +177,7 @@ independence, the 3.01 LU channel sum, the floor, and that `prepare()` then
 ### 4. Extract the AUTO GAIN compensator so it can be measured on signal
 
 It is the one gain stage in the chain that nothing measures, and it sits inline in
-`processBlock`'s per-sample loop. What could be measured if it were a struct, the
+`processTapeEngine`'s per-sample loop (Source/ProcessorSignalPath.cpp). What could be measured if it were a struct, the
 way `RateBridge` and `LoudnessMeter` are:
 
 - that it only ever restores and never boosts (the `jlimit (0.0f, 12.0f, …)` clamp

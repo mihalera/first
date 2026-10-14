@@ -26,6 +26,34 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parents[2]
 HEADER = REPO / "Source" / "PluginProcessor.h"
 IMPL = REPO / "Source" / "PluginProcessor.cpp"
+
+# The processor's own source is two files since the signal path moved out, and every
+# fact checked below is in one of the two: the MIX gate, the repitch call and the arm
+# are inside processTapeEngine (PluginProcessor.cpp until that move, now
+# Source/ProcessorSignalPath.cpp), while the stage's prepare() and the members'
+# declarations stayed with the processor.
+#
+# So they are read AS ONE TEXT, each file under a marker naming it. That is not
+# tidiness: each of these checks failed the moment the move landed, naming its own
+# subject, which is what made the re-pointing obvious rather than silent. A harness
+# that goes on passing because the text it reads moved away is the failure mode this
+# arrangement rules out - and a fact that ends up in BOTH files stops the harness
+# instead of matching whichever one it read first.
+IMPL_SOURCES = [IMPL, REPO / "Source" / "ProcessorSignalPath.cpp"]
+IMPL_NAMES = " + ".join(path.name for path in IMPL_SOURCES)
+
+
+def processor_impl() -> str:
+    """The processor's source as one text, each file under a marker naming it."""
+    chunks = []
+
+    for path in IMPL_SOURCES:
+        if not path.exists():
+            raise SystemExit(f"extract.py: {path.relative_to(REPO)} is missing; the engine-side "
+                             f"half of the transport promise is read out of it.")
+        chunks.append(f"// ---- {path.relative_to(REPO).as_posix()} ----\n" + path.read_text())
+
+    return "\n".join(chunks)
 # The panel is read for ONE thing - that it asks whether START is armed - because
 # the arm is invisible on the machine and a flag nobody reads is not a feature.
 EDITOR = REPO / "Source" / "PluginEditor.cpp"
@@ -106,7 +134,7 @@ def check_engine_gate() -> list[str]:
     multiplication this replaced is a fader, which is what the report heard), and
     both legs of the crossfade have to carry it.
     """
-    impl = IMPL.read_text()
+    impl = processor_impl()
     problems: list[str] = []
 
     # Every platter-speed curve in the engine, by the name it is bound to. The
@@ -121,7 +149,7 @@ def check_engine_gate() -> list[str]:
 
         if len(matches) != 1:
             problems.append(f"the {leg} leg of the MIX crossfade matches {len(matches)} places in "
-                            f"{IMPL.name}, so the harness cannot read it")
+                            f"{IMPL_NAMES}, so the harness cannot read it")
             continue
 
         carried = [name for name in curves if re.search(rf"\b{name}\b", matches[0])]
@@ -164,14 +192,14 @@ def check_engine_gate() -> list[str]:
 
 def check_engine_repitch() -> list[str]:
     """Returns the reasons the engine does not run the repitch stage."""
-    impl = IMPL.read_text()
+    impl = processor_impl()
     header = HEADER.read_text()
     problems: list[str] = []
 
     calls = REPITCH_CALL.findall(impl)
 
     if len(calls) != 1:
-        problems.append(f"`repitchStage.processFrame` appears {len(calls)} times in {IMPL.name}: "
+        problems.append(f"`repitchStage.processFrame` appears {len(calls)} times in {IMPL_NAMES}: "
                         f"the stage is advanced once per frame or it is not advanced at all")
     else:
         arguments = calls[0]
@@ -189,7 +217,7 @@ def check_engine_repitch() -> list[str]:
                         f"so the engine cannot be calling the stage it is calling")
 
     if not re.search(r"repitchStage\.prepare \(([^;]*)\);", impl):
-        problems.append(f"{IMPL.name} never prepares the repitch stage, so its line would be "
+        problems.append(f"{IMPL_NAMES} never prepares the repitch stage, so its line would be "
                         f"sized for no rate at all")
 
     return problems
@@ -205,7 +233,7 @@ def check_engine_arm() -> list[str]:
     flag out of PluginProcessor.h after the rig moved would have found nothing and
     said so - which is how this was noticed.
     """
-    impl = IMPL.read_text()
+    impl = processor_impl()
     rig = RIG_HEADER.read_text()
     editor = EDITOR.read_text()
     problems: list[str] = []
@@ -216,11 +244,11 @@ def check_engine_arm() -> list[str]:
     #    drives, and "unknown means parked" would leave START dead on every host
     #    that cannot answer.
     if "getIsPlaying" not in impl:
-        problems.append(f"{IMPL.name} never asks the playhead whether the host is "
+        problems.append(f"{IMPL_NAMES} never asks the playhead whether the host is "
                         f"playing, so nothing can arm START against it")
 
     if not re.search(r"(?<!\bconst )\bbool hostRolling = true;", impl):
-        problems.append(f"{IMPL.name} reads the host's play state without a rolling "
+        problems.append(f"{IMPL_NAMES} reads the host's play state without a rolling "
                         f"default: a host that will not answer would leave START dead")
 
     # ... and it has to keep it. JUCE reports the transport state as a flag inside
@@ -238,7 +266,7 @@ def check_engine_arm() -> list[str]:
     calls = ARM_CALL.findall(impl)
 
     if len(calls) != 1:
-        problems.append(f"`transport.beginBlock` appears {len(calls)} times in {IMPL.name}: "
+        problems.append(f"`transport.beginBlock` appears {len(calls)} times in {IMPL_NAMES}: "
                         f"the engine drives the rig once per block or it does not drive it")
     elif not re.search(r"\bhostRolling\b", calls[0]):
         problems.append("the engine does not hand the rig the host's play state, so the "

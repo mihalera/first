@@ -203,31 +203,68 @@ for tu in "${TUS[@]}"; do
     echo "  ok  ${tu}"
 done
 
-# The editor's own headers, each compiled ON ITS OWN. This is the half the TU pass
-# above cannot see: a header included by PluginEditor.cpp gets whatever that file
-# happened to include first, so a header with a hidden dependency on its includer
-# passes there and breaks the first file that includes it the other way round - which
-# is exactly what a split produces. The list is the DIRECTORY, so a header that moves
-# in is covered on the next run without being named anywhere; the NativeRenderer
-# backends are left out because each one includes its platform's own headers
-# (D3D11, Metal, Vulkan), which exist on one operating system each.
-mapfile -t GUI_HEADERS < <(python3 - "${REPO}/Source/GUI" <<'PY'
+# The opt-in hot-path probe's own branch, compiled. `J37_ENABLE_HOTPATH_PROBE` is a
+# flag no build defines and no CI job sets, so everything behind it is compiled by
+# nobody - and that is exactly how it went two revisions without the counters it
+# reads existing at all, and then (found by this pass, on the move that made the
+# branch worth compiling) how it held a copy assignment between two atomics. The
+# TUs are found by the same rule as the list above: whatever includes the probe's
+# header is what has to compile with its flag on.
+mapfile -t PROBE_TUS < <(python3 - "${REPO}" <<'PY'
 import pathlib
 import sys
 
-for path in sorted(pathlib.Path(sys.argv[1]).glob("*.h")):
-    if path.name.startswith("NativeRenderer"):
-        continue
-    print(f"GUI/{path.name}")
+repo = pathlib.Path(sys.argv[1])
+for path in sorted((repo / "Source").rglob("*.cpp")):
+    if '#include "HotPathProbe.h"' in path.read_text(errors="ignore"):
+        print(path.relative_to(repo).as_posix())
 PY
 )
 
-if [ "${#GUI_HEADERS[@]}" -eq 0 ]; then
-    echo "check_editor_juce: no headers under Source/GUI/" >&2
+for tu in "${PROBE_TUS[@]}"; do
+    "${CXX}" -std=c++20 -fsyntax-only -Wno-cpp \
+        "${INCLUDES[@]}" "${DEFINES[@]}" -DJ37_ENABLE_HOTPATH_PROBE=1 "${REPO}/${tu}"
+    echo "  ok  ${tu} (hot-path probe on)"
+done
+
+# The plugin's own headers, each compiled ON ITS OWN. This is the half the TU pass
+# above cannot see: a header included by PluginEditor.cpp gets whatever that file
+# happened to include first, so a header with a hidden dependency on its includer
+# passes there and breaks the first file that includes it the other way round - which
+# is exactly what a split produces. The list is the DIRECTORIES, so a header that
+# moves in is covered on the next run without being named anywhere; the NativeRenderer
+# backends are left out because each one includes its platform's own headers
+# (D3D11, Metal, Vulkan), which exist on one operating system each.
+#
+# BOTH levels are read, and the second one is the reason: splitting the processor put
+# Source/ProcessorStateFormat.h and Source/ProcessorPresets.h at the top of Source/
+# rather than under Source/GUI/, so a pass that read only Source/GUI/ would have
+# compiled neither. The saved-state header is the one that would have hurt - two
+# translation units with nothing else in common include it, which is exactly when a
+# hidden dependency stops being theoretical.
+mapfile -t OWN_HEADERS < <(python3 - "${REPO}/Source" <<'PY'
+import pathlib
+import sys
+
+source = pathlib.Path(sys.argv[1])
+
+for path in sorted(list(source.glob("*.h")) + list((source / "GUI").glob("*.h"))):
+    if path.name.startswith("NativeRenderer"):
+        continue
+    # Relative to Source/, which is on the include path - the same way the
+    # translation units above name them. `Source/PluginProcessor.h` would not
+    # resolve from here, and the failure would look like a missing file rather
+    # than a wrong spelling.
+    print(path.relative_to(source).as_posix())
+PY
+)
+
+if [ "${#OWN_HEADERS[@]}" -eq 0 ]; then
+    echo "check_editor_juce: no headers under Source/ or Source/GUI/" >&2
     exit 1
 fi
 
-for header in "${GUI_HEADERS[@]}"; do
+for header in "${OWN_HEADERS[@]}"; do
     # The plugin's own module header comes first deliberately: a GUI header may rely
     # on juce:: names its includer has already declared (Source/GUI/KnobMetrics.h does
     # exactly that, because tests/layout compiles it with no JUCE at all and a stand-in
@@ -242,5 +279,6 @@ for header in "${GUI_HEADERS[@]}"; do
 done
 
 echo "check_editor_juce: ${#TUS[@]} translation unit(s) - the processor, the editor" \
-     "and every file they are split into - and ${#GUI_HEADERS[@]} header(s) of the" \
-     "editor's own compile against real JUCE"
+     "and every file they are split into, plus ${#PROBE_TUS[@]} of them again with the" \
+     "hot-path probe on - and ${#OWN_HEADERS[@]} of the plugin's own header(s) compile" \
+     "against real JUCE"

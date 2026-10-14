@@ -308,17 +308,22 @@ juce_generate_juce_header(first)
 #  Sources
 #
 #  Source/PluginProcessor.cpp and PluginEditor.cpp are the plugin's two halves,
-#  and the editor has been split into the files under Source/GUI/ that draw for
-#  it: the look-and-feels, the meters and the interface-sound engine. JUCE supplies
-#  the plugin entry points itself, so there is no main() in any target.
+#  and each has been split by CONCERN rather than by size: the processor's
+#  parameter table and its preset/state code are files of their own beside it, and
+#  the editor has been split into the files under Source/GUI/ that draw for it - the
+#  look-and-feels, the meters and the interface-sound engine. JUCE supplies the
+#  plugin entry points itself, so there is no main() in any target.
 #
-#  The two headers a split produces are not listed: a header is reached through
-#  the include path (target_include_directories below), and tests/editor/
+#  The headers a split produces are not listed: a header is reached through the
+#  include path (target_include_directories below), and tests/editor/
 #  check_editor_juce.sh compiles every one of them on its own, which is what would
 #  catch a header that is only ever reached accidentally.
 # ------------------------------------------------------------------------------
 target_sources(first PRIVATE
     Source/PluginProcessor.cpp
+    Source/ParameterTable.cpp
+    Source/ProcessorPresets.cpp
+    Source/ProcessorSignalPath.cpp
     Source/PluginEditor.cpp
     Source/GUI/J37LookAndFeel.cpp
     Source/GUI/EditorMeters.cpp

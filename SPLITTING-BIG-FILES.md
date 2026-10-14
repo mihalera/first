@@ -33,8 +33,14 @@ Measured, not eyeballed (`wc -l`, and a comment/code count that ignores blank li
 | `Source/PluginProcessor.h` | 6,177 | 1,787 | thirteen stages plus the engine's own plumbing - 23 headers |
 | `Source/PluginEditor.cpp` | 9,441 | 6,078 | the paint kit, the page table, the knob table, the look-and-feels, the meters, the interface-sound engine |
 | `Source/PluginEditor.h` | 1,256 | 1,231 | the two counts and the theme choice, to the headers that use them |
-| `Source/PluginProcessor.cpp` | 7,220 | 7,220 | nothing yet: the parameter table is step 2 of section 6 |
+| `Source/PluginProcessor.cpp` | 7,220 | 1,325 | the parameter table, the preset/state code, and the whole signal path (section 7) |
 | `Source/GUI/TapeScene.cpp` | 2,860 | 2,860 | nothing yet: the shader sources are step 5 |
+
+Four files came out of `PluginProcessor.cpp` and none of them is a fragment of it: the
+processor is now its lifecycle in one file, `Source/ParameterTable.cpp` (1,357), the
+preset and A/B code with the state format it writes, `Source/ProcessorPresets.cpp`
+(465) and `Source/ProcessorStateFormat.h`, and the signal path the file is actually
+read for, `Source/ProcessorSignalPath.cpp` (3,916).
 
 Two facts worth keeping in view. First, **35-46 % of the big files is prose** - the
 notes that explain why the tape model, the layout and the preset format are shaped
@@ -94,7 +100,7 @@ Four constraints, in the order they bite:
 Ranked by benefit per unit of risk. Line ranges are from the tree the analysis was
 written against; what has since been done is marked, and section 7 has the evidence.
 
-**A. The parameter table -> `Source/ParameterTable.cpp` (low risk, biggest win).**
+**A. The parameter table -> `Source/ParameterTable.cpp` (DONE - low risk, biggest win).**
 `PluginProcessor.cpp:1151-2410` is the namespace holding the 23 group functions
 (1,259 lines). The groups are already internal linkage, and `createParameterLayout()`
 is declared in the class, so the whole namespace *plus* that function can move as
@@ -143,7 +149,9 @@ outside the small backends (21 %). Risk: very low; win: the scene namespace drop
 ~500 lines of geometry and constants. Not worth doing on its own, worth folding into
 any other `TapeScene` work.
 
-**F. `processTapeEngine()` -> named stage functions (high risk, the real prize).**
+**F. `processTapeEngine()` -> named stage functions (high risk, the real prize).** It
+has moved to a file of its own (`Source/ProcessorSignalPath.cpp`, section 7) and is
+still ONE function there: that half is done, this is the half that is not.
 3,390 lines (1,368 of them code) doing the whole signal path: input trim and glue,
 the saturation blend, transport and wow/flutter, the EQ pairs, the second glue
 stage, the output stage, telemetry. Splitting it does **not** need a new file: a
@@ -245,9 +253,10 @@ Each step is independently revertable and ends with the same checks green.
    it (`tests/dsp/`, `tests/state/`, `tests/pitch/`, `tests/transport/`), and
    `tests/layout/extract.py` is the last one to have been given the same treatment:
    it reads the paint routine and the radial budget out of the files that have them.
-2. **A - the parameter table** to `Source/ParameterTable.cpp`. Verify: state harness
-   (109 parameters, 39 checks), preset check. **Not done** - and it is the largest
-   single win left in `PluginProcessor.cpp`.
+2. ~~**A - the parameter table** to `Source/ParameterTable.cpp`~~ - done, with the
+   preset and state code that indexes it and with the signal path on the back of the
+   same move (section 7). Verify: the state harness (109 parameters, 39 checks), the
+   preset check, the DSP harness, the transport harness and the two JUCE checks.
 3. ~~**B and C - tooltip text and the paint kit** out of `PluginEditor.cpp`~~ - done,
    as `Source/GUI/PanelText.h`, `PanelPaint.h` and `PanelTabs.h`. Verify: layout
    harness, plus the new compile check (section 7).
@@ -256,7 +265,10 @@ Each step is independently revertable and ends with the same checks green.
    harness to cut. Verify: DSP harness and the JUCE header check after each.
 5. **E - the shaders**, if `TapeScene.cpp` is being touched anyway. Not done.
 6. **F and G - the long functions**, last, one stage per commit, and only with the
-   harnesses extended to compile the stage that moves. Not started.
+   harnesses extended to compile the stage that moves. F is HALF done and the easy
+   half: `processTapeEngine()` is in a file of its own (step 2), still one function,
+   which is the part that needed no new measurement - splitting it into stages is
+   what is left. G (`resized()`) not started.
 
 After every step: `bash tests/dsp/run.sh`, `bash tests/layout/run.sh`,
 `bash tests/state/run.sh`, `python3 tests/presets/check_presets.py`, and the three
@@ -532,10 +544,92 @@ before the move and after it, with the call-site count now asserted rather than 
 printed - a re-point is the moment a harness can quietly start measuring something else,
 so it is the moment to make it louder.
 
-**What is left.** `PluginEditor.cpp` is 6,078 lines and `PluginProcessor.cpp` is still
-7,220, and the two things the analysis above called the real prizes are both in one of
-them: the parameter table (`Source/ParameterTable.cpp`, step 2 of section 6, the largest
-low-risk win left) and the two long functions (`processTapeEngine()` and `resized()`,
-steps F and G, which need a harness pointed at them first). The editor's remaining bulk
-is its constructor and its phases - 23 of them, already guarded by the layout harness -
-and `resized()` inside it. Neither is a move: both have to be split in place.
+**The processor followed, and it is the move this document was written for.**
+`PluginProcessor.cpp` went from 7,220 lines to 1,325 in seven moves, and the file it
+became is the processor's lifecycle: what it is constructed with, what the host asks
+it, what a session writes. What left it:
+
+| New file | Lines | What it holds |
+| --- | ---: | --- |
+| `Source/ParameterTable.cpp` | 1,357 | the 23 group functions and `createParameterLayout()`, plus the four range constants they are built from |
+| `Source/ProcessorSignalPath.cpp` | 3,916 | `processBlock`, the transport commands, bypass/post-machine, autotune, telemetry and `processTapeEngine()` |
+| `Source/ProcessorPresets.cpp` | 465 | the full-state undo action and the two functions it swaps through, the factory preset table, and the preset/compare code |
+| `Source/ProcessorStateFormat.h` | 87 | the saved-state marker, its migration and `captureState()` |
+| `Source/ProcessorPresets.h` | 30 | the two `FactoryPresets` entry points the constructor's debug audit calls from above the table |
+| `Source/DSP/HotPathMath.h` | 175 | the five inline shapers, which the signal path and the preparation code both call |
+| `Source/HotPathProbe.h` | 113 | the four probe counters and the readout, behind the flag no build sets |
+
+Three kinds of cost, and each is the same kind of fact the editor's split produced:
+
+- **The text checks failed, loudly, and that is the point.** Four extractors read this
+  file by anchor, and each named its own subject the moment the move landed: `tests/dsp`
+  ("the AUTO GAIN compensator's `smoothedCompensationDb = 0.0f` appears 0 times"),
+  `tests/transport` ("the wet leg of the MIX crossfade matches 0 places in
+  PluginProcessor.cpp"), `tests/presets` (the id list) and `tests/state` (the range
+  constants, the saved-state block and `createParameterLayout`). Every one of them
+  aborts rather than measuring something else, so the fix could not be forgotten - and
+  all four now read the processor's own source AS ONE TEXT, each file under a marker
+  naming it, so the next fact that moves is found where it went and a fact that ends up
+  in two files stops the harness instead of matching whichever came first.
+- **The two shared helpers had to become headers, and they are the argument for the
+  whole convention.** `Source/DSP/HotPathMath.h` is `inline` FUNCTIONS (pure, so two
+  copies would be harmless) and `Source/HotPathProbe.h` is `inline` VARIABLES (not
+  harmless at all: the signal path writes the counters and the processor's telemetry
+  readout reads them, so a copy per translation unit would be a probe that reads zero).
+  The shapers also retired the last thing `tests/dsp/extract.py` CUT rather than
+  included - `IMPL_PIECES` is gone, the harness includes the header now, and the file it
+  cuts no text from the plugin at all.
+- **`Source/ProcessorStateFormat.h` is deliberately still an anonymous namespace**, and
+  the reason is in its banner: that is the linkage the four names had in the .cpp, and
+  all four are pure functions and constants, so two copies cannot disagree.
+  `liveThemeChoice` in `Source/GUI/PanelPaint.h` is the counter-example that forced
+  `inline` there - it was an OBJECT two files had to share.
+
+**The move found a real bug in the flag nothing compiles.** `J37_ENABLE_HOTPATH_PROBE`
+appears in no build and no CI job, and the comment above the counters says they were
+declared because turning the documented flag on was "a guaranteed compile error". It
+still was: `hotPathThisBlockActive = hotPathThisSampleActive;` is a copy assignment
+between two `std::atomic<bool>`, which is a deleted function. It was found by compiling
+the flag's own branch during the move, and fixed with the explicit load/store. Both
+checks now cover it: `tests/editor/check_editor_juce.sh` compiles every TU that includes
+`HotPathProbe.h` a second time with `-DJ37_ENABLE_HOTPATH_PROBE=1` (the list found by
+that rule, not written down), and it was verified by putting the bug back - the check
+fails on it with `use of deleted function ... operator=(const std::atomic<bool>&)`.
+
+**The evidence.** Two things were checked, and neither is a green build:
+
+- **Nothing was lost, which is what "pure move" has to mean.** The line multisets of
+  the files before and after were compared, comment and code lines together with their
+  counts. Across the seven moves the only lines that disappeared are the three that
+  described an include list that no longer exists, one comment sentence ("at the bottom
+  of this file" -> "header"), two redundant `#if`/`#endif` pairs and the two lines of the
+  atomic bug above; everything added is a banner, an include, a `#pragma once` marker or
+  an `inline`. No moved line was retyped, and no line of code was added except the fix.
+- **Every harness and both JUCE checks, with the numbers.** `tests/dsp`, `tests/layout`,
+  `tests/state` (109 parameters, 39 checks), `tests/pitch`, `tests/neural`,
+  `tests/transport`, `tests/presets` (29 presets, 101 of 109 parameters set, 12
+excluded), `tests/theme`, `tests/translations` - all passed, the three
+  moving-text harnesses again under `J37_SANITIZE=address,undefined`. The two compile
+  checks: `check_headers_juce.sh` 24 headers from `Source/DSP/`, and
+  `check_editor_juce.sh` 8 translation units (every `.cpp` under `Source/` that includes
+  the processor or the editor: 5 at the top level and 3 under `Source/GUI/`, with the 3
+  new processor files among them), 1 of them again with the probe flag on, and 11 of the
+  plugin's own headers compiled on their own - up from 6, because that pass now reads the
+  top level of `Source/` as well as `Source/GUI/`, which is the half a split of the
+  PROCESSOR produces and the editor's split never did.
+
+The moves are re-runnable rather than described: `tools/split_processor.py` cuts the
+parameter table, the presets and the state format, `tools/split_processor_path.py` cuts
+`HotPathMath.h`, `HotPathProbe.h` and the signal path, and both assert that every anchor
+matches exactly once - so the way to check the claim is to run them and diff. They were
+run against the parent revision a second time and reproduce the working tree.
+
+**What is left.** The processor is done as a MOVE: `PluginProcessor.cpp` is 1,325 lines
+of lifecycle, the table and the presets and the state are files of their own, and the
+signal path is `Source/ProcessorSignalPath.cpp`. What is left there is not a move -
+`processTapeEngine()` is 3,366 lines inside that file, and taking IT apart into named
+stages is step F, which needs a harness pointed at the stages first. `PluginEditor.cpp`
+is 6,078 lines and its remaining bulk is its constructor and its phases - 23 of them,
+already guarded by the layout harness - plus `resized()` (step G), which is also a
+split in place rather than a move. `Source/GUI/TapeScene.cpp` is untouched and its 335
+lines of GLSL are the one piece of pure data left in a big file (step E).

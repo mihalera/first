@@ -36,6 +36,26 @@ REPO = pathlib.Path(__file__).resolve().parents[2]
 PROCESSOR = REPO / "Source" / "PluginProcessor.cpp"
 HEADER = REPO / "Source" / "PluginProcessor.h"
 
+# The processor's own source is four files since PluginProcessor.cpp was split, and
+# the pieces this harness runs are spread across all of them: the range constants and
+# the parameter table moved to ParameterTable.cpp, the preset and A/B code that
+# indexes the table to ProcessorPresets.cpp, and the saved-state marker with its
+# migration to ProcessorStateFormat.h (a header because the state is written from
+# two files now).
+#
+# They are read as ONE text rather than as four lookups, and that is the point: a
+# cut still has to occur EXACTLY ONCE across all of them, so a piece that has been
+# duplicated into a second file stops this harness rather than letting it measure
+# whichever copy it found first. The marker above each file is what keeps a span
+# from being cut across a boundary that no longer exists in any real file - and
+# what names the file in the generated preamble, the way the failure report does.
+PROCESSOR_SOURCES = [
+    PROCESSOR,
+    REPO / "Source" / "ParameterTable.cpp",
+    REPO / "Source" / "ProcessorPresets.cpp",
+    REPO / "Source" / "ProcessorStateFormat.h",
+]
+
 # Where a header piece is looked for. Most of what this harness cuts is still in
 # PluginProcessor.h; the four non-tape saturation voice lists moved into
 # Source/DSP/SaturationCore.h when their struct did (see SPLITTING-BIG-FILES.md),
@@ -72,6 +92,36 @@ MEMBER_FUNCTIONS = [
 ]
 
 GROUP_SIGNATURE = re.compile(r"^    void (add[A-Za-z]+) \(ParamLayout& layout\)$", re.M)
+
+
+def processor_text() -> str:
+    """The processor's source as one text, each file under a marker naming it."""
+    chunks = []
+
+    for path in PROCESSOR_SOURCES:
+        if not path.exists():
+            raise SystemExit(f"extract.py: {path.relative_to(REPO)} is missing; the state "
+                             f"harness cuts the processor's own code out of it.")
+        chunks.append(f"// ---- {path.relative_to(REPO).as_posix()} ----\n" + path.read_text())
+
+    return "\n".join(chunks)
+
+
+def source_of(anchor: str) -> str:
+    """Which of the processor's files contains `anchor`, for the preamble's labels.
+
+    A piece in two files is a failure here rather than a first match: the labels
+    say where the generated text came from, and one that names the wrong file is
+    how a reader ends up looking for code that is not there.
+    """
+    found = [path.relative_to(REPO).as_posix()
+             for path in PROCESSOR_SOURCES if anchor in path.read_text()]
+
+    if len(found) != 1:
+        raise SystemExit(f"extract.py: `{anchor}` is in {len(found)} of the processor's "
+                         f"files ({', '.join(found)}); the preamble cannot name it.")
+
+    return found[0]
 
 
 def brace_end(text: str, start: int) -> int:
@@ -195,7 +245,7 @@ def main() -> int:
     destination = pathlib.Path(args.output_dir)
     destination.mkdir(parents=True, exist_ok=True)
 
-    processor = PROCESSOR.read_text()
+    processor = processor_text()
     header = HEADER.read_text()
 
     # ------------------------------------------------------------------
@@ -204,7 +254,8 @@ def main() -> int:
     # ------------------------------------------------------------------
     preamble = ["// GENERATED FILE - do not edit. Cut verbatim out of Source/ by tests/state/extract.py.",
                 "",
-                "// ---- the range constants the parameter table is built from (PluginProcessor.cpp) ----",
+                "// ---- the range constants the parameter table is built from "
+                f"({source_of('constexpr float minTrack =')}) ----",
                 "namespace",
                 "{"]
     for anchor in CONSTANT_ANCHORS:
@@ -229,7 +280,8 @@ def main() -> int:
     # WHY the marker exists travels with the code that implements it.
     format_start = cut_banner_block(processor, "//  Saved-state format")
     helpers_end = brace_end(processor, processor.index("juce::ValueTree captureState", format_start))
-    preamble.append("// ---- the saved-state format marker and its helpers (PluginProcessor.cpp) ----")
+    preamble.append("// ---- the saved-state format marker and its helpers "
+                    f"({source_of('//  Saved-state format')}) ----")
     preamble.append(processor[format_start:helpers_end])
     preamble.append("")
 
@@ -245,7 +297,8 @@ def main() -> int:
     if len(found) < 10:
         raise SystemExit(f"extract.py: found {len(found)} parameter group functions inside the "
                          f"table's namespace; the table is built by named groups.")
-    preamble.append("// ---- the parameter table's group functions (PluginProcessor.cpp) ----")
+    preamble.append("// ---- the parameter table's group functions "
+                    f"({source_of('//  The parameter table, built in groups.')}) ----")
     preamble.append(groups)
     preamble.append("")
     (destination / "extracted_preamble.inc").write_text("\n".join(preamble))
@@ -274,11 +327,13 @@ def main() -> int:
     # preset checker counts ids - so a group the extractor no longer cuts cannot
     # quietly leave parameters out of the harness's table.
     parameters = len(re.findall(r"std::make_unique<juce::AudioParameter", processor))
+    parameters_file = source_of("std::make_unique<juce::AudioParameter")
     (destination / "expected_parameters.h").write_text(
         "// GENERATED FILE - do not edit. See tests/state/extract.py.\n"
-        "// How many parameters the shipping parameter table builds. Counted from the source,\n"
-        "// so a group the extractor does not cut is a failing check rather than a table that\n"
-        "// quietly holds fewer parameters than the plugin has.\n"
+        "// How many parameters the shipping parameter table builds. Counted from the source\n"
+        f"// ({parameters_file}, the file the table is in), so a group the extractor does not\n"
+        "// cut is a failing check rather than a table that quietly holds fewer parameters\n"
+        "// than the plugin has.\n"
         f"constexpr int expectedParameterCount = {parameters};\n")
     print(f"wrote {destination / 'expected_parameters.h'} (expectedParameterCount = {parameters})")
 

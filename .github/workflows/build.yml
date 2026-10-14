@@ -169,13 +169,14 @@ jobs:
         run: bash tests/dsp/check_headers_juce.sh
 
       # The editor and the processor, split into files: every translation unit that
-      # compiles one of them, plus every header under Source/GUI/ on its own. The
-      # harnesses above compile extracted SPANS - the knob arithmetic, the transport
-      # rig, a saved state - never a whole file, so a block that moved to a new .cpp
-      # with a missing include, or a header that only compiles when the editor's was
-      # included first, is textually perfect and does not compile. This is the same
-      # trick as the check above, one level up: real JUCE, -fsyntax-only, seconds.
-      # It reads the JUCE submodule, which the checkout above fetches.
+      # compiles one of them, plus every header of the plugin's own - the top level
+      # of Source/ and Source/GUI/ - on its own. The harnesses above compile
+      # extracted SPANS - the knob arithmetic, the transport rig, a saved state -
+      # never a whole file, so a block that moved to a new .cpp with a missing
+      # include, or a header that only compiles when the editor's was included first,
+      # is textually perfect and does not compile. This is the same trick as the
+      # check above, one level up: real JUCE, -fsyntax-only, seconds. It reads the
+      # JUCE submodule, which the checkout above fetches.
       - name: Check the plugin's own files against JUCE
         run: bash tests/editor/check_editor_juce.sh
 
