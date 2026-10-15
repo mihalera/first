@@ -599,9 +599,16 @@ void TapeScene::setKnobCaptions (const juce::String* captions, int count)
     const auto usable = captions != nullptr ? juce::jlimit (0, bankKnobCount, count) : 0;
     const auto active = activeCaptionBuffer.load (std::memory_order_acquire);
     const auto rendering = renderCaptionBuffer.load (std::memory_order_acquire);
-    auto next = 0;
-    while (next == active || next == rendering)
-        ++next;
+    auto next = -1;
+    for (int candidate = 0; candidate < static_cast<int> (captionBuffers.size()); ++candidate)
+        if (candidate != active && candidate != rendering)
+        {
+            next = candidate;
+            break;
+        }
+
+    if (next < 0)
+        return;
 
     auto& nextBytes = captionBuffers[static_cast<std::size_t> (next)];
     for (int i = 0; i < bankKnobCount; ++i)
@@ -789,17 +796,22 @@ void TapeScene::paint (juce::Graphics& g)
                    reelRadius * (1.24f - 0.20f * level),
                    reelRadius * (1.24f - 0.20f * level));
 
-    for (int spoke = 0; spoke < 6; ++spoke)
+    const auto drawSpokes = [&] (juce::Point<float> reelCentre, float radius,
+                                  float hub, float rotation, float thickness)
     {
-        const auto spokeAngle = angle + static_cast<float> (spoke)
-                                      * juce::MathConstants<float>::twoPi / 6.0f;
-        const auto inner = centre + juce::Point<float> (std::cos (spokeAngle),
-                                                         std::sin (spokeAngle)) * hubRadius;
-        const auto outer = centre + juce::Point<float> (std::cos (spokeAngle),
-                                                         std::sin (spokeAngle)) * reelRadius * 0.88f;
-        g.setColour (highlight.withAlpha (alpha));
-        g.drawLine (inner.x, inner.y, outer.x, outer.y, 1.5f);
-    }
+        for (int spoke = 0; spoke < 6; ++spoke)
+        {
+            const auto spokeAngle = rotation + static_cast<float> (spoke)
+                                               * juce::MathConstants<float>::twoPi / 6.0f;
+            const auto inner = reelCentre + juce::Point<float> (std::cos (spokeAngle),
+                                                                 std::sin (spokeAngle)) * hub;
+            const auto outer = reelCentre + juce::Point<float> (std::cos (spokeAngle),
+                                                                 std::sin (spokeAngle)) * radius * 0.88f;
+            g.setColour (highlight.withAlpha (alpha));
+            g.drawLine (inner.x, inner.y, outer.x, outer.y, thickness);
+        }
+    };
+    drawSpokes (centre, reelRadius, hubRadius, angle, 1.5f);
 
     g.setColour (highlight.withAlpha (0.35f + 0.35f * peak));
     g.fillEllipse (centre.x - hubRadius, centre.y - hubRadius,
@@ -824,17 +836,7 @@ void TapeScene::paint (juce::Graphics& g)
                    lowerRadius * (1.24f - 0.20f * level),
                    lowerRadius * (1.24f - 0.20f * level));
 
-    for (int spoke = 0; spoke < 6; ++spoke)
-    {
-        const auto spokeAngle = -angle + static_cast<float> (spoke)
-                                        * juce::MathConstants<float>::twoPi / 6.0f;
-        const auto inner = lowerCentre + juce::Point<float> (std::cos (spokeAngle),
-                                                              std::sin (spokeAngle)) * lowerRadius * 0.28f;
-        const auto outer = lowerCentre + juce::Point<float> (std::cos (spokeAngle),
-                                                              std::sin (spokeAngle)) * lowerRadius * 0.88f;
-        g.setColour (highlight.withAlpha (alpha));
-        g.drawLine (inner.x, inner.y, outer.x, outer.y, 1.5f);
-    }
+    drawSpokes (lowerCentre, lowerRadius, lowerRadius * 0.28f, -angle, 1.5f);
 
     const auto headCentre = juce::Point<float> (width * 0.5f, height * 0.64f);
     const auto headWidth = juce::jmax (4.0f, width * 0.16f);
@@ -1386,38 +1388,40 @@ void TapeScene::drawControlBank (const glm::mat4& viewProjection,
     // Three captions would mean three plates at this size, which is a wall of
     // text rather than a label.
     {
-        auto activeCaptions = activeCaptionBuffer.load (std::memory_order_acquire);
+        // Snapshot the index, announce the reader before copying, then verify
+        // publication did not change during acquisition. If it did, retry while
+        // holding no caption-bank pointer.
         for (;;)
         {
+            const auto activeCaptions = activeCaptionBuffer.load (std::memory_order_acquire);
             renderCaptionBuffer.store (activeCaptions, std::memory_order_release);
-            if (activeCaptionBuffer.load (std::memory_order_acquire) == activeCaptions)
-                break;
-            activeCaptions = activeCaptionBuffer.load (std::memory_order_acquire);
+            if (activeCaptionBuffer.load (std::memory_order_acquire) != activeCaptions)
+            {
+                renderCaptionBuffer.store (-1, std::memory_order_release);
+                continue;
+            }
+
+            const auto& bytes = captionBuffers[static_cast<std::size_t> (activeCaptions)][0];
+            auto length = 0;
+            while (length < 8 && bytes[static_cast<std::size_t> (length)] != '\0')
+                ++length;
+
+            for (int i = 0; i < 8; ++i)
+                labelGlyphs[static_cast<std::size_t> (i)] = i < length
+                    ? static_cast<float> (glyphIndexFor (static_cast<unsigned char> (bytes[i])))
+                    : -1.0f;
+
+            shaderProgram->setUniform ("uLabelLength", length);
+            shaderProgram->setUniform ("uLabelHalfWidth",
+                                       static_cast<float> (length) * 3.0f * bankLabelSize);
+            renderCaptionBuffer.store (-1, std::memory_order_release);
+            break;
         }
-        const auto& bytes = captionBuffers[static_cast<std::size_t> (activeCaptions)][0];
-        auto length = 0;
-        while (length < 8 && bytes[static_cast<std::size_t> (length)] != '\0')
-            ++length;
-
-        for (int i = 0; i < 8; ++i)
-            labelGlyphs[static_cast<std::size_t> (i)] = i < length
-                                                            ? static_cast<float> (
-                                                                  glyphIndexFor (static_cast<unsigned char> (bytes[i])))
-                                                            : -1.0f;
-
-        // The glyphs are now copied into render-thread-owned scratch storage;
-        // release this bank so the message thread may reuse it safely.
-        renderCaptionBuffer.store (-1, std::memory_order_release);
 
         // The plate follows the interactive knob rather than the bank's centre,
-        // so the two line up at every panel size: the placement, not a second
-        // constant, is what says where that knob is. The glyphs travel as
-        // floats because juce::OpenGLShaderProgram publishes only a GLfloat*
-        // array overload - there is no GLint* one to call.
+        // so the two line up at every panel size. Glyphs travel as floats because
+        // JUCE's shader wrapper accepts GLfloat arrays for this uniform.
         shaderProgram->setUniform ("uLabelCentreX", bankPlacements[bankInteractiveIndex].x);
-        shaderProgram->setUniform ("uLabelLength", length);
-        shaderProgram->setUniform ("uLabelHalfWidth",
-                                   static_cast<float> (length) * 3.0f * bankLabelSize);
         shaderProgram->setUniform ("uLabelBaseY", -bankHalfHeight * 0.62f);
         shaderProgram->setUniform ("uLabelSize", bankLabelSize);
         shaderProgram->setUniform ("uLabel", labelGlyphs.data(), 8);
@@ -1622,16 +1626,17 @@ void TapeScene::renderOpenGL()
     if (width <= 0 || height <= 0)
         return;
 
-    // -------------------------------------------------------------------------
-    //  What the machine is doing, read once. Each of the five is a single atomic
-    //  load, which is why this can be called on the render thread at all.
-    // -------------------------------------------------------------------------
+    // Read the frame's atomic inputs once on the render thread, then update
+    // thread-local transport animation state.
     const auto level = outputLevel.load (std::memory_order_relaxed);
     const auto peak = outputPeak.load (std::memory_order_relaxed);
     const auto driveAmount = drive.load (std::memory_order_relaxed);
     const auto reduction = gainReduction.load (std::memory_order_relaxed);
     const auto flutter = wowFlutter.load (std::memory_order_relaxed);
     const auto speed = transportSpeed.load (std::memory_order_relaxed);
+    double elapsed = 0.0;
+    float frameSeconds = 0.0f;
+    updateRenderState (level, peak, driveAmount, reduction, flutter, speed, elapsed, frameSeconds);
 
     const auto background = juce::Colour (backgroundColour.load (std::memory_order_relaxed));
     const auto body = juce::Colour (bodyColour.load (std::memory_order_relaxed));
@@ -1821,14 +1826,9 @@ void TapeScene::renderOpenGL()
     drawControlBank (viewProjection, scene, body, highlight);
 }
 
-/* The tail of this file below this point was the remains of several broken
-   paste attempts that duplicated renderOpenGL()'s body again and again, each
-   copy cut off mid-line and spliced into the last. The compiler read every
-   duplicate as a top-level "expected unqualified-id" error, so the
-   duplicates are disabled wholesale; the one real renderOpenGL() above is
-   the whole of what the renderer needs. */
+/* The duplicate tail left by earlier paste attempts is intentionally omitted;
+   renderOpenGL() above contains the sole ordered scene pass. */
 #if 0
-    shaderProgram->setUniformMat4 ("uModel", glm::value_ptr (headModel), 1, GL_FALSE);
     shaderProgram->setUniform ("uMode", static_cast<float> (solidMode));
     shaderProgram->setUniform ("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
                                highlight.getFloatGreen() * 0.55f + 0.06f,
