@@ -26,6 +26,8 @@ tests/editor/check_editor_juce.sh   # every translation unit and Source/GUI/*.h 
 python3 tests/presets/check_presets.py           # the factory preset table
 python3 tests/theme/check_theme_wiring.py        # theme re-inking coverage
 python3 tests/translations/check_translations.py # the shipped translation tables
+python3 tests/parameters/check_parameters.py     # the table and the code that reads it
+python3 tests/shaders/check_shaders.py           # the GLSL and the uniforms it is fed
 ```
 
 Two environment switches, both used by `build-linux-debug`:
@@ -56,7 +58,7 @@ shipping header* tests the code the plugin compiles.
 | `neural` | `RateBridge`, and `NeuralStage` with `J37_HAS_RTNEURAL=1` | `#include`s the shipping headers; RTNeural's two-method API is stood in for |
 | `dsp/check_headers_juce.sh` | every header in `Source/DSP/`, against real JUCE | compiles each header's public surface; catches a header that only works under a harness shim |
 | `editor/check_editor_juce.sh` | every translation unit the plugin builds, and every `Source/GUI/*.h` | compiles them against real JUCE; catches a moved block with a missing include |
-| the three Python checks | no C++ at all | read `Source/` as text and compare tables to the code |
+| the five Python checks | no C++ at all | read `Source/` as text and compare tables to the code |
 
 ## What each harness guarantees
 
@@ -75,6 +77,8 @@ shipping header* tests the code the plugin compiles.
 | `translations` | no dead keys, every lookup present in every language, no ambiguous or empty entry | 17 Ukrainian entries keyed to sentences the plugin no longer said |
 | `check_headers_juce` | each `Source/DSP/*.h` compiles against real JUCE, alone | a header that compiles under the harness shim and not in the plugin |
 | `check_editor_juce` | each translation unit and each `Source/GUI/*.h` compiles against real JUCE | a moved block whose new file forgot an include; it caught three faults on its first run |
+| `check_parameters` | that the table and the code that reads it agree, both ways: every registered id is fetched with `getRawParameterValue` or looked up with `getParameter`, every name read is registered, and every handle fetched is read again somewhere | a knob that changes nothing - a mistyped id reaches nothing silently (`getRawParameterValue` returns nullptr and every call site is `if (x != nullptr)`), and a registered parameter nothing reads is a row in the host's list that consumes nothing |
+| `check_shaders` | that both GLSL sources are still runs of one literal per line, that `TAPE_SCENE_HIGHP` is still defined, and that the uniforms the shaders declare are exactly the ones `TapeScene.cpp` sets | the `"the lit arc"` line of `TapeSceneShaders.h`, where a paste left a bare quote behind - the literal closed early and the rest of the line became a C++ comment, which compiles; and a `setUniform` name the linked program does not declare, which is a silent no-op that leaves the visual that depends on it at zero |
 
 ## What the suite does **not** cover
 
@@ -85,7 +89,17 @@ Listed here rather than left to be discovered, because each one is a proposal in
   rate change between blocks, a prepared-but-never-played plugin. The stages are
   measured; the edges between them are not.
 - **The rendering backends.** `Source/GUI/NativeRenderer_{D3D11,D3D12,Vulkan,Metal}`
-  are compiled by the platform builds and checked by nothing else.
+  are compiled by the platform builds and checked by nothing else. The Metal
+  adapter's display-scale handling is the one part of it a Linux machine cannot
+  even read: it is Objective-C against AppKit.
+- **The GLSL as GLSL.** `check_shaders` proves the sources are intact and that the
+  renderer and the shader agree on every uniform's NAME; it does not compile them.
+  A dialect mistake - a construct a driver rejects - is still found by a driver and
+  by nothing here. `glslangValidator` (glslang-tools) would close that, and it is
+  the one addition worth making to this suite that needs a tool outside it.
+- **What the plugin will load on.** The macOS workflow reads the built binaries'
+  `minos` and the AU's own plist, and validates the AU with Apple's `auval` - but
+  those run on GitHub's runner, not here, and none of them is a DAW.
 - **Anything that needs a host.** Whether a VST3 loads, whether the editor opens,
   whether a real session recalls - that is what the platform build jobs and a
   human are for.

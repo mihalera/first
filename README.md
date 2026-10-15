@@ -1182,6 +1182,19 @@ cmake --build build --config Release --parallel
 on both Apple Silicon and Intel Macs. Leaving one architecture out makes the plugin
 invisible to half the machines it is installed on, so both are always listed.
 
+The **deployment target** is the other half of "which Macs can load this file", and it is
+pinned at **11.0** in `CMakeLists.txt` (`J37_MACOS_DEPLOYMENT_TARGET`, set above the first
+`project()` call, which is the only place CMake reads it). Without a pin, CMake leaves
+`MACOSX_DEPLOYMENT_TARGET` empty and Xcode stamps every binary with its **SDK's** version -
+the version of the machine that built it - so a build made on a macOS 15 runner loads on
+macOS 15 and on nothing older: the host reports the plugin as unavailable, Logic and
+GarageBand never list it, and the build log is clean. 11.0 is the floor a universal build
+can have at all (the arm64 slice cannot load on anything earlier) and both slices are one
+binary with one number. Raise it with `-DCMAKE_OSX_DEPLOYMENT_TARGET=...` if you would
+rather have the availability checks dropped for newer systems. The macOS CI job reads the
+floor back out of the CMake cache and checks it against every slice's `minos`, so the
+setting and the artefacts cannot drift apart.
+
 `-G Xcode` is **required** for the AUv3 build. JUCE only adds the AUv3 target when the
 generator is Xcode (see `_juce_get_platform_plugin_kinds` in
 `JUCE/extras/Build/CMake/JUCEModuleSupport.cmake`); with the default Unix Makefiles
@@ -1247,6 +1260,22 @@ xattr -cr "MiBoX.vst3"
 Артефакти CI мають ad-hoc підпис: цього достатньо, щоб збірка запускалась на
 Apple Silicon, але цього недостатньо, щоб минати перевірку Gatekeeper, тому
 команда вище потрібна для завантажених копій.
+
+Якщо VST3 не з'являється у списку плагінів, а AU працює - це майже завжди та сама
+мітка карантину. Більшість DAW сканують VST3 в **окремому процесі**, і діалог
+«Open anyway», який macOS показує при першому завантаженні, там не з'являється:
+сканер просто відкидає плагін без жодного слова, а AU вантажиться в самому процесі
+DAW, де діалог видно. `xattr -cr` вище прибирає мітку з обох форматів:
+
+```bash
+xattr -cr ~/Library/Audio/Plug-Ins/VST3/MiBoX.vst3
+xattr -cr ~/Library/Audio/Plug-Ins/Components/MiBoX.component
+```
+
+Друге, що варто перевірити тим, для кого VST3 «не працює»: **Logic Pro, GarageBand і
+Final Cut не вантажать VST3 взагалі** - тільки AU та AUv3. Якщо DAW - одна з них, то
+VST3 там і не має працювати; використовуйте `.component` або `.appex` з
+`build/first_artefacts/Release/AU` та `.../AUv3`.
 
 ## Android 🤖
 
@@ -1438,8 +1467,18 @@ This needs a paid Apple Developer account and the certificate stored as a CI sec
   `isAttached()`; if no context can be created the panel falls back to the normal component
   renderer with no visual difference. This matters on macOS, where OpenGL is deprecated in
   favour of Metal but still functional.
+- **The AU is loaded and validated on every CI run, and the signatures are verified.**
+  `auval` - Apple's own Audio Unit host - instantiates the built component, walks its
+  parameter tree and renders through it, under the identity read out of the bundle's own
+  `AudioComponents` entry; `codesign --verify --deep --strict` checks each bundle's
+  signature, which a host is entitled to require and which a nested executable missed by
+  the parent-only signing would fail. Until these steps existed, CI built the macOS plugin
+  and never once ran it.
 - **No platform-specific code in `Source/`.** There are no `_WIN32` guards and no
-  Windows-only APIs; the only platform branches are JUCE's own macros.
+  Windows-only APIs; the only platform branches are JUCE's own macros. The one
+  Objective-C file is `Source/GUI/NativeRenderer_Metal.mm`, and it exists on every Apple
+  build (`J37_RENDER_BACKEND=METAL` is opt-in at configure time, and the adapter returns a
+  null factory otherwise).
 
 ### Linux
 

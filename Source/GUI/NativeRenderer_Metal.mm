@@ -10,6 +10,43 @@ namespace j37::render
 namespace
 {
 /**
+    The scale factor a CAMetalLayer on this view should carry.
+
+    A layer without a scale draws at 1 pixel per point, which on a Retina Mac is
+    half the panel's real resolution - soft, half-size-looking geometry next to a
+    crisp JUCE panel around it. Two things make the naive read unavailable:
+
+      - `view.window` is nil whenever the peer has no window yet, and a plugin
+        host may hand over the peer before its window exists (and again on every
+        editor re-open). A nil window is not "scale 1": it is "not known yet".
+      - a window that is on no screen reports a scale of 0, which would make the
+        drawable 0 x 0 and present nothing at all - a blank scene rather than a
+        soft one.
+
+    So the answer goes outwards: the view's window, then the main screen, then 1.
+    The value is read again on every resize, because a host can move a plugin
+    window between a Retina display and an external one without the editor
+    changing size, which leaves the drawable at the wrong resolution for the
+    screen it is on.
+*/
+CGFloat backingScaleFor (NSView* view)
+{
+    if (view != nil)
+    {
+        NSWindow* window = view.window;
+        const auto scale = window != nil ? window.backingScaleFactor : 0.0;
+
+        if (scale > 0.0)
+            return scale;
+    }
+
+    NSScreen* screen = [NSScreen mainScreen];
+    const auto screenScale = screen != nil ? screen.backingScaleFactor : 0.0;
+
+    return screenScale > 0.0 ? screenScale : 1.0;
+}
+
+/**
     Metal adapter.
 
     A plugin host owns the top-level window, so the presentation surface is a
@@ -68,10 +105,16 @@ public:
         metalLayer.pixelFormat = MTLPixelFormatBGRA8Unorm;
         metalLayer.framebufferOnly = YES;
         metalLayer.presentsWithTransaction = NO;
+        // The drawable is sized in PIXELS while the layer's frame is in points,
+        // so the scale has to be known BEFORE the drawable size is computed.
+        // Setting contentsScale after drawableSize (which is what this did) left
+        // every Retina Mac presenting a half-resolution frame until the first
+        // resize, and a scale of 0 when the host had not given the peer a window
+        // yet, which is a drawable of 0 x 0 and no frames at all.
         metalLayer.frame = CGRectMake (position.x, position.y, width, height);
+        metalLayer.contentsScale = backingScaleFor (view);
         metalLayer.drawableSize = CGSizeMake (width * metalLayer.contentsScale,
                                                height * metalLayer.contentsScale);
-        metalLayer.contentsScale = view.window.backingScaleFactor;
 
         hostView = view;
         previousWantsLayer = view.wantsLayer;
@@ -98,6 +141,11 @@ public:
 
         if (metalLayer != nil)
         {
+            // Read the scale again, never keep the one from initialise(): the
+            // host can move this editor to another display without resizing it,
+            // and a drawable still sized for the display it came from is the
+            // wrong resolution on the one it is on now.
+            metalLayer.contentsScale = backingScaleFor (hostView);
             metalLayer.frame = CGRectMake (newPosition.x, newPosition.y, newWidth, newHeight);
             metalLayer.drawableSize = CGSizeMake (newWidth * metalLayer.contentsScale,
                                                    newHeight * metalLayer.contentsScale);

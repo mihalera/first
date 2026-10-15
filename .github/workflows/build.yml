@@ -166,6 +166,32 @@ jobs:
       - name: Check the translation tables
         run: python3 tests/translations/check_translations.py
 
+      # The parameter table and the code that reads it are two lists that drift,
+      # and both directions of drift produce the same user report - "the knobs do
+      # nothing". A name in the table that nothing reads is a row in the host's
+      # automation list that consumes nothing; a name read that the table does not
+      # hold is SILENT, because getRawParameterValue() returns nullptr rather than
+      # throwing, getParameter() returns nullptr rather than throwing, and every
+      # call site in the processor is written `if (x != nullptr)` - so a typo is a
+      # control that is attached, automated, saved and hears nothing; and a handle
+      # that is fetched and then never dereferenced is the same nothing with an
+      # unfinished refactor for a cause. No build log mentions any of the three.
+      - name: Check the parameter table wiring
+        run: python3 tests/parameters/check_parameters.py
+
+      # The panel's GLSL is the one piece of the UI nothing else here can see: it
+      # is a string literal until a driver compiles it at run time, so a shader
+      # that does not compile is a hole where the scene should be, with nothing in
+      # the build log and no failure anywhere. This reads the literals and the
+      # uniforms the renderer supplies. Every line of both sources has to still BE
+      # one literal - a paste that leaves a bare quote behind closes the literal
+      # early and swallows the rest of the line into a C++ comment, which is a
+      # corruption that COMPILES - and every uniform the shader declares has to be
+      # set, and vice versa, because setUniform() with a name the linked program
+      # does not declare is a no-op on both sides of the mistake.
+      - name: Check the shader sources
+        run: python3 tests/shaders/check_shaders.py
+
       # The stages that have moved into Source/DSP/ are compiled by the harnesses
       # against their own small stand-in for juce::, which is what keeps a harness
       # seconds of work - but a name that stand-in provides is not proof that real
@@ -686,6 +712,180 @@ jobs:
           while IFS= read -r bundle; do
             check "$bundle"
           done < "$RUNNER_TEMP/bundles.txt"
+
+      # What the plugin will and will not LOAD ON.
+      #
+      # This is the one build setting whose failure lands entirely in the user's
+      # copy of the plugin: with no deployment target, Xcode stamps every binary
+      # with the version of the SDK it was built against - the runner's own macOS
+      # - so a release built on a macOS 15 runner loads on macOS 15 and on nothing
+      # older. The host reports the plugin as unavailable, or Logic and GarageBand
+      # simply do not list it, on every machine a couple of years behind the
+      # runner, and the build log is clean. The value is read out of the CMake
+      # cache rather than restated here, so this checks that the setting REACHED
+      # the targets: the two cannot drift, and a change to the floor in
+      # CMakeLists.txt needs no change here.
+      - name: Verify the deployment target of every bundle
+        run: |
+          set -euo pipefail
+
+          FLOOR="$(grep -E '^CMAKE_OSX_DEPLOYMENT_TARGET:' build/CMakeCache.txt | cut -d= -f2)"
+          if [ -z "$FLOOR" ]; then
+            echo "CMAKE_OSX_DEPLOYMENT_TARGET is not in the CMake cache, so nothing"
+            echo "pinned the minimum macOS these binaries load on: every slice is"
+            echo "stamped with the runner's own version and loads on that and newer only."
+            exit 1
+          fi
+          echo "configured floor: macOS $FLOOR"
+
+          # 11 and 11.0 and 11.0.0 are one version, so they compare as one. The
+          # fourth variable is what keeps a trailing ".0" out of the patch field:
+          # read() gives the LAST name the rest of the line, dots and all.
+          rank() {
+            local major minor patch rest
+            IFS=. read -r major minor patch rest <<< "$1.0.0"
+            printf '%d%03d%03d' "$major" "$minor" "$patch"
+          }
+
+          minos_of() {
+            # $1 = binary, $2 = architecture. vtool is the direct answer and lives
+            # in the Xcode toolchain; otool -l is everywhere and prints the same
+            # field, so a runner without the former still checks the same fact.
+            if command -v vtool > /dev/null 2>&1; then
+              vtool -arch "$2" -show-build "$1" | awk '/minos/ { print $2; exit }'
+              return
+            fi
+            otool -arch "$2" -l "$1" | awk '/minos/ { print $2; exit }'
+          }
+
+          while IFS= read -r bundle; do
+            binary=$(find "$bundle/Contents/MacOS" -maxdepth 1 -type f -print -quit)
+            if [ -z "$binary" ]; then
+              echo "No executable inside $bundle" >&2
+              exit 1
+            fi
+            echo "--- $bundle"
+
+            for arch in arm64 x86_64; do
+              MINOS="$(minos_of "$binary" "$arch")"
+              if [ -z "$MINOS" ]; then
+                echo "$binary has no $arch slice to read a minimum version from" >&2
+                exit 1
+              fi
+              echo "    $arch : minos $MINOS"
+              if [ "$(rank "$MINOS")" -ne "$(rank "$FLOOR")" ]; then
+                echo "$binary's $arch slice is stamped for macOS $MINOS, not the" >&2
+                echo "configured $FLOOR: the deployment target did not reach this target," >&2
+                echo "so the bundle refuses to load on the machines the floor promises." >&2
+                exit 1
+              fi
+            done
+
+            # Informational: CMake puts the same number in the plist when the
+            # template has the key at all, and a plist that disagrees with the
+            # binary is worth seeing in the log even though the loader reads the
+            # binary.
+            echo "    plist LSMinimumSystemVersion: $(/usr/libexec/PlistBuddy -c 'Print :LSMinimumSystemVersion' "$bundle/Contents/Info.plist" 2>/dev/null || echo '(absent)')"
+          done < "$RUNNER_TEMP/bundles.txt"
+
+      # The signature, verified rather than written. The step above signs the
+      # bundles ad-hoc so the arm64 slices execute at all (a Mac refuses to run
+      # arm64 code with no signature); a bundle whose signature does not VERIFY -
+      # a nested executable the parent-only signing missed, a plist edited after
+      # signing, a file copied into the bundle afterwards - is one a host is
+      # entitled to refuse to load, and the refusal reads as "the plugin does not
+      # work" with nothing on screen to say why. --strict is what makes this more
+      # than a presence test, and --deep reaches the appex inside AUv3.
+      - name: Verify each bundle's signature
+        run: |
+          set -euo pipefail
+
+          while IFS= read -r bundle; do
+            echo "--- $bundle"
+            codesign --verify --deep --strict --verbose=2 "$bundle"
+            # `codesign -dv` writes to stderr on a bundle with no identity, which
+            # is exactly the case here, so both streams are kept.
+            codesign -dv "$bundle" 2>&1 | sed -n '1,4p'
+          done < "$RUNNER_TEMP/bundles.txt"
+
+      # The AU, actually LOADED.
+      #
+      # Everything above this line is a statement about files. This is the first
+      # step in the whole workflow that RUNS the macOS plugin: auval is Apple's own
+      # Audio Unit host, and it instantiates the component, walks the parameter
+      # tree, exercises the state and renders audio through it. That is the closest
+      # thing to "does the plugin work on a Mac" a machine with no DAW and no
+      # console can ask - and until this step existed, nothing in CI had ever
+      # loaded the macOS binary it had just built. The component is installed where
+      # a host looks for one, because that is the only way auval sees it: it
+      # validates registered components, not a path.
+      #
+      # What a failure here means: the AU does not instantiate, or its parameters
+      # or its rendering do not satisfy the AU contract, so Logic and GarageBand
+      # will not host it either. The identity it is validated under is read from
+      # the BUILT plist - not restated from the codes in CMakeLists.txt - so the
+      # check also covers the plist a host reads to find the component.
+      - name: Validate the Audio Unit (auval)
+        run: |
+          set -euo pipefail
+
+          AU="$(grep -E '\.component$' "$RUNNER_TEMP/bundles.txt" | head -n 1)"
+          if [ -z "$AU" ]; then
+            echo "no .component bundle was found by the format check above" >&2
+            exit 1
+          fi
+
+          PLIST="$AU/Contents/Info.plist"
+          pb() { /usr/libexec/PlistBuddy -c "Print :$1" "$PLIST" 2>/dev/null; }
+
+          TYPE="$(pb AudioComponents:0:type)"
+          SUBTYPE="$(pb AudioComponents:0:subtype)"
+          MANU="$(pb AudioComponents:0:manufacturer)"
+          if [ -z "$TYPE" ] || [ -z "$SUBTYPE" ] || [ -z "$MANU" ]; then
+            echo "$PLIST has no AudioComponents entry with a type, a subtype and a" >&2
+            echo "manufacturer: a host discovers the component through that entry." >&2
+            exit 1
+          fi
+          echo "AU identity, read from the built plist: $TYPE / $SUBTYPE / $MANU"
+
+          COMPONENTS="$HOME/Library/Audio/Plug-Ins/Components"
+          mkdir -p "$COMPONENTS"
+          rm -rf "$COMPONENTS"/*.component
+          cp -R "$AU" "$COMPONENTS/"
+
+          # The component registry caches what it found when the session started;
+          # a component copied in afterwards is invisible until it is made to look
+          # again. killall is reported as failure when no registrar is running,
+          # which is not a fault.
+          killall -9 AudioComponentRegistrar 2>/dev/null || true
+          sleep 3
+
+          echo "--- what auval can see"
+          auval -a 2>&1 | sed -n '1,20p'
+
+          # auval has no timeout of its own, and a plugin that deadlocks inside
+          # its own validation would otherwise hold a macOS runner until the job's
+          # six-hour limit. The watchdog is what turns a hang into a failure with a
+          # line in the log.
+          echo "--- auval -v $TYPE $SUBTYPE $MANU"
+          auval -v "$TYPE" "$SUBTYPE" "$MANU" &
+          AU_PID=$!
+          # The watchdog's own streams are closed: a background process holding
+          # the step's output open is how a CI step waits out a timer nobody is
+          # reading.
+          ( sleep 300; kill -9 "$AU_PID" 2>/dev/null ) > /dev/null 2>&1 &
+          WATCHDOG=$!
+
+          STATUS=0
+          wait "$AU_PID" || STATUS=$?
+          kill "$WATCHDOG" 2>/dev/null || true
+          wait "$WATCHDOG" 2>/dev/null || true
+
+          if [ "$STATUS" -ne 0 ]; then
+            echo "auval did not validate the Audio Unit (exit $STATUS)" >&2
+            exit 1
+          fi
+          echo "auval: the Audio Unit passed validation"
 
       # AU and AUv3 are what Logic, GarageBand and Final Cut can actually load -
       # those hosts do not see VST3 at all.
