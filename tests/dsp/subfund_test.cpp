@@ -1065,6 +1065,158 @@ void testNeuralStageIsTransparentWithoutAModel()
 }
 
 // -----------------------------------------------------------------------------
+//  9. The machine's block-rate coefficients
+// -----------------------------------------------------------------------------
+
+void testBlockRateCoefficients()
+{
+    std::printf ("\n9. The block-rate coefficients the machine's dynamics stages run on\n");
+
+    // This is the first stage taken out of processTapeEngine(), and it is the one
+    // stage in this harness that renders no audio: what it produces is time
+    // constants. So the checks are the RELATIONSHIPS between them, read off the
+    // shipping stage (Source/DSP/BlockRateCoefficients.h) rather than restated here
+    // - and each one is a sentence the comments beside that code already make. A
+    // coefficient is 1 - exp(-1/(tau * rate)), so a longer time constant is a
+    // SMALLER coefficient, and "slower" below means exactly that.
+    const auto blockRate = j37rate::makeBlockRateCoefficients (static_cast<float> (kSampleRate),
+                                                               0.0f);
+
+    check (blockRate.cabinetLow > 0.0f && blockRate.cabinetLow < 1.0f
+           && blockRate.cabinetPeak > 0.0f && blockRate.cabinetPeak < 1.0f
+           && blockRate.presence > 0.0f && blockRate.presence < 1.0f,
+           "the cabinet's two poles and the presence split are one-pole coefficients");
+
+    check (blockRate.cabinetPeak < blockRate.cabinetLow,
+           "the cabinet's resonance pole is slower than its roll-off, so the peak is a lift and not a ring");
+
+    check (blockRate.sagRelease < blockRate.sagAttack,
+           "the SAG envelope releases more slowly than it attacks, which is what makes it give rather than pump");
+
+    check (blockRate.limiterCatch > blockRate.limiterRecovery
+           && blockRate.limiterDetectorAttack > blockRate.limiterDetectorRelease,
+           "the limiter catches a peak faster than it recovers from it, detector and gain alike");
+
+    check (blockRate.antiPhase < blockRate.sagRelease
+           && blockRate.antiPhase < blockRate.limiterRecovery
+           && blockRate.antiPhase < blockRate.limiterDetectorRelease,
+           "the anti-phase guard is the slowest pole in the machine, so a moment of real stereo cannot trip it");
+
+    // The one number here that is a level rather than a time constant, and the one
+    // relationship that ties this stage to the stage after it: the limiter hands the
+    // signal off exactly where softClip's knee begins, so the clipper is transparent
+    // for everything the limiter lets through and does its work only above it. Both
+    // numbers are 0.70f, and this is what would catch either of them being moved
+    // without the other - which the comments beside them say must not happen.
+    check (std::fabs (softClip (blockRate.limiterCeiling) - blockRate.limiterCeiling) < 1.0e-6f,
+           "the limiter's ceiling sits exactly on softClip's knee, so the clipper is transparent below it");
+
+    // The builder is a function of the rate and of CABINET alone, and it has to be
+    // rebuilt per block rather than per sample (that is the reason the stage exists).
+    // A coefficient that did not move with the rate would be a filter whose corner
+    // drifts with the host's sample rate - the one unit error this project has
+    // already paid for twice.
+    // At half the rate the same 2.2 kHz corner is a larger fraction of a cycle, so
+    // the coefficient GROWS - and it grows less than the rate fell, which is what
+    // says this is a corner frequency rather than a per-sample constant. (That
+    // distinction is the 2*pi error this project has already paid for twice: the
+    // old tape low-passes passed millisecond values that were written as kHz.)
+    const auto halfRate = j37rate::makeBlockRateCoefficients (static_cast<float> (kSampleRate) * 0.5f,
+                                                             0.0f);
+    check (halfRate.presence > blockRate.presence
+           && halfRate.presence < 2.0f * blockRate.presence,
+           "every coefficient is rebuilt from the rate: at half the rate the presence pole is larger, and not twice");
+
+    // CABINET is the one control that moves a pole rather than a gain, and its end
+    // stops are a 5 kHz roll-off at 100 % and 9 kHz at 0 % - so a closed cabinet is
+    // the LOWER corner of the two, hence the smaller coefficient.
+    const auto closedCabinet = j37rate::makeBlockRateCoefficients (static_cast<float> (kSampleRate),
+                                                                  1.0f);
+    check (closedCabinet.cabinetLow < blockRate.cabinetLow,
+           "CABINET moves the roll-off: a closed cabinet is the lower corner of the two");
+}
+
+// -----------------------------------------------------------------------------
+// 10. The machine's wander: the shaping curves, the speed scale, the LFO rates
+// -----------------------------------------------------------------------------
+
+void testTapeModulation()
+{
+    std::printf ("\n10. The machine's shaping curves and its two wander rates\n");
+
+    // The second stage out of processTapeEngine(), and the one whose prose makes the
+    // most checkable claims: it is a pure function of seven numbers, so the harness
+    // calls the SHIPPING stage (Source/DSP/TapeModulation.h) rather than a replica.
+    // Every sentence asserted below is one of the comments beside that code.
+    constexpr float kCentre = 0.5f;      // a control at its centre
+    constexpr float kAtSpeed = 1.0f;     // the platter at its running position
+
+    const auto running = j37mod::makeTapeModulation (kCentre, kCentre, kCentre, kCentre,
+                                                     1, kAtSpeed, 120.0);
+
+    check (running.driveCurve < kCentre && running.biasCurve < kCentre
+           && running.wowCurve < kCentre && running.flutterCurve < kCentre,
+           "the four shaping curves bend below their control, because they are curves rather than tapers");
+
+    const auto harder = j37mod::makeTapeModulation (1.0f, kCentre, kCentre, kCentre,
+                                                    1, kAtSpeed, 120.0);
+    check (harder.driveCurve > running.driveCurve,
+           "more DRIVE is a harder curve, and the curve is monotonic in the control");
+
+    // "At speed this is exactly the SPEED control's number": the platter at its
+    // running position multiplies by one, so the scale IS the choice's own number -
+    // which is what makes a running machine unchanged by the mechanism that exists to
+    // model it winding down.
+    const auto slowChoice = j37mod::makeTapeModulation (kCentre, kCentre, kCentre, kCentre,
+                                                        0, kAtSpeed, 120.0);
+    const auto fastChoice = j37mod::makeTapeModulation (kCentre, kCentre, kCentre, kCentre,
+                                                        2, kAtSpeed, 120.0);
+    check (std::fabs (running.speedScale - 1.0f) < 1.0e-6f
+           && std::fabs (slowChoice.speedScale - 0.76f) < 1.0e-6f
+           && std::fabs (fastChoice.speedScale - 1.34f) < 1.0e-6f,
+           "at speed the scale is the SPEED control's own number: 0.76, 1.00 and 1.34");
+
+    const auto coasting = j37mod::makeTapeModulation (kCentre, kCentre, kCentre, kCentre,
+                                                      1, 0.5f, 120.0);
+    check (coasting.speedScale < running.speedScale,
+           "a platter off its running position lowers the scale, which is how a coast reads as a machine losing speed");
+
+    // "The wow rate is tempo-locked ... double the tempo and the machine wanders twice
+    // as fast." This is the claim that is easiest to break and hardest to see: a wow
+    // rate that stopped following the tempo would sound subtly wrong on every faster
+    // track rather than obviously wrong anywhere.
+    const auto atOneTwenty = j37mod::makeTapeModulation (kCentre, kCentre, kCentre, kCentre,
+                                                         1, kAtSpeed, 120.0);
+    const auto atTwoForty = j37mod::makeTapeModulation (kCentre, kCentre, kCentre, kCentre,
+                                                        1, kAtSpeed, 240.0);
+    const auto atSixty = j37mod::makeTapeModulation (kCentre, kCentre, kCentre, kCentre,
+                                                     1, kAtSpeed, 60.0);
+    check (std::fabs (atTwoForty.wowFreq - 2.0f * atOneTwenty.wowFreq) < 1.0e-5f
+           && std::fabs (atSixty.wowFreq - 0.5f * atOneTwenty.wowFreq) < 1.0e-5f,
+           "the wow rate is locked to the host tempo: twice the tempo is twice the wander");
+
+    check (std::fabs (atTwoForty.flutterFreq - atOneTwenty.flutterFreq) < 1.0e-6f,
+           "the flutter rate does NOT follow the tempo: the capstan is mechanical");
+
+    // The anchor's clamp, both ends. A host reporting a tempo of 1 BPM or 5000 must
+    // still leave the machine wandering rather than stopped or buzzing.
+    const auto noTempo = j37mod::makeTapeModulation (kCentre, kCentre, kCentre, kCentre,
+                                                     1, kAtSpeed, 1.0);
+    const auto insaneTempo = j37mod::makeTapeModulation (kCentre, kCentre, kCentre, kCentre,
+                                                         1, kAtSpeed, 5000.0);
+    const auto clampedLow = j37mod::makeTapeModulation (kCentre, kCentre, kCentre, kCentre,
+                                                        1, kAtSpeed, 24.0);
+    const auto clampedHigh = j37mod::makeTapeModulation (kCentre, kCentre, kCentre, kCentre,
+                                                        1, kAtSpeed, 720.0);
+    check (std::fabs (noTempo.wowFreq - clampedLow.wowFreq) < 1.0e-6f
+           && std::fabs (insaneTempo.wowFreq - clampedHigh.wowFreq) < 1.0e-6f,
+           "the tempo anchor is clamped at 0.10 Hz and 3.0 Hz, so an absurd tempo cannot stop or buzz the machine");
+
+    check (insaneTempo.wowFreq > atOneTwenty.wowFreq,
+           "and above the clamp the wander still grows, so the clamp is a floor and a ceiling rather than a constant");
+}
+
+// -----------------------------------------------------------------------------
 //  Reference: what the old arrangement did, printed but not asserted
 // -----------------------------------------------------------------------------
 
@@ -1126,6 +1278,8 @@ int main()
     testTransientShaperAttackDirection();
     testTransientShaperSustainDirection();
     testNeuralStageIsTransparentWithoutAModel();
+    testBlockRateCoefficients();
+    testTapeModulation();
     showOldArrangement();
     printChainSpectrum();
 

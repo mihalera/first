@@ -24,6 +24,11 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD="${TMPDIR:-/tmp}/j37-transport-test"
 CXX="${CXX:-g++}"
 
+# The generated include names the two stages as `#include "DSP/..."`, so Source/ has
+# to be on the include path - the same reason tests/dsp/run.sh puts it there. Source/
+# is part of the checkout, so this is the plugin's own headers being compiled.
+SOURCE="${HERE}/../../Source"
+
 mkdir -p "${BUILD}"
 
 python3 "${HERE}/extract.py" "${BUILD}/extracted_transport.inc"
@@ -37,7 +42,7 @@ fi
 
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
-    -I "${HERE}" -I "${BUILD}" \
+    -I "${HERE}" -I "${BUILD}" -I "${SOURCE}" \
     "${HERE}/transport_test.cpp" -o "${BUILD}/transport_test"
 
 "${BUILD}/transport_test"

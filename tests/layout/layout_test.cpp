@@ -74,13 +74,19 @@ namespace juce
     template <typename T> using Rectangle = j37_stub::Rect<T>;
 }
 
-// ---- the plugin's radial budget, cut verbatim out of Source/ ---------------
-namespace extracted
-{
-#include "metrics.inc"
-}
-using extracted::computeKnobMetrics;
-using extracted::KnobMetrics;
+// ---- the plugin's radial budget, the shipping header ----------------------
+//
+// It used to be cut out of PluginEditor.cpp and pasted in here. It is
+// Source/GUI/KnobMetrics.h now - the editor's strip solver and the LookAndFeel's
+// paint routine both call it, so it could not stay file-local - and this harness
+// compiles the header the plugin compiles rather than a copy of its text. The
+// header names juce::jmin / jmax / jlimit and does not include JUCE itself, which
+// is exactly why the stub above is enough to compile it: the same arrangement the
+// DSP headers have, stated in Source/DSP/J37Math.h.
+#include "GUI/KnobMetrics.h"
+
+using j37panel::computeKnobMetrics;
+using j37panel::KnobMetrics;
 
 #include "constants.inc"
 #include "band_height.inc"

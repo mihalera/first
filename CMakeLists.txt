@@ -307,12 +307,35 @@ juce_generate_juce_header(first)
 # ------------------------------------------------------------------------------
 #  Sources
 #
-#  Source/PluginProcessor.cpp and PluginEditor.cpp are the whole plugin: JUCE
-#  supplies the plugin entry points itself, so there is no main() in any target.
+#  Source/PluginProcessor.cpp and PluginEditor.cpp are the plugin's two halves,
+#  and each has been split by CONCERN rather than by size: the processor's
+#  parameter table and its preset/state code are files of their own beside it, and
+#  the editor has been split into the files under Source/GUI/ that draw for it - the
+#  look-and-feels, the meters, the interface-sound engine, and then its own build,
+#  its theme, its paint and its tick, which is why EditorSetup/Theme/Paint/Timer.cpp
+#  are here rather than left out: PluginEditor.cpp DEFINES none of those four any
+#  more, so a list that still names only PluginEditor.cpp links nothing that a
+#  window needs. JUCE supplies the plugin entry points itself, so there is no main()
+#  in any target.
+#
+#  The headers a split produces are not listed: a header is reached through the
+#  include path (target_include_directories below), and tests/editor/
+#  check_editor_juce.sh compiles every one of them on its own, which is what would
+#  catch a header that is only ever reached accidentally.
 # ------------------------------------------------------------------------------
 target_sources(first PRIVATE
     Source/PluginProcessor.cpp
+    Source/ParameterTable.cpp
+    Source/ProcessorPresets.cpp
+    Source/ProcessorSignalPath.cpp
     Source/PluginEditor.cpp
+    Source/GUI/EditorSetup.cpp
+    Source/GUI/EditorTheme.cpp
+    Source/GUI/EditorPaint.cpp
+    Source/GUI/EditorTimer.cpp
+    Source/GUI/J37LookAndFeel.cpp
+    Source/GUI/EditorMeters.cpp
+    Source/GUI/UiSoundEngine.cpp
     Source/GUI/TapeScene.cpp
     Source/GUI/NativeRenderer.cpp
     Source/GUI/NativeRenderer_D3D11.cpp

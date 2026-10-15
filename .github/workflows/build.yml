@@ -13,6 +13,18 @@ permissions:
 env:
   BUILD_TYPE: Release
 
+  # How many translation units the Linux jobs compile at once. Deliberately not
+  # "as many as the runner has cores": the editor is one file per concern now
+  # (see the Sources block in CMakeLists.txt) and every one of those files pulls
+  # in <JuceHeader.h>, so several of the heaviest units in the project can be in
+  # flight at the same moment. On ubuntu-latest an unbounded --parallel let their
+  # peak add up past what the runner has, and the OOM killer took the compiler
+  # out mid-build: the Release job died with "Killed signal terminated program
+  # cc1plus" while building Source/GUI/TapeScene.cpp, and the Debug job lost the
+  # runner agent itself (exit 143 with no compiler error anywhere above it).
+  # Two in flight is what the runner holds.
+  J37_BUILD_JOBS: 2
+
 jobs:
   # ============================================================================
   #  DSP regression harness - the SUBFUND stage
@@ -24,10 +36,15 @@ jobs:
   #  Nothing short of rendering them catches a regression, and the three
   #  platform builds below take far too long to be the place to find out.
   #
-  #  The harness needs no JUCE, no audio backend and no host: it cuts the
-  #  shipping generator out of Source/ at build time and compiles it against a
-  #  small shim, so it cannot end up measuring a stale copy of the code. It
-  #  checks out without submodules for that reason - it never looks at JUCE/.
+  #  The harness needs no JUCE, no audio backend and no host: it includes the
+  #  shipping stages out of Source/ at build time and compiles them against a
+  #  small shim, so it cannot end up measuring a stale copy of the code. The one
+  #  step here that does look at JUCE is the last one, which compiles the moved
+  #  Source/DSP/ headers against juce_audio_basics instead of that shim - a name
+  #  the shim provides is not proof that real JUCE provides it, and the check is
+  #  what keeps "harness green, plugin red" from being a fifteen-minute discovery
+  #  in the platform builds. That is why the checkout below takes the submodule
+  #  (measured at a few seconds, depth 1) while every other step ignores it.
   # ============================================================================
   dsp-tests:
     name: DSP regression harness
@@ -37,6 +54,8 @@ jobs:
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
+        with:
+          submodules: recursive
 
       - name: Run the subharmonic harness
         run: bash tests/dsp/run.sh
@@ -74,8 +93,8 @@ jobs:
       # machine as written looked right, START did nothing on a machine that was
       # already running, and STOP approached rest asymptotically instead of
       # arriving, so a "stopped" machine was still passing a faded copy of its
-      # input. This harness cuts the shipping TransportRig out of the header and
-      # drives it frame by frame, checking each key against the duration its own
+      # input. This harness includes the shipping TransportRig and drives it
+      # frame by frame, checking each key against the duration its own
       # note claims and the platter the engine actually follows - including the
       # one multiplication that makes STOP silence rather than lower. Same shape as
       # the harnesses above: no JUCE, no host, a few seconds.
@@ -91,8 +110,8 @@ jobs:
       # this frame creeps forward by a frame per grain, which is a few cents of
       # permanent detune and a grain-rate wobble on top. Neither is visible by
       # reading the source - one is a number on rendered audio, the other is an
-      # ordering of two loops - so this harness cuts both structs out of the header
-      # and measures the reading and the splice on generated signal. Same shape as
+      # ordering of two loops - so this harness includes both stages and measures
+      # the reading and the splice on generated signal. Same shape as
       # the harnesses above: no JUCE, no host, a few seconds.
       - name: Run the pitch harness
         run: bash tests/pitch/run.sh
@@ -146,6 +165,32 @@ jobs:
       # Ukrainian again now.
       - name: Check the translation tables
         run: python3 tests/translations/check_translations.py
+
+      # The stages that have moved into Source/DSP/ are compiled by the harnesses
+      # against their own small stand-in for juce::, which is what keeps a harness
+      # seconds of work - but a name that stand-in provides is not proof that real
+      # JUCE provides it, and the moment a stage moves into a header of its own is
+      # exactly when that stops being a safe assumption. Harness green and plugin
+      # red would be a fifteen-minute discovery in the platform builds; this makes
+      # it a two-second one here. What it compiles is the DIRECTORY - every *.h in
+      # Source/DSP/ - so a stage that moves in is checked here on the next run
+      # without being named anywhere. It reads the JUCE
+      # submodule, which is what the checkout above fetches and why it does: an
+      # empty JUCE/ is a setup fault, and the script says so by name.
+      - name: Check the moved DSP headers against JUCE
+        run: bash tests/dsp/check_headers_juce.sh
+
+      # The editor and the processor, split into files: every translation unit that
+      # compiles one of them, plus every header of the plugin's own - the top level
+      # of Source/ and Source/GUI/ - on its own. The harnesses above compile
+      # extracted SPANS - the knob arithmetic, the transport rig, a saved state -
+      # never a whole file, so a block that moved to a new .cpp with a missing
+      # include, or a header that only compiles when the editor's was included first,
+      # is textually perfect and does not compile. This is the same trick as the
+      # check above, one level up: real JUCE, -fsyntax-only, seconds. It reads the
+      # JUCE submodule, which the checkout above fetches.
+      - name: Check the plugin's own files against JUCE
+        run: bash tests/editor/check_editor_juce.sh
 
   # ============================================================================
   #  DSP micro-benchmarks - measurement, never a gate
@@ -331,7 +376,7 @@ jobs:
 
       - name: Compile (Debug)
         run: |
-          cmake --build build --config Debug --parallel 2>&1 | tail -40
+          cmake --build build --config Debug --parallel "$J37_BUILD_JOBS" 2>&1 | tail -40
           test ${PIPESTATUS[0]} -eq 0
 
       - name: Verify the Debug VST3 bundle was produced
@@ -753,16 +798,20 @@ jobs:
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
 
+      # --parallel "$J37_BUILD_JOBS" rather than a bare --parallel: see the note
+      # on J37_BUILD_JOBS at the top of this file. This is the job the OOM killer
+      # actually showed up in, and the retry below is no help against it - a build
+      # that ran out of memory once runs out of memory again, three times over.
       - name: Build
         run: |
           set -o pipefail
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 2>&1 |
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel "$J37_BUILD_JOBS" 2>&1 |
             grep -E 'error|warning|Error|FAILED|BUILD' || true
 
           # Second pass to verify actual exit code
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel > /dev/null 2>&1 || {
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel "$J37_BUILD_JOBS" > /dev/null 2>&1 || {
             echo "Build failed - re-running with full output:"
-            cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+            cmake --build build --config ${{ env.BUILD_TYPE }} --parallel "$J37_BUILD_JOBS"
             exit 1
           }
 

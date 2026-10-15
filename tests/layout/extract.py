@@ -44,7 +44,50 @@ import re
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 EDITOR = REPO / "Source" / "PluginEditor.cpp"
+
+# The editor's own source is five files since the constructor's build, the theme, the
+# paint routines and the tick moved out beside it, and what this harness reads is
+# spread across them: the constructor's phases are DECLARED in PluginEditor.h and
+# defined in Source/GUI/EditorSetup.cpp, the layout arithmetic this file cuts six spans
+# out of is still in PluginEditor.cpp, and the phase guard has to count definitions
+# wherever they are. So the files are read AS ONE TEXT, each under a marker naming it:
+# every span still has to occur exactly once across all of them, which is what turns a
+# definition that has been duplicated in two files into a failure rather than a run
+# that measured whichever copy it found first.
+EDITOR_SOURCES = [
+    EDITOR,
+    REPO / "Source" / "GUI" / "EditorSetup.cpp",
+    REPO / "Source" / "GUI" / "EditorTheme.cpp",
+    REPO / "Source" / "GUI" / "EditorPaint.cpp",
+    REPO / "Source" / "GUI" / "EditorTimer.cpp",
+]
+EDITOR_NAMES = " + ".join(path.name for path in EDITOR_SOURCES)
+
+
+def editor_source() -> str:
+    """The editor's own source as one text, each file under a marker naming it."""
+    chunks = []
+
+    for path in EDITOR_SOURCES:
+        if not path.exists():
+            raise SystemExit(f"extract.py: {path.relative_to(REPO)} is missing; the layout "
+                             f"harness reads the editor's own source across its files.")
+        chunks.append(f"// ---- {path.relative_to(REPO).as_posix()} ----\n" + path.read_text())
+
+    return "\n".join(chunks)
 HEADER = REPO / "Source" / "PluginEditor.h"
+
+# Where the two things this file reads out of the editor have moved to, each named
+# because a text check whose subject has walked off to another file must say so
+# rather than report the absence of something that is right there. The knob's paint
+# routine is the LookAndFeel's now (its drawings, the cap's divisions, the indicator
+# bead, the lists' text inset); the divider the grid starts under is in the page
+# table, which is Source/GUI/PanelTabs.h; and the radial budget the routine solves
+# with is a header of its own, which the harness compiles rather than cuts - it is
+# JUCE-free on purpose and the stub below declares what it asks for.
+LOOK_AND_FEEL = REPO / "Source" / "GUI" / "J37LookAndFeel.cpp"
+PANEL_TABS = REPO / "Source" / "GUI" / "PanelTabs.h"
+KNOB_METRICS = REPO / "Source" / "GUI" / "KnobMetrics.h"
 
 # The editor's constructor, declared as a list of calls - and the header block
 # that declares the phases, under this title, in the order they must be called.
@@ -179,9 +222,9 @@ def check_constructor_phases(source: str, header: str) -> list[str]:
         definitions = len(re.findall(r"FirstAudioProcessorEditor::" + re.escape(name) + r"\s*\(\s*\)",
                                      source))
         if definitions == 0:
-            problems.append(f"{name}() is declared but has no definition in {EDITOR.name}")
+            problems.append(f"{name}() is declared but has no definition in {EDITOR_NAMES}")
         elif definitions > 1:
-            problems.append(f"{name}() is defined {definitions} times in {EDITOR.name}")
+            problems.append(f"{name}() is defined {definitions} times in {EDITOR_NAMES}")
 
     for name in calls:
         if name not in declarations:
@@ -209,28 +252,40 @@ def main() -> int:
 
     destination = pathlib.Path(arguments.output_dir)
     destination.mkdir(parents=True, exist_ok=True)
-    source = EDITOR.read_text()
+    source = editor_source()
+    # The paint routine and the arithmetic it solves with: both are read out of the
+    # file that has them, so "the knob's own numbers" cannot silently become the
+    # numbers this file used to carry.
+    look_and_feel = LOOK_AND_FEEL.read_text()
+    if "drawRotarySlider" not in look_and_feel:
+        raise SystemExit(f"extract.py: {LOOK_AND_FEEL.name} does not define drawRotarySlider, "
+                         f"so the knob's own numbers cannot be read out of it")
+    if not KNOB_METRICS.exists():
+        raise SystemExit(f"extract.py: {KNOB_METRICS} is missing - the radial budget the "
+                         f"harness compiles is not there")
+    tabs = PANEL_TABS.read_text()
 
     phases = check_constructor_phases(source, HEADER.read_text())
     print(f"constructor phases: {len(phases)} declared, defined once and called once, "
           f"in the declared order")
 
-    divider = constant(source, r"controlsDividerOffset = (\d+);", "controlsDividerOffset")
+    divider = constant(tabs, r"controlsDividerOffset = (\d+);", "controlsDividerOffset")
     row_gap = constant(source, r"constexpr int knobRowGap = (\d+);", "knobRowGap")
 
     # The cap's own turning rings and how far the indicator runs among them. The
     # complaint this measures is a tip that lands ON a division, so neither
     # number can be restated in the harness: both are read out of the paint
-    # routine, and a redrawn ladder moves the check with it.
-    pointer_length = ladder(source, r"const auto pointerLength = radius \* ([0-9.]+)f;",
+    # routine - which is Source/GUI/J37LookAndFeel.cpp now - and a redrawn ladder
+    # moves the check with it.
+    pointer_length = ladder(look_and_feel, r"const auto pointerLength = radius \* ([0-9.]+)f;",
                             "the indicator's length")[0]
-    groove_rings = ladder(source, r"for \(int ring = 1; ring <= (\d+); \+\+ring\)",
+    groove_rings = ladder(look_and_feel, r"for \(int ring = 1; ring <= (\d+); \+\+ring\)",
                           "the turning rings")[0]
-    groove_steps = ladder(source,
+    groove_steps = ladder(look_and_feel,
                           r"const auto t = static_cast<float> \(ring\) / ([0-9.]+)f;",
                           "the turning rings' step")[0]
     groove_first, groove_stride = ladder(
-        source, r"const auto ringRadius = radius \* \(([0-9.]+)f \+ t \* ([0-9.]+)f\);",
+        look_and_feel, r"const auto ringRadius = radius \* \(([0-9.]+)f \+ t \* ([0-9.]+)f\);",
         "the turning rings' span")
 
     # Where the bead's paint sits in the routine. It is drawn LAST on purpose: the
@@ -239,11 +294,11 @@ def main() -> int:
     # under the knob, which is what it looked like. That is a property of the
     # routine's SEQUENCE rather than of any number in it, so it is the one thing
     # here that is measured from the order the two blocks appear in.
-    bead_at = source.find("g.fillEllipse (tracer.x")
-    cap_at = source.find("const auto skirt = radius")
+    bead_at = look_and_feel.find("g.fillEllipse (tracer.x")
+    cap_at = look_and_feel.find("const auto skirt = radius")
     if bead_at < 0 or cap_at < 0:
         raise SystemExit(f"extract.py: the indicator bead's paint and the cap's "
-                         f"first solid part are not both in {EDITOR.name}. The "
+                         f"first solid part are not both in {LOOK_AND_FEEL.name}. The "
                          f"layout harness measures their order in drawRotarySlider.")
     bead_over_cap = 1 if bead_at > cap_at else 0
 
@@ -251,17 +306,15 @@ def main() -> int:
     # so it is read out with the function, and the CALL SITES are counted: the two
     # list styles are drawn by two look-and-feels, and "one of them was padded and
     # the other was walled" is exactly the state this guards against.
-    combo_floor = constant(source, r"constexpr int comboTextMinimumInset = (\d+);",
+    combo_floor = constant(look_and_feel, r"constexpr int comboTextMinimumInset = (\d+);",
                            "comboTextMinimumInset")
-    combo_calls = source.count("comboTextInset (box.getHeight(), panelHeight)")
+    combo_calls = look_and_feel.count("comboTextInset (box.getHeight(), panelHeight)")
+    if combo_calls != 2:
+        raise SystemExit(f"extract.py: {combo_calls} call site(s) of comboTextInset in "
+                         f"{LOOK_AND_FEEL.name}; the two list styles are drawn by two "
+                         f"look-and-feels and both have to ask this one function.")
 
     fragments = {
-        # The radial budget: one pure function of the paint area and the camera.
-        "metrics.inc": "\n".join([
-            brace_block(source, "struct KnobMetrics") + ";",
-            "",
-            brace_block(source, "KnobMetrics computeKnobMetrics"),
-        ]),
         # The editor layout, from the outer padding to the four bands it returns.
         "editor_layout.inc": span(source,
                                   "auto remaining = getLocalBounds().reduced (14);",
@@ -299,8 +352,9 @@ def main() -> int:
                               "control.setBounds (sliderBounds);\n    }"),
         # Where a list's value text starts, as a pure function of the field it is
         # written in and the panel it stands on - so the padding every list on the
-        # panel uses can be measured at every window size without a window.
-        "combo_text.inc": brace_block(source, "int comboTextInset"),
+        # panel uses can be measured at every window size without a window. It is
+        # the two look-and-feels' own placement now, so it is cut from there.
+        "combo_text.inc": brace_block(look_and_feel, "int comboTextInset"),
         # The constants the fragments above are measured from. The strip declares
         # its own knobRowGap; this copy is what the harness's own checks read, so
         # a change there cannot leave the test measuring against the old gap.

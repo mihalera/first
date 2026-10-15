@@ -44,7 +44,16 @@ import sys
 ROOT = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 PRESET_DIR = os.path.join(ROOT, "Source", "Presets", "Factory")
 CMAKE = os.path.join(ROOT, "CMakeLists.txt")
+
+# The registered parameter ids are read out of the source that registers them, which
+# is TWO files since PluginProcessor.cpp was split: the table itself (every
+# `ParameterID { "id" }` a group adds) is Source/ParameterTable.cpp, and the two id
+# lists that are not the table - the parameters the editor's dirty badge watches, and
+# the ones deliberately kept out of every preset - stayed in the processor beside the
+# constructor that uses them. Reading only one of the two would silently check the
+# presets against a shorter id set, which is the failure this file exists to catch.
 PROCESSOR = os.path.join(ROOT, "Source", "PluginProcessor.cpp")
+PARAMETER_TABLE = os.path.join(ROOT, "Source", "ParameterTable.cpp")
 
 problems = []
 
@@ -81,12 +90,16 @@ if not listed:
 # 2. The registered parameter ids, and the deliberate exclusions, from source.
 # ---------------------------------------------------------------------------
 processor = read(PROCESSOR)
+table = read(PARAMETER_TABLE)
 
 ids_block = re.search(r"static const auto ids = std::array\s*\{(.*?)\};", processor, re.S)
 if not ids_block:
     sys.exit("check_presets: the registered id list not found in PluginProcessor.cpp")
-ids = set(re.findall(r'"([a-z0-9_]+)"', ids_block.group(1)))
-ids |= set(re.findall(r'ParameterID \{ "([a-z0-9_]+)"', processor))
+badge = set(re.findall(r'"([a-z0-9_]+)"', ids_block.group(1)))
+registered = set(re.findall(r'ParameterID \{ "([a-z0-9_]+)"', table))
+if not registered:
+    sys.exit("check_presets: no registered parameters found in ParameterTable.cpp")
+ids = badge | registered
 
 excluded_block = re.search(
     r"intentionallyNotPresettable\s*\{(.*?)\};", processor, re.S)
@@ -147,3 +160,6 @@ if problems:
 
 print("check_presets: %d presets consistent, %d of %d parameters set, %d excluded"
       % (len(listed), len(covered), len(ids), len(excluded)))
+print("check_presets: %d registered in ParameterTable.cpp, %d watched by the dirty badge in "
+      "PluginProcessor.cpp, %d excluded from every preset"
+      % (len(registered), len(badge), len(excluded)))

@@ -61,6 +61,86 @@ Suggested order: the DSP structs first (they are already used by the harnesses, 
 the split is verifiable by the suite itself), then the editor's panel/theme types,
 then `processBlock`'s stages if it is still unmanageable.
 
+**Progress, and a correction to the paragraph above.** Nineteen headers have moved - the
+scalar math bridge, then `LoudnessMeter`, `TransientShaper`, `GlueCompressor`,
+`RateBridge`, `SaturationCore` (the largest, 1,000 lines, including the four voice
+lists that have to travel with the struct), `VinylStage`, `SubharmonicGenerator`, the
+pitch pair `PitchTracker` / `RealtimePitchShifter`, the transport pair `TransportRig`
+/ `RepitchStage`, the four stages nothing measures (`InputStage`, `PlateReverb`,
+`ThreeBandEq`, `HarmonicAnalyser`), then `OptionalLibraries.h`, `NeuralStage.h` and
+`IrStage.h` - one header each, with their prose, and **three**
+extractors
+(`tests/dsp/`, `tests/pitch/`, `tests/transport/`) now *include* those headers instead
+of cutting their text out of `PluginProcessor.h`. That is the payoff delivered three
+times over: the pitch and transport harnesses used to cut the structs they drive by text,
+and now they compile the shipping code. It is also where the split's one silent-failure
+mode showed up for real: the transport extractor reads `armedForHost` out of
+`PluginProcessor.h` as text, the flag moved with the rig, and the check failed with the
+file it had searched named in the message - the right outcome, and the reason each of
+those checks names its file. `PluginProcessor.h` itself is 1,787 lines, down from 7,605,
+and the DSP extractor's header list is EMPTY: its last entry, `NeuralStage`, moved as
+soon as the optional-library probe it is compiled under had a header of its own,
+`Source/DSP/OptionalLibraries.h` - which is the rule this plan's own paragraph above
+missed, that a header which branches on a macro has to be able to read the file that
+decides it. The JUCE
+header check compiles **every** file in `Source/DSP/` rather than the harnesses'
+source lists, which is what gave the four stages nothing includes a compile against real
+JUCE at all - coverage by convention rather than by registry. What is left in that
+extractor is the .cpp half alone: the five inline shapers. The engine's own plumbing - the
+amp's behaviour around its curve, the tape condition, the sample clock and the smoother
+that reads it, and the conventional compressor on the finished signal - has followed it,
+four more headers that no harness renders and that the JUCE header check instantiates
+instead (23 headers in that directory now).
+
+**And the editor has been split, which is the part this plan had not asked for.**
+`PluginEditor.cpp` is 6,078 lines, down from 9,441: the paint kit and the page table
+(`Source/GUI/PanelPaint.h`, `PanelTabs.h`), the knob table and every tooltip sentence
+(`PanelText.h`), both look-and-feels (`J37LookAndFeel.cpp`), the meters
+(`EditorMeters.cpp`), the interface-sound engine (`UiSoundEngine.cpp`) and the knob's
+radial budget (`KnobMetrics.h`), which two files now call and which the layout harness
+compiles as a header rather than cutting as text. Each move is a pure move of bytes,
+with the three adaptations a header requires named in `SPLITTING-BIG-FILES.md` section
+7 - `inline`, the two counts and the theme choice, and the radial budget that had to
+stop being file-local. That section also records the check the split needed and did not
+have: `tests/editor/check_editor_juce.sh` compiles the whole translation units and every
+`Source/GUI/*.h` on its own against real JUCE, because every other harness in this
+repository compiles an extracted span and would not see a moved block with a missing
+include. It caught three real faults on its first run. The state harness, whose parameter table reads the same six model lists,
+now looks each list up in a short list of header files rather than assuming it is in
+`PluginProcessor.h` - the two-file version of the same rule. That is the first
+payoff above, delivered; `SPLITTING-BIG-FILES.md` section 7 records the recipe and
+what is left. The second payoff - build time - is **not** delivered by moving a header
+on its own, and this plan claimed it was: `PluginProcessor.cpp` and `PluginEditor.cpp`
+both include `PluginProcessor.h`, so both still parse every stage wherever it lives.
+The moves are what makes the fix possible (the editor is the translation unit with the
+least to do with any of these stages), but the build-time win needs the stage
+implementations in per-stage `.cpp` files, or the editor's DSP access behind an opaque
+aggregate, and that is a separate and much riskier step.
+
+**The processor has been split too, and along its own seams rather than by size.**
+`PluginProcessor.cpp` is 1,325 lines, down from 7,220, and what is left in it is the
+processor's LIFECYCLE. Three things left it, and each is a file a reader has a reason
+to open on its own: the parameter table (1,357 lines, `Source/ParameterTable.cpp`),
+the preset/compare code with the saved-state format it writes
+(`Source/ProcessorPresets.cpp` and `.h`, `Source/ProcessorStateFormat.h`), and the
+whole signal path (3,916 lines, `Source/ProcessorSignalPath.cpp`) - including
+`processTapeEngine()`, which is still one 3,366-line function and is now at least in a
+file of its own. Two headers came out of the same move because the signal path and the
+preparation code both call them: the five inline shapers (`Source/DSP/HotPathMath.h`,
+which retired the LAST text `tests/dsp/extract.py` used to cut - that extractor now
+includes every line it compiles) and the hot-path probe
+(`Source/HotPathProbe.h`).
+
+Two facts from that move are worth carrying to the next one. First, **the text checks
+failed by name and the fix rode along with the move**: four extractors read this file by
+anchor, and all four now read the processor's own source as one text across every file
+it is split into, so a fact that moves is found where it went and a fact that ends up in
+two files stops the harness. Second, **compiling the flag nobody compiles found a real
+bug**: `J37_ENABLE_HOTPATH_PROBE`'s branch, turned on for the first time during the move,
+held a copy assignment between two `std::atomic<bool>` - a deleted function - so the
+probe the counters were declared for still did not build. The move fixed it, and
+`tests/editor/check_editor_juce.sh` now compiles that branch on every run.
+
 ### 2. A fast compile gate, and ccache
 
 The one failure class that has cost the most on this repository is the cheapest to
@@ -97,7 +177,7 @@ independence, the 3.01 LU channel sum, the floor, and that `prepare()` then
 ### 4. Extract the AUTO GAIN compensator so it can be measured on signal
 
 It is the one gain stage in the chain that nothing measures, and it sits inline in
-`processBlock`'s per-sample loop. What could be measured if it were a struct, the
+`processTapeEngine`'s per-sample loop (Source/ProcessorSignalPath.cpp). What could be measured if it were a struct, the
 way `RateBridge` and `LoudnessMeter` are:
 
 - that it only ever restores and never boosts (the `jlimit (0.0f, 12.0f, …)` clamp
@@ -163,7 +243,7 @@ is an index over it, not a replacement.
 
 ## If you do three things
 
-1. Move the DSP structs out of `PluginProcessor.h` into `Source/DSP/*.h` and let
+1. **[done] Move the DSP structs out of `PluginProcessor.h` into `Source/DSP/*.h`** and let
    the harnesses `#include` them. It deletes the fragile part of the test suite,
    speeds every build, and unblocks items 4 and 6.
 2. Add ccache and a compile-only gate so a missing include is a two-minute failure

@@ -15,6 +15,12 @@ HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
 BUILD="${TMPDIR:-/tmp}/subfund-dsp-test"
 CXX="${CXX:-g++}"
 
+# The stages that have moved into Source/DSP/ are INCLUDED by the generated header
+# (see extract.py's SOURCE_HEADERS) rather than cut out of PluginProcessor.h, so
+# the compiler needs Source/ on its include path. Source/ and tests/ are both part
+# of the checkout, so this is the plugin's own header being compiled, not a copy.
+SOURCE="${HERE}/../../Source"
+
 mkdir -p "${BUILD}"
 
 python3 "${HERE}/extract.py" "${BUILD}/extracted_dsp.inc"
@@ -32,7 +38,7 @@ fi
 
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
-    -I "${HERE}" -I "${BUILD}" \
+    -I "${HERE}" -I "${BUILD}" -I "${SOURCE}" \
     "${HERE}/subfund_test.cpp" -o "${BUILD}/subfund_test"
 
 "${BUILD}/subfund_test"
@@ -46,7 +52,7 @@ fi
 # log line that carries the exit code.
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
-    -I "${HERE}" -I "${BUILD}" \
+    -I "${HERE}" -I "${BUILD}" -I "${SOURCE}" \
     "${HERE}/loudness_test.cpp" -o "${BUILD}/loudness_test"
 
 "${BUILD}/loudness_test"

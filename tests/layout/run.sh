@@ -38,7 +38,7 @@ fi
 
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
-    -I "${HERE}" -I "${BUILD}" \
+    -I "${HERE}" -I "${HERE}/../../Source" -I "${BUILD}" \
     "${HERE}/layout_test.cpp" -o "${BUILD}/layout_test"
 
 "${BUILD}/layout_test"
