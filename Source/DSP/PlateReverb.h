@@ -36,7 +36,9 @@ struct PlateReverb
     // combs do not reinforce each other into a ringing pitch.
     static constexpr int numAllPasses = 4;
     static constexpr int numCombs = 4;
-    static constexpr int maxDelayLength = 4096;
+    // Supports up to 192 kHz (4x the 44.1 kHz reference) while retaining the
+    // longest scaled comb delay plus one spare sample for safe wraparound.
+    static constexpr int maxDelayLength = 8192;
 
     struct AllPass
     {
@@ -123,8 +125,12 @@ struct PlateReverb
     void prepare (double sampleRate)
     {
         // The lengths are given for 44.1 kHz, so they are scaled for any other rate
-        // to keep the room the same physical size.
-        const auto scale = static_cast<double> (sampleRate) / 44100.0;
+        // to keep the room the same physical size. The fixed delay lines support
+        // rates through 192 kHz; cap the scaling at that documented capacity so
+        // an unsupported extreme cannot collapse distinct delays at the buffer edge.
+        constexpr double maxSupportedSampleRate = 192000.0;
+        const auto safeSampleRate = juce::jlimit (1.0, maxSupportedSampleRate, sampleRate);
+        const auto scale = safeSampleRate / 44100.0;
         const auto scaled = [scale] (int base)
         {
             return juce::jlimit (1, maxDelayLength - 1, juce::roundToInt (base * scale));

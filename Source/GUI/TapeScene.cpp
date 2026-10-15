@@ -596,37 +596,31 @@ void TapeScene::setKnobCaptions (const juce::String* captions, int count) noexce
     // when the tab changes, never per frame. A String and the UTF-8 conversion
     // below are exactly the kind of work the render thread must not be asked to
     // do, which is why the result is published as a fixed byte buffer rather
-    // than as a String.
+    // than as a String. Write only the inactive bank, then publish its index;
+    // the render thread snapshots that index once per frame and reads an
+    // immutable bank even if the next tab change arrives mid-frame.
     const auto usable = juce::jlimit (0, bankKnobCount, count);
+    const auto active = activeCaptionBuffer.load (std::memory_order_relaxed);
+    const auto next = 1 - active;
+    auto& nextBytes = captionBuffers[static_cast<std::size_t> (next)];
 
     for (int i = 0; i < bankKnobCount; ++i)
     {
-        auto& bytes = captionBytes[static_cast<std::size_t> (i)];
-        std::memset (bytes.data(), 0, bytes.size());
+        auto& bytes = nextBytes[static_cast<std::size_t> (i)];
+        bytes.fill ('\0');
 
         if (i >= usable)
             continue;
 
-        // The GL thread reads this buffer once per frame, so the bytes are
-        // written BEFORE the length that publishes them: the store below is a
-        // release and the load in renderOpenGL is an acquire. Both are atomics,
-        // and this is the one ordering in the class that matters - it is the
-        // standard publish-a-buffer pattern, and without it a caption can be
-        // read half-written.
         const auto text = captions[i].toUTF8();
         const auto length = juce::jmin (static_cast<int> (text.length()),
                                         static_cast<int> (bytes.size()) - 1);
 
-        if (length <= 0)
-        {
-            captionLengths[static_cast<std::size_t> (i)].store (0, std::memory_order_release);
-            continue;
-        }
-
-        std::memcpy (bytes.data(), text.getAddress(), static_cast<std::size_t> (length));
-        captionLengths[static_cast<std::size_t> (i)].store (length, std::memory_order_release);
+        if (length > 0)
+            std::memcpy (bytes.data(), text.getAddress(), static_cast<std::size_t> (length));
     }
 
+    activeCaptionBuffer.store (next, std::memory_order_release);
     repaint();
 }
 
@@ -1342,8 +1336,11 @@ void TapeScene::drawControlBank (const glm::mat4& viewProjection,
     // Three captions would mean three plates at this size, which is a wall of
     // text rather than a label.
     {
-        const auto length = juce::jmin (captionLengths[0].load (std::memory_order_acquire), 8);
-        const auto* bytes = captionBytes[0].data();
+        const auto activeCaptions = activeCaptionBuffer.load (std::memory_order_acquire);
+        const auto& bytes = captionBuffers[static_cast<std::size_t> (activeCaptions)][0];
+        auto length = 0;
+        while (length < 8 && bytes[static_cast<std::size_t> (length)] != '\\0')
+            ++length;
 
         for (int i = 0; i < 8; ++i)
             labelGlyphs[static_cast<std::size_t> (i)] = i < length

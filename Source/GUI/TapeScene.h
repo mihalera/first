@@ -341,12 +341,14 @@ private:
     /** The GL thread's half of the answer to isSceneLive(). */
     std::atomic<int> programLinked { 0 };
 
-    /** The bank's knob angles, 0..1, and the five captions under them. The
-        captions are published as bytes plus a length rather than as a String
-        because a juce::String allocates, and the render thread must not. */
+    /** The bank's knob angles, 0..1, and the five captions under them. Captions
+        are double-buffered: the message thread writes the inactive fixed-byte
+        bank, then atomically publishes its index so the render thread can read
+        a stable snapshot without touching juce::String. */
     std::array<std::atomic<float>, bankKnobCount> knobValues {};
-    std::array<std::array<char, 32>, bankKnobCount> captionBytes {};
-    std::array<std::atomic<int>, bankKnobCount> captionLengths {};
+    using CaptionBuffer = std::array<std::array<char, 32>, bankKnobCount>;
+    std::array<CaptionBuffer, 2> captionBuffers {};
+    std::atomic<int> activeCaptionBuffer { 0 };
 
     /** The caption the panel's plate is currently drawing, as the shader's own
         glyph indices. Written on the render thread and read only by it, so this

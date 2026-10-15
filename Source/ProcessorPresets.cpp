@@ -377,6 +377,35 @@ void FirstAudioProcessor::updateActiveCompareSlot()
 //  the per-user application data directory, so they survive plugin updates, are
 //  shared by every instance and never depend on the session.
 //==============================================================================
+namespace
+{
+    juce::String sanitiseUserPresetName (const juce::String& name)
+    {
+        juce::String safe;
+        for (const auto character : name.trim())
+            if (character != '/' && character != '\\\\' && character != ':' && character != '?'
+                && character != '*' && character != '\"' && character != '<'
+                && character != '>' && character != '|')
+                safe += character;
+
+        return safe.trim();
+    }
+
+    bool makeUserPresetFile (const juce::String& name, juce::String& safeName, juce::File& file)
+    {
+        safeName = sanitiseUserPresetName (name);
+        if (safeName.isEmpty() || safeName == "." || safeName == "..")
+            return false;
+
+        const auto directory = FirstAudioProcessor::getUserPresetDirectory();
+        file = directory.getChildFile (safeName + ".miboxpreset");
+
+        // Reject any result that does not remain a direct child. This is a
+        // second boundary check after removing path separators from the name.
+        return file.getParentDirectory().getFullPathName() == directory.getFullPathName();
+    }
+}
+
 juce::File FirstAudioProcessor::getUserPresetDirectory()
 {
     auto directory = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
@@ -387,7 +416,7 @@ juce::File FirstAudioProcessor::getUserPresetDirectory()
     return directory;
 }
 
-juce::StringArray FirstAudioProcessor::getUserPresetNames() const
+juce::StringArray FirstAudioProcessor::getUserPresetNames() constיכּ:
 {
     juce::StringArray names;
     for (const auto& entry : getUserPresetDirectory().findChildFiles (juce::File::findFiles,
@@ -399,24 +428,9 @@ juce::StringArray FirstAudioProcessor::getUserPresetNames() const
 
 bool FirstAudioProcessor::saveUserPreset (const juce::String& name)
 {
-    const auto sanitised = name.trim();
-    if (sanitised.isEmpty())
-        return false;
-
-    // Strip characters the host file system cannot store, so a preset named with a
-    // slash cannot escape the preset directory.
     juce::String safe;
-    for (const auto character : sanitised)
-        // The full set Windows itself refuses: / \\ : * ? " < > |. A name holding any
-        // of the extra five would otherwise survive sanitisation on macOS and Linux
-        // and then fail the write on Windows, where the save returns false with no
-        // explanation.
-        if (character != '/' && character != '\\' && character != ':' && character != '?'
-            && character != '*' && character != '"' && character != '<'
-            && character != '>' && character != '|')
-            safe += character;
-    safe = safe.trim();
-    if (safe.isEmpty())
+    juce::File file;
+    if (! makeUserPresetFile (name, safe, file))
         return false;
 
     // captureState stamps the saved-state format marker, so a preset this build
@@ -426,7 +440,6 @@ bool FirstAudioProcessor::saveUserPreset (const juce::String& name)
     if (xml == nullptr)
         return false;
 
-    const auto file = getUserPresetDirectory().getChildFile (safe + ".miboxpreset");
     const auto saved = xml->writeTo (file);
     if (saved)
         markPresetClean (safe);
@@ -435,7 +448,11 @@ bool FirstAudioProcessor::saveUserPreset (const juce::String& name)
 
 bool FirstAudioProcessor::applyUserPreset (const juce::String& name)
 {
-    const auto file = getUserPresetDirectory().getChildFile (name.trim() + ".miboxpreset");
+    juce::String safeName;
+    juce::File file;
+    if (! makeUserPresetFile (name, safeName, file))
+        return false;
+
     const auto xml = juce::parseXML (file);
     if (xml == nullptr)
         return false;
@@ -452,20 +469,21 @@ bool FirstAudioProcessor::applyUserPreset (const juce::String& name)
     // The marker makes it a decision about the FILE rather than about the number.
     migrateStateFormat (restored);
 
-    applyStateWithUndo (restored, "User preset: " + name);
+    applyStateWithUndo (restored, "User preset: " + safeName);
     lastPresetIndex.store (-1, std::memory_order_relaxed);
-    markPresetClean (name.trim());
+    markPresetClean (safeName);
     return true;
 }
 
 bool FirstAudioProcessor::deleteUserPreset (const juce::String& name)
 {
-    const auto file = getUserPresetDirectory().getChildFile (name.trim() + ".miboxpreset");
-    if (! file.existsAsFile())
+    juce::String safeName;
+    juce::File file;
+    if (! makeUserPresetFile (name, safeName, file) || ! file.existsAsFile())
         return false;
 
     const auto deleted = file.deleteFile();
-    if (currentPresetName.equalsIgnoreCase (name.trim()))
+    if (currentPresetName.equalsIgnoreCase (safeName))
         markPresetClean ({});
     return deleted;
 }
