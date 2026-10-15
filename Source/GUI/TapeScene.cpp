@@ -16,6 +16,7 @@
 #include <cmath>
 #include <cstdint>
 #include <limits>
+#include <thread>
 
 // JUCE 9 keeps every GL command and every GL enum in juce::gl, and documents
 // `using namespace ::juce::gl;` as the supported way to bring them into scope -
@@ -592,18 +593,18 @@ void TapeScene::setControlValues (const float* values, int count) noexcept
 
 void TapeScene::setKnobCaptions (const juce::String* captions, int count) noexcept
 {
-    // Safe to call from the message thread only, and it is: the editor calls it
-    // when the tab changes, never per frame. A String and the UTF-8 conversion
-    // below are exactly the kind of work the render thread must not be asked to
-    // do, which is why the result is published as a fixed byte buffer rather
-    // than as a String. Write only the inactive bank, then publish its index;
-    // the render thread snapshots that index once per frame and reads an
-    // immutable bank even if the next tab change arrives mid-frame.
+    // This method is called on the message thread. Double-buffering alone is
+    // insufficient if two updates arrive while the renderer is still consuming
+    // the older bank, so the render thread announces which bank it is reading.
+    // The writer only reuses a bank after the reader has released it.
     const auto usable = juce::jlimit (0, bankKnobCount, count);
-    const auto active = activeCaptionBuffer.load (std::memory_order_relaxed);
+    const auto active = activeCaptionBuffer.load (std::memory_order_acquire);
     const auto next = 1 - active;
-    auto& nextBytes = captionBuffers[static_cast<std::size_t> (next)];
 
+    while (renderCaptionBuffer.load (std::memory_order_acquire) == next)
+        std::this_thread::yield();
+
+    auto& nextBytes = captionBuffers[static_cast<std::size_t> (next)];
     for (int i = 0; i < bankKnobCount; ++i)
     {
         auto& bytes = nextBytes[static_cast<std::size_t> (i)];
@@ -615,7 +616,6 @@ void TapeScene::setKnobCaptions (const juce::String* captions, int count) noexce
         const auto text = captions[i].toUTF8();
         const auto length = juce::jmin (static_cast<int> (text.length()),
                                         static_cast<int> (bytes.size()) - 1);
-
         if (length > 0)
             std::memcpy (bytes.data(), text.getAddress(), static_cast<std::size_t> (length));
     }
@@ -1337,6 +1337,7 @@ void TapeScene::drawControlBank (const glm::mat4& viewProjection,
     // text rather than a label.
     {
         const auto activeCaptions = activeCaptionBuffer.load (std::memory_order_acquire);
+        renderCaptionBuffer.store (activeCaptions, std::memory_order_release);
         const auto& bytes = captionBuffers[static_cast<std::size_t> (activeCaptions)][0];
         auto length = 0;
         while (length < 8 && bytes[static_cast<std::size_t> (length)] != '\\0')

@@ -377,14 +377,14 @@ void FirstAudioProcessor::updateActiveCompareSlot()
 //  the per-user application data directory, so they survive plugin updates, are
 //  shared by every instance and never depend on the session.
 //==============================================================================
-namespace
+    namespace
 {
     juce::String sanitiseUserPresetName (const juce::String& name)
     {
         juce::String safe;
         for (const auto character : name.trim())
-            if (character != '/' && character != '\\\\' && character != ':' && character != '?'
-                && character != '*' && character != '\"' && character != '<'
+            if (character != '/' && character != '\\' && character != ':' && character != '?'
+                && character != '*' && character != '"' && character != '<'
                 && character != '>' && character != '|')
                 safe += character;
 
@@ -399,9 +399,6 @@ namespace
 
         const auto directory = FirstAudioProcessor::getUserPresetDirectory();
         file = directory.getChildFile (safeName + ".miboxpreset");
-
-        // Reject any result that does not remain a direct child. This is a
-        // second boundary check after removing path separators from the name.
         return file.getParentDirectory().getFullPathName() == directory.getFullPathName();
     }
 }

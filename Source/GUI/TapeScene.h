@@ -349,6 +349,7 @@ private:
     using CaptionBuffer = std::array<std::array<char, 32>, bankKnobCount>;
     std::array<CaptionBuffer, 2> captionBuffers {};
     std::atomic<int> activeCaptionBuffer { 0 };
+    std::atomic<int> renderCaptionBuffer { -1 };
 
     /** The caption the panel's plate is currently drawing, as the shader's own
         glyph indices. Written on the render thread and read only by it, so this
