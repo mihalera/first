@@ -1,6 +1,6 @@
 MIT License
 
-Copyright (c) 2025 Alireza Rezvani
+Copyright (c) 2025-2026 MCsmes (MiBoX)
 
 Permission is hereby granted, free of charge, to any person obtaining a copy
 of this software and associated documentation files (the "Software"), to deal
@@ -19,3 +19,32 @@ AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
 LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
 OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
 SOFTWARE.
+
+---
+
+## Scope note
+
+The text above covers **this repository's own source** - everything under
+`Source/`, `tests/`, `cmake/`, `docs/` and the build files at the root.
+
+It does **not** cover what the build links against, and those terms are stricter
+than MIT in places. What you have to know before shipping a binary:
+
+- **JUCE 9.0.4** is a git submodule at `JUCE/` and is licensed under the
+  **AGPLv3** or a commercial JUCE licence - see
+  <https://juce.com/legal/juce-9-licence/>. A plugin that links JUCE is
+  distributed under one of those two, never under the MIT text above.
+- **`chowdsp_dsp_utils`** (a module of `chowdsp_utils`, which the plugin
+  includes and links) is **GPLv3**, while `chowdsp_math` and `chowdsp_simd` from
+  the same repository are BSD.
+- **SoundTouch 2.4.1** is vendored at `ThirdParty/soundtouch/` under the
+  **LGPL-2.1** (copied at `ThirdParty/soundtouch/COPYING.TXT`) and linked
+  statically; **libsndfile** is **LGPL-2.1** and is on the link line.
+- **`rack_dsp`** comes from VCVRack/Rack, which is GPL-3.0-or-later with a
+  plugin exception for plugins distributed free of charge.
+
+`THIRD_PARTY_NOTICES.md` lists each component, its pin and its licence, and
+`README.md` section
+[Licensing, and what ships in a binary](README.md#licensing-and-what-ships-in-a-binary)
+explains what that means for a distributed build. Check both before you publish
+anything built from this tree.

@@ -373,14 +373,14 @@ void FirstAudioProcessor::updateActiveCompareSlot()
 //
 //  A factory preset covers the machine's designed range; a user preset freezes the
 //  whole machine exactly as it stands. Files are XML state trees (the same format
-//  getStateInformation writes into a session) with a .nonlin preset extension, stored in
+//  getStateInformation writes into a session) with a .miboxpreset extension, stored in
 //  the per-user application data directory, so they survive plugin updates, are
 //  shared by every instance and never depend on the session.
 //==============================================================================
 juce::File FirstAudioProcessor::getUserPresetDirectory()
 {
     auto directory = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
-                       .getChildFile ("Nonlin Analog Saturator")
+                       .getChildFile ("MiBoX")
                        .getChildFile ("Presets");
     if (! directory.isDirectory())
         directory.createDirectory();
@@ -391,7 +391,7 @@ juce::StringArray FirstAudioProcessor::getUserPresetNames() const
 {
     juce::StringArray names;
     for (const auto& entry : getUserPresetDirectory().findChildFiles (juce::File::findFiles,
-                                                                      false, "*.nonlinpreset"))
+                                                                      false, "*.miboxpreset"))
         names.add (entry.getFileNameWithoutExtension());
     names.sort (true);
     return names;
@@ -426,7 +426,7 @@ bool FirstAudioProcessor::saveUserPreset (const juce::String& name)
     if (xml == nullptr)
         return false;
 
-    const auto file = getUserPresetDirectory().getChildFile (safe + ".nonlinpreset");
+    const auto file = getUserPresetDirectory().getChildFile (safe + ".miboxpreset");
     const auto saved = xml->writeTo (file);
     if (saved)
         markPresetClean (safe);
@@ -435,7 +435,7 @@ bool FirstAudioProcessor::saveUserPreset (const juce::String& name)
 
 bool FirstAudioProcessor::applyUserPreset (const juce::String& name)
 {
-    const auto file = getUserPresetDirectory().getChildFile (name.trim() + ".nonlinpreset");
+    const auto file = getUserPresetDirectory().getChildFile (name.trim() + ".miboxpreset");
     const auto xml = juce::parseXML (file);
     if (xml == nullptr)
         return false;
@@ -460,7 +460,7 @@ bool FirstAudioProcessor::applyUserPreset (const juce::String& name)
 
 bool FirstAudioProcessor::deleteUserPreset (const juce::String& name)
 {
-    const auto file = getUserPresetDirectory().getChildFile (name.trim() + ".nonlinpreset");
+    const auto file = getUserPresetDirectory().getChildFile (name.trim() + ".miboxpreset");
     if (! file.existsAsFile())
         return false;
 

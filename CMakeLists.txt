@@ -1,6 +1,6 @@
 # ==============================================================================
 #
-#   Nonlin Analog Saturator - tape machine emulation (J37, Ampex 456, Studer A800,
+#   MiBoX - tape machine emulation (J37, Ampex 456, Studer A800,
 #   Chrome, Type 111, GP9, Quantegy 499, RTM SM911)
 #
 #   This is the single source of truth for the build. The Projucer project
@@ -24,7 +24,7 @@ cmake_minimum_required(VERSION 3.22)
 
 project(first
     VERSION 1.0.0
-    DESCRIPTION "Nonlin Analog Saturator"
+    DESCRIPTION "MiBoX"
     LANGUAGES C CXX)
 
 # Keep the generated project files out of the source tree.
@@ -67,7 +67,7 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 # ------------------------------------------------------------------------------
 #  JUCE
 #
-#  JUCE is a git submodule pinned at 9.0.3, checked out at JUCE/ next to this
+#  JUCE is a git submodule pinned at 9.0.4, checked out at JUCE/ next to this
 #  file. Adding it as a subdirectory is all that is needed: there are no module
 #  paths to configure and therefore none to get wrong per-platform, which was
 #  the source of the absolute-path problems the Projucer setup had.
@@ -82,9 +82,9 @@ if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/JUCE/CMakeLists.txt")
 endif()
 
 # ------------------------------------------------------------------------------
-#  JUCE 9.0.3's opus codec, supplied by this repository.
+#  JUCE 9.0.4's opus codec, supplied by this repository.
 #
-#  Upstream 9.0.3 compiles mdct.c with mdct.h included BEFORE kiss_fft.h, so the
+#  Upstream 9.0.4 compiles mdct.c with mdct.h included BEFORE kiss_fft.h, so the
 #  scalar FFT type names mdct.h uses (kiss_twiddle_scalar) are not yet defined
 #  and juce_audio_formats fails to build on every platform - GCC, Clang and MSVC
 #  alike, because it is a missing type name rather than anything
@@ -93,17 +93,23 @@ endif()
 #  file that needs to change.
 #
 #  The typedefs cannot be pushed to juce-framework/JUCE from here, so the
-#  submodule tracks the plain upstream 9.0.3 tag - a commit every clone can
+#  submodule tracks the plain upstream 9.0.4 tag - a commit every clone can
 #  fetch, which is what makes `git submodule update --init` work outside this
 #  machine - and this repository carries the patched header itself, copied over
 #  the checkout before JUCE is configured.
 #
-#  Keyed to 9.0.3 deliberately: the guard re-reads JUCE's own version on every
-#  configure, so bumping the submodule stops the copy instead of writing a 9.0.3
+#  The header is the 9.0.4 one with those two typedefs inserted, and it is kept
+#  per-version rather than shared: 9.0.4 changed this file itself (it defines
+#  FLOAT_APPROX under __FAST_MATH__), so a copy that merely followed the
+#  submodule would silently drop an upstream fix - which is exactly what the
+#  bump from 9.0.3 to 9.0.4 had to avoid.
+#
+#  Keyed to 9.0.4 deliberately: the guard re-reads JUCE's own version on every
+#  configure, so bumping the submodule stops the copy instead of writing a 9.0.4
 #  header over a newer tree. The copy is content-compared, so it runs once and
 #  never dirties the file - or restarts the build - on a re-configure.
 # ------------------------------------------------------------------------------
-set(JUCE_PATCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/patches/juce-9.0.3")
+set(JUCE_PATCH_DIR "${CMAKE_CURRENT_SOURCE_DIR}/patches/juce-9.0.4")
 
 file(READ "${CMAKE_CURRENT_SOURCE_DIR}/JUCE/CMakeLists.txt" _juce_toplevel LIMIT 16384)
 set(_juce_version "")
@@ -111,7 +117,7 @@ if(_juce_toplevel MATCHES "project\\(JUCE VERSION ([0-9]+\\.[0-9]+\\.[0-9]+)")
     set(_juce_version "${CMAKE_MATCH_1}")
 endif()
 
-if(_juce_version STREQUAL "9.0.3")
+if(_juce_version STREQUAL "9.0.4")
     set(_juce_config_header "modules/juce_audio_formats/codecs/opus/juce_opus_config.h")
     set(_juce_patch "${JUCE_PATCH_DIR}/juce_opus_config.h")
     set(_juce_header "${CMAKE_CURRENT_SOURCE_DIR}/JUCE/${_juce_config_header}")
@@ -160,12 +166,15 @@ include(J37Tests)
 #    ManufacturerCode 0x4d616e75  ("Manu" - see the note below)
 #    PluginCode       0x5a793539  ("Zy59")
 #    Bundle ID        com.MCsmes.first
-#    Product name     Nonlin Analog Saturator
+#    Product name     MiBoX
 #
-#  Only PRODUCT_NAME and DESCRIPTION changed with the rename. The manufacturer
-#  code, the plugin code and the bundle ID are the plugin's identity to hosts and
-#  to saved sessions - they stay exactly as they are, so an existing session still
-#  finds the plugin after the rename and does not end up with two entries.
+#  A rename changes PRODUCT_NAME, and with it the two names the plugin owns on
+#  disk: the user-preset directory and the preset extension (ProcessorPresets.cpp).
+#  The manufacturer code, the plugin code and the bundle ID are the plugin's
+#  identity to hosts and to saved sessions and stay exactly as they are, so an
+#  existing session still finds the plugin after a rename instead of ending up with
+#  two entries side by side. The name has moved twice - Analog Saturator, Nonlin
+#  Analog Saturator, now MiBoX - and the codes have not moved once.
 # ------------------------------------------------------------------------------
 # Set to TRUE to copy the built plugins into the user plugin folders as part of
 # the build. Off by default so a CI build cannot silently write to the machine's
@@ -265,7 +274,7 @@ juce_add_plugin(first
     # it is, however odd it looks next to the company name.
     PLUGIN_MANUFACTURER_CODE    Manu
     PLUGIN_CODE                 Zy59
-    PRODUCT_NAME                "Nonlin Analog Saturator"
+    PRODUCT_NAME                "MiBoX"
     DESCRIPTION                 "Nonlinear analog tape saturation and magnetic coloration"
     FORMATS                     ${J37_PLUGIN_FORMATS}
     IS_SYNTH                    FALSE
@@ -611,7 +620,7 @@ j37_apply_android_settings(first)
 #  Summary
 # ------------------------------------------------------------------------------
 message(STATUS "")
-message(STATUS "Nonlin Analog Saturator (first) ${PROJECT_VERSION}")
+message(STATUS "MiBoX (first) ${PROJECT_VERSION}")
 message(STATUS "  JUCE        : ${CMAKE_CURRENT_SOURCE_DIR}/JUCE")
 message(STATUS "  System      : ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Generator   : ${CMAKE_GENERATOR}")

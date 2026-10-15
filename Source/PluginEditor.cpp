@@ -469,8 +469,8 @@ namespace
     {
         static juce::PropertiesFile settings ([] {
             juce::PropertiesFile::Options options;
-            options.applicationName      = "Nonlin Analog Saturator";
-            options.folderName           = "Nonlin Analog Saturator";
+            options.applicationName      = "MiBoX";
+            options.folderName           = "MiBoX";
             options.filenameSuffix       = "settings";
             options.osxLibrarySubFolder  = "Application Support";
             options.commonToAllUsers     = false;

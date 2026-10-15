@@ -1,263 +1,285 @@
 # Plugin improvement plan
 
-> A working list, not a roadmap: each item says what to change, what it costs, and
-> what it pays for. It is grounded in what the CI logs and the test suite actually
-> say, so the evidence for every claim is a run or a file in this repository rather
-> than an opinion about plugin development.
+> **Code analysis - plan how to improve the code, plus new ideas.**
+>
+> This plan is not a wish list. Every item below comes from a finding in
+> [plugin-analysis.md](plugin-analysis.md), says what it costs, what it pays for,
+> and how you will know it worked. If an item has no evidence behind it, it is in
+> [New ideas](#new-ideas) instead, where it belongs.
 
-## What this plan is based on
+## How to read this
 
-- **The CI logs.** Twelve runs on `fix/processor-compile` and ten on `main` were
-  read job by job. Three findings came out of them and are already fixed on this
-  branch: the five-way build failure on `main` (`field 'neuralL' has incomplete
-  type 'NeuralStage'`, run `38033815073`, which is what this branch is named for),
-  the DSP benchmark job's missing `<array>` (`bench.cpp`, found by the benchmark
-  job itself the moment `RateBridge` joined the extraction), and the two loudness
-  harness failures the branch's own CI is still red on (runs `38293117361` and the
-  `build-linux-debug` job beside it), which turned out to be two real defects in
-  the shipping meter - see below.
-- **The test suite**, harness by harness, because what it does not reach is what
-  this plan is mostly about: `tests/{dsp,layout,state,transport,pitch,neural}`
-  plus the text checks in `tests/dsp/extract.py`, `tests/presets`,
-  `tests/theme` and the new `tests/translations`.
-- **Two defects this session's own work turned up**, because they say something
-  about which parts of this codebase are load-bearing and least watched:
-  - the K-weighted loudness meter ran its two channels through one pair of filter
-    state variables, and `reset()` - which the engine calls *after* `prepare()` -
-    zeroed the coefficients as well as the history, so the meter ran unweighted
-    for the whole session. Both were invisible: the readout was simply 2.4 dB and
-    0.69 dB wrong.
-  - the Ukrainian translation table had seventeen entries whose key no longer
-    existed anywhere in the plugin, so those tooltips had silently fallen back to
-    English.
+- **Priority 1** is what a *distributed binary* owes, and what makes every future
+  change cheaper. It is not about the sound.
+- **Priority 2** is the parts of the plugin nobody can currently see: the long
+  function, the renderers, the block boundaries, the sound itself.
+- **Priority 3** is product and prose.
+- **[New ideas](#new-ideas)** are features that follow from what the engine
+  already is, each with the reason it fits.
+- **[What the last plan delivered](#what-the-last-plan-delivered)** closes the
+  loop on the previous version of this document, so nothing is quietly dropped.
 
-## Priority 1 - things that cost on every change
+Each item carries: **what**, **why**, **cost**, **payoff**, **evidence**, and -
+where it applies - **how to verify**.
 
-### 1. Split the three big files
+## Priority 1 - what a distributed binary owes
 
-`Source/PluginProcessor.h` is 7,605 lines, `PluginProcessor.cpp` 7,220 and
-`PluginEditor.cpp` 9,441. Everything the DSP harnesses cut out of the header - the
-saturation core, the subharmonic generator, the vinyl stage, the loudness meter,
-the rate bridge, the neural stage, the transient shaper - is a self-contained
-struct that could live in its own header under `Source/DSP/`, and the repository
-already carries `SPLITTING-BIG-FILES.md` for exactly this.
+### 1. Decide the licence question, then make the link line match the code
 
-What it pays for, in order of size:
+The analysis found that the plugin links **30 third-party libraries** and its own
+code includes **13** of them, and that one of the thirteen is
+**`chowdsp_dsp_utils`, which is GPLv3**. Two LGPL-2.1 libraries (`SoundTouch`,
+`libsndfile`) are linked statically, and `rack_dsp` (VCVRack/Rack,
+GPL-3.0-or-later with a free-of-charge plugin exception) is linked while being
+included by nothing.
 
-- **`tests/*/extract.py` stops cutting code by text span.** `extract_struct` finds
-  a declaration by string match and reads to the next `\n};` - which is why the
-  extraction order in `HEADER_PIECES` has to mirror the header's own order, and
-  why adding a stage means editing a regex table. If each struct is a real header,
-  the harness `#include`s it and the whole extraction layer shrinks to a build
-  script. That is the single largest simplification available in the test suite.
-- **Build time.** Each CI run on this branch took 15-16 minutes of wall clock
-  (`38275422445`: 16m32s, `38129740123`: 15m12s) across five build jobs, and every
-  one of them recompiles the editor translation unit, which includes the whole
-  7,605-line header for the sake of a handful of types.
-- **Review.** A 7,000-line header cannot be read; a change to `LoudnessMeter` is
-  currently a diff inside `PluginProcessor.h`.
+*What to do, in this order:*
 
-Suggested order: the DSP structs first (they are already used by the harnesses, so
-the split is verifiable by the suite itself), then the editor's panel/theme types,
-then `processBlock`'s stages if it is still unmanageable.
+1. **Decide the intended licence of a shipped binary.** The honest options are:
+   ship under GPLv3/AGPL and stop worrying about `chowdsp_dsp_utils`, or buy the
+   commercial licence for the modules used, or stop using `chowdsp_dsp_utils`
+   and take only the BSD modules (`chowdsp_math`, `chowdsp_simd`) plus the
+   handful of helpers that would have to be replaced. Option three is a real
+   amount of work; option one costs nothing but the terms of the product.
+2. **Delete the sixteen link-line entries nothing includes** - `dr_libs`,
+   `dywapitchtrack`, `fftconvolver`, `imgui`, `kissfft`, `PFFFT`, `pocketfft`,
+   `rack_dsp`, `sndfile`, `sokol_gfx`, `yasio`, `AudioFFT`, `audio_fft`,
+   `dattorro_verb`, `pitch_detector`, `yin_pitch` - and the eight packages that
+   are fetched but neither linked nor included (`aubio`, `iPlug2`, `ChowCentaur`,
+   `VCV-Prototype`, `soundpipe`, `transdes`, `whetstone`,
+   `multiband-transient-shaper`). `libsndfile` and `rack_dsp` are on both lists;
+   deleting `sndfile` removes the last LGPL question that has nothing to do with
+   the audio.
+3. **Add a check that keeps it that way.** A five-line script comparing the
+   names in `target_link_libraries(first` to the `include <...>` set under
+   `Source/` would have caught this on the day it was written, and will catch it
+   the next time somebody links a library "just in case". It belongs in the
+   `dsp-tests` job beside the other text checks.
 
-**Progress, and a correction to the paragraph above.** Nineteen headers have moved - the
-scalar math bridge, then `LoudnessMeter`, `TransientShaper`, `GlueCompressor`,
-`RateBridge`, `SaturationCore` (the largest, 1,000 lines, including the four voice
-lists that have to travel with the struct), `VinylStage`, `SubharmonicGenerator`, the
-pitch pair `PitchTracker` / `RealtimePitchShifter`, the transport pair `TransportRig`
-/ `RepitchStage`, the four stages nothing measures (`InputStage`, `PlateReverb`,
-`ThreeBandEq`, `HarmonicAnalyser`), then `OptionalLibraries.h`, `NeuralStage.h` and
-`IrStage.h` - one header each, with their prose, and **three**
-extractors
-(`tests/dsp/`, `tests/pitch/`, `tests/transport/`) now *include* those headers instead
-of cutting their text out of `PluginProcessor.h`. That is the payoff delivered three
-times over: the pitch and transport harnesses used to cut the structs they drive by text,
-and now they compile the shipping code. It is also where the split's one silent-failure
-mode showed up for real: the transport extractor reads `armedForHost` out of
-`PluginProcessor.h` as text, the flag moved with the rig, and the check failed with the
-file it had searched named in the message - the right outcome, and the reason each of
-those checks names its file. `PluginProcessor.h` itself is 1,787 lines, down from 7,605,
-and the DSP extractor's header list is EMPTY: its last entry, `NeuralStage`, moved as
-soon as the optional-library probe it is compiled under had a header of its own,
-`Source/DSP/OptionalLibraries.h` - which is the rule this plan's own paragraph above
-missed, that a header which branches on a macro has to be able to read the file that
-decides it. The JUCE
-header check compiles **every** file in `Source/DSP/` rather than the harnesses'
-source lists, which is what gave the four stages nothing includes a compile against real
-JUCE at all - coverage by convention rather than by registry. What is left in that
-extractor is the .cpp half alone: the five inline shapers. The engine's own plumbing - the
-amp's behaviour around its curve, the tape condition, the sample clock and the smoother
-that reads it, and the conventional compressor on the finished signal - has followed it,
-four more headers that no harness renders and that the JUCE header check instantiates
-instead (23 headers in that directory now).
+*Cost:* an afternoon for the deletion and the check, plus whatever the licence
+decision costs. *Payoff:* a shorter configure, a shorter build on five platforms,
+and a binary whose terms are known rather than inherited. *Evidence*:
+[analysis §5](plugin-analysis.md#5-the-link-line-is-larger-than-the-code).
+*Verify:* CI green on all seven jobs, and the check fails when a dependency is
+added to one list and not the other.
 
-**And the editor has been split, which is the part this plan had not asked for.**
-`PluginEditor.cpp` is 6,078 lines, down from 9,441: the paint kit and the page table
-(`Source/GUI/PanelPaint.h`, `PanelTabs.h`), the knob table and every tooltip sentence
-(`PanelText.h`), both look-and-feels (`J37LookAndFeel.cpp`), the meters
-(`EditorMeters.cpp`), the interface-sound engine (`UiSoundEngine.cpp`) and the knob's
-radial budget (`KnobMetrics.h`), which two files now call and which the layout harness
-compiles as a header rather than cutting as text. Each move is a pure move of bytes,
-with the three adaptations a header requires named in `SPLITTING-BIG-FILES.md` section
-7 - `inline`, the two counts and the theme choice, and the radial budget that had to
-stop being file-local. That section also records the check the split needed and did not
-have: `tests/editor/check_editor_juce.sh` compiles the whole translation units and every
-`Source/GUI/*.h` on its own against real JUCE, because every other harness in this
-repository compiles an extracted span and would not see a moved block with a missing
-include. It caught three real faults on its first run. The state harness, whose parameter table reads the same six model lists,
-now looks each list up in a short list of header files rather than assuming it is in
-`PluginProcessor.h` - the two-file version of the same rule. That is the first
-payoff above, delivered; `SPLITTING-BIG-FILES.md` section 7 records the recipe and
-what is left. The second payoff - build time - is **not** delivered by moving a header
-on its own, and this plan claimed it was: `PluginProcessor.cpp` and `PluginEditor.cpp`
-both include `PluginProcessor.h`, so both still parse every stage wherever it lives.
-The moves are what makes the fix possible (the editor is the translation unit with the
-least to do with any of these stages), but the build-time win needs the stage
-implementations in per-stage `.cpp` files, or the editor's DSP access behind an opaque
-aggregate, and that is a separate and much riskier step.
+### 2. Make the common failure a two-minute failure
 
-**The processor has been split too, and along its own seams rather than by size.**
-`PluginProcessor.cpp` is 1,325 lines, down from 7,220, and what is left in it is the
-processor's LIFECYCLE. Three things left it, and each is a file a reader has a reason
-to open on its own: the parameter table (1,357 lines, `Source/ParameterTable.cpp`),
-the preset/compare code with the saved-state format it writes
-(`Source/ProcessorPresets.cpp` and `.h`, `Source/ProcessorStateFormat.h`), and the
-whole signal path (3,916 lines, `Source/ProcessorSignalPath.cpp`) - including
-`processTapeEngine()`, which is still one 3,366-line function and is now at least in a
-file of its own. Two headers came out of the same move because the signal path and the
-preparation code both call them: the five inline shapers (`Source/DSP/HotPathMath.h`,
-which retired the LAST text `tests/dsp/extract.py` used to cut - that extractor now
-includes every line it compiles) and the hot-path probe
-(`Source/HotPathProbe.h`).
+One missing include currently costs five platform builds, twelve minutes of wall
+clock and a red run per platform (analysis §6: `build-windows` 12 m 25 s,
+`build-linux` 10 m 59 s, `build-macos` 8 m 25 s).
 
-Two facts from that move are worth carrying to the next one. First, **the text checks
-failed by name and the fix rode along with the move**: four extractors read this file by
-anchor, and all four now read the processor's own source as one text across every file
-it is split into, so a fact that moves is found where it went and a fact that ends up in
-two files stops the harness. Second, **compiling the flag nobody compiles found a real
-bug**: `J37_ENABLE_HOTPATH_PROBE`'s branch, turned on for the first time during the move,
-held a copy assignment between two `std::atomic<bool>` - a deleted function - so the
-probe the counters were declared for still did not build. The move fixed it, and
-`tests/editor/check_editor_juce.sh` now compiles that branch on every run.
+- **A compile-only job** that builds the plugin's translation units with
+  warnings as errors and no linking, before the platform jobs fan out. It is not
+  a substitute for them: it is what makes the class of failure that has cost the
+  most on this repository visible in the first two minutes instead of the
+  fifteenth.
+- **ccache** in the workflow. These builds are dominated by JUCE, glm, xsimd and
+  the rendering backends, which never change between runs.
+- **`J37_BUILD_JOBS`** already bounds the parallel compile on the Linux runners
+  after the OOM kills; that bound should be in the compile-only job from the
+  start rather than discovered again.
 
-### 2. A fast compile gate, and ccache
+*Cost:* half a day. *Payoff:* the most common failure mode gets its own fast
+lane. *Evidence:* [analysis §6](plugin-analysis.md#6-the-build-is-the-slowest-thing-in-the-project).
+*Verify:* the new job's duration is under three minutes on a cold cache and
+under one on a warm one.
 
-The one failure class that has cost the most on this repository is the cheapest to
-catch: an incomplete type, a missing include, a name that does not resolve. Run
-`38033815073` shows five jobs red for one such error, each of them 8-15 minutes
-into a full JUCE build. Two changes make that a minutes-long problem:
+### 3. Stop pulling `<JuceHeader.h>` into every translation unit
 
-- **ccache** in the workflow. These builds are dominated by JUCE, glm and the
-  rendering backends, which never change.
-- **A "compile only" job** that builds the plugin's translation units with
-  warnings as errors and no linking, before the platform jobs fan out. It is not a
-  substitute for the cross-platform builds; it is what makes the common break
-  visible in the first two minutes instead of the fifteenth.
+`CMakeLists.txt` already names this as the follow-up to the Projucer migration:
+the sources include `<JuceHeader.h>`, which is how the old project exposed JUCE,
+and the modern idiom is the individual `juce_*` module headers. A file that needs
+one type currently parses every module.
 
-### 3. Decide what the loudness meter is for, and write it down
+*Cost:* mechanical, file by file, and the two JUCE-compiling harnesses
+(`tests/editor/check_editor_juce.sh`, `tests/dsp/check_headers_juce.sh`) are
+exactly the checks that make it safe. *Payoff:* the largest single build-time
+lever in the repository, paid on every platform and every run. *Evidence*:
+[analysis §6](plugin-analysis.md#6-the-build-is-the-slowest-thing-in-the-project).
+*Verify:* the compile-only job's time before and after, on the same runner.
 
-The meter is a display readout today: `currentLufs` reaches `outputLufs`, and the
-editor draws it. AUTO GAIN does **not** read it - the compensator measures block
-power itself, a few hundred lines further down `processBlock`. Anyone reading
-"K-weighted loudness" and "AUTO GAIN" in the same file will assume otherwise (this
-plan's first draft did). Two options, either is fine as long as it is chosen:
+## Priority 2 - the parts nobody can see
 
-- keep it a meter, and say so in the struct's doc comment; or
-- make it the thing AUTO GAIN uses, at which point the harness's claims become the
-  level contract instead of the display contract, and the compensator's 450 ms
-  programme smoother has to be reconciled with a 400 ms loudness window.
+### 4. Keep taking `processTapeEngine` apart at its own seams
 
-The harness already pins what the reading is (calibration, linearity, rate
-independence, the 3.01 LU channel sum, the floor, and that `prepare()` then
-`reset()` leaves the curve in place), so either decision is testable from today.
+It is **1,654 lines in one function** (analysis §2). `BlockRateCoefficients.h`
+proved the recipe: name the state, move the coefficients beside it, let the
+per-sample loop call one thing. The next four, in the order they pay off, are the
+ones that are still inline in the loop and easiest to reason about separately:
 
-## Priority 2 - the parts with no eyes on them
+- the **AUTO GAIN compensator** - the only gain stage in the chain that nothing
+  measures on signal;
+- the **safety limiter** - four poles, a ceiling and a reset path that no harness
+  ever drives;
+- the **anti-phase guard** - engaged and disengaged by a signal-derived
+  condition, tested nowhere;
+- the **MIX crossfade** - both legs of it carry the transport gate, which is a
+  claim the transport harness does not make.
 
-### 4. Extract the AUTO GAIN compensator so it can be measured on signal
+*Cost:* one stage per sitting, each one a move plus a harness section.
+*Payoff:* the function becomes readable, and four audible behaviours become
+measurable. *Evidence:* [analysis §2](plugin-analysis.md#2-the-processor-is-one-file-and-one-very-long-function).
+*Verify:* each extracted stage has a harness section that renders it and asserts
+on the property its comment claims.
 
-It is the one gain stage in the chain that nothing measures, and it sits inline in
-`processTapeEngine`'s per-sample loop (Source/ProcessorSignalPath.cpp). What could be measured if it were a struct, the
-way `RateBridge` and `LoudnessMeter` are:
+### 5. Drive `processBlock` with the buffer shapes hosts actually hand over
 
-- that it only ever restores and never boosts (the `jlimit (0.0f, 12.0f, …)` clamp
-  on a real signal, not as text);
-- that a 12 dB loss is paid back within the smoother's time and without
-  overshooting;
-- that the correction it applies to the wet leg and to the MIX 0 leg is the same,
-  so DELTA stays silent - the claim two separate comments above those lines make;
-- that a stopped machine holds its last correction instead of ramping to +12 dB.
+Zero frames, one frame, a prime block size, a rate change between blocks, a
+plugin that is prepared and never played, a stop followed by a start at a
+different rate. A harness in the shape of `tests/state` that drives the whole
+chain unconditionally and asserts "no NaN, no denormal, no output above the
+ceiling, DELTA silent at MIX 0" covers the class of bug that costs a user their
+session and that neither the sanitizers nor the per-stage harnesses can see.
+*Evidence:* [analysis §4](plugin-analysis.md#4-what-is-measured-and-what-is-not).
 
-Until then, `tests/dsp/extract.py` pins all four as text, which catches an edit
-that drops one and cannot catch an edit that gets the arithmetic wrong.
+### 6. Give the rendering backends a compile check
 
-### 5. Give the rendering backends a compile check
+`Source/GUI/NativeRenderer_{D3D11,D3D12,Vulkan,Metal}.cpp` and
+`TapeSceneShaders.h` are compiled only by the platform jobs, one OS each. A job
+that includes each translation unit in an offscreen build - no window, no
+swapchain, just the type checks - catches the failure that has already cost this
+repository a fifty-line cascade of glm errors, in seconds, on Linux, for all four.
+*Evidence:* [analysis §7](plugin-analysis.md#7-the-renderers-have-no-coverage).
 
-`Source/GUI/NativeRenderer_{D3D11,D3D12,Vulkan,Metal}` have no automated coverage.
-The failure they produce when an include goes wrong is the ugliest in the repo's
-history - `expected unqualified-id before 'namespace'` cascading through fifty
-lines of glm - and it is only visible in a full platform build. A job that
-includes each backend's translation unit in an offscreen build (no window, no
-swapchain, just the type checks) would catch it in seconds, on Linux, for all
-backends, including the ones whose hardware the runner does not have.
+### 7. Lock the tone
 
-### 6. Drive `processBlock` with the buffer shapes hosts actually hand over
+Nothing in the suite compares a rendered buffer to a reference: every claim is a
+local property (a level, a ratio, a monotonicity). For a saturation plugin the
+cheapest useful addition is a **reference render**: a short signal through the
+whole chain at a fixed set of parameters, with a checksum or an RMS/peak
+tolerance pinned in the harness. It will not catch a deliberate voicing change -
+it is not meant to - it catches the refactor that moved the sound by 0.2 dB.
+*Evidence:* [analysis §4](plugin-analysis.md#4-what-is-measured-and-what-is-not).
 
-The harnesses exercise the stages; none of them exercises the *boundaries*: zero
-frames, one frame, a prime block size, a rate change between blocks, a plugin that
-is prepared and never played, a stop followed by a start at a different rate. A
-harness in the shape of `tests/state` that drives the whole chain unconditionally
-and asserts "no NaN, no denormal, no output above the ceiling, DELTA silent at MIX
-0" would cover the class of bug that costs a user their session and that neither
-the sanitizers nor the per-stage harnesses can see.
+### 8. Close the parameter-versus-badge gap
+
+Of the 109 parameters, 12 are deliberately outside every preset, 101 are set by
+the presets, and **104** are watched by the dirty badge - so five parameters can
+change without the panel offering to save them (analysis §3). Either those five
+mark the preset dirty, or they are named as session-level like the twelve.
+
+### 9. Make translation coverage a number
+
+`uk.txt` is 153 live entries against 1,014 translatable strings in the panel
+(analysis §3, §9). Printing the untranslated count per language on every run - as
+a report line, not a gate, because a half-translated panel showing English is the
+deliberate design - turns "how translated is the panel" from a feeling into a
+number that can be moved.
+
+### 10. Write down the two decisions a reader will otherwise re-litigate
+
+- **A mono instance feeds the loudness meter the same sample twice**, so it reads
+  the stereo sum. That is self-consistent and it is nowhere stated; the next
+  reader will "fix" it and move every mono mix by 3 LU. Put it in the meter's doc
+  comment (`Source/DSP/LoudnessMeter.h`).
+- **The JUCE opus patch** (`patches/juce-9.0.4/`): record in `CMakeLists.txt`
+  what upstream would have to change for it to go away, so the next JUCE bump
+  starts by asking whether it is still needed. *Evidence*:
+  [analysis §8](plugin-analysis.md#8-the-one-juce-patch-this-repository-carries),
+  [§9](plugin-analysis.md#9-details-that-will-bite-the-next-reader).
+
+### 11. Put the numbers where they can be re-measured
+
+Twice now this document has quoted a line count that was true when written and
+false a month later (analysis §9). The fix is a rule rather than a rewrite:
+**a number in `docs/` is either printed by a check or given with its command.**
+Appendix A of the analysis is the pattern - every figure there has the command
+that produces it next to it.
 
 ## Priority 3 - product and prose
 
-### 7. Say what a mono instance reads, or change it
+### 12. A panel that says what it is doing
 
-For a mono instance the engine feeds the meter the same sample twice
-(`processFrame (channelData[0][sample], channelData[0][sample], …)`), so a mono
-instance reads the stereo sum - the same number a stereo instance reads for
-centre-panned material. That is self-consistent, and it is nowhere stated. Either
-write it into the meter's doc comment (it is a decision, and it is defensible) or
-change it; what is not sustainable is that the next reader rediscovers it as a bug
-and "fixes" it, which would move every mono mix by 3 LU.
+The SETTINGS control already reports the active renderer fallback and explains
+it. The same treatment is missing for the two states a user actually asks about:
+**why is the output quieter** (AUTO GAIN is restoring, the limiter is working,
+the machine is stopped) and **why is nothing happening** (the transport is armed
+waiting for the host, a model failed to load, the IR file is missing). Those are
+three numbers the engine already publishes and three sentences the panel does not
+yet say.
 
-### 8. Make translation coverage a number
+### 13. Keep the documentation honest about `J37`
 
-`uk.txt` is 149 entries and `en.txt` is four keyed lookups; the new drift check
-guards the keys that exist but cannot see the sentences that do not. Printing the
-untranslated count per language on every run (as this plan's session shows: the
-seven SOURCE knob tooltips and the new transport text are not in Ukrainian) turns
-"how translated is the panel" from a feeling into a number that can be moved. A
-hard gate on it would be wrong - a half-translated panel showing English is the
-deliberate design - but a count nobody has to guess at is not.
+`J37` survives as a build-flag prefix and a header name after the product rename,
+which is deliberate for the tape formula and accidental for the rest. Either the
+flags get renamed in one mechanical commit, or the README's renaming note gets
+one line naming them as build configuration - whichever, on purpose.
 
-### 9. An index of what the suite guarantees
+## New ideas
 
-Each harness header explains what it pins and why, in prose, which is the right
-place for the reasoning and the wrong place to look up coverage. `tests/README.md`
-with one table - harness, claims, the defect it was written for - would answer "if
-I change X, what will catch me" in one screen. The prose stays where it is; this
-is an index over it, not a replacement.
+Features that follow from what the engine already is. None of them is scheduled;
+each one says what it would be built out of.
+
+| Idea | What it is | Why it fits this engine |
+| --- | --- | --- |
+| **LUFS-target AUTO GAIN** | let the compensator aim at a loudness target instead of unity, once the meter and the compensator read the same signal | the meter is already the panel's ground truth and the compensator is the one unmeasured gain stage (item 4) - doing them together is one piece of work |
+| **Glue sidechain input** | let the two glue compressors be driven by an external bus | they are already signal-driven and their timing already follows the tape type and speed; a sidechain makes the "compressor-coupled saturation" claim user-controllable |
+| **Mid/side drive and glue** | process the side channel with its own DRIVE and glue amount | the engine already has a stereo width stage and a stereo tape offset; M/S is the natural next stereo control and it is what the bus use case asks for |
+| **Print / commit to the DAW** | render the machine's output into the host's audio in one action | every parameter is automatable and every stage is deterministic; a commit function is mostly bookkeeping, and it is what mastering users actually reach for |
+| **Loudness-matched A/B** | match the level between the A and B slots before comparing | the plugin has A/B slots and a real loudness meter; unmatched A/B is the oldest mistake in audio |
+| **Preset browser** | tag, search and preview the 29 factory presets and the user's own | the preset table is JSON and already consistent with the parameter table, so this is UI over data that exists |
+| **Per-band drive** | three-band saturation on the existing three-band EQ split | `ThreeBandEq.h` already splits the signal; the shaper is per-sample and stateless |
+| **Spectrum / harmonic view** | draw the harmonic analyser as a curve instead of a number | `HarmonicAnalyser.h` measures the shaper's own input and output today |
+| **Tape-stop as automation** | make the transport keys automatable parameters | `TransportRig` is deterministic and driven frame by frame; the host-facing half is exposing the keys |
+| **Session-aware wow/flutter** | offer a flutter rate that locks to the host's tempo | the modulation is already a set of shaping curves on the machine's rate |
+| **Import / export a preset as a file** | a `.miboxpreset` the user can send someone | the format already exists as the user-preset file; this is a menu item and a dialog |
+| **Accessibility pass** | real names and values on every control for screen readers | 109 widgets with panel-drawn text are the exact case where a screen reader needs help, and the widget table is centralised in `PanelText.h` |
+| **Coverage in the panel** | a build/health line that prints which optional libraries this build has | `OptionalLibraries.h` already knows, and it is the first question a bug report raises |
 
 ## If you do three things
 
-1. **[done] Move the DSP structs out of `PluginProcessor.h` into `Source/DSP/*.h`** and let
-   the harnesses `#include` them. It deletes the fragile part of the test suite,
-   speeds every build, and unblocks items 4 and 6.
-2. Add ccache and a compile-only gate so a missing include is a two-minute failure
-   instead of a fifteen-minute one, five times over.
-3. Turn the AUTO GAIN compensator into a struct and drive it on signal. It is the
-   only gain stage in this plugin that nothing measures.
+1. **Settle the licence question and trim the link line to what the code
+   includes.** Every other plan in this document is cheaper once the dependency
+   graph means something (Priority 1.1).
+2. **Add the compile-only gate and ccache.** It converts the most expensive
+   failure class on this repository into the cheapest (Priority 1.2).
+3. **Take the compensator out of `processTapeEngine` and measure it.** It is the
+   only gain stage in the chain that nothing measures, and it is the first step
+   towards a function a reviewer can read (Priority 2.4).
+
+## New ideas: how to choose one
+
+If a feature has to be picked tomorrow: **loudness-matched A/B**, then
+**LUFS-target AUTO GAIN**. Both are small, both use machinery that already
+exists and is already tested, and both are the kind of thing a mastering user
+notices immediately. The expensive ones on the list - mid/side drive, per-band
+drive, print-to-DAW - are only worth starting after the link line and the
+compile gate, because they are the changes that will be built, rebuilt and
+reviewed the most.
+
+## What the last plan delivered
+
+The previous revision of this document was a working list written from the CI
+logs of the day. Its items, and where they stand:
+
+| Item | Status |
+| --- | --- |
+| Split the three long files (`PluginProcessor.h` 7,605 / `.cpp` 7,220 / `PluginEditor.cpp` 9,441 lines) | **done** - 1,904 / 1,325 / 2,615 today, with the DSP in 26 headers, the editor in 26 files and the signal path in a file of its own |
+| Let the harnesses `#include` the moved stages instead of cutting text | **done** - the DSP extractor's header list is empty; only the inline shapers are still cut |
+| Add the check that makes a split safe | **done** - `tests/editor/check_editor_juce.sh` compiles every translation unit and every `Source/GUI/*.h` against real JUCE, and caught three faults on its first run |
+| Decide what the loudness meter is for, and write it down | **partly** - the meter's contracts are pinned by `tests/dsp/loudness_test.cpp`; the mono-instance question is still open (item 10) |
+| Extract the AUTO GAIN compensator and measure it on signal | **open** - item 4 |
+| Give the rendering backends a compile check | **open** - item 6 |
+| Drive `processBlock` with real buffer shapes | **open** - item 5 |
+| Say what a mono instance reads, or change it | **open** - item 10 |
+| Make translation coverage a number | **open** - item 9 |
+| An index of what the suite guarantees | **done** - [tests/README.md](../tests/README.md) |
+| A fast compile gate, and ccache | **open** - item 2 |
 
 ## Limits of this plan
 
-- The plugin itself cannot be built or run in the sandbox this was written in (no
-  CMake, no JUCE dependencies, no audio device), so every claim about runtime
-  behaviour above comes either from a harness that renders the shipping code, or
-  from the CI jobs. Items 5 and 6 are proposals, not measurements.
-- The Ukrainian entries re-keyed in this session are written by the author of this
-  plan, not by a native reviewer, and should be read by one before release. What
-  the new check guarantees is that they will fire; it says nothing about how they
-  read.
+- The plugin cannot be built or run in the environment this was written in (one
+  CPU, 2 GB, no CMake, no ALSA headers), so every claim about runtime behaviour
+  comes from a harness that renders the shipping code or from the CI logs.
+  Items 5, 6 and 7 are proposals, not measurements.
+- The licence section states what the components' own repositories publish and
+  what the build currently links. It is not legal advice, and the `chowdsp_utils`
+  commercial option is a conversation with that library's author, not a
+  checkbox.
+- The new ideas are reasoned from what the engine already contains; none has been
+  prototyped, and the ones that touch the audio path (mid/side, per-band drive)
+  would each need their own harness section before they could be trusted.
+- This plan is derived from [plugin-analysis.md](plugin-analysis.md), which dates
+  from the same day. Re-measure before re-planning: Appendix A of that document
+  has the commands.

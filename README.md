@@ -1,9 +1,44 @@
-# Nonlin Analog Saturator
+# MiBoX
 
-https://github.com/mihalera/first
-**Build note:** the repository pins JUCE `9.0.3` as a git submodule.
+**A JUCE 9.0.4 saturation plugin built around a nonlinear magnetic tape machine** - six saturation principles you can blend, a transport you can start and stop, and a mastering-grade output chain around it. Repository: <https://github.com/mihalera/first>
 
-**Nonlin Analog Saturator** - a JUCE-based **mastering-grade analog saturation plugin** built around a nonlinear magnetic tape model, with switchable tape stock, transport speed and tape-style coloration.
+| | |
+| --- | --- |
+| **Formats** | VST3, Audio Unit, AUv3, Standalone (Android) |
+| **Platforms** | Windows x64, macOS universal (arm64 + x86_64), Linux x64, Android arm64-v8a |
+| **Framework** | JUCE `9.0.4`, pinned as a git submodule |
+| **Build** | CMake 3.22+, MSVC on Windows, Xcode on macOS |
+| **Parameters** | 109, in 23 groups, with 29 factory presets |
+| **Checked by** | six harnesses and five checks that need no JUCE, on every pull request |
+| **Licence** | MIT for this repository's own source; a *binary* also links JUCE (AGPLv3 or commercial) and a GPLv3 module - see [Licensing, and what ships in a binary](#licensing-and-what-ships-in-a-binary) |
+
+### Where to go next
+
+| If you want to... | Read |
+| --- | --- |
+| know what the plugin does and how it sounds | this file - start at [Overview](#overview) |
+| build it | [Getting the source](#getting-the-source) and [Build](#build) |
+| change the code and know what will catch you | [docs/architecture.md](docs/architecture.md) and [tests/README.md](tests/README.md) |
+| know what the code is actually like | [docs/plugin-analysis.md](docs/plugin-analysis.md) - the review, with the numbers |
+| know what to do next | [docs/plugin-improvement-plan.md](docs/plugin-improvement-plan.md) |
+| know how far the long files can be split | [SPLITTING-BIG-FILES.md](SPLITTING-BIG-FILES.md) |
+| know whose code this is | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) |
+
+### Contents
+
+The machine and its sound: [Overview](#overview) · [Saturation: six principles, not one curve](#saturation-six-principles-not-one-curve) · [Guitar-amplifier features](#guitar-amplifier-features) · [Preamp and distortion](#preamp-and-distortion) · [Dynamics: the transient shaper](#dynamics-the-transient-shaper) · [Neural stage and IR](#neural-stage-and-ir-rtneural-and-a-convolver) · [Tape condition](#tape-condition-flux-wear-mechanics) · [Reverb and delay](#reverb-and-delay) · [Vinyl](#vinyl) · [Modes](#modes) · [Subharmonics](#subharmonics) · [Signal path](#signal-path)
+
+The transport and the pitch: [Transport: start, play, stop](#transport-start-play-stop) · [Repitch](#repitch-the-platters-own-pitch-bend) · [Autotune](#autotune-the-corrector) · [Tape delay](#tape-delay) · [Stereo tape offset](#stereo-tape-offset)
+
+Controls and metering: [Controls](#controls) · [Analogue nonlinearity](#analogue-nonlinearity) · [Tape formulas](#tape-formulas) · [Metering](#metering) · [Oversampling](#oversampling) · [Presets, A/B compare and undo](#presets-ab-compare-and-undo) · [Output-stage switches](#output-stage-switches) · [Output protection](#output-protection) · [Noise floor](#noise-floor)
+
+Rendering and platform: [Rendering backends](#rendering-backends) · [Platform notes](#platform-notes)
+
+Building: [Project type](#project-type) · [Getting the source](#getting-the-source) · [Build](#build) · [Installing locally](#installing-locally) · [Build system notes](#build-system-notes) · [Linux](#linux)
+
+Repository: [Repository notes](#repository-notes) · [Renaming note](#renaming-note) · [Licensing, and what ships in a binary](#licensing-and-what-ships-in-a-binary)
+
+**MiBoX** - a JUCE-based **mastering-grade analog saturation plugin** built around a nonlinear magnetic tape model, with switchable tape stock, transport speed and tape-style coloration.
 
 This is, first and foremost, a **bus / mastering tool**: two independent glue compressors wrap the tape stage, the output level is calibrated in dB, the loudness metering is four-way (peak / RMS / LUFS / VU), and the output protection chain guarantees that what leaves the plugin is clean and controlled. Use it on the master bus, a drum bus or any programme material where you want the density and warmth of tape without losing control of the level.
 
@@ -641,7 +676,7 @@ rest stays silent.
 | Load IR | file | Reads an impulse response (a WAV or AIFF capture of a cabinet, a room or any other space) and crossfades it into the finished signal, ahead of the reverb and the vinyl stage. A load that succeeds opens IR MIX while it is still closed; the picker reopens in the folder the last one came from. Not saved with the session |
 | Clear IR | - | Releases the loaded impulse response, returning the IR stage to its pass-through |
 | Presets | 29 factory | Loaded from the preset box; each application is one undoable step |
-| User presets | unlimited | SAVE stores the whole machine state as a `.nonlinpreset` file in the user's application-data directory; DEL removes the selected file; recall is one undoable step |
+| User presets | unlimited | SAVE stores the whole machine state as a `.miboxpreset` file in the user's application-data directory; DEL removes the selected file; recall is one undoable step |
 | A/B compare | two slots | COPY A / COPY B store states, A/B swaps them live; an EDITED badge shows when the sides differ |
 | Undo / Redo | full state | Ctrl+Z / Ctrl+Y (or the panel buttons) step through preset and A/B history |
 
@@ -838,8 +873,8 @@ installed - the model survives a preset change untouched, and no preset can leav
 blending toward a model that is not there.
 
 **User presets** go further: SAVE freezes the whole machine exactly as it stands into a
-`.nonlinpreset` file (an XML state tree, the same format the session stores) under
-`<user app data>/Nonlin Analog Saturator/Presets`. Files survive plugin updates, are shared by
+`.miboxpreset` file (an XML state tree, the same format the session stores) under
+`<user app data>/MiBoX/Presets`. Files survive plugin updates, are shared by
 every instance, and recall as one undoable step. A badge under the workflow row names the
 loaded preset and lights while the live state has drifted away from it - including when
 host automation moves a parameter.
@@ -1082,7 +1117,7 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
 ## Project type
 
 - Audio plugin: **VST3**, **Audio Unit** and **AUv3**
-- Framework: JUCE 9.0.3 (pinned as a git submodule)
+- Framework: JUCE 9.0.4 (pinned as a git submodule)
 - Target platforms: Windows (x64), macOS (universal: arm64 + x86_64), Linux (x64, VST3), Android (arm64-v8a, Standalone)
 - Build system: **CMake** (3.22+), driving MSVC on Windows and Xcode on macOS
 
@@ -1093,7 +1128,7 @@ one can build.
 
 ## Getting the source
 
-JUCE is a **git submodule pinned at 9.0.3**, so it must be checked out along with the
+JUCE is a **git submodule pinned at 9.0.4**, so it must be checked out along with the
 project. A plain clone leaves `JUCE/` empty and every build fails:
 
 ```sh
@@ -1125,7 +1160,7 @@ Artefacts land in `build/first_artefacts/Release/`, one subfolder per plugin for
 each bundle named after `PRODUCT_NAME`:
 
 ```
-build/first_artefacts/Release/VST3/Nonlin Analog Saturator.vst3/Contents/x86_64-win/...
+build/first_artefacts/Release/VST3/MiBoX.vst3/Contents/x86_64-win/...
 ```
 
 > This is a real VST3 **bundle**, not a bare DLL. The old Projucer workflow produced a
@@ -1158,9 +1193,9 @@ Three formats are produced, one per format subfolder under `build/first_artefact
 
 | Artefact | Format | Hosts that load it |
 | --- | --- | --- |
-| `VST3/Nonlin Analog Saturator.vst3` | VST3 | Reaper, Cubase, Studio One, Bitwig |
-| `AU/Nonlin Analog Saturator.component` | Audio Unit | Logic Pro, GarageBand, Final Cut |
-| `AUv3/Nonlin Analog Saturator.appex` | AUv3 | Logic Pro, GarageBand, iOS hosts |
+| `VST3/MiBoX.vst3` | VST3 | Reaper, Cubase, Studio One, Bitwig |
+| `AU/MiBoX.component` | Audio Unit | Logic Pro, GarageBand, Final Cut |
+| `AUv3/MiBoX.appex` | AUv3 | Logic Pro, GarageBand, iOS hosts |
 
 AU and AUv3 matter for Mac users because **Logic and GarageBand cannot load VST3 at all**.
 Shipping only VST3 means the plugin does not exist for them.
@@ -1179,8 +1214,8 @@ Or copy by hand:
 
 ```
 Windows : C:\Program Files\Common Files\VST3\
-macOS   : ~/Library/Audio/Plug-Ins/VST3/Nonlin Analog Saturator.vst3
-          ~/Library/Audio/Plug-Ins/Components/Nonlin Analog Saturator.component
+macOS   : ~/Library/Audio/Plug-Ins/VST3/MiBoX.vst3
+          ~/Library/Audio/Plug-Ins/Components/MiBoX.component
 ```
 
 AUv3 is discovered through its containing app rather than copied by hand; run the app that
@@ -1201,7 +1236,7 @@ cd ~/Library/Audio/Plug-Ins/VST3/
 2. Зніміть мітку карантину Apple Gatekeeper з файлу плагіна:
 
 ```bash
-xattr -cr "Nonlin Analog Saturator.vst3"
+xattr -cr "MiBoX.vst3"
 ```
 
 Будьте обачні, використовуючи код.
@@ -1434,33 +1469,37 @@ installs exactly this set.
 
 ```
 CMakeLists.txt   the build, and the only place build settings live
-Source/          the plugin: PluginProcessor, PluginEditor, and DSP
-JUCE/            JUCE 9.0.3, pinned as a git submodule
-.github/         CI: builds VST3 on Windows, VST3 + AU + AUv3 on macOS
-tests/           harnesses that need no JUCE: DSP, transport, pitch, neural rate,
-                 knob layout, saved state - plus three source checks, the factory
-                 preset table, the theme wiring and the translation tables
-docs/plugin-improvement-plan.md   what to do next, and what it is based on
+cmake/           the build split by concern: dependencies, platforms, vendors, tests
+Source/          the plugin: the processor, the editor, Source/DSP/ and Source/GUI/
+JUCE/            JUCE 9.0.4, pinned as a git submodule
+patches/         the one JUCE header this repository supplies itself, per JUCE version
+ThirdParty/      the vendored libraries, at the versions CMake would otherwise fetch
+.github/         CI: the harnesses, and builds for Windows, macOS, Linux and Android
+tests/           what checks what, and what it does not - see tests/README.md
+docs/            architecture, the code analysis, the improvement plan, saturation notes
 SPLITTING-BIG-FILES.md   how far the long files can be split, and what it costs
+THIRD_PARTY_NOTICES.md   every component the build uses, and its licence
 ```
 
 ### Renaming note
 
-The plugin was renamed from *Analog Saturator* (repo `first`) to **Nonlin Analog
-Saturator**. Only `PRODUCT_NAME` and `DESCRIPTION` changed. The manufacturer code
-(`Manu`), the plugin code (`Zy59`) and the bundle ID (`com.MCsmes.first`) are the
-plugin's identity to hosts and to saved sessions and were deliberately left alone, so
-an existing session still finds the plugin after the rename instead of ending up with
-two entries side by side.
+The plugin has been renamed twice and is now **MiBoX**. It began as *Analog
+Saturator* (repo `first`), became **Nonlin Analog Saturator**, and changed name again
+without changing identity: the manufacturer code (`Manu`), the plugin code (`Zy59`)
+and the bundle ID (`com.MCsmes.first`) are what hosts and saved sessions key on, so
+they were deliberately left alone every time. An existing session still finds the
+plugin after a rename instead of ending up with two entries side by side.
 
-Two user-visible names did change with it, both because they are the plugin's own
-namespace on disk:
+What a rename does change is the plugin's own namespace on disk, because those names
+are the product's:
 
-- the user-preset directory is now `<user app data>/Nonlin Analog Saturator/Presets`
-- the preset extension is now `.nonlinpreset`
+- the user-preset directory is now `<user app data>/MiBoX/Presets`
+- the preset extension is now `.miboxpreset`
 
-Presets saved under the old `J37 Tape Mastering` directory and `.j37tape` extension are
-not read by this build. Move the files and rename the extension to keep them.
+Presets saved under the older `J37 Tape Mastering` directory with a `.j37tape`
+extension, or under `Nonlin Analog Saturator` with a `.nonlinpreset` one, are not read
+by this build. Move the files into the new directory and rename the extension to keep
+them.
 
 `J37` survives where it is a tape formula rather than a product name - the first entry
 in the TAPE TYPE list - and in the internal build-flag names (`J37_BUILD_TESTS`,
@@ -1471,6 +1510,39 @@ There are no generated project files in the repository. Open the folder directly
 Visual Studio or VS Code with the CMake extension, and the IDE will configure itself from
 `CMakeLists.txt`.
 
-## License
+## Licensing, and what ships in a binary
 
-This repository is for project and development use.
+**This repository's own source is MIT** - `Source/`, `tests/`, `cmake/`, `docs/` and
+the build files, with the terms in [LICENSE](LICENSE).
+
+A **built binary is not**, and the difference is worth reading before you publish
+one. The plugin links JUCE and a set of third-party libraries, and two of those
+carry terms that are stricter than MIT:
+
+| Component | Terms | What it means for a distributed build |
+| --- | --- | --- |
+| **JUCE 9.0.4** | AGPLv3, or a commercial JUCE licence | the whole plugin is under one of those two; there is no third answer |
+| **`chowdsp_dsp_utils`** | **GPLv3** (the sibling modules `chowdsp_math` and `chowdsp_simd` are BSD) | included and linked, so a binary is GPLv3-bound unless a non-GPL licence is bought from the module's author |
+| **SoundTouch 2.4.1**, **libsndfile** | LGPL-2.1 | linked statically: LGPL-2.1 section 6 asks for the object files or a relinkable form |
+| **`rack_dsp`** (VCVRack/Rack) | GPL-3.0-or-later, with a plugin exception for plugins distributed free of charge | linked today although nothing in `Source/` includes it |
+| everything else | MIT / BSD / zlib / public domain | the notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) are the obligation |
+
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists every component, its pin and
+its licence; [`docs/plugin-analysis.md` §5](docs/plugin-analysis.md#5-the-link-line-is-larger-than-the-code)
+shows which of them the code actually includes, and
+[`docs/plugin-improvement-plan.md`](docs/plugin-improvement-plan.md#priority-1--what-a-distributed-binary-owes)
+proposes what to do about the gap.
+
+## Contributing
+
+- **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** applies to issues, pull requests and
+discussions.
+- **Every change is checked by [tests/README.md](tests/README.md)'s suite** - six
+harnesses that compile the shipping code and five text checks - plus four platform
+builds in CI. A change to the sound belongs with a harness section that pins what
+changed; a change that moves code belongs with a green
+`tests/editor/check_editor_juce.sh`.
+- **The long files have a recipe**, and it is
+[SPLITTING-BIG-FILES.md](SPLITTING-BIG-FILES.md): move text without editing it,
+name what the move needed, and let the checks that read by anchor fail loudly if
+something was left behind.

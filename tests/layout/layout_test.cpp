@@ -17,7 +17,9 @@
 // routine - that the tile's height is the solved ideal and that the disc the
 // solver scored is the disc the paint routine draws.
 //
-// The toolkit geometry it measures against, from JUCE 9.0.3:
+// The toolkit geometry it measures against, from JUCE 9.0.3 (unchanged in 9.0.4:
+// no LookAndFeel file differs between the two tags, which is the thing to check
+// again on the next bump before trusting these numbers):
 //   * LookAndFeel_V2::getSliderLayout keeps a 16 px value box at the slider's
 //     foot (jmin (getTextBoxHeight(), height - 15)); the knob sliders ask for 16
 //     and sit in a tile tall enough to give them the full 16.
