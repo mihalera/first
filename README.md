@@ -1,7 +1,42 @@
 # Nonlin Analog Saturator
 
-https://github.com/mihalera/first
-**Build note:** the repository pins JUCE `9.0.3` as a git submodule.
+**A JUCE 9.0.4 saturation plugin built around a nonlinear magnetic tape machine** - six saturation principles you can blend, a transport you can start and stop, and a mastering-grade output chain around it. Repository: <https://github.com/mihalera/first>
+
+| | |
+| --- | --- |
+| **Formats** | VST3, Audio Unit, AUv3, Standalone (Android) |
+| **Platforms** | Windows x64, macOS universal (arm64 + x86_64), Linux x64, Android arm64-v8a |
+| **Framework** | JUCE `9.0.4`, pinned as a git submodule |
+| **Build** | CMake 3.22+, MSVC on Windows, Xcode on macOS |
+| **Parameters** | 109, in 23 groups, with 29 factory presets |
+| **Checked by** | six harnesses and five checks that need no JUCE, on every pull request |
+| **Licence** | MIT for this repository's own source; a *binary* also links JUCE (AGPLv3 or commercial) and a GPLv3 module - see [Licensing, and what ships in a binary](#licensing-and-what-ships-in-a-binary) |
+
+### Where to go next
+
+| If you want to... | Read |
+| --- | --- |
+| know what the plugin does and how it sounds | this file - start at [Overview](#overview) |
+| build it | [Getting the source](#getting-the-source) and [Build](#build) |
+| change the code and know what will catch you | [docs/architecture.md](docs/architecture.md) and [tests/README.md](tests/README.md) |
+| know what the code is actually like | [docs/plugin-analysis.md](docs/plugin-analysis.md) - the review, with the numbers |
+| know what to do next | [docs/plugin-improvement-plan.md](docs/plugin-improvement-plan.md) |
+| know how far the long files can be split | [SPLITTING-BIG-FILES.md](SPLITTING-BIG-FILES.md) |
+| know whose code this is | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) |
+
+### Contents
+
+The machine and its sound: [Overview](#overview) · [Saturation: six principles, not one curve](#saturation-six-principles-not-one-curve) · [Guitar-amplifier features](#guitar-amplifier-features) · [Preamp and distortion](#preamp-and-distortion) · [Dynamics: the transient shaper](#dynamics-the-transient-shaper) · [Neural stage and IR](#neural-stage-and-ir-rtneural-and-a-convolver) · [Tape condition](#tape-condition-flux-wear-mechanics) · [Reverb and delay](#reverb-and-delay) · [Vinyl](#vinyl) · [Modes](#modes) · [Subharmonics](#subharmonics) · [Signal path](#signal-path)
+
+The transport and the pitch: [Transport: start, play, stop](#transport-start-play-stop) · [Repitch](#repitch-the-platters-own-pitch-bend) · [Autotune](#autotune-the-corrector) · [Tape delay](#tape-delay) · [Stereo tape offset](#stereo-tape-offset)
+
+Controls and metering: [Controls](#controls) · [Analogue nonlinearity](#analogue-nonlinearity) · [Tape formulas](#tape-formulas) · [Metering](#metering) · [Oversampling](#oversampling) · [Presets, A/B compare and undo](#presets-ab-compare-and-undo) · [Output-stage switches](#output-stage-switches) · [Output protection](#output-protection) · [Noise floor](#noise-floor)
+
+Rendering and platform: [Rendering backends](#rendering-backends) · [Platform notes](#platform-notes)
+
+Building: [Project type](#project-type) · [Getting the source](#getting-the-source) · [Build](#build) · [Installing locally](#installing-locally) · [Build system notes](#build-system-notes) · [Linux](#linux)
+
+Repository: [Repository notes](#repository-notes) · [Renaming note](#renaming-note) · [Licensing, and what ships in a binary](#licensing-and-what-ships-in-a-binary)
 
 **Nonlin Analog Saturator** - a JUCE-based **mastering-grade analog saturation plugin** built around a nonlinear magnetic tape model, with switchable tape stock, transport speed and tape-style coloration.
 
@@ -1082,7 +1117,7 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
 ## Project type
 
 - Audio plugin: **VST3**, **Audio Unit** and **AUv3**
-- Framework: JUCE 9.0.3 (pinned as a git submodule)
+- Framework: JUCE 9.0.4 (pinned as a git submodule)
 - Target platforms: Windows (x64), macOS (universal: arm64 + x86_64), Linux (x64, VST3), Android (arm64-v8a, Standalone)
 - Build system: **CMake** (3.22+), driving MSVC on Windows and Xcode on macOS
 
@@ -1093,7 +1128,7 @@ one can build.
 
 ## Getting the source
 
-JUCE is a **git submodule pinned at 9.0.3**, so it must be checked out along with the
+JUCE is a **git submodule pinned at 9.0.4**, so it must be checked out along with the
 project. A plain clone leaves `JUCE/` empty and every build fails:
 
 ```sh
@@ -1434,14 +1469,16 @@ installs exactly this set.
 
 ```
 CMakeLists.txt   the build, and the only place build settings live
-Source/          the plugin: PluginProcessor, PluginEditor, and DSP
-JUCE/            JUCE 9.0.3, pinned as a git submodule
-.github/         CI: builds VST3 on Windows, VST3 + AU + AUv3 on macOS
-tests/           harnesses that need no JUCE: DSP, transport, pitch, neural rate,
-                 knob layout, saved state - plus three source checks, the factory
-                 preset table, the theme wiring and the translation tables
-docs/plugin-improvement-plan.md   what to do next, and what it is based on
+cmake/           the build split by concern: dependencies, platforms, vendors, tests
+Source/          the plugin: the processor, the editor, Source/DSP/ and Source/GUI/
+JUCE/            JUCE 9.0.4, pinned as a git submodule
+patches/         the one JUCE header this repository supplies itself, per JUCE version
+ThirdParty/      the vendored libraries, at the versions CMake would otherwise fetch
+.github/         CI: the harnesses, and builds for Windows, macOS, Linux and Android
+tests/           what checks what, and what it does not - see tests/README.md
+docs/            architecture, the code analysis, the improvement plan, saturation notes
 SPLITTING-BIG-FILES.md   how far the long files can be split, and what it costs
+THIRD_PARTY_NOTICES.md   every component the build uses, and its licence
 ```
 
 ### Renaming note
@@ -1471,6 +1508,39 @@ There are no generated project files in the repository. Open the folder directly
 Visual Studio or VS Code with the CMake extension, and the IDE will configure itself from
 `CMakeLists.txt`.
 
-## License
+## Licensing, and what ships in a binary
 
-This repository is for project and development use.
+**This repository's own source is MIT** - `Source/`, `tests/`, `cmake/`, `docs/` and
+the build files, with the terms in [LICENSE](LICENSE).
+
+A **built binary is not**, and the difference is worth reading before you publish
+one. The plugin links JUCE and a set of third-party libraries, and two of those
+carry terms that are stricter than MIT:
+
+| Component | Terms | What it means for a distributed build |
+| --- | --- | --- |
+| **JUCE 9.0.4** | AGPLv3, or a commercial JUCE licence | the whole plugin is under one of those two; there is no third answer |
+| **`chowdsp_dsp_utils`** | **GPLv3** (the sibling modules `chowdsp_math` and `chowdsp_simd` are BSD) | included and linked, so a binary is GPLv3-bound unless a non-GPL licence is bought from the module's author |
+| **SoundTouch 2.4.1**, **libsndfile** | LGPL-2.1 | linked statically: LGPL-2.1 section 6 asks for the object files or a relinkable form |
+| **`rack_dsp`** (VCVRack/Rack) | GPL-3.0-or-later, with a plugin exception for plugins distributed free of charge | linked today although nothing in `Source/` includes it |
+| everything else | MIT / BSD / zlib / public domain | the notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) are the obligation |
+
+[THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists every component, its pin and
+its licence; [`docs/plugin-analysis.md` §5](docs/plugin-analysis.md#5-the-link-line-is-larger-than-the-code)
+shows which of them the code actually includes, and
+[`docs/plugin-improvement-plan.md`](docs/plugin-improvement-plan.md#priority-1--what-a-distributed-binary-owes)
+proposes what to do about the gap.
+
+## Contributing
+
+- **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** applies to issues, pull requests and
+discussions.
+- **Every change is checked by [tests/README.md](tests/README.md)'s suite** - six
+harnesses that compile the shipping code and five text checks - plus four platform
+builds in CI. A change to the sound belongs with a harness section that pins what
+changed; a change that moves code belongs with a green
+`tests/editor/check_editor_juce.sh`.
+- **The long files have a recipe**, and it is
+[SPLITTING-BIG-FILES.md](SPLITTING-BIG-FILES.md): move text without editing it,
+name what the move needed, and let the checks that read by anchor fail loudly if
+something was left behind.
