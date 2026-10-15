@@ -13,6 +13,18 @@ permissions:
 env:
   BUILD_TYPE: Release
 
+  # How many translation units the Linux jobs compile at once. Deliberately not
+  # "as many as the runner has cores": the editor is one file per concern now
+  # (see the Sources block in CMakeLists.txt) and every one of those files pulls
+  # in <JuceHeader.h>, so several of the heaviest units in the project can be in
+  # flight at the same moment. On ubuntu-latest an unbounded --parallel let their
+  # peak add up past what the runner has, and the OOM killer took the compiler
+  # out mid-build: the Release job died with "Killed signal terminated program
+  # cc1plus" while building Source/GUI/TapeScene.cpp, and the Debug job lost the
+  # runner agent itself (exit 143 with no compiler error anywhere above it).
+  # Two in flight is what the runner holds.
+  J37_BUILD_JOBS: 2
+
 jobs:
   # ============================================================================
   #  DSP regression harness - the SUBFUND stage
@@ -364,7 +376,7 @@ jobs:
 
       - name: Compile (Debug)
         run: |
-          cmake --build build --config Debug --parallel 2>&1 | tail -40
+          cmake --build build --config Debug --parallel "$J37_BUILD_JOBS" 2>&1 | tail -40
           test ${PIPESTATUS[0]} -eq 0
 
       - name: Verify the Debug VST3 bundle was produced
@@ -786,16 +798,20 @@ jobs:
           cmake -S . -B build \
             -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }}
 
+      # --parallel "$J37_BUILD_JOBS" rather than a bare --parallel: see the note
+      # on J37_BUILD_JOBS at the top of this file. This is the job the OOM killer
+      # actually showed up in, and the retry below is no help against it - a build
+      # that ran out of memory once runs out of memory again, three times over.
       - name: Build
         run: |
           set -o pipefail
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 2>&1 |
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel "$J37_BUILD_JOBS" 2>&1 |
             grep -E 'error|warning|Error|FAILED|BUILD' || true
 
           # Second pass to verify actual exit code
-          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel > /dev/null 2>&1 || {
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel "$J37_BUILD_JOBS" > /dev/null 2>&1 || {
             echo "Build failed - re-running with full output:"
-            cmake --build build --config ${{ env.BUILD_TYPE }} --parallel
+            cmake --build build --config ${{ env.BUILD_TYPE }} --parallel "$J37_BUILD_JOBS"
             exit 1
           }
 
