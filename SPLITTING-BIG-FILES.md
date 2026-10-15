@@ -268,7 +268,7 @@ Each step is independently revertable and ends with the same checks green.
    harness to cut. Verify: DSP harness and the JUCE header check after each.
 5. ~~**E - the shaders**~~ - done, and it is the cheapest move in the document: the 335
    lines of GLSL string literals left `Source/GUI/TapeScene.cpp` for
-   `Source/GUI/TapeSceneShaders.h` (`tools/split_tapescene_shaders.py`). They are data -
+   `Source/GUI/TapeSceneShaders.h`. They are data -
    nothing cuts them, nothing includes them but the scene, and no harness has to move.
    Verify: the editor JUCE check, which compiles `TapeScene.cpp` as a whole translation
    unit, which is the one check that sees the GLSL at all.
@@ -669,16 +669,20 @@ excluded), `tests/theme`, `tests/translations` - all passed, the three
   top level of `Source/` as well as `Source/GUI/`, which is the half a split of the
   PROCESSOR produces and the editor's split never did.
 
-The moves are re-runnable rather than described: `tools/split_processor.py` cuts the
-parameter table, the presets and the state format, `tools/split_processor_path.py` cuts
-`HotPathMath.h`, `HotPathProbe.h` and the signal path, and both assert that every anchor
-matches exactly once - so the way to check the claim is to run them and diff. They were
-run against the parent revision a second time and reproduce the working tree.
+Every move here was made by a script rather than by hand, for the reason the two that follow
+set out in detail: a move is a claim that the bytes are the same bytes, and a script asserts
+that claim at every anchor instead of trusting a reader to diff four thousand lines. They cut
+the parameter table, the presets and the state format; then `HotPathMath.h`, `HotPathProbe.h`
+and the signal path; then the editor's build, its theme, its paint and its tick; and finally
+the machine's state and its loop. They were one-off tools: each asserted that every anchor
+matched exactly once, and each was re-run against its parent revision to reproduce the
+working tree, which is the check that makes the claim testable. None is kept in the
+repository now that the moves have landed - the record is the tables below and the commits
+they arrived in.
 
 **The editor's build, theme, paint and tick left next, and `resized()` was then taken
 apart in place.** `PluginEditor.cpp` went from 6,078 lines to 2,615 in two more moves,
-each a pure move of bytes with every replacement asserted to apply exactly once
-(`tools/split_editor_build.py`, `tools/split_tapescene_shaders.py`):
+each a pure move of bytes with every replacement asserted to apply exactly once:
 
 | New file | Lines | What it holds |
 | --- | ---: | --- |
@@ -845,9 +849,9 @@ becoming a member of the state, and a declaration becoming an assignment:
     const float tapeCurve = blend (slowMachineCurve, fastMachineCurve);
     state.tapeCurve = blend (slowMachineCurve, fastMachineCurve);
 
-That is what `tools/split_tape_engine.py` does, from a field list it asserts against the
-function itself before it writes a byte. Four of its refusals are the reason this was a
-script and not a long afternoon:
+That is what the cut's script did, from a field list it asserted against the function itself
+before it wrote a byte. Four of its refusals are the reason this was a script and not a long
+afternoon:
 
 - **The field list has to be EXACTLY the set of function-scope names the loop reads** (plus
   `nextNoise`, accounted for separately - see below). A name that is read but is not a
@@ -893,12 +897,11 @@ they are a function of the parameter snapshot and the rate, they write into
 did, one at a time, with the DSP harness checking what it produces. That, and nothing else
 in this document, is the remaining work.
 
-The moves this section adds are re-runnable the same way as the three before them
-(`tools/split_editor_build.py` and `tools/split_editor_resized.py`, alongside
-`split_tapescene_shaders.py`, and `split_tape_engine.py` for the state and the loop): each
-asserts that every anchor matches exactly once, and `split_editor_resized.py` refuses to run
-at all until `ControlGeometry` is declared in the editor's header, so the geometry the bands
-hand on cannot go missing quietly.
+The moves this section adds were made the same way as the three before them, by scripts that
+asserted every anchor matched exactly once - and one of those refusals carried a rule rather
+than a check: the script that took `resized()` apart refused to run at all until
+`ControlGeometry` was declared in the editor's header, so the geometry the bands hand on could
+not go missing quietly.
 
 **The evidence, for the move together with the two stages before it.** All six harnesses
 pass (`dsp`, `transport`, `pitch`, `state`, `layout`, `neural` - the last four under
@@ -907,8 +910,17 @@ pass (`dsp`, `transport`, `pitch`, `state`, `layout`, `neural` - the last four u
 94 bodies / 2 look-and-feels, `check_translations` 153 entries / 1,014 distinct strings in
 62 source files), and both compile checks pass: `check_headers_juce.sh` 26 headers from
 `Source/DSP/` against real JUCE, and `check_editor_juce.sh` 13 translation units plus the
-13 plugin headers each on its own. CI, on the commit that carries the move: `build-windows`,
-`build-macos`, `build-android`, the DSP regression harness and the micro-benchmarks all
-green, and the two Linux jobs stopped by the RUNNER (exit 143, "the runner has received a
-shutdown signal") rather than by a compile error - the same two jobs are green on the
-revision before, and this commit re-runs them.
+13 plugin headers each on its own. CI, on the revision that carries the move: the five jobs
+above green, and the two Linux jobs failing for a reason that took a second look to name.
+`build-linux` died with `c++: fatal error: Killed signal terminated program cc1plus` while
+compiling `Source/GUI/TapeScene.cpp`, and `build-linux-debug` lost the runner agent itself
+(exit 143, with no compiler error anywhere above it). Both compiled with a bare `--parallel`,
+so every core started the heaviest translation unit it had at the same moment - and this
+branch is exactly what makes the heavy set bigger, because the editor is one file per concern
+now and each of those files pulls in `<JuceHeader.h>`. Bounding the compile to two units in
+flight (`J37_BUILD_JOBS` in the workflow) let the Debug job run to the end and say something
+more useful: the link failed on `FactoryPresets::isSentinelValue(float)`, whose definition and
+`count()`'s were declared `inline` in a file other than their only caller - which links in
+Release, where every use sits under `jassert` and compiles away, and does not in Debug. Both
+entry points have external linkage now, and with those two fixes in, all seven jobs are green
+on `103aadb`, the revision that merged as `dee1b87`.
