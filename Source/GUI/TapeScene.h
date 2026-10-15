@@ -54,7 +54,7 @@
     window of a tape machine has always looked like.
 
     WHAT IT REACTS TO: setAudioState() is called from the editor's 30 Hz timer on
-    the message thread and does nothing but store five floats. Every one of them
+    the message thread and stores six floats. Every one of them
     is an atomic, read once per frame on the GL thread. Nothing on the audio
     thread and nothing on the message thread is touched from renderOpenGL() - the
     alternative, reading the parameter tree from the render thread, is a data
@@ -107,8 +107,9 @@ public:
         knob's name is part of the same picture as the knob.
 
         Message thread only, and it allocates: the editor calls it when the
-        visible bank changes, never per frame. */
-    void setKnobCaptions (const juce::String* captions, int count) noexcept;
+        visible bank changes, never per frame. A null pointer or non-positive
+        count clears the captions; conversion failures propagate to the caller. */
+    void setKnobCaptions (const juce::String* captions, int count);
 
     /** Which control a point in this component falls on, or -1 for none.
 
@@ -341,13 +342,12 @@ private:
     /** The GL thread's half of the answer to isSceneLive(). */
     std::atomic<int> programLinked { 0 };
 
-    /** The bank's knob angles, 0..1, and the five captions under them. Captions
-        are double-buffered: the message thread writes the inactive fixed-byte
-        bank, then atomically publishes its index so the render thread can read
-        a stable snapshot without touching juce::String. */
+    /** The bank's knob angles, 0..1, and its captions. Three fixed-byte
+        caption banks let the message thread publish a free bank while the
+        renderer retains its current snapshot; neither thread needs to wait. */
     std::array<std::atomic<float>, bankKnobCount> knobValues {};
     using CaptionBuffer = std::array<std::array<char, 32>, bankKnobCount>;
-    std::array<CaptionBuffer, 2> captionBuffers {};
+    std::array<CaptionBuffer, 3> captionBuffers {};
     std::atomic<int> activeCaptionBuffer { 0 };
     std::atomic<int> renderCaptionBuffer { -1 };
 

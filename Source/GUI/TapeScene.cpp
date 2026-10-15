@@ -582,7 +582,7 @@ void TapeScene::setControlValues (const float* values, int count) noexcept
     // the previous frame put there, which is what makes this safe to call with a
     // partial list instead of something that has to be got exactly right or it
     // shows a stale angle.
-    const auto usable = juce::jlimit (0, bankKnobCount, count);
+    const auto usable = values != nullptr ? juce::jlimit (0, bankKnobCount, count) : 0;
 
     for (int i = 0; i < bankKnobCount; ++i)
         knobValues[static_cast<std::size_t> (i)].store (i < usable ? values[i] : 0.5f,
@@ -591,18 +591,17 @@ void TapeScene::setControlValues (const float* values, int count) noexcept
     repaint();
 }
 
-void TapeScene::setKnobCaptions (const juce::String* captions, int count) noexcept
+void TapeScene::setKnobCaptions (const juce::String* captions, int count)
 {
-    // This method is called on the message thread. Double-buffering alone is
-    // insufficient if two updates arrive while the renderer is still consuming
-    // the older bank, so the render thread announces which bank it is reading.
-    // The writer only reuses a bank after the reader has released it.
-    const auto usable = juce::jlimit (0, bankKnobCount, count);
+    // Message-thread only. Prepare an inactive bank that the render thread is
+    // not reading, then publish it atomically. Three banks ensure a free
+    // destination without making either thread wait.
+    const auto usable = captions != nullptr ? juce::jlimit (0, bankKnobCount, count) : 0;
     const auto active = activeCaptionBuffer.load (std::memory_order_acquire);
-    const auto next = 1 - active;
-
-    while (renderCaptionBuffer.load (std::memory_order_acquire) == next)
-        std::this_thread::yield();
+    const auto rendering = renderCaptionBuffer.load (std::memory_order_acquire);
+    auto next = 0;
+    while (next == active || next == rendering)
+        ++next;
 
     auto& nextBytes = captionBuffers[static_cast<std::size_t> (next)];
     for (int i = 0; i < bankKnobCount; ++i)
@@ -733,16 +732,19 @@ void TapeScene::paint (juce::Graphics& g)
         if (! nativeRenderer->isInitialised())
             nativeRenderer->initialise (*this, nativeRendererConfig());
 
-        if (nativeRenderer->beginFrame())
-        {
-            nativeRenderer->clear (juce::Colour (backgroundColour.load (std::memory_order_relaxed)));
-            nativeRenderer->endFrame();
-        }
-
-        // Native surfaces are child windows/layers owned by this component.
-        // JUCE's CPU path remains the fallback if surface creation fails.
         if (nativeRenderer->isPresentable())
-            return;
+        {
+            if (nativeRenderer->beginFrame())
+            {
+                nativeRenderer->clear (juce::Colour (backgroundColour.load (std::memory_order_relaxed)));
+                nativeRenderer->endFrame();
+            }
+
+            // The surface owns presentation only while it remains available.
+            // If a resize or device loss drops it, continue through CPU painting.
+            if (nativeRenderer->isPresentable())
+                return;
+        }
     }
 
     if (j37::render::usesOpenGL())
@@ -806,16 +808,49 @@ void TapeScene::paint (juce::Graphics& g)
     g.fillEllipse (centre.x - hubRadius * 0.42f, centre.y - hubRadius * 0.42f,
                    hubRadius * 0.84f, hubRadius * 0.84f);
 
-    // A small moving tape path keeps CPU mode visibly alive without requiring
-    // a second rendering API or allocations on the timer thread.
-    // Named `tapePath` rather than `ribbon`: the class already has a `ribbon`
-    // mesh member, and a local of the same name hides it (MSVC C4458).
+    // The flat fallback shows both reels, the head and the moving tape route,
+    // retaining the transport's key landmarks when GPU rendering is unavailable.
+    const auto lowerCentre = juce::Point<float> (width * 0.5f, height * 0.82f);
+    const auto lowerRadius = juce::jmin (width, height) * 0.16f;
+    g.setColour (body.withAlpha (0.90f));
+    g.fillEllipse (lowerCentre.x - lowerRadius, lowerCentre.y - lowerRadius,
+                   lowerRadius * 2.0f, lowerRadius * 2.0f);
+    g.setColour (highlight.withAlpha (0.24f + 0.24f * level));
+    g.drawEllipse (lowerCentre.x - lowerRadius, lowerCentre.y - lowerRadius,
+                   lowerRadius * 2.0f, lowerRadius * 2.0f, 1.4f);
+    g.setColour (tape.withAlpha (0.65f));
+    g.fillEllipse (lowerCentre.x - lowerRadius * (0.62f - 0.10f * level),
+                   lowerCentre.y - lowerRadius * (0.62f - 0.10f * level),
+                   lowerRadius * (1.24f - 0.20f * level),
+                   lowerRadius * (1.24f - 0.20f * level));
+
+    for (int spoke = 0; spoke < 6; ++spoke)
+    {
+        const auto spokeAngle = -angle + static_cast<float> (spoke)
+                                        * juce::MathConstants<float>::twoPi / 6.0f;
+        const auto inner = lowerCentre + juce::Point<float> (std::cos (spokeAngle),
+                                                              std::sin (spokeAngle)) * lowerRadius * 0.28f;
+        const auto outer = lowerCentre + juce::Point<float> (std::cos (spokeAngle),
+                                                              std::sin (spokeAngle)) * lowerRadius * 0.88f;
+        g.setColour (highlight.withAlpha (alpha));
+        g.drawLine (inner.x, inner.y, outer.x, outer.y, 1.5f);
+    }
+
+    const auto headCentre = juce::Point<float> (width * 0.5f, height * 0.64f);
+    const auto headWidth = juce::jmax (4.0f, width * 0.16f);
+    const auto headHeight = juce::jmax (3.0f, height * 0.06f);
+    g.setColour (highlight.withAlpha (0.80f));
+    g.fillRoundedRectangle (headCentre.x - headWidth * 0.5f, headCentre.y - headHeight * 0.5f,
+                            headWidth, headHeight, headHeight * 0.25f);
+
     juce::Path tapePath;
-    tapePath.startNewSubPath (centre.x - reelRadius * 0.82f, centre.y + reelRadius * 0.72f);
-    tapePath.quadraticTo (centre.x + reelRadius * (0.25f + flutter * 0.20f),
-                          centre.y + reelRadius * (0.92f + flutter * 0.12f),
-                          centre.x + reelRadius * 0.92f, centre.y + reelRadius * 0.52f);
-    g.setColour (tape.brighter (0.25f).withAlpha (0.75f));
+    tapePath.startNewSubPath (centre.x - reelRadius * 0.72f, centre.y + reelRadius * 0.62f);
+    tapePath.quadraticTo (centre.x - reelRadius * 0.18f, height * (0.40f + flutter * 0.015f),
+                          headCentre.x - headWidth * 0.5f, headCentre.y);
+    tapePath.lineTo (headCentre.x + headWidth * 0.5f, headCentre.y);
+    tapePath.quadraticTo (centre.x + reelRadius * 0.20f, height * (0.69f + flutter * 0.015f),
+                          lowerCentre.x + lowerRadius * 0.72f, lowerCentre.y - lowerRadius * 0.55f);
+    g.setColour (tape.brighter (0.25f).withAlpha (0.85f));
     g.strokePath (tapePath, juce::PathStrokeType (juce::jmax (1.0f, width * 0.018f)));
 }
 
@@ -884,9 +919,12 @@ int TapeScene::controlIndexAt (juce::Point<int> position) const
     const auto ndcX = 2.0f * static_cast<float> (position.x) / static_cast<float> (width) - 1.0f;
     const auto ndcY = 1.0f - 2.0f * static_cast<float> (position.y) / static_cast<float> (height);
 
-    // A ray through the click, built from the inverse projection. unProject
-    // takes the matrix the clip-space point is multiplied by, so the inverse of
-    // the view-projection is what turns a screen point back into the scene.
+    // A ray through the click, built from the inverse projection. Check the
+    // transform before inversion so a degenerate matrix cannot introduce NaNs.
+    const auto determinant = glm::determinant (viewProjection);
+    if (! std::isfinite (determinant) || std::abs (determinant) < 1.0e-8f)
+        return -1;
+
     const auto inverse = glm::inverse (viewProjection);
 
     const auto nearPoint = inverse * glm::vec4 (ndcX, ndcY, -1.0f, 1.0f);
@@ -897,13 +935,21 @@ int TapeScene::controlIndexAt (juce::Point<int> position) const
 
     const auto rayOrigin = glm::vec3 (nearPoint) / nearPoint.w;
     const auto rayEnd = glm::vec3 (farPoint) / farPoint.w;
-    const auto rayDirection = glm::normalize (rayEnd - rayOrigin);
+    const auto rayDelta = rayEnd - rayOrigin;
+    const auto rayLengthSquared = glm::dot (rayDelta, rayDelta);
+    if (! std::isfinite (rayLengthSquared) || rayLengthSquared < 1.0e-12f)
+        return -1;
+    const auto rayDirection = rayDelta / std::sqrt (rayLengthSquared);
 
     // The face's plane, in world space: its point is the bank's centre pushed
     // out to its front, and its normal is the scene's own z turned by the two
     // camera rotations.
     const auto planePoint = glm::vec3 (scene * glm::vec4 (0.0f, 0.0f, bankFaceZ, 1.0f));
-    const auto planeNormal = glm::normalize (glm::vec3 (scene * glm::vec4 (0.0f, 0.0f, 1.0f, 0.0f)));
+    const auto normalVector = glm::vec3 (scene * glm::vec4 (0.0f, 0.0f, 1.0f, 0.0f));
+    const auto normalLengthSquared = glm::dot (normalVector, normalVector);
+    if (! std::isfinite (normalLengthSquared) || normalLengthSquared < 1.0e-12f)
+        return -1;
+    const auto planeNormal = normalVector / std::sqrt (normalLengthSquared);
 
     const auto denominator = glm::dot (rayDirection, planeNormal);
 
@@ -921,9 +967,13 @@ int TapeScene::controlIndexAt (juce::Point<int> position) const
     const auto hit = rayOrigin + rayDirection * distance;
 
     // Into the bank's own frame, where a placement's x is what it was written as.
-    const auto local = glm::vec3 (glm::inverse (scene * glm::translate (glm::mat4 (1.0f),
-                                                                        { 0.0f, 0.0f, bankCentreZ }))
-                                  * glm::vec4 (hit, 1.0f));
+    const auto bankTransform = scene * glm::translate (glm::mat4 (1.0f),
+                                                       { 0.0f, 0.0f, bankCentreZ });
+    const auto bankDeterminant = glm::determinant (bankTransform);
+    if (! std::isfinite (bankDeterminant) || std::abs (bankDeterminant) < 1.0e-8f)
+        return -1;
+
+    const auto local = glm::vec3 (glm::inverse (bankTransform) * glm::vec4 (hit, 1.0f));
 
     // The nearest control whose own footprint contains the point. A knob is a
     // disc and a key is a rectangle, but both are tested as a box of their own
@@ -1336,11 +1386,17 @@ void TapeScene::drawControlBank (const glm::mat4& viewProjection,
     // Three captions would mean three plates at this size, which is a wall of
     // text rather than a label.
     {
-        const auto activeCaptions = activeCaptionBuffer.load (std::memory_order_acquire);
-        renderCaptionBuffer.store (activeCaptions, std::memory_order_release);
+        auto activeCaptions = activeCaptionBuffer.load (std::memory_order_acquire);
+        for (;;)
+        {
+            renderCaptionBuffer.store (activeCaptions, std::memory_order_release);
+            if (activeCaptionBuffer.load (std::memory_order_acquire) == activeCaptions)
+                break;
+            activeCaptions = activeCaptionBuffer.load (std::memory_order_acquire);
+        }
         const auto& bytes = captionBuffers[static_cast<std::size_t> (activeCaptions)][0];
         auto length = 0;
-        while (length < 8 && bytes[static_cast<std::size_t> (length)] != '\\0')
+        while (length < 8 && bytes[static_cast<std::size_t> (length)] != '\0')
             ++length;
 
         for (int i = 0; i < 8; ++i)
@@ -1348,6 +1404,10 @@ void TapeScene::drawControlBank (const glm::mat4& viewProjection,
                                                             ? static_cast<float> (
                                                                   glyphIndexFor (static_cast<unsigned char> (bytes[i])))
                                                             : -1.0f;
+
+        // The glyphs are now copied into render-thread-owned scratch storage;
+        // release this bank so the message thread may reuse it safely.
+        renderCaptionBuffer.store (-1, std::memory_order_release);
 
         // The plate follows the interactive knob rather than the bank's centre,
         // so the two line up at every panel size: the placement, not a second

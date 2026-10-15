@@ -377,7 +377,7 @@ void FirstAudioProcessor::updateActiveCompareSlot()
 //  the per-user application data directory, so they survive plugin updates, are
 //  shared by every instance and never depend on the session.
 //==============================================================================
-    namespace
+namespace
 {
     juce::String sanitiseUserPresetName (const juce::String& name)
     {
