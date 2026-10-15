@@ -1,4 +1,4 @@
-# Nonlin Analog Saturator
+# MiBoX
 
 **A JUCE 9.0.4 saturation plugin built around a nonlinear magnetic tape machine** - six saturation principles you can blend, a transport you can start and stop, and a mastering-grade output chain around it. Repository: <https://github.com/mihalera/first>
 
@@ -38,7 +38,7 @@ Building: [Project type](#project-type) · [Getting the source](#getting-the-sou
 
 Repository: [Repository notes](#repository-notes) · [Renaming note](#renaming-note) · [Licensing, and what ships in a binary](#licensing-and-what-ships-in-a-binary)
 
-**Nonlin Analog Saturator** - a JUCE-based **mastering-grade analog saturation plugin** built around a nonlinear magnetic tape model, with switchable tape stock, transport speed and tape-style coloration.
+**MiBoX** - a JUCE-based **mastering-grade analog saturation plugin** built around a nonlinear magnetic tape model, with switchable tape stock, transport speed and tape-style coloration.
 
 This is, first and foremost, a **bus / mastering tool**: two independent glue compressors wrap the tape stage, the output level is calibrated in dB, the loudness metering is four-way (peak / RMS / LUFS / VU), and the output protection chain guarantees that what leaves the plugin is clean and controlled. Use it on the master bus, a drum bus or any programme material where you want the density and warmth of tape without losing control of the level.
 
@@ -676,7 +676,7 @@ rest stays silent.
 | Load IR | file | Reads an impulse response (a WAV or AIFF capture of a cabinet, a room or any other space) and crossfades it into the finished signal, ahead of the reverb and the vinyl stage. A load that succeeds opens IR MIX while it is still closed; the picker reopens in the folder the last one came from. Not saved with the session |
 | Clear IR | - | Releases the loaded impulse response, returning the IR stage to its pass-through |
 | Presets | 29 factory | Loaded from the preset box; each application is one undoable step |
-| User presets | unlimited | SAVE stores the whole machine state as a `.nonlinpreset` file in the user's application-data directory; DEL removes the selected file; recall is one undoable step |
+| User presets | unlimited | SAVE stores the whole machine state as a `.miboxpreset` file in the user's application-data directory; DEL removes the selected file; recall is one undoable step |
 | A/B compare | two slots | COPY A / COPY B store states, A/B swaps them live; an EDITED badge shows when the sides differ |
 | Undo / Redo | full state | Ctrl+Z / Ctrl+Y (or the panel buttons) step through preset and A/B history |
 
@@ -873,8 +873,8 @@ installed - the model survives a preset change untouched, and no preset can leav
 blending toward a model that is not there.
 
 **User presets** go further: SAVE freezes the whole machine exactly as it stands into a
-`.nonlinpreset` file (an XML state tree, the same format the session stores) under
-`<user app data>/Nonlin Analog Saturator/Presets`. Files survive plugin updates, are shared by
+`.miboxpreset` file (an XML state tree, the same format the session stores) under
+`<user app data>/MiBoX/Presets`. Files survive plugin updates, are shared by
 every instance, and recall as one undoable step. A badge under the workflow row names the
 loaded preset and lights while the live state has drifted away from it - including when
 host automation moves a parameter.
@@ -1160,7 +1160,7 @@ Artefacts land in `build/first_artefacts/Release/`, one subfolder per plugin for
 each bundle named after `PRODUCT_NAME`:
 
 ```
-build/first_artefacts/Release/VST3/Nonlin Analog Saturator.vst3/Contents/x86_64-win/...
+build/first_artefacts/Release/VST3/MiBoX.vst3/Contents/x86_64-win/...
 ```
 
 > This is a real VST3 **bundle**, not a bare DLL. The old Projucer workflow produced a
@@ -1193,9 +1193,9 @@ Three formats are produced, one per format subfolder under `build/first_artefact
 
 | Artefact | Format | Hosts that load it |
 | --- | --- | --- |
-| `VST3/Nonlin Analog Saturator.vst3` | VST3 | Reaper, Cubase, Studio One, Bitwig |
-| `AU/Nonlin Analog Saturator.component` | Audio Unit | Logic Pro, GarageBand, Final Cut |
-| `AUv3/Nonlin Analog Saturator.appex` | AUv3 | Logic Pro, GarageBand, iOS hosts |
+| `VST3/MiBoX.vst3` | VST3 | Reaper, Cubase, Studio One, Bitwig |
+| `AU/MiBoX.component` | Audio Unit | Logic Pro, GarageBand, Final Cut |
+| `AUv3/MiBoX.appex` | AUv3 | Logic Pro, GarageBand, iOS hosts |
 
 AU and AUv3 matter for Mac users because **Logic and GarageBand cannot load VST3 at all**.
 Shipping only VST3 means the plugin does not exist for them.
@@ -1214,8 +1214,8 @@ Or copy by hand:
 
 ```
 Windows : C:\Program Files\Common Files\VST3\
-macOS   : ~/Library/Audio/Plug-Ins/VST3/Nonlin Analog Saturator.vst3
-          ~/Library/Audio/Plug-Ins/Components/Nonlin Analog Saturator.component
+macOS   : ~/Library/Audio/Plug-Ins/VST3/MiBoX.vst3
+          ~/Library/Audio/Plug-Ins/Components/MiBoX.component
 ```
 
 AUv3 is discovered through its containing app rather than copied by hand; run the app that
@@ -1236,7 +1236,7 @@ cd ~/Library/Audio/Plug-Ins/VST3/
 2. Зніміть мітку карантину Apple Gatekeeper з файлу плагіна:
 
 ```bash
-xattr -cr "Nonlin Analog Saturator.vst3"
+xattr -cr "MiBoX.vst3"
 ```
 
 Будьте обачні, використовуючи код.
@@ -1483,21 +1483,23 @@ THIRD_PARTY_NOTICES.md   every component the build uses, and its licence
 
 ### Renaming note
 
-The plugin was renamed from *Analog Saturator* (repo `first`) to **Nonlin Analog
-Saturator**. Only `PRODUCT_NAME` and `DESCRIPTION` changed. The manufacturer code
-(`Manu`), the plugin code (`Zy59`) and the bundle ID (`com.MCsmes.first`) are the
-plugin's identity to hosts and to saved sessions and were deliberately left alone, so
-an existing session still finds the plugin after the rename instead of ending up with
-two entries side by side.
+The plugin has been renamed twice and is now **MiBoX**. It began as *Analog
+Saturator* (repo `first`), became **Nonlin Analog Saturator**, and changed name again
+without changing identity: the manufacturer code (`Manu`), the plugin code (`Zy59`)
+and the bundle ID (`com.MCsmes.first`) are what hosts and saved sessions key on, so
+they were deliberately left alone every time. An existing session still finds the
+plugin after a rename instead of ending up with two entries side by side.
 
-Two user-visible names did change with it, both because they are the plugin's own
-namespace on disk:
+What a rename does change is the plugin's own namespace on disk, because those names
+are the product's:
 
-- the user-preset directory is now `<user app data>/Nonlin Analog Saturator/Presets`
-- the preset extension is now `.nonlinpreset`
+- the user-preset directory is now `<user app data>/MiBoX/Presets`
+- the preset extension is now `.miboxpreset`
 
-Presets saved under the old `J37 Tape Mastering` directory and `.j37tape` extension are
-not read by this build. Move the files and rename the extension to keep them.
+Presets saved under the older `J37 Tape Mastering` directory with a `.j37tape`
+extension, or under `Nonlin Analog Saturator` with a `.nonlinpreset` one, are not read
+by this build. Move the files into the new directory and rename the extension to keep
+them.
 
 `J37` survives where it is a tape formula rather than a product name - the first entry
 in the TAPE TYPE list - and in the internal build-flag names (`J37_BUILD_TESTS`,

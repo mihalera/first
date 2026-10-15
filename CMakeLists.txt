@@ -1,6 +1,6 @@
 # ==============================================================================
 #
-#   Nonlin Analog Saturator - tape machine emulation (J37, Ampex 456, Studer A800,
+#   MiBoX - tape machine emulation (J37, Ampex 456, Studer A800,
 #   Chrome, Type 111, GP9, Quantegy 499, RTM SM911)
 #
 #   This is the single source of truth for the build. The Projucer project
@@ -24,7 +24,7 @@ cmake_minimum_required(VERSION 3.22)
 
 project(first
     VERSION 1.0.0
-    DESCRIPTION "Nonlin Analog Saturator"
+    DESCRIPTION "MiBoX"
     LANGUAGES C CXX)
 
 # Keep the generated project files out of the source tree.
@@ -166,12 +166,15 @@ include(J37Tests)
 #    ManufacturerCode 0x4d616e75  ("Manu" - see the note below)
 #    PluginCode       0x5a793539  ("Zy59")
 #    Bundle ID        com.MCsmes.first
-#    Product name     Nonlin Analog Saturator
+#    Product name     MiBoX
 #
-#  Only PRODUCT_NAME and DESCRIPTION changed with the rename. The manufacturer
-#  code, the plugin code and the bundle ID are the plugin's identity to hosts and
-#  to saved sessions - they stay exactly as they are, so an existing session still
-#  finds the plugin after the rename and does not end up with two entries.
+#  A rename changes PRODUCT_NAME, and with it the two names the plugin owns on
+#  disk: the user-preset directory and the preset extension (ProcessorPresets.cpp).
+#  The manufacturer code, the plugin code and the bundle ID are the plugin's
+#  identity to hosts and to saved sessions and stay exactly as they are, so an
+#  existing session still finds the plugin after a rename instead of ending up with
+#  two entries side by side. The name has moved twice - Analog Saturator, Nonlin
+#  Analog Saturator, now MiBoX - and the codes have not moved once.
 # ------------------------------------------------------------------------------
 # Set to TRUE to copy the built plugins into the user plugin folders as part of
 # the build. Off by default so a CI build cannot silently write to the machine's
@@ -271,7 +274,7 @@ juce_add_plugin(first
     # it is, however odd it looks next to the company name.
     PLUGIN_MANUFACTURER_CODE    Manu
     PLUGIN_CODE                 Zy59
-    PRODUCT_NAME                "Nonlin Analog Saturator"
+    PRODUCT_NAME                "MiBoX"
     DESCRIPTION                 "Nonlinear analog tape saturation and magnetic coloration"
     FORMATS                     ${J37_PLUGIN_FORMATS}
     IS_SYNTH                    FALSE
@@ -617,7 +620,7 @@ j37_apply_android_settings(first)
 #  Summary
 # ------------------------------------------------------------------------------
 message(STATUS "")
-message(STATUS "Nonlin Analog Saturator (first) ${PROJECT_VERSION}")
+message(STATUS "MiBoX (first) ${PROJECT_VERSION}")
 message(STATUS "  JUCE        : ${CMAKE_CURRENT_SOURCE_DIR}/JUCE")
 message(STATUS "  System      : ${CMAKE_SYSTEM_NAME}")
 message(STATUS "  Generator   : ${CMAKE_GENERATOR}")

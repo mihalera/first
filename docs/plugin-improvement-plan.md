@@ -223,7 +223,7 @@ each one says what it would be built out of.
 | **Spectrum / harmonic view** | draw the harmonic analyser as a curve instead of a number | `HarmonicAnalyser.h` measures the shaper's own input and output today |
 | **Tape-stop as automation** | make the transport keys automatable parameters | `TransportRig` is deterministic and driven frame by frame; the host-facing half is exposing the keys |
 | **Session-aware wow/flutter** | offer a flutter rate that locks to the host's tempo | the modulation is already a set of shaping curves on the machine's rate |
-| **Import / export a preset as a file** | a `.nonlinpreset` the user can send someone | the format already exists as the user-preset file; this is a menu item and a dialog |
+| **Import / export a preset as a file** | a `.miboxpreset` the user can send someone | the format already exists as the user-preset file; this is a menu item and a dialog |
 | **Accessibility pass** | real names and values on every control for screen readers | 109 widgets with panel-drawn text are the exact case where a screen reader needs help, and the widget table is centralised in `PanelText.h` |
 | **Coverage in the panel** | a build/health line that prints which optional libraries this build has | `OptionalLibraries.h` already knows, and it is the first question a bug report raises |
 

@@ -316,8 +316,8 @@ void FirstAudioProcessorEditor::setUpTooltipsAndPhysics()
 
 void FirstAudioProcessorEditor::stylePanelLabels()
 {
-    styleLabel (brandLabel, "NONLIN ANALOG", 9.0f, paletteFor (false).accent, true, juce::Justification::left);
-    titleLabel.setText ("Saturator", juce::dontSendNotification);
+    styleLabel (brandLabel, "TAPE MACHINE", 9.0f, paletteFor (false).accent, true, juce::Justification::left);
+    titleLabel.setText ("MiBoX", juce::dontSendNotification);
 
     // Serif display face with a cross-platform fallback chain. "Georgia" only exists on
     // Windows, so naming it alone made the title fall back to an arbitrary face (and an
@@ -327,7 +327,7 @@ void FirstAudioProcessorEditor::stylePanelLabels()
                                                        30.0f, juce::Font::bold)));
     titleLabel.setJustificationType (juce::Justification::left);
     titleLabel.setInterceptsMouseClicks (false, false);
-    styleLabel (subtitleLabel, "NONLINEAR ANALOG MACHINE  /  SATURATION", 10.0f,
+    styleLabel (subtitleLabel, "NONLINEAR ANALOG  /  SATURATION", 10.0f,
                 paletteFor (false).secondary, true, juce::Justification::left);
     styleLabel (statusLabel, "STEREO / REAL TIME", 9.0f,
                 paletteFor (false).status, true, juce::Justification::centred);

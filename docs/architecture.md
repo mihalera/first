@@ -106,12 +106,13 @@ that is quietly missing a control.
 | parameters | the APVTS | host session |
 | the machine's extra state | `getStateInformation` / `setStateInformation` | this plugin's own marker + version, migrated in `ProcessorStateFormat.h` |
 | factory presets | `Source/Presets/Factory/*.json`, 29 of them | JSON, embedded as a binary resource |
-| user presets | `<user app data>/Nonlin Analog Saturator/Presets` | `.nonlinpreset` |
+| user presets | `<user app data>/MiBoX/Presets` | `.miboxpreset` |
 | A/B slots and undo history | in memory, per instance | whole-state strings |
 
 The identity a host keys on - manufacturer code `Manu`, plugin code `Zy59`,
-bundle ID `com.MCsmes.first` - is deliberately frozen even though the product
-was renamed. `CMakeLists.txt` says why beside it.
+bundle ID `com.MCsmes.first` - is deliberately frozen across renames: the product
+name has moved twice, to MiBoX, and these three have not. `CMakeLists.txt` says
+why beside it.
 
 ## Rendering
 

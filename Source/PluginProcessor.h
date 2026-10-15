@@ -509,8 +509,8 @@ public:
     //
     //  A factory preset covers the machine's range; a USER preset freezes the whole
     //  machine exactly as it stands, including anything the factory list has no row
-    //  for. Files live in <user app data>/Nonlin Analog Saturator/Presets with a
-    //  .nonlinpreset extension, so they survive plugin updates and are shared by
+    //  for. Files live in <user app data>/MiBoX/Presets with a .miboxpreset
+    //  extension, so they survive plugin updates and are shared by
     //  every instance.
     //==============================================================================
 

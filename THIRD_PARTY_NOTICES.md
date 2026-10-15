@@ -1,6 +1,6 @@
 # Third-party notices
 
-Nonlin Analog Saturator is built out of other people's work, and this file says
+MiBoX is built out of other people's work, and this file says
 whose. It lists **every** component the build pulls in, where it comes from, the
 pin it is held at, and the licence it is under.
 

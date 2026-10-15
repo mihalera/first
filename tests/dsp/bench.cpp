@@ -121,7 +121,7 @@ void reportBudget (double nanosecondsPerFrame)
 int main()
 {
     ankerl::nanobench::Bench bench;
-    bench.title ("Nonlin Analog Saturator - DSP hot paths")
+    bench.title ("MiBoX - DSP hot paths")
          .unit ("frame")
          .warmup (200)
          .minEpochIterations (2000);
