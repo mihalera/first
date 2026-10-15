@@ -25,6 +25,15 @@
 //==============================================================================
 namespace FactoryPresets
 {
-    inline int count();
-    inline bool isSentinelValue (float value) noexcept;
+    // NOT inline, and that is the point of this header. Both are DEFINED in
+    // Source/ProcessorPresets.cpp, and an inline function defined only there is
+    // emitted only where that file itself uses it: the debug audit in the
+    // constructor is the one caller outside it, so an inline pair links in
+    // Release (every use sits under jassert and compiles away, leaving nothing
+    // to reference them) and fails in Debug on undefined references to both - a
+    // link error the release builds cannot produce and therefore cannot catch.
+    // External linkage is what a cross-translation-unit entry point needs, and
+    // the Debug link is the only build that checks it.
+    int count();
+    bool isSentinelValue (float value) noexcept;
 }

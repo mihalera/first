@@ -175,7 +175,11 @@ namespace FactoryPresets
     // than at a nonsense one.
     inline constexpr float notANumber = -1.0e9f;
 
-    inline bool isSentinelValue (float value) noexcept
+    // External linkage, deliberately: the declaration this definition is paired
+    // with is in Source/ProcessorPresets.h, and the caller is the constructor in
+    // PluginProcessor.cpp. See the note on that declaration - inline here would
+    // be emitted in this file only and would leave the Debug link unresolved.
+    bool isSentinelValue (float value) noexcept
     {
         // Compared as int, not float: the sentinel is exactly representable, so
         // the comparison is exact, and -Wfloat-equal is right to object to a
@@ -242,7 +246,9 @@ namespace FactoryPresets
         return parsed;
     }
 
-    inline int count()
+    // Same reason as isSentinelValue above: called from PluginProcessor.cpp's
+    // constructor, so it needs external linkage to be emitted at all.
+    int count()
     {
         return static_cast<int> (all().size());
     }
