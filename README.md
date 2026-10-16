@@ -9,7 +9,7 @@
 | **Framework** | JUCE `9.0.4`, pinned as a git submodule |
 | **Build** | CMake 3.22+, MSVC on Windows, Xcode on macOS |
 | **Parameters** | 109, in 23 groups, with 29 factory presets |
-| **Checked by** | six harnesses and five checks that need no JUCE, on every pull request |
+| **Checked by** | eight harnesses and six text checks that need no JUCE, on every pull request |
 | **Licence** | MIT for this repository's own source; a *binary* also links JUCE (AGPLv3 or commercial) and a GPLv3 module - see [Licensing, and what ships in a binary](#licensing-and-what-ships-in-a-binary) |
 
 ### Where to go next
@@ -971,6 +971,20 @@ CMake exposes the following option:
 -DJ37_RENDER_BACKEND=AUTO|OPENGL|VULKAN|METAL|D3D11|D3D12|BGFX|WGPU|DAWN|CPU
 ```
 
+One further option belongs to the audio rather than the panel, and it is the only
+switch in the build that changes what the plugin *renders*:
+
+```text
+-DJ37_USE_SIMD_TANH=ON|OFF   (default OFF)
+```
+
+With it on, the tanh every saturation curve runs becomes xsimd's batch kernel
+instead of `std::tanh`: measured through `tests/dsp/run_bench.sh` at 2.5 ns per
+call against 7.0 ns, which makes the saturation core 1.46x cheaper, at a curve
+difference of 1.19e-7 (absolute, worst case) - below audibility, but not zero,
+which is why it is off until a listening test says otherwise. The build prints
+which one it is using in its configure summary.
+
 `AUTO` and `OPENGL` use the existing JUCE/OpenGL scene. `CPU` uses a dedicated
 JUCE `Graphics` renderer for the animated transport, while the rest of the panel
 continues through its normal software path. `VULKAN`, `METAL`, `D3D11`, `D3D12`,
@@ -1399,16 +1413,16 @@ exceptions are named in the table: those the engine actually runs today.
 | `nlohmann/json` | `v3.12.0` | **Used.** The JSON DOM `RTNeural::json_parser::parseJson` parses a model file into. Header-only |
 | `chowdsp_utils` | `v2.4.0` | Chowdhury DSP's toolbox. Provides the polynomial `exp`/`log`/dB approximations on the metering and auto-gain hot paths; `chowdsp_dsp_utils` is linked so the rest is available |
 | `melatonin_inspector` | commit `9c483f86` | JUCE component inspector, compiled under `JUCE_DEBUG` only. Passive in the shipped build |
-| `melatonin_blur` | `v1.4` | Fast shadow/gradient blurring for JUCE Components - the editor draws a lot of soft analog shading by hand today |
-| `xsimd` | `13.0.0` | Portable SIMD wrappers (SSE/AVX/NEON). `chowdsp::chowdsp_simd` already wraps xsimd, so this is the same code path rather than a second SIMD layer |
+| `melatonin_blur` | `v1.4` | **Used.** Fast shadow/gradient blurring for JUCE Components. Three lights on the panel are `melatonin::DropShadow` now - the panel's own drop shadow (`Source/GUI/PanelPaint.h`) and the knob's halo and cap shadow (`Source/GUI/J37LookAndFeel.cpp`) - each cached against its path and radius, so a repaint at 30 Hz is a blit rather than a blur. The hand-drawn fallbacks (a stack of flat rounded rectangles, and a stack of stroked rings) are still there behind the module's probe |
+| `xsimd` | `13.0.0` | **Used, behind `J37_USE_SIMD_TANH`.** Portable SIMD wrappers (SSE/AVX/NEON). `chowdsp::chowdsp_simd` already wraps xsimd, so this is the same code path rather than a second SIMD layer - and the shaper's own tanh goes through it too: every tanh the saturation core runs is `j37Tanh` (`Source/DSP/HotPathMath.h`), which is xsimd's batch kernel when the option is on: 2.5 ns per call against std::tanh's 7.0 ns, 1.46x off the whole shaper, at a 1.19e-7 curve difference. Off by default because it changes the rendered audio; `tests/dsp/simd_tanh_test.cpp` builds all three shapes |
 
 Two dev-only libraries are **off by default**, so a plugin build never drags a test
 framework into its dependency graph. Enable with `-DJ37_BUILD_TESTS=ON`:
 
 | Library | Pinned at | Why |
 | --- | --- | --- |
-| `Catch2` | `v3.7.1` | Unit tests for the pieces underneath the DSP harness - a single shaper, a single loudness filter, a single compressor detector |
-| `nanobench` | `v4.3.11` | Micro-benchmarks. The shaper runs two `std::tanh` calls per sample per channel, so approximating or vectorising it is a real complexity cost that should only be paid once a benchmark shows the shaper actually dominates |
+| `Catch2` | `v3.9.1` | **Used.** Unit tests for the pieces underneath the DSP harness - the equaliser, the conventional compressor and the transient designer, driven one call at a time rather than through a replica of the engine (`tests/unit/`, a gate in CI, and it also runs under ASan + UBSan) |
+| `nanobench` | `v4.6.0` | Micro-benchmarks. The shaper runs two `std::tanh` calls per sample per channel, so approximating or vectorising it is a real complexity cost that should only be paid once a benchmark shows the shaper actually dominates |
 
 What is deliberately **not** here: an FFT library (the harmonic analyser needs three
 bins, and a full transform would be slower than the Goertzel it uses) and a pitch
@@ -1599,8 +1613,8 @@ proposes what to do about the gap.
 
 - **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** applies to issues, pull requests and
 discussions.
-- **Every change is checked by [tests/README.md](tests/README.md)'s suite** - six
-harnesses that compile the shipping code and five text checks - plus four platform
+- **Every change is checked by [tests/README.md](tests/README.md)'s suite** - eight
+harnesses that compile the shipping code and six text checks - plus four platform
 builds in CI. A change to the sound belongs with a harness section that pins what
 changed; a change that moves code belongs with a green
 `tests/editor/check_editor_juce.sh`.

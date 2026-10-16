@@ -66,3 +66,30 @@ echo
     "${HERE}/bench.cpp" -o "${BUILD}/bench"
 
 "${BUILD}/bench"
+
+# -----------------------------------------------------------------------------
+#  The same translation unit a second time, in the opt-in configuration of the
+#  shaper's tanh seam.
+#
+#  J37_USE_SIMD_TANH is a CMake option (OFF by default) that routes every tanh
+#  the saturation core runs through xsimd's batch kernel instead of libm's. The
+#  run above measures the shipping path, because that switch is off in every
+#  build this repository produces; this one measures what turning it on buys.
+#
+#  The comparison is a subtraction rather than an inference: the SaturationCore
+#  and reference rows appear in BOTH logs, from the same file and the same
+#  signal, and section 6's j37Tanh row exists only here. It is informational in
+#  exactly the same way as the run above - a slower number fails nothing - and
+#  tests/dsp/simd_tanh_test.cpp is what pins the curve the switch changes.
+# -----------------------------------------------------------------------------
+echo
+echo "J37_USE_SIMD_TANH=ON - the shaper's tanh through xsimd's kernel"
+echo "(compare the SaturationCore::process and std::tanh rows with the log above)"
+echo
+
+"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+    -I "${HERE}" -I "${BUILD}" -I "${NANOBENCH_INC}" -I "${REPO}/Source" \
+    -I "${REPO}/ThirdParty/xsimd/include" -DJ37_USE_SIMD_TANH=1 \
+    "${HERE}/bench.cpp" -o "${BUILD}/bench_simd"
+
+"${BUILD}/bench_simd"

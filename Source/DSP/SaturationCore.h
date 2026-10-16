@@ -5,11 +5,21 @@
 //  Compiled and driven by tests/dsp/subfund_test.cpp, which includes this header
 //  rather than a copy cut out of PluginProcessor.h. The conventions of
 //  Source/DSP/ are stated in J37Math.h.
+//
+//  Every tanh below goes through j37Tanh (Source/DSP/HotPathMath.h) rather than
+//  straight to std::tanh, and that is the whole of the seam: the shaper is the
+//  hot path, so the ONE place its cost can be traded - xsimd's batch kernel, an
+//  opt-in build option - is the one call this file makes eleven times. With the
+//  option off, j37Tanh IS std::tanh, so the curves and every render are what
+//  they were before this include existed. tests/dsp/simd_tanh_test.cpp drives
+//  the curves below both ways and asserts exactly that.
 // =============================================================================
 #pragma once
 
 #include <array>
 #include <cmath>
+
+#include "HotPathMath.h"
 
 //==============================================================================
 /*
@@ -362,11 +372,11 @@ struct SaturationCore
         const float biased = x + asymmetry;
 
         const float slope = 1.0f + drive * 2.6f;
-        const float hard = std::tanh (biased * slope) / slope;
+        const float hard = j37Tanh (biased * slope) / slope;
 
         const float lagged = tapeMemory * 0.62f;
         const float delayedSlope = 0.55f + drive * 1.0f;
-        const float delayed = std::tanh ((biased * delayedSlope) + lagged) / delayedSlope;
+        const float delayed = j37Tanh ((biased * delayedSlope) + lagged) / delayedSlope;
 
         constexpr float hardWeight = 0.70f;
         constexpr float delayedWeight = 0.30f;
@@ -377,8 +387,8 @@ struct SaturationCore
         // The zero-point correction, exactly as in magneticHysteresis: subtracting
         // the curve's own value at zero input removes the DC pedestal the bias
         // offset would otherwise leave, so zero in still means zero out.
-        const float hardAtZero = std::tanh (asymmetry * slope) / slope;
-        const float delayedAtZero = std::tanh ((asymmetry * delayedSlope) + lagged) / delayedSlope;
+        const float hardAtZero = j37Tanh (asymmetry * slope) / slope;
+        const float delayedAtZero = j37Tanh ((asymmetry * delayedSlope) + lagged) / delayedSlope;
         const float blendedAtZero = hardAtZero * hardWeight + delayedAtZero * delayedWeight;
         const float asymmetryAtZero = asymmetry * 0.45f * hardAtZero * hardAtZero;
 
@@ -446,14 +456,14 @@ struct SaturationCore
         // A gentler slope than tape's: the valve compresses across a wider range
         // instead of bending early. The squared term is the valve's own soft knee.
         const float slope = 1.0f + drive * 1.5f;
-        const float soft = std::tanh (biased * slope) / slope;
+        const float soft = j37Tanh (biased * slope) / slope;
 
         // The asymmetry here is stronger and applied to the whole curve rather
         // than only to the hard branch, which is what makes the even content
         // dominate instead of sitting under an odd-heavy fundamental.
         const float asymmetryTerm = driftingBias * 0.65f * soft * soft;
 
-        const float softAtZero = std::tanh (driftingBias * slope) / slope;
+        const float softAtZero = j37Tanh (driftingBias * slope) / slope;
         const float asymmetryAtZero = driftingBias * 0.65f * softAtZero * softAtZero;
 
         return (soft - softAtZero) - (asymmetryTerm - asymmetryAtZero);
@@ -649,20 +659,20 @@ struct SaturationCore
         // Stage one: high gain, hard clip. The slope is much steeper than tape's
         // so the knee arrives early, and the type sets how much steeper.
         const float slope1 = 1.0f + drive * ampGain1;
-        const float stage1 = std::tanh (biased * slope1) / slope1;
+        const float stage1 = j37Tanh (biased * slope1) / slope1;
 
         // Stage two: the cascade. A second, gentler stage applied to the first
         // stage's output, which is what flattens the middle of the curve.
         const float slope2 = 1.0f + drive * ampGain2;
-        const float stage2 = std::tanh (stage1 * slope2) / slope2;
+        const float stage2 = j37Tanh (stage1 * slope2) / slope2;
 
         // Hard-clipped stages are nearly symmetric, so the asymmetry term is
         // small - just enough to keep some even content rather than a pure odd
         // series, which would read as a fuzz rather than an amp.
         const float asymmetryTerm = asymmetry * 0.20f * stage2 * stage2;
 
-        const float s1Zero = std::tanh ((asymmetry * 0.18f) * slope1) / slope1;
-        const float s2Zero = std::tanh (s1Zero * slope2) / slope2;
+        const float s1Zero = j37Tanh ((asymmetry * 0.18f) * slope1) / slope1;
+        const float s2Zero = j37Tanh (s1Zero * slope2) / slope2;
         const float asymmetryAtZero = asymmetry * 0.20f * s2Zero * s2Zero;
 
         return (stage2 - s2Zero) - (asymmetryTerm - asymmetryAtZero);
@@ -764,7 +774,7 @@ struct SaturationCore
         const auto load = juce::jlimit (0.0f, shaperDriveRange, drive)
                             / shaperDriveRange;
         const float slope = 1.0f + load * 1.1f * transformerSoftness;
-        const float bent = std::tanh (core * slope) / slope;
+        const float bent = j37Tanh (core * slope) / slope;
 
         // How loaded the core is, which gates the two effects below. This is a
         // guide rather than a corner in the curve - the bend above has no knee,

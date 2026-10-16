@@ -620,6 +620,36 @@ target_link_libraries(first
 j37_apply_vendor_libraries(first)
 
 # ------------------------------------------------------------------------------
+#  The shaper's tanh: the one switch in this build that changes the rendered
+#  audio, and the only place a library is wired to the engine by a macro.
+#
+#  OFF by default, deliberately. Source/DSP/HotPathMath.h's j37Tanh is the single
+#  call that every saturation curve in Source/DSP/SaturationCore.h runs, and this
+#  option is what makes it xsimd's batch kernel instead of std::tanh: measured
+#  through tests/dsp/run_bench.sh (the same translation unit built both ways,
+#  section 6 of the log) at 2.5 ns per call against std::tanh's 7.0 ns, which
+#  makes the whole saturation core 1.46x cheaper - 41.4 us to 28.4 us per 512
+#  frame block. It is off because it is a DIFFERENT CURVE: 1.19e-7 absolute at
+#  worst, which is far below audibility for a stage that is generating harmonics
+#  on purpose, but a measured difference in the rendered audio is a listening
+#  decision in this repository and not a build default.
+#
+#  xsimd is already on the plugin's include path - it is fetched into
+#  ThirdParty/ and linked as chowdsp::chowdsp_simd - so this option only has to
+#  define the macro the seam reads. tests/dsp/simd_tanh_test.cpp compiles all
+#  three shapes (flag with the library, flag without it, and neither) and asserts
+#  what each one renders, so the switch cannot quietly rot into a no-op again:
+#  as written it called xsimd::tanh on a float, which IS std::tanh.
+# ------------------------------------------------------------------------------
+option(J37_USE_SIMD_TANH
+    "Run the shaper's tanh through xsimd's batch kernel instead of std::tanh (changes the rendered audio by ~1e-7)"
+    OFF)
+
+if(J37_USE_SIMD_TANH)
+    target_compile_definitions(first PRIVATE J37_USE_SIMD_TANH=1)
+endif()
+
+# ------------------------------------------------------------------------------
 #  Compile definitions
 #
 #  JUCE_VST3_CAN_REPLACE_VST2 and JUCE_STRICT_REFCOUNTEDPOINTER were both set in
@@ -707,6 +737,11 @@ elseif(J37_ENABLE_IPP)
     message(STATUS "                Intel IPP not installed - portable paths only")
 else()
     message(STATUS "                Intel IPP disabled by J37_ENABLE_IPP=OFF")
+endif()
+if(J37_USE_SIMD_TANH)
+    message(STATUS "  Shaper tanh : xsimd's batch kernel (J37_USE_SIMD_TANH=ON - a different curve, ~1e-7)")
+else()
+    message(STATUS "  Shaper tanh : std::tanh (-DJ37_USE_SIMD_TANH=ON for xsimd's kernel)")
 endif()
 if(J37_BUILD_TESTS)
     message(STATUS "  Dev tests   : ON  (Catch2, nanobench)")

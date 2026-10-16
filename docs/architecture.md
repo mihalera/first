@@ -165,3 +165,21 @@ cover. Two of them are structural rather than functional and belong in this map:
 the same for every header in `Source/DSP/`. Between them they are what makes the
 split of these files safe: every other harness compiles an extracted span and
 would not see a moved block with a missing include.
+
+One of them is wired the opposite way round, from a library to the audio: every tanh
+the saturation core runs goes through `j37Tanh`, the one seam a library switch can be
+thrown at, and the switch is `J37_USE_SIMD_TANH` (off by default, because it changes
+the rendered audio by ~1e-7). `tests/dsp/simd_tanh_test.cpp` is built in all three
+shapes - flag with xsimd, flag without it, and neither - and the three binaries'
+curve digests are compared against each other, because "the switch reaches the audio"
+is a claim about two builds rather than about one.
+
+Three of the stages in the table above are unit-sized rather than engine-sized -
+they hold no state of their own, take their coefficients as arguments, and state
+their contract in the header comment - so they are measured directly as well as
+through a harness: `tests/unit/run.sh` drives `ThreeBandEq`,
+`StandardCompressor` and `TransientShaper` one call at a time under Catch2 (a
+dev-only dependency, fetched by `-DJ37_BUILD_TESTS=ON`). A stage that is
+engine-sized - one that reads the processor's state or the block-rate
+coefficients - stays with the harnesses, which is the split `cmake/J37Tests.cmake`
+describes from the other side.

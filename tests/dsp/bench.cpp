@@ -42,6 +42,14 @@
 //     python3 tests/dsp/extract.py <out.inc>
 //     g++ -std=c++17 -O2 -I tests/dsp -I <build> -I <nanobench>/src
 //         tests/dsp/bench.cpp -o bench && ./bench
+//
+//  It is then built and run a SECOND time with -DJ37_USE_SIMD_TANH=1 and
+//  ThirdParty/xsimd/include on the include path, which is the opt-in
+//  configuration of the shaper's tanh seam (see section 6 and the J37_USE_SIMD_TANH
+//  option in CMakeLists.txt). One file, two builds, so the rows that appear in
+//  both logs - SaturationCore::process above all - are the comparison, measured
+//  on the same signal through the same code rather than inferred from two
+//  different benchmarks.
 // =============================================================================
 
 #include "shim.h"
@@ -121,7 +129,11 @@ void reportBudget (double nanosecondsPerFrame)
 int main()
 {
     ankerl::nanobench::Bench bench;
+#if J37_HAS_XSIMD
+    bench.title ("MiBoX - DSP hot paths (J37_USE_SIMD_TANH=ON: the shaper's tanh is xsimd's kernel)")
+#else
     bench.title ("MiBoX - DSP hot paths")
+#endif
          .unit ("frame")
          .warmup (200)
          .minEpochIterations (2000);
@@ -243,6 +255,30 @@ int main()
             sink += j37math::log10 (std::fabs (sample) + 1.0e-6f);
         ankerl::nanobench::doNotOptimizeAway (sink);
     });
+
+    // -------------------------------------------------------------------------
+    //  6. The tanh seam, in the one build that has the library behind it.
+    //
+    //  Source/DSP/HotPathMath.h's j37Tanh is the single call the saturation core's
+    //  cost can be traded at, and J37_USE_SIMD_TANH (a CMake option, OFF by
+    //  default) is what switches it to xsimd's batch kernel. Nothing in this
+    //  block exists in the default binary: run_bench.sh compiles this file twice,
+    //  and this row only appears in the second build.
+    //
+    //  It is the SAME loop over the SAME signal as section 4's std::tanh row and
+    //  as the SaturationCore row in section 1, which is what makes the two logs
+    //  comparable: the seam's cost, and what it buys on the shaper, are both a
+    //  subtraction of two printed numbers rather than an estimate.
+    // -------------------------------------------------------------------------
+#if J37_HAS_XSIMD
+    bench.run ("j37Tanh (the seam: xsimd batch kernel)", [&]
+    {
+        float sink = 0.0f;
+        for (const auto sample : signal)
+            sink += j37Tanh (sample * 1.78f);
+        ankerl::nanobench::doNotOptimizeAway (sink);
+    });
+#endif
 
     // A single representative frame cost for the budget summary. This is the
     // full-frame loop measured above, re-run once outside the harness so the

@@ -56,3 +56,107 @@ fi
     "${HERE}/loudness_test.cpp" -o "${BUILD}/loudness_test"
 
 "${BUILD}/loudness_test"
+
+# -----------------------------------------------------------------------------
+#  The shaper's tanh seam, in the three shapes a build can have it in.
+#
+#  j37Tanh (Source/DSP/HotPathMath.h) is the one place the saturation core's
+#  cost can be traded for xsimd's batch kernel, and the switch that trades it
+#  (J37_USE_SIMD_TANH, the CMake option of the same name) is OFF in every build
+#  this repository produces - which is exactly why the seam needs a harness. A
+#  branch that no build compiles rots, and this one had rotted twice over:
+#  nothing called the function the flag switched, and the call it made
+#  (xsimd::tanh on a float) was std::tanh, so even with the flag thrown the
+#  branch was a no-op.
+#
+#  Three binaries, one per shape, each TOLD which shape it is, and then their
+#  curve digests are compared ACROSS the binaries, because "the flag reaches
+#  the rendered audio" is a claim about two builds rather than about one:
+#
+#    flag + xsimd   J37_HAS_XSIMD 1, the approximation, the curves move
+#    flag alone     J37_HAS_XSIMD 0 and identical to the default
+#    neither        the shipping default
+#
+#  A build that asks for a library it has not got must render the default, and a
+#  build with the flag and the library must render different audio by the amount
+#  the header quotes - that is the pair this block exists to keep true.
+# -----------------------------------------------------------------------------
+XSIMD_INCLUDE="${HERE}/../../ThirdParty/xsimd/include"
+
+build_seam() {                     # name, then that build's extra flags
+    local name="$1"; shift
+
+    "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+        "${sanitize_flags[@]}" \
+        -I "${HERE}" -I "${SOURCE}" "$@" \
+        "${HERE}/simd_tanh_test.cpp" -o "${BUILD}/${name}"
+}
+
+run_seam() {                       # name - stderr/stdout shown, digest kept
+    local name="$1"
+
+    if ! "${BUILD}/${name}" > "${BUILD}/${name}.txt"; then
+        cat "${BUILD}/${name}.txt"
+        echo "simd_tanh: ${name} failed" >&2
+        exit 1
+    fi
+
+    grep -v '^curve ' "${BUILD}/${name}.txt"
+}
+
+build_seam simd_default -DJ37_EXPECT_XSIMD=0
+build_seam simd_flag_no_library -DJ37_EXPECT_XSIMD=0 -DJ37_USE_SIMD_TANH=1
+build_seam simd_kernel -DJ37_EXPECT_XSIMD=1 -DJ37_USE_SIMD_TANH=1 -I "${XSIMD_INCLUDE}"
+
+run_seam simd_default
+run_seam simd_flag_no_library
+run_seam simd_kernel
+
+digest() { grep '^curve ' "${BUILD}/$1.txt"; }
+
+if diff <(digest simd_flag_no_library) <(digest simd_default) > /dev/null; then
+    echo "  ok   the flag without xsimd renders the default curves, byte for byte"
+else
+    echo ""
+    diff <(digest simd_flag_no_library) <(digest simd_default) | head -20
+    echo "simd_tanh: J37_USE_SIMD_TANH without xsimd on the include path changed the curves" >&2
+    exit 1
+fi
+
+# The cross-build claim, and the only place it can be made: one binary can only
+# ever be one of the three shapes. Both bounds are asserted - a difference of
+# zero means the flag no longer reaches the audio, and a difference over the
+# bound means the kernel is not the approximation the header describes.
+python3 - "${BUILD}/simd_kernel.txt" "${BUILD}/simd_default.txt" <<'PY'
+import sys
+
+def digest(path):
+    rows = []
+    for line in open(path):
+        parts = line.split()
+        if len(parts) == 5 and parts[0] == "curve":
+            rows.append(tuple(parts[1:4]) + (float(parts[4]),))
+    return rows
+
+kernel, default = digest(sys.argv[1]), digest(sys.argv[2])
+if not kernel or len(kernel) != len(default):
+    raise SystemExit(f"simd_tanh: the two digests are not the same shape ({len(kernel)} vs {len(default)})")
+
+worst, at, moved = 0.0, None, 0
+for k, d in zip(kernel, default):
+    if k[:3] != d[:3]:
+        raise SystemExit(f"simd_tanh: digest order differs at {k[:3]} vs {d[:3]}")
+    delta = abs(k[3] - d[3])
+    moved += delta > 0.0
+    if delta > worst:
+        worst, at = delta, k
+
+limit = 2.0e-6
+if worst == 0.0:
+    raise SystemExit("simd_tanh: the flag with xsimd present rendered identical curves - the seam does not reach the audio path")
+if worst > limit:
+    raise SystemExit(f"simd_tanh: the flag moved the curves by {worst:g} at {'/'.join(at[:3])}, over the {limit:g} bound")
+
+print(f"  ok   with xsimd the flag moves {moved} of {len(kernel)} curve samples, worst {worst:.3g}"
+      f" at {'/'.join(at[:3])}, within the {limit:g} bound")
+PY

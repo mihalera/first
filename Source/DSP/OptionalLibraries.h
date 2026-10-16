@@ -85,9 +85,22 @@
 // pedestal can be subtracted), and that is the hot loop at 8x oversampling.
 //
 // It is wired in as an OPT-IN, not a default: an approximation only earns its
-// place once a benchmark shows the shaper dominates, and a measured difference
-// in the rendered audio is a change to the sound. See the use site in
-// PluginProcessor.cpp for what the flag actually switches.
+// place once a benchmark shows what it buys, and a measured difference in the
+// rendered audio is a change to the sound. See the use site - j37Tanh in
+// Source/DSP/HotPathMath.h, which Source/DSP/SaturationCore.h's eleven tanh calls
+// all go through - for what the flag actually switches, the J37_USE_SIMD_TANH
+// option in CMakeLists.txt for how it is thrown, and tests/dsp/simd_tanh_test.cpp
+// for what each of the three shapes renders.
+//
+// Two things about this probe were wrong until it was measured, and they are the
+// reason the harness next door exists:
+//
+//   - the macro was read by a header and thrown by no build, so J37_HAS_XSIMD was
+//     0 everywhere and the branch below was never compiled by anything;
+//   - the branch it guards called xsimd::tanh's SCALAR entry point, which xsimd
+//     defines as `using std::tanh;` - i.e. the flag, once thrown, would have
+//     switched nothing. The approximation exists only in the batch kernel, which
+//     is what HotPathMath.h now calls.
 #if ! defined (J37_DSP_HARNESS) && ! defined (J37_HAS_XSIMD) \
     && defined (J37_USE_SIMD_TANH) && __has_include (<xsimd/xsimd.hpp>)
  #include <xsimd/xsimd.hpp>

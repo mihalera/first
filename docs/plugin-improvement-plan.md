@@ -66,6 +66,19 @@ included by nothing.
    should adopt `signalsmith-stretch` (the corrector, which shifts pitch at
    constant duration) and leave the deletion decision where it was.
 
+   **`xsimd` has left the pile by the same route as `pocketfft`.** It appeared in
+   the analysis's "actually included by Source/" list while no line of `Source/`
+   included it: the only mention was behind a `J37_USE_SIMD_TANH` flag no build
+   threw, guarding a function (`j37Tanh`) that nothing called, whose body called
+   `xsimd::tanh` on a float - and xsimd's scalar entry point is `using std::tanh;`
+   (`xsimd/arch/xsimd_scalar.hpp`), so the branch would have switched nothing even
+   with the flag thrown. All three are fixed: the shaper's eleven tanh calls go
+   through the seam, the flag is a real CMake option that is OFF by default
+   because it changes the rendered audio by 1.19e-7, `tests/dsp/simd_tanh_test.cpp`
+   builds the three shapes and compares their curves against each other, and
+   `tests/dsp/run_bench.sh` measures what it buys - 2.5 ns per call against
+   `std::tanh`'s 7.0 ns, and 1.46x off the saturation core itself.
+
    **The two vendor libraries have left the "linked and inert" pile, by the same
    route.** `cmake/J37VendorLibraries.cmake` used to discover Intel IPP and Apple
    vDSP, link them, and define `J37_HAVE_IPP` / `J37_HAVE_VDSP` for a plugin that

@@ -249,6 +249,66 @@ jobs:
         run: bash tests/editor/check_editor_juce.sh
 
   # ============================================================================
+  #  DSP unit tests - the pieces UNDERNEATH the harnesses
+  #
+  #  The harness job above renders audio and asserts on the recording, which is
+  #  the right tool for a signal path and the wrong one for "does this function
+  #  still return what it returned yesterday". The three stages tested here - the
+  #  equaliser, the conventional compressor and the transient designer - hold no
+  #  engine state, take their coefficients as arguments, and carry a written
+  #  contract in their own header comments, so each is driven directly instead of
+  #  through a replica of the engine: a call, a number, and the claim it stands
+  #  for named in the test's own title.
+  #
+  #  This one IS a gate, unlike the benchmark job below: the whole suite is
+  #  microseconds of work with no machine-dependent number anywhere in it.
+  #
+  #  The framework is Catch2, which CPM fetches only under -DJ37_BUILD_TESTS=ON,
+  #  so the job configures once with that flag first - which is also what
+  #  populates the CPM cache that tests/unit/run.sh looks in. The script then
+  #  compiles Catch2's own amalgamated sources and runs the suite twice: once
+  #  plain, and once under ASan and UBSan, where a one-function numerical mistake
+  #  is cheapest to see. No CMake build of the plugin, no JUCE, no audio backend:
+  #  like every other harness here, it is seconds of work on any machine with a
+  #  C++17 compiler.
+  # ============================================================================
+  dsp-unit:
+    name: DSP unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Linux audio and GUI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev libjack-jackd2-dev libfreetype6-dev \
+            libfontconfig1-dev libcurl4-openssl-dev libx11-dev \
+            libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev \
+            libxrandr-dev libxrender-dev libgl1-mesa-dev libglu1-mesa-dev \
+            libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Configure with the dev tests enabled (fetches Catch2)
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DJ37_BUILD_TESTS=ON
+
+      - name: Run the DSP unit tests
+        run: bash tests/unit/run.sh
+
+      # -fno-sanitize-recover=all inside the script makes any finding fail this
+      # step rather than printing and carrying on, and the binary's exit status
+      # is the script's - a failed assertion cannot be filtered away.
+      - name: Run the DSP unit tests under ASan and UBSan
+        run: J37_SANITIZE=address,undefined bash tests/unit/run.sh
+
+  # ============================================================================
   #  DSP micro-benchmarks - measurement, never a gate
   #
   #  Runs after the regression harness and is allowed to fail the job only if it

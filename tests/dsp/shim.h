@@ -1,8 +1,8 @@
 // Minimal stand-in for the handful of JUCE helpers the extracted DSP uses, so
 // the harness compiles with nothing but a C++17 compiler. Only what the
-// extracted code actually calls is here: jmin / jmax / jlimit, MathConstants,
-// and the two Decibels conversions. Anything the plugin's DSP needs that is
-// missing will fail to compile rather than quietly behaving differently.
+// extracted code actually calls is here: jmin / jmax / jlimit / roundToInt,
+// MathConstants, and the two Decibels conversions. Anything the plugin's DSP needs
+// that is missing will fail to compile rather than quietly behaving differently.
 #pragma once
 
 #include <cmath>
@@ -19,6 +19,14 @@ constexpr T jmax (T a, T b) noexcept { return a < b ? b : a; }
 
 template <typename T>
 constexpr T jlimit (T lo, T hi, T v) noexcept { return v < lo ? lo : (hi < v ? hi : v); }
+
+// juce::roundToInt, spelled the way juce_MathsFunctions.h spells it: round half
+// away from zero rather than truncate towards zero, which is what makes 2.5 into
+// 3 and -2.5 into -3. It is here because ThreeBandEq.h turns a slope in dB per
+// octave into a pole COUNT with it, and that header is now measured by a unit
+// test of its own (tests/unit/) - not because the extracted signal path calls it.
+template <typename T>
+constexpr int roundToInt (T value) noexcept { return static_cast<int> (std::lround (value)); }
 
 template <typename T>
 struct MathConstants
