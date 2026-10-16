@@ -397,7 +397,12 @@ namespace
         if (safeName.isEmpty() || safeName == "." || safeName == "..")
             return false;
 
-        const auto directory = FirstAudioProcessor::getUserPresetDirectory();
+        auto directory = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
+                            .getChildFile ("MiBoX")
+                            .getChildFile ("Presets");
+        if (! directory.isDirectory())
+            directory.createDirectory();
+
         file = directory.getChildFile (safeName + ".miboxpreset");
         return file.getParentDirectory().getFullPathName() == directory.getFullPathName();
     }
@@ -413,7 +418,7 @@ juce::File FirstAudioProcessor::getUserPresetDirectory()
     return directory;
 }
 
-juce::StringArray FirstAudioProcessor::getUserPresetNames() constיכּ:
+juce::StringArray FirstAudioProcessor::getUserPresetNames() const
 {
     juce::StringArray names;
     for (const auto& entry : getUserPresetDirectory().findChildFiles (juce::File::findFiles,
@@ -481,6 +486,6 @@ bool FirstAudioProcessor::deleteUserPreset (const juce::String& name)
 
     const auto deleted = file.deleteFile();
     if (currentPresetName.equalsIgnoreCase (safeName))
-        markPresetClean ({});
+        markPresetClean ({ });
     return deleted;
 }

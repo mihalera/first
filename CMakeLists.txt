@@ -22,6 +22,47 @@
 
 cmake_minimum_required(VERSION 3.22)
 
+# ------------------------------------------------------------------------------
+#  macOS deployment target.
+#
+#  THIS IS THE ONE SETTING THAT HAS TO BE HERE, ABOVE project(): CMake reads
+#  CMAKE_OSX_DEPLOYMENT_TARGET once, while it initialises the toolchain, and a
+#  value set further down this file is ignored without a word.
+#
+#  Why it cannot be left to the toolchain's own default. With the variable
+#  unset, MACOSX_DEPLOYMENT_TARGET is left empty in the generated project, and
+#  Xcode stamps every binary with its SDK's version - the version of the machine
+#  that BUILT it. A build made on a macOS 15 runner therefore loads on macOS 15
+#  and on nothing older: the host reports the plugin as unavailable, or, in
+#  Logic and GarageBand, does not list it at all - on every machine a couple of
+#  years behind the runner. Nothing in the build log says so; the failure lives
+#  entirely in the user's copy of the plugin, which is the worst place for a
+#  build setting to be wrong.
+#
+#  11.0 is the floor a UNIVERSAL build can have at all. The arm64 slice cannot
+#  load on anything earlier (macOS 11 is the first arm64 release), and both
+#  slices are one binary with one deployment target, so the x86_64 slice is
+#  stamped with that same number rather than with one of its own. JUCE 9 itself
+#  supports 10.11 and later, so nothing in this build asks for an API newer than
+#  11.0 - the number is a promise about the users, not a requirement of the code.
+#
+#  Raise it (or set it to your own machine's version, which drops the
+#  availability checks for older systems) with -DCMAKE_OSX_DEPLOYMENT_TARGET=...:
+#  this default only fills in what nobody set.
+# ------------------------------------------------------------------------------
+set(J37_MACOS_DEPLOYMENT_TARGET "11.0" CACHE STRING
+    "Minimum macOS version the plugin binaries are built to load on")
+
+# CMAKE_HOST_SYSTEM_NAME rather than APPLE: `APPLE` is not defined until project()
+# has run, and the variable has to be set before it. The host test also keeps this
+# from applying a macOS floor to an Android or iOS cross build, where the minimum
+# version is the platform's own business.
+if(NOT CMAKE_OSX_DEPLOYMENT_TARGET
+   AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin"
+   AND (NOT CMAKE_SYSTEM_NAME OR CMAKE_SYSTEM_NAME STREQUAL "Darwin"))
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "${J37_MACOS_DEPLOYMENT_TARGET}")
+endif()
+
 project(first
     VERSION 1.0.0
     DESCRIPTION "MiBoX"
@@ -629,6 +670,7 @@ message(STATUS "  Renderer    : requested ${J37_RENDER_BACKEND}")
 message(STATUS "  Build commit: ${J37_BUILD_COMMIT}")
 if(APPLE)
     message(STATUS "  Archs       : ${CMAKE_OSX_ARCHITECTURES}")
+    message(STATUS "  macOS floor : ${CMAKE_OSX_DEPLOYMENT_TARGET}")
     message(STATUS "  Formats     : VST3, AU, AUv3")
 else()
     message(STATUS "  Formats     : VST3")
