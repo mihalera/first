@@ -292,16 +292,6 @@ private:
     void renderOpenGL() override;
     void openGLContextClosing() override;
 
-    void updateRenderState (float level, float peak, float driveAmount, float reduction,
-                            float flutter, float speed, double& elapsed, float& frameSeconds);
-    void drawRenderFrame (int width, int height, double elapsed, float flutter,
-                          float reduction, float driveAmount, const juce::Colour& background,
-                          const juce::Colour& body, const juce::Colour& highlight,
-                          const juce::Colour& tape);
-    void drawReel (const glm::mat4& scene, float centreX, float centreY, float radius,
-                   float angle, float packOuter, const juce::Colour& bodyColour,
-                   const juce::Colour& tapeColour);
-
     juce::OpenGLContext openGLContext;
     std::unique_ptr<juce::OpenGLShaderProgram> shaderProgram;
     std::unique_ptr<j37::render::NativeRenderer> nativeRenderer;

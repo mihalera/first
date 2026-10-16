@@ -1626,17 +1626,12 @@ void TapeScene::renderOpenGL()
     if (width <= 0 || height <= 0)
         return;
 
-    // Read the frame's atomic inputs once on the render thread, then update
-    // thread-local transport animation state.
     const auto level = outputLevel.load (std::memory_order_relaxed);
     const auto peak = outputPeak.load (std::memory_order_relaxed);
     const auto driveAmount = drive.load (std::memory_order_relaxed);
     const auto reduction = gainReduction.load (std::memory_order_relaxed);
     const auto flutter = wowFlutter.load (std::memory_order_relaxed);
     const auto speed = transportSpeed.load (std::memory_order_relaxed);
-    double elapsed = 0.0;
-    float frameSeconds = 0.0f;
-    updateRenderState (level, peak, driveAmount, reduction, flutter, speed, elapsed, frameSeconds);
 
     const auto background = juce::Colour (backgroundColour.load (std::memory_order_relaxed));
     const auto body = juce::Colour (bodyColour.load (std::memory_order_relaxed));
