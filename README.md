@@ -264,6 +264,11 @@ like. The three are genuinely different machines:
 | **BBD** | A bucket-brigade chip: darker still, with clock noise on the repeats and a bandwidth that **narrows as the delay lengthens** - which is what a BBD physically does, because the same number of buckets is being clocked more slowly |
 | **Modern** | A clean digital delay: full bandwidth, no loss, repeats that stack without getting dull |
 
+**PING-PONG** routes the feedback between the two stereo delay lines: at 0 % repeats
+stay on their original side, at 100 % each repeat crosses to the other side, and values
+in between split the feedback across both. In mono, feedback stays in the single
+available line. A DELAY setting of 0 ms disengages the second head.
+
 ## Vinyl
 
 The record-playing end of the chain. A turntable adds three things nothing else here

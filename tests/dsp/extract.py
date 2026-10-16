@@ -447,6 +447,53 @@ def check_auto_gain_compensation(impl: str) -> list[str]:
     return problems
 
 
+def check_mono_delay_feedback(impl: str) -> list[str]:
+    """Ensure mono feedback never writes to the absent right-channel delay line."""
+    problems: list[str] = []
+    delay_gates = list(re.finditer(r"if\s*\(\s*delayBufferLength\s*>\s*0\s*\)\s*\{", impl))
+    block = next(
+        (impl[gate.start():matching_brace(impl, gate.end() - 1)]
+         for gate in reversed(delay_gates)
+         if "feedbackAmount" in impl[gate.start():matching_brace(impl, gate.end() - 1)]),
+        None,
+    )
+
+    if block is None:
+        return ["the tape delay write block is missing, so mono feedback routing cannot be checked"]
+
+    if re.search(r"const float requestedDelaySamples\s*=\s*delaySamplesSmoothed\.getCurrentValue\(\);"
+                 r"\s*const bool delayEnabled\s*=\s*requestedDelaySamples\s*>\s*0\.0f;"
+                 r"\s*const float delaySamples\s*=\s*juce::jmax\s*\(1\.0f,\s*requestedDelaySamples\);",
+                 impl) is None:
+        problems.append("zero delay is not treated as a disengaged playback head, or an active head "
+                        "can read from its current write slot")
+
+    if "const bool stereo = state.activeChannels > 1;" not in block:
+        problems.append("the tape delay feedback does not distinguish mono from stereo, so mono "
+                        "may write to a delay channel that does not exist")
+        return problems
+
+    if re.search(r"if\s*\(\s*delayEnabled\s*\)\s*\{[^{}]*feedbackAmount", block, re.S) is None:
+        problems.append("zero delay can still write feedback into the delay ring")
+
+    if re.search(r"delayWrite\[delayWritePosition\]\s*\+=\s*feedbackAmount\s*"
+                 r"\*\s*\(stereo\s*\?\s*\(1\.0f\s*-\s*pingPongNow\)\s*:\s*1\.0f\);",
+                 block) is None:
+        problems.append("mono tape delay feedback is not kept entirely in its only delay line")
+
+    other_channel_write = re.search(
+        r"if\s*\(\s*stereo\s*\)\s*\{\s*const int feedbackChannel\s*=\s*1\s*-\s*channel\s*;"
+        r"\s*delayBuffer\.getWritePointer\s*\(\s*feedbackChannel\s*\)",
+        block,
+        re.S,
+    )
+    if other_channel_write is None:
+        problems.append("the tape delay's other-channel feedback write is not guarded by a stereo "
+                        "channel-count check")
+
+    return problems
+
+
 def main() -> int:
     destination = pathlib.Path(sys.argv[1] if len(sys.argv) > 1 else "extracted_dsp.inc")
     header = HEADER.read_text()
@@ -455,6 +502,7 @@ def main() -> int:
 
     problems = check_neural_rate_wiring(header, impl, stage)
     problems += check_auto_gain_compensation(impl)
+    problems += check_mono_delay_feedback(impl)
     if problems:
         for problem in problems:
             print(f"extract.py: {problem}", file=sys.stderr)
@@ -464,6 +512,8 @@ def main() -> int:
           "session rate times its oversampling factor")
     print("auto gain: the compensator measures before it corrects, only ever restores, holds its "
           "correction on a stopped machine, and rides both legs of the MIX crossfade")
+    print("tape delay: mono keeps feedback in its only channel; stereo alone writes ping-pong "
+          "feedback to the other channel, and zero delay disengages the playback head")
 
     chunks = ["// GENERATED FILE - do not edit.",
               "// Built out of Source/ by tests/dsp/extract.py: the DSP stages and the",

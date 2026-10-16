@@ -2904,13 +2904,15 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         //  and a delay that snapped to whole samples would zipper as the knob
         //  moved.
         // -------------------------------------------------------------------
+        // Zero means the second head is disengaged. An active head must read at
+        // least one sample behind the current write position, or a zero offset
+        // wraps around and reads stale audio from the end of the ring.
+        const float requestedDelaySamples = delaySamplesSmoothed.getCurrentValue();
+        const bool delayEnabled = requestedDelaySamples > 0.0f;
+        const float delaySamples = juce::jmax (1.0f, requestedDelaySamples);
         float delayed = 0.0f;
-        if (delayBufferLength > 0)
+        if (delayBufferLength > 0 && delayEnabled)
         {
-            const float delaySamples = juce::jlimit (
-                0.0f, static_cast<float> (delayBufferLength - 1),
-                delaySamplesSmoothed.getCurrentValue());
-
             float readPosition = static_cast<float> (delayWritePosition) - delaySamples;
             if (readPosition < 0.0f)
                 readPosition += static_cast<float> (delayBufferLength);
@@ -3029,10 +3031,10 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
             // this is the other side; in between it is neither, and the two
             // writes below distribute the feedback across both lines so the
             // control sweeps continuously rather than switching.
-            const int feedbackChannel = 1 - channel;
             const float feedbackAmount = delayFeedbackSmoothed.getCurrentValue()
                                        * damp;
             const float pingPongNow = pingPongSmoothed.getCurrentValue();
+            const bool stereo = state.activeChannels > 1;
 
             auto* delayWrite = delayBuffer.getWritePointer (channel);
 
@@ -3041,16 +3043,21 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
             // feedback is re-routed.
             delayWrite[delayWritePosition] = dcBlocked;
 
-            // The feedback: partly into this channel's line and partly into
-            // the other's, split by the control. The sum of the two partial
-            // writes is the same total energy at every position, so sweeping
-            // PING-PONG moves the echoes across the image rather than fading
-            // them.
-            delayWrite[delayWritePosition] += feedbackAmount * (1.0f - pingPongNow);
+            if (delayEnabled)
+            {
+                // Stereo splits feedback between this channel and the other one.
+                // Mono has nowhere else to send it, so keep the full feedback in
+                // its only delay line.
+                delayWrite[delayWritePosition] += feedbackAmount
+                    * (stereo ? (1.0f - pingPongNow) : 1.0f);
 
-            if (feedbackChannel != channel)
-                delayBuffer.getWritePointer (feedbackChannel)[delayWritePosition]
-                    += feedbackAmount * pingPongNow;
+                if (stereo)
+                {
+                    const int feedbackChannel = 1 - channel;
+                    delayBuffer.getWritePointer (feedbackChannel)[delayWritePosition]
+                        += feedbackAmount * pingPongNow;
+                }
+            }
         }
 
         const float withDelay = dcBlocked + delayTap;
@@ -3897,4 +3904,3 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         state.currentInputLufs = inputLoudness.processFrame (state.inputChainHistory[0], state.inputChainHistory[0],
                                                        state.inputLoudnessCoefficient);
 }
-
