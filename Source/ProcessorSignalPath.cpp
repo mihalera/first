@@ -1015,36 +1015,52 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                           vinylTypeParam != nullptr
                               ? static_cast<int> (vinylTypeParam->load()) : 0);
 
-    // The vinyl type re-voices the two VinylStages, once per block. RIAA depth,
-    // crackle and rumble multipliers, tick decay and groove hiss all belong to
-    // the disc rather than to the controls, so they are written here and only
-    // read in the loop.
+    // Vinyl setup values are snapshotted once per block for the two stages.
     {
-        // riaa, rumble, crackle, decay, surface
-        static constexpr float voices[6][5] =
+        struct VinylSetup
         {
-            // Standard LP: the reference pressing. Full RIAA, quiet surface.
-            { 0.45f, 1.00f, 0.60f, 0.99850f, 0.00f },
-            // Single: less play per side, wider grooves, a little more top. The
-            // rumble is lower - a single spins faster and the bearing sees less
-            // time under the stylus.
-            { 0.42f, 0.80f, 0.70f, 0.99820f, 0.00f },
-            // Shellac 78: pre-vinyl. Shellac is abrasive, so the surface is
-            // LOUD between every note, the groove hiss is continuous, the
-            // rumble is a wind-up motor's, and there is no RIAA to undo - 78s
-            // predate the curve, so the tilt here is the rougher blunt one.
-            { 0.18f, 1.60f, 1.35f, 0.99700f, 1.00f },
-            // Worn Classic: a well-loved record. The ticks multiply and ring,
-            // the surface hiss rises, the top end has been played off.
-            { 0.40f, 1.15f, 1.60f, 0.99880f, 0.35f },
-            // Dubplate: soft lacquer, loud cut, played minutes after the cut.
-            // Crackle is nearly absent and the RIAA is hot - the lathe was
-            // pushed for a sound system.
-            { 0.55f, 0.90f, 0.25f, 0.99900f, 0.05f },
-            // Half-Speed Master: the cleanest pressing. The lathe tracked at
-            // half speed, so the RIAA is deep and the surface is almost silent.
-            { 0.55f, 0.70f, 0.30f, 0.99920f, 0.02f },
+            int type, speed, generation, turntable, cartridge;
+            float dust, scratch, warp, electrical, clicks;
         };
+        const VinylSetup setup { vinylTypeCached,
+            vinylSpeedParam != nullptr ? juce::jlimit (0, 2, static_cast<int> (vinylSpeedParam->load())) : 0,
+            vinylGenerationParam != nullptr ? juce::jlimit (0, 2, static_cast<int> (vinylGenerationParam->load())) : 0,
+            vinylTurntableParam != nullptr ? juce::jlimit (0, 2, static_cast<int> (vinylTurntableParam->load())) : 0,
+            vinylCartridgeParam != nullptr ? juce::jlimit (0, 2, static_cast<int> (vinylCartridgeParam->load())) : 0,
+            vinylDustParam != nullptr ? vinylDustParam->load() : 0.0f,
+            vinylScratchParam != nullptr ? vinylScratchParam->load() : 0.0f,
+            vinylWarpParam != nullptr ? vinylWarpParam->load() : 0.0f,
+            vinylElectricalParam != nullptr ? vinylElectricalParam->load() : 0.0f,
+            vinylClicksParam != nullptr ? vinylClicksParam->load() : 0.0f };
+        const auto configureVinyl = [&] (VinylStage& left, VinylStage& right, float rate, const VinylSetup& values)
+        {
+            const int vinylSpeedIndex = values.speed;
+            VinylStage* vinylStages[2] = { &left, &right };
+            // riaa, rumble, crackle, decay, surface
+            static constexpr float vinylVoices[6][5] =
+            {
+                // Standard LP: the reference pressing. Full RIAA, quiet surface.
+                { 0.45f, 1.00f, 0.60f, 0.99850f, 0.00f },
+                // Single: less play per side, wider grooves, a little more top. The
+                // rumble is lower - a single spins faster and the bearing sees less
+                // time under the stylus.
+                { 0.42f, 0.80f, 0.70f, 0.99820f, 0.00f },
+                // Shellac 78: pre-vinyl. Shellac is abrasive, so the surface is
+                // LOUD between every note, the groove hiss is continuous, the
+                // rumble is a wind-up motor's, and there is no RIAA to undo - 78s
+                // predate the curve, so the tilt here is the rougher blunt one.
+                { 0.18f, 1.60f, 1.35f, 0.99700f, 1.00f },
+                // Worn Classic: a well-loved record. The ticks multiply and ring,
+                // the surface hiss rises, the top end has been played off.
+                { 0.40f, 1.15f, 1.60f, 0.99880f, 0.35f },
+                // Dubplate: soft lacquer, loud cut, played minutes after the cut.
+                // Crackle is nearly absent and the RIAA is hot - the lathe was
+                // pushed for a sound system.
+                { 0.55f, 0.90f, 0.25f, 0.99900f, 0.05f },
+                // Half-Speed Master: the cleanest pressing. The lathe tracked at
+                // half speed, so the RIAA is deep and the surface is almost silent.
+                { 0.55f, 0.70f, 0.30f, 0.99920f, 0.02f },
+            };
 
         // VINYL TYPE = OFF: no DISC at all.
         //
@@ -1057,33 +1073,29 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         // need programme (dust, which follows the level) fall silent with it.
         //
         // It is the reference state for hearing what the DISC contributes.
-        const bool vinylTypeOff = (vinylTypeCached == modelOffIndex);
-        const auto& v = voices[juce::jlimit (0, 5, vinylTypeCached)];
-        for (auto* stage : { &vinylL, &vinylR })
-        {
-            stage->riaaAmount    = vinylTypeOff ? 0.0f : v[0];
-            stage->rumbleAmount  = vinylTypeOff ? 0.0f : v[1];
-            stage->crackleAmount = vinylTypeOff ? 0.0f : v[2];
-            stage->crackleDecay  = v[3];
-            stage->surfaceNoise  = v[4];
-        }
+        const bool vinylTypeOff = (values.type == modelOffIndex);
+        const auto& v = vinylVoices[juce::jlimit (0, 5, values.type)];
+        left.riaaAmount = vinylTypeOff ? 0.0f : v[0];
+        left.rumbleAmount = vinylTypeOff ? 0.0f : v[1];
+        left.crackleAmount = vinylTypeOff ? 0.0f : v[2];
+        left.crackleDecay = v[3];
+        left.surfaceNoise = v[4];
+        right.riaaAmount = vinylTypeOff ? 0.0f : v[0];
+        right.rumbleAmount = vinylTypeOff ? 0.0f : v[1];
+        right.crackleAmount = vinylTypeOff ? 0.0f : v[2];
+        right.crackleDecay = v[3];
+        right.surfaceNoise = v[4];
 
-        // VINYL SPEED sets how much the disc's own speed error modulates the
-        // stage - a slow wow on a 33, a tighter shimmer on a 45, and the wind-up
-        // motor's wobble on a 78. Zero is a perfectly steady turntable. The
-        // wander the type voices apply is folded on top of it, so a shellac at
-        // speed 0 is steady but still shellac.
-        const auto vinylSpeedNow = vinylSpeedParam != nullptr
-            ? static_cast<int> (vinylSpeedParam->load()) : 0;
+        // VINYL SPEED selects one of the three platter-rate setups.
         static constexpr float wanderRate[3] = { 0.62f, 1.10f, 3.30f };   // Hz
         static constexpr float wanderDepth[3] = { 0.010f, 0.016f, 0.028f };
-        for (auto* stage : { &vinylL, &vinylR })
+        for (auto* stage : vinylStages)
         {
-            stage->vinylWowIncrement = wanderRate[vinylSpeedNow] / state.engineSampleRate;
+            stage->vinylWowIncrement = wanderRate[vinylSpeedIndex] / rate;
             // The turntable scales the depth (see the voicing below, which runs
             // after this and overwrites it with the scale applied) - the deck's
             // stability is what decides how much of the disc's wander you hear.
-            stage->speedModulation = wanderDepth[vinylSpeedNow];
+            stage->speedModulation = wanderDepth[vinylSpeedIndex];
 
             // Every one of the four faults' rates is derived from the SAME platter
             // speed the wander uses, because they are all consequences of how fast
@@ -1092,17 +1104,17 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // winding that is not synchronised to a 33's at all. Deriving them from
             // one number is what makes the faults belong to the SAME record instead
             // of being four unrelated generators.
-            const float revolutionHz = wanderRate[vinylSpeedNow];
+            const float revolutionHz = wanderRate[vinylSpeedIndex];
 
-            stage->scratchIncrement = revolutionHz / state.engineSampleRate;
-            stage->warpIncrement = revolutionHz / state.engineSampleRate;
+            stage->scratchIncrement = revolutionHz / rate;
+            stage->warpIncrement = revolutionHz / rate;
 
             // The dust's bandwidth is a real corner frequency - the grit sits above
             // the programme's own top end - converted the same way every other
             // coefficient here is. It also opens slightly with the platter speed,
             // because a faster stylus excites finer grit.
             stage->dustCoefficient = onePoleCoefficientHz (
-                6000.0f + 2000.0f * static_cast<float> (vinylSpeedNow), state.engineSampleRate);
+                6000.0f + 2000.0f * static_cast<float> (vinylSpeedIndex), rate);
 
             // Mains hum is the one rate that is NOT the disc's: it is the supply's.
             // 50 Hz is the standard outside North America and 60 Hz inside it; the
@@ -1111,29 +1123,29 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // hum. The second harmonic is set from the same base so the two can
             // never lose their 2:1 relationship.
             constexpr float humHz = 50.0f;
-            stage->humIncrement = humHz / state.engineSampleRate;
-            stage->humIncrement2 = humHz * 2.0f / state.engineSampleRate;
+            stage->humIncrement = humHz / rate;
+            stage->humIncrement2 = humHz * 2.0f / rate;
 
             // The four amounts, read once per block like every other control. They
             // are squared inside the stage, so the control's travel is gentle at the
             // bottom (a little dust is a little dust) and the top end is where the
             // damage actually sounds like damage.
-            stage->dustAmount = vinylDustParam != nullptr ? vinylDustParam->load() : 0.0f;
-            stage->scratchAmount = vinylScratchParam != nullptr ? vinylScratchParam->load() : 0.0f;
-            stage->warpAmount = vinylWarpParam != nullptr ? vinylWarpParam->load() : 0.0f;
-            stage->electricalAmount = vinylElectricalParam != nullptr ? vinylElectricalParam->load() : 0.0f;
+            stage->dustAmount = values.dust;
+            stage->scratchAmount = values.scratch;
+            stage->warpAmount = values.warp;
+            stage->electricalAmount = values.electrical;
 
             // CLICKS rides the same platter-locked rate as the scratch and the
             // warp, because the periodic half of it IS a once-per-revolution
             // event: a pressing fault crossed by the stylus every turn.
-            stage->clickAmount = vinylClicksParam != nullptr ? vinylClicksParam->load() : 0.0f;
-            stage->clickIncrement = revolutionHz / state.engineSampleRate;
+            stage->clickAmount = values.clicks;
+            stage->clickIncrement = revolutionHz / rate;
 
             // The split the GENERATION and CARTRIDGE tilts both act around: a
             // real playback-band boundary at 1.2 kHz, converted the same way
             // every other coefficient here is. One coefficient, two users, so
             // the two controls cannot disagree about where the boundary is.
-            stage->cartridgeCoefficient = onePoleCoefficientHz (1200.0f, state.engineSampleRate);
+            stage->cartridgeCoefficient = onePoleCoefficientHz (1200.0f, rate);
         }
 
         // ------------------------------------------------------------------
@@ -1141,87 +1153,49 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         //  selectors. They are read once per block here, and the stage applies
         //  them per sample, exactly like the type voices above.
         // ------------------------------------------------------------------
-        const auto generationIndex = vinylGenerationParam != nullptr
-            ? juce::jlimit (0, 2, static_cast<int> (vinylGenerationParam->load())) : 0;
-        const auto turntableIndex = vinylTurntableParam != nullptr
-            ? juce::jlimit (0, 2, static_cast<int> (vinylTurntableParam->load())) : 0;
-        const auto cartridgeIndex = vinylCartridgeParam != nullptr
-            ? juce::jlimit (0, 2, static_cast<int> (vinylCartridgeParam->load())) : 0;
+        const auto generationIndex = values.generation;
+        const auto turntableIndex = values.turntable;
+        const auto cartridgeIndex = values.cartridge;
 
-        // GENERATION: how much top end the cut and the pressing took, how much
-        // bottom was left, and how much noise the process added. The three are
-        // ordered from the reference cut to the copy of a copy.
         struct GenerationVoice { float topLoss; float bottomLift; float noise; };
         static constexpr GenerationVoice generationVoices[3]
         {
-            // Laquer: the reference cut. Almost no loss, no extra noise.
             { 0.94f, 1.02f, 1.00f },
-            // Direct: cut straight to metal. The most open top and the
-            // quietest surface of the three - cleaner than the lacquer itself,
-            // because one whole generation is missing.
             { 1.03f, 1.00f, 0.90f },
-            // Printed: the pressing you actually buy. Every generation's loss,
-            // a noticeably darker top, a fuller bottom and a noisier surface.
             { 0.80f, 1.08f, 1.35f },
         };
-
-        // TURNTABLE: how much the drive wanders and how steadily it holds. A
-        // belt is smooth but elastic, a direct drive is locked solid, an idler
-        // couples the motor's own rumble into the platter.
         struct TurntableVoice { float wowScale; float stability; };
         static constexpr TurntableVoice turntableVoices[3]
         {
-            { 1.10f, 1.15f },   // Belt: a little more wander, less steady
-            { 0.55f, 0.70f },   // Direct: locked, the steadiest of the three
-            { 1.35f, 1.55f },   // Idler: the least stable, coupling the drive
+            { 1.10f, 1.15f }, { 0.55f, 0.70f }, { 1.35f, 1.55f },
         };
-
-        // CARTRIDGE: a top/bottom gain pair plus its own noise multipliers. The
-        // moving coil is the bright, detailed one and carries the most hiss
-        // because of its lower output; the DJ cart is the hot, heavier one with
-        // the most surface noise.
         struct CartridgeVoice { float top; float bottom; float noise; float hiss; };
         static constexpr CartridgeVoice cartridgeVoices[3]
         {
-            { 0.94f, 1.04f, 1.00f, 1.00f },   // MM: soft top, broad bottom
-            { 1.12f, 0.96f, 1.05f, 1.30f },   // MC: bright, tight, more hiss
-            { 1.05f, 1.12f, 1.30f, 1.10f },   // DJ: hot and heavy, more surface
+            { 0.94f, 1.04f, 1.00f, 1.00f },
+            { 1.12f, 0.96f, 1.05f, 1.30f },
+            { 1.05f, 1.12f, 1.30f, 1.10f },
         };
 
         const auto& generation = generationVoices[generationIndex];
         const auto& turntable = turntableVoices[turntableIndex];
         const auto& cartridge = cartridgeVoices[cartridgeIndex];
-
-        for (auto* stage : { &vinylL, &vinylR })
+        for (auto* stage : vinylStages)
         {
             stage->generationTopLoss = generation.topLoss;
             stage->generationBottomLift = generation.bottomLift;
             stage->generationNoiseScale = generation.noise;
-
-            // The turntable scales the stage's own wander depth, so the same
-            // VINYL SPEED setting wanders differently on each deck - which is
-            // exactly what the control is for.
             stage->turntableWowScale = turntable.wowScale;
             stage->turntableStability = turntable.stability;
-
             stage->cartridgeTopGain = cartridge.top;
             stage->cartridgeBottomGain = cartridge.bottom;
             stage->cartridgeNoiseGain = cartridge.noise * generation.noise;
             stage->cartridgeHissGain = cartridge.hiss * generation.noise;
-
-            // The turntable scales the wander the VINYL SPEED switch set, so the
-            // deck's stability is what decides how much of it you actually hear.
-            // Applied here rather than at the speed block because the voice is
-            // only known once the selector has been read.
             stage->speedModulation *= turntable.stability;
-            // And the WANDER RATE separately: a belt-driven platter does not
-            // merely wander further, it wanders SLOWER, because the elastic belt
-            // filters the motor's own speed variations. An idler is the opposite
-            // - the wheel couples them through. Scaling the increment as well as
-            // the depth is what makes the three decks three decks rather than
-            // three amounts of the same wobble.
             stage->vinylWowIncrement *= turntable.wowScale;
         }
+        };
+        configureVinyl (vinylL, vinylR, state.engineSampleRate, setup);
     }
 
     // The stage coefficients. Every frequency is converted with
@@ -1247,61 +1221,46 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // -------------------------------------------------------------------------
     //  The two equalisers.
     //
-    //  The split coefficients are rebuilt here per block rather than only in
-    //  prepareToPlay, because the engine's rate changes with the oversampling
-    //  switch WITHOUT prepareToPlay running again - so an EQ prepared only once
-    //  would have its 200 Hz and 4 kHz corners at the wrong frequencies the
-    //  moment 4x was selected. One std::exp each per block is nothing.
+    //  The split coefficients are rebuilt once per block, because the engine rate
+    //  can change with oversampling without prepareToPlay running again.
     //
     //  The band gains come from the parameters, converted from dB to linear,
     //  and are fed to the smoothies so a drag glides. 0 dB converts to exactly
     //  1.0, which is what keeps a neutral EQ bit-for-bit transparent.
     // -------------------------------------------------------------------------
-    inputEq.prepare (state.engineSampleRate);
-    outputEq.prepare (state.engineSampleRate);
-
-    // The two corners, orders and Q values, read once per block.
-    //
-    // The ORDER is a choice parameter, so its raw value is the INDEX into the
-    // dB/octave list (0 = 6, 5 = 48), and the conversion to a slope happens in
-    // ONE place here rather than in the filter - the filter wants a slope, the
-    // panel wants a name, and this is the join between them.
-    const auto eqOrderSlope = [] (std::atomic<float>* parameter) -> float
+    struct EqSetupParameters
     {
-        // Six entries: 6, 12, 18, 24, 36, 48. The list is not an arithmetic
-        // series because 6, 12, 18, 24 are the useful everyday slopes and 36 and
-        // 48 are the "get it out of the way" end - a straight 6..48 line would
-        // spend three of its six positions on 30, 36 and 42, which nobody asks
-        // for.
+        std::atomic<float>* hpFrequency;
+        std::atomic<float>* lpFrequency;
+        std::atomic<float>* order;
+        std::atomic<float>* q;
+        std::atomic<float>* hpEnabled;
+        std::atomic<float>* lpEnabled;
+    };
+    const auto configureEq = [] (ThreeBandEq& eq, float rate, const EqSetupParameters& params) -> float
+    {
+        eq.prepare (rate);
         static constexpr float slopes[6] { 6.0f, 12.0f, 18.0f, 24.0f, 36.0f, 48.0f };
-        const auto index = parameter != nullptr
-                               ? juce::jlimit (0, 5, static_cast<int> (parameter->load())) : 0;
-        return slopes[index];
+        const auto orderIndex = params.order != nullptr
+            ? juce::jlimit (0, 5, static_cast<int> (params.order->load())) : 0;
+        eq.prepareFilters (rate,
+                          params.hpFrequency != nullptr ? params.hpFrequency->load() : 20.0f,
+                          params.lpFrequency != nullptr ? params.lpFrequency->load() : 20000.0f,
+                          slopes[orderIndex],
+                          params.q != nullptr ? params.q->load() : 0.7f);
+        if (params.hpEnabled != nullptr && params.hpEnabled->load() < 0.5f)
+            eq.hpActive = false;
+        if (params.lpEnabled != nullptr && params.lpEnabled->load() < 0.5f)
+            eq.lpActive = false;
+        return eq.midBandCoefficient (rate);
     };
 
-    inputEq.prepareFilters (state.engineSampleRate,
-                            inputEqHpFreqParam != nullptr ? inputEqHpFreqParam->load() : 20.0f,
-                            inputEqLpFreqParam != nullptr ? inputEqLpFreqParam->load() : 20000.0f,
-                            eqOrderSlope (inputEqOrderParam),
-                            inputEqQParam != nullptr ? inputEqQParam->load() : 0.7f);
-    // An explicit OFF on the switch wins over the corner's own travel-bypass.
-    if (inputEqHpOnParam != nullptr && inputEqHpOnParam->load() < 0.5f)
-        inputEq.hpActive = false;
-    if (inputEqLpOnParam != nullptr && inputEqLpOnParam->load() < 0.5f)
-        inputEq.lpActive = false;
-
-    outputEq.prepareFilters (state.engineSampleRate,
-                             outputEqHpFreqParam != nullptr ? outputEqHpFreqParam->load() : 20.0f,
-                             outputEqLpFreqParam != nullptr ? outputEqLpFreqParam->load() : 20000.0f,
-                             eqOrderSlope (outputEqOrderParam),
-                             outputEqQParam != nullptr ? outputEqQParam->load() : 0.7f);
-    if (outputEqHpOnParam != nullptr && outputEqHpOnParam->load() < 0.5f)
-        outputEq.hpActive = false;
-    if (outputEqLpOnParam != nullptr && outputEqLpOnParam->load() < 0.5f)
-        outputEq.lpActive = false;
-
-    state.inputEqMidCoefficient = inputEq.midBandCoefficient (state.engineSampleRate);
-    state.outputEqMidCoefficient = outputEq.midBandCoefficient (state.engineSampleRate);
+    state.inputEqMidCoefficient = configureEq (inputEq, state.engineSampleRate,
+        { inputEqHpFreqParam, inputEqLpFreqParam, inputEqOrderParam, inputEqQParam,
+          inputEqHpOnParam, inputEqLpOnParam });
+    state.outputEqMidCoefficient = configureEq (outputEq, state.engineSampleRate,
+        { outputEqHpFreqParam, outputEqLpFreqParam, outputEqOrderParam, outputEqQParam,
+          outputEqHpOnParam, outputEqLpOnParam });
 
     inputEqLowSmoothed.setTargetValue (
         juce::Decibels::decibelsToGain (inputEqLowParam != nullptr ? inputEqLowParam->load() : 0.0f));
@@ -2216,17 +2175,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 //==============================================================================
 //  The machine, one sample at a time.
 //
-//  This was a 1,669-line lambda inside processTapeEngine(), capturing 68 of that
-//  function's own locals by reference - which is why that function could not be read:
-//  nothing distinguished one block's setup from one sample's work but a capture list
-//  that meant all of it. It takes the block's state as an argument now, TapeBlockState
-//  (declared in PluginProcessor.h), and the `state` in its body is that argument.
-//
-//  The body is the lambda's, moved: every statement is the same statement, in the same
-//  order, and the only text that changed is the names that now reach through `state`.
-//  The block-rate reading the body does - the per-sample controls it reads once per
-//  frame from the shared sample clock - is unchanged: those are members, not state.
-//==============================================================================
+    //  This was the per-sample machine body inside processTapeEngine(). It takes
+    //  explicit block state, and all sample-clock reads remain in their original order.
+    //==============================================================================
 void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) noexcept
 {
     // -----------------------------------------------------------------
@@ -2240,7 +2191,7 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     //  read from the same per-sample value everywhere else in the frame.
     //
     // INPUT owns the shared sample-clock advance; the following reads advance
-    // their individual ramps lazily for this same frame.
+    //  their individual ramps lazily for this same frame.
     const float inputGain = inputGainSmoothed.getNextValue();
     const float outputGain = outputGainSmoothed.getCurrentValue();
     const float currentWidth = widthSmoothed.getCurrentValue();
