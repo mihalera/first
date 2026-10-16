@@ -2346,6 +2346,8 @@ void FirstAudioProcessorEditor::placeDeckSwitch (const ControlGeometry& geometry
         box.setBounds (cell.getX() + 12, bandY,
                        cell.getWidth() - 24, bandHeight);
     };
+
+    placeDeckSwitch (label, box, column, columnsWide, caption);
 }
 
 //==============================================================================

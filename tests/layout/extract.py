@@ -92,6 +92,7 @@ KNOB_METRICS = REPO / "Source" / "GUI" / "KnobMetrics.h"
 # The editor's constructor, declared as a list of calls - and the header block
 # that declares the phases, under this title, in the order they must be called.
 CONSTRUCTOR = "FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)"
+DECK_SWITCH = "void FirstAudioProcessorEditor::placeDeckSwitch ("
 PHASE_TITLE = "//  The constructor's phases, in the order it calls them."
 PHASE_DECLARATION = re.compile(r"^\s*void (\w+)\s*\(\s*\);\s*$")
 PHASE_CALL = re.compile(r"^\s*(\w+)\s*\(\s*\);\s*$", re.M)
@@ -243,6 +244,17 @@ def check_constructor_phases(source: str, header: str) -> list[str]:
     return declarations
 
 
+def check_deck_switch(source: str) -> None:
+    """Ensure the member-band layout actually executes its bounds-setting lambda."""
+    body = body_of(source, DECK_SWITCH)
+    call = re.compile(
+        r"^\s*placeDeckSwitch\s*\(label,\s*box,\s*column,\s*columnsWide,\s*caption\);\s*$",
+        re.M)
+    if len(call.findall(body)) != 1:
+        raise SystemExit("extract.py: placeDeckSwitch defines the member bounds but does not "
+                         "invoke its layout helper exactly once.")
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("output_dir", nargs="?", default="extracted_layout",
@@ -268,6 +280,8 @@ def main() -> int:
     phases = check_constructor_phases(source, HEADER.read_text())
     print(f"constructor phases: {len(phases)} declared, defined once and called once, "
           f"in the declared order")
+    check_deck_switch(source)
+    print("member switch layout helper: invoked once")
 
     divider = constant(tabs, r"controlsDividerOffset = (\d+);", "controlsDividerOffset")
     row_gap = constant(source, r"constexpr int knobRowGap = (\d+);", "knobRowGap")
