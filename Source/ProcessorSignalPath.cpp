@@ -1982,16 +1982,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
     state.activeChannels = activeInputChannels;
 
-    // Scratch storage for the IR stage's wet capture. It is reserved in
-    // prepareToPlay; do not resize a thread_local AudioBuffer in processBlock,
-    // because a larger host block would allocate on the audio thread.
-    //
-    // The stage processes the WET signal only: in DELTA listen the difference
-    // is taken against the dry reference further down, so an IR blended in at
-    // MIX 100 still shows as "what the machine adds" rather than as the room
-    // the dry signal never passed through.
-    auto& scratch = postFxScratch;
-
     // Working pointers into the block's own storage. In the plain path these are
     // the host buffer's channels; in the oversampled path they are the oversampler's
     // internal buffer. The engine is written against these pointers only.
