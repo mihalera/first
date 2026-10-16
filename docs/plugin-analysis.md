@@ -170,6 +170,35 @@ required only transitively (1):
   chowdsp_simd   (pulled in by chowdsp_dsp_utils' own headers)
 ```
 
+> **Two corrections, applied after this count was taken.** `pocketfft` is
+> INCLUDED now: `Source/DSP/SpectrumAnalyser.h` is its caller and
+> `tests/spectrum/run.sh` measures that stage with the library and without it, so
+> the "never included" list is fifteen rather than sixteen. And
+> `signalsmith-stretch` was never included at all - the probe that would decide
+> `J37_HAS_SIGNALSMITH` did not exist, so the macro read 0 in every build and
+> nothing could have included it. `signalsmith-stretch` and `SoundTouch` are two
+> of the names below that "look like the pitch engines and are probed for": they
+> are probed and then read by no code, which is the point that paragraph makes,
+> arrived at from the other side. Re-run the count rather than editing these
+> numbers.
+>
+> **A third correction, about the two libraries on neither list because they are
+> not repositories.** `cmake/J37VendorLibraries.cmake` discovered Intel IPP and
+> Apple vDSP, linked them, and defined `J37_HAVE_IPP` and `J37_HAVE_VDSP` for the
+> plugin - two macros that no file under `Source/` has ever read. The file's
+> prose said the DSP took "its vDSP path" under one of them and the portable path
+> otherwise; neither path existed, and the IPP install on the CI runners
+> accelerated nothing at all. The switch that library's own FFT engine is gated
+> on is JUCE's, and it is not the flag the internet names: JUCE 9.0.4 has no
+> `JUCE_DSP_USE_INTEL_IPP` anywhere in its tree, and `juce_dsp.cpp` /
+> `juce_FFT.cpp` compile their Intel IPP engine under the IPP **linking-model**
+> macros instead. Both halves are fixed and both are now checked:
+> `tests/definitions/check_definitions.py` compares every macro the build hands the
+> compiler against the preprocessor branches that read them, and asserts the IPP
+> switch is the one JUCE gates on and is still thrown. What that changes about
+> the link line - and what it does not - is item 1 of
+> [plugin-improvement-plan.md](plugin-improvement-plan.md).
+
 That is the link line. The dependency *menu* is larger still:
 `cmake/J37Dependencies.cmake` declares **42 CPM packages** over 1,222 lines -
 soundtouch, chowdsp_utils, melatonin_inspector, melatonin_blur,

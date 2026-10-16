@@ -540,6 +540,16 @@ void FirstAudioProcessor::publishBlockTelemetry (const BlockContext& context,
         frame.harmonicCharacter = driveInto;
         frame.evenHarmonicRatio = evenHarmonicRatio.load (std::memory_order_relaxed);
         frame.oddHarmonicRatio = oddHarmonicRatio.load (std::memory_order_relaxed);
+
+        // The spectrum, read straight off the analyser. It is deliberately the ONE
+        // field in this frame that has no mirror atomic: this function runs on the
+        // audio thread at the end of the block, the frame is the channel the
+        // editor reads, and twenty-four per-band atomics would be state nothing
+        // consults. A build without the queue therefore shows a flat curve rather
+        // than a stale one - getTelemetry()'s atomic fallback leaves these bands at
+        // the floor, which is the honest reading of "this build carries no
+        // frames" rather than a curve frozen at whatever the last block said.
+        frame.spectrumBandsDb = spectrumAnalyser.bands();
         frame.subfundTrackedHz = subfundTrackedHz.load (std::memory_order_relaxed);
         frame.subfundConfidence = subfundConfidence.load (std::memory_order_relaxed);
         frame.antiPhaseAmount = antiPhaseCorrection;
@@ -2664,7 +2674,19 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         // identically and doubling the analyser would cost twice as much for the same
         // reading.
         if (channel == 0)
+        {
             harmonicAnalyser.analyse (preDrive, voicedCore, state.engineSampleRate);
+
+            // The spectrum, fed the same sample the harmonic balance is measured
+            // on: the shaper's own output, which is what makes the curve a
+            // measurement of what the machine produced rather than a copy of what
+            // went into it. One sample per call and the transform every 512 of
+            // them, so the per-sample cost is a call and a store and the work is
+            // amortised - the same shape the analyser beside it already has, and
+            // the reason it is measured on channel 0 alone (the two channels are
+            // driven identically; see the comment above).
+            spectrumAnalyser.process (&voicedCore, 1);
+        }
 
         // Tape is a low-pass medium: the faster the tape and the brighter the
         // tone setting, the more top end survives. The undertones are NOT part of

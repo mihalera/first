@@ -222,6 +222,12 @@ INCLUDES=(
     -I "${REPO}/ThirdParty/soundtouch/include"
     -I "${REPO}/ThirdParty/pocketfft"
 )
+# pocketfft was already in this list because cmake/J37Dependencies.cmake declares it
+# header-only and CMakeLists.txt therefore puts its directory on the plugin's include
+# path; what is new is that a header under Source/ now READS that fact. The macro it
+# decides (J37_HAS_POCKETFFT) is 1 here and 0 in a checkout with ThirdParty/ pruned,
+# which is the pair tests/spectrum compiles explicitly - so this pass is the one that
+# compiles the library-present shape of the stage in the plugin's own context.
 
 # juce_audio_basics pulls juce_core in itself; the module defines are what a
 # module header checks before compiling its own sources.

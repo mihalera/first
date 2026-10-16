@@ -110,12 +110,23 @@ Fetched only under `-DJ37_BUILD_TESTS=ON`, which no shipped build sets, and
 ### Vendor vector libraries
 
 Discovered on the build machine rather than fetched - see
-`cmake/J37VendorLibraries.cmake`. Both are optional accelerators behind a
-capability probe, and the portable path is used when neither is present.
+`cmake/J37VendorLibraries.cmake`. Both are optional accelerators, and the
+portable path is used when neither is present.
+
+**IPP is not merely probed, and that is the one licence fact here that depends on
+whose machine built the binary.** The build throws the IPP linking-model macro
+JUCE's own FFT engine is gated on, so on a machine with the single-threaded
+static IPP layout `juce::dsp::FFT` - and with it the Convolution behind the IR
+cabinet - is Intel's rather than JUCE's, and the binary carries Intel's IPP
+object code. Whether that is redistributable is a question for Intel's own terms
+(and Intel's FAQ on the Simplified Software License), exactly as the copyleft
+components below are for theirs; a build on a machine without IPP, and every
+macOS build, is unaffected. On Apple the vDSP that runs is JUCE's, from
+Accelerate, under the Xcode licence - this repository throws no switch for it.
 
 | Component | Platform | Licence |
 | --- | --- | --- |
-| **Intel Integrated Performance Primitives (IPP)** | Windows / Linux | Commercial, free of charge for use with Intel silicon under the Intel Simplified Software License; redistributed by the user's own installation, not vendored here |
+| **Intel Integrated Performance Primitives (IPP)** | Windows / Linux | Commercial, free of charge for use with Intel silicon under the Intel Simplified Software License; installed by the user, never vendored here - and **linked into a binary built where it is present** |
 | **Apple Accelerate / vDSP** | macOS | Apple SDK, covered by the Xcode licence |
 
 ## What the copyleft components mean for a binary

@@ -18,7 +18,11 @@
 // the libraries on their include path: a header that branches on a macro has to be
 // able to find the file that decides it. What it defines is J37_HAS_CHOWDSP_MATH,
 // J37_HAS_CHOWDSP_DSP, J37_HAS_RTNEURAL, J37_HAS_XSIMD, J37_HAS_RWQ, J37_HAS_FARBOT,
-// J37_HAS_SIGNALSMITH and J37_HAS_SOUNDTOUCH.
+// J37_HAS_SIGNALSMITH, J37_HAS_SOUNDTOUCH and J37_HAS_POCKETFFT. The last of those is
+// read by Source/DSP/SpectrumAnalyser.h - the one stage that needs a library this
+// repository does not vendor JUCE-side - and it is included below with the rest of
+// the engine's stages, because its bands travel in the telemetry frame this file
+// declares.
 //
 // It is included at exactly this point because Source/DSP/J37Math.h below reads the
 // first of them and Source/DSP/NeuralStage.h reads the third.
@@ -253,6 +257,14 @@ inline juce::StringArray vinylTypeNameList()
 // The harmonic analyser. Moved out of this file, prose and all: Source/DSP/ is where
 // its code and the note explaining it now live together.
 #include "DSP/HarmonicAnalyser.h"
+
+// The spectrum analyser, which reads the same shaper output the harmonic balance
+// above is measured on and reports it as a curve instead of two ratios. It pulls
+// pocketfft in when the build has it (see the probe in Source/DSP/
+// OptionalLibraries.h), which is one more header in every translation unit that
+// includes this one - measured at about 0.6 s of -fsyntax-only on the machine this
+// was written on, against the 2.0 s the three JUCE modules above already cost.
+#include "DSP/SpectrumAnalyser.h"
 
 //==============================================================================
 // The pitch tracker: the note the autotune stage corrects towards. Moved out of
@@ -831,6 +843,17 @@ public:
         float harmonicCharacter = 0.0f;
         float evenHarmonicRatio = 0.0f;
         float oddHarmonicRatio = 0.0f;
+
+        /** The shaper's own output as a CURVE rather than a ratio: one entry per
+            band, in dBFS, over the ladder SpectrumAnalyser::edgesHz describes.
+
+            It is an array in the frame rather than one field per band for the
+            reason the frame exists at all: the twenty-four readings belong to the
+            same block of audio, and twenty-four separate atomics would be
+            twenty-four chances to read the curve half updated. The floor value
+            means "nothing there", so a build that carries no frames (no
+            readerwriterqueue) shows a flat curve rather than no curve. */
+        std::array<float, SpectrumAnalyser::bandCount> spectrumBandsDb {};
         float subfundTrackedHz = 0.0f;
         float subfundConfidence = 0.0f;
         float antiPhaseAmount = 0.0f;
@@ -1352,6 +1375,13 @@ private:
     // odd. This is the observable signature of the analogue character and drives the
     // HARMONICS display.
     HarmonicAnalyser harmonicAnalyser;
+
+    // Measures the same shaper output as a log-spaced spectrum, for the curve the
+    // SHAPERS page draws. Prepared from the ENGINE's rate (see
+    // updateNeuralSampleRates), so its band ladder follows the oversampling
+    // switch, and fed one sample at a time from the channel-0 tap the harmonic
+    // analyser is fed from - the transform only runs once per 512 frames.
+    SpectrumAnalyser spectrumAnalyser;
 
     // Output safety limiter, the stage that keeps the signal below the soft clipper so it
     // almost never has to act. `preLimiterDetector` is a fast peak follower and

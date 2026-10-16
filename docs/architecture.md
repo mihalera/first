@@ -67,6 +67,7 @@ The order, in the code's own terms, is
 | transport (stop / play / start, the power cut) | `Source/DSP/TransportRig.h` |
 | repitch (what the platter's speed does to the audio) | `Source/DSP/RepitchStage.h` |
 | harmonic readout for the panel | `Source/DSP/HarmonicAnalyser.h` |
+| spectrum analyser, and the only caller pocketfft has | `Source/DSP/SpectrumAnalyser.h` |
 | the per-sample scalar helpers | `Source/DSP/HotPathMath.h` |
 | which optional libraries this build has | `Source/DSP/OptionalLibraries.h` |
 | the scalar math, routed to chowdsp or `std::` | `Source/DSP/J37Math.h` |
@@ -131,7 +132,7 @@ gap: those files are compiled by the platform builds and checked by nothing else
 ```
 CMakeLists.txt              the target, its sources, its definitions, its formats
 cmake/J37Dependencies.cmake everything fetched, in the order it must be configured
-cmake/J37VendorLibraries.cmake  IPP / Accelerate discovery and wiring
+cmake/J37VendorLibraries.cmake  IPP / Accelerate discovery, and the switch that makes JUCE's own FFT use IPP
 cmake/J37Platform.cmake     the Apple, Windows and Android specifics
 cmake/J37ThirdPartyWarnings.cmake  warning suppression for vendored code
 cmake/J37Tests.cmake        Catch2 + nanobench, off by default

@@ -126,6 +126,24 @@ jobs:
       - name: Run the neural rate harness
         run: bash tests/neural/run.sh
 
+      # The spectrum analyser. It is a MEASUREMENT - it reads the signal and writes
+      # nothing to it, so a wrong reading is a wrong PICTURE and never a wrong sound,
+      # and no stage depends on it. That is precisely why it is pinned rather than
+      # eyeballed: a curve 12 dB high, or one that draws 6 kHz where 2 kHz belongs,
+      # looks entirely plausible on a panel, and it is the user who already trusted it
+      # who notices. Stated on rendered signal: a full-scale tone on a bin centre reads
+      # 0 dBFS, the reading is linear, a tone between bins reads low only as far as a
+      # Hann window's own 1.42 dB scalloping allows, a tone an octave up lands in a
+      # higher band, and silence reads the floor.
+      #
+      # This ALSO compiles the same header a second time with ThirdParty/pocketfft off
+      # the include path, which is the only place in this suite where the
+      # ABSENT-library branch of a stage is built at all - and it is the pass that
+      # gives pocketfft, on the link line since long before anything included it, its
+      # first caller.
+      - name: Run the spectrum harness
+        run: bash tests/spectrum/run.sh
+
       # The factory presets cannot fail at runtime - a name list that is a row
       # short, or a parameter with no column in the table, both just quietly
       # load the wrong sound - so they are checked against the source instead.
@@ -191,6 +209,18 @@ jobs:
       # does not declare is a no-op on both sides of the mistake.
       - name: Check the shader sources
         run: python3 tests/shaders/check_shaders.py
+
+      # The macros the build hands the compiler, against the files that read them.
+      # cmake/J37VendorLibraries.cmake discovered Intel IPP, linked it, and then
+      # defined J37_HAVE_IPP and J37_HAVE_VDSP for a plugin whose code tested
+      # neither - so "the DSP takes its vDSP path" was a statement about the build
+      # that nothing checked, and the IPP install on this runner accelerated
+      # nothing at all. The switch that library's own FFT engine is gated on is
+      # JUCE's, and it is not the flag named online (JUCE 9.0.4 has no
+      # JUCE_DSP_USE_INTEL_IPP anywhere). This compares both lists and asserts
+      # both directions of that one.
+      - name: Check the compile definitions
+        run: python3 tests/definitions/check_definitions.py
 
       # The stages that have moved into Source/DSP/ are compiled by the harnesses
       # against their own small stand-in for juce::, which is what keeps a harness
@@ -356,6 +386,17 @@ jobs:
           #
           # The wheels are unpinned on purpose: pip resolves the current release
           # and there is no version to rot.
+          #
+          # The header this searches for is the aggregator - its whole body is
+          # #include <ipp/ipp.h> - and the real ones, including the two JUCE's
+          # own IPP FFT engine includes, sit one level down in
+          # <prefix>/include/ipp. cmake/J37VendorLibraries.cmake looks there, and
+          # for the single-threaded static layout this runner installs it also
+          # throws the linking-model macro JUCE reads, so this job is the one
+          # that compiles juce::dsp::FFT against Intel's library - which is why
+          # the build's link line now has to carry ippvm with it (it was missing
+          # before anything referenced IPP, and without it the link fails on
+          # `y8_ippsSin_32f_A24').
           python -m pip install --upgrade pip
           python -m pip install ipp-static
           prefix=$(python - <<'PYIPP'
@@ -394,6 +435,7 @@ jobs:
           J37_SANITIZE=address,undefined bash tests/transport/run.sh
           J37_SANITIZE=address,undefined bash tests/pitch/run.sh
           J37_SANITIZE=address,undefined bash tests/neural/run.sh
+          J37_SANITIZE=address,undefined bash tests/spectrum/run.sh
 
       - name: Configure CMake (Debug)
         run: |
@@ -973,6 +1015,17 @@ jobs:
           #
           # The wheels are unpinned on purpose: pip resolves the current release
           # and there is no version to rot.
+          #
+          # The header this searches for is the aggregator - its whole body is
+          # #include <ipp/ipp.h> - and the real ones, including the two JUCE's
+          # own IPP FFT engine includes, sit one level down in
+          # <prefix>/include/ipp. cmake/J37VendorLibraries.cmake looks there, and
+          # for the single-threaded static layout this runner installs it also
+          # throws the linking-model macro JUCE reads, so this job is the one
+          # that compiles juce::dsp::FFT against Intel's library - which is why
+          # the build's link line now has to carry ippvm with it (it was missing
+          # before anything referenced IPP, and without it the link fails on
+          # `y8_ippsSin_32f_A24').
           python -m pip install --upgrade pip
           python -m pip install ipp-static
           prefix=$(python - <<'PYIPP'
@@ -1135,7 +1188,8 @@ jobs:
           # Intel's static IPP from PyPI, the prefix located by finding ipp.h
           # and exported as IPPROOT. In this cross-build the probe is harmless:
           # the wheel libraries are x86 archives, an ARM link line names no IPP
-          # target, and J37_HAVE_IPP therefore stays undefined.
+          # target, and J37_HAVE_IPP / J37_IPP_LINKING_MODEL therefore stay
+          # unset.
           python -m pip install --upgrade pip
           python -m pip install ipp-static
           prefix=$(python - <<'PYIPP'

@@ -562,6 +562,15 @@ private:
     void placeMeters (const EditorLayout& layout);
     void verifyPanelHasNoOverlaps() const;
 
+    /** The rectangle the spectrum curve is drawn in: the SHAPERS page's member band,
+        fourth column, in the geometry paint() draws that band with.
+
+        ONE definition, called by paint() to draw into it and by the timer to
+        INVALIDATE it. Two copies of this arithmetic is exactly how the status pill
+        kept the old 92 px cell and overhung its own band by 72 px - the pill was
+        drawn from one copy of the grid and invalidated from another. */
+    juce::Rectangle<int> shapersSpectrumBounds() const;
+
     // -------------------------------------------------------------------------
     //  The constructor's phases, in the order it calls them.
     //
@@ -1078,6 +1087,16 @@ private:
     // paint() draws the neural picker's card behind the SHAPERS page's member
     // band's first column - the page whose NEURAL knob the picker belongs to.
     bool activeTabIsShapers = false;
+
+    // The shaper's spectrum, which paint() draws in that band's FOURTH column - the
+    // one cell on the page nothing else claims. Filled by the timer from the frame
+    // the harmonic readout beside it is read from, so the curve and the ratio
+    // describe the same block of audio.
+    //
+    // Twenty-four floats in one array rather than a member per band, and no
+    // separate atomic per band: the frame is already the channel the audio thread
+    // publishes through, and a curve is read as a whole or not at all.
+    std::array<float, SpectrumAnalyser::bandCount> spectrumBandsDb {};
 
     // -----------------------------------------------------------------------
     //  The front panel's theme.

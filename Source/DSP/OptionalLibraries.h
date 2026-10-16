@@ -120,10 +120,37 @@
 //                               blocking on it.
 //
 //    signalsmith-stretch        Signalsmith Audio - a real-time phase-vocoder
-//                               time stretcher. Used by the transport so a speed
-//                               change is a genuine TIME change (the tape slows
-//                               down and the music slows with it) rather than a
-//                               resample that also drops the pitch of everything.
+//                               time stretcher: it changes how long material
+//                               takes while keeping its PITCH.
+//
+//                               This entry used to claim the transport used it
+//                               "so a speed change is a genuine TIME change (the
+//                               tape slows down and the music slows with it)
+//                               rather than a resample that also drops the pitch
+//                               of everything". That claim was false twice over:
+//                               no file under Source/ included the header, and
+//                               J37_HAS_SIGNALSMITH was defined to 0 and never
+//                               probed - so the macro reported "absent" in a
+//                               build that had the library on its include path,
+//                               and reported it to nobody.
+//
+//                               It was also backwards about the sound. The
+//                               transport's speed change is
+//                               Source/DSP/RepitchStage.h, which is deliberately
+//                               a VARISPEED: a tape read at half speed comes out
+//                               an octave down, and that falling pitch IS the
+//                               effect the transport is asked for. A stretch that
+//                               preserved the pitch would delete it.
+//
+//                               The one stage that wants this library is the
+//                               CORRECTOR. Moving a note onto the grid without
+//                               changing how long it lasts is a pitch shift at
+//                               constant duration, which is exactly what this is,
+//                               and AUTOTUNE does that today with the hand-written
+//                               granular shifter in
+//                               Source/DSP/RealtimePitchShifter.h. Adopting it
+//                               there is a change to the sound and belongs to its
+//                               own piece of work, not to a probe.
 //
 //    SoundTouch                 Olli Parviainen's SoundTouch Audio Processing
 //                               Library - the WSOLA time-stretch and pitch-shift
@@ -134,6 +161,15 @@
 //                               LGPL-2.1, with the licence text distributed at
 //                               ThirdParty/soundtouch/COPYING.TXT and the
 //                               attribution in THIRD_PARTY_NOTICES.md.
+//
+//                               Like signalsmith-stretch above it is probed and
+//                               included here and READ BY NOTHING: it is the
+//                               second engine in this file whose presence the
+//                               build pays for and no stage calls. It is left in
+//                               place rather than removed, and the probe below is
+//                               left honest about what it finds - the same pair of
+//                               statements the analyser stage makes about
+//                               pocketfft by USING it.
 // ------------------------------------------------------------------------------
 #if ! defined (J37_DSP_HARNESS)
 
@@ -162,7 +198,23 @@
   #define J37_HAS_FARBOT 0
  #endif
 
-
+ // signalsmith-stretch: header-only, and its header includes its own
+ // signalsmith-linear sibling by relative path (see cmake/J37Dependencies.cmake,
+ // which fetches that sibling for exactly this reason), so ONE include directory
+ // is what the CMake target exposes. The probe only DECIDES the macro - the
+ // header is included by whatever uses it, which is nothing today, and the
+ // corrected entry above says which stage that should be.
+ //
+ // It was missing until now. J37_HAS_SIGNALSMITH was written only in the harness
+ // branch at the bottom of this file (as 0), so no build could ever say it had
+ // the library whatever was on its include path - the macro's single caller is a
+ // comment. A probe that is never written is not a conservative default; it is a
+ // statement about the build that nobody checked.
+ #if __has_include (<signalsmith-stretch/signalsmith-stretch.h>)
+  #define J37_HAS_SIGNALSMITH 1
+ #else
+  #define J37_HAS_SIGNALSMITH 0
+ #endif
 
  // SoundTouch: its public headers sit flat in include/, and that one directory
  // is what the CMake target exposes, so the spelling is the bare
@@ -180,4 +232,32 @@
  #define J37_HAS_FARBOT 0
  #define J37_HAS_SIGNALSMITH 0
  #define J37_HAS_SOUNDTOUCH 0
+#endif
+
+// ------------------------------------------------------------------------------
+//  pocketfft (mreineck/pocketfft, vendored under ThirdParty/pocketfft as the one
+//  header pocketfft_hdronly.h).
+//
+//  Deliberately NOT behind the harness guard the utilities above sit behind, and
+//  deliberately does not include anything. Source/DSP/SpectrumAnalyser.h includes
+//  the header ITSELF when this macro is 1 - the way Source/DSP/NeuralStage.h
+//  includes RTNeural's loader itself - so a file that only decides a macro stays
+//  free of a four-thousand-line header no other stage wants.
+//
+//  Unguarded is what lets a harness opt IN by putting ThirdParty/pocketfft on its
+//  include path and opt OUT by leaving it off.
+//  tests/spectrum/run.sh compiles the same stage BOTH ways and asserts what each
+//  build reports, which is the only way the absent-library branch of a header is
+//  ever compiled at all.
+//
+//  pocketfft was on the link line long before anything included it. That is the
+//  state the review flagged (sixteen entries with no caller) and the reason the
+//  analyser stage exists: an FFT this build already carries is worth calling.
+// ------------------------------------------------------------------------------
+#if ! defined (J37_HAS_POCKETFFT)
+ #if __has_include (<pocketfft_hdronly.h>)
+  #define J37_HAS_POCKETFFT 1
+ #else
+  #define J37_HAS_POCKETFFT 0
+ #endif
 #endif

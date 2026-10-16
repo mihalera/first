@@ -15,12 +15,18 @@
 #include "GUI/PanelTabs.h"
 #include "GUI/PanelPaint.h"
 
+// The spectrum curve's arithmetic: where each band's level sits in a box. It is a
+// metric rather than a widget, so what this file takes from it is a list of points
+// - the colour and the decision to draw are here.
+#include "GUI/SpectrumMetrics.h"
+
 // Only the names this file's own text uses: a header member that is not
 // reachable from here should not look reachable.
 using j37panel::paletteFor;
 using j37panel::controlsDividerOffset;
 using j37panel::drawScrew;
 using j37panel::drawPanel;
+using j37panel::shrinkingFont;
 
 #include <utility>
 
@@ -364,6 +370,90 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
         g.fillRoundedRectangle (card, 4.0f);
         g.setColour (palette.border.withAlpha (0.55f));
         g.drawRoundedRectangle (card, 4.0f, 1.0f);
+
+        // ---- the shaper's spectrum ----------------------------------------
+        //  The band's FOURTH column, drawn the way the card above it is: same
+        //  strip, same cell width, no widget. It is painted rather than built as
+        //  a component because the geometry it needs already exists here and in
+        //  resized() (see shapersSpectrumBounds(), which the timer invalidates
+        //  from), and because a twenty-four-point curve has nothing a JUCE
+        //  component would give it: no value, no text, no keyboard focus.
+        //
+        //  What it reports is the SHAPER's own output, measured per sample and
+        //  transformed every 512 frames - the curve is the machine's harmonics, not
+        //  a copy of the input, which is what makes it worth a cell on the page the
+        //  shaper's controls live on.
+        //
+        //  The level axis is fixed (-72 dBFS at the bottom, full scale at the top)
+        //  rather than auto-ranged: a curve that rescales itself is a curve whose
+        //  height means nothing, and this one is read against the same DRIVE the
+        //  user is turning. See Source/GUI/SpectrumMetrics.h.
+        const auto spectrumCell = juce::Rectangle<float> (
+            static_cast<float> (gridNow.getX() + 3 * cellWidthNow),
+            static_cast<float> (memberBandY),
+            static_cast<float> (cellWidthNow),
+            static_cast<float> (memberBandHeightNow)).reduced (3.0f);
+
+        if (spectrumCell.getWidth() > 8.0f && spectrumCell.getHeight() > 8.0f)
+        {
+            g.setColour (palette.background.withAlpha (0.55f));
+            g.fillRoundedRectangle (spectrumCell, 3.0f);
+
+            // The cell's own caption, in the panel's caption voice. It is a LITERAL
+            // rather than an xlat() lookup, which is this panel's convention for a
+            // caption (see the deck's own "HARMONICS" and "SUBFUND TRACK"): the
+            // translated strings here are the tooltips and the value readouts, not
+            // the fixed names of things.
+            //
+            //  It says TAPE on purpose. The cell sits on the SHAPERS page beside the
+            //  neural and IR loaders, and the signal behind the curve is neither of
+            //  them - it is the magnetic stage's own output, the same sample the
+            //  HARMONICS readout on the deck is measured on. "SPECTRUM" alone, one
+            //  cell away from two file-fed stages, would read as theirs.
+            const auto captionHeight = 11.0f;
+            const auto captionArea = spectrumCell.withHeight (captionHeight);
+
+            g.setColour (palette.accent);
+            g.setFont (shrinkingFont ("TAPE SPECTRUM", captionHeight - 2.0f,
+                                      juce::Font::bold, captionArea.getWidth()));
+            g.drawText ("TAPE SPECTRUM", captionArea, juce::Justification::centredLeft, false);
+
+            // What is left of the cell below the caption is the curve's box, so the
+            // caption can never be drawn over the curve and the curve can never run
+            // under the caption - however tall the member band ends up being.
+            const auto curveArea = spectrumCell.withTrimmedTop (captionHeight);
+
+            const auto points = j37spectrum::curve (spectrumBandsDb,
+                                                    curveArea.getWidth(),
+                                                    curveArea.getHeight());
+
+            // y is measured DOWN from the top of the box and this one is drawn up
+            // from its bottom, which is the one place the two conventions meet -
+            // hence the subtraction in both coordinates below rather than a
+            // flipped transform the reader would have to hold in their head.
+            juce::Path curvePath;
+            curvePath.startNewSubPath (curveArea.getX() + points.front().x,
+                                       curveArea.getBottom() - points.front().y);
+
+            for (std::size_t i = 1; i < points.size(); ++i)
+                curvePath.lineTo (curveArea.getX() + points[i].x,
+                                  curveArea.getBottom() - points[i].y);
+
+            // The area under the line, filled: at this size a stroke alone reads as
+            // a scratch on the panel, and the shape of the energy is the point.
+            auto underCurve = curvePath;
+            underCurve.lineTo (curveArea.getRight(), curveArea.getBottom());
+            underCurve.lineTo (curveArea.getX(), curveArea.getBottom());
+            underCurve.closeSubPath();
+
+            g.setColour (palette.accent.withAlpha (0.35f));
+            g.fillPath (underCurve);
+            g.setColour (palette.accent);
+            g.strokePath (curvePath, juce::PathStrokeType (1.0f));
+
+            g.setColour (palette.border.withAlpha (0.55f));
+            g.drawRoundedRectangle (spectrumCell, 3.0f, 1.0f);
+        }
     }
 
     // A hairline rule under the header strip separates the title block from the

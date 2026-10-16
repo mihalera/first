@@ -190,6 +190,24 @@ every other curve in this plugin is hand-written from physics, a **neural model*
 *measurement* of a space; RTNeural and the convolver each run fast enough to sit inside
 the per-sample loop.
 
+The same page carries the machine's own **TAPE SPECTRUM**, which is the one readout
+there that is not about a file: it is the magnetic shaper's **output** drawn as a
+24-band curve, measured on the same sample the deck's HARMONICS readout is measured on,
+so the curve and the number describe one block of audio rather than two. The cells
+under the SHAPERS knobs already hold the two loaders; the spectrum takes the one cell
+nothing else claims, and it is drawn rather than built as a control because it has no
+value to set - it is a window on what the machine just did.
+
+Its level axis is **fixed** - full scale at the top, -72 dBFS at the bottom - rather
+than auto-ranged. A curve that rescales itself to whatever is playing always fills its
+box and therefore means nothing; this one is read against the same DRIVE the user is
+turning. The bands are log-spaced, so equal steps across the curve are equal frequency
+ratios, and the lowest two or three bands sit closer together than the transform's own
+resolution: a 21 ms window cannot separate two frequencies that close, so the bottom
+of the curve is indicative where the rest is exact. See
+[Source/DSP/SpectrumAnalyser.h](Source/DSP/SpectrumAnalyser.h) for the measurement and
+[Source/GUI/SpectrumMetrics.h](Source/GUI/SpectrumMetrics.h) for the drawing.
+
 - Both are **files**, not parameters: the model is loaded with **LOAD MODEL** and the
   capture with **LOAD IR**. The network is whatever the file describes (a Dense net, an
   LSTM, a GRU) and the IR is any WAV or AIFF capture of a cabinet or a room. Neither is

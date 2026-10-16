@@ -41,8 +41,8 @@ included by nothing.
    and take only the BSD modules (`chowdsp_math`, `chowdsp_simd`) plus the
    handful of helpers that would have to be replaced. Option three is a real
    amount of work; option one costs nothing but the terms of the product.
-2. **Delete the sixteen link-line entries nothing includes** - `dr_libs`,
-   `dywapitchtrack`, `fftconvolver`, `imgui`, `kissfft`, `PFFFT`, `pocketfft`,
+2. **Delete the fifteen link-line entries nothing includes** - `dr_libs`,
+   `dywapitchtrack`, `fftconvolver`, `imgui`, `kissfft`, `PFFFT`,
    `rack_dsp`, `sndfile`, `sokol_gfx`, `yasio`, `AudioFFT`, `audio_fft`,
    `dattorro_verb`, `pitch_detector`, `yin_pitch` - and the eight packages that
    are fetched but neither linked nor included (`aubio`, `iPlug2`, `ChowCentaur`,
@@ -50,6 +50,48 @@ included by nothing.
    `multiband-transient-shaper`). `libsndfile` and `rack_dsp` are on both lists;
    deleting `sndfile` removes the last LGPL question that has nothing to do with
    the audio.
+
+   **`pocketfft` has left this list since it was written, and by the other
+   route.** `Source/DSP/SpectrumAnalyser.h` includes it, so it now has a caller to
+   break before it can be deleted, and `tests/spectrum/run.sh` builds that stage
+   both with the library and without it. That is the shape this item argues for -
+   a linked library the code actually calls - reached by USING the library instead
+   of by deleting it from the link line, and it is the cheaper of the two whenever
+   the library is the right tool. The same audit found two entries whose prose
+   claimed a use that did not exist: `OptionalLibraries.h` said
+   `signalsmith-stretch` stretched time in the transport (it does not, and a tape
+   slowing down is supposed to drop the pitch), and `J37_HAS_SIGNALSMITH` was
+   never probed at all, so the macro read 0 in every build. Both libraries are
+   still linked and still read by no code; the corrected entries say which stage
+   should adopt `signalsmith-stretch` (the corrector, which shifts pitch at
+   constant duration) and leave the deletion decision where it was.
+
+   **The two vendor libraries have left the "linked and inert" pile, by the same
+   route.** `cmake/J37VendorLibraries.cmake` used to discover Intel IPP and Apple
+   vDSP, link them, and define `J37_HAVE_IPP` / `J37_HAVE_VDSP` for a plugin that
+   read neither. It now throws the IPP **linking-model** macro JUCE's own FFT
+   engine is compiled under - there is no `JUCE_DSP_USE_INTEL_IPP` in JUCE 9.0.4,
+   whatever the build guides say - and throws it only for the single-threaded
+   static layout whose whole link line was measured against Intel's own wheel.
+   That measurement also fixed two things the switch alone would not have
+   survived: the include directory JUCE's engine needs is `include/ipp` rather
+   than `include` (the wheels keep `ipp.h` alone at the top and the real headers
+   one level down), and the engine's FFT init links through `ippvm`, which was
+   not on the line. On a machine with that layout, `juce::dsp::FFT` - and so the
+   Convolution behind the IR cabinet - is Intel's rather than JUCE's, and the
+   licence consequence is real: that binary carries Intel's IPP object code, so
+   the terms to read before distributing it are Intel's and not this
+   repository's. On Apple nothing is thrown, because the vDSP that runs there is
+   JUCE's own, from the Accelerate framework `juce_dsp` declares itself.
+
+   This does not change the deletion decision above: `dr_libs`, `dywapitchtrack`,
+   `fftconvolver`, `imgui`, `kissfft`, `PFFFT`, `rack_dsp`, `sndfile`,
+   `sokol_gfx`, `yasio` and the rest are still on the link line with no caller,
+   and the check item 3 below asks for - the one that compares the link line to
+   the includes - is still open. `tests/definitions/check_definitions.py` is its
+   sibling: it compares the *macros* the build hands the compiler against the
+   preprocessor branches that read them, which is the same question one level
+   down, and it is what caught this pair.
 3. **Add a check that keeps it that way.** A five-line script comparing the
    names in `target_link_libraries(first` to the `include <...>` set under
    `Source/` would have caught this on the day it was written, and will catch it
