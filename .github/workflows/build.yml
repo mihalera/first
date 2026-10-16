@@ -729,7 +729,7 @@ jobs:
         run: |
           set -euo pipefail
 
-          FLOOR="$(grep -E '^CMAKE_OSX_DEPLOYMENT_TARGET:' build/CMakeCache.txt | cut -d= -f2)"
+          FLOOR="$(grep -E '^CMAKE_OSX_DEPLOYMENT_TARGET:' build/CMakeCache.txt | cut -d= -f2 || true)"
           if [ -z "$FLOOR" ]; then
             echo "CMAKE_OSX_DEPLOYMENT_TARGET is not in the CMake cache, so nothing"
             echo "pinned the minimum macOS these binaries load on: every slice is"

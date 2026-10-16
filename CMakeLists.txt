@@ -60,7 +60,9 @@ set(J37_MACOS_DEPLOYMENT_TARGET "11.0" CACHE STRING
 if(NOT CMAKE_OSX_DEPLOYMENT_TARGET
    AND CMAKE_HOST_SYSTEM_NAME STREQUAL "Darwin"
    AND (NOT CMAKE_SYSTEM_NAME OR CMAKE_SYSTEM_NAME STREQUAL "Darwin"))
-    set(CMAKE_OSX_DEPLOYMENT_TARGET "${J37_MACOS_DEPLOYMENT_TARGET}")
+    # Keep the effective default inspectable by the macOS CI bundle check.
+    set(CMAKE_OSX_DEPLOYMENT_TARGET "${J37_MACOS_DEPLOYMENT_TARGET}" CACHE STRING
+        "Minimum macOS version the plugin binaries are built to load on")
 endif()
 
 project(first
