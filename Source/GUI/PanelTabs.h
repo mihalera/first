@@ -226,10 +226,9 @@ namespace j37panel
                      "each loaded from a file through the loader under its own "
                      "knob.",
                      2, 2, { 62, 63 } },
-        //  No knobs of its own: SETTINGS is where the three engine-level switches
-        //  live - GL, OVERSAMPLING and the interface sounds - shown by
-        //  setCurrentTab, not by the grid.
-             { "SETTINGS", "The engine-level switches and musical setup: rate, language and tuning reference.",
+        //  No knobs of its own: SETTINGS holds the engine and interface
+        //  preferences, shown by setCurrentTab rather than by the knob grid.
+             { "SETTINGS", "The engine-level switches and interface preferences: rate, language and UI sounds.",
                                0, 2, {} },
              { "AUTOTUNE", "Pitch correction with safe realtime tracking and scale quantisation.",
                                0, 1, {} },
@@ -264,7 +263,7 @@ namespace j37panel
         "the equaliser after the machine: it corrects the RESULT",
         "the equaliser before the machine: it changes the CHARACTER",
         "the two file-fed stages, each with its loader beside it",
-        "the engine-level switches and musical tuning",
+        "the engine-level switches and interface preferences",
         "pitch correction and scale quantisation",
         "the conventional compressor, independent of glue"
     } };

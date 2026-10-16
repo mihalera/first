@@ -2074,10 +2074,10 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     oversamplingBox.setVisible (geometry.settingsTab);
     languageLabel.setVisible (geometry.settingsTab);
     languageBox.setVisible (geometry.settingsTab);
-    tuningTonicLabel.setVisible (geometry.settingsTab);
-    tuningModeLabel.setVisible (geometry.settingsTab);
-    tuningTonicBox.setVisible (geometry.settingsTab);
-    tuningModeBox.setVisible (geometry.settingsTab);
+    tuningTonicLabel.setVisible (geometry.autotuneTab);
+    tuningModeLabel.setVisible (geometry.autotuneTab);
+    tuningTonicBox.setVisible (geometry.autotuneTab);
+    tuningModeBox.setVisible (geometry.autotuneTab);
     autoTuneButton.setVisible (geometry.autotuneTab);
     autoTuneAmountLabel.setVisible (geometry.autotuneTab);
     autoTuneAmountSlider.setVisible (geometry.autotuneTab);
@@ -2157,39 +2157,17 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
     }
     else if (geometry.settingsTab)
     {
-        // SETTINGS: the first band carries the four engine-level selectors - the
-        // two switches and the tuning pair - and the second the two interface
-        // preferences.
+        // SETTINGS: engine-level switches in the first band and interface
+        // preferences in the second.
         placeDeckSwitch (geometry, glLabel, glButton, 0, 1, "GL");
         placeDeckSwitch (geometry, oversamplingLabel, oversamplingBox, 1, 1, "OVER");
-        placeDeckSwitch (geometry, tuningTonicLabel, tuningTonicBox, 2, 1, "TONIC");
-        tuningModeLabel.setBounds (geometry.grid.getX() + 3 * geometry.cellWidth + 5, geometry.memberRowY + 1, geometry.cellWidth - 10, 17);
-        tuningModeBox.setBounds (geometry.grid.getX() + 3 * geometry.cellWidth + 12, geometry.memberRowY + 20, geometry.cellWidth - 24, 30);
 
         // LANGUAGE keeps the first cell of the second band; UI SOUNDS takes the
-        // second. UI SOUNDS used to be written into the THIRD CELL OF THE FIRST
-        // BAND, which is the rectangle the TONIC combo owns - so the two
-        // controls were given the same bounds, the switch was added later and
-        // therefore sat on top, and the page showed a control labelled
-        // "UI Sounds" under the TONIC caption while the key itself could not be
-        // set at all. One caption band, one control band, two cells nothing
-        // else claims.
-        //
-        // The AUTOTUNE pair no longer takes bounds here at all: those rectangles
-        // were left over from when AUTOTUNE was a sub-page of SETTINGS (the page
-        // has its own tab now - see the autotuneTab branch) and they described
-        // cells that are free on THIS page, which is exactly the belief that
-        // produced the double booking above.
+        // second; the guard takes the third.
         languageLabel.setBounds (geometry.grid.getX() + 5, geometry.memberRowY + 56, geometry.cellWidth - 10, 17);
         languageBox.setBounds (geometry.grid.getX() + 12, geometry.memberRowY + 76, geometry.cellWidth - 24, 30);
         uiSoundsButton.setBounds (geometry.grid.getX() + geometry.cellWidth + 12, geometry.memberRowY + 76,
                                   geometry.cellWidth - 24, 30);
-        // The guard's switch takes the THIRD cell of that same band. It is the
-        // one cell on this page nothing else claims - the TONIC pair owns the
-        // third cell of the band ABOVE - and it is where a protection setting
-        // belongs: with GL, OVERSAMPLING and UI SOUNDS, not with the machine's
-        // sound. Same caption band, same control band, same insets as the two
-        // controls beside it, so the row reads as one line of preferences.
         antiPhaseGuardLabel.setBounds (geometry.grid.getX() + 2 * geometry.cellWidth + 5, geometry.memberRowY + 56,
                                        geometry.cellWidth - 10, 17);
         antiPhaseGuardButton.setBounds (geometry.grid.getX() + 2 * geometry.cellWidth + 12, geometry.memberRowY + 76,
@@ -2204,14 +2182,19 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
     else if (geometry.autotuneTab)
     {
         sectionCaptionLabel.setText ("AUTOTUNE", juce::dontSendNotification);
-        // The page's knob is on the strip above, with its caption and its readout
-        // in its own tile (see knobCount), so the band under the strip carries the
-        // control the page has left: the AUTO TUNE pill. It names itself - the
-        // inline look-and-feel draws the button's own text beside its pill - so it
-        // needs no caption band, and it is placed in the band's control row with
-        // the same insets as the switches on every other page's member row.
+        // Keep the key and scale together with the corrector that uses them. The
+        // tune-amount knob occupies the strip above; the member band holds TONIC,
+        // MODE and the AUTO TUNE switch in its four columns.
+        placeDeckSwitch (geometry, tuningTonicLabel, tuningTonicBox, 0, 1, "TONIC");
+        tuningModeLabel.setBounds (geometry.grid.getX() + geometry.cellWidth + 5,
+                                   geometry.memberRowY + 1,
+                                   2 * geometry.cellWidth - 10, 17);
+        tuningModeBox.setBounds (geometry.grid.getX() + geometry.cellWidth + 12,
+                                 geometry.memberRowY + 20,
+                                 2 * geometry.cellWidth - 24, 30);
         const auto bandHeight = juce::jmin (30, geometry.grid.getBottom() - geometry.memberRowY - 22);
-        autoTuneButton.setBounds (geometry.grid.getX() + 12, geometry.memberRowY + 20,
+        autoTuneButton.setBounds (geometry.grid.getX() + 3 * geometry.cellWidth + 12,
+                                  geometry.memberRowY + 20,
                                   geometry.cellWidth - 24, bandHeight);
     }
     // The COMP page has no branch here, and that is the point: its six knobs are

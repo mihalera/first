@@ -212,8 +212,8 @@ void FirstAudioProcessorEditor::setUpLanguageAndTuning()
     addAndMakeVisible (languageLabel);
     addAndMakeVisible (languageBox);
 
-    // SETUP musical controls: key selection is independent of the UI language,
-    // while autotune remains opt-in and its amount is continuously automatable.
+    // AUTOTUNE's key and scale select the correction grid; the correction itself
+    // remains opt-in and its amount continuously automatable.
     tuningTonicBox.addItemList (juce::StringArray { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" }, 1);
     tuningModeBox.addItemList (juce::StringArray { "Chromatic", "Major", "Minor", "Dorian", "Pentatonic Major", "Pentatonic Minor" }, 1);
     tuningTonicBox.setLookAndFeel (&inlineLookAndFeel);
