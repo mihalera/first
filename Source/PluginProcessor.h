@@ -443,9 +443,18 @@ public:
         float referenceBlockPower = 0.0f;
     };
 
+    /** Shared values produced by the input stage for one audio frame. */
+    struct SampleInputContext
+    {
+        std::array<float, 2> trimmedByChannel {};
+        float detectorPower = 0.0f;
+    };
+
     /** The machine: one sample of the block, with everything the block was set up with.
         It was the 1,669-line lambda inside processTapeEngine() - see TapeBlockState. */
     void processOneSample (TapeBlockState& state, int sample) noexcept;
+    SampleInputContext prepareSampleInput (const TapeBlockState& state, int sample,
+                                           float inputGain) noexcept;
     void updateSampleLoudnessMeters (TapeBlockState& state, int sample) noexcept;
 
     bool processBypassedBlock (juce::dsp::AudioBlock<float>&, const BlockContext&);
@@ -887,6 +896,9 @@ private:
 
     /** Recomputes the cached tone filter coefficients for the current rate. */
     void updateToneCoefficients (float toneValue, float engineSampleRate);
+
+    /** Rebuilds rate-dependent block coefficients from the current engine rate. */
+    void configureBlockRateCoefficients (float engineSampleRate, float cabinetAmount);
 
     /** (Re)creates the oversampling engine for the requested factor and reports latency. */
     void setOversamplingFactor (OversamplingFactor factor, int samplesPerBlock);

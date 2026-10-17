@@ -635,6 +635,22 @@ void FirstAudioProcessor::publishBlockTelemetry (const BlockContext& context,
     }
 }
 
+void FirstAudioProcessor::configureBlockRateCoefficients (float engineSampleRate, float cabinetAmount)
+{
+    const auto blockRate = j37rate::makeBlockRateCoefficients (engineSampleRate, cabinetAmount);
+    cabinetLowCoefficient = blockRate.cabinetLow;
+    cabinetPeakCoefficient = blockRate.cabinetPeak;
+    presenceCoefficient = blockRate.presence;
+    sagAttackCoefficient = blockRate.sagAttack;
+    sagReleaseCoefficient = blockRate.sagRelease;
+    limiterDetectorAttack = blockRate.limiterDetectorAttack;
+    limiterDetectorRelease = blockRate.limiterDetectorRelease;
+    limiterCatchCoefficient = blockRate.limiterCatch;
+    limiterRecoveryCoefficient = blockRate.limiterRecovery;
+    limiterCeiling = blockRate.limiterCeiling;
+    antiPhaseCoefficient = blockRate.antiPhase;
+}
+
 void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                              juce::MidiBuffer& midiMessages)
 {
@@ -1346,18 +1362,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // block, which is why they are a stage of their own rather than a run of lines in
     // this preamble - and why the DSP harness can check them: the stage, and the prose
     // that says what each asymmetry is for, are Source/DSP/BlockRateCoefficients.h.
-    const auto blockRate = j37rate::makeBlockRateCoefficients (state.engineSampleRate, cabinetAmount);
-    cabinetLowCoefficient = blockRate.cabinetLow;
-    cabinetPeakCoefficient = blockRate.cabinetPeak;
-    presenceCoefficient = blockRate.presence;
-    sagAttackCoefficient = blockRate.sagAttack;
-    sagReleaseCoefficient = blockRate.sagRelease;
-    limiterDetectorAttack = blockRate.limiterDetectorAttack;
-    limiterDetectorRelease = blockRate.limiterDetectorRelease;
-    limiterCatchCoefficient = blockRate.limiterCatch;
-    limiterRecoveryCoefficient = blockRate.limiterRecovery;
-    limiterCeiling = blockRate.limiterCeiling;
-    antiPhaseCoefficient = blockRate.antiPhase;
+    configureBlockRateCoefficients (state.engineSampleRate, cabinetAmount);
 
     // The normaliser: the correlation is divided by a slow measure of the frame's
     // own energy, so the guard reads the RATIO of opposition to total energy rather
@@ -2183,6 +2188,20 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //  This was the per-sample machine body inside processTapeEngine(). It takes
     //  explicit block state, and all sample-clock reads remain in their original order.
     //==============================================================================
+FirstAudioProcessor::SampleInputContext FirstAudioProcessor::prepareSampleInput (
+    const TapeBlockState& state, int sample, float inputGain) noexcept
+{
+    SampleInputContext input;
+    for (int channel = 0; channel < state.activeChannels; ++channel)
+    {
+        const auto index = static_cast<std::size_t> (channel);
+        input.trimmedByChannel[index] = state.channelData[index][sample] * inputGain;
+        input.detectorPower += input.trimmedByChannel[index] * input.trimmedByChannel[index];
+    }
+    input.detectorPower /= static_cast<float> (juce::jmax (1, state.activeChannels));
+    return input;
+}
+
 void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) noexcept
 {
     // -----------------------------------------------------------------
@@ -2314,16 +2333,9 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     //  sides are given the same one. This is the arrangement the OUTPUT stage
     //  compressor below has always used.
     // ------------------------------------------------------------------
-    std::array<float, 2> inputTrimmedByChannel {};
-    float inputDetectorPower = 0.0f;
-    for (int channel = 0; channel < state.activeChannels; ++channel)
-    {
-        const auto raw = state.channelData[static_cast<std::size_t> (channel)][sample];
-        const auto trimmed = raw * inputGain;
-        inputTrimmedByChannel[static_cast<std::size_t> (channel)] = trimmed;
-        inputDetectorPower += trimmed * trimmed;
-    }
-    inputDetectorPower /= static_cast<float> (juce::jmax (1, state.activeChannels));
+    const auto inputContext = prepareSampleInput (state, sample, inputGain);
+    const auto& inputTrimmedByChannel = inputContext.trimmedByChannel;
+    const auto inputDetectorPower = inputContext.detectorPower;
 
     // ------------------------------------------------------------------
     //  Input stage glue, LINKED or per-channel.
