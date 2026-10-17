@@ -1050,7 +1050,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             vinylClicksParam != nullptr ? vinylClicksParam->load() : 0.0f };
         const auto configureVinyl = [&] (VinylStage& left, VinylStage& right, float rate, const VinylSetup& values)
         {
-            const int vinylSpeedIndex = values.speed;
+            const int vinylSpeedIndex = juce::jlimit (0, 2, values.speed);
             VinylStage* vinylStages[2] = { &left, &right };
             // riaa, rumble, crackle, decay, surface
             static constexpr float vinylVoices[6][5] =

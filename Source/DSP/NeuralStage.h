@@ -441,12 +441,12 @@ struct NeuralStage
         // is one relaxed load against the two the guards above already make, and
         // it has to be here rather than per block because this stage is called
         // per sample.
-        if (ratesPending.load (std::memory_order_acquire))
-        {
+        // Claim the pending update BEFORE reading the rates. If setSampleRates()
+        // publishes another update during these loads, its store of true remains
+        // pending for the next inference instead of being erased by a trailing clear.
+        if (ratesPending.exchange (false, std::memory_order_acq_rel))
             bridge.prepare (wantedModelRate.load (std::memory_order_relaxed),
                             wantedEngineRate.load (std::memory_order_relaxed));
-            ratesPending.store (false, std::memory_order_release);
-        }
 
         if (resetRequested.exchange (false, std::memory_order_acq_rel))
         {
