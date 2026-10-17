@@ -186,7 +186,7 @@ the tape's character survives intact.
 
 ## Neural stage and IR (RTNeural and a convolver)
 
-The two file-fed stages on the **SHAPERS** tab are optional and inert by default. Where
+The two file-fed stages on the **MODELS** tab are optional and inert by default. Where
 every other curve in this plugin is hand-written from physics, a **neural model** is
 *learned* from measurements of a real device and an **impulse response** is a
 *measurement* of a space; RTNeural and the convolver each run fast enough to sit inside
@@ -196,7 +196,7 @@ The same page carries the machine's own **TAPE SPECTRUM**, which is the one read
 there that is not about a file: it is the magnetic shaper's **output** drawn as a
 24-band curve, measured on the same sample the deck's HARMONICS readout is measured on,
 so the curve and the number describe one block of audio rather than two. The cells
-under the SHAPERS knobs already hold the two loaders; the spectrum takes the one cell
+under the MODELS knobs already hold the two loaders; the spectrum takes the one cell
 nothing else claims, and it is drawn rather than built as a control because it has no
 value to set - it is a window on what the machine just did.
 

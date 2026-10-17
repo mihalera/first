@@ -1391,7 +1391,7 @@ private:
     HarmonicAnalyser harmonicAnalyser;
 
     // Measures the same shaper output as a log-spaced spectrum, for the curve the
-    // SHAPERS page draws. Prepared from the ENGINE's rate (see
+    // MODELS page draws. Prepared from the ENGINE's rate (see
     // updateNeuralSampleRates), so its band ladder follows the oversampling
     // switch, and fed one sample at a time from the channel-0 tap the harmonic
     // analyser is fed from - the transform only runs once per 512 frames.

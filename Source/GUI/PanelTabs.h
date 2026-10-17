@@ -208,8 +208,8 @@ namespace j37panel
                     "three bands as the input EQ, same transparency at 0 dB; the "
                     "ORDER and corner switches ride the row below.",
                      6, 1, { 46, 47, 48, 55, 56, 57 } },
-        // ---- SETUP family (3 pages): what the machine hears, the file-fed
-        //  shapers, the engine switches ----------------------------------------
+        // ---- SETUP family (3 pages): what the machine hears, its file-fed
+        //  models, the engine switches ------------------------------------------
         //  in_low, in_mid, in_high and their three corners.
         { "IN EQ", "The input equaliser, in front of the machine. What it shapes "
                    "is what the tape HEARS, so lifting the low end here drives "
@@ -221,7 +221,7 @@ namespace j37panel
                      6, 2, { 43, 44, 45, 52, 53, 54 } },
         //  neural_mix, ir_mix - the two file-fed stages, each with its own
         //  loader in the band under the row.
-        { "SHAPERS", "The two file-fed stages: NEURAL blends in a learned model "
+        { "MODELS", "The two file-fed stages: NEURAL blends in a learned model "
                      "and IR MIX an impulse response - a cabinet or a room - "
                      "each loaded from a file through the loader under its own "
                      "knob.",
@@ -262,7 +262,7 @@ namespace j37panel
         "the finished signal's envelope, not its waveform",
         "the equaliser after the machine: it corrects the RESULT",
         "the equaliser before the machine: it changes the CHARACTER",
-        "the two file-fed stages, each with its loader beside it",
+        "the neural model and impulse response, each loaded beside its control",
         "the engine-level switches and interface preferences",
         "pitch correction and scale quantisation",
         "the conventional compressor, independent of glue"

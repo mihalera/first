@@ -157,8 +157,8 @@ namespace j37panel
         { "transient_attack","ATK",        0.0,   "DYN"      },
         { "transient_sustain","SUS",       0.0,   "DYN"      },
         { "transient_mix",   "TR MIX",     0.0,   "DYN"      },
-        { "neural_mix",      "NEURAL",     0.0,   "SHAPERS"   },
-        { "ir_mix",          "IR MIX",     0.0,   "SHAPERS"   }
+        { "neural_mix",      "NEURAL",     0.0,   "MODELS"    },
+        { "ir_mix",          "IR MIX",     0.0,   "MODELS"    }
     } };
 
     // A tooltip for EVERY parameter - this is what shows when the user hovers.
@@ -515,7 +515,7 @@ namespace j37panel
         if (id == "neural_mix")
             return "NEURAL - the wet/dry position of the optional "
                    "learned model. The model is not a knob: it is a file "
-                   "loaded with LOAD MODEL on the SHAPERS tab, and the "
+                   "loaded with LOAD MODEL on the MODELS tab, and the "
                    "network itself (a Dense net, an LSTM, a GRU) is whatever "
                    "the file describes. This control blends the model's "
                    "output with the untouched signal, so it is always a "
@@ -525,7 +525,7 @@ namespace j37panel
             return "IR MIX - how much of the convolved signal is blended "
                    "into the finished one. The impulse response itself is "
                    "not a knob: it is a file loaded with LOAD IR on the "
-                   "SHAPERS tab, and it can be a cabinet, a room or any "
+                   "MODELS tab, and it can be a cabinet, a room or any "
                    "other space. At 0, or with no IR loaded, the stage is "
                    "transparent. Default 0 percent.";
         // The eleven knobs that were falling through to an empty sentence:

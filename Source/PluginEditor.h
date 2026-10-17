@@ -568,7 +568,7 @@ private:
     void placeMeters (const EditorLayout& layout);
     void verifyPanelHasNoOverlaps() const;
 
-    /** The rectangle the spectrum curve is drawn in: the SHAPERS page's member band,
+    /** The rectangle the spectrum curve is drawn in: the MODELS page's member band,
         fourth column, in the geometry paint() draws that band with.
 
         ONE definition, called by paint() to draw into it and by the timer to
@@ -1093,7 +1093,7 @@ private:
     // this. The timer's attach retries consult it, so a context the HOST lost
     // is recovered automatically while one the USER turned off stays off.
     bool glUserDisabled = false;
-    // paint() draws the neural picker's card behind the SHAPERS page's member
+    // paint() draws the neural picker's card behind the MODELS page's member
     // band's first column - the page whose NEURAL knob the picker belongs to.
     bool activeTabIsShapers = false;
 

@@ -1321,7 +1321,7 @@ void FirstAudioProcessorEditor::setUpSettingsSwitches()
 void FirstAudioProcessorEditor::setUpModelButtons()
 {
     // ---------------------------------------------------------------
-    //  The neural model picker, on the SHAPERS tab beside the NEURAL knob.
+    //  The neural model picker, on the MODELS tab beside the NEURAL knob.
     //  It has no parameter and no attachment: a model is data read from a file,
     //  not a value a session or a preset carries, so the two buttons drive the
     //  processor directly and the status label reports what the stage holds.
@@ -1371,7 +1371,7 @@ void FirstAudioProcessorEditor::setUpModelButtons()
     addAndMakeVisible (neuralStatusLabel);
 
     // ---------------------------------------------------------------
-    //  The IR picker rides the SHAPERS page's member band, under the IR MIX
+    //  The IR picker rides the MODELS page's member band, under the IR MIX
     //  knob it belongs to: LOAD IR / CLEAR IR / status, styled and tipped
     //  exactly like the model picker beside it. An IR is data read from a
     //  file for the same reason a model is - no parameter, no attachment.

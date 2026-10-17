@@ -261,7 +261,7 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
     // name cannot drift the way a hard-coded page number did when the pages
     // were reordered.
     activeTabIsShapers = (std::strcmp (tabSpecs[static_cast<std::size_t> (currentTab)].name,
-                                       "SHAPERS") == 0);
+                                       "MODELS") == 0);
 
     // The family follows the page: the bar's two rows are two views of one
     // state, and a path that set one without the other left the bar showing a
@@ -288,7 +288,7 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
     styleTabButtons();
     resized();
 
-    // A page's own painted furniture has to leave with the page. The SHAPERS
+    // A page's own painted furniture has to leave with the page. The MODELS
     // card behind the model picker is drawn by THIS component's paint(), not by
     // the picker's widgets - and the 30 Hz timer only repaints the knobs, the
     // switches, the lamp and the deck (see repaintAnimatedSurfaces), which is why
@@ -1742,7 +1742,7 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     const auto delayTab = index_of_tab_named ("DELAY") == currentTab;
     const auto characterTab = index_of_tab_named ("CHARACTER") == currentTab;
     const auto frontEndTab = index_of_tab_named ("FRONT END") == currentTab;
-    const auto shapersTab = index_of_tab_named ("SHAPERS") == currentTab;
+    const auto shapersTab = index_of_tab_named ("MODELS") == currentTab;
     const auto inEqTab = index_of_tab_named ("IN EQ") == currentTab;
     const auto outEqTab = index_of_tab_named ("OUT EQ") == currentTab;
     const auto machineTab = index_of_tab_named ("MACHINE") == currentTab;
@@ -2100,7 +2100,7 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     delaySyncLabel.setVisible (geometry.delayTab);
     delaySyncButton.setVisible (geometry.delayTab);
 
-    // The neural model picker follows SHAPERS - under its own NEURAL knob - and
+    // The neural model picker follows MODELS - under its own NEURAL knob - and
     // the IR loader follows it for the same reason, beside IR MIX. Each file-fed
     // stage keeps its loader and its status readout on the page its knob lives on.
     loadNeuralButton.setVisible (geometry.shapersTab);
@@ -2132,7 +2132,7 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
 //  page that owns combos or pills in the member band.
 //==============================================================================
 //==============================================================================
-//  Where the SHAPERS page's spectrum is drawn.
+//  Where the MODELS page's spectrum is drawn.
 //
 //  The arithmetic MIRRORS paint()'s, deliberately and in the same words it uses for
 //  the neural card: the member band is a fixed 50 px strip at the grid's bottom, the
@@ -2256,7 +2256,7 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
     }
     else if (geometry.shapersTab)
     {
-        // SHAPERS: the two file-fed stages on one page, each with its loader
+        // MODELS: the two file-fed stages on one page, each with its loader
         // under its own knob. The NEURAL picker takes the band's FIRST column
         // - LOAD MODEL on the control line, CLEAR beneath it, the model-status
         // readout in the caption line above them - and the IR loader takes the
