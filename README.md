@@ -979,9 +979,10 @@ switch in the build that changes what the plugin *renders*:
 ```
 
 With it on, the tanh every saturation curve runs becomes xsimd's batch kernel
-instead of `std::tanh`: measured through `tests/dsp/run_bench.sh` at 2.5 ns per
-call against 7.0 ns, which makes the saturation core 1.46x cheaper, at a curve
-difference of 1.19e-7 (absolute, worst case) - below audibility, but not zero,
+instead of `std::tanh`: measured through `tests/dsp/run_bench.sh` at ~2.4 ns per
+call against ~6.7 ns, which takes the saturation core from ~42 us to ~28 us per
+512-frame block (about 1.5x cheaper), at a curve difference of 1.19e-7
+(absolute, worst case) - below audibility, but not zero,
 which is why it is off until a listening test says otherwise. The build prints
 which one it is using in its configure summary.
 
@@ -1414,7 +1415,7 @@ exceptions are named in the table: those the engine actually runs today.
 | `chowdsp_utils` | `v2.4.0` | Chowdhury DSP's toolbox. Provides the polynomial `exp`/`log`/dB approximations on the metering and auto-gain hot paths; `chowdsp_dsp_utils` is linked so the rest is available |
 | `melatonin_inspector` | commit `9c483f86` | JUCE component inspector, compiled under `JUCE_DEBUG` only. Passive in the shipped build |
 | `melatonin_blur` | `v1.4` | **Used.** Fast shadow/gradient blurring for JUCE Components. Three lights on the panel are `melatonin::DropShadow` now - the panel's own drop shadow (`Source/GUI/PanelPaint.h`) and the knob's halo and cap shadow (`Source/GUI/J37LookAndFeel.cpp`) - each cached against its path and radius, so a repaint at 30 Hz is a blit rather than a blur. The hand-drawn fallbacks (a stack of flat rounded rectangles, and a stack of stroked rings) are still there behind the module's probe |
-| `xsimd` | `13.0.0` | **Used, behind `J37_USE_SIMD_TANH`.** Portable SIMD wrappers (SSE/AVX/NEON). `chowdsp::chowdsp_simd` already wraps xsimd, so this is the same code path rather than a second SIMD layer - and the shaper's own tanh goes through it too: every tanh the saturation core runs is `j37Tanh` (`Source/DSP/HotPathMath.h`), which is xsimd's batch kernel when the option is on: 2.5 ns per call against std::tanh's 7.0 ns, 1.46x off the whole shaper, at a 1.19e-7 curve difference. Off by default because it changes the rendered audio; `tests/dsp/simd_tanh_test.cpp` builds all three shapes |
+| `xsimd` | `13.0.0` | **Used, behind `J37_USE_SIMD_TANH`.** Portable SIMD wrappers (SSE/AVX/NEON). `chowdsp::chowdsp_simd` already wraps xsimd, so this is the same code path rather than a second SIMD layer - and the shaper's own tanh goes through it too: every tanh the saturation core runs is `j37Tanh` (`Source/DSP/HotPathMath.h`), which is xsimd's batch kernel when the option is on: ~2.4 ns per call against std::tanh's ~6.7 ns, ~1.5x off the whole shaper, at a 1.19e-7 curve difference. Off by default because it changes the rendered audio; `tests/dsp/simd_tanh_test.cpp` builds all three shapes |
 
 Two dev-only libraries are **off by default**, so a plugin build never drags a test
 framework into its dependency graph. Enable with `-DJ37_BUILD_TESTS=ON`:

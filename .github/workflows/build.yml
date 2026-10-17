@@ -45,6 +45,15 @@ jobs:
   #  what keeps "harness green, plugin red" from being a fifteen-minute discovery
   #  in the platform builds. That is why the checkout below takes the submodule
   #  (measured at a few seconds, depth 1) while every other step ignores it.
+  #
+  #  The same script now also compiles the shaper's tanh seam in three shapes -
+  #  J37_USE_SIMD_TANH with xsimd, the flag with the library absent, and neither
+  #  (tests/dsp/simd_tanh_test.cpp) - and compares their curve digests across the
+  #  binaries, because "the flag reaches the rendered audio" is a claim about two
+  #  builds rather than about one. That switch is OFF in every build this
+  #  repository ships, which is exactly why a branch nothing compiles has to be
+  #  compiled here or it rots. No submodule is needed for it: xsimd is vendored
+  #  under ThirdParty/.
   # ============================================================================
   dsp-tests:
     name: DSP regression harness

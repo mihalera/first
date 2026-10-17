@@ -76,8 +76,8 @@ included by nothing.
    through the seam, the flag is a real CMake option that is OFF by default
    because it changes the rendered audio by 1.19e-7, `tests/dsp/simd_tanh_test.cpp`
    builds the three shapes and compares their curves against each other, and
-   `tests/dsp/run_bench.sh` measures what it buys - 2.5 ns per call against
-   `std::tanh`'s 7.0 ns, and 1.46x off the saturation core itself.
+   `tests/dsp/run_bench.sh` measures what it buys - ~2.4 ns per call against
+   `std::tanh`'s ~6.7 ns, and about 1.5x off the saturation core itself.
 
    **The two vendor libraries have left the "linked and inert" pile, by the same
    route.** `cmake/J37VendorLibraries.cmake` used to discover Intel IPP and Apple

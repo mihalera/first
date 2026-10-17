@@ -67,9 +67,11 @@
         tiny inputs, and once either function has saturated;
       - cost: measured through tests/dsp/run_bench.sh, which builds that
         benchmark twice - the same translation unit, the same signal, one build
-        of each configuration - at 2.5 ns per call against std::tanh's 7.0 ns,
-        and at 41.4 us to 28.4 us per 512-frame block for the WHOLE saturation
-        core, i.e. 1.46x cheaper on the shaper itself. (GCC 11, x86-64, -O2.)
+        of each configuration - at ~2.4 ns per call against std::tanh's ~6.7 ns,
+        and at ~42 us to ~28 us per 512-frame block for the WHOLE saturation
+        core, i.e. about 1.5x cheaper on the shaper itself. (GCC 11, x86-64, -O2;
+        the digits move by a few per cent between runs and between machines, so
+        these are quoted as approximations rather than as a spec.)
 
     That second number is the reason this is worth having, and the first is the
     reason it stays behind a flag. It changes the rendered audio - by ~1e-7,
@@ -97,7 +99,7 @@
 #if ! defined (J37_DSP_HARNESS) && defined (J37_USE_SIMD_TANH) && J37_HAS_XSIMD
     // OPT-IN only, not a build default: this is a different curve from std::tanh,
     // by the 1.19e-7 measured above. A batch of one is all a scalar call can hand
-    // the kernel, and it is still 2.5 ns against 7.0 ns - see section 6 of
+    // the kernel, and it is still ~2.4 ns against ~6.7 ns - see section 6 of
     // tests/dsp/bench.cpp and the second build tests/dsp/run_bench.sh gives it.
     return xsimd::tanh (xsimd::batch<float> (x)).get (0);
 #else

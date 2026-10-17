@@ -627,12 +627,13 @@ j37_apply_vendor_libraries(first)
 #  call that every saturation curve in Source/DSP/SaturationCore.h runs, and this
 #  option is what makes it xsimd's batch kernel instead of std::tanh: measured
 #  through tests/dsp/run_bench.sh (the same translation unit built both ways,
-#  section 6 of the log) at 2.5 ns per call against std::tanh's 7.0 ns, which
-#  makes the whole saturation core 1.46x cheaper - 41.4 us to 28.4 us per 512
-#  frame block. It is off because it is a DIFFERENT CURVE: 1.19e-7 absolute at
-#  worst, which is far below audibility for a stage that is generating harmonics
-#  on purpose, but a measured difference in the rendered audio is a listening
-#  decision in this repository and not a build default.
+#  section 6 of the log) at ~2.4 ns per call against std::tanh's ~6.7 ns, which
+#  makes the whole saturation core about 1.5x cheaper - ~42 us to ~28 us per 512
+#  frame block on the machine that measured it. It is off because it is a
+#  DIFFERENT CURVE: 1.19e-7 absolute at worst, which is far below audibility for
+#  a stage that is generating harmonics on purpose, but a measured difference in
+#  the rendered audio is a listening decision in this repository and not a build
+#  default.
 #
 #  xsimd is already on the plugin's include path - it is fetched into
 #  ThirdParty/ and linked as chowdsp::chowdsp_simd - so this option only has to
