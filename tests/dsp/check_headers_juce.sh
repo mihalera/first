@@ -200,6 +200,22 @@ TU="${BUILD}/header_check.cpp"
     HarmonicAnalyser analyser;
     x += analyser.analyse (x, x * 0.5f, 48000.0f) ? 1.0f : 0.0f;
 
+    // The spectrum analyser, which sits beside the harmonic readout above in the
+    // engine and is the only stage in this directory that leans on a FOURTH-party
+    // header rather than on JUCE: pocketfft, one header on the include path below.
+    // That is why it is worth using here rather than merely parsing - the probe is
+    // the one place the plugin's own context (real JUCE) and the library's context
+    // are compiled together, while tests/spectrum compiles both the library branch
+    // and the absent-library branch with no JUCE at all. Between the two, neither
+    // half of the header is left to the platform builds.
+    SpectrumAnalyser spectrum;
+    spectrum.prepare (48000.0);
+    spectrum.process (&x, 1);
+    x += spectrum.bands()[0] * 1.0e-3f
+       + static_cast<float> (spectrum.pendingSamples())
+       + (SpectrumAnalyser::compiledIn ? 1.0f : 0.0f);
+    spectrum.reset();
+
     TransportRig rig;
     rig.prepare (48000.0);
     rig.beginBlock (0, false, true, 48000.0, 0, 0, 120.0);
@@ -211,6 +227,17 @@ TU="${BUILD}/header_check.cpp"
     repitch.processFrame (frame, 2, 1.0f);
     x = frame[0];
     repitch.reset();
+
+    // The output anti-phase guard. tests/phase measures it band by band with the
+    // harness's own stand-in for juce::; this is the other half - the same header
+    // compiled and USED against real JUCE, which is where juce::jlimit, juce::jmax
+    // and juce::MathConstants have to be the real ones rather than whatever the
+    // shim happens to declare.
+    j37dsp::MultibandPhaseGuard guard;
+    guard.prepare (48000.0);
+    std::array<float, 2> guarded { x, -x };
+    x = guard.process (guarded[0], guarded[1], 1.0f) ? guarded[0] + guarded[1] : 0.0f;
+    guard.reset();
 
     PitchTracker tracker;
     tracker.prepare (48000.0);
@@ -298,8 +325,15 @@ EOF
 # JUCE modules want the project's global settings header, which in a CMake build is
 # the generated JuceHeader.h. These defines stand in for it: juce_audio_basics pulls
 # juce_core in itself, and nothing here touches a GUI, a device or a file.
+# ThirdParty/pocketfft is on the include path so that the one header in the
+# directory that reads J37_HAS_POCKETFFT is compiled with the library PRESENT
+# here (the plugin's shape) rather than only in its absent-library shape. A
+# checkout with ThirdParty/ pruned still passes: the probe reports 0 and the
+# header's other branch is what compiles, which is exactly what tests/spectrum's
+# second pass asserts without JUCE in the way.
 "${CXX}" -std=c++17 -fsyntax-only -Wall -Wextra -Wno-unused-parameter \
     -I "${REPO}/Source" -I "${JUCE_MODULES}" \
+    -I "${REPO}/ThirdParty/pocketfft" \
     -DJUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1 \
     -DJUCE_MODULE_AVAILABLE_juce_core=1 \
     -DJUCE_MODULE_AVAILABLE_juce_events=1 \

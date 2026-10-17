@@ -2,8 +2,11 @@
 //  Which optional libraries this build actually has.
 //
 //  Everything the engine uses that may be absent - chowdsp's math and DSP utils,
-//  RTNeural, xsimd, and the four real-time-safe third-party utilities - is probed
-//  for HERE, once, and reported as a J37_HAS_* macro. The stages that consume
+//  RTNeural, xsimd, readerwriterqueue and pocketfft - is probed for HERE, once,
+//  and reported as a J37_HAS_* macro. Every one of those macros is read by a
+//  stage, which is now checked: tests/linkline/check_linkline.py fails when a
+//  probe has no reader, and when the link line carries a library no include
+//  names. The stages that consume
 //  those macros live in headers of their own under Source/DSP/, and a harness
 //  compiles those headers with neither JUCE nor the libraries on its include
 //  path, so the probe cannot live in the plugin's header any more: a stage that
@@ -85,9 +88,22 @@
 // pedestal can be subtracted), and that is the hot loop at 8x oversampling.
 //
 // It is wired in as an OPT-IN, not a default: an approximation only earns its
-// place once a benchmark shows the shaper dominates, and a measured difference
-// in the rendered audio is a change to the sound. See the use site in
-// PluginProcessor.cpp for what the flag actually switches.
+// place once a benchmark shows what it buys, and a measured difference in the
+// rendered audio is a change to the sound. See the use site - j37Tanh in
+// Source/DSP/HotPathMath.h, which Source/DSP/SaturationCore.h's eleven tanh calls
+// all go through - for what the flag actually switches, the J37_USE_SIMD_TANH
+// option in CMakeLists.txt for how it is thrown, and tests/dsp/simd_tanh_test.cpp
+// for what each of the three shapes renders.
+//
+// Two things about this probe were wrong until it was measured, and they are the
+// reason the harness next door exists:
+//
+//   - the macro was read by a header and thrown by no build, so J37_HAS_XSIMD was
+//     0 everywhere and the branch below was never compiled by anything;
+//   - the branch it guards called xsimd::tanh's SCALAR entry point, which xsimd
+//     defines as `using std::tanh;` - i.e. the flag, once thrown, would have
+//     switched nothing. The approximation exists only in the batch kernel, which
+//     is what HotPathMath.h now calls.
 #if ! defined (J37_DSP_HARNESS) && ! defined (J37_HAS_XSIMD) \
     && defined (J37_USE_SIMD_TANH) && __has_include (<xsimd/xsimd.hpp>)
  #include <xsimd/xsimd.hpp>
@@ -99,12 +115,11 @@
 // ------------------------------------------------------------------------------
 //  Real-time-safe third-party utilities.
 //
-//  Each of these is included behind a __has_include guard AND a harness guard,
-//  exactly like chowdsp above, because the harnesses compile these stages against
-//  a shim that has neither JUCE's full include path nor any of these libraries.
-//  The engine must therefore stay compilable with all four macros 0, and every use
-//  site must have a portable substitution rather than assuming the library is
-//  present.
+//  It is included behind a __has_include guard AND a harness guard, exactly like
+//  chowdsp above, because the harnesses compile these stages against a shim that
+//  has neither JUCE's full include path nor any of these libraries. The engine
+//  must therefore stay compilable with J37_HAS_RWQ 0, and the use site must have
+//  a portable substitution rather than assuming the library is present.
 //
 //    fatoml::ReaderWriterQueue  cameron314/readerwriterqueue - the lock-free
 //                               single-producer/single-consumer queue. Used for
@@ -112,28 +127,62 @@
 //                               thread can publish a frame of metering and the
 //                               editor can read it WITHOUT every field being its
 //                               own atomic and without a lock on the audio thread.
+//                               It is the ONLY one of the four that survived:
+//                               every use site reads J37_HAS_RWQ and falls back
+//                               to plain atomics without it.
 //
-//    farbot::RealtimeObject     hogliux/farbot - a realtime-safe object holder.
-//                               Used for the machine-state hand-off, so the
-//                               message thread can install a whole new engine
-//                               configuration without the audio thread ever
-//                               blocking on it.
+//    The other three left, and they left the same way xsimd and pocketfft did
+//    not: they were LINKED, INCLUDED and probed here, and read by nothing.
 //
-//    signalsmith-stretch        Signalsmith Audio - a real-time phase-vocoder
-//                               time stretcher. Used by the transport so a speed
-//                               change is a genuine TIME change (the tape slows
-//                               down and the music slows with it) rather than a
-//                               resample that also drops the pitch of everything.
+//    farbot::RealtimeObject     The entry used to claim the machine-state
+//                               hand-off used it, so the message thread could
+//                               install a whole engine configuration without the
+//                               audio thread blocking. No such hand-off exists:
+//                               the engine's state is written by the audio
+//                               thread from atomic parameters, and the only
+//                               cross-thread object is the telemetry frame,
+//                               which readerwriterqueue already carries. With no
+//                               site to adopt it, farbot came off the link line
+//                               and out of this file; cmake/J37Dependencies.cmake
+//                               still fetches it, so a stage that needs a
+//                               realtime-safe object is one line and one probe
+//                               away.
 //
-//    SoundTouch                 Olli Parviainen's SoundTouch Audio Processing
-//                               Library - the WSOLA time-stretch and pitch-shift
-//                               engine. Vendored under ThirdParty/soundtouch and
-//                               compiled into the plugin by
-//                               cmake/J37Dependencies.cmake. The one dependency
-//                               in this list that is NOT permissively licensed:
-//                               LGPL-2.1, with the licence text distributed at
-//                               ThirdParty/soundtouch/COPYING.TXT and the
-//                               attribution in THIRD_PARTY_NOTICES.md.
+//    signalsmith-stretch        A phase-vocoder time stretcher: it changes how
+//                               long material takes while keeping its PITCH. Two
+//                               claims here were false. The transport does not
+//                               use it - the transport's speed change is
+//                               Source/DSP/RepitchStage.h, which is deliberately
+//                               a VARISPEED, because a tape at half speed is
+//                               supposed to come out an octave down. And the
+//                               macro that said whether the build had it was
+//                               never probed, so it read 0 everywhere and said
+//                               it to nobody.
+//
+//                               The one stage that wants it is the CORRECTOR:
+//                               moving a note onto the grid without changing
+//                               how long it lasts is a pitch shift at constant
+//                               duration. AUTOTUNE does that today with the
+//                               hand-written granular shifter in
+//                               Source/DSP/RealtimePitchShifter.h, which is
+//                               driven one FRAME at a time from the tape loop -
+//                               and this library works one BLOCK at a time. So
+//                               adopting it is a restructure of the frame loop
+//                               rather than a swap, which is why the library is
+//                               not on the link line: the line describes the
+//                               binary, not the intention. The vendored source
+//                               and the CPM fetch stay for that work.
+//
+//    SoundTouch                 The WSOLA time-stretch engine, LGPL-2.1 - the one
+//                               dependency in this file that was not
+//                               permissively licensed. It was probed, included
+//                               and compiled into the plugin, and no stage
+//                               called it, so it was contributing nothing but a
+//                               static LGPL link to the binary. That link is
+//                               gone; THIRD_PARTY_NOTICES.md records the
+//                               library, the fetch stays for the same reason
+//                               signalsmith's does, and the licence question it
+//                               raised with it.
 // ------------------------------------------------------------------------------
 #if ! defined (J37_DSP_HARNESS)
 
@@ -152,32 +201,34 @@
   #define J37_HAS_RWQ 0
  #endif
 
- // farbot: its headers live under include/farbot, and the CMake target adds
- // include/ to the path, so the spelling is <farbot/...>. Two of its headers are
- // useful here - the realtime-safe FIFO and the RealtimeObject that guards it.
- #if __has_include (<farbot/fifo.hpp>)
-  #include <farbot/fifo.hpp>
-  #define J37_HAS_FARBOT 1
- #else
-  #define J37_HAS_FARBOT 0
- #endif
-
-
-
- // SoundTouch: its public headers sit flat in include/, and that one directory
- // is what the CMake target exposes, so the spelling is the bare
- // <SoundTouch.h>. Probed like the rest, so a checkout with ThirdParty/ pruned
- // reports 0 instead of failing the compile.
- #if __has_include (<SoundTouch.h>)
-  #include <SoundTouch.h>
-  #define J37_HAS_SOUNDTOUCH 1
- #else
-  #define J37_HAS_SOUNDTOUCH 0
- #endif
-
 #else
  #define J37_HAS_RWQ 0
- #define J37_HAS_FARBOT 0
- #define J37_HAS_SIGNALSMITH 0
- #define J37_HAS_SOUNDTOUCH 0
+#endif
+
+// ------------------------------------------------------------------------------
+//  pocketfft (mreineck/pocketfft, vendored under ThirdParty/pocketfft as the one
+//  header pocketfft_hdronly.h).
+//
+//  Deliberately NOT behind the harness guard the utilities above sit behind, and
+//  deliberately does not include anything. Source/DSP/SpectrumAnalyser.h includes
+//  the header ITSELF when this macro is 1 - the way Source/DSP/NeuralStage.h
+//  includes RTNeural's loader itself - so a file that only decides a macro stays
+//  free of a four-thousand-line header no other stage wants.
+//
+//  Unguarded is what lets a harness opt IN by putting ThirdParty/pocketfft on its
+//  include path and opt OUT by leaving it off.
+//  tests/spectrum/run.sh compiles the same stage BOTH ways and asserts what each
+//  build reports, which is the only way the absent-library branch of a header is
+//  ever compiled at all.
+//
+//  pocketfft was on the link line long before anything included it. That is the
+//  state the review flagged (sixteen entries with no caller) and the reason the
+//  analyser stage exists: an FFT this build already carries is worth calling.
+// ------------------------------------------------------------------------------
+#if ! defined (J37_HAS_POCKETFFT)
+ #if __has_include (<pocketfft_hdronly.h>)
+  #define J37_HAS_POCKETFFT 1
+ #else
+  #define J37_HAS_POCKETFFT 0
+ #endif
 #endif

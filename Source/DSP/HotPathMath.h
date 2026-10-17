@@ -32,39 +32,76 @@
 
 #include "OptionalLibraries.h"
 
+// The library itself, and not only the probe that decides whether it is there.
+// OptionalLibraries.h is deliberately free of the libraries it measures - the
+// convention its pocketfft block states - so a header that USES one includes it:
+// Source/DSP/SpectrumAnalyser.h does this for pocketfft and NeuralStage.h for
+// RTNeural's loader, and the same rule applies here. It matters more than usual
+// because the probe's answer is only 1 when the build has asked for this path.
+#if J37_HAS_XSIMD
+ #include <xsimd/xsimd.hpp>
+#endif
+
 /**
-    The tanh the magnetic shaper calls.
+    The tanh every saturation curve in the shaper calls.
 
     This exists as a named function rather than a direct std::tanh call so the
     one place the shaper's cost can be traded for a different one is explicit
-    and greppable.
+    and greppable. Source/DSP/SaturationCore.h is the caller: all eleven tanh
+    calls across the tape, valve, amp and transformer curves go through here,
+    which is what makes the trade reach the audio at all. (InputStage.h's own
+    clip is deliberately NOT routed through it: that is the preamp, not the
+    shaper, and the question this seam answers is about the shaper's cost.)
 
     Default: std::tanh. Exact, and what every existing render was produced
-    with.
+    with. With the flag undefined this is std::tanh and nothing else.
 
-    With J37_USE_SIMD_TANH defined AND xsimd available: a vectorised rational
-    approximation. It is a DIFFERENT function - accurate to roughly 1e-4 over
-    the range the shaper uses, which is well below audibility for a curve that
-    is already generating harmonics on purpose, but it is not the same curve
-    and it will not null against the default. That is exactly why it is behind
-    a flag: the choice belongs to a listening test, not to a build default.
+    With J37_USE_SIMD_TANH defined AND xsimd available (see the J37_USE_SIMD_TANH
+    option in CMakeLists.txt, which is OFF by default): xsimd's BATCH kernel,
+    used one sample at a time. It is a DIFFERENT function, and the numbers below
+    were measured rather than assumed - tests/dsp/simd_tanh_test.cpp pins them:
 
-    xsimd::tanh is used in its scalar form here. The vector form pays off once
-    the tape loop processes a batch of samples at a time; the scalar entry
-    point lets that change be made in one place without the shaper having to
-    know about it yet.
+      - accuracy: 1.19e-7 absolute and 2.13e-7 relative, worst case, over
+        |x| <= 40 (which covers the shaper's arguments at any drive), and it
+        agrees with std::tanh bit for bit on 95 % of that range, at 0.0, on
+        tiny inputs, and once either function has saturated;
+      - cost: measured through tests/dsp/run_bench.sh, which builds that
+        benchmark twice - the same translation unit, the same signal, one build
+        of each configuration - at ~2.4 ns per call against std::tanh's ~6.7 ns,
+        and at ~42 us to ~28 us per 512-frame block for the WHOLE saturation
+        core, i.e. about 1.5x cheaper on the shaper itself. (GCC 11, x86-64, -O2;
+        the digits move by a few per cent between runs and between machines, so
+        these are quoted as approximations rather than as a spec.)
+
+    That second number is the reason this is worth having, and the first is the
+    reason it stays behind a flag. It changes the rendered audio - by ~1e-7,
+    which is far below audibility for a curve that is already generating
+    harmonics on purpose, but a measured difference in the rendered audio is a
+    listening decision in this repository rather than a build default.
+
+    HOW THE BATCH KERNEL IS REACHED, and the trap this function used to sit in:
+    xsimd offers no approximation under the name xsimd::tanh(float). Its scalar
+    header (xsimd/arch/xsimd_scalar.hpp) does `using std::tanh;`, so a call
+    spelled xsimd::tanh(x) with a FLOAT resolves to libm's own tanh - which is
+    exactly what this function called until it was measured, and why the flag
+    switched nothing at all: the scalar spelling is a no-op that looks like a
+    vectorised one. The approximation lives only in the batch kernel, so a
+    scalar sample is carried through a batch of one. The vector form's real
+    payoff still needs the tape loop to hand over a batch of samples at a time,
+    which is a change to the loop rather than to this function.
 */
-// maybe_unused, and not deleted: this is the seam the opt-in flag switches
-// at, and until J37_USE_SIMD_TANH is turned on nothing calls it, which
-// Clang reports as an unused function on every build. The spelling is kept
-// exactly as it is because tests/dsp/extract.py matches this line by name.
+// maybe_unused, and not deleted: the shaper calls it, but a translation unit can
+// include this header for the two coefficient builders and the clipper without
+// pulling the shaper in, and Clang reports an uncalled inline function in that
+// unit as unused. The attribute says "may be unused", not "is unused".
 [[maybe_unused]] inline float j37Tanh (float x) noexcept
 {
 #if ! defined (J37_DSP_HARNESS) && defined (J37_USE_SIMD_TANH) && J37_HAS_XSIMD
-    // OPT-IN only, not a build default. The SIMD form is a different curve from
-    // std::tanh at roughly the 1e-4 level, so this is correct only after a listening
-    // test / benchmark says the shaper dominates and the difference is acceptable.
-    return xsimd::tanh (x);
+    // OPT-IN only, not a build default: this is a different curve from std::tanh,
+    // by the 1.19e-7 measured above. A batch of one is all a scalar call can hand
+    // the kernel, and it is still ~2.4 ns against ~6.7 ns - see section 6 of
+    // tests/dsp/bench.cpp and the second build tests/dsp/run_bench.sh gives it.
+    return xsimd::tanh (xsimd::batch<float> (x)).get (0);
 #else
     return std::tanh (x);
 #endif

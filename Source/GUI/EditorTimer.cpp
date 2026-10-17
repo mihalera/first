@@ -407,6 +407,20 @@ void FirstAudioProcessorEditor::timerCallback()
     // Report the harmonic balance the tape stage is producing. Even and odd are shown
     // side by side because the ratio between them is the character: even-dominant reads as
     // warm and full, odd-dominant as hard and edgy, and real tape has both.
+    // The SHAPERS page's spectrum, from the same frame as the ratio below it: the
+    // curve and the even/odd split describe one block of audio rather than two,
+    // which is the whole reason the frame carries the bands instead of the editor
+    // reading twenty-four atomics.
+    spectrumBandsDb = telemetry.spectrumBandsDb;
+
+    // Only the page that DRAWS the curve is invalidated, and only its own cell: the
+    // panel is repainted in bands on purpose, and a whole-window repaint per tick is
+    // the cost this file's repaint strategy exists to avoid. shapersSpectrumBounds()
+    // is the same function paint() draws with, so the rectangle that is invalidated
+    // is the rectangle that is drawn - see its declaration in PluginEditor.h.
+    if (activeTabIsShapers)
+        repaint (shapersSpectrumBounds());
+
     const auto evenRatio = telemetry.evenHarmonicRatio;
     const auto oddRatio = telemetry.oddHarmonicRatio;
     harmonicsReadout.setText ("E " + juce::String (evenRatio * 100.0f, 1) + " %"

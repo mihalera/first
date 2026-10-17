@@ -53,6 +53,7 @@
 #include <vector>
 
 #include "extracted_pitch.inc"
+#include "DSP/PitchCorrectionRule.h"
 
 namespace
 {
@@ -505,6 +506,96 @@ void printDiagnostics()
                      static_cast<double> (reading.confidence));
     }
 }
+// =============================================================================
+//  The corrector's rule: the +-10 cent dead zone, the semitone grip, and how
+//  TUNE AMOUNT scales what is left.
+//
+//  This is the one part of the autotune path that is pure arithmetic - the note
+//  the detector heard and the note the scale wants go in, the ratio the shifter
+//  reads at comes out - so it is checked at exact cent values either side of the
+//  boundary rather than through a rendered tone, where 10 cents is inside the
+//  tracker's own error.
+//
+//  What it pins is the claim the header makes: inside the zone the ratio is 1
+//  BIT FOR BIT (so the shifter reads at unity and the note passes untouched),
+//  outside it the pull is the interval the reading asked for, amount scales the
+//  pull rather than the zone, and the grip never exceeds a semitone.
+// =============================================================================
+void testCorrectionDeadZone()
+{
+    using j37dsp::PitchCorrectionRule;
+
+    const auto atCents = [] (double cents)
+    {
+        return static_cast<float> (440.0 * std::pow (2.0, cents / 1200.0));
+    };
+
+    constexpr float target = 440.0f;
+
+    check (PitchCorrectionRule::deadZoneCents == 10.0f,
+           "the dead zone is the documented +-10 cents");
+
+    // --- inside the zone: no correction at all ------------------------------
+    for (const auto cents : { 0.0, 3.0, -3.0, 9.9, -9.9, 10.0, -10.0 })
+    {
+        const auto detected = atCents (cents);
+        check (PitchCorrectionRule::ratio (detected, target, 1.0f) == 1.0f,
+               "  " + std::to_string (cents) + " cents is left alone (ratio exactly 1)");
+    }
+
+    check (PitchCorrectionRule::inDeadZone (atCents (10.0), target)
+           && ! PitchCorrectionRule::inDeadZone (atCents (10.5), target),
+           "the boundary itself is inside the zone and half a cent past it is not");
+
+    // --- outside it: the interval the reading asked for ---------------------
+    {
+        const auto detected = atCents (-10.5);            // a hair flat
+        const auto expected = std::pow (2.0, 10.5 / 1200.0);
+        const auto ratio = PitchCorrectionRule::ratio (detected, target, 1.0f);
+
+        check (ratio > 1.0f && std::abs (ratio - static_cast<float> (expected)) < 2.0e-4f,
+               "10.5 cents flat is pulled up by the interval it is off by");
+    }
+    {
+        const auto detected = atCents (-37.0);            // a third of a semitone flat
+        const auto expected = std::pow (2.0, 37.0 / 1200.0);
+        const auto ratio = PitchCorrectionRule::ratio (detected, target, 1.0f);
+
+        check (std::abs (ratio - static_cast<float> (expected)) < 2.0e-4f,
+               "and a third of a semitone is pulled the whole way at full amount");
+    }
+
+    // --- TUNE AMOUNT scales the PULL, not the zone --------------------------
+    {
+        const auto detected = atCents (-50.0);
+        const auto full = PitchCorrectionRule::ratio (detected, target, 1.0f);
+        const auto half = PitchCorrectionRule::ratio (detected, target, 0.5f);
+        const auto none = PitchCorrectionRule::ratio (detected, target, 0.0f);
+
+        check (std::abs (half - (1.0f + (full - 1.0f) * 0.5f)) < 2.0e-5f,
+               "half amount is half the pull on a note outside the zone");
+        check (none == 1.0f, "and zero amount is no pull at all");
+    }
+
+    // --- the grip: a semitone either way, never more ------------------------
+    {
+        // A reading SHARP of the target has to be pulled DOWN (ratio below 1) and
+        // a flat one pushed UP, so the clamps are the other way round from the
+        // direction of the error.
+        const auto sharp = PitchCorrectionRule::ratio (atCents (200.0), target, 1.0f);
+        const auto flat = PitchCorrectionRule::ratio (atCents (-200.0), target, 1.0f);
+
+        check (std::abs (sharp - PitchCorrectionRule::minRatio) < 1.0e-6f,
+               "a reading two semitones sharp is gripped to the -6 % clamp");
+        check (std::abs (flat - PitchCorrectionRule::maxRatio) < 1.0e-6f,
+               "and two semitones flat to the +6 % one");
+    }
+
+    // --- nonsense in, unity out --------------------------------------------
+    check (PitchCorrectionRule::ratio (0.0f, target, 1.0f) == 1.0f
+           && PitchCorrectionRule::ratio (target, 0.0f, 1.0f) == 1.0f,
+           "a missing reading or target yields unity rather than a division");
+}
 } // namespace
 
 int main()
@@ -520,6 +611,7 @@ int main()
     testSpliceResidueIsBounded();
     testUnityIsTransparent();
     testShifterKeepsItsFooting();
+    testCorrectionDeadZone();
     printDiagnostics();
 
     std::printf ("\n%s (%d failure%s)\n", gFailures == 0 ? "PITCH CHECK PASSED" : "FAILURES PRESENT",

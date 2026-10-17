@@ -567,6 +567,33 @@ target_include_directories(first PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated"
 #  linking target's module list - leaving them out fails the configure with a
 #  missing module error rather than at link time.
 # ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+#  What the binary is actually made of.
+#
+#  Every entry below is a library some line of Source/ includes, and nothing else
+#  is here. That rule is new, and it is checked: tests/linkline/check_linkline.py
+#  reads this call and the include lines out of Source/ and fails when a linked
+#  target has no caller. Until it was applied the line carried eighteen targets
+#  that no file of the plugin's own code named - a second FFT (four of them, in
+#  fact, against the one pocketfft the spectrum analyser uses), a second decoder
+#  stack, a second GUI toolkit, a socket library, two rival pitch detectors and
+#  a reverb - each of them fetched, configured, compiled into an archive and
+#  handed to the linker so it could be discarded, on five platforms per run.
+#
+#  The PACKAGES are still declared in cmake/J37Dependencies.cmake: the fetch is
+#  what makes "use it" a one-line change, and several of the removed entries are
+#  candidates for a stage that does not exist yet (dr_libs for a file the IR
+#  stage might read, dattorro_verb for a room, the pitch trackers for a second
+#  opinion on PitchTracker). What is not true is that the shipping plugin links
+#  them, and the link line is a claim about the binary rather than about intent.
+#
+#  `signalsmith-stretch` left with the rest of them, and it is the one worth
+#  saying out loud: the plan names it as the corrector's engine, but
+#  Source/DSP/RealtimePitchShifter.h shifts one frame at a time and the library
+#  works one BLOCK at a time, so adopting it is a restructure of the frame loop
+#  rather than a swap. Linking a library the code cannot call yet is how the
+#  eighteen got there.
+# ------------------------------------------------------------------------------
 target_link_libraries(first
     PRIVATE
         juce::juce_audio_processors
@@ -584,28 +611,10 @@ target_link_libraries(first
         melatonin_blur
         foleys::foleys_gui_magic
         xsimd
-        signalsmith-stretch
-        SoundTouch
-        fftconvolver
-        imgui
-        farbot
-        rack_dsp
         readerwriterqueue
-        kissfft
         pocketfft
-        yasio
-        dywapitchtrack
-        PFFFT
         RTNeural
-        dr_libs
-        yin_pitch
-        pitch_detector
-        audio_fft
-        dattorro_verb
-        sndfile
         nlohmann_json
-        q_dsp
-        sokol_gfx
         glm
         PluginResources
     PUBLIC
@@ -618,6 +627,37 @@ target_link_libraries(first
 #  to the target. Both are additive accelerators; see that file for the detail.
 # ------------------------------------------------------------------------------
 j37_apply_vendor_libraries(first)
+
+# ------------------------------------------------------------------------------
+#  The shaper's tanh: the one switch in this build that changes the rendered
+#  audio, and the only place a library is wired to the engine by a macro.
+#
+#  OFF by default, deliberately. Source/DSP/HotPathMath.h's j37Tanh is the single
+#  call that every saturation curve in Source/DSP/SaturationCore.h runs, and this
+#  option is what makes it xsimd's batch kernel instead of std::tanh: measured
+#  through tests/dsp/run_bench.sh (the same translation unit built both ways,
+#  section 6 of the log) at ~2.4 ns per call against std::tanh's ~6.7 ns, which
+#  makes the whole saturation core about 1.5x cheaper - ~42 us to ~28 us per 512
+#  frame block on the machine that measured it. It is off because it is a
+#  DIFFERENT CURVE: 1.19e-7 absolute at worst, which is far below audibility for
+#  a stage that is generating harmonics on purpose, but a measured difference in
+#  the rendered audio is a listening decision in this repository and not a build
+#  default.
+#
+#  xsimd is already on the plugin's include path - it is fetched into
+#  ThirdParty/ and linked as chowdsp::chowdsp_simd - so this option only has to
+#  define the macro the seam reads. tests/dsp/simd_tanh_test.cpp compiles all
+#  three shapes (flag with the library, flag without it, and neither) and asserts
+#  what each one renders, so the switch cannot quietly rot into a no-op again:
+#  as written it called xsimd::tanh on a float, which IS std::tanh.
+# ------------------------------------------------------------------------------
+option(J37_USE_SIMD_TANH
+    "Run the shaper's tanh through xsimd's batch kernel instead of std::tanh (changes the rendered audio by ~1e-7)"
+    OFF)
+
+if(J37_USE_SIMD_TANH)
+    target_compile_definitions(first PRIVATE J37_USE_SIMD_TANH=1)
+endif()
 
 # ------------------------------------------------------------------------------
 #  Compile definitions
@@ -690,7 +730,7 @@ message(STATUS "                Optional graphics: BGFX, wgpu-native or Dawn (se
 message(STATUS "                transdes, whetstone, multiband-transient-shaper (source only)")
 message(STATUS "                juce_opengl_3d: no such JUCE module, see cmake/J37Dependencies.cmake")
 if(J37_HAVE_VDSP)
-    message(STATUS "  Vector libs : Apple vDSP (Accelerate)")
+    message(STATUS "  Vector libs : Apple vDSP (Accelerate) - JUCE's own FFT path, on by default")
 elseif(APPLE)
     message(STATUS "  Vector libs : Apple vDSP NOT found - portable paths only")
 else()
@@ -698,10 +738,20 @@ else()
 endif()
 if(J37_HAVE_IPP)
     message(STATUS "                Intel IPP found: ${J37_IPP_HOW}")
+    if(J37_IPP_LINKING_MODEL)
+        message(STATUS "                Intel IPP FFT: ${J37_IPP_LINKING_MODEL} - JUCE's FFT engine is Intel's")
+    else()
+        message(STATUS "                Intel IPP FFT: NOT wired - ${J37_IPP_UNWIRED}")
+    endif()
 elseif(J37_ENABLE_IPP)
     message(STATUS "                Intel IPP not installed - portable paths only")
 else()
     message(STATUS "                Intel IPP disabled by J37_ENABLE_IPP=OFF")
+endif()
+if(J37_USE_SIMD_TANH)
+    message(STATUS "  Shaper tanh : xsimd's batch kernel (J37_USE_SIMD_TANH=ON - a different curve, ~1e-7)")
+else()
+    message(STATUS "  Shaper tanh : std::tanh (-DJ37_USE_SIMD_TANH=ON for xsimd's kernel)")
 endif()
 if(J37_BUILD_TESTS)
     message(STATUS "  Dev tests   : ON  (Catch2, nanobench)")

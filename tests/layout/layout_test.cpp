@@ -87,8 +87,18 @@ namespace juce
 // DSP headers have, stated in Source/DSP/J37Math.h.
 #include "GUI/KnobMetrics.h"
 
+// The spectrum curve's arithmetic, which is checked here for the reason the knob
+// metrics are: what it can get wrong is not a crash, it is a curve that draws
+// smoothly, plausibly and upside down. No JUCE is involved - the header is plain
+// arithmetic on floats - so the same harness that measures the knobs can measure
+// this without a window.
+#include "GUI/SpectrumMetrics.h"
+
 using j37panel::computeKnobMetrics;
 using j37panel::KnobMetrics;
+using j37spectrum::ceilingDb;
+using j37spectrum::floorDb;
+using j37spectrum::levelToY;
 
 #include "constants.inc"
 #include "band_height.inc"
@@ -550,6 +560,119 @@ int main()
         check (comboTextInsetCallSites >= 2,
                "both list styles place their text through the one inset rule",
                "LISTS", W, H);
+    }
+
+    // ------------------------------------------------------------------------
+    //  SPECTRUM: the curve the SHAPERS page draws in its member band's fourth
+    //  column. Twenty-four readings and the box they have to fit in - which is
+    //  what makes these claims testable here at every panel size, with no window
+    //  and no renderer: the mapping is arithmetic, and the arithmetic is the part
+    //  that can be wrong without looking wrong.
+    // ------------------------------------------------------------------------
+    {
+        // Checked once rather than per panel size, and that is not a shortcut: what
+        // is under test is a mapping from a dBFS reading into a box's own
+        // coordinates, and it is a pure function of the two numbers it is handed.
+        // The knob metrics above have to be measured at every size because the
+        // panel's arithmetic CHANGES with them; this one is scale-invariant, which
+        // is why the box dimensions are the loop's variable here instead. The
+        // pageW/pageH passed to check() are the report's context, not the input.
+        constexpr int bands = 24;
+        constexpr int pageW = 1280;
+        constexpr int pageH = 800;
+        const auto boxW = 140.0f;   // the member cell at a mid-size panel
+        const auto boxH = 50.0f;
+
+        // The axis, at its two ends and past them. Past them is the case that
+        // matters: a band reading -100 dBFS is a silent one, and it must land ON
+        // the floor rather than above it or off the cell.
+        check (std::abs (levelToY (ceilingDb, boxH) - 0.0f) < 1.0e-6f,
+               "full scale maps to the top of the spectrum's box", "SPECTRUM", pageW, pageH);
+        check (std::abs (levelToY (floorDb, boxH) - boxH) < 1.0e-6f,
+               "the display floor maps to the bottom of the box", "SPECTRUM", pageW, pageH);
+        check (levelToY (floorDb - 40.0f, boxH) == boxH,
+               "a reading below the floor is CLAMPED onto it, not drawn past it",
+               "SPECTRUM", pageW, pageH);
+        check (levelToY (ceilingDb + 40.0f, boxH) == 0.0f,
+               "a reading above full scale is clamped onto the ceiling", "SPECTRUM", pageW, pageH);
+
+        // The same two ends at the shapes the box actually takes: the member cell
+        // is clipped to something small on a narrow panel and is a wide flat strip
+        // on a large one, and both ends have to hold at both.
+        auto endsHoldAtEveryBox = true;
+        for (const auto height : { 24.0f, 50.0f, 96.0f })
+            if (levelToY (ceilingDb, height) != 0.0f || levelToY (floorDb, height) != height)
+                endsHoldAtEveryBox = false;
+        check (endsHoldAtEveryBox,
+               "the ceiling and the floor land on the box's own edges at every cell size",
+               "SPECTRUM", pageW, pageH);
+
+        // Monotonic and ordered: quieter is lower, never higher, at every step.
+        auto monotonic = true;
+        auto previous = levelToY (ceilingDb, boxH);
+        for (int step = 1; step <= 24; ++step)
+        {
+            const auto db = ceilingDb - static_cast<float> (step) * 3.0f;
+            const auto y = levelToY (db, boxH);
+            if (y < previous - 1.0e-6f)
+                monotonic = false;
+            previous = y;
+        }
+        check (monotonic, "the level axis never inverts: quieter always draws lower",
+               "SPECTRUM", pageW, pageH);
+
+        std::array<float, bands> readings {};
+        for (int b = 0; b < bands; ++b)
+            readings[static_cast<std::size_t> (b)] = -6.0f * static_cast<float> (b);
+
+        const auto points = j37spectrum::curve (readings, boxW, boxH);
+        auto inside = true;
+        auto increasing = true;
+
+        for (int b = 0; b < bands; ++b)
+        {
+            const auto& p = points[static_cast<std::size_t> (b)];
+            if (p.x <= 0.0f || p.x >= boxW || p.y < 0.0f || p.y > boxH)
+                inside = false;
+            if (b > 0 && p.x <= points[static_cast<std::size_t> (b - 1)].x)
+                increasing = false;
+        }
+
+        check (inside, "every curve point lies inside its cell, at this and every panel size",
+               "SPECTRUM", pageW, pageH);
+        check (increasing, "the curve runs left to right in band order",
+               "SPECTRUM", pageW, pageH);
+
+        // The same two at the widths the cell takes when the window is dragged: the
+        // half-step inset is what keeps the stroke inside, and it has to remain an
+        // inset however narrow the cell gets.
+        auto insetAtEveryWidth = true;
+        for (const auto width : { 12.0f, 60.0f, 400.0f })
+        {
+            const auto trial = j37spectrum::curve (readings, width, boxH);
+            if (trial.front().x <= 0.0f || trial.back().x >= width)
+                insetAtEveryWidth = false;
+        }
+        check (insetAtEveryWidth,
+               "the first and last points stay inside the cell however narrow it is",
+               "SPECTRUM", pageW, pageH);
+
+        // The two degenerate readings a stopped machine produces: silence is a
+        // flat line ON the floor, and a full-scale machine is a flat line on the
+        // ceiling. Both are checked because both are what the user sees when
+        // nothing is playing - and a curve that drew silence at half height would
+        // read as programme.
+        std::array<float, bands> silence {};
+        silence.fill (floorDb - 30.0f);
+        const auto silent = j37spectrum::curve (silence, boxW, boxH);
+
+        auto flatOnFloor = true;
+        for (const auto& p : silent)
+            if (std::abs (p.y - boxH) > 1.0e-3f)
+                flatOnFloor = false;
+
+        check (flatOnFloor, "silence draws as a flat line on the floor, not at mid height",
+               "SPECTRUM", pageW, pageH);
     }
 
     std::printf ("\n%s (%d failures)\n",

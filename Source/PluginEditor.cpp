@@ -2131,6 +2131,40 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
 //  Where the live page's members are: the mix bar's own strip, then one branch per
 //  page that owns combos or pills in the member band.
 //==============================================================================
+//==============================================================================
+//  Where the SHAPERS page's spectrum is drawn.
+//
+//  The arithmetic MIRRORS paint()'s, deliberately and in the same words it uses for
+//  the neural card: the member band is a fixed 50 px strip at the grid's bottom, the
+//  grid is the controls band reduced by 14 and cut by the divider offset, and the
+//  band is four columns wide. The card takes the first column, the two IR loaders
+//  the second and third, and this takes the FOURTH - the one cell on the page no
+//  control claims.
+//
+//  It exists as a function rather than as a second copy inside the timer because
+//  paint() and the timer MUST agree: one draws the curve, the other decides which
+//  pixels are redrawn, and a disagreement between them is a curve that is stale at
+//  its edges and frozen where the invalidation missed. That is not hypothetical - it
+//  is what the status pill did (see the declaration in PluginEditor.h).
+//==============================================================================
+juce::Rectangle<int> FirstAudioProcessorEditor::shapersSpectrumBounds() const
+{
+    constexpr int tabColumns = 4;
+    constexpr int memberBandHeight = 50;
+    constexpr int spectrumColumn = 3;
+
+    auto grid = getEditorLayout().controls.reduced (14);
+    grid.removeFromTop (controlsDividerOffset - 14 + 8);
+    grid.removeFromBottom (8);
+
+    const auto cellWidth = grid.getWidth() / tabColumns;
+
+    return { grid.getX() + spectrumColumn * cellWidth,
+             grid.getBottom() - memberBandHeight,
+             cellWidth,
+             memberBandHeight };
+}
+
 void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry)
 {
     if (geometry.mixTab)

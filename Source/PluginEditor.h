@@ -26,6 +26,12 @@
 // kit is the one file the editor's own header has to include.
 #include "GUI/PanelPaint.h"
 
+// The panel's tooltip window. juce::TooltipWindow shows the NEXT control's tip
+// at once while one is on screen; DwellTooltipWindow applies the dwell on every
+// change of control. See Source/GUI/TipDwell.h for the branch in JUCE that does
+// it and what this fixes on the panel.
+#include "GUI/DwellTooltipWindow.h"
+
 // foleys_gui_magic (fetched by CPM in CMakeLists.txt). Daniel Walz's declarative
 // GUI framework: the editor's controls can be described in XML and edited live,
 // instead of every position being computed by hand in resized(). It is linked and
@@ -562,6 +568,15 @@ private:
     void placeMeters (const EditorLayout& layout);
     void verifyPanelHasNoOverlaps() const;
 
+    /** The rectangle the spectrum curve is drawn in: the SHAPERS page's member band,
+        fourth column, in the geometry paint() draws that band with.
+
+        ONE definition, called by paint() to draw into it and by the timer to
+        INVALIDATE it. Two copies of this arithmetic is exactly how the status pill
+        kept the old 92 px cell and overhung its own band by 72 px - the pill was
+        drawn from one copy of the grid and invalidated from another. */
+    juce::Rectangle<int> shapersSpectrumBounds() const;
+
     // -------------------------------------------------------------------------
     //  The constructor's phases, in the order it calls them.
     //
@@ -704,10 +719,13 @@ private:
 
     // Tooltips (set with setTooltip on the workflow controls) only render while a
     // TooltipWindow instance exists; without one the calls are silent no-ops.
-    // TooltipWindow: a shared instance is required for any setTooltip text to show.
-    // SharedResourcePointer default-constructs the object; the hover delay is set in
-    // the editor's constructor through setMillisecondsBeforeTipAppears().
-    juce::SharedResourcePointer<juce::TooltipWindow> tooltipWindow;
+    // A shared instance is required for any setTooltip text to show, and it is the
+    // PANEL's window rather than JUCE's: j37panel::DwellTooltipWindow applies the
+    // third of a second on every change of control, where the base class applies
+    // it only to the first (Source/GUI/TipDwell.h has the branch and the fix).
+    // SharedResourcePointer default-constructs it; the window's own delay is set to
+    // 0 in the editor's constructor so the dwell lives in exactly one place.
+    juce::SharedResourcePointer<j37panel::DwellTooltipWindow> tooltipWindow;
 
     // component -> the English it was given, so updateTooltips() has something to
     // replay. A vector rather than a map: the order tooltips were set in is the
@@ -1078,6 +1096,16 @@ private:
     // paint() draws the neural picker's card behind the SHAPERS page's member
     // band's first column - the page whose NEURAL knob the picker belongs to.
     bool activeTabIsShapers = false;
+
+    // The shaper's spectrum, which paint() draws in that band's FOURTH column - the
+    // one cell on the page nothing else claims. Filled by the timer from the frame
+    // the harmonic readout beside it is read from, so the curve and the ratio
+    // describe the same block of audio.
+    //
+    // Twenty-four floats in one array rather than a member per band, and no
+    // separate atomic per band: the frame is already the channel the audio thread
+    // publishes through, and a curve is read as a whole or not at all.
+    std::array<float, SpectrumAnalyser::bandCount> spectrumBandsDb {};
 
     // -----------------------------------------------------------------------
     //  The front panel's theme.

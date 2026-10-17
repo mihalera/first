@@ -8,17 +8,23 @@ me?** - in one screen.
 Everything here runs on a machine with nothing but a C++17 compiler, Python 3 and
 bash. No JUCE build, no audio device, no plugin host, no CMake configure. The
 whole suite is seconds of work, which is why it runs on every pull request and
-not only where the plugin is built.
+not only where the plugin is built. The two rows that need something *fetched*
+first say so where they appear: Catch2 for the unit suite, nanobench for the
+benchmarks.
 
 ## Run it
 
 ```bash
-tests/dsp/run.sh          # subharmonics (SUBFUND) + the loudness meter
+tests/dsp/run.sh          # subharmonics (SUBFUND), the loudness meter, and the shaper's tanh seam
 tests/layout/run.sh       # knob geometry on every page, at four panel sizes
+tests/tooltip/run.sh      # the tooltip dwell, at exact millisecond boundaries
 tests/state/run.sh        # session state round trip, and older state files
 tests/transport/run.sh    # the transport rig, frame by frame
 tests/pitch/run.sh        # the pitch tracker and the granular shifter
+tests/phase/run.sh        # the three-band output anti-phase guard, band by band
 tests/neural/run.sh       # the rate bridge, and the neural stage with RTNeural stubbed
+tests/spectrum/run.sh     # the spectrum analyser, with pocketfft in and out of the build
+tests/unit/run.sh         # the equaliser, the compressor and the transient shaper, as units
 
 tests/dsp/check_headers_juce.sh     # every Source/DSP/*.h against real JUCE
 tests/editor/check_editor_juce.sh   # every translation unit and Source/GUI/*.h against real JUCE
@@ -28,19 +34,32 @@ python3 tests/theme/check_theme_wiring.py        # theme re-inking coverage
 python3 tests/translations/check_translations.py # the shipped translation tables
 python3 tests/parameters/check_parameters.py     # the table and the code that reads it
 python3 tests/shaders/check_shaders.py           # the GLSL and the uniforms it is fed
+python3 tests/definitions/check_definitions.py   # the macros the build defines, and who reads them
+python3 tests/linkline/check_linkline.py         # the link line, against the includes under Source/
 ```
 
-Two environment switches, both used by `build-linux-debug`:
+Two environment switches, both used by the workflows:
 
 | Variable | Effect |
 | --- | --- |
-| `J37_SANITIZE=address,undefined` | builds the harnesses in the first six rows with ASan + UBSan and turns them loose on the same assertions |
+| `J37_SANITIZE=address,undefined` | builds every harness above, and the unit suite, with ASan + UBSan and turns them loose on the same assertions |
 | `CXX` | the compiler to use; `g++` by default |
 
-The micro-benchmarks are separate and informational: `tests/dsp/run_bench.sh`
+The micro-benchmarks are separate and **informational**: `tests/dsp/run_bench.sh`
 (nanobench, needs `-DJ37_BUILD_TESTS=ON` to have fetched it) and the hot-path
 probe step in `.github/workflows/build.yml`. Nothing fails a build because a
-benchmark got slower.
+benchmark got slower. It builds `tests/dsp/bench.cpp` TWICE - once as the engine
+ships, once with `-DJ37_USE_SIMD_TANH=1` - so the rows the two logs share
+(`SaturationCore::process` above all) are the measurement of what that switch
+buys, on the same signal through the same file, rather than two benchmarks
+being compared from memory.
+
+The unit suite needs a framework rather than a measurement, from the same
+`-DJ37_BUILD_TESTS=ON` configure: `tests/unit/run.sh` compiles Catch2's own
+amalgamated sources, looks for the checkout in the CPM cache and takes
+`CATCH2_DIR` as an override. Unlike the benchmarks it IS a gate, because every
+number in it is a property of a function rather than of the machine - there is
+nothing in it that a busier runner could make flaky.
 
 ## What each harness compiles
 
@@ -50,35 +69,49 @@ shipping header* tests the code the plugin compiles.
 
 | Harness | What it compiles | How it gets it |
 | --- | --- | --- |
-| `dsp` | the subharmonic generator, the loudness meter, and a reduced replica of the signal path | extracts spans through `tests/dsp/extract.py`, **and** `#include`s every stage that has moved to `Source/DSP/` |
-| `layout` | the knob strip arithmetic and the editor's constructor phase order | `tests/layout/extract.py` cuts it out of `Source/PluginEditor.cpp` + `Source/GUI/` |
+| `dsp` | the subharmonic generator, the loudness meter, and a reduced replica of the signal path - plus `j37Tanh`, `SaturationCore` and the seven curves, built THREE ways | extracts spans through `tests/dsp/extract.py`, **and** `#include`s every stage that has moved to `Source/DSP/`; the tanh seam's three binaries are one file compiled with and without `J37_USE_SIMD_TANH` and with and without xsimd on the include path |
+| `layout` | the knob strip arithmetic, the editor's constructor phase order, and the spectrum curve's level mapping | `tests/layout/extract.py` cuts the first two out of `Source/PluginEditor.cpp` + `Source/GUI/`, and `#include`s `Source/GUI/SpectrumMetrics.h` directly |
+| `tooltip` | `j37panel::TipDwell` - the rule that decides when a hint may be shown | `#include`s `Source/GUI/TipDwell.h` as it ships: no extractor, no shim, because the header includes nothing (the JUCE half is `Source/GUI/DwellTooltipWindow.h`) |
 | `state` | the parameter table and the state functions | `tests/state/extract.py`, compiled against `tests/state/juce_stub.*` |
 | `transport` | `TransportRig` and `RepitchStage` | `#include`s the shipping headers from `Source/DSP/` |
 | `pitch` | `PitchTracker` and `RealtimePitchShifter` | `#include`s the shipping headers from `Source/DSP/` |
+| `phase` | `MultibandPhaseGuard` - the crossovers, the six band envelopes and the rotation | `#include`s the shipping header from `Source/DSP/`: no extractor, no replica, because the guard is arithmetic on the two samples it is handed |
 | `neural` | `RateBridge`, and `NeuralStage` with `J37_HAS_RTNEURAL=1` | `#include`s the shipping headers; RTNeural's two-method API is stood in for |
+| `spectrum` | `SpectrumAnalyser` | `#include`s the shipping header from `Source/DSP/`, compiled TWICE: with `ThirdParty/pocketfft` on the include path, and without it |
+| `unit` | `ThreeBandEq`, `StandardCompressor` and `TransientShaper` - one stage per file | `#include`s the shipping headers from `Source/DSP/` against the same shim the DSP harness uses, and links Catch2's amalgamated sources: no replica of the engine, because none of the three needs one |
+| `linkline` | no C++ at all: `target_link_libraries(first ...)` in `CMakeLists.txt`, every `#include` under `Source/`, and the `J37_HAS_*` probes in `OptionalLibraries.h` | reads all three as text. A spelling table says how each target is named when the code uses it (`nlohmann_json` is `nlohmann/json.hpp`, `pocketfft` is `pocketfft_hdronly.h`, `chowdsp_simd` is included by chowdsp_dsp_utils rather than by `Source/`), because a name match would call `rack_dsp` used on the strength of `PitchTracker.h` |
 | `dsp/check_headers_juce.sh` | every header in `Source/DSP/`, against real JUCE | compiles each header's public surface; catches a header that only works under a harness shim |
 | `editor/check_editor_juce.sh` | every translation unit the plugin builds, and every `Source/GUI/*.h` | compiles them against real JUCE; catches a moved block with a missing include |
-| the five Python checks | no C++ at all | read `Source/` as text and compare tables to the code |
+| the seven Python checks | no C++ at all | read `Source/` and the build files as text and compare tables to the code |
 
 ## What each harness guarantees
 
 | Harness | The claims it pins | Written for |
 | --- | --- | --- |
 | `dsp` (subfund) | the undertone series is generated at the octave below, does not run away, stays silent below its threshold, and the anti-phase guard engages | the subharmonic generator shipping silent and then shipping louder than the programme |
+| `dsp` (tanh seam) | that the shaper's tanh is `std::tanh` bit for bit unless `J37_USE_SIMD_TANH` is thrown, that the flag WITHOUT xsimd on the include path renders the default curves byte for byte, and that the flag WITH xsimd really moves the rendered audio - by 1.19e-7 at worst, which is the accuracy the header quotes, and not by zero, which is what it used to do | a flag that switched a function nothing called, whose branch called `xsimd::tanh` on a float - and xsimd's scalar entry point is `using std::tanh;`, so the switch was a no-op that no build, test or CI job could notice. The three binaries are compared against each other because "the flag reaches the audio" is a claim about two builds rather than about one |
 | `dsp` (loudness) | calibration, linearity, rate independence, the 3.01 LU channel sum, the floor, and that `prepare()` then `reset()` leaves the curve in place | the K-weighting filter running on one pair of state variables for two channels, and `reset()` zeroing the coefficients |
-| `layout` | every knob's tile stands inside its page and above the member band; no two tiles overlap; the strip is centred; the disc is drawable at the 780 x 664 floor; the value text clears its field's wall; the painted disc is the solved disc | a layout drifting away from the paint routine, and a constructor phase that quietly never ran |
+| `tooltip` | a hint is withheld for the full 350 ms after the pointer lands on a control, the clock restarts when it moves to the NEXT control (so the second hint waits exactly as long as the first), a repeated reading of the same control restarts nothing, and hovering off the panel counts as a change | a hint that appeared instantly when the pointer moved between two switches, because `juce::TooltipWindow` applies its delay only to the first tip and shows every later one as soon as the hovered component changes |
+| `layout` | every knob's tile stands inside its page and above the member band; no two tiles overlap; the strip is centred; the disc is drawable at the 780 x 664 floor; the value text clears its field's wall; the painted disc is the solved disc; and the spectrum curve's level axis runs the right way up, is CLAMPED at both ends rather than rescaled, and keeps every point inside its cell at any box size | a layout drifting away from the paint routine, and a constructor phase that quietly never ran - plus a curve that draws smoothly, plausibly and upside down, which no screenshot review catches |
 | `state` | a written state reads back identical, an older state loads, an unknown key is ignored, and a missing parameter keeps its default | a bad pointer or an out-of-bounds read in the state path, which only ever shows up in someone's session |
 | `transport` | START starts, STOP arrives at rest, the power cut spins down, and `platter()` moves the way the engine's level and modulation assume | START doing nothing on a running machine, and STOP approaching rest without reaching it |
-| `pitch` | the tracker finds notes, notes with harmonics, and notes in noise; silence yields no note; the shifter holds its ratios | an out-of-range lag or a read past the delay line |
+| `pitch` | the tracker finds notes, notes with harmonics, and notes in noise; silence yields no note; the shifter holds its ratios; and the corrector leaves a reading within ±10 cents exactly alone (ratio 1, bit for bit), pulls one outside it by the interval it is off, scales the pull with TUNE AMOUNT and never grips past a semitone | an out-of-range lag or a read past the delay line, and a corrector that "corrects" a performance that was already in tune - which is what removes the human character the control is meant to keep |
+| `phase` | the three Linkwitz-Riley bands sum back to a flat magnitude (within 0.1 dB across 30 Hz to 15 kHz) and each path is -6 dB at its own crossover; a correlated frame at full engagement comes back bit for bit; an inverted LOW band loses its side by 40 dB while the high band, which was healthy but wide, keeps its own within 0.03 dB; the recovered low band is folded into MID rather than faded away; and when the fault ends the rotation unwinds until the pair is whole again | a single-band guard rotating the whole frame by the low band's reading, which flattens the bands that were fine to fix the one that was not - and the two things a guard must never do: change a mix with no problem, or leave a rotation latched after the fault is gone |
 | `neural` (rate) | the bridge carries signal between the engine's rate and a model's, at the rate pairs the engine can produce | the stage running a model at the engine's rate while the model carries its trained rate |
 | `neural` (stage) | the guarded half of `NeuralStage` - everything inside `#if J37_HAS_RTNEURAL` - compiles and runs | a branch no harness had ever compiled |
+| `unit` (`ThreeBandEq`) | at neutral settings the stage is an identity to within a float step and both filters are real bypasses at their off ends; the pole count is the slope divided by six, clamped to the eight-pole array; Q is held between 0.5 and 1.5; the high-pass removes DC while the low-pass keeps it; LOW and HIGH each move their own end of the spectrum and leave the other, and MID moves its own band without dragging the ends with it (measured and bounded: about 1.09x at 50 Hz and 1.15x at 10 kHz alongside 1.9x on the bell, for MID at +6 dB) | a "neutral" EQ that is actually a very gentle filter, an order control that quietly picks a different slope, and the wrong band taking a shelf's gain. It also records where the header's wording is stronger than the arithmetic: the three bands are a SUM of one-pole splits, so transparency is exact for a fresh instance on most values and one float step off on others (0.1 comes back 0.099999994) - a float step, never a filter, and the test says which is which |
+| `unit` (`StandardCompressor`) | unity under the threshold; the ratio's slope above the knee, as 10 dB more in and 10/ratio dB more out; a knee that blends rather than steps, checked as three 4 dB steps up the curve; MAKEUP exactly on the label; a ratio below 1:1 behaving as 1:1 rather than as a gate; RELEASE recovering to unity instead of parking; and finite output at the parameter extremes, including a sample rate of zero. The slope is measured as a DIFFERENCE because the detector reads a sine about 1.6 dB high - a property of asymmetric ballistics that the suite pins rather than assumes | the two places this stage's maths divides by something - the ratio guard and the knee - and a gain that stays where a loud passage left it instead of recovering |
+| `unit` (`TransientShaper`) | 0/0 returns the input bit for bit; ATTACK moves the leading edge and leaves the tail where it was; SUSTAIN lifts the tail at +1 and shortens it at -1 - the sign the header spends its longest paragraph justifying - and leaves the edge alone; the applied gain stays inside a quarter and four; and a signal arriving into an envelope that has only ever seen silence produces no NaN. The signal is a PLUCKED note rather than a step, because a step's tail is exactly zero and cannot show what SUSTAIN does | the inverted SUSTAIN sign, which sounds like a working control until it is measured, and a normalisation that divides by an empty envelope |
+| `spectrum` | the transform is calibrated (a full-scale tone on a bin centre reads 0 dBFS), linear, low between bins only as far as a Hann window's own 1.42 dB scalloping loss allows, band-ordered, and floored on silence; and that a build WITHOUT pocketfft still compiles, stays unready and reports the floor | a curve that reads high or draws the wrong band, which looks entirely plausible on a panel - and the absent-library half of a header, which nothing else here compiles |
 | `presets` | the preset names match the table, every sound-bearing parameter has a column, and the counts agree with `ParameterTable.cpp` | the preset box listing 20 names for a 26-row table, and 15 sound-bearing parameters silently keeping the session's value |
 | `theme` | every widget the panel owns is re-inked when the theme changes | a control keeping the ivory panel's ink on charcoal, or falling back to the Look and Feel's own dark scheme |
 | `translations` | no dead keys, every lookup present in every language, no ambiguous or empty entry | 17 Ukrainian entries keyed to sentences the plugin no longer said |
+| `linkline` | every library on the plugin's link line is named by an include under `Source/`, every library the code includes is on the link line, and every `J37_HAS_*` probe is read outside the header that decides it - with one named exception, `J37_HAS_CHOWDSP_DSP`, whose target is the GPLv3 module and whose owner is the licence decision in plan item 1.1 | eighteen linked libraries the code never named: four alternative FFTs against the one pocketfft the analyser calls, a second decoder stack, a GUI toolkit, a socket library, two rival pitch detectors, a reverb and an LGPL time stretcher - plus xsimd's probe, read only by a branch no build compiled |
 | `check_headers_juce` | each `Source/DSP/*.h` compiles against real JUCE, alone | a header that compiles under the harness shim and not in the plugin |
 | `check_editor_juce` | each translation unit and each `Source/GUI/*.h` compiles against real JUCE | a moved block whose new file forgot an include; it caught three faults on its first run |
 | `check_parameters` | that the table and the code that reads it agree, both ways: every registered id is fetched with `getRawParameterValue` or looked up with `getParameter`, every name read is registered, and every handle fetched is read again somewhere | a knob that changes nothing - a mistyped id reaches nothing silently (`getRawParameterValue` returns nullptr and every call site is `if (x != nullptr)`), and a registered parameter nothing reads is a row in the host's list that consumes nothing |
 | `check_shaders` | that both GLSL sources are still runs of one literal per line, that `TAPE_SCENE_HIGHP` is still defined, and that the uniforms the shaders declare are exactly the ones `TapeScene.cpp` sets | the `"the lit arc"` line of `TapeSceneShaders.h`, where a paste left a bare quote behind - the literal closed early and the rest of the line became a C++ comment, which compiles; and a `setUniform` name the linked program does not declare, which is a silent no-op that leaves the visual that depends on it at zero |
+| `check_definitions` | that every `J37_*` macro the build hands the compiler is read by a preprocessor branch under `Source/`; and that the IPP switch is the one JUCE's own FFT engine is gated on, is still thrown, and that the `JUCE_DSP_USE_INTEL_IPP` spelling which does not exist in JUCE 9.0.4 stays out of the build | `J37_HAVE_IPP` and `J37_HAVE_VDSP`, defined for the plugin by `cmake/J37VendorLibraries.cmake` and read by no file under `Source/` - two claims about the build that nothing checked, beside an IPP install that was discovered, linked and accelerated nothing. The JUCE half of the check needs the submodule and says so when it is not there |
 
 ## What the suite does **not** cover
 

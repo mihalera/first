@@ -38,7 +38,8 @@ editor; the editor reads published numbers.
 
 ## The signal path
 
-The order, in the code's own terms, is
+The order, in the code's own terms, is [signal-path.md](signal-path.md) - stage
+by stage, with the rate domain of each - and the short version is
 [README.md § Signal path](../README.md#signal-path). Where each step lives:
 
 | Stage | File |
@@ -67,6 +68,7 @@ The order, in the code's own terms, is
 | transport (stop / play / start, the power cut) | `Source/DSP/TransportRig.h` |
 | repitch (what the platter's speed does to the audio) | `Source/DSP/RepitchStage.h` |
 | harmonic readout for the panel | `Source/DSP/HarmonicAnalyser.h` |
+| spectrum analyser, and the only caller pocketfft has | `Source/DSP/SpectrumAnalyser.h` |
 | the per-sample scalar helpers | `Source/DSP/HotPathMath.h` |
 | which optional libraries this build has | `Source/DSP/OptionalLibraries.h` |
 | the scalar math, routed to chowdsp or `std::` | `Source/DSP/J37Math.h` |
@@ -131,7 +133,7 @@ gap: those files are compiled by the platform builds and checked by nothing else
 ```
 CMakeLists.txt              the target, its sources, its definitions, its formats
 cmake/J37Dependencies.cmake everything fetched, in the order it must be configured
-cmake/J37VendorLibraries.cmake  IPP / Accelerate discovery and wiring
+cmake/J37VendorLibraries.cmake  IPP / Accelerate discovery, and the switch that makes JUCE's own FFT use IPP
 cmake/J37Platform.cmake     the Apple, Windows and Android specifics
 cmake/J37ThirdPartyWarnings.cmake  warning suppression for vendored code
 cmake/J37Tests.cmake        Catch2 + nanobench, off by default
@@ -164,3 +166,21 @@ cover. Two of them are structural rather than functional and belong in this map:
 the same for every header in `Source/DSP/`. Between them they are what makes the
 split of these files safe: every other harness compiles an extracted span and
 would not see a moved block with a missing include.
+
+One of them is wired the opposite way round, from a library to the audio: every tanh
+the saturation core runs goes through `j37Tanh`, the one seam a library switch can be
+thrown at, and the switch is `J37_USE_SIMD_TANH` (off by default, because it changes
+the rendered audio by ~1e-7). `tests/dsp/simd_tanh_test.cpp` is built in all three
+shapes - flag with xsimd, flag without it, and neither - and the three binaries'
+curve digests are compared against each other, because "the switch reaches the audio"
+is a claim about two builds rather than about one.
+
+Three of the stages in the table above are unit-sized rather than engine-sized -
+they hold no state of their own, take their coefficients as arguments, and state
+their contract in the header comment - so they are measured directly as well as
+through a harness: `tests/unit/run.sh` drives `ThreeBandEq`,
+`StandardCompressor` and `TransientShaper` one call at a time under Catch2 (a
+dev-only dependency, fetched by `-DJ37_BUILD_TESTS=ON`). A stage that is
+engine-sized - one that reads the processor's state or the block-rate
+coefficients - stays with the harnesses, which is the split `cmake/J37Tests.cmake`
+describes from the other side.

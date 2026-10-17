@@ -759,6 +759,12 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     antiPhaseProductMagnitude = 1.0e-3f;
     antiPhaseAmount.store (0.0f, std::memory_order_relaxed);
 
+    // The per-band guard is prepared at the engine's rate here - the crossovers'
+    // coefficients and the envelope's pole are both functions of it - and reset
+    // so the first block after a rate change does not start with a stale filter.
+    antiPhaseGuard.prepare (sampleRateToUse);
+    antiPhaseGuard.reset();
+
     // The two equalisers start clean, so the first block after a rate change is
     // not coloured by a stale filter state from the previous rate.
     inputEq.reset();
@@ -977,6 +983,19 @@ void FirstAudioProcessor::updateNeuralSampleRates()
     const auto engineRate = static_cast<double> (
         juce::jmax (1.0f, sampleRate * oversamplingRateFactor));
     neuralEngineRate.store (engineRate, std::memory_order_relaxed);
+
+    // The spectrum analyser is rebuilt from the same number, here, for the same
+    // reason and in the same place. Its window and its band ladder are both
+    // functions of the rate, so an OVERSAMPLING change moves every band edge: a
+    // ladder built for a 48 kHz engine would label a 384 kHz transform with the
+    // wrong frequencies and the curve would be a picture of nothing.
+    //
+    // This function is the engine-rate hook - reached from prepareToPlay and from
+    // a factor change, which arrives on the audio thread - so preparing here is
+    // what keeps a second copy of `sampleRate * oversamplingRateFactor` from being
+    // written somewhere else and drifting. prepare() allocates nothing and takes
+    // no lock (every buffer it fills is a member), so it is safe on that thread.
+    spectrumAnalyser.prepare (engineRate);
 
     const auto modelRate = neuralModelRate.load (std::memory_order_relaxed);
     neuralL.setSampleRates (modelRate, engineRate);

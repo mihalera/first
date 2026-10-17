@@ -47,6 +47,8 @@
 
 #include "DSP/BlockRateCoefficients.h"
 #include "DSP/HotPathMath.h"
+#include "DSP/MultibandPhaseGuard.h"
+#include "DSP/PitchCorrectionRule.h"
 #include "DSP/TapeModulation.h"
 #include "HotPathProbe.h"
 
@@ -365,17 +367,21 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
 
         const auto targetHz = 440.0f * std::pow (2.0f, (static_cast<float> (target) - 69.0f) / 12.0f);
 
-        // A semitone either way: a corrector pulls a note ONTO the grid, it does
-        // not transpose. A wider grip would chase a reading the detector is
-        // reporting an octave away and take the performance with it.
-        const auto ideal = juce::jlimit (0.94f, 1.06f, targetHz / juce::jmax (1.0f, detected));
-
+        // The pull itself, with the two rules that make it a corrector rather
+        // than a quantiser: a reading within +-10 cents of the target is left
+        // ALONE (the dead zone - a voice is never exactly on the grid, and the
+        // part of the performance that is slightly off is the part that sounds
+        // human), and the grip is clamped to a semitone either way, because a
+        // corrector pulls a note onto the grid rather than transposing it. Both
+        // live in Source/DSP/PitchCorrectionRule.h, where tests/pitch can drive
+        // them at exact cents either side of the boundary.
+        //
         // TUNE AMOUNT is a DEPTH as well as a speed. Half the amount is half the
         // pull - a note a hair sharp lands, a note a quarter-tone flat is only
         // nudged - which is the setting a singer reaches for when they want the
         // corrector felt rather than heard. At full amount the pull is the whole
         // semitone and the glide is 8 ms, which is the snap the control promises.
-        const auto ratio = 1.0f + (ideal - 1.0f) * amount;
+        const auto ratio = j37dsp::PitchCorrectionRule::ratio (detected, targetHz, amount);
 
         autoTuneCorrectionSmoothed[i] += (ratio - autoTuneCorrectionSmoothed[i]) * glide;
 
@@ -540,6 +546,16 @@ void FirstAudioProcessor::publishBlockTelemetry (const BlockContext& context,
         frame.harmonicCharacter = driveInto;
         frame.evenHarmonicRatio = evenHarmonicRatio.load (std::memory_order_relaxed);
         frame.oddHarmonicRatio = oddHarmonicRatio.load (std::memory_order_relaxed);
+
+        // The spectrum, read straight off the analyser. It is deliberately the ONE
+        // field in this frame that has no mirror atomic: this function runs on the
+        // audio thread at the end of the block, the frame is the channel the
+        // editor reads, and twenty-four per-band atomics would be state nothing
+        // consults. A build without the queue therefore shows a flat curve rather
+        // than a stale one - getTelemetry()'s atomic fallback leaves these bands at
+        // the floor, which is the honest reading of "this build carries no
+        // frames" rather than a curve frozen at whatever the last block said.
+        frame.spectrumBandsDb = spectrumAnalyser.bands();
         frame.subfundTrackedHz = subfundTrackedHz.load (std::memory_order_relaxed);
         frame.subfundConfidence = subfundConfidence.load (std::memory_order_relaxed);
         frame.antiPhaseAmount = antiPhaseCorrection;
@@ -2664,7 +2680,19 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         // identically and doubling the analyser would cost twice as much for the same
         // reading.
         if (channel == 0)
+        {
             harmonicAnalyser.analyse (preDrive, voicedCore, state.engineSampleRate);
+
+            // The spectrum, fed the same sample the harmonic balance is measured
+            // on: the shaper's own output, which is what makes the curve a
+            // measurement of what the machine produced rather than a copy of what
+            // went into it. One sample per call and the transform every 512 of
+            // them, so the per-sample cost is a call and a store and the work is
+            // amortised - the same shape the analyser beside it already has, and
+            // the reason it is measured on channel 0 alone (the two channels are
+            // driven identically; see the comment above).
+            spectrumAnalyser.process (&voicedCore, 1);
+        }
 
         // Tape is a low-pass medium: the faster the tape and the brighter the
         // tone setting, the more top end survives. The undertones are NOT part of
@@ -3624,36 +3652,25 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
 
         if (antiPhaseCorrection > 1.0e-5f)
         {
-            const float guardMid = 0.5f * (outputSignal[0] + outputSignal[1]);
-            const float guardSide = 0.5f * (outputSignal[0] - outputSignal[1]);
-
-            // The correction is the ANGLE, as a fraction of a quarter turn:
-            // 0 leaves the pair exactly as it arrived, 1 is the quarter turn
-            // that recovers an inverted pair into mono, and every level in
-            // between is a proportional rotation of the pair.
+            // The correction above is the FRAME's, and it is what gates the
+            // guard. The rotation itself happens per BAND, in
+            // Source/DSP/MultibandPhaseGuard.h: the frame is split by
+            // Linkwitz-Riley crossovers at 200 Hz and 2 kHz, each band's own
+            // correlation decides how far that band rotates, and the result is
+            // blended back by the frame's engagement times the opposition the
+            // bands actually reported. So a low end that cancels is fixed
+            // without flattening the bands that were fine - and a frame with no
+            // fault comes back bit for bit, because the blend is zero.
             //
-            // Stating it as the angle rather than as its SINE is the one
-            // thing here that is not a style choice. Keeping sin(angle) in
-            // the correction and recovering cos as sqrt (1 - sin^2) is
-            // arithmetically exact, but its derivative is not: d(angle)/
-            // d(sin) = 1/cos, which is unbounded at the quarter turn. A guard
-            // sitting at full engagement then multiplies every wobble of the
-            // detector - and the whole of a switch-off, which unwinds through
-            // this same pole - into an unbounded step in the angle, and so
-            // into a step in the signal. The angle form moves the pair by at
-            // most a quarter turn per unit of correction at every level, and
-            // the two trig calls ride the same rare branch the rest of the
-            // rotation does (the guard is engaged only while a pair really is
-            // opposed, which is why a slow 400 ms pole is enough to catch it).
-            const float rotation = juce::jlimit (0.0f, 1.0f, antiPhaseCorrection)
-                                   * juce::MathConstants<float>::halfPi;
-            const float sinRotation = std::sin (rotation);
-            const float cosRotation = std::cos (rotation);
-            const float rotatedMid = guardMid * cosRotation + guardSide * sinRotation;
-            const float rotatedSide = guardSide * cosRotation - guardMid * sinRotation;
-
-            outputSignal[0] = rotatedMid + rotatedSide;
-            outputSignal[1] = rotatedMid - rotatedSide;
+            // Two things that used to be inline and are now in that header, so
+            // they are not lost: the rotation is stated as an ANGLE rather than
+            // as its sine (d(angle)/d(sin) is unbounded at a quarter turn, and a
+            // guard sitting at full engagement would turn every wobble of the
+            // detector into a step), and the rotation is ORTHOGONAL, so it moves
+            // what opposes from side into mid instead of fading it out - no
+            // pumping, no level lost, nothing to hear but the image coming back.
+            antiPhaseGuard.process (outputSignal[0], outputSignal[1],
+                                    juce::jlimit (0.0f, 1.0f, antiPhaseCorrection));
         }
     }
     else

@@ -9,7 +9,7 @@
 | **Framework** | JUCE `9.0.4`, pinned as a git submodule |
 | **Build** | CMake 3.22+, MSVC on Windows, Xcode on macOS |
 | **Parameters** | 109, in 23 groups, with 29 factory presets |
-| **Checked by** | six harnesses and five checks that need no JUCE, on every pull request |
+| **Checked by** | ten harnesses and seven text checks that need no JUCE, on every pull request |
 | **Licence** | MIT for this repository's own source; a *binary* also links JUCE (AGPLv3 or commercial) and a GPLv3 module - see [Licensing, and what ships in a binary](#licensing-and-what-ships-in-a-binary) |
 
 ### Where to go next
@@ -19,6 +19,8 @@
 | know what the plugin does and how it sounds | this file - start at [Overview](#overview) |
 | build it | [Getting the source](#getting-the-source) and [Build](#build) |
 | change the code and know what will catch you | [docs/architecture.md](docs/architecture.md) and [tests/README.md](tests/README.md) |
+| follow one sample through the plugin | [docs/signal-path.md](docs/signal-path.md) - every stage, in order, with its rate domain and its controls |
+| see what a proposed roadmap would actually cost | [docs/requested-roadmap-status.md](docs/requested-roadmap-status.md) - each item vs. what the tree already does |
 | know what the code is actually like | [docs/plugin-analysis.md](docs/plugin-analysis.md) - the review, with the numbers |
 | know what to do next | [docs/plugin-improvement-plan.md](docs/plugin-improvement-plan.md) |
 | know how far the long files can be split | [SPLITTING-BIG-FILES.md](SPLITTING-BIG-FILES.md) |
@@ -189,6 +191,24 @@ every other curve in this plugin is hand-written from physics, a **neural model*
 *learned* from measurements of a real device and an **impulse response** is a
 *measurement* of a space; RTNeural and the convolver each run fast enough to sit inside
 the per-sample loop.
+
+The same page carries the machine's own **TAPE SPECTRUM**, which is the one readout
+there that is not about a file: it is the magnetic shaper's **output** drawn as a
+24-band curve, measured on the same sample the deck's HARMONICS readout is measured on,
+so the curve and the number describe one block of audio rather than two. The cells
+under the SHAPERS knobs already hold the two loaders; the spectrum takes the one cell
+nothing else claims, and it is drawn rather than built as a control because it has no
+value to set - it is a window on what the machine just did.
+
+Its level axis is **fixed** - full scale at the top, -72 dBFS at the bottom - rather
+than auto-ranged. A curve that rescales itself to whatever is playing always fills its
+box and therefore means nothing; this one is read against the same DRIVE the user is
+turning. The bands are log-spaced, so equal steps across the curve are equal frequency
+ratios, and the lowest two or three bands sit closer together than the transform's own
+resolution: a 21 ms window cannot separate two frequencies that close, so the bottom
+of the curve is indicative where the rest is exact. See
+[Source/DSP/SpectrumAnalyser.h](Source/DSP/SpectrumAnalyser.h) for the measurement and
+[Source/GUI/SpectrumMetrics.h](Source/GUI/SpectrumMetrics.h) for the drawing.
 
 - Both are **files**, not parameters: the model is loaded with **LOAD MODEL** and the
   capture with **LOAD IR**. The network is whatever the file describes (a Dense net, an
@@ -411,6 +431,10 @@ to - which is how a user finds out that a mix is being read an octave low.
 
 ## Signal path
 
+[docs/signal-path.md](docs/signal-path.md) is the full sequence - every stage in the
+order the code runs it, which of them are per sample, per frame or per block, and
+where the oversampling switch puts them. The paragraph below is the short version.
+
 
 
 Input trim (dB) -> input glue compressor (always on) ->
@@ -608,6 +632,15 @@ the reading on the fundamental and reports how confident it is, which is what th
 below it - silence, noise, a chord, a note outside 45 Hz to 1.4 kHz - the correction glides
 back to unity and the signal passes untouched, because correcting towards a number the
 detector made up out of a cymbal is audible only as wrongness.
+
+**The dead zone** is what keeps the result human. A reading within **±10 cents** of the note
+the key asks for is not corrected at all - the ratio is exactly 1, so the shifter reads at
+unity and the note passes untouched - because a voice is never exactly on the grid, and the
+part of a performance that is slightly sharp or flat is the part the ear reads as human. The
+zone is applied before TUNE AMOUNT scales the pull, so half amount is a gentler version of
+the same opinion rather than a differently-tuned one, and the grip outside it is still clamped
+to a semitone either way. It lives in `Source/DSP/PitchCorrectionRule.h` and `tests/pitch/`
+drives it at exact cents either side of the boundary.
 
 **The shifter** moves the audio onto the note by re-reading it at the correction ratio out of
 a delay line. It has two read heads half a grain apart whose Hann windows sum to one, and the
@@ -926,6 +959,31 @@ PEAK row means the *clipper* had to act, not merely that the signal was loud.
 Order matters here: stereo width and the output trim are applied **before** the limiter, so
 a boost on OUTPUT cannot push the signal past the ceiling the limiter just established.
 
+### The anti-phase guard, in three bands
+
+A pair whose two sides are largely in **opposite polarity** is inaudible in stereo and
+then vanishes the moment anything downstream folds it to mono - a broadcast fold-down, a
+club PA, a phone speaker. The guard sits at the end of the wet path, after WIDTH and
+before the limiter, and recovers that image by **rotating** the mid/side pair rather than
+fading SIDE: a rotation moves what opposes MID into MID, so the fold-down comes back at
+full level instead of the pair fading toward silence, and the pair's energy is preserved
+exactly, which is why nothing pumps.
+
+It is **per band**, and that is the whole difference from a frame-wide guard. The frame
+is split by Linkwitz-Riley 4th-order crossovers at 200 Hz and 2 kHz, each band's own
+correlation decides how far that band rotates, and the result is blended by the frame's
+engagement - so a close-miked snare whose low end cancels against a room mic, or a bass DI
+and a bass amp a few samples apart, has its low end fixed while the bands that were fine
+keep their stereo image. A frame with no opposition comes back **bit for bit**, because
+the blend is zero.
+
+The rotation is stated as an angle rather than as its sine, so a guard sitting at full
+engagement cannot turn a wobble of its own detector into a step. The GUARD switch on the
+SETTINGS tab turns it off, and turning it off **unwinds** the rotation through the same
+slow pole instead of switching the image back in one sample; the detector keeps running
+while it is off, because the readout is the panel's warning that the sides are in
+opposition.
+
 ## Final gain compensation
 
 After the last compressor, and before the output trim, a slow compensator compares the
@@ -952,6 +1010,21 @@ CMake exposes the following option:
 ```text
 -DJ37_RENDER_BACKEND=AUTO|OPENGL|VULKAN|METAL|D3D11|D3D12|BGFX|WGPU|DAWN|CPU
 ```
+
+One further option belongs to the audio rather than the panel, and it is the only
+switch in the build that changes what the plugin *renders*:
+
+```text
+-DJ37_USE_SIMD_TANH=ON|OFF   (default OFF)
+```
+
+With it on, the tanh every saturation curve runs becomes xsimd's batch kernel
+instead of `std::tanh`: measured through `tests/dsp/run_bench.sh` at ~2.4 ns per
+call against ~6.7 ns, which takes the saturation core from ~42 us to ~28 us per
+512-frame block (about 1.5x cheaper), at a curve difference of 1.19e-7
+(absolute, worst case) - below audibility, but not zero,
+which is why it is off until a listening test says otherwise. The build prints
+which one it is using in its configure summary.
 
 `AUTO` and `OPENGL` use the existing JUCE/OpenGL scene. `CPU` uses a dedicated
 JUCE `Graphics` renderer for the animated transport, while the rest of the panel
@@ -1370,27 +1443,33 @@ Projucer project enabled:
 ### Third-party libraries
 
 Everything below JUCE is fetched by **CPM** at configure time and pinned by tag or
-commit, so a fresh clone resolves the same versions forever. Most are linked into the
-plugin target so the pieces are *available* and the engine uses its own code, with
-adopting a piece a per-piece decision made against a profile and a listening test. The
-exceptions are named in the table: those the engine actually runs today.
+commit, so a fresh clone resolves the same versions forever. Only the libraries the
+engine actually calls are LINKED: `tests/linkline/check_linkline.py` reads
+`target_link_libraries(first ...)` against the includes under `Source/` and fails a
+build when a linked target has no caller, so the link line is a claim about the binary
+rather than about intent. Eighteen entries that no file named used to sit on it - four
+alternative FFTs against the one `pocketfft` the analyser calls, a second decoder
+stack, a GUI toolkit, a socket library, two rival pitch detectors, a reverb, an LGPL
+time stretcher - and they came off. They are still FETCHED, which is what makes
+adopting one a probe and a line rather than a new dependency, and a shipped binary
+carries none of them.
 
 | Library | Pinned at | Why it is in the build |
 | --- | --- | --- |
 | `RTNeural` | commit `95c3c0f9` | **Used.** The real-time neural inference engine behind the DYN tab's optional model stage. `NeuralStage` runs a 1-in/1-out model per channel. Configured with `RTNEURAL_STL ON` and no `-mavx2`, so the binary still runs on machines without AVX |
 | `nlohmann/json` | `v3.12.0` | **Used.** The JSON DOM `RTNeural::json_parser::parseJson` parses a model file into. Header-only |
-| `chowdsp_utils` | `v2.4.0` | Chowdhury DSP's toolbox. Provides the polynomial `exp`/`log`/dB approximations on the metering and auto-gain hot paths; `chowdsp_dsp_utils` is linked so the rest is available |
+| `chowdsp_utils` | `v2.4.0` | Chowdhury DSP's toolbox. **Used:** the polynomial `exp`/`log`/dB approximations on the metering and auto-gain hot paths come from the BSD `chowdsp_math` module. **`chowdsp_dsp_utils` is the one exception to the rule above** - linked, and no line of the code calls it. It is GPLv3, so dropping it would drop that obligation from the binary; that is the licence decision in `docs/plugin-improvement-plan.md` item 1.1, and `check_linkline.py` names it with that owner rather than failing on it |
 | `melatonin_inspector` | commit `9c483f86` | JUCE component inspector, compiled under `JUCE_DEBUG` only. Passive in the shipped build |
-| `melatonin_blur` | `v1.4` | Fast shadow/gradient blurring for JUCE Components - the editor draws a lot of soft analog shading by hand today |
-| `xsimd` | `13.0.0` | Portable SIMD wrappers (SSE/AVX/NEON). `chowdsp::chowdsp_simd` already wraps xsimd, so this is the same code path rather than a second SIMD layer |
+| `melatonin_blur` | `v1.4` | **Used.** Fast shadow/gradient blurring for JUCE Components. Three lights on the panel are `melatonin::DropShadow` now - the panel's own drop shadow (`Source/GUI/PanelPaint.h`) and the knob's halo and cap shadow (`Source/GUI/J37LookAndFeel.cpp`) - each cached against its path and radius, so a repaint at 30 Hz is a blit rather than a blur. The hand-drawn fallbacks (a stack of flat rounded rectangles, and a stack of stroked rings) are still there behind the module's probe |
+| `xsimd` | `13.0.0` | **Used, behind `J37_USE_SIMD_TANH`.** Portable SIMD wrappers (SSE/AVX/NEON). `chowdsp::chowdsp_simd` already wraps xsimd, so this is the same code path rather than a second SIMD layer - and the shaper's own tanh goes through it too: every tanh the saturation core runs is `j37Tanh` (`Source/DSP/HotPathMath.h`), which is xsimd's batch kernel when the option is on: ~2.4 ns per call against std::tanh's ~6.7 ns, ~1.5x off the whole shaper, at a 1.19e-7 curve difference. Off by default because it changes the rendered audio; `tests/dsp/simd_tanh_test.cpp` builds all three shapes |
 
 Two dev-only libraries are **off by default**, so a plugin build never drags a test
 framework into its dependency graph. Enable with `-DJ37_BUILD_TESTS=ON`:
 
 | Library | Pinned at | Why |
 | --- | --- | --- |
-| `Catch2` | `v3.7.1` | Unit tests for the pieces underneath the DSP harness - a single shaper, a single loudness filter, a single compressor detector |
-| `nanobench` | `v4.3.11` | Micro-benchmarks. The shaper runs two `std::tanh` calls per sample per channel, so approximating or vectorising it is a real complexity cost that should only be paid once a benchmark shows the shaper actually dominates |
+| `Catch2` | `v3.9.1` | **Used.** Unit tests for the pieces underneath the DSP harness - the equaliser, the conventional compressor and the transient designer, driven one call at a time rather than through a replica of the engine (`tests/unit/`, a gate in CI, and it also runs under ASan + UBSan) |
+| `nanobench` | `v4.6.0` | Micro-benchmarks. The shaper runs two `std::tanh` calls per sample per channel, so approximating or vectorising it is a real complexity cost that should only be paid once a benchmark shows the shaper actually dominates |
 
 What is deliberately **not** here: an FFT library (the harmonic analyser needs three
 bins, and a full transform would be slower than the Goertzel it uses) and a pitch
@@ -1567,8 +1646,8 @@ carry terms that are stricter than MIT:
 | --- | --- | --- |
 | **JUCE 9.0.4** | AGPLv3, or a commercial JUCE licence | the whole plugin is under one of those two; there is no third answer |
 | **`chowdsp_dsp_utils`** | **GPLv3** (the sibling modules `chowdsp_math` and `chowdsp_simd` are BSD) | included and linked, so a binary is GPLv3-bound unless a non-GPL licence is bought from the module's author |
-| **SoundTouch 2.4.1**, **libsndfile** | LGPL-2.1 | linked statically: LGPL-2.1 section 6 asks for the object files or a relinkable form |
-| **`rack_dsp`** (VCVRack/Rack) | GPL-3.0-or-later, with a plugin exception for plugins distributed free of charge | linked today although nothing in `Source/` includes it |
+| **SoundTouch 2.4.1**, **libsndfile** | LGPL-2.1 | **not linked**: both are still fetched and vendored, but nothing under `Source/` calls either, and a linked-but-uncalled library is a licence obligation with no upside. `tests/linkline/check_linkline.py` is what keeps the link line honest |
+| **`rack_dsp`** (VCVRack/Rack) | GPL-3.0-or-later, with a plugin exception for plugins distributed free of charge | **not linked** for the same reason: fetched, and named by no file of the plugin's own code |
 | everything else | MIT / BSD / zlib / public domain | the notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) are the obligation |
 
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists every component, its pin and
@@ -1580,10 +1659,9 @@ proposes what to do about the gap.
 ## Contributing
 
 - **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** applies to issues, pull requests and
-discussions.
-- **Every change is checked by [tests/README.md](tests/README.md)'s suite** - six
-harnesses that compile the shipping code and five text checks - plus four platform
-builds in CI. A change to the sound belongs with a harness section that pins what
+discussions.- **Every change is checked by [tests/README.md](tests/README.md)'s suite** - nine
+  harnesses that compile the shipping code and seven text checks - plus four platform
+  builds in CI. A change to the sound belongs with a harness section that pins what
 changed; a change that moves code belongs with a green
 `tests/editor/check_editor_juce.sh`.
 - **The long files have a recipe**, and it is

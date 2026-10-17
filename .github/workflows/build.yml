@@ -45,6 +45,15 @@ jobs:
   #  what keeps "harness green, plugin red" from being a fifteen-minute discovery
   #  in the platform builds. That is why the checkout below takes the submodule
   #  (measured at a few seconds, depth 1) while every other step ignores it.
+  #
+  #  The same script now also compiles the shaper's tanh seam in three shapes -
+  #  J37_USE_SIMD_TANH with xsimd, the flag with the library absent, and neither
+  #  (tests/dsp/simd_tanh_test.cpp) - and compares their curve digests across the
+  #  binaries, because "the flag reaches the rendered audio" is a claim about two
+  #  builds rather than about one. That switch is OFF in every build this
+  #  repository ships, which is exactly why a branch nothing compiles has to be
+  #  compiled here or it rots. No submodule is needed for it: xsimd is vendored
+  #  under ThirdParty/.
   # ============================================================================
   dsp-tests:
     name: DSP regression harness
@@ -74,6 +83,16 @@ jobs:
       # called still compiles and simply leaves its controls unbuilt.
       - name: Run the knob layout harness
         run: bash tests/layout/run.sh
+
+      # The tooltip dwell, which is the panel's "hold on a control and the hint
+      # appears" rule as arithmetic: j37panel::TipDwell in Source/GUI/TipDwell.h
+      # keeps the clock that decides when a hint may be shown. It exists because
+      # juce::TooltipWindow applies its delay only to the FIRST tip - while one is
+      # on screen, moving to the next control shows that control's tip at once,
+      # which is the reported flicker. The harness runs the rule at exact
+      # millisecond boundaries, with no window and no JUCE.
+      - name: Run the tooltip dwell harness
+        run: bash tests/tooltip/run.sh
 
       # The parameter table and the saved-state round trip. A state a host saved
       # is a promise to the user: opening a project written by an older build has
@@ -116,6 +135,20 @@ jobs:
       - name: Run the pitch harness
         run: bash tests/pitch/run.sh
 
+      # The output anti-phase guard. It sits at the end of the wet path and, for a
+      # pair whose sides oppose, folds what opposes the mid back into the mid
+      # instead of fading it out - so it is the one stage whose failure is INAUDIBLE
+      # in stereo and total in mono. The guard splits the frame into three bands
+      # and rotates only the bands whose own correlation is negative, which is the
+      # difference from the frame-wide guard it replaces: the old one fixed a
+      # cancelling low end by flattening every band. Neither claim is visible by
+      # reading the source - both are numbers on rendered audio - so this includes
+      # the shipping header and measures the crossover flat, the untouched healthy
+      # frame, the side energy per band and the unwind after the fault ends.
+      # Same shape as the harnesses above: no JUCE, no host, a few seconds.
+      - name: Run the anti-phase guard harness
+        run: bash tests/phase/run.sh
+
       # The neural stage's rate conversion. A .nam model carries the rate it was
       # TRAINED at and the engine runs at the session's rate times its oversampling
       # factor, and a network's memory is counted in samples rather than seconds -
@@ -125,6 +158,24 @@ jobs:
       # can produce, and what is measured is the sequence the MODEL is handed.
       - name: Run the neural rate harness
         run: bash tests/neural/run.sh
+
+      # The spectrum analyser. It is a MEASUREMENT - it reads the signal and writes
+      # nothing to it, so a wrong reading is a wrong PICTURE and never a wrong sound,
+      # and no stage depends on it. That is precisely why it is pinned rather than
+      # eyeballed: a curve 12 dB high, or one that draws 6 kHz where 2 kHz belongs,
+      # looks entirely plausible on a panel, and it is the user who already trusted it
+      # who notices. Stated on rendered signal: a full-scale tone on a bin centre reads
+      # 0 dBFS, the reading is linear, a tone between bins reads low only as far as a
+      # Hann window's own 1.42 dB scalloping allows, a tone an octave up lands in a
+      # higher band, and silence reads the floor.
+      #
+      # This ALSO compiles the same header a second time with ThirdParty/pocketfft off
+      # the include path, which is the only place in this suite where the
+      # ABSENT-library branch of a stage is built at all - and it is the pass that
+      # gives pocketfft, on the link line since long before anything included it, its
+      # first caller.
+      - name: Run the spectrum harness
+        run: bash tests/spectrum/run.sh
 
       # The factory presets cannot fail at runtime - a name list that is a row
       # short, or a parameter with no column in the table, both just quietly
@@ -192,6 +243,31 @@ jobs:
       - name: Check the shader sources
         run: python3 tests/shaders/check_shaders.py
 
+      # The macros the build hands the compiler, against the files that read them.
+      # cmake/J37VendorLibraries.cmake discovered Intel IPP, linked it, and then
+      # defined J37_HAVE_IPP and J37_HAVE_VDSP for a plugin whose code tested
+      # neither - so "the DSP takes its vDSP path" was a statement about the build
+      # that nothing checked, and the IPP install on this runner accelerated
+      # nothing at all. The switch that library's own FFT engine is gated on is
+      # JUCE's, and it is not the flag named online (JUCE 9.0.4 has no
+      # JUCE_DSP_USE_INTEL_IPP anywhere). This compares both lists and asserts
+      # both directions of that one.
+      - name: Check the compile definitions
+        run: python3 tests/definitions/check_definitions.py
+
+      # The link line, against the includes under Source/. A library on it is a
+      # statement that the binary carries it; eighteen entries made that statement
+      # while no file of the plugin's own code named them - four alternative FFTs
+      # against the one pocketfft the spectrum analyser calls, a second decoder
+      # stack, a GUI toolkit, a socket library, two rival pitch detectors, a
+      # reverb and an LGPL time stretcher. This reads
+      # target_link_libraries(first ...) and every #include under Source/ and
+      # fails on a target with no caller, on an included library that is not
+      # linked, and on a J37_HAS_* probe that nothing reads - which is how xsimd's
+      # branch survived two builds without being compiled by either.
+      - name: Check the link line against the code
+        run: python3 tests/linkline/check_linkline.py
+
       # The stages that have moved into Source/DSP/ are compiled by the harnesses
       # against their own small stand-in for juce::, which is what keeps a harness
       # seconds of work - but a name that stand-in provides is not proof that real
@@ -217,6 +293,66 @@ jobs:
       # JUCE submodule, which the checkout above fetches.
       - name: Check the plugin's own files against JUCE
         run: bash tests/editor/check_editor_juce.sh
+
+  # ============================================================================
+  #  DSP unit tests - the pieces UNDERNEATH the harnesses
+  #
+  #  The harness job above renders audio and asserts on the recording, which is
+  #  the right tool for a signal path and the wrong one for "does this function
+  #  still return what it returned yesterday". The three stages tested here - the
+  #  equaliser, the conventional compressor and the transient designer - hold no
+  #  engine state, take their coefficients as arguments, and carry a written
+  #  contract in their own header comments, so each is driven directly instead of
+  #  through a replica of the engine: a call, a number, and the claim it stands
+  #  for named in the test's own title.
+  #
+  #  This one IS a gate, unlike the benchmark job below: the whole suite is
+  #  microseconds of work with no machine-dependent number anywhere in it.
+  #
+  #  The framework is Catch2, which CPM fetches only under -DJ37_BUILD_TESTS=ON,
+  #  so the job configures once with that flag first - which is also what
+  #  populates the CPM cache that tests/unit/run.sh looks in. The script then
+  #  compiles Catch2's own amalgamated sources and runs the suite twice: once
+  #  plain, and once under ASan and UBSan, where a one-function numerical mistake
+  #  is cheapest to see. No CMake build of the plugin, no JUCE, no audio backend:
+  #  like every other harness here, it is seconds of work on any machine with a
+  #  C++17 compiler.
+  # ============================================================================
+  dsp-unit:
+    name: DSP unit tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v4
+        with:
+          submodules: recursive
+
+      - name: Install Linux audio and GUI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev libjack-jackd2-dev libfreetype6-dev \
+            libfontconfig1-dev libcurl4-openssl-dev libx11-dev \
+            libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev \
+            libxrandr-dev libxrender-dev libgl1-mesa-dev libglu1-mesa-dev \
+            libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Configure with the dev tests enabled (fetches Catch2)
+        run: |
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DJ37_BUILD_TESTS=ON
+
+      - name: Run the DSP unit tests
+        run: bash tests/unit/run.sh
+
+      # -fno-sanitize-recover=all inside the script makes any finding fail this
+      # step rather than printing and carrying on, and the binary's exit status
+      # is the script's - a failed assertion cannot be filtered away.
+      - name: Run the DSP unit tests under ASan and UBSan
+        run: J37_SANITIZE=address,undefined bash tests/unit/run.sh
 
   # ============================================================================
   #  DSP micro-benchmarks - measurement, never a gate
@@ -356,6 +492,17 @@ jobs:
           #
           # The wheels are unpinned on purpose: pip resolves the current release
           # and there is no version to rot.
+          #
+          # The header this searches for is the aggregator - its whole body is
+          # #include <ipp/ipp.h> - and the real ones, including the two JUCE's
+          # own IPP FFT engine includes, sit one level down in
+          # <prefix>/include/ipp. cmake/J37VendorLibraries.cmake looks there, and
+          # for the single-threaded static layout this runner installs it also
+          # throws the linking-model macro JUCE reads, so this job is the one
+          # that compiles juce::dsp::FFT against Intel's library - which is why
+          # the build's link line now has to carry ippvm with it (it was missing
+          # before anything referenced IPP, and without it the link fails on
+          # `y8_ippsSin_32f_A24').
           python -m pip install --upgrade pip
           python -m pip install ipp-static
           prefix=$(python - <<'PYIPP'
@@ -378,7 +525,7 @@ jobs:
 
       # The one thing a Debug build proves that Release hides is what the
       # sanitizers can see, and this job is the only place a Debug toolchain is
-      # already paid for. The five harnesses are seconds of work each and need
+      # already paid for. The harnesses above are seconds of work each and need
       # no toolkit, no host and no submodules, so they run here a second time
       # with ASan and UBSan turned on: the shipped DSP generator, the knob
       # strip's arithmetic, the state writer/reader, the transport rig and the
@@ -390,10 +537,13 @@ jobs:
         run: |
           J37_SANITIZE=address,undefined bash tests/dsp/run.sh
           J37_SANITIZE=address,undefined bash tests/layout/run.sh
+          J37_SANITIZE=address,undefined bash tests/tooltip/run.sh
           J37_SANITIZE=address,undefined bash tests/state/run.sh
           J37_SANITIZE=address,undefined bash tests/transport/run.sh
           J37_SANITIZE=address,undefined bash tests/pitch/run.sh
+          J37_SANITIZE=address,undefined bash tests/phase/run.sh
           J37_SANITIZE=address,undefined bash tests/neural/run.sh
+          J37_SANITIZE=address,undefined bash tests/spectrum/run.sh
 
       - name: Configure CMake (Debug)
         run: |
@@ -973,6 +1123,17 @@ jobs:
           #
           # The wheels are unpinned on purpose: pip resolves the current release
           # and there is no version to rot.
+          #
+          # The header this searches for is the aggregator - its whole body is
+          # #include <ipp/ipp.h> - and the real ones, including the two JUCE's
+          # own IPP FFT engine includes, sit one level down in
+          # <prefix>/include/ipp. cmake/J37VendorLibraries.cmake looks there, and
+          # for the single-threaded static layout this runner installs it also
+          # throws the linking-model macro JUCE reads, so this job is the one
+          # that compiles juce::dsp::FFT against Intel's library - which is why
+          # the build's link line now has to carry ippvm with it (it was missing
+          # before anything referenced IPP, and without it the link fails on
+          # `y8_ippsSin_32f_A24').
           python -m pip install --upgrade pip
           python -m pip install ipp-static
           prefix=$(python - <<'PYIPP'
@@ -1135,7 +1296,8 @@ jobs:
           # Intel's static IPP from PyPI, the prefix located by finding ipp.h
           # and exported as IPPROOT. In this cross-build the probe is harmless:
           # the wheel libraries are x86 archives, an ARM link line names no IPP
-          # target, and J37_HAVE_IPP therefore stays undefined.
+          # target, and J37_HAVE_IPP / J37_IPP_LINKING_MODEL therefore stay
+          # unset.
           python -m pip install --upgrade pip
           python -m pip install ipp-static
           prefix=$(python - <<'PYIPP'
