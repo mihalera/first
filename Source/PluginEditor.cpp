@@ -2149,7 +2149,6 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
 //==============================================================================
 juce::Rectangle<int> FirstAudioProcessorEditor::shapersSpectrumBounds() const
 {
-    constexpr int tabColumns = 4;
     constexpr int memberBandHeight = 50;
     constexpr int spectrumColumn = 3;
 
