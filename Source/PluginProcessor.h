@@ -446,7 +446,7 @@ public:
     /** The machine: one sample of the block, with everything the block was set up with.
         It was the 1,669-line lambda inside processTapeEngine() - see TapeBlockState. */
     void processOneSample (TapeBlockState& state, int sample) noexcept;
-    void processOneSampleCore (TapeBlockState& state, int sample) noexcept;
+    void updateSampleLoudnessMeters (TapeBlockState& state, int sample) noexcept;
 
     bool processBypassedBlock (juce::dsp::AudioBlock<float>&, const BlockContext&);
     void processPostMachineStages (juce::dsp::AudioBlock<float>&, const BlockContext&);

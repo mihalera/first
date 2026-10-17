@@ -68,6 +68,52 @@ inline float nextNoise (std::uint32_t& state) noexcept
     state = state * 1664525u + 1013904223u;
     return static_cast<float> ((state >> 8) & 0x00ffffffu) * (1.0f / 8388608.0f) - 1.0f;
 }
+
+// Configure the track-layout geometry once per block and return the matching
+// noise scale for the per-sample tape-floor calculation.
+inline float configureTrackGeometry (FirstAudioProcessor::TapeBlockState& state,
+                                     int tracksIndex, int bleedBufferLength) noexcept
+{
+    static constexpr float tracksWidthScale[3] { 1.00f, 0.94f, 0.82f };
+    static constexpr float tracksCrosstalk[3]  { 0.020f, 0.010f, 0.055f };
+    static constexpr float tracksSpacingMs[3]  { 0.018f, 0.042f, 0.009f };
+    static constexpr float tracksNoiseScale[3] { 1.00f, 1.06f, 1.22f };
+
+    state.trackWidthScale = tracksWidthScale[tracksIndex];
+    state.trackCrosstalk = tracksCrosstalk[tracksIndex];
+    state.trackBleedDelaySamples = juce::jlimit (
+        1, bleedBufferLength - 2,
+        juce::roundToInt (tracksSpacingMs[tracksIndex] * 0.001f * state.engineSampleRate));
+    return tracksNoiseScale[tracksIndex];
+}
+
+inline void initialiseBlockMeasurements (FirstAudioProcessor::TapeBlockState& state,
+                                         juce::dsp::AudioBlock<float>& block,
+                                         int activeInputChannels) noexcept
+{
+    state.activeChannels = activeInputChannels;
+
+    state.channelData = {};
+    for (int channel = 0; channel < state.activeChannels; ++channel)
+        state.channelData[static_cast<std::size_t> (channel)] =
+            block.getChannelPointer (static_cast<std::size_t> (channel));
+
+    state.inputPeak = 0.0f;
+    state.outputPeak = 0.0f;
+    state.inputSquares = 0.0;
+    state.outputSquares = 0.0;
+    state.peakReductionDb = 0.0f;
+    state.inputPeakReductionDb = 0.0f;
+    state.inputEnvelopeActivity = 0.0f;
+    state.driftAccumulator = 0.0f;
+    state.referenceBlockPower = 0.0f;
+    state.currentLufs = -70.0f;
+    state.clippingThisBlock = false;
+    state.currentInputLufs = -70.0f;
+    state.inputClippingThisBlock = false;
+    state.inputChainHistory = {};
+}
+
 }
 
 
@@ -601,10 +647,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     juce::ignoreUnused (midiMessages);
 
     const int numSamples = static_cast<int> (block.getNumSamples());
+    const auto engineSampleRate = juce::jmax (1.0f, sampleRate * oversamplingRateFactor);
 
     // processBlock has already expanded oversampled blocks. Build all DSP time
     // constants against the rate of this block, not the host/base rate.
-    state.engineSampleRate = juce::jmax (1.0f, sampleRate * oversamplingRateFactor);
+    state.engineSampleRate = engineSampleRate;
 
     // The engine works directly on the block: in the oversampled path the block
     // references the oversampler's internal storage, in the plain path it wraps
@@ -699,23 +746,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //       2-track        2+3 (4-track used as 2)     3-track
     //       widest/tightest spacing,       widest spacing,        narrowest tracks,
     //       least crosstalk                least crosstalk        most crosstalk
-    static constexpr float tracksWidthScale[3]   { 1.00f, 0.94f, 0.82f };
-    static constexpr float tracksCrosstalk[3]    { 0.020f, 0.010f, 0.055f };
-    static constexpr float tracksSpacingMs[3]    { 0.018f, 0.042f, 0.009f };
-    static constexpr float tracksNoiseScale[3]   { 1.00f, 1.06f, 1.22f };
+    // The same geometry table is shared by the state fields and the floor scale.
+    const float trackNoiseScale = configureTrackGeometry (state, tracksIndex,
+                                                           tracksBleedBufferLength);
 
-    state.trackWidthScale = tracksWidthScale[tracksIndex];
-    state.trackCrosstalk = tracksCrosstalk[tracksIndex];
-    const float trackNoiseScale = tracksNoiseScale[tracksIndex];
-
-    // The bleed's own delay, in samples. A one-sample floor keeps the line valid
-    // at every rate, and at any normal rate the figure is tens of samples - far
-    // below the ear's ability to hear it as a separate event, which is the
-    // point: it is an infinitesimal smear, not an echo. It is a hard limit that
-    // the maximum spacing is well under, so the wrap below never loops.
-    state.trackBleedDelaySamples = juce::jlimit (
-        1, tracksBleedBufferLength - 2,
-        juce::roundToInt (tracksSpacingMs[tracksIndex] * 0.001f * state.engineSampleRate));
+    // The one-sample floor keeps the bleed line valid at every engine rate.
 
     // Output-stage switches are read once per block. Polarity is applied to each
     // final sample, after the clean-mono diagnostics, and auto gain gates the slow
@@ -1996,43 +2031,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // The floor itself is constant - see the note in the tape loop for why there is
     // no programme-dependent levelling.
 
-    state.activeChannels = activeInputChannels;
-
-    // Working pointers into the block's own storage. In the plain path these are
-    // the host buffer's channels; in the oversampled path they are the oversampler's
-    // internal buffer. The engine is written against these pointers only.
-    state.channelData = {};
-    for (int channel = 0; channel < state.activeChannels; ++channel)
-        state.channelData[static_cast<std::size_t> (channel)] = block.getChannelPointer (static_cast<std::size_t> (channel));
-
-    state.inputPeak = 0.0f;
-    state.outputPeak = 0.0f;
-    state.inputSquares = 0.0;
-    state.outputSquares = 0.0;
-    state.peakReductionDb = 0.0f;
-    state.inputPeakReductionDb = 0.0f;
-    state.inputEnvelopeActivity = 0.0f;
-    state.driftAccumulator = 0.0f;
-
-    // Reference power for the final gain compensation: the power of the signal straight
-    // after the INPUT trim, before the first glue compressor touches it. That is the
-    // level the user dialled in with INPUT, so it is what the plugin's output should
-    // still be tracking once the tape stage and both compressors have had their way
-    // with the signal. Accumulated across this block only - the correction it drives is
-    // itself smoothed, so no block-to-block history is needed here.
-    state.referenceBlockPower = 0.0f;
-
-    // Loudness metering accumulators for this block. currentLufs is carried out of the
-    // per-sample loop because the K-weighted follower is stateful across the whole block.
-    state.currentLufs = -70.0f;
-    state.clippingThisBlock = false;
-    state.currentInputLufs = -70.0f;
-    state.inputClippingThisBlock = false;
-
-    // The input side of the K-weighted meter needs the raw signal, but the buffer is
-    // processed in place, so the dry input of the current sample is stashed here before
-    // the channel loop overwrites it. Two slots are enough for a stereo frame.
-    state.inputChainHistory = {};
+    initialiseBlockMeasurements (state, block, activeInputChannels);
 
     // Slow one-pole coefficient for the compensation itself. Deliberately far slower
     // than either compressor, so the correction settles on the programme level instead
@@ -3179,6 +3178,8 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     // frame and halve the spacing between the two heads.
     tracksBleedWritePosition = (tracksBleedWritePosition + 1) % tracksBleedBufferLength;
 
+    updateSampleLoudnessMeters (state, sample);
+
     // The reference is a per-channel average now, the same scale the
     // post-compressor power below is measured on.
     state.referenceBlockPower /= static_cast<float> (juce::jmax (1, state.activeChannels));
@@ -3831,34 +3832,28 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         vuAverage += (std::abs (limitedOut) - vuAverage) * state.vuBallisticCoefficient;
     }
 
-    // K-weighted loudness runs on the final stereo frame, after the width stage, so
-    // it reports what actually leaves the plugin.
-    //
-    // It reads the channels back out of the buffer rather than off outputSignal,
-    // for two reasons. The OUTPUT trim was already applied to outputSignal above,
-    // so metering `outputSignal * outputGain` - which is what this used to do -
-    // applied that trim a second time: the meter read 6 dB high for every decibel
-    // of boost on OUTPUT, on a control that has nothing to do with loudness. And
-    // the buffer holds the finished sample - the limiter's gain, the soft clipper
-    // and the bypass crossfade have all run by this point - so this is the only
-    // one of the three reads that is the signal the host actually receives. The
-    // INPUT meter below reads its channels the same way.
-    if (state.activeChannels == 2)
-        state.currentLufs = outputLoudness.processFrame (state.channelData[0][sample],
-                                                   state.channelData[1][sample],
-                                                   state.outputLoudnessCoefficient);
-    else if (state.activeChannels == 1)
-        state.currentLufs = outputLoudness.processFrame (state.channelData[0][sample],
-                                                   state.channelData[0][sample],
-                                                   state.outputLoudnessCoefficient);
+}
 
-    // The INPUT meter runs the same K-weighting on the raw signal at the plugin's
-    // own input, so the two meters can be compared directly. The channels are read
-    // back from the buffer because the dry input was overwritten in place.
+void FirstAudioProcessor::updateSampleLoudnessMeters (TapeBlockState& state, int sample) noexcept
+{
+    // K-weighted loudness runs on the finished output sample. The input pair was
+    // saved before the buffer was overwritten, so both meters see this same frame.
     if (state.activeChannels == 2)
-        state.currentInputLufs = inputLoudness.processFrame (state.inputChainHistory[0], state.inputChainHistory[1],
-                                                       state.inputLoudnessCoefficient);
+    {
+        state.currentLufs = outputLoudness.processFrame (state.channelData[0][sample],
+                                                        state.channelData[1][sample],
+                                                        state.outputLoudnessCoefficient);
+        state.currentInputLufs = inputLoudness.processFrame (state.inputChainHistory[0],
+                                                             state.inputChainHistory[1],
+                                                             state.inputLoudnessCoefficient);
+    }
     else if (state.activeChannels == 1)
-        state.currentInputLufs = inputLoudness.processFrame (state.inputChainHistory[0], state.inputChainHistory[0],
-                                                       state.inputLoudnessCoefficient);
+    {
+        state.currentLufs = outputLoudness.processFrame (state.channelData[0][sample],
+                                                        state.channelData[0][sample],
+                                                        state.outputLoudnessCoefficient);
+        state.currentInputLufs = inputLoudness.processFrame (state.inputChainHistory[0],
+                                                             state.inputChainHistory[0],
+                                                             state.inputLoudnessCoefficient);
+    }
 }
