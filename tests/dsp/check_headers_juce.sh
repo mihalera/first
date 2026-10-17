@@ -228,6 +228,17 @@ TU="${BUILD}/header_check.cpp"
     x = frame[0];
     repitch.reset();
 
+    // The output anti-phase guard. tests/phase measures it band by band with the
+    // harness's own stand-in for juce::; this is the other half - the same header
+    // compiled and USED against real JUCE, which is where juce::jlimit, juce::jmax
+    // and juce::MathConstants have to be the real ones rather than whatever the
+    // shim happens to declare.
+    j37dsp::MultibandPhaseGuard guard;
+    guard.prepare (48000.0);
+    std::array<float, 2> guarded { x, -x };
+    x = guard.process (guarded[0], guarded[1], 1.0f) ? guarded[0] + guarded[1] : 0.0f;
+    guard.reset();
+
     PitchTracker tracker;
     tracker.prepare (48000.0);
 

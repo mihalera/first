@@ -9,7 +9,7 @@
 | **Framework** | JUCE `9.0.4`, pinned as a git submodule |
 | **Build** | CMake 3.22+, MSVC on Windows, Xcode on macOS |
 | **Parameters** | 109, in 23 groups, with 29 factory presets |
-| **Checked by** | nine harnesses and seven text checks that need no JUCE, on every pull request |
+| **Checked by** | ten harnesses and seven text checks that need no JUCE, on every pull request |
 | **Licence** | MIT for this repository's own source; a *binary* also links JUCE (AGPLv3 or commercial) and a GPLv3 module - see [Licensing, and what ships in a binary](#licensing-and-what-ships-in-a-binary) |
 
 ### Where to go next
@@ -958,6 +958,31 @@ PEAK row means the *clipper* had to act, not merely that the signal was loud.
 
 Order matters here: stereo width and the output trim are applied **before** the limiter, so
 a boost on OUTPUT cannot push the signal past the ceiling the limiter just established.
+
+### The anti-phase guard, in three bands
+
+A pair whose two sides are largely in **opposite polarity** is inaudible in stereo and
+then vanishes the moment anything downstream folds it to mono - a broadcast fold-down, a
+club PA, a phone speaker. The guard sits at the end of the wet path, after WIDTH and
+before the limiter, and recovers that image by **rotating** the mid/side pair rather than
+fading SIDE: a rotation moves what opposes MID into MID, so the fold-down comes back at
+full level instead of the pair fading toward silence, and the pair's energy is preserved
+exactly, which is why nothing pumps.
+
+It is **per band**, and that is the whole difference from a frame-wide guard. The frame
+is split by Linkwitz-Riley 4th-order crossovers at 200 Hz and 2 kHz, each band's own
+correlation decides how far that band rotates, and the result is blended by the frame's
+engagement - so a close-miked snare whose low end cancels against a room mic, or a bass DI
+and a bass amp a few samples apart, has its low end fixed while the bands that were fine
+keep their stereo image. A frame with no opposition comes back **bit for bit**, because
+the blend is zero.
+
+The rotation is stated as an angle rather than as its sine, so a guard sitting at full
+engagement cannot turn a wobble of its own detector into a step. The GUARD switch on the
+SETTINGS tab turns it off, and turning it off **unwinds** the rotation through the same
+slow pole instead of switching the image back in one sample; the detector keeps running
+while it is off, because the readout is the panel's warning that the sides are in
+opposition.
 
 ## Final gain compensation
 

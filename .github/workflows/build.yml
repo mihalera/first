@@ -135,6 +135,20 @@ jobs:
       - name: Run the pitch harness
         run: bash tests/pitch/run.sh
 
+      # The output anti-phase guard. It sits at the end of the wet path and, for a
+      # pair whose sides oppose, folds what opposes the mid back into the mid
+      # instead of fading it out - so it is the one stage whose failure is INAUDIBLE
+      # in stereo and total in mono. The guard splits the frame into three bands
+      # and rotates only the bands whose own correlation is negative, which is the
+      # difference from the frame-wide guard it replaces: the old one fixed a
+      # cancelling low end by flattening every band. Neither claim is visible by
+      # reading the source - both are numbers on rendered audio - so this includes
+      # the shipping header and measures the crossover flat, the untouched healthy
+      # frame, the side energy per band and the unwind after the fault ends.
+      # Same shape as the harnesses above: no JUCE, no host, a few seconds.
+      - name: Run the anti-phase guard harness
+        run: bash tests/phase/run.sh
+
       # The neural stage's rate conversion. A .nam model carries the rate it was
       # TRAINED at and the engine runs at the session's rate times its oversampling
       # factor, and a network's memory is counted in samples rather than seconds -
@@ -511,7 +525,7 @@ jobs:
 
       # The one thing a Debug build proves that Release hides is what the
       # sanitizers can see, and this job is the only place a Debug toolchain is
-      # already paid for. The five harnesses are seconds of work each and need
+      # already paid for. The harnesses above are seconds of work each and need
       # no toolkit, no host and no submodules, so they run here a second time
       # with ASan and UBSan turned on: the shipped DSP generator, the knob
       # strip's arithmetic, the state writer/reader, the transport rig and the
@@ -527,6 +541,7 @@ jobs:
           J37_SANITIZE=address,undefined bash tests/state/run.sh
           J37_SANITIZE=address,undefined bash tests/transport/run.sh
           J37_SANITIZE=address,undefined bash tests/pitch/run.sh
+          J37_SANITIZE=address,undefined bash tests/phase/run.sh
           J37_SANITIZE=address,undefined bash tests/neural/run.sh
           J37_SANITIZE=address,undefined bash tests/spectrum/run.sh
 

@@ -47,6 +47,7 @@
 
 #include "DSP/BlockRateCoefficients.h"
 #include "DSP/HotPathMath.h"
+#include "DSP/MultibandPhaseGuard.h"
 #include "DSP/PitchCorrectionRule.h"
 #include "DSP/TapeModulation.h"
 #include "HotPathProbe.h"
@@ -3651,36 +3652,25 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
 
         if (antiPhaseCorrection > 1.0e-5f)
         {
-            const float guardMid = 0.5f * (outputSignal[0] + outputSignal[1]);
-            const float guardSide = 0.5f * (outputSignal[0] - outputSignal[1]);
-
-            // The correction is the ANGLE, as a fraction of a quarter turn:
-            // 0 leaves the pair exactly as it arrived, 1 is the quarter turn
-            // that recovers an inverted pair into mono, and every level in
-            // between is a proportional rotation of the pair.
+            // The correction above is the FRAME's, and it is what gates the
+            // guard. The rotation itself happens per BAND, in
+            // Source/DSP/MultibandPhaseGuard.h: the frame is split by
+            // Linkwitz-Riley crossovers at 200 Hz and 2 kHz, each band's own
+            // correlation decides how far that band rotates, and the result is
+            // blended back by the frame's engagement times the opposition the
+            // bands actually reported. So a low end that cancels is fixed
+            // without flattening the bands that were fine - and a frame with no
+            // fault comes back bit for bit, because the blend is zero.
             //
-            // Stating it as the angle rather than as its SINE is the one
-            // thing here that is not a style choice. Keeping sin(angle) in
-            // the correction and recovering cos as sqrt (1 - sin^2) is
-            // arithmetically exact, but its derivative is not: d(angle)/
-            // d(sin) = 1/cos, which is unbounded at the quarter turn. A guard
-            // sitting at full engagement then multiplies every wobble of the
-            // detector - and the whole of a switch-off, which unwinds through
-            // this same pole - into an unbounded step in the angle, and so
-            // into a step in the signal. The angle form moves the pair by at
-            // most a quarter turn per unit of correction at every level, and
-            // the two trig calls ride the same rare branch the rest of the
-            // rotation does (the guard is engaged only while a pair really is
-            // opposed, which is why a slow 400 ms pole is enough to catch it).
-            const float rotation = juce::jlimit (0.0f, 1.0f, antiPhaseCorrection)
-                                   * juce::MathConstants<float>::halfPi;
-            const float sinRotation = std::sin (rotation);
-            const float cosRotation = std::cos (rotation);
-            const float rotatedMid = guardMid * cosRotation + guardSide * sinRotation;
-            const float rotatedSide = guardSide * cosRotation - guardMid * sinRotation;
-
-            outputSignal[0] = rotatedMid + rotatedSide;
-            outputSignal[1] = rotatedMid - rotatedSide;
+            // Two things that used to be inline and are now in that header, so
+            // they are not lost: the rotation is stated as an ANGLE rather than
+            // as its sine (d(angle)/d(sin) is unbounded at a quarter turn, and a
+            // guard sitting at full engagement would turn every wobble of the
+            // detector into a step), and the rotation is ORTHOGONAL, so it moves
+            // what opposes from side into mid instead of fading it out - no
+            // pumping, no level lost, nothing to hear but the image coming back.
+            antiPhaseGuard.process (outputSignal[0], outputSignal[1],
+                                    juce::jlimit (0.0f, 1.0f, antiPhaseCorrection));
         }
     }
     else

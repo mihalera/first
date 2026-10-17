@@ -27,6 +27,7 @@
 //
 // It is included at exactly this point because Source/DSP/J37Math.h below reads the
 // first of them and Source/DSP/NeuralStage.h reads the third.
+#include "DSP/MultibandPhaseGuard.h"
 #include "DSP/OptionalLibraries.h"
 
 #include <array>
@@ -1541,6 +1542,12 @@ private:
     float antiPhaseCoefficient = 0.0f;
     float antiPhaseProductMagnitude = 1.0e-3f;
     std::atomic<float> antiPhaseAmount { 0.0f };
+
+    //  The rotation itself, per band. It holds both channels' Linkwitz-Riley
+    //  crossovers and the six band envelopes, so it is prepared with the engine
+    //  rate (see prepareToPlay) and reset with the rest of the per-rate state.
+    //  Source/DSP/MultibandPhaseGuard.h has the rule; tests/phase measures it.
+    j37dsp::MultibandPhaseGuard antiPhaseGuard;
 
     // -----------------------------------------------------------------------
     //  Audio -> UI telemetry stream.

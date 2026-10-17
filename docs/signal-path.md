@@ -79,15 +79,16 @@ Numbers are the order; "per" is the rate domain.
 | 26 | Conventional compressor | sample | An ordinary feed-forward compressor on the finished signal, independent of the two glue stages, with its own mix. | COMP THRESH/RATIO/ATTACK/RELEASE/MAKEUP/MIX |
 | 27 | Track bleed | sample | What one head reads from the other track's recent history - a small, symmetric leak that is part of what the machine put on the tape. | TRACKS |
 | 28 | Stereo width | sample | Mid/side width on the finished image. | WIDTH |
-| 29 | Output trim | sample | OUTPUT in dB, applied before the limiter so boosts stay protected. | OUTPUT |
-| 30 | Safety limiter | sample | Program-dependent gain reduction with a fast catch and a slow release; a gain stage, so it adds no harmonics of its own. | - |
-| 31 | Soft clipper | sample | The last resort for what still overshoots after the limiter; its flag means "the clipper had to act", which is why the meter warns about real distortion. | - |
-| 32 | Polarity | sample | Flips the finished sample. | POLARITY |
-| 33 | LO-FI mode | sample | Bandwidth restriction, sample-and-hold quantisation and a raised floor, applied after protection so the quantisation cannot be smoothed away. | LO-FI |
-| 34 | BYPASS / DELTA crossfades | sample | BYPASS crossfades from the untouched host sample to the finished one; DELTA crossfades to the difference between the finished signal and the machine's dry reference, computed from the same frame so the subtraction is phase-perfect at any oversampling factor. | BYPASS, DELTA |
-| 35 | IR cabinet | block | Convolution against a user impulse response, applied to a copy and blended by its amount. | CABINET |
-| 36 | SPACE reverb | block | The plate reverb on the protected signal. | SPACE, SPACE SIZE |
-| 37 | VINYL | block | Surface crackle, rumble, dust, scratches, warp, electrical noise and the RIAA-style warmth, all scaled by the stage's own level. | VINYL, and its six character controls |
+| 29 | Anti-phase guard | frame | Splits the frame into three bands (200 Hz and 2 kHz Linkwitz-Riley crossovers), measures each band's own correlation and rotates only the bands whose sides oppose the mid, so a cancelling low end is recovered without flattening the bands that were fine. A frame with no opposition is blended by zero and comes back bit for bit; the GUARD switch unwinds the rotation rather than switching it. | GUARD |
+| 30 | Output trim | sample | OUTPUT in dB, applied before the limiter so boosts stay protected. | OUTPUT |
+| 31 | Safety limiter | sample | Program-dependent gain reduction with a fast catch and a slow release; a gain stage, so it adds no harmonics of its own. | - |
+| 32 | Soft clipper | sample | The last resort for what still overshoots after the limiter; its flag means "the clipper had to act", which is why the meter warns about real distortion. | - |
+| 33 | Polarity | sample | Flips the finished sample. | POLARITY |
+| 34 | LO-FI mode | sample | Bandwidth restriction, sample-and-hold quantisation and a raised floor, applied after protection so the quantisation cannot be smoothed away. | LO-FI |
+| 35 | BYPASS / DELTA crossfades | sample | BYPASS crossfades from the untouched host sample to the finished one; DELTA crossfades to the difference between the finished signal and the machine's dry reference, computed from the same frame so the subtraction is phase-perfect at any oversampling factor. | BYPASS, DELTA |
+| 36 | IR cabinet | block | Convolution against a user impulse response, applied to a copy and blended by its amount. | CABINET |
+| 37 | SPACE reverb | block | The plate reverb on the protected signal. | SPACE, SPACE SIZE |
+| 38 | VINYL | block | Surface crackle, rumble, dust, scratches, warp, electrical noise and the RIAA-style warmth, all scaled by the stage's own level. | VINYL, and its six character controls |
 
 ## What the panel meters read
 
@@ -103,6 +104,7 @@ machine produced.
 | Claim | Harness |
 | --- | --- |
 | the subharmonic series, its threshold and its anti-phase guard | `tests/dsp` (SUBFUND sections) |
+| the output anti-phase guard's three bands, per band rotation, and its unwind | `tests/phase` |
 | the loudness meter's calibration and channel sum | `tests/dsp` (loudness sections) |
 | the shaper's curves when the tanh seam is switched | `tests/dsp/simd_tanh_test.cpp` |
 | the three-band EQ's neutral point, slopes and band independence | `tests/unit` (`ThreeBandEq`) |
@@ -116,8 +118,8 @@ machine produced.
 
 Stages without a harness section of their own are listed in
 [plugin-improvement-plan.md](plugin-improvement-plan.md) item 4: the AUTO GAIN
-compensator, the safety limiter, the anti-phase guard and the MIX crossfade are the
-four that are read here and measured nowhere yet.
+compensator, the safety limiter and the MIX crossfade are the three that are read here
+and measured nowhere yet.
 
 ## Short version
 
