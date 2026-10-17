@@ -31,8 +31,10 @@
 #endif
 
 #include <atomic>
+#include <limits>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <vector>
 
 //==============================================================================
@@ -259,6 +261,16 @@ struct NeuralStage
             const auto inputSize = config.at ("input_size").get<int>();
             const auto hiddenSize = config.at ("hidden_size").get<int>();
 
+            // Keep all subsequent dimensions and products bounded before doing any
+            // size arithmetic on data supplied by the model file.
+            constexpr int maxLayers = 8;
+            constexpr int maxInputSize = 256;
+            constexpr int maxHiddenSize = 512;
+            if (numLayers < 1 || numLayers > maxLayers
+                || inputSize < 1 || inputSize > maxInputSize
+                || hiddenSize < 1 || hiddenSize > maxHiddenSize)
+                return false;
+
         // A .nam file's weights array is 1-D JSON. Anything else is not a
         // shape this converter understands.
         if (! namJson.contains ("weights") || ! namJson["weights"].is_array())
@@ -274,38 +286,78 @@ struct NeuralStage
         // take the previous layer's H hidden outputs, so their stride is H+H.
         // The topmost block additionally carries the output head (out x H,
         // row-major) and its bias (out), which become the "dense" layer.
-        const auto biasElements = 4 * hiddenSize;
-        auto kernelElementsFor = [hiddenSize] (int layerIn)
-        {
-            return 4 * hiddenSize * (layerIn + hiddenSize);
-        };
-        auto blockElementsFor = [kernelElementsFor, biasElements, hiddenSize] (int layerIn)
-        {
-            return kernelElementsFor (layerIn) + biasElements + 2 * hiddenSize;
-        };
-        auto expectedElements = hiddenSize + 1;
-        for (int layer = 0; layer < numLayers; ++layer)
-            expectedElements += blockElementsFor (layer == 0 ? inputSize : hiddenSize);
+        using Size = std::size_t;
+        const auto hidden = static_cast<Size> (hiddenSize);
+        const auto input = static_cast<Size> (inputSize);
+        const auto layers = static_cast<Size> (numLayers);
 
-        if (numLayers < 1 || inputSize < 1 || hiddenSize < 1
-            || static_cast<int> (weights.size()) != expectedElements)
+        auto checkedMultiply = [] (Size a, Size b, Size& result) noexcept
+        {
+            constexpr auto maxValue = std::numeric_limits<Size>::max();
+            if (a != 0 && b > maxValue / a)
+                return false;
+            result = a * b;
+            return true;
+        };
+        auto checkedAdd = [] (Size a, Size b, Size& result) noexcept
+        {
+            constexpr auto maxValue = std::numeric_limits<Size>::max();
+            if (b > maxValue - a)
+                return false;
+            result = a + b;
+            return true;
+        };
+        auto kernelElementsFor = [hidden, &checkedMultiply, &checkedAdd] (Size layerIn, Size& result)
+        {
+            Size taps = 0;
+            if (! checkedAdd (layerIn, hidden, taps)
+                || ! checkedMultiply (4, hidden, result))
+                return false;
+            return checkedMultiply (result, taps, result);
+        };
+        auto blockElementsFor = [hidden, &checkedMultiply, &checkedAdd, &kernelElementsFor]
+                                (Size layerIn, Size& result)
+        {
+            Size kernel = 0, bias = 0, states = 0, partial = 0;
+            return kernelElementsFor (layerIn, kernel)
+                && checkedMultiply (4, hidden, bias)
+                && checkedMultiply (2, hidden, states)
+                && checkedAdd (kernel, bias, partial)
+                && checkedAdd (partial, states, result);
+        };
+
+        Size expectedElements = 0;
+        if (! checkedAdd (hidden, 1, expectedElements))
+            return false;
+        for (Size layer = 0; layer < layers; ++layer)
+        {
+            Size layerElements = 0;
+            const auto layerInput = layer == 0 ? input : hidden;
+            if (! blockElementsFor (layerInput, layerElements)
+                || ! checkedAdd (expectedElements, layerElements, expectedElements))
+                return false;
+        }
+
+        if (weights.size() != expectedElements)
             return false;
 
-        auto readFlat = [&weights] (int offset, int count)
+        auto readFlat = [&weights] (Size offset, Size count)
         {
+            if (offset > weights.size() || count > weights.size() - offset)
+                throw std::out_of_range ("NAM tensor range is out of bounds");
             std::vector<float> slice;
-            slice.reserve (static_cast<std::size_t> (count));
-            for (int i = 0; i < count; ++i)
-                slice.push_back (weights.at (static_cast<std::size_t> (offset + i)).get<float>());
+            slice.reserve (count);
+            for (Size i = 0; i < count; ++i)
+                slice.push_back (weights.at (offset + i).get<float>());
             return slice;
         };
 
         // The head, kept for the [rows][columns] reads the head needs.
-        auto kernel2D = [&readFlat] (int offset, int rows, int columns)
+        auto kernel2D = [&readFlat] (Size offset, Size rows, Size columns)
         {
             std::vector<std::vector<float>> rowsOut;
-            rowsOut.reserve (static_cast<std::size_t> (rows));
-            for (int r = 0; r < rows; ++r)
+            rowsOut.reserve (rows);
+            for (Size r = 0; r < rows; ++r)
                 rowsOut.push_back (readFlat (offset + r * columns, columns));
             return rowsOut;
         };
@@ -317,26 +369,27 @@ struct NeuralStage
         // reading it back column-wise moves the taps onto the rows and the
         // gates into the columns without touching the gate order - exactly
         // the mapping RTNeural's own setters then regroup per gate.
-        auto splitKernel = [&weights, hiddenSize, biasElements] (int offset, int inputRows)
+        const auto biasElements = static_cast<Size> (4) * hidden;
+        auto splitKernel = [&weights, hidden, biasElements] (Size offset, Size inputRows)
         {
-            const auto stride = inputRows + hiddenSize;
+            const auto stride = inputRows + hidden;
             std::vector<std::vector<float>> kernel, recurrent;
-            kernel.reserve (static_cast<std::size_t> (inputRows));
-            recurrent.reserve (static_cast<std::size_t> (hiddenSize));
-            for (int i = 0; i < inputRows; ++i)
+            kernel.reserve (inputRows);
+            recurrent.reserve (hidden);
+            for (Size i = 0; i < inputRows; ++i)
             {
                 std::vector<float> row;
-                row.reserve (static_cast<std::size_t> (biasElements));
-                for (int k = 0; k < biasElements; ++k)
-                    row.push_back (weights.at (static_cast<std::size_t> (offset + k * stride + i)).get<float>());
+                row.reserve (biasElements);
+                for (Size k = 0; k < biasElements; ++k)
+                    row.push_back (weights.at (offset + k * stride + i).get<float>());
                 kernel.push_back (std::move (row));
             }
-            for (int j = 0; j < hiddenSize; ++j)
+            for (Size j = 0; j < hidden; ++j)
             {
                 std::vector<float> row;
-                row.reserve (static_cast<std::size_t> (biasElements));
-                for (int k = 0; k < biasElements; ++k)
-                    row.push_back (weights.at (static_cast<std::size_t> (offset + k * stride + inputRows + j)).get<float>());
+                row.reserve (biasElements);
+                for (Size k = 0; k < biasElements; ++k)
+                    row.push_back (weights.at (offset + k * stride + inputRows + j).get<float>());
                 recurrent.push_back (std::move (row));
             }
             return std::make_pair (std::move (kernel), std::move (recurrent));
@@ -348,14 +401,19 @@ struct NeuralStage
         // PyTorch trained it - RTNeural's own setters do that regrouping, so
         // a second permutation here would be a second bug.
         nlohmann::json layerList = nlohmann::json::array();
-        int cursor = 0;
+        Size cursor = 0;
 
-        for (int layer = 0; layer < numLayers; ++layer)
+        for (Size layer = 0; layer < layers; ++layer)
         {
-            const auto layerIn = layer == 0 ? inputSize : hiddenSize;
+            const auto layerIn = layer == 0 ? input : hidden;
+            Size kernelElements = 0, blockElements = 0;
+            if (! kernelElementsFor (layerIn, kernelElements)
+                || ! blockElementsFor (layerIn, blockElements)
+                || cursor > weights.size() || blockElements > weights.size() - cursor)
+                return false;
             auto kernelPair = splitKernel (cursor, layerIn);
-            const auto bias = readFlat (cursor + kernelElementsFor (layerIn), biasElements);
-            cursor += blockElementsFor (layerIn);
+            const auto bias = readFlat (cursor + kernelElements, biasElements);
+            cursor += blockElements;
 
             layerList.push_back ({ { "type", "lstm" },
                                    { "shape", nlohmann::json::array ({ hiddenSize }) },
@@ -366,8 +424,11 @@ struct NeuralStage
         // The head is stored row-major [out x H]; RTNeural's dense loader
         // expects [in][out] and transposes on the way in, so each hidden tap
         // becomes one single-element row.
-        const auto headWeight = kernel2D (cursor, hiddenSize, 1);
-        const auto headBias = readFlat (cursor + hiddenSize, 1);
+        if (cursor > weights.size() || hidden > weights.size() - cursor
+            || weights.size() - cursor - hidden != 1)
+            return false;
+        const auto headWeight = kernel2D (cursor, hidden, 1);
+        const auto headBias = readFlat (cursor + hidden, 1);
         layerList.push_back ({ { "type", "dense" },
                                { "shape", nlohmann::json::array ({ 1 }) },
                                { "weights", nlohmann::json::array ({ headWeight, headBias }) } });
@@ -441,12 +502,12 @@ struct NeuralStage
         // is one relaxed load against the two the guards above already make, and
         // it has to be here rather than per block because this stage is called
         // per sample.
-        if (ratesPending.load (std::memory_order_acquire))
-        {
+        // Claim the pending update BEFORE reading the rates. If setSampleRates()
+        // publishes another update during these loads, its store of true remains
+        // pending for the next inference instead of being erased by a trailing clear.
+        if (ratesPending.exchange (false, std::memory_order_acq_rel))
             bridge.prepare (wantedModelRate.load (std::memory_order_relaxed),
                             wantedEngineRate.load (std::memory_order_relaxed));
-            ratesPending.store (false, std::memory_order_release);
-        }
 
         if (resetRequested.exchange (false, std::memory_order_acq_rel))
         {

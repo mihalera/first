@@ -129,9 +129,20 @@ public:
 
         if (swapChain != nullptr)
         {
-            swapChain->ResizeBuffers (0, static_cast<UINT> (width), static_cast<UINT> (height),
-                                      DXGI_FORMAT_UNKNOWN, 0);
-            createRenderTarget();
+            if (FAILED (swapChain->ResizeBuffers (0, static_cast<UINT> (width),
+                                                   static_cast<UINT> (height),
+                                                   DXGI_FORMAT_UNKNOWN, 0)))
+            {
+                failure = "DirectX 11: swapchain resize failed";
+                shutdown();
+                return;
+            }
+
+            if (! createRenderTarget())
+            {
+                failure = "DirectX 11: render target recreation failed";
+                shutdown();
+            }
         }
     }
 

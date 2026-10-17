@@ -1,5 +1,5 @@
 // =============================================================================
-//  The arithmetic the SHAPERS page's spectrum curve is drawn with, and nothing
+//  The arithmetic the MODELS page's spectrum curve is drawn with, and nothing
 //  else: no JUCE, no component, no colour.
 //
 //  It is a header of its own - rather than twenty lines inside paint() - for the

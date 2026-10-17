@@ -445,10 +445,19 @@ public:
         float referenceBlockPower = 0.0f;
     };
 
+    /** Shared values produced by the input stage for one audio frame. */
+    struct SampleInputContext
+    {
+        std::array<float, 2> trimmedByChannel {};
+        float detectorPower = 0.0f;
+    };
+
     /** The machine: one sample of the block, with everything the block was set up with.
         It was the 1,669-line lambda inside processTapeEngine() - see TapeBlockState. */
     void processOneSample (TapeBlockState& state, int sample) noexcept;
-    void processOneSampleCore (TapeBlockState& state, int sample) noexcept;
+    SampleInputContext prepareSampleInput (const TapeBlockState& state, int sample,
+                                           float inputGain) noexcept;
+    void updateSampleLoudnessMeters (TapeBlockState& state, int sample) noexcept;
 
     bool processBypassedBlock (juce::dsp::AudioBlock<float>&, const BlockContext&);
     void processPostMachineStages (juce::dsp::AudioBlock<float>&, const BlockContext&);
@@ -889,6 +898,9 @@ private:
 
     /** Recomputes the cached tone filter coefficients for the current rate. */
     void updateToneCoefficients (float toneValue, float engineSampleRate);
+
+    /** Rebuilds rate-dependent block coefficients from the current engine rate. */
+    void configureBlockRateCoefficients (float engineSampleRate, float cabinetAmount);
 
     /** (Re)creates the oversampling engine for the requested factor and reports latency. */
     void setOversamplingFactor (OversamplingFactor factor, int samplesPerBlock);
@@ -1381,7 +1393,7 @@ private:
     HarmonicAnalyser harmonicAnalyser;
 
     // Measures the same shaper output as a log-spaced spectrum, for the curve the
-    // SHAPERS page draws. Prepared from the ENGINE's rate (see
+    // MODELS page draws. Prepared from the ENGINE's rate (see
     // updateNeuralSampleRates), so its band ladder follows the oversampling
     // switch, and fed one sample at a time from the channel-0 tap the harmonic
     // analyser is fed from - the transform only runs once per 512 frames.

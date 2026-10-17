@@ -189,7 +189,8 @@ public:
         // Resizing a swapchain while frames are in flight is undefined, so the
         // GPU is brought to a known state first and every back buffer is
         // released before ResizeBuffers is allowed to drop its own references.
-        waitForGpuIdle();
+        if (! waitForGpuIdle())
+            return;
 
         width = newWidth;
         height = newHeight;
@@ -217,7 +218,8 @@ public:
 
     void shutdown() noexcept override
     {
-        waitForGpuIdle();
+        if (! waitForGpuIdle())
+            return;
 
         for (auto& buffer : backBuffers)
             buffer.Reset();
@@ -390,22 +392,27 @@ private:
         return true;
     }
 
-    void waitForGpuIdle() noexcept
+    bool waitForGpuIdle() noexcept
     {
         if (queue == nullptr || fence == nullptr || fenceEvent == nullptr)
-            return;
+            return true;
 
         const auto target = ++fenceValue;
+        const auto signalResult = queue->Signal (fence.Get(), target);
+        const auto eventResult = signalResult == S_OK
+            ? fence->SetEventOnCompletion (target, fenceEvent) : signalResult;
+        const auto waitResult = eventResult == S_OK
+            ? WaitForSingleObject (fenceEvent, 2000) : WAIT_FAILED;
 
-        if (queue->Signal (fence.Get(), target) != S_OK
-            || fence->SetEventOnCompletion (target, fenceEvent) != S_OK
-            || WaitForSingleObject (fenceEvent, 2000) == WAIT_FAILED)
-        {
-            // A fence that will not signal means the GPU is gone or wedged.
-            // Waiting longer would hang the editor's shutdown, so this is a
-            // deliberate bound rather than an unbounded wait.
-            return;
-        }
+        if (signalResult == S_OK && eventResult == S_OK && waitResult == WAIT_OBJECT_0)
+            return true;
+
+        // Preserve all GPU-owned resources until a later successful wait; a
+        // timeout is not evidence that the queue has stopped using them.
+        failure = waitResult == WAIT_TIMEOUT
+            ? "DirectX 12: timed out waiting for GPU idle"
+            : "DirectX 12: failed waiting for GPU idle";
+        return false;
     }
 
     ComPtr<ID3D12Device> device;

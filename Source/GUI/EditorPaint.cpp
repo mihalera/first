@@ -152,7 +152,7 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     g.fillAll (palette.background);
 
     const auto layout = getEditorLayout();
-    // The neural card sits behind the SHAPERS page's picker cell, and its
+    // The neural card sits behind the MODELS page's picker cell, and its
     // geometry MIRRORS resized()'s: the grid is the controls band reduced by
     // 14, cut 78 from the top (controlsDividerOffset 92 - 14 + 8) and 8 from
     // the bottom; the member band is a fixed 50 px strip at the grid's bottom.
@@ -357,7 +357,7 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     // The neural model picker's card: the moved picker reads as a device with a
     // face, not as three unstyled widgets on the page - "it's black" was the
     // unstyled defaults speaking. The card is drawn behind the picker's member
-    // cell only when SHAPERS is the visible tab - the page whose NEURAL knob it
+    // cell only when MODELS is the visible tab - the page whose NEURAL knob it
     // belongs to.
     if (activeTabIsShapers)
     {
@@ -405,7 +405,7 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
             // translated strings here are the tooltips and the value readouts, not
             // the fixed names of things.
             //
-            //  It says TAPE on purpose. The cell sits on the SHAPERS page beside the
+            //  It says TAPE on purpose. The cell sits on the MODELS page beside the
             //  neural and IR loaders, and the signal behind the curve is neither of
             //  them - it is the magnetic stage's own output, the same sample the
             //  HARMONICS readout on the deck is measured on. "SPECTRUM" alone, one

@@ -407,7 +407,7 @@ void FirstAudioProcessorEditor::timerCallback()
     // Report the harmonic balance the tape stage is producing. Even and odd are shown
     // side by side because the ratio between them is the character: even-dominant reads as
     // warm and full, odd-dominant as hard and edgy, and real tape has both.
-    // The SHAPERS page's spectrum, from the same frame as the ratio below it: the
+    // The MODELS page's spectrum, from the same frame as the ratio below it: the
     // curve and the even/odd split describe one block of audio rather than two,
     // which is the whole reason the frame carries the bands instead of the editor
     // reading twenty-four atomics.

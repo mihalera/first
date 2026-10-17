@@ -283,7 +283,7 @@ const Page pages[] = {
     { "CHARACTER", 3, true }, { "NOISE", 6, false }, { "RECORD", 5, false },
     { "VINYL", 3, false }, { "MIX", 7, true }, { "SUB FUND", 3, false },
     { "DELAY", 4, true }, { "REVERB", 2, false }, { "DYN", 3, false },
-    { "OUT EQ", 6, true }, { "IN EQ", 6, true }, { "SHAPERS", 2, true },
+    { "OUT EQ", 6, true }, { "IN EQ", 6, true }, { "MODELS", 2, true },
     { "SETTINGS", 0, true },
     // The two pages that own their knobs. AUTOTUNE's one rides the strip with a
     // member band under it for the AUTO TUNE pill; COMP's six take the whole page,
@@ -563,7 +563,7 @@ int main()
     }
 
     // ------------------------------------------------------------------------
-    //  SPECTRUM: the curve the SHAPERS page draws in its member band's fourth
+    //  SPECTRUM: the curve the MODELS page draws in its member band's fourth
     //  column. Twenty-four readings and the box they have to fit in - which is
     //  what makes these claims testable here at every panel size, with no window
     //  and no renderer: the mapping is arithmetic, and the arithmetic is the part

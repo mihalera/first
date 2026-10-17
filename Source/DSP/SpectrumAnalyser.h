@@ -9,7 +9,7 @@
 //  It also SHIPS: Source/PluginProcessor.h holds one by value, the signal path
 //  feeds it the magnetic shaper's own output at the channel-0 tap the harmonic
 //  analyser beside it is fed from, and its bands travel in the block telemetry
-//  frame the SHAPERS page draws its curve from. So the numbers below are the ones
+//  frame the MODELS page draws its curve from. So the numbers below are the ones
 //  on a user's screen, and this file is the first thing to read when the curve is
 //  wrong - after SpectrumMetrics.h, which is where the DRAWING of them lives.
 //

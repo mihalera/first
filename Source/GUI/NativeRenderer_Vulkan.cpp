@@ -192,7 +192,7 @@ public:
 
     void endFrame() override
     {
-        (activeSlot == invalidIndex)
+        if (activeSlot == invalidIndex)
             return;
 
         const auto slot = activeSlot;
