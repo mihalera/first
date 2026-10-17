@@ -45,10 +45,13 @@
 // =============================================================================
 #include "PluginProcessor.h"
 
+#include "DSP/AutoGainCompensator.h"
 #include "DSP/BlockRateCoefficients.h"
 #include "DSP/HotPathMath.h"
+#include "DSP/MixCrossfader.h"
 #include "DSP/MultibandPhaseGuard.h"
 #include "DSP/PitchCorrectionRule.h"
+#include "DSP/SafetyLimiter.h"
 #include "DSP/TapeModulation.h"
 #include "HotPathProbe.h"
 
@@ -643,11 +646,18 @@ void FirstAudioProcessor::configureBlockRateCoefficients (float engineSampleRate
     presenceCoefficient = blockRate.presence;
     sagAttackCoefficient = blockRate.sagAttack;
     sagReleaseCoefficient = blockRate.sagRelease;
-    limiterDetectorAttack = blockRate.limiterDetectorAttack;
-    limiterDetectorRelease = blockRate.limiterDetectorRelease;
-    limiterCatchCoefficient = blockRate.limiterCatch;
-    limiterRecoveryCoefficient = blockRate.limiterRecovery;
-    limiterCeiling = blockRate.limiterCeiling;
+
+    // The limiter's four coefficients and its ceiling travel together, so they are
+    // handed over as one struct rather than kept as five members of this engine -
+    // and the stage that reads them is Source/DSP/SafetyLimiter.h.
+    j37dsp::SafetyLimiter::Coefficients limiterCoefficients;
+    limiterCoefficients.detectorAttack = blockRate.limiterDetectorAttack;
+    limiterCoefficients.detectorRelease = blockRate.limiterDetectorRelease;
+    limiterCoefficients.catchCoefficient = blockRate.limiterCatch;
+    limiterCoefficients.recoveryCoefficient = blockRate.limiterRecovery;
+    limiterCoefficients.ceiling = blockRate.limiterCeiling;
+    limiter.prepare (limiterCoefficients);
+
     antiPhaseCoefficient = blockRate.antiPhase;
 }
 
@@ -2219,10 +2229,12 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     const float inputGain = inputGainSmoothed.getNextValue();
     const float outputGain = outputGainSmoothed.getCurrentValue();
     const float currentWidth = widthSmoothed.getCurrentValue();
-    const float mixNow = juce::jlimit (0.0f, 1.0f, mixSmoothed.getCurrentValue());
-    const float mixAngle = mixNow * juce::MathConstants<float>::halfPi;
-    const float dryGain = std::cos (mixAngle);
-    const float wetGain = std::sin (mixAngle);
+    // MIX is the equal-power dry/wet crossfade and Source/DSP/MixCrossfader.h is
+    // the law: the gain pair, the endpoint behaviour and the transport gate both
+    // legs carry. tests/mix_crossfader measures it; this reads one position per
+    // frame off the block-rate smoother and keeps it for the hot-path probe below.
+    const float mixNow = j37dsp::MixCrossfader::clampMix (mixSmoothed.getCurrentValue());
+    const auto mixGains = j37dsp::MixCrossfader::gainsFor (mixNow);
     const float bypassMix = bypassSmoothed.getCurrentValue();
     const float deltaMix = deltaListenSmoothed.getCurrentValue();
     const float driveNow = shaperDriveSmoothed.getCurrentValue();
@@ -3107,10 +3119,12 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         //  machine is the input's path, so STOP there is a stop too. The gate's
         //  SHAPE is `platterGate` and not the platter speed itself: a linear
         //  gate is a fader, and a fader is what the report heard. tests/transport
-        //  reads both of these legs as text precisely so neither can lose it.
-        const float wetMix = aligned * wetGain * platterGate;
-        const float dryMix = machineDryInput[static_cast<std::size_t> (channel)]
-                           * dryGain * platterGate;
+        //  reads both of these legs as text precisely so neither can lose it, and
+        //  the crossfade itself - the gain pair and the gate on BOTH legs - lives
+        //  in Source/DSP/MixCrossfader.h.
+        const float wetMix = j37dsp::MixCrossfader::wetLeg (aligned, mixGains, platterGate);
+        const float dryMix = j37dsp::MixCrossfader::dryLeg (
+            machineDryInput[static_cast<std::size_t> (channel)], mixGains, platterGate);
         tapeOutput[static_cast<std::size_t> (channel)] = dryMix + wetMix;
     }
 
@@ -3286,32 +3300,28 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     // ---------------------------------------------------------------------
     //  Final gain compensation.
     //
-    //  The tape stage, the two glue compressors and their makeup all change the
-    //  level, so what leaves the plugin is not necessarily the level the user
-    //  dialled in with INPUT. This compares the finished signal against the
-    //  reference taken straight after the input trim and before the first
-    //  compressor, and pays back whatever was lost or gained, so the plugin holds
-    //  its output level as DRIVE, TAPE TYPE, SPEED and MIX are changed instead of
-    //  drifting louder or quieter with every edit.
-    //
-    //  The correction is smoothed with a slow one-pole, so it tracks the overall
-    //  programme level rather than fighting the moment-to-moment compression. That
-    //  keeps the compressors' punch intact: it corrects the average, not transients.
-    // ---------------------------------------------------------------------
-    float compensationGain = 1.0f;
+    //  Source/DSP/AutoGainCompensator.h is the rule itself - restore what the
+    //  chain lost, never boost, smooth it over 450 ms, stop at 12 dB - and
+    //  tests/gain measures it on signal. What is here is the measurement it is
+    //  handed and the gate around it.
     //
     //  The compensation measures the MACHINE's output against the input, so it
     //  must not try to correct a machine that is not running: with STOP gating
     //  that output the measurement would collapse, the compensator would ramp
     //  to its +12 dB limit while the machine sat still, and START would then
     //  come back loud before the correction relaxed. While the platter is not
-    //  at speed the last correction is held instead - which is also the honest
-    //  reading, because a stopped machine has no output to measure.
-    if (state.autoGainEnabled && transport.atSpeed() && state.referenceBlockPower > 0.0f)
+    //  at speed the stage is not advanced at all, so the last correction is
+    //  held - which is also the honest reading, because a stopped machine has
+    //  no output to measure.
+    //
+    //  The power below is the signal as it leaves the compressors and tape
+    //  stage, but BEFORE this compensation is folded in - measuring the
+    //  compensated output would make the correction chase its own tail.
+    // ---------------------------------------------------------------------
+    float compensationGain = 1.0f;
+
+    if (state.autoGainEnabled && transport.atSpeed())
     {
-        // Power of the signal as it leaves the compressors and tape stage, but
-        // BEFORE this compensation is folded in - measuring the compensated output
-        // would make the correction chase its own tail.
         float postCompressorPower = 0.0f;
         for (int channel = 0; channel < state.activeChannels; ++channel)
         {
@@ -3320,28 +3330,9 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
             postCompressorPower += signal * signal;
         }
 
-        if (postCompressorPower > 1.0e-12f)
-        {
-            // How far the finished signal has fallen below the reference taken after
-            // the input trim. Positive means level was lost and needs paying back.
-            // chowdsp's polynomial dB approximation replaces libm's exp2/log2
-            // chain on the auto-gain hot path; the JUCE fallback below keeps any
-            // build without the chowdsp header identical in behaviour.
-#if J37_HAS_CHOWDSP_MATH
-            const auto levelRatioDb = chowdsp::DecibelsApprox::gainToDecibels (
-                std::sqrt (state.referenceBlockPower / postCompressorPower), 0.0f);
-#else
-            const auto levelRatioDb = juce::Decibels::gainToDecibels (
-                std::sqrt (state.referenceBlockPower / postCompressorPower), 0.0f);
-#endif
-
-            // Only ever restore, never exaggerate: the correction may recover a loss
-            // but must not become an extra boost stage of its own.
-            const auto targetCompensationDb = juce::jlimit (0.0f, 12.0f, levelRatioDb);
-            smoothedCompensationDb += (targetCompensationDb - smoothedCompensationDb)
-                                    * state.compensationCoefficient;
-            compensationGain = juce::Decibels::decibelsToGain (smoothedCompensationDb);
-        }
+        compensationGain = autoGainCompensator.process (state.referenceBlockPower,
+                                                       postCompressorPower,
+                                                       state.compensationCoefficient);
     }
 
     std::array<float, 2> outputSignal {};
@@ -3384,7 +3375,7 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     //
     //  Two scalings keep the control meaning what it says:
     //
-    //    - `wetGain`, so MIX 0 is the untouched input and the undertones go
+    //    - `mixGains.wet`, so MIX 0 is the untouched input and the undertones go
     //      with it, exactly like the rest of the tape path;
     //    - `finalOutputGain`, the machine's static output calibration, so the
     //      knob holds the same level in the mix that it held when the sum ran
@@ -3395,7 +3386,7 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     // -------------------------------------------------------------------
     for (int channel = 0; channel < state.activeChannels; ++channel)
         outputSignal[static_cast<std::size_t> (channel)] +=
-            undertoneOutput[static_cast<std::size_t> (channel)] * wetGain * state.finalOutputGain
+            undertoneOutput[static_cast<std::size_t> (channel)] * mixGains.wet * state.finalOutputGain
             * platterSpeed;
 
     // -------------------------------------------------------------------
@@ -3726,27 +3717,14 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     for (int channel = 0; channel < state.activeChannels; ++channel)
         framePeak = juce::jmax (framePeak, std::abs (outputSignal[static_cast<std::size_t> (channel)]));
 
-    // A very fast attack catches transients before they overshoot; the release is
-    // short enough to recover between events without pumping on sustained material.
-    //
-    // All four coefficients are BLOCK-RATE constants, built above the loop. They
-    // used to be rebuilt here, which cost four std::exp per sample per channel -
-    // and because the gain smoothing is a ternary, BOTH of its branches were
-    // evaluated every sample and one thrown away.
-    const auto detectorCoefficient = framePeak > preLimiterDetector ? limiterDetectorAttack
-                                                                    : limiterDetectorRelease;
-    preLimiterDetector += (framePeak - preLimiterDetector) * detectorCoefficient;
-
-    // Gain required to bring the peak back to the ceiling. It is smoothed separately
-    // from the detector so the correction is continuous and cannot click.
-    const auto requiredGain = preLimiterDetector > limiterCeiling
-                                ? limiterCeiling / preLimiterDetector
-                                : 1.0f;
-    // 0.4 ms catch, 120 ms recovery. The asymmetry is the point: a limiter
-    // must catch instantly and let go slowly, or it pumps.
-    const auto gainSmoothing = requiredGain < limiterGain ? limiterCatchCoefficient
-                                                          : limiterRecoveryCoefficient;
-    limiterGain += (requiredGain - limiterGain) * gainSmoothing;
+    // The stage itself - the fast detector, the catch/release asymmetry and the
+    // ceiling on softClip's knee - is Source/DSP/SafetyLimiter.h, and tests/limiter
+    // measures it on generated signal. It is handed the FRAME's loudest channel, so
+    // both sides get one gain and limiting cannot shift the image; and its four
+    // coefficients are block-rate constants, built above the loop rather than
+    // rebuilt here (four std::exp per sample per channel, with both branches of a
+    // ternary evaluated and one thrown away).
+    const auto limiterGain = limiter.process (framePeak);
 
     for (int channel = 0; channel < state.activeChannels; ++channel)
         outputSignal[static_cast<std::size_t> (channel)] *= limiterGain;

@@ -239,6 +239,17 @@ TU="${BUILD}/header_check.cpp"
     x = guard.process (guarded[0], guarded[1], 1.0f) ? guarded[0] + guarded[1] : 0.0f;
     guard.reset();
 
+    // The AUTO GAIN compensator, which tests/gain measures on generated signal
+    // with no JUCE at all. This is its other shape: the header compiled in the
+    // plugin's own translation unit, where J37_HAS_CHOWDSP_MATH is decided by the
+    // build rather than by the harness, and its public surface has to instantiate
+    // against whatever that decision was.
+    j37dsp::AutoGainCompensator compensator;
+    compensator.process (x * x, x * x * 0.25f, 0.001f);
+    x += compensator.getSmoothedDb() + compensator.getGain();
+    compensator.reset();
+
+
     PitchTracker tracker;
     tracker.prepare (48000.0);
 
@@ -302,6 +313,36 @@ TU="${BUILD}/header_check.cpp"
        + blockRate.limiterDetectorAttack + blockRate.limiterDetectorRelease
        + blockRate.limiterCatch + blockRate.limiterRecovery
        + blockRate.limiterCeiling + blockRate.antiPhase;
+
+    // The safety limiter, which tests/limiter drives on generated signal against
+    // the DSP harness's shim. Its own header names nothing of JUCE; what this adds
+    // is the plugin's shape of it - prepared from the block-rate coefficients above
+    // and driven with the frame's loudest channel.
+    j37dsp::SafetyLimiter::Coefficients limiterCoefficients;
+    limiterCoefficients.detectorAttack = blockRate.limiterDetectorAttack;
+    limiterCoefficients.detectorRelease = blockRate.limiterDetectorRelease;
+    limiterCoefficients.catchCoefficient = blockRate.limiterCatch;
+    limiterCoefficients.recoveryCoefficient = blockRate.limiterRecovery;
+    limiterCoefficients.ceiling = blockRate.limiterCeiling;
+
+    j37dsp::SafetyLimiter limiter;
+    limiter.prepare (limiterCoefficients);
+    x = std::abs (x) * limiter.process (std::abs (x));
+    x += limiter.getGain() + limiter.getDetector() + limiter.getCeiling();
+    limiter.reset();
+
+    // The MIX crossfade, which tests/mix_crossfader drives with no JUCE at all. What
+    // this probe adds is the one number in it that has to agree with JUCE EXACTLY:
+    // the quarter turn is juce::MathConstants<float>::halfPi to the bit, because one
+    // ULP here would move every rendered sample of every existing session by that
+    // much. The static_assert is the pin; the calls below are the surface.
+    static_assert (j37dsp::MixCrossfader::halfPi == juce::MathConstants<float>::halfPi,
+                   "the crossfade's quarter turn must be JUCE's halfPi, to the bit");
+
+    const auto mixGains = j37dsp::MixCrossfader::gainsFor (0.5f);
+    x = j37dsp::MixCrossfader::dryLeg (x, mixGains, 1.0f)
+      + j37dsp::MixCrossfader::wetLeg (x, mixGains, 1.0f)
+      + j37dsp::MixCrossfader::clampMix (x);
 
     // The machine's rate and its shaping curves, which is the second stage out of
     // processTapeEngine() and the one with the most prose per line in the engine: it

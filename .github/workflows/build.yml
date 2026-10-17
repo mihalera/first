@@ -149,6 +149,45 @@ jobs:
       - name: Run the anti-phase guard harness
         run: bash tests/phase/run.sh
 
+      # The AUTO GAIN compensator - the one gain stage in the chain that nothing
+      # measured. It compares the finished signal against the reference taken after
+      # the input trim and pays back what the tape stage and both compressors lost,
+      # so a mix does not drift quieter with every edit. Three things it must never
+      # do are numbers on rendered audio rather than on source: boost a programme
+      # that is already loud, restore more than its 12 dB ceiling, or drive itself
+      # to that ceiling because STOP made the output silent. This drives the
+      # shipping header with generated signal and asserts each one, plus the 450 ms
+      # time constant at two rates. Same shape as the harnesses above: no JUCE, no
+      # host, a few seconds.
+      - name: Run the auto gain compensator harness
+        run: bash tests/gain/run.sh
+
+      # The output safety limiter - the stage that keeps the soft clipper idle.
+      # Nothing drove it before: the only other mention of it in tests/ was a
+      # reduced replica inside the SUBFUND harness's signal path, which can only be
+      # wrong in the same way as the code it copies. This includes the shipping
+      # header and the block-rate coefficients that feed it, and asserts what the
+      # two-stage protection design depends on: a programme below the ceiling comes
+      # back bit for bit, a step 6 dB over it is caught within a few milliseconds
+      # and held at the ceiling, the catch is fast and the release slow enough not
+      # to pump between notes, and the shape is the same duration at every engine
+      # rate. Same shape as the harnesses above: no JUCE, no host, a few seconds.
+      - name: Run the safety limiter harness
+        run: bash tests/limiter/run.sh
+
+      # The MIX crossfade - the last of the four stages item 4 named. It is the one
+      # control that decides how much of the finished tape signal leaves the plugin,
+      # and the only thing that read it was a text check in the transport harness,
+      # which can see that a gate is multiplied in but not that the crossfade is
+      # smooth or that its ends are the two signals. This includes the shipping
+      # header and renders signal through both legs: MIX 0 % is the dry input bit for
+      # bit, 100 % is the tape path, an uncorrelated pair holds its level across the
+      # travel while a correlated one is the +3 dB the equal-power law costs, and a
+      # closed transport gate empties both legs - which is what makes STOP a stop at
+      # MIX 0 % too. Same shape as the harnesses above: no JUCE, no host, seconds.
+      - name: Run the MIX crossfade harness
+        run: bash tests/mix_crossfader/run.sh
+
       # The neural stage's rate conversion. A .nam model carries the rate it was
       # TRAINED at and the engine runs at the session's rate times its oversampling
       # factor, and a network's memory is counted in samples rather than seconds -
@@ -542,6 +581,9 @@ jobs:
           J37_SANITIZE=address,undefined bash tests/transport/run.sh
           J37_SANITIZE=address,undefined bash tests/pitch/run.sh
           J37_SANITIZE=address,undefined bash tests/phase/run.sh
+          J37_SANITIZE=address,undefined bash tests/gain/run.sh
+          J37_SANITIZE=address,undefined bash tests/limiter/run.sh
+          J37_SANITIZE=address,undefined bash tests/mix_crossfader/run.sh
           J37_SANITIZE=address,undefined bash tests/neural/run.sh
           J37_SANITIZE=address,undefined bash tests/spectrum/run.sh
 
