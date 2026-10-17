@@ -748,9 +748,9 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     noiseState = 0x1b873593u;
 
     // The safety limiter must start open, otherwise a stale gain from the previous
-    // session would duck the first block audibly.
-    preLimiterDetector = 0.0f;
-    limiterGain = 1.0f;
+    // session would duck the first block audibly. It owns that state now -
+    // Source/DSP/SafetyLimiter.h - so this is its own reset.
+    limiter.reset();
 
     // The anti-phase guard starts neutral: no correction, and an energy floor that
     // keeps a silent opening passage from dividing by nothing.
@@ -803,8 +803,10 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     outputCompressor.reset();
 
     // The final compensation starts from unity so the first block is not nudged by a
-    // stale correction from a previous session or sample rate.
-    smoothedCompensationDb = 0.0f;
+    // stale correction from a previous session or sample rate. The compensator owns
+    // that correction now - Source/DSP/AutoGainCompensator.h - so this is its own
+    // reset rather than a float written from here.
+    autoGainCompensator.reset();
 }
 
 void FirstAudioProcessor::resetSampleRateDependentState()

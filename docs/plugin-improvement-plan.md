@@ -186,27 +186,38 @@ lever in the repository, paid on every platform and every run. *Evidence*:
 
 ## Priority 2 - the parts nobody can see
 
-### 4. Keep taking `processTapeEngine` apart at its own seams
+### 4. Keep taking `processTapeEngine` apart at its own seams - **done**
 
-It is **1,654 lines in one function** (analysis §2). `BlockRateCoefficients.h`
-proved the recipe: name the state, move the coefficients beside it, let the
-per-sample loop call one thing. The next four, in the order they pay off, are the
-ones that are still inline in the loop and easiest to reason about separately:
+It was **1,654 lines in one function** when this plan was written (analysis §2).
+`BlockRateCoefficients.h` proved the recipe: name the state, move the coefficients
+beside it, let the per-sample loop call one thing. Four stages were named, in the
+order they pay off - the ones that were still inline in the loop and easiest to
+reason about separately - and all four are out of the function now:
 
-- the **AUTO GAIN compensator** - the only gain stage in the chain that nothing
-  measures on signal;
-- the **safety limiter** - four poles, a ceiling and a reset path that no harness
-  ever drives;
-- the **anti-phase guard** - engaged and disengaged by a signal-derived
-  condition, tested nowhere;
-- the **MIX crossfade** - both legs of it carry the transport gate, which is a
-  claim the transport harness does not make.
+- the **AUTO GAIN compensator** - `Source/DSP/AutoGainCompensator.h`, pinned by
+  `tests/gain`: it only restores, stops at 12 dB, holds through silence and does
+  not chase a transient;
+- the **safety limiter** - `Source/DSP/SafetyLimiter.h`, pinned by `tests/limiter`:
+  bit-for-bit transparency below the ceiling, a catch measured in milliseconds, a
+  release slow enough not to pump between notes, and the same shape at every
+  engine rate;
+- the **anti-phase guard** - `Source/DSP/MultibandPhaseGuard.h` (three bands rather
+  than one), pinned by `tests/phase`: the crossover flat, the per-band rotation and
+  the unwind after the fault ends;
+- the **MIX crossfade** - `Source/DSP/MixCrossfader.h`, pinned by
+  `tests/mix_crossfader`: 0 % is the dry input bit for bit, 100 % is the tape path,
+  the law is equal power with its +3 dB correlated midpoint measured rather than
+  hidden, and BOTH legs carry the transport gate - which is the claim the transport
+  check can only see as text and a harness can now drive.
+
+What is left of the signal path's own length (see SPLITTING-BIG-FILES.md, step F)
+is the ~1,570 lines of per-block derivations, which is a move rather than a rewrite.
 
 *Cost:* one stage per sitting, each one a move plus a harness section.
-*Payoff:* the function becomes readable, and four audible behaviours become
-measurable. *Evidence:* [analysis §2](plugin-analysis.md#2-the-processor-is-one-file-and-one-very-long-function).
+*Payoff:* the function is shorter, and four audible behaviours are measurable
+rather than described. *Evidence:* [analysis §2](plugin-analysis.md#2-the-processor-is-one-file-and-one-very-long-function).
 *Verify:* each extracted stage has a harness section that renders it and asserts
-on the property its comment claims.
+on the property its comment claims - all four do today.
 
 ### 5. Drive `processBlock` with the buffer shapes hosts actually hand over
 
@@ -344,7 +355,8 @@ logs of the day. Its items, and where they stand:
 | Let the harnesses `#include` the moved stages instead of cutting text | **done** - the DSP extractor's header list is empty; only the inline shapers are still cut |
 | Add the check that makes a split safe | **done** - `tests/editor/check_editor_juce.sh` compiles every translation unit and every `Source/GUI/*.h` against real JUCE, and caught three faults on its first run |
 | Decide what the loudness meter is for, and write it down | **partly** - the meter's contracts are pinned by `tests/dsp/loudness_test.cpp`; the mono-instance question is still open (item 10) |
-| Extract the AUTO GAIN compensator and measure it on signal | **open** - item 4 |
+| Extract the AUTO GAIN compensator and measure it on signal | **done** - `Source/DSP/AutoGainCompensator.h`, pinned by `tests/gain` |
+| Keep taking `processTapeEngine` apart at its own seams (the four stages of item 4) | **done** - the guard, the compensator, the limiter and the MIX crossfade are headers of their own, each with a harness that renders it |
 | Give the rendering backends a compile check | **open** - item 6 |
 | Drive `processBlock` with real buffer shapes | **open** - item 5 |
 | Say what a mono instance reads, or change it | **open** - item 10 |

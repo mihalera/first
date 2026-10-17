@@ -29,6 +29,7 @@
 #pragma once
 
 #include "DSP/HotPathMath.h"
+#include "DSP/SafetyLimiter.h"
 
 namespace j37rate
 {
@@ -59,7 +60,8 @@ struct BlockRateCoefficients
 
     // The safety limiter's four coefficients and its ceiling. All functions of the
     // rate alone - see the per-sample loop, where rebuilding them was four std::exp
-    // per sample per channel.
+    // per sample per channel - and the four durations they are built from are named
+    // in Source/DSP/SafetyLimiter.h, which is the stage that reads them.
     float limiterDetectorAttack = 0.0f;
     float limiterDetectorRelease = 0.0f;
     float limiterCatch = 0.0f;
@@ -112,10 +114,15 @@ inline BlockRateCoefficients makeBlockRateCoefficients (float engineSampleRate,
     coefficients.sagAttack = onePoleCoefficient (60.0f, engineSampleRate);
     coefficients.sagRelease = onePoleCoefficient (240.0f, engineSampleRate);
 
-    coefficients.limiterDetectorAttack = onePoleCoefficient (0.5f, engineSampleRate);
-    coefficients.limiterDetectorRelease = onePoleCoefficient (80.0f, engineSampleRate);
-    coefficients.limiterCatch = onePoleCoefficient (0.4f, engineSampleRate);
-    coefficients.limiterRecovery = onePoleCoefficient (120.0f, engineSampleRate);
+    // From the stage's own names, so the four durations have one definition and
+    // tests/limiter can describe the shape from the same numbers.
+    using Limiter = j37dsp::SafetyLimiter;
+    coefficients.limiterDetectorAttack = onePoleCoefficient (Limiter::detectorAttackMs,
+                                                            engineSampleRate);
+    coefficients.limiterDetectorRelease = onePoleCoefficient (Limiter::detectorReleaseMs,
+                                                             engineSampleRate);
+    coefficients.limiterCatch = onePoleCoefficient (Limiter::catchMs, engineSampleRate);
+    coefficients.limiterRecovery = onePoleCoefficient (Limiter::recoveryMs, engineSampleRate);
 
     coefficients.antiPhase = onePoleCoefficient (400.0f, engineSampleRate);
 

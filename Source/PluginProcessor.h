@@ -27,7 +27,9 @@
 //
 // It is included at exactly this point because Source/DSP/J37Math.h below reads the
 // first of them and Source/DSP/NeuralStage.h reads the third.
+#include "DSP/AutoGainCompensator.h"
 #include "DSP/MultibandPhaseGuard.h"
+#include "DSP/SafetyLimiter.h"
 #include "DSP/OptionalLibraries.h"
 
 #include <array>
@@ -1386,23 +1388,19 @@ private:
     SpectrumAnalyser spectrumAnalyser;
 
     // Output safety limiter, the stage that keeps the signal below the soft clipper so it
-    // almost never has to act. `preLimiterDetector` is a fast peak follower and
-    // `limiterGain` is the smoothed gain it applies; keeping them separate gives the
-    // classic brick-wall shape - instant catch, musical release.
-    //
-    // `limiterCeiling` is the level the limiter pulls back to. It sits exactly on
-    // softClip's knee (0.70), which is the only value that makes the hand-off
-    // claim true: below the knee the clipper is bit-for-bit transparent, so anything
-    // the limiter lets through is distortion the clipper would not have caused yet.
-    float preLimiterDetector = 0.0f;
-    float limiterCeiling = 0.70f;
-    float limiterGain = 1.0f;
+    // almost never has to act. It is Source/DSP/SafetyLimiter.h - one peak detector, one
+    // smoothed gain and one ceiling - and tests/limiter measures it on generated signal.
+    // Keeping the detector and the gain separate is what gives the classic brick-wall
+    // shape: instant catch, musical release.
+    j37dsp::SafetyLimiter limiter;
 
-    // Final gain compensation. `smoothedCompensationDb` is the slow, programme-level
-    // correction applied after the last compressor. It is driven by comparing the
-    // reference power taken straight after the input trim (before the first compressor)
-    // against the power the chain actually produced. Audio-thread only, so a plain float.
-    float smoothedCompensationDb = 0.0f;
+    // Final gain compensation. The compensator holds the slow, programme-level
+    // correction applied after the last compressor, driven by comparing the
+    // reference power taken straight after the input trim (before the first
+    // compressor) against the power the chain actually produced. It lives in
+    // Source/DSP/AutoGainCompensator.h so tests/gain can measure it on signal;
+    // its state is one float, so this costs the block state nothing.
+    j37dsp::AutoGainCompensator autoGainCompensator;
 
     // K-weighted loudness, run on the plugin output and on the reference point so the
     // panel can show both ends of the chain on the same scale.
@@ -1683,22 +1681,15 @@ private:
     // -----------------------------------------------------------------------
     //  Block-rate envelope coefficients.
     //
-    //  These were rebuilt inside the per-sample loop, which cost six std::exp
-    //  per sample per channel for values that cannot change within a block -
-    //  every one of them is a function of the sample rate alone. They are built
-    //  next to the other block-rate coefficients in processTapeEngine and read
-    //  as plain floats in the loop.
-    //
-    //  The limiter's two gain-smoothing coefficients were worse than that: they
-    //  sat in a ternary, so BOTH branches were evaluated on every sample and one
-    //  was discarded.
+    //  The SAG pair was rebuilt inside the per-sample loop, which cost two std::exp
+    //  per sample per channel for values that cannot change within a block - both
+    //  are functions of the sample rate alone. They are built next to the other
+    //  block-rate coefficients in processTapeEngine and read as plain floats in the
+    //  loop. The safety limiter's four moved with the stage: its header holds them
+    //  now, and its own comment says why the catch/release asymmetry matters.
     // -----------------------------------------------------------------------
     float sagAttackCoefficient = 0.0f;
     float sagReleaseCoefficient = 0.0f;
-    float limiterDetectorAttack = 0.0f;
-    float limiterDetectorRelease = 0.0f;
-    float limiterCatchCoefficient = 0.0f;
-    float limiterRecoveryCoefficient = 0.0f;
 
     // -----------------------------------------------------------------------
     //  Preamp and distortion - the two gain stages in front of the machine.

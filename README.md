@@ -9,7 +9,7 @@
 | **Framework** | JUCE `9.0.4`, pinned as a git submodule |
 | **Build** | CMake 3.22+, MSVC on Windows, Xcode on macOS |
 | **Parameters** | 109, in 23 groups, with 29 factory presets |
-| **Checked by** | ten harnesses and seven text checks that need no JUCE, on every pull request |
+| **Checked by** | thirteen harnesses and seven text checks that need no JUCE, on every pull request |
 | **Licence** | MIT for this repository's own source; a *binary* also links JUCE (AGPLv3 or commercial) and a GPLv3 module - see [Licensing, and what ships in a binary](#licensing-and-what-ships-in-a-binary) |
 
 ### Where to go next
@@ -746,8 +746,10 @@ is where the harmonics come from:
   it was previously broken twice over: the shaper summed three saturating curves that
   stacked into permanent distortion, and DRIVE had a hard floor of 0.28 that pre-boosted the
   signal 38 % even at zero. Both are fixed.
-- MIX is the one control that is a true linear crossfade, so the blend always agrees with
-  its own readout.
+- MIX is the one control that is a true crossfade, so the blend always agrees with its own
+  readout. The law lives in `Source/DSP/MixCrossfader.h` - equal power, exactly the dry
+  input at 0 % and all tape at 100 %, and `tests/mix_crossfader/` measures the endpoints,
+  the level across the travel and the transport gate both legs carry.
 - **BRIGHTNESS is a real playback high-shelf**: a fixed 8 kHz corner whose gain follows
   the control (0 dB at warm up to about +8.5 dB at bright). Earlier versions moved the
   corner frequency and folded it into a tilt stage shared with the TONE macro, which made
@@ -934,6 +936,8 @@ Two switches sit at the very end of the chain:
 - **AUTO GAIN** gates the slow programme compensator. On (default) the plugin keeps
   tracking the level the INPUT trim dialled in; off hands full level responsibility to
   the OUTPUT trim alone, which is how many engineers prefer to ride a mastering chain.
+  The rule itself - restore a loss, never boost, stop at 12 dB, hold through silence -
+  lives in `Source/DSP/AutoGainCompensator.h`, and `tests/gain/` measures it on signal.
 
 ## Output protection
 
@@ -942,7 +946,9 @@ Two stages keep the output clean, in this order:
 1. **Safety limiter.** A fast peak-follower pulls the gain back before the signal reaches
 the ceiling. It is a *gain* stage, not a shaper, so it adds no harmonics of its own - the
 only distortion in the output is the tape stage's. Normal material is limited
-transparently.
+transparently, and below the ceiling it is transparent to the bit. The stage is
+`Source/DSP/SafetyLimiter.h`, and `tests/limiter/` measures its catch, its release and
+its rate independence on generated signal.
 
 2. **Soft clipper.** Only what still overshoots (a peak faster than the limiter's attack)
 reaches this. It is a linear region up to 0.70, then blends smoothly into a saturating
@@ -1659,7 +1665,7 @@ proposes what to do about the gap.
 ## Contributing
 
 - **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** applies to issues, pull requests and
-discussions.- **Every change is checked by [tests/README.md](tests/README.md)'s suite** - nine
+discussions.- **Every change is checked by [tests/README.md](tests/README.md)'s suite** - thirteen
   harnesses that compile the shipping code and seven text checks - plus four platform
   builds in CI. A change to the sound belongs with a harness section that pins what
 changed; a change that moves code belongs with a green

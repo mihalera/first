@@ -105,6 +105,9 @@ machine produced.
 | --- | --- |
 | the subharmonic series, its threshold and its anti-phase guard | `tests/dsp` (SUBFUND sections) |
 | the output anti-phase guard's three bands, per band rotation, and its unwind | `tests/phase` |
+| the AUTO GAIN compensator's pole, ceiling, no-boost rule and silence handling | `tests/gain` |
+| the safety limiter's transparency, catch, release and rate independence | `tests/limiter` |
+| the MIX crossfade's endpoints, equal-power law and the transport gate on both legs | `tests/mix_crossfader` |
 | the loudness meter's calibration and channel sum | `tests/dsp` (loudness sections) |
 | the shaper's curves when the tanh seam is switched | `tests/dsp/simd_tanh_test.cpp` |
 | the three-band EQ's neutral point, slopes and band independence | `tests/unit` (`ThreeBandEq`) |
@@ -116,10 +119,12 @@ machine produced.
 | the spectrum analyser, with and without its FFT | `tests/spectrum` |
 | session state round trip | `tests/state` |
 
-Stages without a harness section of their own are listed in
-[plugin-improvement-plan.md](plugin-improvement-plan.md) item 4: the AUTO GAIN
-compensator, the safety limiter and the MIX crossfade are the three that are read here
-and measured nowhere yet.
+Every stage on the list [plugin-improvement-plan.md](plugin-improvement-plan.md) item 4
+named now has a harness section of its own: the anti-phase guard (`tests/phase`), the
+AUTO GAIN compensator (`tests/gain`), the safety limiter (`tests/limiter`) and the MIX
+crossfade (`tests/mix_crossfader`). What is still described here and measured nowhere is
+the sequencing of the loop itself - item 5 drives `processBlock` with the buffer shapes a
+host hands over.
 
 ## Short version
 
