@@ -26,6 +26,12 @@
 // kit is the one file the editor's own header has to include.
 #include "GUI/PanelPaint.h"
 
+// The panel's tooltip window. juce::TooltipWindow shows the NEXT control's tip
+// at once while one is on screen; DwellTooltipWindow applies the dwell on every
+// change of control. See Source/GUI/TipDwell.h for the branch in JUCE that does
+// it and what this fixes on the panel.
+#include "GUI/DwellTooltipWindow.h"
+
 // foleys_gui_magic (fetched by CPM in CMakeLists.txt). Daniel Walz's declarative
 // GUI framework: the editor's controls can be described in XML and edited live,
 // instead of every position being computed by hand in resized(). It is linked and
@@ -713,10 +719,13 @@ private:
 
     // Tooltips (set with setTooltip on the workflow controls) only render while a
     // TooltipWindow instance exists; without one the calls are silent no-ops.
-    // TooltipWindow: a shared instance is required for any setTooltip text to show.
-    // SharedResourcePointer default-constructs the object; the hover delay is set in
-    // the editor's constructor through setMillisecondsBeforeTipAppears().
-    juce::SharedResourcePointer<juce::TooltipWindow> tooltipWindow;
+    // A shared instance is required for any setTooltip text to show, and it is the
+    // PANEL's window rather than JUCE's: j37panel::DwellTooltipWindow applies the
+    // third of a second on every change of control, where the base class applies
+    // it only to the first (Source/GUI/TipDwell.h has the branch and the fix).
+    // SharedResourcePointer default-constructs it; the window's own delay is set to
+    // 0 in the editor's constructor so the dwell lives in exactly one place.
+    juce::SharedResourcePointer<j37panel::DwellTooltipWindow> tooltipWindow;
 
     // component -> the English it was given, so updateTooltips() has something to
     // replay. A vector rather than a map: the order tooltips were set in is the

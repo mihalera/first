@@ -9,7 +9,7 @@
 | **Framework** | JUCE `9.0.4`, pinned as a git submodule |
 | **Build** | CMake 3.22+, MSVC on Windows, Xcode on macOS |
 | **Parameters** | 109, in 23 groups, with 29 factory presets |
-| **Checked by** | eight harnesses and six text checks that need no JUCE, on every pull request |
+| **Checked by** | nine harnesses and seven text checks that need no JUCE, on every pull request |
 | **Licence** | MIT for this repository's own source; a *binary* also links JUCE (AGPLv3 or commercial) and a GPLv3 module - see [Licensing, and what ships in a binary](#licensing-and-what-ships-in-a-binary) |
 
 ### Where to go next
@@ -19,6 +19,8 @@
 | know what the plugin does and how it sounds | this file - start at [Overview](#overview) |
 | build it | [Getting the source](#getting-the-source) and [Build](#build) |
 | change the code and know what will catch you | [docs/architecture.md](docs/architecture.md) and [tests/README.md](tests/README.md) |
+| follow one sample through the plugin | [docs/signal-path.md](docs/signal-path.md) - every stage, in order, with its rate domain and its controls |
+| see what a proposed roadmap would actually cost | [docs/requested-roadmap-status.md](docs/requested-roadmap-status.md) - each item vs. what the tree already does |
 | know what the code is actually like | [docs/plugin-analysis.md](docs/plugin-analysis.md) - the review, with the numbers |
 | know what to do next | [docs/plugin-improvement-plan.md](docs/plugin-improvement-plan.md) |
 | know how far the long files can be split | [SPLITTING-BIG-FILES.md](SPLITTING-BIG-FILES.md) |
@@ -429,6 +431,10 @@ to - which is how a user finds out that a mix is being read an octave low.
 
 ## Signal path
 
+[docs/signal-path.md](docs/signal-path.md) is the full sequence - every stage in the
+order the code runs it, which of them are per sample, per frame or per block, and
+where the oversampling switch puts them. The paragraph below is the short version.
+
 
 
 Input trim (dB) -> input glue compressor (always on) ->
@@ -626,6 +632,15 @@ the reading on the fundamental and reports how confident it is, which is what th
 below it - silence, noise, a chord, a note outside 45 Hz to 1.4 kHz - the correction glides
 back to unity and the signal passes untouched, because correcting towards a number the
 detector made up out of a cymbal is audible only as wrongness.
+
+**The dead zone** is what keeps the result human. A reading within **±10 cents** of the note
+the key asks for is not corrected at all - the ratio is exactly 1, so the shifter reads at
+unity and the note passes untouched - because a voice is never exactly on the grid, and the
+part of a performance that is slightly sharp or flat is the part the ear reads as human. The
+zone is applied before TUNE AMOUNT scales the pull, so half amount is a gentler version of
+the same opinion rather than a differently-tuned one, and the grip outside it is still clamped
+to a semitone either way. It lives in `Source/DSP/PitchCorrectionRule.h` and `tests/pitch/`
+drives it at exact cents either side of the boundary.
 
 **The shifter** moves the audio onto the note by re-reading it at the correction ratio out of
 a delay line. It has two read heads half a grain apart whose Hann windows sum to one, and the
@@ -1403,16 +1418,22 @@ Projucer project enabled:
 ### Third-party libraries
 
 Everything below JUCE is fetched by **CPM** at configure time and pinned by tag or
-commit, so a fresh clone resolves the same versions forever. Most are linked into the
-plugin target so the pieces are *available* and the engine uses its own code, with
-adopting a piece a per-piece decision made against a profile and a listening test. The
-exceptions are named in the table: those the engine actually runs today.
+commit, so a fresh clone resolves the same versions forever. Only the libraries the
+engine actually calls are LINKED: `tests/linkline/check_linkline.py` reads
+`target_link_libraries(first ...)` against the includes under `Source/` and fails a
+build when a linked target has no caller, so the link line is a claim about the binary
+rather than about intent. Eighteen entries that no file named used to sit on it - four
+alternative FFTs against the one `pocketfft` the analyser calls, a second decoder
+stack, a GUI toolkit, a socket library, two rival pitch detectors, a reverb, an LGPL
+time stretcher - and they came off. They are still FETCHED, which is what makes
+adopting one a probe and a line rather than a new dependency, and a shipped binary
+carries none of them.
 
 | Library | Pinned at | Why it is in the build |
 | --- | --- | --- |
 | `RTNeural` | commit `95c3c0f9` | **Used.** The real-time neural inference engine behind the DYN tab's optional model stage. `NeuralStage` runs a 1-in/1-out model per channel. Configured with `RTNEURAL_STL ON` and no `-mavx2`, so the binary still runs on machines without AVX |
 | `nlohmann/json` | `v3.12.0` | **Used.** The JSON DOM `RTNeural::json_parser::parseJson` parses a model file into. Header-only |
-| `chowdsp_utils` | `v2.4.0` | Chowdhury DSP's toolbox. Provides the polynomial `exp`/`log`/dB approximations on the metering and auto-gain hot paths; `chowdsp_dsp_utils` is linked so the rest is available |
+| `chowdsp_utils` | `v2.4.0` | Chowdhury DSP's toolbox. **Used:** the polynomial `exp`/`log`/dB approximations on the metering and auto-gain hot paths come from the BSD `chowdsp_math` module. **`chowdsp_dsp_utils` is the one exception to the rule above** - linked, and no line of the code calls it. It is GPLv3, so dropping it would drop that obligation from the binary; that is the licence decision in `docs/plugin-improvement-plan.md` item 1.1, and `check_linkline.py` names it with that owner rather than failing on it |
 | `melatonin_inspector` | commit `9c483f86` | JUCE component inspector, compiled under `JUCE_DEBUG` only. Passive in the shipped build |
 | `melatonin_blur` | `v1.4` | **Used.** Fast shadow/gradient blurring for JUCE Components. Three lights on the panel are `melatonin::DropShadow` now - the panel's own drop shadow (`Source/GUI/PanelPaint.h`) and the knob's halo and cap shadow (`Source/GUI/J37LookAndFeel.cpp`) - each cached against its path and radius, so a repaint at 30 Hz is a blit rather than a blur. The hand-drawn fallbacks (a stack of flat rounded rectangles, and a stack of stroked rings) are still there behind the module's probe |
 | `xsimd` | `13.0.0` | **Used, behind `J37_USE_SIMD_TANH`.** Portable SIMD wrappers (SSE/AVX/NEON). `chowdsp::chowdsp_simd` already wraps xsimd, so this is the same code path rather than a second SIMD layer - and the shaper's own tanh goes through it too: every tanh the saturation core runs is `j37Tanh` (`Source/DSP/HotPathMath.h`), which is xsimd's batch kernel when the option is on: ~2.4 ns per call against std::tanh's ~6.7 ns, ~1.5x off the whole shaper, at a 1.19e-7 curve difference. Off by default because it changes the rendered audio; `tests/dsp/simd_tanh_test.cpp` builds all three shapes |
@@ -1600,8 +1621,8 @@ carry terms that are stricter than MIT:
 | --- | --- | --- |
 | **JUCE 9.0.4** | AGPLv3, or a commercial JUCE licence | the whole plugin is under one of those two; there is no third answer |
 | **`chowdsp_dsp_utils`** | **GPLv3** (the sibling modules `chowdsp_math` and `chowdsp_simd` are BSD) | included and linked, so a binary is GPLv3-bound unless a non-GPL licence is bought from the module's author |
-| **SoundTouch 2.4.1**, **libsndfile** | LGPL-2.1 | linked statically: LGPL-2.1 section 6 asks for the object files or a relinkable form |
-| **`rack_dsp`** (VCVRack/Rack) | GPL-3.0-or-later, with a plugin exception for plugins distributed free of charge | linked today although nothing in `Source/` includes it |
+| **SoundTouch 2.4.1**, **libsndfile** | LGPL-2.1 | **not linked**: both are still fetched and vendored, but nothing under `Source/` calls either, and a linked-but-uncalled library is a licence obligation with no upside. `tests/linkline/check_linkline.py` is what keeps the link line honest |
+| **`rack_dsp`** (VCVRack/Rack) | GPL-3.0-or-later, with a plugin exception for plugins distributed free of charge | **not linked** for the same reason: fetched, and named by no file of the plugin's own code |
 | everything else | MIT / BSD / zlib / public domain | the notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) are the obligation |
 
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists every component, its pin and
@@ -1613,10 +1634,9 @@ proposes what to do about the gap.
 ## Contributing
 
 - **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** applies to issues, pull requests and
-discussions.
-- **Every change is checked by [tests/README.md](tests/README.md)'s suite** - eight
-harnesses that compile the shipping code and six text checks - plus four platform
-builds in CI. A change to the sound belongs with a harness section that pins what
+discussions.- **Every change is checked by [tests/README.md](tests/README.md)'s suite** - nine
+  harnesses that compile the shipping code and seven text checks - plus four platform
+  builds in CI. A change to the sound belongs with a harness section that pins what
 changed; a change that moves code belongs with a green
 `tests/editor/check_editor_juce.sh`.
 - **The long files have a recipe**, and it is

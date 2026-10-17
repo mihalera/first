@@ -51,6 +51,27 @@ included by nothing.
    deleting `sndfile` removes the last LGPL question that has nothing to do with
    the audio.
 
+   **The link half of this is done.** Eighteen entries came off
+   `target_link_libraries(first ...)` - the fifteen above, plus
+   `signalsmith-stretch`, `SoundTouch`, `farbot` and `q_dsp`, with
+   `pocketfft`/`xsimd` already having left by the other route. What is left on the
+   line is what `Source/` includes, and the PGPL/LGPL picture improved with it:
+   SoundTouch (LGPL-2.1) and libsndfile are no longer statically linked, because
+   nothing called either, and `signalsmith-stretch` came off with them after the
+   entry above was corrected - a library the code cannot call yet is not a use,
+   and the vendored source plus the CPM fetch stay for the corrector work. The
+   packages are still FETCHED; deleting those is the configure-time half of the
+   item and is still open, because a fetch is also what makes adopting one of
+   them a one-line change. `chowdsp_dsp_utils` remains linked and remains the one
+   GPLv3 question in the binary; the code calls only `chowdsp_math`'s
+   approximators, so dropping it would drop that obligation, and that is the
+   licence decision above rather than a mechanical edit.
+
+   `tests/linkline/check_linkline.py` is the check item 3 asks for, and it is in
+   the `dsp-tests` job: it fails on a linked target no include names, on an
+   included library that is not linked, and on a `J37_HAS_*` probe nothing reads -
+   the last of which is how xsimd's dead branch was found.
+
    **`pocketfft` has left this list since it was written, and by the other
    route.** `Source/DSP/SpectrumAnalyser.h` includes it, so it now has a caller to
    break before it can be deleted, and `tests/spectrum/run.sh` builds that stage
@@ -110,6 +131,15 @@ included by nothing.
    `Source/` would have caught this on the day it was written, and will catch it
    the next time somebody links a library "just in case". It belongs in the
    `dsp-tests` job beside the other text checks.
+
+   **Done** - `tests/linkline/check_linkline.py`, wired into that job. It asks
+   both directions of the link question (linked but not included, included but
+   not linked) and a third the original sketch did not have: every `J37_HAS_*`
+   macro in `OptionalLibraries.h` must be READ by something outside it, which is
+   the defect that let xsimd's branch reach two builds without being compiled.
+   The one exception is named in the script with its owner - `chowdsp_dsp_utils`,
+   the GPLv3 module and the licence decision above - rather than left as a silent
+   allowlist.
 
 *Cost:* an afternoon for the deletion and the check, plus whatever the licence
 decision costs. *Payoff:* a shorter configure, a shorter build on five platforms,

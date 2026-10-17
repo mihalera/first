@@ -2,8 +2,11 @@
 //  Which optional libraries this build actually has.
 //
 //  Everything the engine uses that may be absent - chowdsp's math and DSP utils,
-//  RTNeural, xsimd, and the four real-time-safe third-party utilities - is probed
-//  for HERE, once, and reported as a J37_HAS_* macro. The stages that consume
+//  RTNeural, xsimd, readerwriterqueue and pocketfft - is probed for HERE, once,
+//  and reported as a J37_HAS_* macro. Every one of those macros is read by a
+//  stage, which is now checked: tests/linkline/check_linkline.py fails when a
+//  probe has no reader, and when the link line carries a library no include
+//  names. The stages that consume
 //  those macros live in headers of their own under Source/DSP/, and a harness
 //  compiles those headers with neither JUCE nor the libraries on its include
 //  path, so the probe cannot live in the plugin's header any more: a stage that
@@ -112,12 +115,11 @@
 // ------------------------------------------------------------------------------
 //  Real-time-safe third-party utilities.
 //
-//  Each of these is included behind a __has_include guard AND a harness guard,
-//  exactly like chowdsp above, because the harnesses compile these stages against
-//  a shim that has neither JUCE's full include path nor any of these libraries.
-//  The engine must therefore stay compilable with all four macros 0, and every use
-//  site must have a portable substitution rather than assuming the library is
-//  present.
+//  It is included behind a __has_include guard AND a harness guard, exactly like
+//  chowdsp above, because the harnesses compile these stages against a shim that
+//  has neither JUCE's full include path nor any of these libraries. The engine
+//  must therefore stay compilable with J37_HAS_RWQ 0, and the use site must have
+//  a portable substitution rather than assuming the library is present.
 //
 //    fatoml::ReaderWriterQueue  cameron314/readerwriterqueue - the lock-free
 //                               single-producer/single-consumer queue. Used for
@@ -125,64 +127,62 @@
 //                               thread can publish a frame of metering and the
 //                               editor can read it WITHOUT every field being its
 //                               own atomic and without a lock on the audio thread.
+//                               It is the ONLY one of the four that survived:
+//                               every use site reads J37_HAS_RWQ and falls back
+//                               to plain atomics without it.
 //
-//    farbot::RealtimeObject     hogliux/farbot - a realtime-safe object holder.
-//                               Used for the machine-state hand-off, so the
-//                               message thread can install a whole new engine
-//                               configuration without the audio thread ever
-//                               blocking on it.
+//    The other three left, and they left the same way xsimd and pocketfft did
+//    not: they were LINKED, INCLUDED and probed here, and read by nothing.
 //
-//    signalsmith-stretch        Signalsmith Audio - a real-time phase-vocoder
-//                               time stretcher: it changes how long material
-//                               takes while keeping its PITCH.
+//    farbot::RealtimeObject     The entry used to claim the machine-state
+//                               hand-off used it, so the message thread could
+//                               install a whole engine configuration without the
+//                               audio thread blocking. No such hand-off exists:
+//                               the engine's state is written by the audio
+//                               thread from atomic parameters, and the only
+//                               cross-thread object is the telemetry frame,
+//                               which readerwriterqueue already carries. With no
+//                               site to adopt it, farbot came off the link line
+//                               and out of this file; cmake/J37Dependencies.cmake
+//                               still fetches it, so a stage that needs a
+//                               realtime-safe object is one line and one probe
+//                               away.
 //
-//                               This entry used to claim the transport used it
-//                               "so a speed change is a genuine TIME change (the
-//                               tape slows down and the music slows with it)
-//                               rather than a resample that also drops the pitch
-//                               of everything". That claim was false twice over:
-//                               no file under Source/ included the header, and
-//                               J37_HAS_SIGNALSMITH was defined to 0 and never
-//                               probed - so the macro reported "absent" in a
-//                               build that had the library on its include path,
-//                               and reported it to nobody.
-//
-//                               It was also backwards about the sound. The
-//                               transport's speed change is
+//    signalsmith-stretch        A phase-vocoder time stretcher: it changes how
+//                               long material takes while keeping its PITCH. Two
+//                               claims here were false. The transport does not
+//                               use it - the transport's speed change is
 //                               Source/DSP/RepitchStage.h, which is deliberately
-//                               a VARISPEED: a tape read at half speed comes out
-//                               an octave down, and that falling pitch IS the
-//                               effect the transport is asked for. A stretch that
-//                               preserved the pitch would delete it.
+//                               a VARISPEED, because a tape at half speed is
+//                               supposed to come out an octave down. And the
+//                               macro that said whether the build had it was
+//                               never probed, so it read 0 everywhere and said
+//                               it to nobody.
 //
-//                               The one stage that wants this library is the
-//                               CORRECTOR. Moving a note onto the grid without
-//                               changing how long it lasts is a pitch shift at
-//                               constant duration, which is exactly what this is,
-//                               and AUTOTUNE does that today with the hand-written
-//                               granular shifter in
-//                               Source/DSP/RealtimePitchShifter.h. Adopting it
-//                               there is a change to the sound and belongs to its
-//                               own piece of work, not to a probe.
+//                               The one stage that wants it is the CORRECTOR:
+//                               moving a note onto the grid without changing
+//                               how long it lasts is a pitch shift at constant
+//                               duration. AUTOTUNE does that today with the
+//                               hand-written granular shifter in
+//                               Source/DSP/RealtimePitchShifter.h, which is
+//                               driven one FRAME at a time from the tape loop -
+//                               and this library works one BLOCK at a time. So
+//                               adopting it is a restructure of the frame loop
+//                               rather than a swap, which is why the library is
+//                               not on the link line: the line describes the
+//                               binary, not the intention. The vendored source
+//                               and the CPM fetch stay for that work.
 //
-//    SoundTouch                 Olli Parviainen's SoundTouch Audio Processing
-//                               Library - the WSOLA time-stretch and pitch-shift
-//                               engine. Vendored under ThirdParty/soundtouch and
-//                               compiled into the plugin by
-//                               cmake/J37Dependencies.cmake. The one dependency
-//                               in this list that is NOT permissively licensed:
-//                               LGPL-2.1, with the licence text distributed at
-//                               ThirdParty/soundtouch/COPYING.TXT and the
-//                               attribution in THIRD_PARTY_NOTICES.md.
-//
-//                               Like signalsmith-stretch above it is probed and
-//                               included here and READ BY NOTHING: it is the
-//                               second engine in this file whose presence the
-//                               build pays for and no stage calls. It is left in
-//                               place rather than removed, and the probe below is
-//                               left honest about what it finds - the same pair of
-//                               statements the analyser stage makes about
-//                               pocketfft by USING it.
+//    SoundTouch                 The WSOLA time-stretch engine, LGPL-2.1 - the one
+//                               dependency in this file that was not
+//                               permissively licensed. It was probed, included
+//                               and compiled into the plugin, and no stage
+//                               called it, so it was contributing nothing but a
+//                               static LGPL link to the binary. That link is
+//                               gone; THIRD_PARTY_NOTICES.md records the
+//                               library, the fetch stays for the same reason
+//                               signalsmith's does, and the licence question it
+//                               raised with it.
 // ------------------------------------------------------------------------------
 #if ! defined (J37_DSP_HARNESS)
 
@@ -201,50 +201,8 @@
   #define J37_HAS_RWQ 0
  #endif
 
- // farbot: its headers live under include/farbot, and the CMake target adds
- // include/ to the path, so the spelling is <farbot/...>. Two of its headers are
- // useful here - the realtime-safe FIFO and the RealtimeObject that guards it.
- #if __has_include (<farbot/fifo.hpp>)
-  #include <farbot/fifo.hpp>
-  #define J37_HAS_FARBOT 1
- #else
-  #define J37_HAS_FARBOT 0
- #endif
-
- // signalsmith-stretch: header-only, and its header includes its own
- // signalsmith-linear sibling by relative path (see cmake/J37Dependencies.cmake,
- // which fetches that sibling for exactly this reason), so ONE include directory
- // is what the CMake target exposes. The probe only DECIDES the macro - the
- // header is included by whatever uses it, which is nothing today, and the
- // corrected entry above says which stage that should be.
- //
- // It was missing until now. J37_HAS_SIGNALSMITH was written only in the harness
- // branch at the bottom of this file (as 0), so no build could ever say it had
- // the library whatever was on its include path - the macro's single caller is a
- // comment. A probe that is never written is not a conservative default; it is a
- // statement about the build that nobody checked.
- #if __has_include (<signalsmith-stretch/signalsmith-stretch.h>)
-  #define J37_HAS_SIGNALSMITH 1
- #else
-  #define J37_HAS_SIGNALSMITH 0
- #endif
-
- // SoundTouch: its public headers sit flat in include/, and that one directory
- // is what the CMake target exposes, so the spelling is the bare
- // <SoundTouch.h>. Probed like the rest, so a checkout with ThirdParty/ pruned
- // reports 0 instead of failing the compile.
- #if __has_include (<SoundTouch.h>)
-  #include <SoundTouch.h>
-  #define J37_HAS_SOUNDTOUCH 1
- #else
-  #define J37_HAS_SOUNDTOUCH 0
- #endif
-
 #else
  #define J37_HAS_RWQ 0
- #define J37_HAS_FARBOT 0
- #define J37_HAS_SIGNALSMITH 0
- #define J37_HAS_SOUNDTOUCH 0
 #endif
 
 // ------------------------------------------------------------------------------

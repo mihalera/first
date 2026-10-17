@@ -17,8 +17,9 @@
 // in headers of their own and are compiled by harnesses that have neither JUCE nor
 // the libraries on their include path: a header that branches on a macro has to be
 // able to find the file that decides it. What it defines is J37_HAS_CHOWDSP_MATH,
-// J37_HAS_CHOWDSP_DSP, J37_HAS_RTNEURAL, J37_HAS_XSIMD, J37_HAS_RWQ, J37_HAS_FARBOT,
-// J37_HAS_SIGNALSMITH, J37_HAS_SOUNDTOUCH and J37_HAS_POCKETFFT. The last of those is
+// J37_HAS_CHOWDSP_DSP, J37_HAS_RTNEURAL, J37_HAS_XSIMD, J37_HAS_RWQ and
+// J37_HAS_POCKETFFT - and every one of them but CHOWDSP_DSP is read by a stage, which
+// tests/linkline/check_linkline.py checks. The last of those is
 // read by Source/DSP/SpectrumAnalyser.h - the one stage that needs a library this
 // repository does not vendor JUCE-side - and it is included below with the rest of
 // the engine's stages, because its bands travel in the telemetry frame this file

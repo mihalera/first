@@ -310,7 +310,14 @@ void FirstAudioProcessorEditor::setUpTooltipsAndPhysics()
 {
     // Tooltips appear after a third of a second of hover: quick enough to be
     // discoverable, slow enough not to flash while the user sweeps the panel.
-    tooltipWindow->setMillisecondsBeforeTipAppears (350);
+    //
+    // That third of a second is NOT this number any more. The window is
+    // j37panel::DwellTooltipWindow (Source/GUI/TipDwell.h), which restarts the
+    // dwell whenever the pointer changes control - the base class applies its own
+    // delay only to the first tip and shows every later one the instant the
+    // control under the pointer changes. So the delay is set to 0 here and the
+    // dwell in TipDwell is the one that decides; setting both would stack two.
+    tooltipWindow->setMillisecondsBeforeTipAppears (0);
     createDecorativePhysics();
 }
 

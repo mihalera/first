@@ -38,7 +38,8 @@ editor; the editor reads published numbers.
 
 ## The signal path
 
-The order, in the code's own terms, is
+The order, in the code's own terms, is [signal-path.md](signal-path.md) - stage
+by stage, with the rate domain of each - and the short version is
 [README.md § Signal path](../README.md#signal-path). Where each step lives:
 
 | Stage | File |

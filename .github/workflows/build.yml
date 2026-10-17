@@ -84,6 +84,16 @@ jobs:
       - name: Run the knob layout harness
         run: bash tests/layout/run.sh
 
+      # The tooltip dwell, which is the panel's "hold on a control and the hint
+      # appears" rule as arithmetic: j37panel::TipDwell in Source/GUI/TipDwell.h
+      # keeps the clock that decides when a hint may be shown. It exists because
+      # juce::TooltipWindow applies its delay only to the FIRST tip - while one is
+      # on screen, moving to the next control shows that control's tip at once,
+      # which is the reported flicker. The harness runs the rule at exact
+      # millisecond boundaries, with no window and no JUCE.
+      - name: Run the tooltip dwell harness
+        run: bash tests/tooltip/run.sh
+
       # The parameter table and the saved-state round trip. A state a host saved
       # is a promise to the user: opening a project written by an older build has
       # to give back the sound it was saved with, and a block the host hands over
@@ -230,6 +240,19 @@ jobs:
       # both directions of that one.
       - name: Check the compile definitions
         run: python3 tests/definitions/check_definitions.py
+
+      # The link line, against the includes under Source/. A library on it is a
+      # statement that the binary carries it; eighteen entries made that statement
+      # while no file of the plugin's own code named them - four alternative FFTs
+      # against the one pocketfft the spectrum analyser calls, a second decoder
+      # stack, a GUI toolkit, a socket library, two rival pitch detectors, a
+      # reverb and an LGPL time stretcher. This reads
+      # target_link_libraries(first ...) and every #include under Source/ and
+      # fails on a target with no caller, on an included library that is not
+      # linked, and on a J37_HAS_* probe that nothing reads - which is how xsimd's
+      # branch survived two builds without being compiled by either.
+      - name: Check the link line against the code
+        run: python3 tests/linkline/check_linkline.py
 
       # The stages that have moved into Source/DSP/ are compiled by the harnesses
       # against their own small stand-in for juce::, which is what keeps a harness
@@ -500,6 +523,7 @@ jobs:
         run: |
           J37_SANITIZE=address,undefined bash tests/dsp/run.sh
           J37_SANITIZE=address,undefined bash tests/layout/run.sh
+          J37_SANITIZE=address,undefined bash tests/tooltip/run.sh
           J37_SANITIZE=address,undefined bash tests/state/run.sh
           J37_SANITIZE=address,undefined bash tests/transport/run.sh
           J37_SANITIZE=address,undefined bash tests/pitch/run.sh

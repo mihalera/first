@@ -39,9 +39,12 @@ column names the file in the tree that carries the text.
 ## Fetched by CMake (CPM)
 
 Pinned in `cmake/J37Dependencies.cmake`. "Licence" is what the upstream project
-publishes; the link is the repository whose own licence file governs. Components
-marked **linked, never included** are on the plugin's link line today even though
-no file under `Source/` includes or calls them - see
+publishes; the link is the repository whose own licence file governs. Being
+fetched is not the same as being linked: the plugin's link line carries only the
+libraries `Source/` actually includes, and
+`tests/linkline/check_linkline.py` fails a build when it does not. A component
+fetched and not linked is a candidate for a future stage rather than part of a
+binary - see
 [docs/plugin-analysis.md](docs/plugin-analysis.md#5-the-link-line-is-larger-than-the-code).
 
 | Component | Pin | Licence | Upstream |
@@ -145,18 +148,19 @@ and today they do not agree.
   distributed binary is bound by GPLv3 unless a non-GPL licence is bought from
   the library's author - the licence file says so in as many words. This is the
   first thing to settle before publishing a build.
-* **SoundTouch 2.4.1** is LGPL-2.1 and is linked **statically**: LGPL-2.1 section
-  6 asks for the object files or a relinkable form, so a distributor has to
-  decide that deliberately rather than by accident.
-* **libsndfile** (LGPL-2.1) is on the link line and nothing under `Source/`
-  includes it - see [plugin-analysis.md, §5](docs/plugin-analysis.md#5-the-link-line-is-larger-than-the-code).
-  Deleting the entry deletes the question.
+* **SoundTouch 2.4.1** is LGPL-2.1 and **used to be linked statically** - which
+  LGPL-2.1 section 6 makes a deliberate decision about object files or a
+  relinkable form. It is no longer on the link line: nothing under `Source/`
+  called it, so a shipped binary carries none of it, and the vendored copy and
+  its licence text stay for the stage that would use a stretcher.
+* **libsndfile** (LGPL-2.1) is fetched and **not linked**, and nothing under
+  `Source/` includes it either - see
+  [plugin-analysis.md, §5](docs/plugin-analysis.md#5-the-link-line-is-larger-than-the-code).
 * **`rack_dsp`** comes from VCVRack/Rack, which is GPL-3.0-or-later **with a
   plugin exception**: a plugin may link Rack's API regardless of its own licence
   as long as it is distributed free of charge; selling it needs Rack's
-  commercial option. It is on the link line and nothing under `Source/` includes
-  it, so the simplest way to keep the exception off the critical path is to
-  delete the entry.
+  commercial option. It is fetched and **not linked**, so that exception is not
+  on the critical path of this binary at all.
 * **aubio** is fetched by CMake and is **GPL-3.0**, but it is not linked and not
   included - it cannot affect a binary. It is dead dependency weight rather than
   a licensing problem, and it is on the list to remove.

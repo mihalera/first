@@ -47,6 +47,7 @@
 
 #include "DSP/BlockRateCoefficients.h"
 #include "DSP/HotPathMath.h"
+#include "DSP/PitchCorrectionRule.h"
 #include "DSP/TapeModulation.h"
 #include "HotPathProbe.h"
 
@@ -365,17 +366,21 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
 
         const auto targetHz = 440.0f * std::pow (2.0f, (static_cast<float> (target) - 69.0f) / 12.0f);
 
-        // A semitone either way: a corrector pulls a note ONTO the grid, it does
-        // not transpose. A wider grip would chase a reading the detector is
-        // reporting an octave away and take the performance with it.
-        const auto ideal = juce::jlimit (0.94f, 1.06f, targetHz / juce::jmax (1.0f, detected));
-
+        // The pull itself, with the two rules that make it a corrector rather
+        // than a quantiser: a reading within +-10 cents of the target is left
+        // ALONE (the dead zone - a voice is never exactly on the grid, and the
+        // part of the performance that is slightly off is the part that sounds
+        // human), and the grip is clamped to a semitone either way, because a
+        // corrector pulls a note onto the grid rather than transposing it. Both
+        // live in Source/DSP/PitchCorrectionRule.h, where tests/pitch can drive
+        // them at exact cents either side of the boundary.
+        //
         // TUNE AMOUNT is a DEPTH as well as a speed. Half the amount is half the
         // pull - a note a hair sharp lands, a note a quarter-tone flat is only
         // nudged - which is the setting a singer reaches for when they want the
         // corrector felt rather than heard. At full amount the pull is the whole
         // semitone and the glide is 8 ms, which is the snap the control promises.
-        const auto ratio = 1.0f + (ideal - 1.0f) * amount;
+        const auto ratio = j37dsp::PitchCorrectionRule::ratio (detected, targetHz, amount);
 
         autoTuneCorrectionSmoothed[i] += (ratio - autoTuneCorrectionSmoothed[i]) * glide;
 

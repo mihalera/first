@@ -182,6 +182,18 @@ required only transitively (1):
 > arrived at from the other side. Re-run the count rather than editing these
 > numbers.
 >
+> **The count above is now history rather than the tree.** The link line was
+> trimmed to what `Source/` includes: eighteen targets came off it - the sixteen
+> listed here, less `pocketfft`, plus `signalsmith-stretch`, `SoundTouch`,
+> `farbot` and `q_dsp` - and the three `J37_HAS_*` probes they answered for came
+> out of `OptionalLibraries.h` with them. `tests/linkline/check_linkline.py` now
+> fails the build if a linked target has no caller, if an included library is not
+> linked, or if a probe has no reader. The one linked target still without a
+> caller is `chowdsp_dsp_utils`, and that is the GPLv3 licence decision in plan
+> item 1.1 rather than a finding. The numbers stay as measured here because the
+> point of the section is how they were measured; the live answer is the check's
+> own output.
+>
 > **A third correction, about the two libraries on neither list because they are
 > not repositories.** `cmake/J37VendorLibraries.cmake` discovered Intel IPP and
 > Apple vDSP, linked them, and defined `J37_HAVE_IPP` and `J37_HAVE_VDSP` for the

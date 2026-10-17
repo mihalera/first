@@ -567,6 +567,33 @@ target_include_directories(first PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated"
 #  linking target's module list - leaving them out fails the configure with a
 #  missing module error rather than at link time.
 # ------------------------------------------------------------------------------
+# ------------------------------------------------------------------------------
+#  What the binary is actually made of.
+#
+#  Every entry below is a library some line of Source/ includes, and nothing else
+#  is here. That rule is new, and it is checked: tests/linkline/check_linkline.py
+#  reads this call and the include lines out of Source/ and fails when a linked
+#  target has no caller. Until it was applied the line carried eighteen targets
+#  that no file of the plugin's own code named - a second FFT (four of them, in
+#  fact, against the one pocketfft the spectrum analyser uses), a second decoder
+#  stack, a second GUI toolkit, a socket library, two rival pitch detectors and
+#  a reverb - each of them fetched, configured, compiled into an archive and
+#  handed to the linker so it could be discarded, on five platforms per run.
+#
+#  The PACKAGES are still declared in cmake/J37Dependencies.cmake: the fetch is
+#  what makes "use it" a one-line change, and several of the removed entries are
+#  candidates for a stage that does not exist yet (dr_libs for a file the IR
+#  stage might read, dattorro_verb for a room, the pitch trackers for a second
+#  opinion on PitchTracker). What is not true is that the shipping plugin links
+#  them, and the link line is a claim about the binary rather than about intent.
+#
+#  `signalsmith-stretch` left with the rest of them, and it is the one worth
+#  saying out loud: the plan names it as the corrector's engine, but
+#  Source/DSP/RealtimePitchShifter.h shifts one frame at a time and the library
+#  works one BLOCK at a time, so adopting it is a restructure of the frame loop
+#  rather than a swap. Linking a library the code cannot call yet is how the
+#  eighteen got there.
+# ------------------------------------------------------------------------------
 target_link_libraries(first
     PRIVATE
         juce::juce_audio_processors
@@ -584,28 +611,10 @@ target_link_libraries(first
         melatonin_blur
         foleys::foleys_gui_magic
         xsimd
-        signalsmith-stretch
-        SoundTouch
-        fftconvolver
-        imgui
-        farbot
-        rack_dsp
         readerwriterqueue
-        kissfft
         pocketfft
-        yasio
-        dywapitchtrack
-        PFFFT
         RTNeural
-        dr_libs
-        yin_pitch
-        pitch_detector
-        audio_fft
-        dattorro_verb
-        sndfile
         nlohmann_json
-        q_dsp
-        sokol_gfx
         glm
         PluginResources
     PUBLIC
