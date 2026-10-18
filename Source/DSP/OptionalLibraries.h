@@ -228,6 +228,29 @@
 #endif
 
 // ------------------------------------------------------------------------------
+//  dr_wav (mackron/dr_libs, vendored under ThirdParty/dr_libs as the one header
+//  dr_wav.h, with the implementation compiled by Source/DSP/NoiseDecoder.cpp).
+//
+//  Deliberately NOT behind the harness guard, for the same reason pocketfft is
+//  not: tests/dsp compiles the decoder BOTH ways - with ThirdParty/dr_libs on
+//  the include path and without it - to compile the absent-library branch rather
+//  than assume it. A harness guard here would force the empty build to be the
+//  only one, and the branch that says "this build has no WAV decoder" would
+//  never be executed by anything.
+//
+//  Unguarded also means a checkout that has pruned ThirdParty/ still builds: the
+//  probe answers 0, and Source/DSP/NoiseLoader.h reports that as a load error
+//  with a reason rather than failing to compile.
+// ------------------------------------------------------------------------------
+#if ! defined (J37_HAS_DRWAV)
+ #if __has_include (<dr_wav.h>)
+  #define J37_HAS_DRWAV 1
+ #else
+  #define J37_HAS_DRWAV 0
+ #endif
+#endif
+
+// ------------------------------------------------------------------------------
 //  signalsmith-stretch (vendored under ThirdParty/signalsmith-stretch, with the
 //  sibling signalsmith-linear checkout inside it that its own header includes by
 //  a relative path).

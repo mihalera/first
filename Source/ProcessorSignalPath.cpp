@@ -372,6 +372,18 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
     // costs, which is a channel left out rather than a write past the pair.
     const auto frameWidth = juce::jmin (2, channels);
     float frame[2] {};
+
+    // The user's noise print, if one is loaded: ONE acquire load for the whole
+    // block, not one per sample. The pointer stays valid for the block even if
+    // the loader publishes another one mid-way through it, because a retired
+    // print is never freed until the audio thread is stopped - which is the
+    // whole reason Source/DSP/NoiseLoader.h keeps a retirement list instead of
+    // deleting at the swap. Null here is the ordinary case: the stage then
+    // synthesises its own surface, exactly as it did before prints existed.
+    const auto* noisePrint = noiseLoader.active();
+    vinylL.noisePrint = noisePrint;
+    vinylR.noisePrint = noisePrint;
+
     for (int i = 0; i < samples; ++i)
     {
         for (int c = 0; c < frameWidth; ++c)
@@ -393,9 +405,15 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
             {
                 auto& stage = c == 0 ? vinylL : vinylR;
                 const auto noiseLevel = noiseLvlSmoothed.getCurrentValue() * noiseTrimSmoothed.getCurrentValue();
+
+                // The print's gain is the file's own level scaled by NOISE and by
+                // the vinyl mix, and nothing else: a print is a RECORDING of a
+                // surface, so attenuating or normalising it here would make two
+                // prints of the same surface at different levels sound identical.
                 value = stage.process (value, c, vinylCrackleSmoothed.getCurrentValue() * vinylMix * noiseLevel,
                                        vinylRumbleSmoothed.getCurrentValue() * vinylMix * noiseLevel, vinylMix,
-                                       vinylRumbleCoefficient, vinylWarmthCoefficient, vinylNoiseState);
+                                       vinylRumbleCoefficient, vinylWarmthCoefficient, vinylNoiseState,
+                                       noiseLevel * vinylMix);
             }
             data[i] = value;
         }

@@ -380,6 +380,7 @@ target_sources(first PRIVATE
     Source/ParameterTable.cpp
     Source/ProcessorPresets.cpp
     Source/ProcessorSignalPath.cpp
+    Source/DSP/NoiseDecoder.cpp
     Source/PluginEditor.cpp
     Source/GUI/EditorSetup.cpp
     Source/GUI/EditorTheme.cpp
@@ -621,6 +622,7 @@ target_link_libraries(first
         nlohmann_json
         glm
         dattorro_verb
+        dr_libs
         signalsmith-stretch
         PluginResources
     PUBLIC

@@ -160,3 +160,35 @@ if worst > limit:
 print(f"  ok   with xsimd the flag moves {moved} of {len(kernel)} curve samples, worst {worst:.3g}"
       f" at {'/'.join(at[:3])}, within the {limit:g} bound")
 PY
+
+# -----------------------------------------------------------------------------
+#  The vinyl stage's noise print, in the two shapes a build can be in.
+#
+#  Source/DSP/NoiseDecoder.h is the WAV decode behind the user's noise print and
+#  dr_wav is the library under it, so the interesting claim is not "a file loads"
+#  but "a build WITHOUT the decoder still compiles, still refuses the file, and
+#  says which library is missing" - and the only way to know that branch says the
+#  truth is to compile it. ThirdParty/dr_libs is vendored precisely so this does
+#  not need a configure: the checkout is enough.
+#
+#  Both binaries compile Source/DSP/NoiseDecoder.cpp, the one translation unit
+#  that owns dr_wav's implementation. The absent build compiles the same file and
+#  gets the header's absent branch, which is what a pruned ThirdParty/ would.
+# -----------------------------------------------------------------------------
+DR_LIBS_INCLUDE="${HERE}/../../ThirdParty/dr_libs"
+
+build_noise() {                     # name, then that build's extra flags
+    local name="$1"; shift
+
+    "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+        "${sanitize_flags[@]}" \
+        -I "${HERE}" -I "${SOURCE}" "$@" \
+        "${HERE}/noise_loader_test.cpp" "${SOURCE}/DSP/NoiseDecoder.cpp" \
+        -o "${BUILD}/${name}"
+}
+
+build_noise noise_library -DJ37_EXPECT_DRWAV=1 -I "${DR_LIBS_INCLUDE}"
+build_noise noise_absent -DJ37_EXPECT_DRWAV=0
+
+"${BUILD}/noise_library"
+"${BUILD}/noise_absent"

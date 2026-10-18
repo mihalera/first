@@ -50,7 +50,8 @@ them the honest answer is "nothing I can name", and that is a finding, not an om
 | `glm` | vendored `1.0.3` | MIT / Happy Bunny | `Source/GUI/TapeScene.*` |
 | `melatonin_blur` | `v1.4` | MIT | panel shadows and halos |
 | `foleys_gui_magic` | `d53d998e` | BSD-3 | `Source/PluginEditor.h` |
-| `readerwriterqueue` | `v1.0.7` | BSD-2 | telemetry (WP2 adds a second caller) |
+| `readerwriterqueue` | `v1.0.7` | BSD-2 | telemetry (WP2 deliberately did not add a second caller - see the WP2 note) |
+| `dr_libs` (`dr_wav.h`) | vendored `wav-0.14.5` | Unlicense / MIT-0 | `Source/DSP/NoiseDecoder.*`, the vinyl stage's noise print |
 | `chowdsp_math` (+ `chowdsp_simd`, which it includes) | `v2.4.0` | BSD-3 | metering and auto-gain dB/exp paths |
 | `xsimd` | vendored `14.3.0` | BSD-3 | **opt-in** via `J37_USE_SIMD_TANH` |
 | `signalsmith-stretch` (+ `signalsmith-linear`) | vendored `1.4.0` / `0.6.4` | MIT | `Source/DSP/CorrectorStage.h` engine 2, **off by default** |
@@ -76,8 +77,9 @@ an `option()`, a probe, and a harness that prints what each shape renders.
 
 | Library | Licence | Verdict |
 | --- | --- | --- |
-| `dr_libs` | Unlicense / MIT-0 | **WP2.** A real feature (user noise print), no licence cost, one header |
 | `kissfft`, `pffft`, `AudioFFT`, `audio_fft`, `fftconvolver` | BSD-3, BSD-like, MIT, MIT, MIT | §4. Five FFTs for one caller that already exists (`pocketfft`). Adopt only on a benchmark that names the FFT as the bottleneck |
+
+(One row left this table in WP2: `dr_libs` had a caller added rather than a reason found, and it now sits in 2a.)
 | `dywapitchtrack`, `yin_pitch`, `pitch_detector` | MIT / see upstream | §4. Three rival detectors against a measured YIN. A replacement has to beat the printed error, not the include graph |
 | `sndfile` | **LGPL-2.1** | Not planned while `dr_wav` decodes the format the feature needs. An LGPL decoder is the same obligation WP4 is trying to shed |
 | `q_dsp` / `cycfi_infra` | MIT | §4. The transient shaper's envelopes are its own and pinned by `tests/unit` |
@@ -147,47 +149,62 @@ remaining half of the gate and run on the next push.
 
 **Cost.** Under an hour, plus one CI run.
 
-### WP2 - `dr_libs` `dr_wav`: a user noise file for the vinyl stage
+### WP2 - `dr_libs` `dr_wav`: a user noise file for the vinyl stage - **done**
 
-**Why.** `Source/DSP/VinylStage.h` synthesises its surface noise, and the plugin has no
-way to use a real noise print. `dr_wav` is a single header, decodes every PCM/float WAV
-including 24-bit, and the licence asks for nothing (Unlicense / MIT-0).
+**Why.** `Source/DSP/VinylStage.h` synthesises its surface noise, and the plugin had no
+way to use a real noise print - the click, the rumble and the hiss a record collector
+means when they say "that pressing". `dr_wav` is a single header, decodes every PCM and
+float WAV including 24-bit, and the licence asks for nothing (Unlicense / MIT-0).
 
-**Where.** A new `Source/DSP/NoiseLoader.h`, modelled one-for-one on the IR stage: a
-background decode into a `juce::AudioBuffer`, a `loading` flag the panel reads, and a
-hand-off to the audio thread with no allocation and no lock. `readerwriterqueue` (already
-linked and called) carries the hand-off; the queue is bounded and a second request while
-one is in flight replaces it rather than racing it.
+**What was built.**
 
-**Steps.**
+1. **Vendored**, not fetched-only: `ThirdParty/dr_libs/dr_wav.h` at `wav-0.14.5` with its
+   `LICENSE`, and `cmake/J37Dependencies.cmake` prefers it over the CPM fallback. This is
+   the one decision the plan got wrong and the harness forced: a test that has to build the
+   decoder BOTH ways cannot wait for a configure, so a checkout has to be enough. It is
+   the same reason `pocketfft` and `dattorro-verb` are vendored.
+2. `J37_HAS_DRWAV` in `OptionalLibraries.h`, in the **unguarded** family - unguarded is
+   what lets the harness opt in by adding an include path rather than by undefining a
+   macro nobody can see.
+3. `Source/DSP/NoiseDecoder.h` - the JUCE-free half: `NoisePrint`, `decodeWavMemory`,
+   `resamplePrint`, and the refusals with their reasons. `Source/DSP/NoiseDecoder.cpp` is
+   the one translation unit that defines `DR_WAV_IMPLEMENTATION`.
+4. `Source/DSP/NoiseLoader.h` - the JUCE half: the file on a worker thread, one atomic
+   pointer swap per load, a retirement list so a print the audio thread is inside is never
+   freed under it, and a rate conversion in `prepare`. Exactly the shape `IrStage` and
+   `NeuralStage` use.
+5. `VinylStage` gained a print pointer and a position. A loaded print **replaces** the
+   synthesised groove hiss rather than adding to it, and CRACKLE, DUST, CLICKS, SCRATCH,
+   WARP and ELECTRICAL keep working over it - the print is the surface, the rest is the
+   damage and the deck.
+6. `tests/dsp/noise_loader_test.cpp`, built **twice** by `tests/dsp/run.sh` (with
+   `ThirdParty/dr_libs` and without) and asserting its own shape either way.
 
-1. Fetch `dr_libs` (already pinned at `wav-0.14.5` in `J37Dependencies.cmake`) and add a
-   `j37_declare_header_only_library(dr_libs ...)` target - `dr_wav.h` is a single header
-   and needs no translation unit.
-2. Add `J37_HAS_DRWAV` to `OptionalLibraries.h`, in the *guarded* family (the harness
-   shape), because the file that uses it should compile with it absent.
-3. `NoiseLoader`: `prepare(sampleRate, maxSeconds)`, `requestLoad(File)`,
-   `takePending(AudioBuffer&)`; `/W4`, `-Wall` clean.
-4. `VinylStage` gains a `noiseLoop` the synth noise is blended against; NONE means the
-   synthesised print, which is what every build did before.
-5. Panel: the file chooser the IR loader already has, pointed at `.wav/.wave/.aif` - the
-   AIFF case is JUCE's reader, not dr_wav, and is worth having because the decode is
-   already async.
-6. `tests/dsp/noise_loader_test.cpp`: write three fixture WAVs (16-bit mono, 24-bit
-   stereo, 32-bit float) with a known ramp, decode them through the loader, assert
-   sample count and every sample within half an LSB. Then the headless path: no file,
-   `takePending` returns false, the stage renders exactly what it did before.
+**Gate, and what it measured.** Sixteen checks in each binary, all passing. The three
+formats decode to the samples that were written (within half an LSB); a mono file is the
+same surface on both sides; a float file outside `[-1, 1)` is left where it is; a 44.1 kHz
+print converts to 48 kHz with the loop's seam **wrapped**, so there is no click per
+repeat; an empty buffer, a truncated file, a NaN sample and a print over the minute cap
+are each refused with a reason; and with the generators switched off the stage's output
+IS the print's sample times the gain, sample for sample over two passes. The absent binary
+asserts the other branch says which library is missing rather than loading nothing
+quietly.
 
-**Gate.** The three fixtures decode to the values that were written; a 24-bit file whose
-samples exceed `[-1, 1)` is clipped once, at load; the render with no file loaded is
-bit-identical to the pre-change render (the harness prints the difference and fails on
-non-zero).
+The gate as written asked for one thing differently: it said a file over `[-1, 1)` should
+be "clipped once, at load". That is wrong for a noise print and the code says so - a print
+is a recording of a surface at its own level, and normalising or clipping it would make
+two prints of the same surface at different levels sound identical, which is the opposite
+of what the control is for. A FLOAT file is therefore left alone; integer formats are
+exact by construction.
 
-**Risk.** Loop points and sample-rate mismatch: a 48 kHz print used at 96 kHz needs
-either a resample at load (cheap, off the audio thread) or an honest refusal. Choose
-resample-at-load and state it in the panel.
+**Not in this work package.** The panel has no picker yet: the engine's entry point is
+`FirstAudioProcessor::loadNoiseFile`, which the editor does not call, so a user reaches
+the feature through the public processor API and not through a button. The chooser to
+write is `loadIrFromFile`'s shape (an asynchronous `FileChooser` filtered to
+`*.wav;*.aif*`), and it is deliberately a separate change because it touches the panel
+layout and the theme wiring, both of which `tests/layout` and `tests/theme` measure.
 
-**Cost.** A day including the harness.
+**Cost so far.** The engine half of the day the plan estimated; the picker is the rest.
 
 ### WP3 - `NeuralAmpModelerCore` + Eigen: the rest of the `.nam` format
 
@@ -337,7 +354,7 @@ A library is finished - not merely added - when all seven are true:
 | Order | Item | Why here |
 | --- | --- | --- |
 | 1 | WP1 - drop `chowdsp_dsp_utils` | **Done.** Minutes of work, removed a GPLv3 obligation from the binary, needed no new measurement |
-| 2 | WP2 - `dr_wav` noise loader | A real user feature with a small, self-contained gate, and it exercises the loader pattern that WP3 then reuses |
+| 2 | WP2 - `dr_wav` noise loader | **Done** (engine half; the panel picker is noted under WP2). It exercised the loader pattern WP3 reuses |
 | 3 | WP3 - NAM Core + Eigen | The largest user-visible gain (most `.nam` profiles load) and the largest measurement burden; start it only with the fixtures written first |
 | 4 | WP4 - delete `SoundTouch` | Follows WP3 so the corrector's engine set is settled before it is pruned |
 | 5 | WP5 - `Assimp` | Blocked on an asset, not on time |
@@ -345,5 +362,6 @@ A library is finished - not merely added - when all seven are true:
 
 WP1 and WP4 are the two that make the binary *smaller* and the licence story simpler.
 They are not glamorous, and they are the ones worth doing early for that reason: every
-later item inherits the link line they leave behind. WP1 is done; WP4 waits for WP3 so
-the corrector's engine set is settled before it is pruned.
+later item inherits the link line they leave behind. WP1 and WP2 are done; WP4 waits for
+WP3 so the corrector's engine set is settled before it is pruned; WP3 is the largest
+remaining item and the only one that adds a new inference engine to the binary.
