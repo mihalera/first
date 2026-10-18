@@ -34,7 +34,7 @@ if(J37_BUILD_TESTS)
     CPMAddPackage(
         NAME Catch2
         GITHUB_REPOSITORY catchorg/Catch2
-        GIT_TAG v3.9.1
+        GIT_TAG v3.16.1
         EXCLUDE_FROM_ALL YES
         SYSTEM YES)
 
