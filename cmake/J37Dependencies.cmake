@@ -47,7 +47,7 @@
 #
 # ==============================================================================
 
-set(CPM_DOWNLOAD_VERSION 0.40.2)
+set(CPM_DOWNLOAD_VERSION 0.43.2)
 
 if(NOT DEFINED CPM_SOURCE_CACHE AND DEFINED ENV{CPM_SOURCE_CACHE})
     set(CPM_SOURCE_CACHE "$ENV{CPM_SOURCE_CACHE}" CACHE PATH "CPM package cache")
