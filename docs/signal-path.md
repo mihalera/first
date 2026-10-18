@@ -87,7 +87,7 @@ Numbers are the order; "per" is the rate domain.
 | 34 | LO-FI mode | sample | Bandwidth restriction, sample-and-hold quantisation and a raised floor, applied after protection so the quantisation cannot be smoothed away. | LO-FI |
 | 35 | BYPASS / DELTA crossfades | sample | BYPASS crossfades from the untouched host sample to the finished one; DELTA crossfades to the difference between the finished signal and the machine's dry reference, computed from the same frame so the subtraction is phase-perfect at any oversampling factor. | BYPASS, DELTA |
 | 36 | IR cabinet | block | Convolution against a user impulse response, applied to a copy and blended by its amount. | CABINET |
-| 37 | SPACE reverb | block | The plate reverb on the protected signal. | SPACE, SPACE SIZE |
+| 37 | SPACE reverb | frame, per block | Dattorro's plate on the protected signal: one tank fed the frame, its width taken from two taps of it. It runs at 48 kHz, the rate its delay lengths were chosen at, and the signal is carried to and from the session's rate - so the same SIZE decays for the same number of SECONDS at 44.1, 48 or 96 kHz rather than being a different room at each. | SPACE, SPACE SIZE |
 | 38 | VINYL | block | Surface crackle, rumble, dust, scratches, warp, electrical noise and the RIAA-style warmth, all scaled by the stage's own level. | VINYL, and its six character controls |
 
 ## What the panel meters read
@@ -116,6 +116,7 @@ machine produced.
 | the transport rig and the repitch stage | `tests/transport` |
 | the pitch tracker and the granular shifter | `tests/pitch` |
 | the rate bridge and the guarded neural stage | `tests/neural` |
+| the room's tail length in seconds at three rates, its stereo width, and its silence at MIX 0 | `tests/reverb` |
 | the spectrum analyser, with and without its FFT | `tests/spectrum` |
 | session state round trip | `tests/state` |
 

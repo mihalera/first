@@ -216,6 +216,26 @@ jobs:
       - name: Run the spectrum harness
         run: bash tests/spectrum/run.sh
 
+      # The room. It is the one stage in this suite that CALLS a third-party
+      # library rather than reimplementing one: SPACE is Dattorro's plate, from
+      # ThirdParty/dattorro-verb, and this harness compiles that library's own
+      # verb.c as C beside the shipping header as C++ - which is also the only
+      # place the stage's extern "C" wrapping is measured at all.
+      #
+      # What it asserts is a property no source reading and no listening test can
+      # reach: Dattorro's tank is a set of delay lines whose lengths are SAMPLE
+      # COUNTS, so a tail run at 96 kHz is half as long as the same setting at 48.
+      # The wrapper runs the tank at the rate those lengths were chosen at and
+      # carries the signal across, and the measure of whether that works is the
+      # tail in SECONDS: 0.65 / 1.18 / 3.07 s for SIZE 0.1 / 0.5 / 0.9, and 1.21 /
+      # 1.18 / 1.20 s for SIZE 0.5 at 44.1, 48 and 96 kHz. Alongside it: MIX 0 is
+      # the frame back bit for bit (at every rate, not just the tank's), the two
+      # sides of the tail are decorrelated so the width is real, a mono bus gets
+      # the pair summed rather than one side, MIX 1 lands within 6 dB of the dry
+      # programme, and the tail decays away without a NaN or an infinity.
+      - name: Run the room harness
+        run: bash tests/reverb/run.sh
+
       # The factory presets cannot fail at runtime - a name list that is a row
       # short, or a parameter with no column in the table, both just quietly
       # load the wrong sound - so they are checked against the source instead.
@@ -567,9 +587,11 @@ jobs:
       # already paid for. The harnesses above are seconds of work each and need
       # no toolkit, no host and no submodules, so they run here a second time
       # with ASan and UBSan turned on: the shipped DSP generator, the knob
-      # strip's arithmetic, the state writer/reader, the transport rig and the
-      # pitch stage's delay line, executed as compiled out of Source/ rather
-      # than as a copy of it.
+      # strip's arithmetic, the state writer/reader, the transport rig, the
+      # pitch stage's delay line and the room's feedback network - with the
+      # vendored verb.c instrumented too, since that is where the tank's own
+      # delay buffers live - executed as compiled out of Source/ rather than as
+      # a copy of it.
       # -fno-sanitize-recover=all makes any finding fail the step instead of
       # printing and carrying on.
       - name: Run the harnesses under ASan and UBSan
@@ -586,6 +608,7 @@ jobs:
           J37_SANITIZE=address,undefined bash tests/mix_crossfader/run.sh
           J37_SANITIZE=address,undefined bash tests/neural/run.sh
           J37_SANITIZE=address,undefined bash tests/spectrum/run.sh
+          J37_SANITIZE=address,undefined bash tests/reverb/run.sh
 
       - name: Configure CMake (Debug)
         run: |

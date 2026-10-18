@@ -266,14 +266,28 @@ number a thousand times and use it once.
 The two time-based stages live on their own tab because they are the same kind of
 decision.
 
-**Reverb** is a plate/room built from four Schroeder all-pass sections into two comb
-banks. The topology is the classic one because it is the one that sounds like a room
-for the least code: all-passes diffuse without colouring the spectrum, and the comb
-banks that follow set the decay. Two banks with different comb lengths are what gives
-the image its width - a single bank would collapse to mono. It sits **after** the
-machine, so it reverberates the processed signal rather than feeding back into the
-saturation; a reverb inside the nonlinearity would be pitch-shifted by the wow and
-would smear the harmonics the plugin exists to produce.
+**Reverb** is Jon Dattorro's plate, from [Effect Design Part 1](https://ccrma.stanford.edu/~dattorro/EffectDesignPart1.pdf),
+as implemented by [`el-visio/dattorro-verb`](https://github.com/el-visio/dattorro-verb)
+and wrapped by `Source/DSP/DattorroRoom.h`. The design is the one the paper names: four
+input diffusers, then a tank of two halves that cross-feed, each with a **modulated**
+all-pass (the modulation is what stops a long tail from ringing on one pitch), a damping
+low-pass in the loop, and seven taps summed into the stereo pair - which is where the
+width comes from, one network rather than two rooms. It sits **after** the machine, so it
+reverberates the processed signal rather than feeding back into the saturation; a reverb
+inside the nonlinearity would be pitch-shifted by the wow and would smear the harmonics
+the plugin exists to produce.
+
+A delay network is a set of delays counted in **samples**, so its numbers only mean a room
+at one sample rate: run at 96 kHz the same tank is half as long in time, at 44.1 kHz 9 %
+longer. The wrapper therefore runs the tank at the 48 kHz its lengths were chosen at and
+carries the session's signal across - the same conversion `RateBridge` does for a model -
+so **SIZE sets a decay in seconds**, not a number of samples. `tests/reverb` measures
+exactly that: 1.21 / 1.18 / 1.20 s at SIZE 0.5 for 44.1, 48 and 96 kHz. At 48 kHz the
+conversion is not merely skipped but absent, and at MIX 0 the stage is not quiet but
+absent: the frame comes back bit for bit.
+
+**SPACE SIZE** runs from about half a second to about five, and a larger setting is a
+darker tail as well as a longer one - a bigger room absorbs more top end per pass.
 
 **Delay** is the second playback head, and **DELAY TYPE** sets what its repeats sound
 like. The three are genuinely different machines:
@@ -1462,6 +1476,7 @@ carries none of them.
 
 | Library | Pinned at | Why it is in the build |
 | --- | --- | --- |
+| `dattorro-verb` | commit `41e976a0`, vendored in `ThirdParty/dattorro-verb/` | **Used.** Jon Dattorro's 1997 plate reverb, 400 lines of C. `Source/DSP/DattorroRoom.h` is the stage: it runs the tank at the 48 kHz its delay lengths were chosen at and carries the session's signal to and from that rate, so the tail is the same length in seconds at any session rate - which is what `tests/reverb` measures. `verb.c` is compiled as C (`CMakeLists.txt` declares the language for it) and the header is included inside `extern "C"` |
 | `RTNeural` | commit `95c3c0f9` | **Used.** The real-time neural inference engine behind the DYN tab's optional model stage. `NeuralStage` runs a 1-in/1-out model per channel. Configured with `RTNEURAL_STL ON` and no `-mavx2`, so the binary still runs on machines without AVX |
 | `nlohmann/json` | `v3.12.0` | **Used.** The JSON DOM `RTNeural::json_parser::parseJson` parses a model file into. Header-only |
 | `chowdsp_utils` | `v2.4.0` | Chowdhury DSP's toolbox. **Used:** the polynomial `exp`/`log`/dB approximations on the metering and auto-gain hot paths come from the BSD `chowdsp_math` module. **`chowdsp_dsp_utils` is the one exception to the rule above** - linked, and no line of the code calls it. It is GPLv3, so dropping it would drop that obligation from the binary; that is the licence decision in `docs/plugin-improvement-plan.md` item 1.1, and `check_linkline.py` names it with that owner rather than failing on it |

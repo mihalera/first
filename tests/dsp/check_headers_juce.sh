@@ -188,9 +188,20 @@ TU="${BUILD}/header_check.cpp"
       + input.processDistortion (x, 0.2f)
       + input.processDiBox (x, 0.1f, 0.5f, -6.0f, 0.2f, 0.01f, 0.01f, 1.0f);
 
-    PlateReverb plate;
-    plate.prepare (48000.0);
-    x = plate.process (x, 0, 0.5f, 0.2f);
+    // The room, which is the one stage in the directory that CALLS a third-party
+    // library rather than merely including a header of one: Dattorro's tank is
+    // el-visio/dattorro-verb, compiled from ThirdParty/dattorro-verb/verb.c, and
+    // this is the only place its API is compiled beside real JUCE. The call below
+    // is here so the stage's declaration and its use are compiled together, against
+    // the library's own header rather than the harness's memory of it; the LINK is
+    // tests/reverb's job, which compiles verb.c as C and is where the stage's
+    // extern "C" wrapping would fail if it ever went missing.
+    DattorroRoom room;
+    room.prepare (48000.0);
+    std::array<float, 2> roomFrame { x, x };
+    room.processFrame (roomFrame.data(), 2, 0.5f, 0.2f);
+    x = roomFrame[0] + roomFrame[1] + static_cast<float> (room.delay());
+    room.reset();
 
     ThreeBandEq tone;
     tone.prepare (48000.0f);
@@ -375,6 +386,7 @@ EOF
 "${CXX}" -std=c++17 -fsyntax-only -Wall -Wextra -Wno-unused-parameter \
     -I "${REPO}/Source" -I "${JUCE_MODULES}" \
     -I "${REPO}/ThirdParty/pocketfft" \
+    -I "${REPO}/ThirdParty/dattorro-verb" \
     -DJUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1 \
     -DJUCE_MODULE_AVAILABLE_juce_core=1 \
     -DJUCE_MODULE_AVAILABLE_juce_events=1 \

@@ -220,9 +220,10 @@ inline juce::StringArray vinylTypeNameList()
 // and the note explaining it now live together.
 #include "DSP/TapeCondition.h"
 
-// The plate reverb. Moved out of this file, prose and all: Source/DSP/ is where
-// its code and the note explaining it now live together.
-#include "DSP/PlateReverb.h"
+// The room. Dattorro's plate against el-visio/dattorro-verb, wrapped in
+// Source/DSP/: the tank runs at the rate its delay lengths were chosen at and the
+// wrapper carries the signal across. Prose and all, it lives there now.
+#include "DSP/DattorroRoom.h"
 
 // The vinyl stage: surface noise, rumble and the RIAA playback curve. Moved out
 // of this file, so the harnesses can include it directly instead of having its
@@ -1755,9 +1756,11 @@ private:
 
     // -----------------------------------------------------------------------
     //  Reverb - one instance, two channels inside it. It is placed after the
-    //  machine, so it is a single stereo processor rather than two mono ones.
+    //  machine, so it is a single stereo processor rather than two mono ones,
+    //  and it takes the frame rather than a channel: Dattorro's network is fed
+    //  one signal and its width comes from the taps.
     // -----------------------------------------------------------------------
-    PlateReverb reverb;
+    DattorroRoom reverb;
     SampleSmoother reverbMixSmoothed { sampleClock };
     SampleSmoother reverbSizeSmoothed { sampleClock, false, false, 0.4f };
 

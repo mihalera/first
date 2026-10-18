@@ -733,10 +733,12 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     lofiCounter = 0;
     wearModulation = 0.0f;
 
-    // The reverb is prepared for the rate (its comb lengths scale with it, so the
-    // room keeps the same physical size) and then flushed.
+    // The room starts empty. Its tank runs at the rate its own delay lengths were
+    // chosen at and the wrapper carries the signal across, so a new session rate
+    // re-times that conversion rather than resizing the room - which is also why
+    // the tail lasts the same number of SECONDS at any rate. prepare() clears the
+    // tank itself, so there is nothing to flush afterwards.
     reverb.prepare (sampleRateToUse);
-    reverb.reset();
 
     // The vinyl stage's generator gets its own seed, separate from the tape hiss,
     // so the two noise sources are uncorrelated.

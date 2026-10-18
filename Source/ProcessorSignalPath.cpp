@@ -286,13 +286,35 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
 
     if (reverbMix <= 1.0e-5f && vinylMix <= 1.0e-5f && ! irActive) return;
     const auto reverbSize = reverbSizeSmoothed.getCurrentValue();
+
+    // The room takes the WHOLE frame rather than one channel of it: Dattorro's
+    // network is fed one signal and its width comes from tapping the tank twice,
+    // so there is no per-channel reverb to call. That is what the two loops around
+    // it are for - the IR blend is per channel, the tank is one pass over the
+    // frame, and the vinyl stage after it is per channel again.
+    //
+    // The frame is a fixed pair because isBusesLayoutSupported allows a mono or a
+    // stereo bus and nothing else; the clamp is what a host that ignores that
+    // costs, which is a channel left out rather than a write past the pair.
+    const auto frameWidth = juce::jmin (2, channels);
+    float frame[2] {};
     for (int i = 0; i < samples; ++i)
-        for (int c = 0; c < channels; ++c)
+    {
+        for (int c = 0; c < frameWidth; ++c)
         {
             auto* data = block.getChannelPointer (c);
             auto value = data[i];
             if (irActive) value += (postFxScratch.getSample (c, i) - value) * irMix;
-            if (reverbMix > 1.0e-5f) value = reverb.process (value, c, reverbSize, reverbMix);
+            frame[c] = value;
+        }
+
+        if (reverbMix > 1.0e-5f)
+            reverb.processFrame (frame, frameWidth, reverbSize, reverbMix);
+
+        for (int c = 0; c < frameWidth; ++c)
+        {
+            auto* data = block.getChannelPointer (c);
+            auto value = frame[c];
             if (vinylMix > 1.0e-5f)
             {
                 auto& stage = c == 0 ? vinylL : vinylR;
@@ -303,6 +325,7 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
             }
             data[i] = value;
         }
+    }
 }
 
 const std::array<int, 12>& FirstAudioProcessor::scaleOffsetsForMode (int modeIndex) noexcept

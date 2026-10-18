@@ -583,9 +583,12 @@ target_include_directories(first PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated"
 #  The PACKAGES are still declared in cmake/J37Dependencies.cmake: the fetch is
 #  what makes "use it" a one-line change, and several of the removed entries are
 #  candidates for a stage that does not exist yet (dr_libs for a file the IR
-#  stage might read, dattorro_verb for a room, the pitch trackers for a second
-#  opinion on PitchTracker). What is not true is that the shipping plugin links
-#  them, and the link line is a claim about the binary rather than about intent.
+#  stage might read, the pitch trackers for a second opinion on PitchTracker).
+#  One of them has since come back, and it is the model for how: dattorro_verb
+#  is linked below because Source/DSP/DattorroRoom.h calls it and tests/reverb
+#  renders through it, in that order - the caller first, the harness with it.
+#  What is not true is that the shipping plugin links them, and the link line is
+#  a claim about the binary rather than about intent.
 #
 #  `signalsmith-stretch` left with the rest of them, and it is the one worth
 #  saying out loud: the plan names it as the corrector's engine, but
@@ -616,6 +619,7 @@ target_link_libraries(first
         RTNeural
         nlohmann_json
         glm
+        dattorro_verb
         PluginResources
     PUBLIC
         juce::juce_recommended_config_flags

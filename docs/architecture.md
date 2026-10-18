@@ -61,7 +61,7 @@ by stage, with the rate domain of each - and the short version is
 | IR cabinet (convolution, optional) | `Source/DSP/IrStage.h` |
 | the rate bridge between engine rate and a model's rate | `Source/DSP/RateBridge.h` |
 | subharmonic generator | `Source/DSP/SubharmonicGenerator.h` |
-| plate reverb (SPACE) | `Source/DSP/PlateReverb.h` |
+| room reverb (SPACE), Dattorro's plate against `ThirdParty/dattorro-verb` | `Source/DSP/DattorroRoom.h` |
 | vinyl stage (surface, rumble, RIAA) | `Source/DSP/VinylStage.h` |
 | pitch tracking for autotune | `Source/DSP/PitchTracker.h` |
 | granular pitch shifting for repitch and autotune | `Source/DSP/RealtimePitchShifter.h` |

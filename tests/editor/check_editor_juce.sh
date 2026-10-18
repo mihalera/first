@@ -221,6 +221,12 @@ INCLUDES=(
     -I "${REPO}/ThirdParty/signalsmith-stretch/include"
     -I "${REPO}/ThirdParty/soundtouch/include"
     -I "${REPO}/ThirdParty/pocketfft"
+    # The room's library. Unlike the rest of this list it is not header-only -
+    # verb.c is compiled into the plugin by cmake/J37Dependencies.cmake - but the
+    # stage's include of <verb.h> is a fact about compiling the plugin, and a pass
+    # that could not find it would fail every translation unit the processor is
+    # split into. The link is tests/reverb's job.
+    -I "${REPO}/ThirdParty/dattorro-verb"
 )
 # pocketfft was already in this list because cmake/J37Dependencies.cmake declares it
 # header-only and CMakeLists.txt therefore puts its directory on the plugin's include
