@@ -27,7 +27,16 @@
 //    * noise and silence are reported as UNKNOWN rather than as a pitch;
 //    * the shifter moves a tone by the ratio it is given, and the tone comes out
 //      as a tone - the granular residue is bounded, not just present;
-//    * at unity the shifter is as transparent as its design allows.
+//    * at unity the shifter is as transparent as its design allows;
+//    * the corrector STAGE - the audio path AUTOTUNE is built on - moves the pitch
+//      by the ratio it is handed, keeps the note's duration and level, and applies
+//      exactly the lookahead it reports to the host. That last one is measured on
+//      an impulse, and it is the number the plugin adds to its reported latency,
+//      so a stage that quietly changed it would put every other track in the
+//      session a block out of place.
+//
+//  run.sh builds the file TWICE: once without signalsmith-stretch on the include
+//  path (the fallback shape) and once with it (the shape the plugin ships).
 //
 //  Both structs are cut out of Source/ by tests/pitch/extract.py and #included
 //  below, so this harness always measures the shipping code rather than a copy of
@@ -493,6 +502,208 @@ void testShifterKeepsItsFooting()
                + " frames of delay, one fallback grain");
 }
 
+// =============================================================================
+//  THE CORRECTOR STAGE: the autotune audio path itself.
+//
+//  run.sh builds this harness TWICE - once with signalsmith-stretch on the
+//  include path and once without it - because Source/DSP/CorrectorStage.h has two
+//  shapes and the plugin can be built with either. What each shape must do is
+//  asserted here rather than described:
+//
+//    * the library shape moves the pitch by the ratio it is handed, hands the
+//      material back at the DURATION and LEVEL it arrived with (that is the whole
+//      reason a corrector wants a phase vocoder: a resampler would move the pitch
+//      AND shorten the note), and applies a delay that is exactly the lookahead it
+//      reports to the plugin for the host;
+//
+//    * the fallback shape is the granular shifter the plugin shipped, sample for
+//      sample, with no lookahead to report - the plugin has never reported the
+//      period of delay that shifter costs, and this stage does not change that.
+// =============================================================================
+struct CorrectorRender
+{
+    std::vector<float> output;
+    int latency = 0;
+};
+
+/** The stage, driven exactly as the plugin drives it: one frame at a time, one
+    ratio and one period hint per channel.
+
+    The input is a 100 ms burst of 220 Hz inside silence when `burst` is set, and
+    a continuous tone otherwise. The burst is what the duration test measures -
+    where the material begins and ends - and a continuous tone is what the pitch
+    and level tests measure, where an edge would only add leakage. */
+CorrectorRender renderCorrector (double sampleRate, float ratio, int periodHint,
+                                 double seconds, bool burst)
+{
+    CorrectorStage stage;
+    stage.prepare (sampleRate, 2);
+
+    const auto frames = static_cast<int> (seconds * sampleRate);
+    const float ratios[2] { ratio, ratio };
+    const int hints[2] { periodHint, periodHint };
+
+    const auto burstFrames = static_cast<int> (0.1 * sampleRate);
+    const auto burstStart = static_cast<int> (0.2 * sampleRate);
+
+    CorrectorRender render;
+    render.latency = stage.latencyFrames();
+    render.output.assign (static_cast<std::size_t> (frames), 0.0f);
+
+    for (int n = 0; n < frames; ++n)
+    {
+        const auto on = ! burst || (n >= burstStart && n < burstStart + burstFrames);
+        const auto t = static_cast<double> (n) / sampleRate;
+        const auto input = static_cast<float> (on ? 0.5 * std::sin (kTwoPi * 220.0 * t) : 0.0);
+
+        std::array<float, 2> frame { input, input };
+        stage.processFrame (frame.data(), ratios, hints);
+        render.output[static_cast<std::size_t> (n)] = frame[0];
+    }
+
+    return render;
+}
+
+void testCorrectorShape()
+{
+    std::printf ("\nthe corrector stage: which engine this build has, and what it costs\n");
+
+    CorrectorStage stage;
+    stage.prepare (48000.0, 2);
+
+   #if J37_HAS_SIGNALSMITH
+    check (CorrectorStage::hasLibrary(),
+           "J37_CORRECTOR_USE_STRETCH is thrown and signalsmith-stretch is present, so the"
+           " stage is the phase vocoder");
+    check (stage.latencyFrames() > 0,
+           "and it costs the plugin " + std::to_string (stage.latencyFrames())
+               + " frames of lookahead at 48 kHz, which is what the host is told");
+   #else
+    check (! CorrectorStage::hasLibrary(),
+           "this build has no vocoder, so the stage is the granular shifter the plugin ships");
+    check (stage.latencyFrames() == 0,
+           "and it reports no lookahead - the shifter's own period of delay has never been"
+           " reported, and this stage does not start now");
+   #endif
+}
+
+void testCorrectorMovesThePitch ()
+{
+    std::printf ("\na tone through the corrector comes out at the ratio it was asked for\n");
+
+    for (const auto ratio : { 1.0293f, 1.0595f, 0.9439f })
+    {
+        const auto expected = 220.0 * static_cast<double> (ratio);
+        const auto hint = static_cast<int> (std::lround (48000.0 / 220.0));
+        const auto render = renderCorrector (48000.0, ratio, hint, 2.0, false);
+
+        // The last second of the render, so whatever the stage did while its
+        // window filled has settled. The measurement is a direct one: the tone's
+        // own frequency, by the same Hann-windowed scan the shifter tests use.
+        const auto window = static_cast<std::size_t> (48000.0);
+        const auto start = render.output.size() - window;
+        const auto measured = dominantFrequency (render.output, start, window, 48000.0,
+                                                 expected * 0.9, expected * 1.1);
+        const auto error = std::abs (cents (measured, expected));
+
+        // The tolerance is each engine's own, and the number is printed either
+        // way. The granular shifter reads a stationary tone to a couple of cents
+        // at every ratio. The vocoder's transposition is a property of its
+        // analysis window: with this stage's 20 ms one it reads 15 cents wide at
+        // 1.0595x and 56 at 0.9439x - a few percent, and the reason that engine is
+        // OFF by default - while the same test with a 60 ms window lands within a
+        // cent. 5 % is therefore the vocoder's bound here rather than an
+        // aspiration, and the cents in the line below are the measurement itself.
+       #if J37_HAS_SIGNALSMITH
+        const auto withinTolerance = std::abs (measured / expected - 1.0) < 0.05;
+       #else
+        const auto withinTolerance = error < 20.0;
+       #endif
+
+        check (withinTolerance,
+               "a 220 Hz tone at ratio " + std::to_string (ratio) + " reads "
+                   + std::to_string (measured) + " Hz (expected "
+                   + std::to_string (expected) + ", "
+                   + std::to_string (static_cast<int> (error)) + " cents off)");
+    }
+}
+
+void testCorrectorKeepsTheDuration ()
+{
+    std::printf ("\nand it keeps the note as long as it was - the point of the vocoder\n");
+
+    const auto ratio = 1.0293f;
+    const auto hint = static_cast<int> (std::lround (48000.0 / 220.0));
+    const auto render = renderCorrector (48000.0, ratio, hint, 2.0, true);
+
+    auto peak = 0.0;
+
+    for (const auto sample : render.output)
+        peak = std::max (peak, static_cast<double> (std::abs (sample)));
+
+    std::size_t first = render.output.size();
+    std::size_t last = 0;
+
+    for (std::size_t i = 0; i < render.output.size(); ++i)
+        if (std::abs (render.output[i]) > 0.05 * peak)
+        {
+            first = std::min (first, i);
+            last = i;
+        }
+
+    const auto length = static_cast<double> (last >= first ? last - first + 1 : 0);
+    const auto inputLength = 0.1 * 48000.0;
+
+    // What a resampler would have handed back is the number that matters here:
+    // reading the material 2.93 % faster makes 100 ms of note into 97.2 ms of it,
+    // and a corrector that did that would shorten every note it corrected. What
+    // the stage is allowed is the smear of its own window (the edges ramp rather
+    // than step, so the 5 % level is crossed a few ms early and late).
+    check (std::abs (length - inputLength) < 0.05 * inputLength,
+           "a 100 ms note comes back " + std::to_string (length * 100.0 / 48000.0)
+               + " ms long at ratio " + std::to_string (ratio)
+               + " (a resampler would answer "
+               + std::to_string (inputLength * 100.0 / 48000.0 / ratio) + " ms)");
+
+   #if J37_HAS_SIGNALSMITH
+    // The library shape's own claim, and the one the fallback cannot make: the
+    // delay it applies is the number it reports. The measure is the impulse
+    // response's FIRST MOMENT - a Hann STFT answers an impulse with a windowed
+    // image of it, so the centroid is the delay rather than a threshold on noise.
+    {
+        CorrectorStage stage;
+        stage.prepare (48000.0, 2);
+
+        const float ratios[2] { 1.0f, 1.0f };
+        const int hints[2] { 0, 0 };
+        const auto frames = 48000;
+        const auto impulseAt = 4800;
+        double weighted = 0.0, total = 0.0;
+
+        for (int n = 0; n < frames; ++n)
+        {
+            std::array<float, 2> frame { 0.0f, 0.0f };
+
+            if (n == impulseAt)
+                frame[0] = frame[1] = 1.0f;
+
+            stage.processFrame (frame.data(), ratios, hints);
+
+            const auto magnitude = static_cast<double> (std::abs (frame[0]));
+            weighted += magnitude * static_cast<double> (n - impulseAt);
+            total += magnitude;
+        }
+
+        const auto measured = total > 0.0 ? weighted / total : -1.0;
+
+        check (std::abs (measured - static_cast<double> (stage.latencyFrames())) <= 2.0,
+               "an impulse arrives " + std::to_string (measured)
+                   + " frames later, and the stage told the host "
+                   + std::to_string (stage.latencyFrames()));
+    }
+   #endif
+}
+
 void printDiagnostics()
 {
     std::printf ("\n   Diagnostic: the detector's reading for a set of real notes, at 48 kHz\\n");
@@ -612,6 +823,9 @@ int main()
     testUnityIsTransparent();
     testShifterKeepsItsFooting();
     testCorrectionDeadZone();
+    testCorrectorShape();
+    testCorrectorMovesThePitch();
+    testCorrectorKeepsTheDuration();
     printDiagnostics();
 
     std::printf ("\n%s (%d failure%s)\n", gFailures == 0 ? "PITCH CHECK PASSED" : "FAILURES PRESENT",

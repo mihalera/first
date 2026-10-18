@@ -630,12 +630,17 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     flutterScale = 1.0f;
 
     autoTuneCorrectionSmoothed.fill (1.0f);
-    // The trackers are TOLD the rate rather than left at their default: their
-    // decimation is what makes a lag mean the same frequency at every session
-    // rate, so a rate change has to rebuild it. The shifters hold no rate of
-    // their own - their grains are in frames - so a reset is all they need.
-    for (auto& tracker : autoTuneTrackers) tracker.prepare (sampleRate);
-    for (auto& shifter : autoTuneShifters) shifter.reset();
+    // AUTOTUNE's two rate-dependent halves - the trackers' decimation and the
+    // corrector's analysis window - are TOLD the rate rather than left at their
+    // defaults, and that happens inside setOversamplingFactor above rather than
+    // here, because the rate they must be told is the ENGINE's and this method
+    // reads the session's. They are fed the engine's frames: the stage runs at the
+    // end of processTapeEngine, on the block the oversampler expanded. Preparing
+    // them here from `sampleRate` was a real defect over one factor of two - the
+    // tracker read a 440 Hz note as 880 and the corrector would have carried the
+    // wrong window - so both are prepared where the engine's rate is known and all
+    // that is left here is to start them clean.
+    corrector.reset();
 
     // The sample rate changed, so every time-domain constant has to be rebuilt.
     // The tone filters are cached rather than recomputed per block, and their
@@ -733,10 +738,12 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     lofiCounter = 0;
     wearModulation = 0.0f;
 
-    // The reverb is prepared for the rate (its comb lengths scale with it, so the
-    // room keeps the same physical size) and then flushed.
+    // The room starts empty. Its tank runs at the rate its own delay lengths were
+    // chosen at and the wrapper carries the signal across, so a new session rate
+    // re-times that conversion rather than resizing the room - which is also why
+    // the tail lasts the same number of SECONDS at any rate. prepare() clears the
+    // tank itself, so there is nothing to flush afterwards.
     reverb.prepare (sampleRateToUse);
-    reverb.reset();
 
     // The vinyl stage's generator gets its own seed, separate from the tape hiss,
     // so the two noise sources are uncorrelated.
@@ -748,9 +755,9 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     noiseState = 0x1b873593u;
 
     // The safety limiter must start open, otherwise a stale gain from the previous
-    // session would duck the first block audibly.
-    preLimiterDetector = 0.0f;
-    limiterGain = 1.0f;
+    // session would duck the first block audibly. It owns that state now -
+    // Source/DSP/SafetyLimiter.h - so this is its own reset.
+    limiter.reset();
 
     // The anti-phase guard starts neutral: no correction, and an energy floor that
     // keeps a silent opening passage from dividing by nothing.
@@ -803,8 +810,10 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     outputCompressor.reset();
 
     // The final compensation starts from unity so the first block is not nudged by a
-    // stale correction from a previous session or sample rate.
-    smoothedCompensationDb = 0.0f;
+    // stale correction from a previous session or sample rate. The compensator owns
+    // that correction now - Source/DSP/AutoGainCompensator.h - so this is its own
+    // reset rather than a float written from here.
+    autoGainCompensator.reset();
 }
 
 void FirstAudioProcessor::resetSampleRateDependentState()
@@ -927,6 +936,25 @@ void FirstAudioProcessor::resetSampleRateDependentState()
             oversampler->reset();
 }
 
+void FirstAudioProcessor::publishReportedLatency()
+{
+    // One number out of its two parts. The oversampler's share is fixed for a
+    // factor and the corrector's is zero until AUTOTUNE is switched in, so the
+    // host is told whenever either moves - switching the corrector on is a real
+    // change in how far behind the plugin runs, and a host that is not told about
+    // it will place every other track a block too early against this one.
+    //
+    // setLatencySamples is the inherited non-virtual host-notification setter, and
+    // it is called from the audio thread by both of its callers (an oversampling
+    // change and an AUTOTUNE switch). That is the same trade the oversampler's own
+    // initProcessing makes: both are parameter changes, and neither has a path to
+    // the message thread that would not add a lock to the audio path.
+    const auto total = oversamplerLatencySamples + publishedCorrectorLatencySamples;
+
+    if (getLatencySamples() != total)
+        AudioProcessor::setLatencySamples (total);
+}
+
 void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int samplesPerBlock)
 {
     const auto clamped = (factor == OversamplingFactor::x2
@@ -953,11 +981,26 @@ void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int 
         // The dummy stage adds no delay; the real ones report their filter latency
         // so every DAW can compensate sample-accurately. setLatencySamples is the
         // inherited non-virtual host-notification setter.
-        const int newLatency = (clamped == OversamplingFactor::off)
-                                   ? 0
-                                   : juce::roundToInt (oversampler->getLatencyInSamples());
-        if (getLatencySamples() != newLatency)
-            AudioProcessor::setLatencySamples (newLatency);
+        oversamplerLatencySamples = (clamped == OversamplingFactor::off)
+                                        ? 0
+                                        : juce::roundToInt (oversampler->getLatencyInSamples());
+        publishReportedLatency();
+
+        // The corrector runs INSIDE the engine, so its own lookahead - the
+        // vocoder's analysis window - has to be rebuilt for the rate the engine is
+        // about to run at. Allocating here is the same trade the oversamplers' own
+        // initProcessing makes above: a rate change is a parameter change, and the
+        // alternative is an engineering change on the audio thread.
+        const auto engineRate = static_cast<double> (juce::jmax (1.0f, sampleRate * oversamplingRateFactor));
+        corrector.prepare (engineRate, 2);
+
+        // The tracker rides the same rate, for the same reason and with the same
+        // absence of allocation: its decimation is what makes a lag mean the same
+        // frequency at every rate, and it is fed the engine's frames. A separate
+        // prepare() here is not redundancy - the two are handed the same number
+        // because they must be, so the number is written once above.
+        for (auto& tracker : autoTuneTrackers)
+            tracker.prepare (engineRate);
     }
 
     currentOversampling = clamped;

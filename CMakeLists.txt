@@ -583,9 +583,14 @@ target_include_directories(first PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated"
 #  The PACKAGES are still declared in cmake/J37Dependencies.cmake: the fetch is
 #  what makes "use it" a one-line change, and several of the removed entries are
 #  candidates for a stage that does not exist yet (dr_libs for a file the IR
-#  stage might read, dattorro_verb for a room, the pitch trackers for a second
-#  opinion on PitchTracker). What is not true is that the shipping plugin links
-#  them, and the link line is a claim about the binary rather than about intent.
+#  stage might read, the pitch trackers for a second opinion on PitchTracker).
+#  Two of them have since come back, and they are the model for how: dattorro_verb
+#  is linked below because Source/DSP/DattorroRoom.h calls it and tests/reverb
+#  renders through it, and signalsmith-stretch because the corrector calls its
+#  header - header-only, so what the link line carries is the include path - in
+#  that order both times: the caller first, the harness with it.
+#  What is not true is that the shipping plugin links them, and the link line is
+#  a claim about the binary rather than about intent.
 #
 #  `signalsmith-stretch` left with the rest of them, and it is the one worth
 #  saying out loud: the plan names it as the corrector's engine, but
@@ -616,6 +621,8 @@ target_link_libraries(first
         RTNeural
         nlohmann_json
         glm
+        dattorro_verb
+        signalsmith-stretch
         PluginResources
     PUBLIC
         juce::juce_recommended_config_flags
@@ -657,6 +664,55 @@ option(J37_USE_SIMD_TANH
 
 if(J37_USE_SIMD_TANH)
     target_compile_definitions(first PRIVATE J37_USE_SIMD_TANH=1)
+endif()
+
+# ------------------------------------------------------------------------------
+#  The corrector's engine: OFF by default, deliberately, and this is the second
+#  switch in the build that changes the rendered audio.
+#
+#  Source/DSP/CorrectorStage.h has two engines behind one interface. The default
+#  is the granular shifter the plugin has always corrected with: one period of
+#  latency, inaudible when AUTOTUNE is off, and no latency reported because the
+#  plugin has never reported one. The option swaps in signalsmith-stretch, a phase
+#  vocoder that renders the correction with a whole analysis window and is handed
+#  whole blocks.
+#
+#  What that measures, from tests/pitch, which builds BOTH shapes of the same file
+#  and prints these numbers on every run:
+#
+#    latency      1216 frames at 48 kHz (25 ms) against the shifter's one period.
+#                 The plugin reports it while AUTOTUNE is engaged - see
+#                 publishReportedLatency - so it is not hidden, but it is in the
+#                 monitoring path and a performer feels it.
+#    duration     100 ms of note comes back 103 ms at ratio 1.0293 where a
+#                 resampler would answer 97 ms. This is the vocoder's real win:
+#                 the correction no longer shortens the note it corrects.
+#    pitch        a few percent wide of the ratio it is handed, and the error is a
+#                 property of the analysis window: 15 cents at 1.0595x and 56 at
+#                 0.9439x with this stage's 20 ms window, within a cent with a 60 ms
+#                 one. The granular shifter reads under a cent at every ratio on a
+#                 stationary tone. So the engine that is accurate to a couple of
+#                 cents costs one period of latency and the one that is accurate to
+#                 a few percent costs a window of it - and since AUTOTUNE's whole
+#                 job is moving a note by less than the dead zone's +-10 cents, an
+#                 engine that is 56 cents wide of a 5.7 % correction is correcting
+#                 with its own error on top. That is why it is OFF, and the option
+#                 is here for the work that would earn it: a longer window and the
+#                 latency it brings, or a phase-locking configuration.
+#
+#  So the default is the shifter, the option is there for the work that would make
+#  the vocoder the better engine (a phase-locking configuration, or a longer
+#  window and the latency that comes with it), and the harness measures both rather
+#  than describing either. The library is on the link line either way, because the
+#  stage includes its header under this flag - which is what makes the flag, rather
+#  than the include path, the thing that decides.
+# ------------------------------------------------------------------------------
+option(J37_CORRECTOR_USE_STRETCH
+    "Correct with signalsmith-stretch's phase vocoder instead of the granular shifter (adds 1216 frames of reported latency at 48 kHz; measured up to 56 cents of its own error at a 20 ms window)"
+    OFF)
+
+if(J37_CORRECTOR_USE_STRETCH)
+    target_compile_definitions(first PRIVATE J37_CORRECTOR_USE_STRETCH=1)
 endif()
 
 # ------------------------------------------------------------------------------
@@ -752,6 +808,11 @@ if(J37_USE_SIMD_TANH)
     message(STATUS "  Shaper tanh : xsimd's batch kernel (J37_USE_SIMD_TANH=ON - a different curve, ~1e-7)")
 else()
     message(STATUS "  Shaper tanh : std::tanh (-DJ37_USE_SIMD_TANH=ON for xsimd's kernel)")
+endif()
+if(J37_CORRECTOR_USE_STRETCH)
+    message(STATUS "  Corrector   : signalsmith-stretch (J37_CORRECTOR_USE_STRETCH=ON - 25 ms of reported latency at 48 kHz)")
+else()
+    message(STATUS "  Corrector   : the granular shifter (-DJ37_CORRECTOR_USE_STRETCH=ON for the vocoder)")
 endif()
 if(J37_BUILD_TESTS)
     message(STATUS "  Dev tests   : ON  (Catch2, nanobench)")

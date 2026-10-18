@@ -9,7 +9,7 @@
 | **Framework** | JUCE `9.0.4`, pinned as a git submodule |
 | **Build** | CMake 3.22+, MSVC on Windows, Xcode on macOS |
 | **Parameters** | 109, in 23 groups, with 29 factory presets |
-| **Checked by** | ten harnesses and seven text checks that need no JUCE, on every pull request |
+| **Checked by** | thirteen harnesses and seven text checks that need no JUCE, on every pull request |
 | **Licence** | MIT for this repository's own source; a *binary* also links JUCE (AGPLv3 or commercial) and a GPLv3 module - see [Licensing, and what ships in a binary](#licensing-and-what-ships-in-a-binary) |
 
 ### Where to go next
@@ -266,14 +266,28 @@ number a thousand times and use it once.
 The two time-based stages live on their own tab because they are the same kind of
 decision.
 
-**Reverb** is a plate/room built from four Schroeder all-pass sections into two comb
-banks. The topology is the classic one because it is the one that sounds like a room
-for the least code: all-passes diffuse without colouring the spectrum, and the comb
-banks that follow set the decay. Two banks with different comb lengths are what gives
-the image its width - a single bank would collapse to mono. It sits **after** the
-machine, so it reverberates the processed signal rather than feeding back into the
-saturation; a reverb inside the nonlinearity would be pitch-shifted by the wow and
-would smear the harmonics the plugin exists to produce.
+**Reverb** is Jon Dattorro's plate, from [Effect Design Part 1](https://ccrma.stanford.edu/~dattorro/EffectDesignPart1.pdf),
+as implemented by [`el-visio/dattorro-verb`](https://github.com/el-visio/dattorro-verb)
+and wrapped by `Source/DSP/DattorroRoom.h`. The design is the one the paper names: four
+input diffusers, then a tank of two halves that cross-feed, each with a **modulated**
+all-pass (the modulation is what stops a long tail from ringing on one pitch), a damping
+low-pass in the loop, and seven taps summed into the stereo pair - which is where the
+width comes from, one network rather than two rooms. It sits **after** the machine, so it
+reverberates the processed signal rather than feeding back into the saturation; a reverb
+inside the nonlinearity would be pitch-shifted by the wow and would smear the harmonics
+the plugin exists to produce.
+
+A delay network is a set of delays counted in **samples**, so its numbers only mean a room
+at one sample rate: run at 96 kHz the same tank is half as long in time, at 44.1 kHz 9 %
+longer. The wrapper therefore runs the tank at the 48 kHz its lengths were chosen at and
+carries the session's signal across - the same conversion `RateBridge` does for a model -
+so **SIZE sets a decay in seconds**, not a number of samples. `tests/reverb` measures
+exactly that: 1.21 / 1.18 / 1.20 s at SIZE 0.5 for 44.1, 48 and 96 kHz. At 48 kHz the
+conversion is not merely skipped but absent, and at MIX 0 the stage is not quiet but
+absent: the frame comes back bit for bit.
+
+**SPACE SIZE** runs from about half a second to about five, and a larger setting is a
+darker tail as well as a longer one - a bigger room absorbs more top end per pass.
 
 **Delay** is the second playback head, and **DELAY TYPE** sets what its repeats sound
 like. The three are genuinely different machines:
@@ -664,6 +678,22 @@ exactly the ratio it is given, to keep it a tone (granular residue more than 20 
 be transparent at unity, and to keep both heads behind the write head at every ratio from
 0.5 to 2, which is the one failure a pitch measurement cannot see.
 
+**A second engine exists, and it is OFF.** `Source/DSP/CorrectorStage.h` holds the audio path
+the two halves above drive, with the granular shifter behind it by default and
+**signalsmith-stretch** - a phase vocoder, MIT, vendored in `ThirdParty/` - available through
+`-DJ37_CORRECTOR_USE_STRETCH=ON`. The vocoder's real win is the one thing a granular shifter
+cannot do: it reads the material through an analysis window, so the correction does not
+shorten the note it corrects (100 ms of note comes back 103 ms where a resampler answers
+97 ms). What it costs, measured by building the same harness both ways, is stated in
+`CMakeLists.txt` beside the option rather than here: **1216 frames of lookahead at 48 kHz**
+(25 ms, reported to the host while AUTO TUNE is engaged) and a transposition that is a few
+percent wide of the ratio it is handed at a 20 ms window - 56 cents at 0.94x - against the
+granular engine's sub-cent reading. A corrector whose engine adds its own error at the scale
+of the ±10 cents it is correcting with is a worse corrector, so the default is the shifter
+and the option is there for the work that would earn the vocoder: a longer window and its
+latency, or a phase-locking configuration. Both shapes are compiled and measured on every
+run of `tests/pitch/run.sh`, so neither can rot.
+
 ## Noise floor level
 
 TAPE TYPE sets each formula's own hiss floor as part of its character and that stays
@@ -746,8 +776,10 @@ is where the harmonics come from:
   it was previously broken twice over: the shaper summed three saturating curves that
   stacked into permanent distortion, and DRIVE had a hard floor of 0.28 that pre-boosted the
   signal 38 % even at zero. Both are fixed.
-- MIX is the one control that is a true linear crossfade, so the blend always agrees with
-  its own readout.
+- MIX is the one control that is a true crossfade, so the blend always agrees with its own
+  readout. The law lives in `Source/DSP/MixCrossfader.h` - equal power, exactly the dry
+  input at 0 % and all tape at 100 %, and `tests/mix_crossfader/` measures the endpoints,
+  the level across the travel and the transport gate both legs carry.
 - **BRIGHTNESS is a real playback high-shelf**: a fixed 8 kHz corner whose gain follows
   the control (0 dB at warm up to about +8.5 dB at bright). Earlier versions moved the
   corner frequency and folded it into a tilt stage shared with the TONE macro, which made
@@ -934,6 +966,8 @@ Two switches sit at the very end of the chain:
 - **AUTO GAIN** gates the slow programme compensator. On (default) the plugin keeps
   tracking the level the INPUT trim dialled in; off hands full level responsibility to
   the OUTPUT trim alone, which is how many engineers prefer to ride a mastering chain.
+  The rule itself - restore a loss, never boost, stop at 12 dB, hold through silence -
+  lives in `Source/DSP/AutoGainCompensator.h`, and `tests/gain/` measures it on signal.
 
 ## Output protection
 
@@ -942,7 +976,9 @@ Two stages keep the output clean, in this order:
 1. **Safety limiter.** A fast peak-follower pulls the gain back before the signal reaches
 the ceiling. It is a *gain* stage, not a shaper, so it adds no harmonics of its own - the
 only distortion in the output is the tape stage's. Normal material is limited
-transparently.
+transparently, and below the ceiling it is transparent to the bit. The stage is
+`Source/DSP/SafetyLimiter.h`, and `tests/limiter/` measures its catch, its release and
+its rate independence on generated signal.
 
 2. **Soft clipper.** Only what still overshoots (a peak faster than the limiter's attack)
 reaches this. It is a linear region up to 0.70, then blends smoothly into a saturating
@@ -1456,6 +1492,7 @@ carries none of them.
 
 | Library | Pinned at | Why it is in the build |
 | --- | --- | --- |
+| `dattorro-verb` | commit `41e976a0`, vendored in `ThirdParty/dattorro-verb/` | **Used.** Jon Dattorro's 1997 plate reverb, 400 lines of C. `Source/DSP/DattorroRoom.h` is the stage: it runs the tank at the 48 kHz its delay lengths were chosen at and carries the session's signal to and from that rate, so the tail is the same length in seconds at any session rate - which is what `tests/reverb` measures. `verb.c` is compiled as C (`CMakeLists.txt` declares the language for it) and the header is included inside `extern "C"` |
 | `RTNeural` | commit `95c3c0f9` | **Used.** The real-time neural inference engine behind the DYN tab's optional model stage. `NeuralStage` runs a 1-in/1-out model per channel. Configured with `RTNEURAL_STL ON` and no `-mavx2`, so the binary still runs on machines without AVX |
 | `nlohmann/json` | `v3.12.0` | **Used.** The JSON DOM `RTNeural::json_parser::parseJson` parses a model file into. Header-only |
 | `chowdsp_utils` | `v2.4.0` | Chowdhury DSP's toolbox. **Used:** the polynomial `exp`/`log`/dB approximations on the metering and auto-gain hot paths come from the BSD `chowdsp_math` module. **`chowdsp_dsp_utils` is the one exception to the rule above** - linked, and no line of the code calls it. It is GPLv3, so dropping it would drop that obligation from the binary; that is the licence decision in `docs/plugin-improvement-plan.md` item 1.1, and `check_linkline.py` names it with that owner rather than failing on it |
@@ -1659,7 +1696,7 @@ proposes what to do about the gap.
 ## Contributing
 
 - **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** applies to issues, pull requests and
-discussions.- **Every change is checked by [tests/README.md](tests/README.md)'s suite** - nine
+discussions.- **Every change is checked by [tests/README.md](tests/README.md)'s suite** - thirteen
   harnesses that compile the shipping code and seven text checks - plus four platform
   builds in CI. A change to the sound belongs with a harness section that pins what
 changed; a change that moves code belongs with a green

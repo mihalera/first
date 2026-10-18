@@ -27,7 +27,9 @@
 //
 // It is included at exactly this point because Source/DSP/J37Math.h below reads the
 // first of them and Source/DSP/NeuralStage.h reads the third.
+#include "DSP/AutoGainCompensator.h"
 #include "DSP/MultibandPhaseGuard.h"
+#include "DSP/SafetyLimiter.h"
 #include "DSP/OptionalLibraries.h"
 
 #include <array>
@@ -218,9 +220,10 @@ inline juce::StringArray vinylTypeNameList()
 // and the note explaining it now live together.
 #include "DSP/TapeCondition.h"
 
-// The plate reverb. Moved out of this file, prose and all: Source/DSP/ is where
-// its code and the note explaining it now live together.
-#include "DSP/PlateReverb.h"
+// The room. Dattorro's plate against el-visio/dattorro-verb, wrapped in
+// Source/DSP/: the tank runs at the rate its delay lengths were chosen at and the
+// wrapper carries the signal across. Prose and all, it lives there now.
+#include "DSP/DattorroRoom.h"
 
 // The vinyl stage: surface noise, rumble and the RIAA playback curve. Moved out
 // of this file, so the harnesses can include it directly instead of having its
@@ -274,9 +277,10 @@ inline juce::StringArray vinylTypeNameList()
 // cut out of here.
 #include "DSP/PitchTracker.h"
 
-// The realtime pitch shifter the autotune stage moves the audio with. Moved out
-// for the same reason as the tracker above.
-#include "DSP/RealtimePitchShifter.h"
+// The autotune stage's audio path: signalsmith-stretch's phase vocoder when the
+// build has it, the granular shifter when it does not. Moved out for the same
+// reason as the tracker above.
+#include "DSP/CorrectorStage.h"
 
 // The transport rig: one capstan, three keys and a power cut. Moved out of this
 // file, so tests/transport/ can include it directly instead of having its text cut
@@ -1182,6 +1186,16 @@ private:
     int lastBlockSize = 512;
     float oversamplingRateFactor = 1.0f;
 
+    // Latency reported to the host, in two parts. The oversampler's is fixed for a
+    // factor; the corrector's is zero while AUTOTUNE is off and one block of
+    // lookahead while it is on, because the phase vocoder is handed whole blocks.
+    // The two are published together by publishReportedLatency(), so the host is
+    // only ever told a number that matches what the audio path is actually doing.
+    int oversamplerLatencySamples = 0;
+    int publishedCorrectorLatencySamples = 0;
+    void publishReportedLatency();
+
+
     // The two A/B slots hold full parameter states; the live side is the one the
     // engine is currently rendering. Slot recall swaps state, never sample data.
     juce::ValueTree compareSlots[2];
@@ -1376,7 +1390,11 @@ private:
     std::array<GlueCompressor, 2> inputCompressorChannels;
     std::array<GlueCompressor, 2> outputCompressorChannels;
     std::array<StandardCompressor, 2> standardCompressors;
-    std::array<RealtimePitchShifter, 2> autoTuneShifters;
+    // The corrector's audio path. Two engines live behind it - see
+    // Source/DSP/CorrectorStage.h - and which one this build has is decided by
+    // OptionalLibraries.h, not here. It is prepared at the ENGINE's rate, since
+    // that is the rate the stage is handed frames at.
+    CorrectorStage corrector;
     // One YIN tracker per channel: the estimate a corrector needs is the pitch of
     // the note in THIS channel, and a stereo mix's two notes are not the same
     // note. The tracker is only fed while the stage is switched on - see
@@ -1398,23 +1416,19 @@ private:
     SpectrumAnalyser spectrumAnalyser;
 
     // Output safety limiter, the stage that keeps the signal below the soft clipper so it
-    // almost never has to act. `preLimiterDetector` is a fast peak follower and
-    // `limiterGain` is the smoothed gain it applies; keeping them separate gives the
-    // classic brick-wall shape - instant catch, musical release.
-    //
-    // `limiterCeiling` is the level the limiter pulls back to. It sits exactly on
-    // softClip's knee (0.70), which is the only value that makes the hand-off
-    // claim true: below the knee the clipper is bit-for-bit transparent, so anything
-    // the limiter lets through is distortion the clipper would not have caused yet.
-    float preLimiterDetector = 0.0f;
-    float limiterCeiling = 0.70f;
-    float limiterGain = 1.0f;
+    // almost never has to act. It is Source/DSP/SafetyLimiter.h - one peak detector, one
+    // smoothed gain and one ceiling - and tests/limiter measures it on generated signal.
+    // Keeping the detector and the gain separate is what gives the classic brick-wall
+    // shape: instant catch, musical release.
+    j37dsp::SafetyLimiter limiter;
 
-    // Final gain compensation. `smoothedCompensationDb` is the slow, programme-level
-    // correction applied after the last compressor. It is driven by comparing the
-    // reference power taken straight after the input trim (before the first compressor)
-    // against the power the chain actually produced. Audio-thread only, so a plain float.
-    float smoothedCompensationDb = 0.0f;
+    // Final gain compensation. The compensator holds the slow, programme-level
+    // correction applied after the last compressor, driven by comparing the
+    // reference power taken straight after the input trim (before the first
+    // compressor) against the power the chain actually produced. It lives in
+    // Source/DSP/AutoGainCompensator.h so tests/gain can measure it on signal;
+    // its state is one float, so this costs the block state nothing.
+    j37dsp::AutoGainCompensator autoGainCompensator;
 
     // K-weighted loudness, run on the plugin output and on the reference point so the
     // panel can show both ends of the chain on the same scale.
@@ -1695,22 +1709,15 @@ private:
     // -----------------------------------------------------------------------
     //  Block-rate envelope coefficients.
     //
-    //  These were rebuilt inside the per-sample loop, which cost six std::exp
-    //  per sample per channel for values that cannot change within a block -
-    //  every one of them is a function of the sample rate alone. They are built
-    //  next to the other block-rate coefficients in processTapeEngine and read
-    //  as plain floats in the loop.
-    //
-    //  The limiter's two gain-smoothing coefficients were worse than that: they
-    //  sat in a ternary, so BOTH branches were evaluated on every sample and one
-    //  was discarded.
+    //  The SAG pair was rebuilt inside the per-sample loop, which cost two std::exp
+    //  per sample per channel for values that cannot change within a block - both
+    //  are functions of the sample rate alone. They are built next to the other
+    //  block-rate coefficients in processTapeEngine and read as plain floats in the
+    //  loop. The safety limiter's four moved with the stage: its header holds them
+    //  now, and its own comment says why the catch/release asymmetry matters.
     // -----------------------------------------------------------------------
     float sagAttackCoefficient = 0.0f;
     float sagReleaseCoefficient = 0.0f;
-    float limiterDetectorAttack = 0.0f;
-    float limiterDetectorRelease = 0.0f;
-    float limiterCatchCoefficient = 0.0f;
-    float limiterRecoveryCoefficient = 0.0f;
 
     // -----------------------------------------------------------------------
     //  Preamp and distortion - the two gain stages in front of the machine.
@@ -1764,9 +1771,11 @@ private:
 
     // -----------------------------------------------------------------------
     //  Reverb - one instance, two channels inside it. It is placed after the
-    //  machine, so it is a single stereo processor rather than two mono ones.
+    //  machine, so it is a single stereo processor rather than two mono ones,
+    //  and it takes the frame rather than a channel: Dattorro's network is fed
+    //  one signal and its width comes from the taps.
     // -----------------------------------------------------------------------
-    PlateReverb reverb;
+    DattorroRoom reverb;
     SampleSmoother reverbMixSmoothed { sampleClock };
     SampleSmoother reverbSizeSmoothed { sampleClock, false, false, 0.4f };
 

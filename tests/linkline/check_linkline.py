@@ -54,6 +54,11 @@ SPELLINGS = {
     "glm": ("glm/",),
     "nlohmann_json": ("nlohmann/json.hpp",),
     "pocketfft": ("pocketfft_hdronly.h",),
+    # A compiled C library rather than a header: the caller includes its API
+    # header, which is <verb.h> because that is the file the library publishes.
+    "dattorro_verb": ("verb.h",),
+    # Header-only, and reached through the folder the checkout publishes.
+    "signalsmith-stretch": ("signalsmith-stretch/",),
 }
 
 # -----------------------------------------------------------------------------

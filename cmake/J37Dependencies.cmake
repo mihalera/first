@@ -117,6 +117,8 @@ endfunction()
 #    ThirdParty/RTNeural/            jatinchowdhury18/RTNeural @ 95c3c0f9 (STL backend)
 #    ThirdParty/soundtouch/          soundtouch/soundtouch @ 2.4.1 (include/ +
 #                                    source/SoundTouch/, compiled below)
+#    ThirdParty/dattorro-verb/       el-visio/dattorro-verb @ 41e976a0 (verb.c,
+#                                    compiled below)
 #
 #  Every licence ships inside its own folder and THIRD_PARTY_NOTICES.md carries
 #  the attribution notices. One entry is the exception to the permissive rule
@@ -851,18 +853,33 @@ endif()
 #  (verb.h / verb_structs.h / verb.c, stdint/math/string only - verified to
 #  compile alone) with an opaque-struct API, so it is compiled here into a
 #  static library like YIN. No tags upstream; pinned to the master head.
+#
+#  Vendored copy wins (ThirdParty/dattorro-verb/); CPM is the fallback, the same
+#  arrangement every other compiled dependency in this file uses. The library is
+#  C, which is why the top-level project() declares the C language - verb.c is
+#  compiled as C rather than re-spelled for C++.
+#
+#  The caller is Source/DSP/DattorroRoom.h, and the harness that renders through
+#  it is tests/reverb/run.sh: a delay network's lengths are sample counts, so a
+#  reverb is the one library in this tree whose correctness is about the RATE it
+#  runs at, and the harness measures the tail in seconds at three of them.
 # ==============================================================================
-CPMAddPackage(
-    NAME dattorro_verb
-    GITHUB_REPOSITORY el-visio/dattorro-verb
-    GIT_TAG 41e976a0228a2472156f5c010b3bfbb444e777d2
-    DOWNLOAD_ONLY YES)
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/dattorro-verb/verb.c")
+    set(J37_DATTORRO_ROOT "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/dattorro-verb")
+else()
+    CPMAddPackage(
+        NAME dattorro_verb
+        GITHUB_REPOSITORY el-visio/dattorro-verb
+        GIT_TAG 41e976a0228a2472156f5c010b3bfbb444e777d2
+        DOWNLOAD_ONLY YES)
+    set(J37_DATTORRO_ROOT "${dattorro_verb_SOURCE_DIR}")
+endif()
 
 if(NOT TARGET dattorro_verb)
     add_library(dattorro_verb STATIC EXCLUDE_FROM_ALL
-        "${dattorro_verb_SOURCE_DIR}/verb.c")
+        "${J37_DATTORRO_ROOT}/verb.c")
     target_include_directories(dattorro_verb SYSTEM PUBLIC
-        "${dattorro_verb_SOURCE_DIR}")
+        "${J37_DATTORRO_ROOT}")
 endif()
 
 # ==============================================================================

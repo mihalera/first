@@ -188,9 +188,20 @@ TU="${BUILD}/header_check.cpp"
       + input.processDistortion (x, 0.2f)
       + input.processDiBox (x, 0.1f, 0.5f, -6.0f, 0.2f, 0.01f, 0.01f, 1.0f);
 
-    PlateReverb plate;
-    plate.prepare (48000.0);
-    x = plate.process (x, 0, 0.5f, 0.2f);
+    // The room, which is the one stage in the directory that CALLS a third-party
+    // library rather than merely including a header of one: Dattorro's tank is
+    // el-visio/dattorro-verb, compiled from ThirdParty/dattorro-verb/verb.c, and
+    // this is the only place its API is compiled beside real JUCE. The call below
+    // is here so the stage's declaration and its use are compiled together, against
+    // the library's own header rather than the harness's memory of it; the LINK is
+    // tests/reverb's job, which compiles verb.c as C and is where the stage's
+    // extern "C" wrapping would fail if it ever went missing.
+    DattorroRoom room;
+    room.prepare (48000.0);
+    std::array<float, 2> roomFrame { x, x };
+    room.processFrame (roomFrame.data(), 2, 0.5f, 0.2f);
+    x = roomFrame[0] + roomFrame[1] + static_cast<float> (room.delay());
+    room.reset();
 
     ThreeBandEq tone;
     tone.prepare (48000.0f);
@@ -238,6 +249,17 @@ TU="${BUILD}/header_check.cpp"
     std::array<float, 2> guarded { x, -x };
     x = guard.process (guarded[0], guarded[1], 1.0f) ? guarded[0] + guarded[1] : 0.0f;
     guard.reset();
+
+    // The AUTO GAIN compensator, which tests/gain measures on generated signal
+    // with no JUCE at all. This is its other shape: the header compiled in the
+    // plugin's own translation unit, where J37_HAS_CHOWDSP_MATH is decided by the
+    // build rather than by the harness, and its public surface has to instantiate
+    // against whatever that decision was.
+    j37dsp::AutoGainCompensator compensator;
+    compensator.process (x * x, x * x * 0.25f, 0.001f);
+    x += compensator.getSmoothedDb() + compensator.getGain();
+    compensator.reset();
+
 
     PitchTracker tracker;
     tracker.prepare (48000.0);
@@ -303,6 +325,36 @@ TU="${BUILD}/header_check.cpp"
        + blockRate.limiterCatch + blockRate.limiterRecovery
        + blockRate.limiterCeiling + blockRate.antiPhase;
 
+    // The safety limiter, which tests/limiter drives on generated signal against
+    // the DSP harness's shim. Its own header names nothing of JUCE; what this adds
+    // is the plugin's shape of it - prepared from the block-rate coefficients above
+    // and driven with the frame's loudest channel.
+    j37dsp::SafetyLimiter::Coefficients limiterCoefficients;
+    limiterCoefficients.detectorAttack = blockRate.limiterDetectorAttack;
+    limiterCoefficients.detectorRelease = blockRate.limiterDetectorRelease;
+    limiterCoefficients.catchCoefficient = blockRate.limiterCatch;
+    limiterCoefficients.recoveryCoefficient = blockRate.limiterRecovery;
+    limiterCoefficients.ceiling = blockRate.limiterCeiling;
+
+    j37dsp::SafetyLimiter limiter;
+    limiter.prepare (limiterCoefficients);
+    x = std::abs (x) * limiter.process (std::abs (x));
+    x += limiter.getGain() + limiter.getDetector() + limiter.getCeiling();
+    limiter.reset();
+
+    // The MIX crossfade, which tests/mix_crossfader drives with no JUCE at all. What
+    // this probe adds is the one number in it that has to agree with JUCE EXACTLY:
+    // the quarter turn is juce::MathConstants<float>::halfPi to the bit, because one
+    // ULP here would move every rendered sample of every existing session by that
+    // much. The static_assert is the pin; the calls below are the surface.
+    static_assert (j37dsp::MixCrossfader::halfPi == juce::MathConstants<float>::halfPi,
+                   "the crossfade's quarter turn must be JUCE's halfPi, to the bit");
+
+    const auto mixGains = j37dsp::MixCrossfader::gainsFor (0.5f);
+    x = j37dsp::MixCrossfader::dryLeg (x, mixGains, 1.0f)
+      + j37dsp::MixCrossfader::wetLeg (x, mixGains, 1.0f)
+      + j37dsp::MixCrossfader::clampMix (x);
+
     // The machine's rate and its shaping curves, which is the second stage out of
     // processTapeEngine() and the one with the most prose per line in the engine: it
     // names juce::jlimit and juce::MathConstants, so the check that matters here is
@@ -331,9 +383,17 @@ EOF
 # checkout with ThirdParty/ pruned still passes: the probe reports 0 and the
 # header's other branch is what compiles, which is exactly what tests/spectrum's
 # second pass asserts without JUCE in the way.
+# signalsmith-stretch is on the include path AND the corrector's option is thrown,
+# because the VOCODER shape of Source/DSP/CorrectorStage.h is the one that includes a
+# third-party header and instantiates its templates - so it is the shape worth
+# compiling against real JUCE. The shifter shape is what a build without the flag
+# compiles here, and it is the other binary tests/pitch builds.
 "${CXX}" -std=c++17 -fsyntax-only -Wall -Wextra -Wno-unused-parameter \
     -I "${REPO}/Source" -I "${JUCE_MODULES}" \
     -I "${REPO}/ThirdParty/pocketfft" \
+    -I "${REPO}/ThirdParty/dattorro-verb" \
+    -I "${REPO}/ThirdParty/signalsmith-stretch/include" \
+    -DJ37_CORRECTOR_USE_STRETCH=1 \
     -DJUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1 \
     -DJUCE_MODULE_AVAILABLE_juce_core=1 \
     -DJUCE_MODULE_AVAILABLE_juce_events=1 \

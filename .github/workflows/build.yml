@@ -132,6 +132,14 @@ jobs:
       # ordering of two loops - so this harness includes both stages and measures
       # the reading and the splice on generated signal. Same shape as
       # the harnesses above: no JUCE, no host, a few seconds.
+      #
+      # It builds the file TWICE, and the second build is the point of this
+      # comment: Source/DSP/CorrectorStage.h has two engines behind one interface,
+      # and the second binary is compiled exactly as -DJ37_CORRECTOR_USE_STRETCH=ON
+      # compiles the plugin. The numbers that keep that option OFF - 1216 frames of
+      # reported lookahead, a transposition 56 cents wide at 0.94x against the
+      # granular engine's sub-cent reading - are printed by that run rather than
+      # quoted here, so the flag and its evidence cannot drift apart.
       - name: Run the pitch harness
         run: bash tests/pitch/run.sh
 
@@ -148,6 +156,45 @@ jobs:
       # Same shape as the harnesses above: no JUCE, no host, a few seconds.
       - name: Run the anti-phase guard harness
         run: bash tests/phase/run.sh
+
+      # The AUTO GAIN compensator - the one gain stage in the chain that nothing
+      # measured. It compares the finished signal against the reference taken after
+      # the input trim and pays back what the tape stage and both compressors lost,
+      # so a mix does not drift quieter with every edit. Three things it must never
+      # do are numbers on rendered audio rather than on source: boost a programme
+      # that is already loud, restore more than its 12 dB ceiling, or drive itself
+      # to that ceiling because STOP made the output silent. This drives the
+      # shipping header with generated signal and asserts each one, plus the 450 ms
+      # time constant at two rates. Same shape as the harnesses above: no JUCE, no
+      # host, a few seconds.
+      - name: Run the auto gain compensator harness
+        run: bash tests/gain/run.sh
+
+      # The output safety limiter - the stage that keeps the soft clipper idle.
+      # Nothing drove it before: the only other mention of it in tests/ was a
+      # reduced replica inside the SUBFUND harness's signal path, which can only be
+      # wrong in the same way as the code it copies. This includes the shipping
+      # header and the block-rate coefficients that feed it, and asserts what the
+      # two-stage protection design depends on: a programme below the ceiling comes
+      # back bit for bit, a step 6 dB over it is caught within a few milliseconds
+      # and held at the ceiling, the catch is fast and the release slow enough not
+      # to pump between notes, and the shape is the same duration at every engine
+      # rate. Same shape as the harnesses above: no JUCE, no host, a few seconds.
+      - name: Run the safety limiter harness
+        run: bash tests/limiter/run.sh
+
+      # The MIX crossfade - the last of the four stages item 4 named. It is the one
+      # control that decides how much of the finished tape signal leaves the plugin,
+      # and the only thing that read it was a text check in the transport harness,
+      # which can see that a gate is multiplied in but not that the crossfade is
+      # smooth or that its ends are the two signals. This includes the shipping
+      # header and renders signal through both legs: MIX 0 % is the dry input bit for
+      # bit, 100 % is the tape path, an uncorrelated pair holds its level across the
+      # travel while a correlated one is the +3 dB the equal-power law costs, and a
+      # closed transport gate empties both legs - which is what makes STOP a stop at
+      # MIX 0 % too. Same shape as the harnesses above: no JUCE, no host, seconds.
+      - name: Run the MIX crossfade harness
+        run: bash tests/mix_crossfader/run.sh
 
       # The neural stage's rate conversion. A .nam model carries the rate it was
       # TRAINED at and the engine runs at the session's rate times its oversampling
@@ -176,6 +223,26 @@ jobs:
       # first caller.
       - name: Run the spectrum harness
         run: bash tests/spectrum/run.sh
+
+      # The room. It is the one stage in this suite that CALLS a third-party
+      # library rather than reimplementing one: SPACE is Dattorro's plate, from
+      # ThirdParty/dattorro-verb, and this harness compiles that library's own
+      # verb.c as C beside the shipping header as C++ - which is also the only
+      # place the stage's extern "C" wrapping is measured at all.
+      #
+      # What it asserts is a property no source reading and no listening test can
+      # reach: Dattorro's tank is a set of delay lines whose lengths are SAMPLE
+      # COUNTS, so a tail run at 96 kHz is half as long as the same setting at 48.
+      # The wrapper runs the tank at the rate those lengths were chosen at and
+      # carries the signal across, and the measure of whether that works is the
+      # tail in SECONDS: 0.65 / 1.18 / 3.07 s for SIZE 0.1 / 0.5 / 0.9, and 1.21 /
+      # 1.18 / 1.20 s for SIZE 0.5 at 44.1, 48 and 96 kHz. Alongside it: MIX 0 is
+      # the frame back bit for bit (at every rate, not just the tank's), the two
+      # sides of the tail are decorrelated so the width is real, a mono bus gets
+      # the pair summed rather than one side, MIX 1 lands within 6 dB of the dry
+      # programme, and the tail decays away without a NaN or an infinity.
+      - name: Run the room harness
+        run: bash tests/reverb/run.sh
 
       # The factory presets cannot fail at runtime - a name list that is a row
       # short, or a parameter with no column in the table, both just quietly
@@ -528,9 +595,11 @@ jobs:
       # already paid for. The harnesses above are seconds of work each and need
       # no toolkit, no host and no submodules, so they run here a second time
       # with ASan and UBSan turned on: the shipped DSP generator, the knob
-      # strip's arithmetic, the state writer/reader, the transport rig and the
-      # pitch stage's delay line, executed as compiled out of Source/ rather
-      # than as a copy of it.
+      # strip's arithmetic, the state writer/reader, the transport rig, the
+      # pitch stage's delay line, the corrector's ring buffers in BOTH of its
+      # engines, and the room's feedback network - with the vendored verb.c
+      # instrumented too, since that is where the tank's own delay buffers live -
+      # executed as compiled out of Source/ rather than as a copy of it.
       # -fno-sanitize-recover=all makes any finding fail the step instead of
       # printing and carrying on.
       - name: Run the harnesses under ASan and UBSan
@@ -542,8 +611,12 @@ jobs:
           J37_SANITIZE=address,undefined bash tests/transport/run.sh
           J37_SANITIZE=address,undefined bash tests/pitch/run.sh
           J37_SANITIZE=address,undefined bash tests/phase/run.sh
+          J37_SANITIZE=address,undefined bash tests/gain/run.sh
+          J37_SANITIZE=address,undefined bash tests/limiter/run.sh
+          J37_SANITIZE=address,undefined bash tests/mix_crossfader/run.sh
           J37_SANITIZE=address,undefined bash tests/neural/run.sh
           J37_SANITIZE=address,undefined bash tests/spectrum/run.sh
+          J37_SANITIZE=address,undefined bash tests/reverb/run.sh
 
       - name: Configure CMake (Debug)
         run: |
