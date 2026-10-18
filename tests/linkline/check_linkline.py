@@ -54,6 +54,10 @@ SPELLINGS = {
     "glm": ("glm/",),
     "nlohmann_json": ("nlohmann/json.hpp",),
     "pocketfft": ("pocketfft_hdronly.h",),
+    # The vinyl stage's noise print: Source/DSP/NoiseDecoder.h includes the
+    # decoder by the name the library publishes, and the header that does it sits
+    # behind a probe, so this row is also the proof that the probe has a reader.
+    "dr_libs": ("dr_wav.h",),
     # A compiled C library rather than a header: the caller includes its API
     # header, which is <verb.h> because that is the file the library publishes.
     "dattorro_verb": ("verb.h",),

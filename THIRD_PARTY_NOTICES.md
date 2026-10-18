@@ -28,6 +28,7 @@ column names the file in the tree that carries the text.
 | --- | --- | --- | --- |
 | **RTNeural** - Jatin Chowdhury | `95c3c0f9` | BSD 3-Clause, Copyright (c) 2020, jatinchowdhury18 | `ThirdParty/RTNeural/LICENSE` |
 | **dattorro-verb** - El Visio (Pauli Pölkki) | `41e976a0` | MIT, Copyright (c) 2022 Pauli Pölkki | `ThirdParty/dattorro-verb/LICENSE` |
+| **dr_libs** (`dr_wav.h`) - mackron | `wav-0.14.5` | Unlicense **or** MIT-0, the user's choice | `ThirdParty/dr_libs/LICENSE` |
 | **farbot** - Fabian Renn | `d8f132c2` | MIT, Copyright (c) 2019 Fabian Renn | `ThirdParty/farbot/LICENSE` |
 | **glm** (OpenGL Mathematics) - G-Truc Creation | `1.0.3` | The Happy Bunny License **or** the MIT License, by the user's choice | `ThirdParty/glm/copying.txt` |
 | **nlohmann/json** - Niels Lohmann | `v3.12.0` | MIT, Copyright (c) 2013-2025 Niels Lohmann | `ThirdParty/nlohmann_json/LICENSE.MIT` |
@@ -70,7 +71,7 @@ binary - see
 | **q_dsp** / **cycfi_infra** | `v1.0.1` / `2024_MAY` | MIT | <https://github.com/cycfi/q> |
 | **AudioFFT** | `0893b532` | MIT | <https://github.com/HiFi-LoFi/AudioFFT> |
 | **dattorro-verb** (fallback) | `41e976a0` | MIT | <https://github.com/el-visio/dattorro-verb> |
-| **dr_libs** | `wav-0.14.5` | Unlicense **or** MIT-0, the user's choice | <https://github.com/mackron/dr_libs> |
+| **dr_libs** (fallback for the vendored copy) | `wav-0.14.5` | Unlicense **or** MIT-0, the user's choice | <https://github.com/mackron/dr_libs> |
 | **whetstone** | `83d715a0` | BSD 3-Clause | <https://github.com/unicornsasfuel/whetstone> |
 | **multiband-transient-shaper** | `7c77e23c` | MIT | <https://github.com/sevagh/multiband-transient-shaper> |
 | **transdes** | `0.0.3` | MIT | <https://github.com/ylmrx/transdes> |

@@ -692,17 +692,31 @@ endif ()
 #
 #  Nothing here is compiled: the headers self-contain their implementation
 #  behind DR_WAV_IMPLEMENTATION and friends, which exactly one translation unit
-#  may define, so the target is include-only and the implementation units are
-#  added by whoever adopts a decoder. Pinned to the wav-0.14.5 tag (upstream
-#  tags per component, wav-* and mp3-*, and wav is the newest of the two).
+#  may define, so the target is include-only and the implementation unit is
+#  Source/DSP/NoiseDecoder.cpp, which defines the macro for the whole build.
+#  Pinned to the wav-0.14.5 tag (upstream tags per component, wav-* and mp3-*,
+#  and wav is the newest of the two).
+#
+#  VENDORED at ThirdParty/dr_libs/dr_wav.h, and the vendored copy wins. Not for
+#  offline builds, which the CPM cache already covers, but because a harness
+#  has to compile the decoder BOTH WAYS - tests/dsp builds NoiseDecoder.cpp
+#  with this include path and without it, so the branch that says "this build
+#  has no WAV decoder" is compiled by something. A harness cannot wait for a
+#  configure; a checkout of the repository has to be enough. This is the same
+#  reason pocketfft, dattorro-verb, RTNeural and glm are vendored, and the CPM
+#  fetch stays as the fallback that keeps the file honest about its own source.
 # ==============================================================================
-CPMAddPackage(
-    NAME dr_libs
-    GITHUB_REPOSITORY mackron/dr_libs
-    GIT_TAG wav-0.14.5
-    DOWNLOAD_ONLY YES)
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/dr_libs/dr_wav.h")
+    j37_declare_header_only_library(dr_libs "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/dr_libs")
+else()
+    CPMAddPackage(
+        NAME dr_libs
+        GITHUB_REPOSITORY mackron/dr_libs
+        GIT_TAG wav-0.14.5
+        DOWNLOAD_ONLY YES)
 
-j37_declare_header_only_library(dr_libs "${dr_libs_SOURCE_DIR}")
+    j37_declare_header_only_library(dr_libs "${dr_libs_SOURCE_DIR}")
+endif()
 
 # ==============================================================================
 #  libsndfile - the C library for reading and writing sampled audio.

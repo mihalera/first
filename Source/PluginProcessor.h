@@ -229,6 +229,12 @@ inline juce::StringArray vinylTypeNameList()
 // text cut out of here.
 #include "DSP/VinylStage.h"
 
+// The vinyl stage's user noise print: the WAV decoder (Source/DSP/NoiseDecoder.*)
+// and the background loader that feeds the two stages above it. Moved out of this
+// file for the same reason, and it is the header that names the ONE JUCE module
+// it needs (juce_core) rather than inheriting it: everything else it uses is std.
+#include "DSP/NoiseLoader.h"
+
 // The equaliser: three tone bands, a high-pass and a low-pass. Moved out of this
 // file, prose and all: Source/DSP/ is where its code and the note explaining it
 // now live together.
@@ -783,6 +789,35 @@ public:
 
     /** Releases the loaded impulse response. */
     void clearIr();
+
+    /** Loads a WAV file as the VINYL stage's surface noise - a noise print, in
+        the sense a record collector means it: the sound of a real surface,
+        replacing the one the stage synthesises. Returns immediately and decodes
+        on a background thread; ask isNoiseLoading() for progress and
+        getNoiseError() for why a file produced nothing. Returns false only when
+        the file does not exist, which is the one failure that is known
+        synchronously. */
+    bool loadNoiseFile (const juce::File& noiseFile);
+
+    /** Goes back to the synthesised surface. */
+    void clearNoiseFile();
+
+    /** True while a print is being decoded. */
+    bool isNoiseLoading() const noexcept { return noiseLoader.isLoading(); }
+
+    /** True while a decoded print is playing. */
+    bool hasNoisePrint() const noexcept { return noiseLoader.active() != nullptr; }
+
+    /** The loaded file's name, or an empty string. */
+    juce::String getNoiseFileName() const { return noiseLoader.loadedFileName(); }
+
+    /** Why the last noise load produced no print, or an empty string. */
+    juce::String getNoiseError() const { return noiseLoader.lastError(); }
+
+    /** Frames in the loaded print, and the rate of the file it came from - both
+        zero when nothing is loaded. The panel's readout of what is playing. */
+    std::size_t getNoisePrintFrames() const noexcept { return noiseLoader.loadedFrames(); }
+    double getNoisePrintSourceRate() const noexcept { return noiseLoader.loadedSourceRate(); }
 
     /** True while an impulse response is loaded. */
     bool hasIr() const noexcept { return irStage.hasIr; }
@@ -1785,6 +1820,14 @@ private:
     // -----------------------------------------------------------------------
     VinylStage vinylL;
     VinylStage vinylR;
+
+    // -----------------------------------------------------------------------
+    //  The user's noise print: the WAV file behind Source/DSP/NoiseLoader.h,
+    //  decoded on its own thread and read by the two stages above through one
+    //  atomic pointer per block. Nothing here is read or written on the audio
+    //  thread except that pointer load.
+    // -----------------------------------------------------------------------
+    j37dsp::NoiseLoader noiseLoader;
 
     // -----------------------------------------------------------------------
     //  The two equalisers.

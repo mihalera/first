@@ -51,7 +51,7 @@ section after the tables).
 | `mNAMEngine->process()` in `processBlock` | **not as written** | model inference on the audio thread is only safe if it allocates and locks nothing; the current stage runs a fixed graph with per-channel state, and the async machinery here is the IR loader's |
 | `juce::dsp::Convolution` IR loader | **done** | `Source/DSP/IrStage.h`: one Convolution per channel, `loadImpulseResponse` for the wait-free background decode, a stereo/mono rule, and a "loading" flag the panel reads |
 | RTNeural micro-models for valve/cabinet | **done (as the neural stage)** | `Source/DSP/NeuralStage.h` + `tests/neural`, which compiles the guarded half with RTNeural stubbed |
-| dr_libs noise loader through a lock-free queue | **open** | `dr_libs` is fetched but not linked (it has no caller); the telemetry already uses `readerwriterqueue`, and the IR loader is the pattern to copy for a user noise file |
+| dr_libs noise loader through a lock-free queue | **done, without the queue** | `dr_libs` is vendored (`ThirdParty/dr_libs`), linked and called: `Source/DSP/NoiseDecoder.*` decodes a WAV and `Source/DSP/NoiseLoader.h` hands the loop to the vinyl stage on its own thread, measured by `tests/dsp`'s two noise binaries. There is no queue, and the header says why: what crosses the thread boundary is ONE pointer swapped atomically, so a queue would be a second mechanism for a hand-off that is already a single word - `readerwriterqueue` keeps its one caller (the telemetry), and a retired print is kept alive rather than freed, which is the part a queue would not have solved |
 
 ## Stage 5 - 3D, model import, anti-phase
 
@@ -110,7 +110,8 @@ prints the reading so the trade stays visible.
 
 1. **The link line and the libraries waiting for a caller** - see
    [library-integration-plan.md](library-integration-plan.md): WP1 drops the GPLv3 module
-   nothing calls, WP2 gives `dr_libs` a caller as the vinyl stage's user noise print.
+   nothing calls; WP2 gave `dr_libs` a caller as the vinyl stage's user noise print,
+   which is the shape that argument wanted - a library adopted by USING it.
    The multiband anti-phase guard this list used to open with is done (Stage 5).
 2. **Formant preservation and the block-based corrector** - the restructure is done
    (`Source/DSP/CorrectorStage.h`, measured by `tests/pitch`), so what is left is the

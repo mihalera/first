@@ -388,10 +388,16 @@ EOF
 # third-party header and instantiates its templates - so it is the shape worth
 # compiling against real JUCE. The shifter shape is what a build without the flag
 # compiles here, and it is the other binary tests/pitch builds.
+# ThirdParty/dr_libs is on the include path for the same reason, and it is the only
+# one of these four that changes COMPILED CODE rather than which branch is taken:
+# Source/DSP/NoiseDecoder.h declares its decode inline, so with dr_wav present this
+# script instantiates it against the library - a shape tests/dsp's noise_library
+# binary checks arithmetically and no JUCE build compiles otherwise.
 "${CXX}" -std=c++17 -fsyntax-only -Wall -Wextra -Wno-unused-parameter \
     -I "${REPO}/Source" -I "${JUCE_MODULES}" \
     -I "${REPO}/ThirdParty/pocketfft" \
     -I "${REPO}/ThirdParty/dattorro-verb" \
+    -I "${REPO}/ThirdParty/dr_libs" \
     -I "${REPO}/ThirdParty/signalsmith-stretch/include" \
     -DJ37_CORRECTOR_USE_STRETCH=1 \
     -DJUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1 \

@@ -652,6 +652,12 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     irStage.prepare ({ sampleRate,
                        static_cast<juce::uint32> (juce::jmax (1, samplesPerBlock)),
                        2 });
+
+    // The noise print, if one is loaded, is converted to this rate HERE - a
+    // prepare may allocate, an audio callback may not - and the print stays in
+    // its decoded form so a later rate switch costs arithmetic rather than
+    // another read of the file.
+    noiseLoader.prepare (sampleRate);
     postFxScratch.setSize (2, juce::jmax (1, samplesPerBlock * 8), false, true, true);
     postFxScratch.clear();
 
@@ -1316,6 +1322,26 @@ bool FirstAudioProcessor::loadIrFile (const juce::File& irFile)
 void FirstAudioProcessor::clearIr()
 {
     irStage.clear();
+}
+
+bool FirstAudioProcessor::loadNoiseFile (const juce::File& noiseFile)
+{
+    if (! noiseFile.existsAsFile())
+        return false;
+
+    // Everything else about this load happens on the loader's own thread: the
+    // read, the decode and the rate conversion all allocate, and none of them may
+    // happen anywhere near the audio callback. The audio thread sees the result
+    // as one pointer swap, or never sees it at all if the file turns out not to
+    // be a WAV this build can read - in which case getNoiseError() says why and
+    // the previous print, if there was one, is still playing.
+    noiseLoader.requestLoad (noiseFile);
+    return true;
+}
+
+void FirstAudioProcessor::clearNoiseFile()
+{
+    noiseLoader.clear();
 }
 
 void FirstAudioProcessor::clearNeuralModel()

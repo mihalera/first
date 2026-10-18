@@ -8,7 +8,10 @@
 // =============================================================================
 #pragma once
 
+#include "NoiseDecoder.h"
+
 #include <cmath>
+#include <cstddef>
 #include <cstdint>
 
 //==============================================================================
@@ -204,8 +207,45 @@ struct VinylStage
     float vinylWowPhaseR = 0.0f;
     float vinylWowIncrement = 0.02f;
 
+    // ------------------------------------------------------------------
+    //  The USER'S NOISE PRINT, if one is loaded.
+    //
+    //  Everything above synthesises a surface. A print is a RECORDING of one -
+    //  a WAV file the user owns, decoded off the audio thread by
+    //  Source/DSP/NoiseLoader.h and handed to this stage as a loop. When there
+    //  is one it REPLACES the synthesised groove hiss rather than adding to it:
+    //  two surfaces at once is neither the file nor the model, and the whole
+    //  point of loading a print is to hear that surface.
+    //
+    //  What it does NOT replace: CRACKLE, DUST, CLICKS, SCRATCH, WARP and
+    //  ELECTRICAL are the deck and the damage, and they stay the controls they
+    //  were. So a print and the damage model compose - a shellac print under a
+    //  handful of clicks is a specific, reachable sound.
+    //
+    //  The stage holds a POINTER and a POSITION. It does not own the samples and
+    //  never allocates: the loader keeps every print it has ever published alive
+    //  until the audio thread is stopped, which is why reading through this
+    //  pointer is safe even while the loader is swapping in the next one.
+    // ------------------------------------------------------------------
+    const j37dsp::NoisePrint* noisePrint = nullptr;
+    std::size_t noisePrintIndex = 0;
+
+    /** The print's contribution for one channel, advanced once per frame per
+        stage (each channel owns its own index, and one channel's stage is called
+        exactly once per frame). Zero when no print is loaded, so the caller does
+        not branch on it. */
+    float nextPrintSample (int channel, float printGain) noexcept
+    {
+        if (noisePrint == nullptr || noisePrint->empty() || printGain == 0.0f)
+            return 0.0f;
+
+        const auto value = noisePrint->sample (channel, noisePrintIndex);
+        return value * printGain;
+    }
+
     void reset() noexcept
     {
+        noisePrintIndex = 0;
         rumbleL = rumbleR = 0.0f;
         warmthLowL = warmthLowR = 0.0f;
         crackleEnvelopeL = crackleEnvelopeR = 0.0f;
@@ -230,7 +270,8 @@ struct VinylStage
     float process (float x, int channel,
                    float crackleControl, float rumbleControl, float warmth,
                    float rumbleCoefficient, float warmthCoefficient,
-                   std::uint32_t& random) noexcept
+                   std::uint32_t& random,
+                   float printGain = 0.0f) noexcept
     {
         // -- CRACKLE: sparse impulses, not continuous noise ---------------------
         // A tick happens when the stylus hits something, so it is an impulse with a
@@ -271,8 +312,19 @@ struct VinylStage
 
         // Groove surface hiss - continuous, unlike the ticks. A shellac 78 has
         // real surface between every transient; a half-speed master almost none.
+        //
+        // A loaded PRINT takes this slot: it is the same thing - the continuous
+        // texture of a surface - as a recording instead of a generator, and the
+        // synthesised hiss is suppressed with it so the two cannot double up.
+        // The position advances even when the gain is zero, so a print that comes
+        // back does not resume at a seam the user has already heard.
         float groove = 0.0f;
-        if (surfaceNoise > 0.0f)
+        if (noisePrint != nullptr && ! noisePrint->empty())
+        {
+            groove = nextPrintSample (channel, printGain);
+            ++noisePrintIndex;
+        }
+        else if (surfaceNoise > 0.0f)
         {
             random = random * 1664525u + 1013904223u;
             const float hiss = static_cast<float> ((random >> 8) & 0x00ffffffu)
