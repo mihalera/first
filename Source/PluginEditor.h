@@ -473,6 +473,7 @@ private:
         bool delayTab = false;
         bool characterTab = false;
         bool frontEndTab = false;
+        bool vinylTab = false;
         bool shapersTab = false;
         bool inEqTab = false;
         bool outEqTab = false;
@@ -828,6 +829,23 @@ private:
     void refreshIrStatus();
     juce::String lastShownIrStatus;
     juce::String irStatusReason;      // see neuralStatusReason above
+
+    // The VINYL stage's noise-print picker, on the page whose knob is VINYL MIX: a
+    // WAV recording of a real surface, which REPLACES the surface the stage
+    // synthesises (see Source/DSP/VinylStage.h and Source/DSP/NoiseLoader.h). A
+    // print is DATA like a model or an IR - no parameter, no attachment, nothing
+    // a session or a preset carries - and its decode happens on the loader's own
+    // thread, so even the load is asynchronous twice over: the chooser returns
+    // before the file is read, and the processor returns from loadNoiseFile()
+    // before it is decoded. The readout therefore polls for all three states,
+    // including the one the other two pickers do not have - a decode in flight.
+    juce::TextButton loadNoiseButton { "LOAD PRINT" };
+    juce::TextButton clearNoiseButton { "CLEAR PRINT" };
+    juce::Label noiseStatusLabel;
+    void loadNoisePrintFromFile();
+    void refreshNoiseStatus();
+    juce::String lastShownNoiseStatus;
+    juce::String noiseStatusReason;   // see neuralStatusReason above
 
     // Opens a file-fed stage's MIX to full after a load that succeeded, but only
     // while the blend is still fully closed; see the note on the definition.

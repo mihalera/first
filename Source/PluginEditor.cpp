@@ -623,6 +623,42 @@ void FirstAudioProcessorEditor::loadIrFromFile()
     });
 }
 
+void FirstAudioProcessorEditor::loadNoisePrintFromFile()
+{
+    // Same asynchronous-chooser shape as the two pickers above. The filter names
+    // the one format this build DECODES - dr_wav is a WAV decoder, not a general
+    // audio-file reader (see Source/DSP/NoiseDecoder.h) - and "*" keeps anything
+    // else selectable, so a user who picks an AIFF is told by the readout what
+    // it was rather than left wondering why the file is not in the dialogue at
+    // all.
+    auto chooser = std::make_shared<juce::FileChooser> (
+        "Load a surface-noise print",
+        rememberedFolder ("lastNoiseFolder"),
+        "*.wav;*");
+
+    const auto browserFlags = juce::FileBrowserComponent::openMode
+                            | juce::FileBrowserComponent::canSelectFiles;
+
+    chooser->launchAsync (browserFlags, [this, chooser] (const juce::FileChooser& fc)
+    {
+        const auto file = fc.getResult();
+        if (! file.existsAsFile())
+            return;
+
+        // Whatever this returns, the answer is NOT known here: a print is read
+        // and decoded on the loader's own thread, so the processor only refuses
+        // a file that is not there. Everything else - bad WAV, no frames, NaN,
+        // over the minute cap - arrives through getNoiseError() on a later
+        // tick, which is exactly what the readout is for.
+        audioProcessor.loadNoiseFile (file);
+
+        noiseStatusReason = {};
+        rememberFolder ("lastNoiseFolder", file);
+        lastShownNoiseStatus = {};    // force the next refresh to repaint
+        refreshNoiseStatus();
+    });
+}
+
 
 
 //==============================================================================
@@ -1742,6 +1778,7 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     const auto delayTab = index_of_tab_named ("DELAY") == currentTab;
     const auto characterTab = index_of_tab_named ("CHARACTER") == currentTab;
     const auto frontEndTab = index_of_tab_named ("FRONT END") == currentTab;
+    const auto vinylTab = index_of_tab_named ("VINYL") == currentTab;
     const auto shapersTab = index_of_tab_named ("MODELS") == currentTab;
     const auto inEqTab = index_of_tab_named ("IN EQ") == currentTab;
     const auto outEqTab = index_of_tab_named ("OUT EQ") == currentTab;
@@ -1781,11 +1818,15 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     // reason the page is worth its own strip. FRONT END counts because its DI PAD
     // is a combo - a member - and can no longer ride the knob grid: a page whose
     // knobs fill their row has no free cell to put it in (it used to take the
-    // fourth cell of a second row that had three knobs in it). DYN does NOT: its
+    // fourth cell of a second row that had three knobs in it). VINYL counts for
+    // the same reason the two picker pages do: the surface the record plays is a
+    // FILE the user loads, and the band under VINYL MIX is where that loader now
+    // lives - the page carried nothing but three knobs before, so a print had no
+    // way to be reached from the page whose stage plays it. DYN does NOT: its
     // knobs moved to CHARACTER and nothing ever rode the band it reserved, so the
     // page now gives that 50 px to its own three knobs instead.
     const auto memberRows = (settingsTab || delayTab || characterTab
-                             || frontEndTab || shapersTab || inEqTab || outEqTab
+                             || frontEndTab || vinylTab || shapersTab || inEqTab || outEqTab
                              || machineTab || mixTab || autotuneTab) ? 1 : 0;
 
     // The member band is a FIXED strip - a caption band plus a control band -
@@ -2028,6 +2069,7 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     geometry.delayTab = delayTab;
     geometry.characterTab = characterTab;
     geometry.frontEndTab = frontEndTab;
+    geometry.vinylTab = vinylTab;
     geometry.shapersTab = shapersTab;
     geometry.inEqTab = inEqTab;
     geometry.outEqTab = outEqTab;
@@ -2109,6 +2151,15 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     loadIrButton.setVisible (geometry.shapersTab);
     clearIrButton.setVisible (geometry.shapersTab);
     irStatusLabel.setVisible (geometry.shapersTab);
+
+    // The noise-print picker follows VINYL, the page whose VINYL MIX knob its
+    // print feeds: a file-fed stage keeps its loader on the page its own knob
+    // lives on, exactly like the pair above. It used to be reachable only
+    // through the processor's public API - see the WP2 note in
+    // docs/library-integration-plan.md - because this band did not exist.
+    loadNoiseButton.setVisible (geometry.vinylTab);
+    clearNoiseButton.setVisible (geometry.vinylTab);
+    noiseStatusLabel.setVisible (geometry.vinylTab);
 
     // The three vinyl selectors stayed on CHARACTER: they re-voice the whole
     // vinyl stage, so they live with the machine's other voicing rather than
@@ -2285,6 +2336,26 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
                                 buttonY, geometry.cellWidth - 24, buttonH);
         clearIrButton.setBounds (geometry.grid.getX() + 2 * geometry.cellWidth + 12,
                                  buttonY, geometry.cellWidth - 24, buttonH);
+    }
+    else if (geometry.vinylTab)
+    {
+        // VINYL: the record-playing stage's three knobs fill the row above, and
+        // the band under them carries the surface those knobs act ON - the
+        // user's own noise print. The readout is the band's caption line across
+        // TWO cells, centred, because a file name is the one string on this
+        // page whose length is not known in advance, and the two buttons share
+        // the control line under it: LOAD PRINT under the readout's left half,
+        // CLEAR PRINT under its right. Centred rather than pinned left because
+        // the three knobs above span the whole row - a pair at the left edge
+        // would read as belonging to the first knob, which is VINYL MIX.
+        const auto buttonY = geometry.memberRowY + 20;
+        const auto buttonH = juce::jmin (30, geometry.grid.getBottom() - geometry.memberRowY - 22);
+        const auto leftEdge = geometry.grid.getX() + geometry.cellWidth;
+        loadNoiseButton.setBounds (leftEdge + 12, buttonY, geometry.cellWidth - 24, buttonH);
+        clearNoiseButton.setBounds (leftEdge + geometry.cellWidth + 12, buttonY,
+                                    geometry.cellWidth - 24, buttonH);
+        noiseStatusLabel.setBounds (leftEdge + 5, geometry.memberRowY - 1,
+                                    2 * geometry.cellWidth - 10, 17);
     }
     else if (geometry.inEqTab || geometry.outEqTab)
     {
@@ -2579,6 +2650,9 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "loadIr",         &loadIrButton },
             { "clearIr",        &clearIrButton },
             { "irStatus",       &irStatusLabel },
+            { "loadNoise",      &loadNoiseButton },
+            { "clearNoise",     &clearNoiseButton },
+            { "noiseStatus",    &noiseStatusLabel },
             { "inEqOrderLbl",   &inputEqOrderLabel },
             { "inEqOrderBox",   &inputEqOrderBox },
             { "outEqOrderLbl",  &outputEqOrderLabel },

@@ -55,6 +55,10 @@
 "CLEAR IR - releases the loaded impulse response, returning the IR stage to its transparent pass-through." = "CLEAR IR — звільняє завантажену імпульсну характеристику, повертаючи IR-стадію до прозорого проходження сигналу.";
 "IR MIX" = "IR MIX";
 
+// -- VINYL page: the surface noise print and its picker ------------------------
+"LOAD PRINT - reads a WAV recording of a record's surface - a noise print, in the sense a record collector means it - and plays it as the VINYL stage's surface. A loaded print REPLACES the surface the stage synthesises, and the FAULTS - CRACKLE, DUST, CLICKS, SCRATCH, WARP and ELECTRICAL - keep working over it, because those are the deck and the damage rather than the surface. The file's own level is kept, so NOISE and VINYL MIX are what set how much of it is in the output; the decode runs on a background thread and the audio thread never waits for it. The picker reopens in the folder the last print came from, and a print is not saved with the session." = "LOAD PRINT — читає WAV-запис поверхні платівки — шумовий зразок, у тому сенсі, в якому його вживає колекціонер платівок — і відтворює його як поверхню стадії VINYL. Завантажений зразок ЗАМІНЮЄ поверхню, яку стадія синтезує, а ДЕФЕКТИ — CRACKLE, DUST, CLICKS, SCRATCH, WARP і ELECTRICAL — продовжують працювати поверх нього, бо це дека й пошкодження, а не сама поверхня. Рівень запису зберігається як є, тож саме NOISE і VINYL MIX задають, скільки його потрапляє на вихід; декодування виконується у фоновому потоці, і аудіопотік ніколи його не чекає. Вибір файлу відкривається у теці, з якої прийшов останній зразок, а сам зразок не зберігається разом із сесією.";
+"CLEAR PRINT - releases the loaded print, and the VINYL stage goes back to synthesising its own surface." = "CLEAR PRINT — звільняє завантажений зразок, і стадія VINYL знову синтезує власну поверхню.";
+
 " Hold Shift for fine control, mouse wheel for small steps, double-click to reset." = " Утримуйте Shift для точного керування, коліще миші — для невеликих кроків, подвійний клік — для скидання.";
 
 // -----------------------------------------------------------------------------
@@ -194,6 +198,9 @@
 "INVALID MODEL" = "ХИБНА МОДЕЛЬ";
 "NO IR" = "НЕМАЄ IR";
 "INVALID IR" = "ХИБНА IR";
+"NO PRINT" = "НЕМАЄ ЗРАЗКА";
+"INVALID PRINT" = "ХИБНИЙ ЗРАЗОК";
+"LOADING PRINT" = "ЗАВАНТАЖЕННЯ ЗРАЗКА";
 "MACHINE" = "MACHINE";
 "DRIVE" = "DRIVE";
 "CHARACTER" = "CHARACTER";
