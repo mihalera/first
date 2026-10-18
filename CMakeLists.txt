@@ -609,7 +609,6 @@ target_link_libraries(first
         juce::juce_gui_extra
         juce::juce_opengl
         juce::juce_box2d
-        chowdsp::chowdsp_dsp_utils
         chowdsp::chowdsp_math
         chowdsp::chowdsp_simd
         melatonin_inspector

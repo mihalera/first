@@ -1,8 +1,8 @@
 // =============================================================================
 //  Which optional libraries this build actually has.
 //
-//  Everything the engine uses that may be absent - chowdsp's math and DSP utils,
-//  RTNeural, xsimd, readerwriterqueue, pocketfft and signalsmith-stretch - is
+//  Everything the engine uses that may be absent - chowdsp's math, RTNeural,
+//  xsimd, readerwriterqueue, pocketfft and signalsmith-stretch - is
 //  probed for HERE, once, and reported as a J37_HAS_* macro. Every one of those macros is read by a
 //  stage, which is now checked: tests/linkline/check_linkline.py fails when a
 //  probe has no reader, and when the link line carries a library no include
@@ -32,24 +32,20 @@
 // conditional so the DSP regression harness - which compiles these headers
 // against a shim, without chowdsp on its include path - is never asked for it.
 //
-// chowdsp_dsp_utils is pulled in alongside it. It is a full JUCE module rather
-// than a header, so it needs the plugin target's include path, which the harness
-// does not provide; the same guard covers both. What the engine uses from it is
-// named where it is used.
+// chowdsp_math includes chowdsp_simd itself, so the simd module arrives with it
+// and is linked for that reason rather than for a call of its own.
+//
+// chowdsp_dsp_utils used to be probed here too, and the probe was the defect:
+// nothing under Source/ included it, so the macro guarded a branch that did not
+// exist and the module sat on the link line carrying GPLv3 terms for no caller.
+// Both are gone - the module off the link line, the probe out of this file - and
+// tests/linkline/check_linkline.py now fails on either coming back.
 #if ! defined (J37_DSP_HARNESS) && ! defined (J37_HAS_CHOWDSP_MATH) \
     && __has_include (<chowdsp_math/chowdsp_math.h>)
  #include <chowdsp_math/chowdsp_math.h>
  #define J37_HAS_CHOWDSP_MATH 1
 #elif ! defined (J37_HAS_CHOWDSP_MATH)
  #define J37_HAS_CHOWDSP_MATH 0
-#endif
-
-#if ! defined (J37_DSP_HARNESS) && ! defined (J37_HAS_CHOWDSP_DSP) \
-    && __has_include (<chowdsp_dsp_utils/chowdsp_dsp_utils.h>)
- #include <chowdsp_dsp_utils/chowdsp_dsp_utils.h>
- #define J37_HAS_CHOWDSP_DSP 1
-#elif ! defined (J37_HAS_CHOWDSP_DSP)
- #define J37_HAS_CHOWDSP_DSP 0
 #endif
 
 // RTNeural (fetched by CPM in CMakeLists.txt). The real-time neural inference
