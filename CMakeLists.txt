@@ -20,7 +20,7 @@
 #
 # ==============================================================================
 
-cmake_minimum_required(VERSION 4.0)
+cmake_minimum_required(VERSION 3.22...4.0)
 
 # ------------------------------------------------------------------------------
 #  macOS deployment target.
@@ -750,7 +750,7 @@ elseif(J37_ENABLE_IPP)
 else()
     message(STATUS "                Intel IPP disabled by J37_ENABLE_IPP=OFF")
 endif()
-if(J37_USE_SIMD_TANH || J37_HAS_XSIMD)
+if(J37_USE_SIMD_TANH OR J37_HAS_XSIMD)
     message(STATUS "  Shaper tanh : xsimd's batch kernel (default when xsimd available - ~1.5x faster, ~1e-7 curve difference)")
 else()
     message(STATUS "  Shaper tanh : std::tanh (xsimd not configured in this build)")
