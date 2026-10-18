@@ -1479,10 +1479,10 @@ jobs:
           # Bootstrap the Gradle wrapper so a fresh runner without a checked-in
           # wrapper can execute assembleRelease.
           if [ ! -f gradlew ]; then
-            wget -q https://services.gradle.org/distributions/gradle-8.7-bin.zip
-            unzip -q gradle-8.7-bin.zip
-            ./gradle-8.7/bin/gradle wrapper --gradle-version 8.7
-            rm -rf gradle-8.7 gradle-8.7-bin.zip
+            wget -q https://services.gradle.org/distributions/gradle-8.14.6-bin.zip
+            unzip -q gradle-8.14.6-bin.zip
+            ./gradle-8.14.6/bin/gradle wrapper --gradle-version 8.14.6
+            rm -rf gradle-8.14.6 gradle-8.14.6-bin.zip
           fi
 
           ./gradlew :app:assembleRelease --no-daemon
