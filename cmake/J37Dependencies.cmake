@@ -511,7 +511,7 @@ endif()
 CPMAddPackage(
     NAME imgui
     GITHUB_REPOSITORY ocornut/imgui
-    GIT_TAG v1.91.5
+    GIT_TAG v1.93.0
     DOWNLOAD_ONLY YES)
 
 if(NOT TARGET imgui)
