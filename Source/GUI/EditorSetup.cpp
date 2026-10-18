@@ -1410,6 +1410,57 @@ void FirstAudioProcessorEditor::setUpModelButtons()
     styleLabel (irStatusLabel, "NO IR", 8.5f, paletteFor (false).secondary,
                 false, juce::Justification::centred);
     addAndMakeVisible (irStatusLabel);
+
+    // ---------------------------------------------------------------
+    //  The VINYL page's noise-print picker, in the band under its three knobs.
+    //  A print is the record's own SURFACE as a file - a WAV recording of a real
+    //  pressing, which replaces the surface the stage synthesises - so the third
+    //  file-fed picker is built here, beside the other two, and styled, tipped
+    //  and wired the same way: a raise-face pill rather than a parameter, and a
+    //  status readout that reports what the stage actually holds.
+    // ---------------------------------------------------------------
+    loadNoiseButton.setLookAndFeel (&inlineLookAndFeel);
+    clearNoiseButton.setLookAndFeel (&inlineLookAndFeel);
+    loadNoiseButton.setColour (juce::TextButton::buttonColourId, paletteFor (false).raised);
+    loadNoiseButton.setColour (juce::TextButton::textColourOffId, paletteFor (false).text);
+    loadNoiseButton.setColour (juce::TextButton::buttonOnColourId, paletteFor (false).raised.darker (0.15f));
+    clearNoiseButton.setColour (juce::TextButton::buttonColourId, paletteFor (false).raised);
+    clearNoiseButton.setColour (juce::TextButton::textColourOffId, paletteFor (false).text);
+    clearNoiseButton.setColour (juce::TextButton::buttonOnColourId, paletteFor (false).raised.darker (0.15f));
+    setTip (loadNoiseButton, "LOAD PRINT - reads a WAV recording of a record's "
+                                "surface - a noise print, in the sense a record "
+                                "collector means it - and plays it as the VINYL "
+                                "stage's surface. A loaded print REPLACES the "
+                                "surface the stage synthesises, and the FAULTS "
+                                "- CRACKLE, DUST, CLICKS, SCRATCH, WARP and "
+                                "ELECTRICAL - keep working over it, because those "
+                                "are the deck and the damage rather than the "
+                                "surface. The file's own level is kept, so NOISE "
+                                "and VINYL MIX are what set how much of it is in "
+                                "the output; the decode runs on a background "
+                                "thread and the audio thread never waits for it. "
+                                "The picker reopens in the folder the last print "
+                                "came from, and a print is not saved with the "
+                                "session.");
+    setTip (clearNoiseButton, "CLEAR PRINT - releases the loaded print, and the "
+                                 "VINYL stage goes back to synthesising its own "
+                                 "surface.");
+    loadNoiseButton.onClick = [this] { loadNoisePrintFromFile(); };
+    clearNoiseButton.onClick = [this]
+    {
+        audioProcessor.clearNoiseFile();
+        // A refusal belongs to the file that was refused, so releasing the stage
+        // releases the reason with it - the same rule the other two pickers
+        // follow, and it is what makes "NO PRINT" the truth again afterwards.
+        noiseStatusReason = {};
+        refreshNoiseStatus();
+    };
+    addAndMakeVisible (loadNoiseButton);
+    addAndMakeVisible (clearNoiseButton);
+
+    styleLabel (noiseStatusLabel, "NO PRINT", 8.5f, paletteFor (false).secondary,
+                false, juce::Justification::centred);
+    addAndMakeVisible (noiseStatusLabel);
 }
 
 void FirstAudioProcessorEditor::setUpInlineLists()

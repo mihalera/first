@@ -146,6 +146,11 @@ void FirstAudioProcessorEditor::applyTheme()
     // covers the theme switch, which repaints without a status change.
     irStatusLabel.setColour (juce::Label::textColourId,
                              audioProcessor.hasIr() ? palette.accent : palette.secondary);
+    // ... and the noise-print readout is the third of the same shape: it re-inks
+    // itself on every change in refreshNoiseStatus(), and this is the theme
+    // switch, which repaints without one.
+    noiseStatusLabel.setColour (juce::Label::textColourId,
+                                audioProcessor.hasNoisePrint() ? palette.accent : palette.secondary);
 
     // The tab buttons carry the theme, and styleTabButtons() reads currentTab as well,
     // so the selected tab keeps its accent highlight across a theme switch.
@@ -264,6 +269,8 @@ void FirstAudioProcessorEditor::applyTheme()
     stylePickerButton (clearNeuralButton);
     stylePickerButton (loadIrButton);
     stylePickerButton (clearIrButton);
+    stylePickerButton (loadNoiseButton);
+    stylePickerButton (clearNoiseButton);
 
     styleCombo (oversamplingBox);
     styleCombo (instrumentBox);

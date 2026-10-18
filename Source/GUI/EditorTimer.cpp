@@ -90,6 +90,37 @@ void FirstAudioProcessorEditor::refreshIrStatus()
                                  : paletteFor (false).secondary);
 }
 
+void FirstAudioProcessorEditor::refreshNoiseStatus()
+{
+    // The VINYL page's readout, in FOUR states rather than the two the other
+    // pickers have - because this stage is the only one whose load is not
+    // finished when the picker's callback returns. The decode runs on the
+    // loader's own thread (Source/DSP/NoiseLoader.h), so between the click and
+    // the sound there is a real interval during which "NO PRINT" would be a lie
+    // about a file that is being read: LOADING says which of the two is true.
+    //
+    // Order matters and is: the reason a load was REFUSED outranks everything
+    // (the previous print may well still be playing), then the busy state, then
+    // the loaded file's own name, then the synthesised surface.
+    const auto status = noiseStatusReason.isNotEmpty()
+                            ? xlat ("INVALID PRINT") + " (" + noiseStatusReason + ")"
+                            : audioProcessor.isNoiseLoading()
+                                  ? xlat ("LOADING PRINT")
+                                  : audioProcessor.hasNoisePrint()
+                                        ? audioProcessor.getNoiseFileName()
+                                        : xlat ("NO PRINT");
+
+    if (status == lastShownNoiseStatus)
+        return;
+
+    lastShownNoiseStatus = status;
+    noiseStatusLabel.setText (status, juce::dontSendNotification);
+    noiseStatusLabel.setColour (juce::Label::textColourId,
+                                audioProcessor.hasNoisePrint()
+                                    ? paletteFor (false).accent
+                                    : paletteFor (false).secondary);
+}
+
 void FirstAudioProcessorEditor::refreshUserPresetList()
 {
     userPresetBox.clear (juce::dontSendNotification);
@@ -348,6 +379,11 @@ void FirstAudioProcessorEditor::timerCallback()
     // that finished on the convolution's background thread still gets drawn,
     // since the load hands its result to the stage asynchronously.
     refreshIrStatus();
+    // The noise-print readout is the same rule again, and here the polling is
+    // the ONLY way the readout can ever leave LOADING: the decode has no
+    // callback into the panel, it simply publishes the print and clears its own
+    // busy flag when it is done (Source/DSP/NoiseLoader.h).
+    refreshNoiseStatus();
 
     inputMeter.setLoudness (telemetry.inputPeakDb,
                             telemetry.inputRmsDb,
