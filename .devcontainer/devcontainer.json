@@ -1,6 +1,6 @@
 {
   "name": "JUCE 9.0.4 Plugin Dev",
-  "image": "mcr.microsoft.com/devcontainers/cpp:1-ubuntu-22.04",
+  "image": "mcr.microsoft.com/devcontainers/cpp:2-ubuntu-22.04",
   "features": {
     "ghcr.io/devcontainers/features/git:1": {},
     "ghcr.io/devcontainers/features/github-cli:1": {}
