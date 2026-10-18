@@ -948,7 +948,7 @@ endif()
 CPMAddPackage(
     NAME q_dsp
     GITHUB_REPOSITORY cycfi/q
-    GIT_TAG v1.0.1
+    GIT_TAG v1.5.4
     DOWNLOAD_ONLY YES)
 
 j37_declare_header_only_library(q_dsp "${q_dsp_SOURCE_DIR}/q_lib/include")
