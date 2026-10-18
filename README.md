@@ -23,6 +23,7 @@
 | see what a proposed roadmap would actually cost | [docs/requested-roadmap-status.md](docs/requested-roadmap-status.md) - each item vs. what the tree already does |
 | know what the code is actually like | [docs/plugin-analysis.md](docs/plugin-analysis.md) - the review, with the numbers |
 | know what to do next | [docs/plugin-improvement-plan.md](docs/plugin-improvement-plan.md) |
+| add or adopt a library | [docs/library-integration-plan.md](docs/library-integration-plan.md) - the gate a dependency passes, where each one stands today, and the order to do them in |
 | know how far the long files can be split | [SPLITTING-BIG-FILES.md](SPLITTING-BIG-FILES.md) |
 | know whose code this is | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) |
 
@@ -1492,10 +1493,10 @@ commit, so a fresh clone resolves the same versions forever. Only the libraries 
 engine actually calls are LINKED: `tests/linkline/check_linkline.py` reads
 `target_link_libraries(first ...)` against the includes under `Source/` and fails a
 build when a linked target has no caller, so the link line is a claim about the binary
-rather than about intent. Eighteen entries that no file named used to sit on it - four
+rather than about intent. Nineteen entries that no file named used to sit on it - four
 alternative FFTs against the one `pocketfft` the analyser calls, a second decoder
 stack, a GUI toolkit, a socket library, two rival pitch detectors, a reverb, an LGPL
-time stretcher - and they came off. They are still FETCHED, which is what makes
+time stretcher and a GPLv3 module - and they came off. They are still FETCHED, which is what makes
 adopting one a probe and a line rather than a new dependency, and a shipped binary
 carries none of them.
 
@@ -1504,10 +1505,10 @@ carries none of them.
 | `dattorro-verb` | commit `41e976a0`, vendored in `ThirdParty/dattorro-verb/` | **Used.** Jon Dattorro's 1997 plate reverb, 400 lines of C. `Source/DSP/DattorroRoom.h` is the stage: it runs the tank at the 48 kHz its delay lengths were chosen at and carries the session's signal to and from that rate, so the tail is the same length in seconds at any session rate - which is what `tests/reverb` measures. `verb.c` is compiled as C (`CMakeLists.txt` declares the language for it) and the header is included inside `extern "C"` |
 | `RTNeural` | commit `95c3c0f9` | **Used.** The real-time neural inference engine behind the DYN tab's optional model stage. `NeuralStage` runs a 1-in/1-out model per channel. Configured with `RTNEURAL_STL ON` and no `-mavx2`, so the binary still runs on machines without AVX |
 | `nlohmann/json` | `v3.12.0` | **Used.** The JSON DOM `RTNeural::json_parser::parseJson` parses a model file into. Header-only |
-| `chowdsp_utils` | `v2.4.0` | Chowdhury DSP's toolbox. **Used:** the polynomial `exp`/`log`/dB approximations on the metering and auto-gain hot paths come from the BSD `chowdsp_math` module. **`chowdsp_dsp_utils` is the one exception to the rule above** - linked, and no line of the code calls it. It is GPLv3, so dropping it would drop that obligation from the binary; that is the licence decision in `docs/plugin-improvement-plan.md` item 1.1, and `check_linkline.py` names it with that owner rather than failing on it |
+| `chowdsp_utils` | `v2.4.0` | Chowdhury DSP's toolbox. **Used:** the polynomial `exp`/`log`/dB approximations on the metering and auto-gain hot paths come from the BSD `chowdsp_math` module, which includes the BSD `chowdsp_simd` module and is why that one is linked as well. `chowdsp_dsp_utils` **is GPLv3** and sat on the link line with no caller; it is off it now, so no shipped binary carries it - `docs/library-integration-plan.md` WP1 has the evidence and the check that keeps it off |
 | `melatonin_inspector` | commit `9c483f86` | JUCE component inspector, compiled under `JUCE_DEBUG` only. Passive in the shipped build |
 | `melatonin_blur` | `v1.4` | **Used.** Fast shadow/gradient blurring for JUCE Components. Three lights on the panel are `melatonin::DropShadow` now - the panel's own drop shadow (`Source/GUI/PanelPaint.h`) and the knob's halo and cap shadow (`Source/GUI/J37LookAndFeel.cpp`) - each cached against its path and radius, so a repaint at 30 Hz is a blit rather than a blur. The hand-drawn fallbacks (a stack of flat rounded rectangles, and a stack of stroked rings) are still there behind the module's probe |
-| `xsimd` | `13.0.0` | **Used, behind `J37_USE_SIMD_TANH`.** Portable SIMD wrappers (SSE/AVX/NEON). `chowdsp::chowdsp_simd` already wraps xsimd, so this is the same code path rather than a second SIMD layer - and the shaper's own tanh goes through it too: every tanh the saturation core runs is `j37Tanh` (`Source/DSP/HotPathMath.h`), which is xsimd's batch kernel when the option is on: ~2.4 ns per call against std::tanh's ~6.7 ns, ~1.5x off the whole shaper, at a 1.19e-7 curve difference. Off by default because it changes the rendered audio; `tests/dsp/simd_tanh_test.cpp` builds all three shapes |
+| `xsimd` | `14.3.0` (vendored) | **Used, behind `J37_USE_SIMD_TANH`.** Portable SIMD wrappers (SSE/AVX/NEON). `chowdsp::chowdsp_simd` already wraps xsimd, so this is the same code path rather than a second SIMD layer - and the shaper's own tanh goes through it too: every tanh the saturation core runs is `j37Tanh` (`Source/DSP/HotPathMath.h`), which is xsimd's batch kernel when the option is on: ~2.4 ns per call against std::tanh's ~6.7 ns, ~1.5x off the whole shaper, at a 1.19e-7 curve difference. Off by default because it changes the rendered audio; `tests/dsp/simd_tanh_test.cpp` builds all three shapes |
 
 Two dev-only libraries are **off by default**, so a plugin build never drags a test
 framework into its dependency graph. Enable with `-DJ37_BUILD_TESTS=ON`:
@@ -1685,20 +1686,22 @@ Visual Studio or VS Code with the CMake extension, and the IDE will configure it
 the build files, with the terms in [LICENSE](LICENSE).
 
 A **built binary is not**, and the difference is worth reading before you publish
-one. The plugin links JUCE and a set of third-party libraries, and two of those
-carry terms that are stricter than MIT:
+one. The plugin links JUCE and a set of third-party libraries. Only one of the things
+it links - JUCE - carries terms stricter than MIT; the rest of this table is what the
+build fetches and deliberately keeps OFF the link line:
 
 | Component | Terms | What it means for a distributed build |
 | --- | --- | --- |
 | **JUCE 9.0.4** | AGPLv3, or a commercial JUCE licence | distribution requires complying with AGPLv3 for the plugin as a whole or obtaining a commercial JUCE licence; there is no third option |
-| **`chowdsp_dsp_utils`** | **GPLv3** (the sibling modules `chowdsp_math` and `chowdsp_simd` are BSD) | included and linked, so distribution must comply with GPLv3 unless a non-GPL licence is obtained from the module's author |
+| **`chowdsp_dsp_utils`** | **GPLv3** (the modules the code calls, `chowdsp_math` and `chowdsp_simd`, are BSD) | **not linked**: no file under `Source/` included it, so it came off the link line and a binary carries none of it - the obligation goes with it, and putting the module back restores it |
 | **SoundTouch 2.4.1**, **libsndfile** | LGPL-2.1 | **not linked**: both are still fetched and vendored, but nothing under `Source/` calls either, and a linked-but-uncalled library is a licence obligation with no upside. `tests/linkline/check_linkline.py` is what keeps the link line honest |
 | **`rack_dsp`** (VCVRack/Rack) | GPL-3.0-or-later, with a plugin exception for plugins distributed free of charge | **not linked** for the same reason: fetched, and named by no file of the plugin's own code |
 | everything else | MIT / BSD / zlib / public domain | the notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) are the obligation |
 
 **Binary distribution is currently blocked pending a licensing decision.** Before
-shipping any binary, determine and document the applicable licence path for both JUCE
-and `chowdsp_dsp_utils`: obtain the required commercial licences, or have the
+shipping any binary, determine and document the applicable licence path for JUCE - and
+for any GPLv3 or LGPL module a later change puts back on the link line: obtain the
+required commercial licences, or have the
 appropriate licence compliance materials and source-offer process reviewed and
 prepared for the applicable open-source terms. Do not distribute binaries until that
 review is complete; this README is not legal advice.

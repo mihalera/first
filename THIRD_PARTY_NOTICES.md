@@ -51,7 +51,7 @@ binary - see
 | Component | Pin | Licence | Upstream |
 | --- | --- | --- | --- |
 | **JUCE** | `9.0.4` | **AGPLv3 or commercial** | <https://github.com/juce-framework/JUCE> · <https://juce.com/legal/juce-9-licence/> |
-| **chowdsp_utils** | `v2.4.0` | **per module**: `chowdsp_dsp_utils` **GPLv3**, `chowdsp_math` BSD, `chowdsp_simd` BSD - see the note below | <https://github.com/Chowdhury-DSP/chowdsp_utils> |
+| **chowdsp_utils** | `v2.4.0` | **per module**: `chowdsp_math` and `chowdsp_simd` BSD 3-Clause (both linked), `chowdsp_dsp_utils` **GPLv3** (**not linked**) - see the note below | <https://github.com/Chowdhury-DSP/chowdsp_utils> |
 | **melatonin_inspector** | `9c483f86` | MIT | <https://github.com/sudara/melatonin_inspector> |
 | **melatonin_blur** | `v1.4` | MIT | <https://github.com/sudara/melatonin_blur> |
 | **foleys_gui_magic** | `d53d998e` | BSD 3-Clause (stated in the module header) | <https://github.com/ffAudio/foleys_gui_magic> |
@@ -139,16 +139,21 @@ Most of the list above is MIT or BSD and only asks for the notices in this file.
 The components below are the exceptions, and they are the reason this section
 exists. Read them with the link line in front of you, because **what a package
 is licensed under and what a shipped binary links are two different questions** -
-and today they do not agree.
+and the answer has changed once already: the GPLv3 module below is fetched and not
+linked, and it used to be both.
 
 * **JUCE 9.0.4** is AGPLv3 or a commercial JUCE licence. A distributed plugin
   that links it is under one of those two; there is no third answer.
-* **`chowdsp_dsp_utils` is GPLv3.** It is one module of `chowdsp_utils`, whose
-  other modules are not: `chowdsp_math` and `chowdsp_simd` are BSD. The plugin
-  includes `<chowdsp_dsp_utils/chowdsp_dsp_utils.h>` and links the module, so a
-  distributed binary is bound by GPLv3 unless a non-GPL licence is bought from
-  the library's author - the licence file says so in as many words. This is the
-  first thing to settle before publishing a build.
+* **`chowdsp_dsp_utils` is GPLv3, and is not linked.** It is one module of
+  `chowdsp_utils`, whose other modules are not: `chowdsp_math` and `chowdsp_simd`
+  are BSD, and those two are what the plugin includes and links. The GPLv3 module
+  was on the link line for a while with no caller at all, which is an obligation
+  bought for nothing; it is now off it, and
+  `tests/linkline/check_linkline.py` fails if it comes back without a caller. A
+  build that did link it would be GPLv3-bound unless a non-GPL licence were
+  bought from the author - that is a decision for the product, not for a
+  dependency bump, and [docs/library-integration-plan.md](docs/library-integration-plan.md)
+  records how it was taken.
 * **SoundTouch 2.4.1** is LGPL-2.1 and **used to be linked statically** - which
   LGPL-2.1 section 6 makes a deliberate decision about object files or a
   relinkable form. It is no longer on the link line: nothing under `Source/`

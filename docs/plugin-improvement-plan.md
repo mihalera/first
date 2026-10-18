@@ -62,10 +62,11 @@ included by nothing.
    and the vendored source plus the CPM fetch stay for the corrector work. The
    packages are still FETCHED; deleting those is the configure-time half of the
    item and is still open, because a fetch is also what makes adopting one of
-   them a one-line change. `chowdsp_dsp_utils` remains linked and remains the one
-   GPLv3 question in the binary; the code calls only `chowdsp_math`'s
-   approximators, so dropping it would drop that obligation, and that is the
-   licence decision above rather than a mechanical edit.
+   them a one-line change. `chowdsp_dsp_utils` **is off the line now**: the code
+   calls only `chowdsp_math`'s approximators, so the GPLv3 module was dropped and
+   with it the binary's GPL obligation - the third option in 1.1 above, taken
+   under WP1 of [library-integration-plan.md](library-integration-plan.md). The
+   package is still fetched for the BSD modules beside it.
 
    `tests/linkline/check_linkline.py` is the check item 3 asks for, and it is in
    the `dsp-tests` job: it fails on a linked target no include names, on an
@@ -137,9 +138,10 @@ included by nothing.
    not linked) and a third the original sketch did not have: every `J37_HAS_*`
    macro in `OptionalLibraries.h` must be READ by something outside it, which is
    the defect that let xsimd's branch reach two builds without being compiled.
-   The one exception is named in the script with its owner - `chowdsp_dsp_utils`,
-   the GPLv3 module and the licence decision above - rather than left as a silent
-   allowlist.
+   The one exception the script used to carry - `chowdsp_dsp_utils`, the GPLv3
+   module and the licence decision above - is gone, because the module is gone:
+   the probe left `OptionalLibraries.h` with it, and the allowance dictionaries
+   are empty on purpose.
 
 *Cost:* an afternoon for the deletion and the check, plus whatever the licence
 decision costs. *Payoff:* a shorter configure, a shorter build on five platforms,

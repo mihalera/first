@@ -63,7 +63,7 @@ section after the tables).
 | Sokol GFX as a light pipeline wrapper | **not as written** | `sokol_gfx` is fetched and has no caller; the panel's 2D is `juce::Graphics`, and the 3D backends already own their pipelines |
 | GLM for camera and Lambert/Phong lighting | **done** | `Source/GUI/TapeScene.*` |
 | Procedural tape-grain / metal-roughness shader driven by DRIVE and the compressor | **partial** | the shaders generate grain and shading from the engine's telemetry; DRIVE and gain reduction are among the values the scene reads |
-| Multiband Linkwitz-Riley crossover + correlation-driven M/S squeeze | **open** | the shipping guard is single-band: `processOneSample` pulls the 1/2 and 1/4 undertone stages back into phase (stage 18). An Ozone-style version is the biggest genuinely new DSP item in this plan |
+| Multiband Linkwitz-Riley crossover + correlation-driven M/S squeeze | **done** | `Source/DSP/MultibandPhaseGuard.h`: the frame is split by Linkwitz-Riley 4th-order crossovers at 200 Hz and 2 kHz, each band's own correlation decides that band's rotation, and the rotation is orthogonal (side folds into mid, so the fix costs no level). A frame with no opposition comes back bit for bit, and `tests/phase` measures the per-band side energy that proves the fault's band is the band that moves. Separate from - and never mixed with - stage 18's undertone phase-lock in `processOneSample` |
 
 ## Items that should not be applied as written
 
@@ -108,11 +108,10 @@ prints the reading so the trade stays visible.
 
 ## The next three, in order
 
-1. **Multiband anti-phase guard** (`juce::dsp::LinkwitzRileyFilter` crossover,
-   correlation per band, M/S squeeze only where correlation < 0). It is the one item
-   in the plan that is both genuinely missing and audible, and it has a natural
-   harness: render a decorrelated band and assert the side channel shrinks while the
-   correlated bands do not.
+1. **The link line and the libraries waiting for a caller** - see
+   [library-integration-plan.md](library-integration-plan.md): WP1 drops the GPLv3 module
+   nothing calls, WP2 gives `dr_libs` a caller as the vinyl stage's user noise print.
+   The multiband anti-phase guard this list used to open with is done (Stage 5).
 2. **Formant preservation and the block-based corrector** - the restructure is done
    (`Source/DSP/CorrectorStage.h`, measured by `tests/pitch`), so what is left is the
    engine itself: a phase-locking configuration or a longer analysis window that
