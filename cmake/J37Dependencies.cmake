@@ -590,7 +590,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME kissfft
     GITHUB_REPOSITORY mborgerding/kissfft
-    GIT_TAG 131.1.0
+    GIT_TAG 131.2.0
     EXCLUDE_FROM_ALL YES
     SYSTEM YES
     OPTIONS
