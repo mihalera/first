@@ -38,7 +38,8 @@
       "description": "Update the Gradle distribution used by Android CI",
       "managerFilePatterns": ["/^\\.github\\/workflows\\/build\\.yml$/"],
       "matchStrings": [
-        "(?:gradle-|--gradle-version\\s+)(?<currentValue>\\d+\\.\\d+(?:\\.\\d+)?)(?:-bin\\.zip|/|(?=\\s))"
+        "gradle-(?<currentValue>\\d+[.]\\d+([.]\\d+)?)",
+        "--gradle-version\\s+(?<currentValue>\\d+[.]\\d+([.]\\d+)?)"
       ],
       "depNameTemplate": "gradle",
       "datasourceTemplate": "gradle-version",
