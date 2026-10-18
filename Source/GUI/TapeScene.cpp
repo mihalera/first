@@ -1737,6 +1737,9 @@ void TapeScene::renderOpenGL()
     //  Draw state. The clear takes the colour and the depth, and the background
     //  is the panel's own so the window reads as a recess rather than as a hole.
     // -------------------------------------------------------------------------
+    // Set this explicitly each frame: some hosts resize child components without
+    // recreating the context, leaving the previous GL viewport in effect.
+    glViewport (0, 0, width, height);
     juce::OpenGLHelpers::clear (background);
 
     glEnable (GL_DEPTH_TEST);
@@ -1753,14 +1756,11 @@ void TapeScene::renderOpenGL()
     shaderProgram->setUniform ("uDrive", driveAmount);
     shaderProgram->setUniform ("uLightDirection", lightX, lightY, lightZ);
     // The arithmetic texture's three doses (grain / tape shimmer / wear), one
-    // palette-carried vector - see panelTexture in the fragment source.
-    shaderProgram->setUniform ("uTextureWeights",
-                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
-                                 .getFloatRed(),
-                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
-                                 .getFloatGreen(),
-                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
-                                 .getFloatBlue());
+    // palette-carried vector - see panelTexture in the fragment source. Snapshot
+    // the packed atomic once so a theme switch cannot mix channels from two states.
+    const auto texturePalette = juce::Colour (textureWeights.load (std::memory_order_relaxed));
+    shaderProgram->setUniform ("uTextureWeights", texturePalette.getFloatRed(),
+                               texturePalette.getFloatGreen(), texturePalette.getFloatBlue());
 
     const auto drawReel = [this, &scene, &body, &tape] (float centreX, float centreY, float radius,
                                                         float angle, float packOuter)
@@ -1926,14 +1926,11 @@ void TapeScene::renderOpenGL()
     shaderProgram->setUniform ("uDrive", driveAmount);
     shaderProgram->setUniform ("uLightDirection", lightX, lightY, lightZ);
     // The arithmetic texture's three doses (grain / tape shimmer / wear), one
-    // palette-carried vector - see panelTexture in the fragment source.
-    shaderProgram->setUniform ("uTextureWeights",
-                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
-                                 .getFloatRed(),
-                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
-                                 .getFloatGreen(),
-                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
-                                 .getFloatBlue());
+    // palette-carried vector - see panelTexture in the fragment source. Snapshot
+    // the packed atomic once so a theme switch cannot mix channels from two states.
+    const auto texturePalette = juce::Colour (textureWeights.load (std::memory_order_relaxed));
+    shaderProgram->setUniform ("uTextureWeights", texturePalette.getFloatRed(),
+                               texturePalette.getFloatGreen(), texturePalette.getFloatBlue());
 
     const auto drawReel = [this, &scene, &body, &tape] (float centreX, float centreY, float radius,
                                                         float angle, float packOuter)
@@ -2196,6 +2193,9 @@ void TapeScene::renderOpenGL()
     //  Draw state. The clear takes the colour and the depth, and the background
     //  is the panel's own so the window reads as a recess rather than as a hole.
     // -------------------------------------------------------------------------
+    // Set this explicitly each frame: some hosts resize child components without
+    // recreating the context, leaving the previous GL viewport in effect.
+    glViewport (0, 0, width, height);
     juce::OpenGLHelpers::clear (background);
 
     glEnable (GL_DEPTH_TEST);
@@ -2212,14 +2212,11 @@ void TapeScene::renderOpenGL()
     shaderProgram->setUniform ("uDrive", driveAmount);
     shaderProgram->setUniform ("uLightDirection", lightX, lightY, lightZ);
     // The arithmetic texture's three doses (grain / tape shimmer / wear), one
-    // palette-carried vector - see panelTexture in the fragment source.
-    shaderProgram->setUniform ("uTextureWeights",
-                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
-                                 .getFloatRed(),
-                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
-                                 .getFloatGreen(),
-                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
-                                 .getFloatBlue());
+    // palette-carried vector - see panelTexture in the fragment source. Snapshot
+    // the packed atomic once so a theme switch cannot mix channels from two states.
+    const auto texturePalette = juce::Colour (textureWeights.load (std::memory_order_relaxed));
+    shaderProgram->setUniform ("uTextureWeights", texturePalette.getFloatRed(),
+                               texturePalette.getFloatGreen(), texturePalette.getFloatBlue());
 
     const auto drawReel = [this, &scene, &body, &tape] (float centreX, float centreY, float radius,
                                                         float angle, float packOuter)
@@ -2381,14 +2378,11 @@ void TapeScene::renderOpenGL()
     shaderProgram->setUniform ("uDrive", driveAmount);
     shaderProgram->setUniform ("uLightDirection", lightX, lightY, lightZ);
     // The arithmetic texture's three doses (grain / tape shimmer / wear), one
-    // palette-carried vector - see panelTexture in the fragment source.
-    shaderProgram->setUniform ("uTextureWeights",
-                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
-                                 .getFloatRed(),
-                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
-                                 .getFloatGreen(),
-                               juce::Colour (textureWeights.load (std::memory_order_relaxed))
-                                 .getFloatBlue());
+    // palette-carried vector - see panelTexture in the fragment source. Snapshot
+    // the packed atomic once so a theme switch cannot mix channels from two states.
+    const auto texturePalette = juce::Colour (textureWeights.load (std::memory_order_relaxed));
+    shaderProgram->setUniform ("uTextureWeights", texturePalette.getFloatRed(),
+                               texturePalette.getFloatGreen(), texturePalette.getFloatBlue());
 
     const auto drawReel = [this, &scene, &body, &tape] (float centreX, float centreY, float radius,
                                                         float angle, float packOuter)

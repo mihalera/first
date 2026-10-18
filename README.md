@@ -46,7 +46,7 @@ This is, first and foremost, a **bus / mastering tool**: two independent glue co
 
 ## Overview
 
-This project is a mastering-oriented audio effect plugin built for Windows with JUCE and Visual Studio.
+This project is a mastering-oriented audio effect plugin built with JUCE for Windows (x64), macOS (universal), Linux (x64 VST3), and Android (arm64-v8a Standalone).
 It provides a tape-saturation mastering workflow with:
 
 - drive and harmonic character controls
@@ -1093,7 +1093,12 @@ plugin format do not need to change; renderer choice is an editor-only concern.
 
 The editor also avoids unnecessary GPU/CPU work: the OpenGL contexts use vsync
 and explicit invalidation rather than an unrestricted repaint loop, while hidden
-editors stop telemetry, physics and repaint polling. The DSP remains on the CPU
+editors stop telemetry, physics and repaint polling. The deck renderer refreshes its
+viewport every frame (hosts can resize child components without rebuilding the GL
+context) and snapshots the packed theme texture weights once per draw, so a theme
+change cannot mix colour channels from different states. The fragment shader
+renormalises interpolated normals before lighting and clamps the final lit base
+colour to a valid display range. The DSP remains on the CPU
 by design: DAW audio callbacks are small, real-time blocks, and moving the tape
 model to a GPU would add transfer/synchronisation latency and make plugin hosts
 less reliable. GPU rendering is appropriate for the visual panel, not for the
@@ -1257,6 +1262,10 @@ configure and therefore none to get wrong per platform. Every contributor builds
 byte-identical JUCE sources and does not have to install JUCE at any particular location.
 
 ## Build
+**Building locally is not authorization to distribute the resulting binary.** Before
+publishing any binary, complete [`docs/release-checklist.md`](docs/release-checklist.md)
+and resolve the JUCE and `chowdsp_dsp_utils` licensing paths; do not distribute while
+any licensing review or compliance item remains open.
 
 The build is driven by `CMakeLists.txt`, which is the single source of truth. There is no
 `.jucer` file and no checked-in project files: CMake generates them from the script.
@@ -1681,22 +1690,30 @@ carry terms that are stricter than MIT:
 
 | Component | Terms | What it means for a distributed build |
 | --- | --- | --- |
-| **JUCE 9.0.4** | AGPLv3, or a commercial JUCE licence | the whole plugin is under one of those two; there is no third answer |
-| **`chowdsp_dsp_utils`** | **GPLv3** (the sibling modules `chowdsp_math` and `chowdsp_simd` are BSD) | included and linked, so a binary is GPLv3-bound unless a non-GPL licence is bought from the module's author |
+| **JUCE 9.0.4** | AGPLv3, or a commercial JUCE licence | distribution requires complying with AGPLv3 for the plugin as a whole or obtaining a commercial JUCE licence; there is no third option |
+| **`chowdsp_dsp_utils`** | **GPLv3** (the sibling modules `chowdsp_math` and `chowdsp_simd` are BSD) | included and linked, so distribution must comply with GPLv3 unless a non-GPL licence is obtained from the module's author |
 | **SoundTouch 2.4.1**, **libsndfile** | LGPL-2.1 | **not linked**: both are still fetched and vendored, but nothing under `Source/` calls either, and a linked-but-uncalled library is a licence obligation with no upside. `tests/linkline/check_linkline.py` is what keeps the link line honest |
 | **`rack_dsp`** (VCVRack/Rack) | GPL-3.0-or-later, with a plugin exception for plugins distributed free of charge | **not linked** for the same reason: fetched, and named by no file of the plugin's own code |
 | everything else | MIT / BSD / zlib / public domain | the notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) are the obligation |
+
+**Binary distribution is currently blocked pending a licensing decision.** Before
+shipping any binary, determine and document the applicable licence path for both JUCE
+and `chowdsp_dsp_utils`: obtain the required commercial licences, or have the
+appropriate licence compliance materials and source-offer process reviewed and
+prepared for the applicable open-source terms. Do not distribute binaries until that
+review is complete; this README is not legal advice.
 
 [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) lists every component, its pin and
 its licence; [`docs/plugin-analysis.md` §5](docs/plugin-analysis.md#5-the-link-line-is-larger-than-the-code)
 shows which of them the code actually includes, and
 [`docs/plugin-improvement-plan.md`](docs/plugin-improvement-plan.md#priority-1--what-a-distributed-binary-owes)
-proposes what to do about the gap.
+tracks the work needed before distribution.
 
 ## Contributing
 
 - **[CODE_OF_CONDUCT.md](CODE_OF_CONDUCT.md)** applies to issues, pull requests and
-discussions.- **Every change is checked by [tests/README.md](tests/README.md)'s suite** - thirteen
+  discussions.
+- **Every change is checked by [tests/README.md](tests/README.md)'s suite** - thirteen
   harnesses that compile the shipping code and seven text checks - plus four platform
   builds in CI. A change to the sound belongs with a harness section that pins what
 changed; a change that moves code belongs with a green
