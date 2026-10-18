@@ -1,0 +1,32 @@
+name: Renovate
+
+on:
+  schedule:
+    - cron: "0 5 * * 1"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  renovate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Check out repository
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Require Renovate token
+        env:
+          RENOVATE_TOKEN: ${{ secrets.RENOVATE_TOKEN }}
+        run: |
+          if [ -z "$RENOVATE_TOKEN" ]; then
+            echo "::error::Add a RENOVATE_TOKEN repository secret with repo and workflow access."
+            exit 1
+          fi
+
+      - name: Run Renovate
+        uses: renovatebot/github-action@v46.3.8
+        with:
+          token: ${{ secrets.RENOVATE_TOKEN }}
