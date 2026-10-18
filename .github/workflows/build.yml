@@ -638,7 +638,7 @@ jobs:
           echo "Debug VST3 bundle: $found"
 
       - name: Upload Debug VST3 Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: first-linux-debug-vst3
           path: build/first_artefacts/Debug/**/*.vst3
@@ -774,7 +774,7 @@ jobs:
           "binary=$($binary.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
       - name: Upload VST3 Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MiBoX-VST3-Windows
           path: ${{ steps.vst3.outputs.bundle }}
@@ -1125,7 +1125,7 @@ jobs:
           ls -la "$ART"
 
       - name: Upload macOS Artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MiBoX-macOS
           path: ${{ runner.temp }}/artifacts
@@ -1272,7 +1272,7 @@ jobs:
           echo "bundle=$bundle" >> "$GITHUB_OUTPUT"
 
       - name: Upload Linux VST3 Artifact
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MiBoX-VST3-Linux
           path: ${{ steps.vst3.outputs.bundle }}
@@ -1500,7 +1500,7 @@ jobs:
 
       - name: Upload Android APK Artifact
         if: steps.apk.outputs.apk_ready == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: MiBoX-Android
           path: ${{ runner.temp }}/android-artifacts
