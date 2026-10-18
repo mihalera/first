@@ -2,8 +2,8 @@
 //  Which optional libraries this build actually has.
 //
 //  Everything the engine uses that may be absent - chowdsp's math and DSP utils,
-//  RTNeural, xsimd, readerwriterqueue and pocketfft - is probed for HERE, once,
-//  and reported as a J37_HAS_* macro. Every one of those macros is read by a
+//  RTNeural, xsimd, readerwriterqueue, pocketfft and signalsmith-stretch - is
+//  probed for HERE, once, and reported as a J37_HAS_* macro. Every one of those macros is read by a
 //  stage, which is now checked: tests/linkline/check_linkline.py fails when a
 //  probe has no reader, and when the link line carries a library no include
 //  names. The stages that consume
@@ -127,12 +127,12 @@
 //                               thread can publish a frame of metering and the
 //                               editor can read it WITHOUT every field being its
 //                               own atomic and without a lock on the audio thread.
-//                               It is the ONLY one of the four that survived:
-//                               every use site reads J37_HAS_RWQ and falls back
-//                               to plain atomics without it.
+//                               It is the ONLY one of the four probed in this
+//                               block: every use site reads J37_HAS_RWQ and falls
+//                               back to plain atomics without it.
 //
-//    The other three left, and they left the same way xsimd and pocketfft did
-//    not: they were LINKED, INCLUDED and probed here, and read by nothing.
+//    The other three left this block, and two of them left the hard way: they
+//    were LINKED, INCLUDED and probed here, and read by nothing.
 //
 //    farbot::RealtimeObject     The entry used to claim the machine-state
 //                               hand-off used it, so the message thread could
@@ -149,9 +149,10 @@
 //                               away.
 //
 //    signalsmith-stretch        A phase-vocoder time stretcher: it changes how
-//                               long material takes while keeping its PITCH. Two
-//                               claims here were false. The transport does not
-//                               use it - the transport's speed change is
+//                               long material takes while keeping its PITCH.
+//                               This block used to say two things about it, and
+//                               both were false. The transport does not use it -
+//                               the transport's speed change is
 //                               Source/DSP/RepitchStage.h, which is deliberately
 //                               a VARISPEED, because a tape at half speed is
 //                               supposed to come out an octave down. And the
@@ -159,19 +160,16 @@
 //                               never probed, so it read 0 everywhere and said
 //                               it to nobody.
 //
-//                               The one stage that wants it is the CORRECTOR:
-//                               moving a note onto the grid without changing
-//                               how long it lasts is a pitch shift at constant
-//                               duration. AUTOTUNE does that today with the
-//                               hand-written granular shifter in
-//                               Source/DSP/RealtimePitchShifter.h, which is
-//                               driven one FRAME at a time from the tape loop -
-//                               and this library works one BLOCK at a time. So
-//                               adopting it is a restructure of the frame loop
-//                               rather than a swap, which is why the library is
-//                               not on the link line: the line describes the
-//                               binary, not the intention. The vendored source
-//                               and the CPM fetch stay for that work.
+//                               It has since come back as a stage: the CORRECTOR
+//                               moves a note onto the grid without changing how
+//                               long it lasts, which is a pitch shift at
+//                               constant duration, and Source/DSP/CorrectorStage.h
+//                               is that stage - with this library as an OPT-IN
+//                               engine and the shifter above as its default. Its
+//                               probe is at the bottom of this file rather than
+//                               in this block, because what it needs is an
+//                               include path, a flag and a fallback rather than a
+//                               real-time utility with a JUCE-laden substitute.
 //
 //    SoundTouch                 The WSOLA time-stretch engine, LGPL-2.1 - the one
 //                               dependency in this file that was not
@@ -230,5 +228,40 @@
   #define J37_HAS_POCKETFFT 1
  #else
   #define J37_HAS_POCKETFFT 0
+ #endif
+#endif
+
+// ------------------------------------------------------------------------------
+//  signalsmith-stretch (vendored under ThirdParty/signalsmith-stretch, with the
+//  sibling signalsmith-linear checkout inside it that its own header includes by
+//  a relative path).
+//
+//  OPT-IN, exactly like xsimd above and for the same kind of reason: the two
+//  engines do not render the same audio, so which one the build uses is a
+//  listening decision that belongs in CMakeLists.txt rather than in a probe. The
+//  flag is J37_CORRECTOR_USE_STRETCH (OFF by default), and the numbers behind
+//  "off by default" are in the option's own comment: the vocoder costs 1216
+//  frames of lookahead at 48 kHz against the granular shifter's one period, and
+//  this library's transposition measured 10 cents wide of the ratio it was given
+//  at 1.06x and 6 cents at 0.94x (tests/pitch prints both), which is the same
+//  order as the +-10 cent dead zone the control is built around.
+//
+//  NOT behind the harness guard, because that guard exists so a stage can be
+//  compiled against a shim with no optional library on the include path - and the
+//  way to compile the library shape is to ask for it, which is what
+//  tests/pitch/run.sh's second binary and the CMake option both do. A guard that
+//  forced the macro to 0 would make that impossible.
+//
+//  And like pocketfft, the file that only decides the macro includes nothing:
+//  Source/DSP/CorrectorStage.h includes the library ITSELF when this is 1, so a
+//  checkout that has pruned ThirdParty/ carries the fallback engine and none of
+//  the four-thousand-line header.
+// ------------------------------------------------------------------------------
+#if ! defined (J37_HAS_SIGNALSMITH)
+ #if defined (J37_CORRECTOR_USE_STRETCH) \
+     && __has_include (<signalsmith-stretch/signalsmith-stretch.h>)
+  #define J37_HAS_SIGNALSMITH 1
+ #else
+  #define J37_HAS_SIGNALSMITH 0
  #endif
 #endif

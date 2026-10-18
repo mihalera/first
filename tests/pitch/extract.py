@@ -31,6 +31,7 @@ import sys
 SOURCE_HEADERS = [
     "DSP/PitchTracker.h",
     "DSP/RealtimePitchShifter.h",
+    "DSP/CorrectorStage.h",
 ]
 
 

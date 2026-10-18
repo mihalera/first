@@ -16,9 +16,10 @@
 //    flushPendingTransportHostSync()  flushes that the editor asks for
 //    setSpindownHeld()           the platter brake, held from the panel
 //    processBypassedBlock()      what the machine does in BYPASS and DELTA
-//    processPostMachineStages()  the EQ pair, the IR and the neural stage after it
+//    processPostMachineStages()  the corrector, the IR, the room and the vinyl stage
 //    scaleOffsetsForMode()       the twelve scale degrees autotune snaps to
-//    processAutoTuneSample()     the optional pitch correction, one frame at a time
+//    processAutoTuneSample()     the optional pitch correction: the control, one frame
+//                                at a time, and the call into the stage that does it
 //    publishBlockTelemetry()     what the panel's meters read, published per block
 //    processTapeEngine()         the machine: the block's own setup, and the loop that
 //                                runs it
@@ -222,6 +223,32 @@ bool FirstAudioProcessor::processBypassedBlock (juce::dsp::AudioBlock<float>& bl
         return false;
 
     bypassActive.store (true, std::memory_order_relaxed);
+
+    // A bypassed plugin still owes the host the latency it reports. With AUTOTUNE
+    // engaged the corrector is part of the chain, so the dry signal this path
+    // hands through gets the same lookahead the wet path would have had - without
+    // it, bypass would arrive a block early against every other track in the
+    // session. With the stage off the delay is zero and none of this costs
+    // anything: the loop below advances no ring at all.
+    if (autoTuneParam != nullptr && autoTuneParam->load() >= 0.5f
+        && autoTuneAmountParam != nullptr && autoTuneAmountParam->load() > 1.0e-5f)
+    {
+        const auto frameChannels = juce::jmin (2, context.channels);
+
+        for (int sample = 0; sample < context.samples; ++sample)
+        {
+            std::array<float, 2> frame {};
+
+            for (int channel = 0; channel < frameChannels; ++channel)
+                frame[static_cast<std::size_t> (channel)] = block.getSample (channel, sample);
+
+            corrector.delayFrame (frame.data());
+
+            for (int channel = 0; channel < frameChannels; ++channel)
+                block.setSample (channel, sample, frame[static_cast<std::size_t> (channel)]);
+        }
+    }
+
     float peak = 0.0f;
     double squares = 0.0;
     for (int channel = 0; channel < context.channels; ++channel)
@@ -272,6 +299,53 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
     const auto vinylMix = vinylSmoothed.getCurrentValue();
     const auto irMix = irMixSmoothed.getCurrentValue();
     if (channels <= 0 || samples <= 0) return;
+
+    // -----------------------------------------------------------------------
+    //  AUTOTUNE - the corrector's audio path, on the finished block.
+    //
+    //  The stage is driven one frame at a time here, exactly as it was inside the
+    //  per-sample loop, but the LOOP around it is this block rather than the
+    //  engine's, and that is the whole of the move: the phase vocoder behind
+    //  CorrectorStage.h is handed blocks, so the stage has to be handed a block's
+    //  worth of frames somewhere the engine can afford to wait for them. This is
+    //  that place, and it is the same place - and the same reasoning - the IR
+    //  cabinet, the reverb and the vinyl stage below are processed in.
+    //
+    //  It runs BEFORE the IR and the room on purpose. Both of those hear the
+    //  corrected performance rather than the raw one, which is what the chain said
+    //  when the stage was inside the loop, so moving it here changes the ORDER of
+    //  the protection stages and not of the effects: what the corrector is fed is
+    //  still the tape machine's output, and what the reverb is fed is still the
+    //  corrected signal.
+    //
+    //  The lookahead the stage costs is reported to the host (see
+    //  publishReportedLatency) and is zero while AUTOTUNE is off, so a session that
+    //  does not use the stage pays nothing for it - no latency, no CPU, and the
+    //  bit-for-bit pass-through the panel's own documentation promises.
+    // -----------------------------------------------------------------------
+    const bool autoTuneEngaged = autoTuneParam != nullptr && autoTuneParam->load() >= 0.5f
+                                 && autoTuneAmountParam != nullptr
+                                 && autoTuneAmountParam->load() > 1.0e-5f;
+
+    if (autoTuneEngaged && corrector.isPrepared())
+    {
+        const auto frameChannels = juce::jmin (2, channels);
+
+        for (int i = 0; i < samples; ++i)
+        {
+            std::array<float, 2> tuneFrame {};
+
+            for (int c = 0; c < frameChannels; ++c)
+                tuneFrame[static_cast<std::size_t> (c)]
+                    = block.getChannelPointer (static_cast<std::size_t> (c))[i];
+
+            processAutoTuneSample (tuneFrame.data(), frameChannels, context.sampleRate);
+
+            for (int c = 0; c < frameChannels; ++c)
+                block.getChannelPointer (static_cast<std::size_t> (c))[i]
+                    = tuneFrame[static_cast<std::size_t> (c)];
+        }
+    }
 
     bool irActive = false;
     if (irMix > 1.0e-5f && irStage.hasIr
@@ -392,12 +466,19 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
     // mostly moves is the DEPTH of the pull below, and the glide rides along.
     const auto glide = 0.0005f + 0.012f * amount;
 
+    // What the stage below is handed, one entry per channel: the ratio that
+    // channel's signal should be read at, and the period the fallback shifter
+    // splices on. The ratios start at unity, so a channel the loop never reaches
+    // (a mono bus) is a pass-through rather than a stale value, and a channel whose
+    // reading is gated out simply keeps it.
+    std::array<float, 2> ratios { 1.0f, 1.0f };
+    std::array<int, 2> periodHints { 0, 0 };
+
     for (int channel = 0; channel < juce::jlimit (0, 2, channels); ++channel)
     {
         const auto i = static_cast<std::size_t> (channel);
         const auto input = samples[i];
         auto& tracker = autoTuneTrackers[i];
-        auto& shifter = autoTuneShifters[i];
 
         tracker.push (input);
 
@@ -409,7 +490,7 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
         if (confidence < 0.5f || detected < 45.0f || detected > 1400.0f)
         {
             autoTuneCorrectionSmoothed[i] += (1.0f - autoTuneCorrectionSmoothed[i]) * glide;
-            samples[i] = shifter.process (input, autoTuneCorrectionSmoothed[i], 0);
+            ratios[i] = autoTuneCorrectionSmoothed[i];
             continue;
         }
 
@@ -461,10 +542,16 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
         // SHIFTER's rate. The tracker measured it at its own decimated rate, so
         // it is rescaled here - the one place that knows both rates.
         const auto stagePeriod = tracker.periodFrames() * stageRate / tracker.analysisRateHz();
-        const auto periodHint = stagePeriod > 0.0f ? juce::roundToInt (stagePeriod) : 0;
 
-        samples[i] = shifter.process (input, autoTuneCorrectionSmoothed[i], periodHint);
+        ratios[i] = autoTuneCorrectionSmoothed[i];
+        periodHints[i] = stagePeriod > 0.0f ? juce::roundToInt (stagePeriod) : 0;
     }
+
+    // The audio path, once for the frame. Everything above this line is the
+    // CONTROL - what note is playing, where it should sit, how fast the pull is
+    // allowed to travel - and the line below is the engine that does it. Which
+    // engine is Source/DSP/CorrectorStage.h's business, not this function's.
+    corrector.processFrame (samples, ratios.data(), periodHints.data());
 }
 
 void FirstAudioProcessor::publishBlockTelemetry (const BlockContext& context,
@@ -757,6 +844,19 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const bool autoTuneEnabled = autoTuneParam != nullptr && autoTuneParam->load() >= 0.5f;
     const auto autoTuneAmount = autoTuneAmountParam != nullptr ? autoTuneAmountParam->load() : 0.0f;
     state.autoTuneStrength = autoTuneEnabled ? juce::jlimit (0.0f, 1.0f, autoTuneAmount) : 0.0f;
+
+    // The corrector's lookahead is part of the plugin's latency only while the
+    // stage is engaged. That is the whole of the trade the library makes: a phase
+    // vocoder is handed whole blocks, so it runs one block behind, and a session
+    // whose AUTOTUNE is off pays none of it - the stage is not in the path at all,
+    // and neither is the number. See publishReportedLatency().
+    const auto correctorLatency = state.autoTuneStrength > 1.0e-5f ? corrector.latencyFrames() : 0;
+
+    if (correctorLatency != publishedCorrectorLatencySamples)
+    {
+        publishedCorrectorLatencySamples = correctorLatency;
+        publishReportedLatency();
+    }
     // The anti-phase guard's switch, read once per block like every other choice.
     // A missing parameter (a host that restored a session written before the
     // switch existed) means ON: the guard is protection, and the safe reading of
@@ -3505,36 +3605,31 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     }
 
     // ------------------------------------------------------------------
-    //  AUTOTUNE PLACEMENT / RATE DECISION.
+    //  AUTOTUNE is no longer here.
     //
-    //  The current arrangement runs autotune on the DOWN-SAMPLED signal AFTER
-    //  processBlock has downsampled the oversampled block. That is a deliberate
-    //  placement decision, not an accidental one, but it is the one place in the
-    //  chain where the rate the processor sees and the rate the stage is handed
-    //  can disagree if oversampling is on.
+    //  It was the last per-frame stage in this loop, and the phase vocoder the
+    //  corrector is built on (Source/DSP/CorrectorStage.h) is a BLOCK processor:
+    //  it analyses overlapping windows, so it cannot be driven a frame at a time
+    //  without a wrapper whose only job would be to pretend a block is a frame.
+    //  The stage therefore moved to the block section of the chain, which is where
+    //  the other block-rate stages already live - see processPostMachineStages(),
+    //  which runs it before the IR cabinet, the reverb and the vinyl stage.
     //
-    //  Review question (leave as a flag until decided one way):
-    //    - Keep as-is if autotune is meant to operate at the host session rate
-    //      regardless of oversampling, and its internal pitch state is rate-
-    //      correct at that rate.
-    //    - Move it earlier / re-rate it if the stage is meant to see the engine
-    //      rate (session rate * oversampling factor) and the state is built for
-    //      that.
+    //  Two consequences, stated rather than discovered:
     //
-    //  Do not change the placement here without confirming which of those two is
-    //  the intended behavior. Until then this block preserves the existing audio
-    //  path exactly.
+    //    * the corrector now runs AFTER the per-frame protection chain (the
+    //      compressor, the width stage, the anti-phase guard, the output trim, the
+    //      limiter and the soft clipper) rather than before it. What that costs is
+    //      the limiter no longer seeing a corrected signal; what it buys is the
+    //      stage running on the block the engine actually has, and its own
+    //      lookahead being reported to the host instead of hidden in the middle of
+    //      the chain, where it would move every later stage against the host's
+    //      timeline;
+    //
+    //    * the rate it sees is the ENGINE's (see processPostMachineStages), which
+    //      is the rate every other block stage in that function is prepared at and
+    //      the rate the tracker's period is already rescaled to here.
     // ------------------------------------------------------------------
-    if (state.autoTuneStrength > 1.0e-5f)
-    {
-        std::array<float, 2> tuneFrame { outputSignal[0], outputSignal[1] };
-        processAutoTuneSample (tuneFrame.data(), state.activeChannels, state.engineSampleRate);
-        for (int channel = 0; channel < state.activeChannels; ++channel)
-        {
-            const auto index = static_cast<std::size_t> (channel);
-            outputSignal[index] = tuneFrame[index];
-        }
-    }
     // Conventional compressor: post-tape, pre-width, independent of both
     // glue stages. It is a transparent bypass at MIX 0 and uses the same
     // detector settings for both channels without linking their gain states.

@@ -38,9 +38,9 @@ section after the tables).
 | --- | --- | --- |
 | DywaPitchTrack for the detector | **open** | `Source/DSP/PitchTracker.h` is YIN, with its confidence gate measured by `tests/pitch`. A second detector would need a reason better than "faster", and a harness comparison |
 | Sub generator from phase accumulators | **done** | `Source/DSP/SubharmonicGenerator.h` (the undertone series with downward saturation), stage 9 and 21 of [signal-path.md](signal-path.md) |
-| Signalsmith phase vocoder for autotune | **open, blocked by shape** | the shifter is driven one frame at a time (`Source/DSP/RealtimePitchShifter.h`); the library works one block at a time, so adopting it restructures the frame loop before it can be swapped in |
+| Signalsmith phase vocoder for autotune | **built, OFF by default** | `Source/DSP/CorrectorStage.h` is the stage: the granular shifter by default, signalsmith-stretch behind `-DJ37_CORRECTOR_USE_STRETCH=ON`. The restructure the row above predicted is done - the stage runs on blocks, at the top of `processPostMachineStages()`, and its lookahead is reported to the host. It is OFF because `tests/pitch` measured what it costs: 1216 frames of lookahead at 48 kHz, and a transposition 56 cents wide of the ratio it was given at 0.94x (a 60 ms window brings that to a cent, at three times the latency) against the granular engine's sub-cent reading. Both shapes are built and measured on every run |
 | **±10 cent dead zone** | **done** | `Source/DSP/PitchCorrectionRule.h`, used by `processAutoTuneSample`, pinned at exact cents by `tests/pitch` |
-| Formant preservation | **open** | it belongs with the same block-based restructure as the vocoder; there is no formant detector today |
+| Formant preservation | **open, and tried** | `setFormantFactor (1, true)` was measured on a synthetic vowel at 1.06x and 1.5x, with the formant base given and autodetected, and the envelope's centroid moved with the pitch in both cases and identically with the compensation on and off - so the stage does not claim it and the row stays open |
 | cycfi/q true-RMS envelopes for the transient shaper | **open** | `Source/DSP/TransientShaper.h` has its own fast/slow envelopes, pinned by `tests/unit` |
 
 ## Stage 4 - NAM, IR, micro-models, noise loader
@@ -113,8 +113,10 @@ prints the reading so the trade stays visible.
    in the plan that is both genuinely missing and audible, and it has a natural
    harness: render a decorrelated band and assert the side channel shrinks while the
    correlated bands do not.
-2. **Formant preservation and the block-based corrector** - together, because both
-   need the same restructure of the frame loop, and `signalsmith-stretch` is only
-   adoptable once it exists.
+2. **Formant preservation and the block-based corrector** - the restructure is done
+   (`Source/DSP/CorrectorStage.h`, measured by `tests/pitch`), so what is left is the
+   engine itself: a phase-locking configuration or a longer analysis window that
+   makes the vocoder's transposition as accurate as the granular shifter's, and a
+   formant path that survives the vowel measurement the roadmap row describes.
 3. **NAM Core + Eigen**, behind the existing `NeuralStage` seam, with a model-format
    loader that follows the IR stage's background-load pattern.

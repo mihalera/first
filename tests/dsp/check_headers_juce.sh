@@ -383,10 +383,17 @@ EOF
 # checkout with ThirdParty/ pruned still passes: the probe reports 0 and the
 # header's other branch is what compiles, which is exactly what tests/spectrum's
 # second pass asserts without JUCE in the way.
+# signalsmith-stretch is on the include path AND the corrector's option is thrown,
+# because the VOCODER shape of Source/DSP/CorrectorStage.h is the one that includes a
+# third-party header and instantiates its templates - so it is the shape worth
+# compiling against real JUCE. The shifter shape is what a build without the flag
+# compiles here, and it is the other binary tests/pitch builds.
 "${CXX}" -std=c++17 -fsyntax-only -Wall -Wextra -Wno-unused-parameter \
     -I "${REPO}/Source" -I "${JUCE_MODULES}" \
     -I "${REPO}/ThirdParty/pocketfft" \
     -I "${REPO}/ThirdParty/dattorro-verb" \
+    -I "${REPO}/ThirdParty/signalsmith-stretch/include" \
+    -DJ37_CORRECTOR_USE_STRETCH=1 \
     -DJUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1 \
     -DJUCE_MODULE_AVAILABLE_juce_core=1 \
     -DJUCE_MODULE_AVAILABLE_juce_events=1 \

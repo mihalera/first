@@ -57,7 +57,9 @@ struct PitchTracker
     static constexpr float silentRms = 1.0e-4f;
     static constexpr float octaveGuardLog2 = 0.15f;
 
-    /** Prepares the decimation for a rate. Called from prepareToPlay. */
+    /** Prepares the decimation for a rate. Called from setOversamplingFactor,
+        with the ENGINE's rate rather than the session's, because that is the rate
+        the frames it is pushed arrive at. */
     void prepare (double sampleRateIn)
     {
         const auto sampleRate = sampleRateIn > 1.0 ? sampleRateIn : 48000.0;

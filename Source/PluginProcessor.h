@@ -277,9 +277,10 @@ inline juce::StringArray vinylTypeNameList()
 // cut out of here.
 #include "DSP/PitchTracker.h"
 
-// The realtime pitch shifter the autotune stage moves the audio with. Moved out
-// for the same reason as the tracker above.
-#include "DSP/RealtimePitchShifter.h"
+// The autotune stage's audio path: signalsmith-stretch's phase vocoder when the
+// build has it, the granular shifter when it does not. Moved out for the same
+// reason as the tracker above.
+#include "DSP/CorrectorStage.h"
 
 // The transport rig: one capstan, three keys and a power cut. Moved out of this
 // file, so tests/transport/ can include it directly instead of having its text cut
@@ -1185,6 +1186,16 @@ private:
     int lastBlockSize = 512;
     float oversamplingRateFactor = 1.0f;
 
+    // Latency reported to the host, in two parts. The oversampler's is fixed for a
+    // factor; the corrector's is zero while AUTOTUNE is off and one block of
+    // lookahead while it is on, because the phase vocoder is handed whole blocks.
+    // The two are published together by publishReportedLatency(), so the host is
+    // only ever told a number that matches what the audio path is actually doing.
+    int oversamplerLatencySamples = 0;
+    int publishedCorrectorLatencySamples = 0;
+    void publishReportedLatency();
+
+
     // The two A/B slots hold full parameter states; the live side is the one the
     // engine is currently rendering. Slot recall swaps state, never sample data.
     juce::ValueTree compareSlots[2];
@@ -1379,7 +1390,11 @@ private:
     std::array<GlueCompressor, 2> inputCompressorChannels;
     std::array<GlueCompressor, 2> outputCompressorChannels;
     std::array<StandardCompressor, 2> standardCompressors;
-    std::array<RealtimePitchShifter, 2> autoTuneShifters;
+    // The corrector's audio path. Two engines live behind it - see
+    // Source/DSP/CorrectorStage.h - and which one this build has is decided by
+    // OptionalLibraries.h, not here. It is prepared at the ENGINE's rate, since
+    // that is the rate the stage is handed frames at.
+    CorrectorStage corrector;
     // One YIN tracker per channel: the estimate a corrector needs is the pitch of
     // the note in THIS channel, and a stereo mix's two notes are not the same
     // note. The tracker is only fed while the stage is switched on - see

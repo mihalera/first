@@ -34,6 +34,20 @@ Consequences worth knowing before reading the table:
   192 kHz). The two glue compressors, the EQs, the compressor and the limiter all
   recompute their coefficients from that rate, so their times and corner
   frequencies do not move when the switch does.
+- **The corrector's audio path left the per-frame loop and sits with the block stages.**
+  `Source/DSP/CorrectorStage.h` has two engines behind one interface and one of them - the
+  signalsmith-stretch vocoder, which `-DJ37_CORRECTOR_USE_STRETCH=ON` selects - is handed whole
+  blocks, so the stage is driven where the engine can afford to wait for them: at the top of
+  `processPostMachineStages()`, before the IR cabinet, the reverb and the vinyl stage. What
+  that changes is the order of the PROTECTION stages (the compressor, width, guard, output
+  trim, limiter and clipper no longer see a corrected signal) and not of the effects: the
+  corrector is still fed the tape machine's output and the reverb is still fed the corrected
+  signal. What it buys is that the stage's lookahead is one number, reported to the host by
+  `publishReportedLatency()` while AUTO TUNE is engaged and zero while it is not - instead of
+  a delay buried in the middle of the chain, where every stage after it would sit against the
+  host's timeline. That latency is engine-specific and measured: 1216 frames at 48 kHz (25 ms)
+  with the vocoder, and nothing reported for the granular shifter, whose one period of delay
+  the plugin has never reported.
 - **The IR cabinet, SPACE reverb and VINYL stage are per BLOCK, not per sample**,
   and they run *after* the limiter and the soft clipper - so they are the only
   stages that can add level the protection chain never saw. They also run at the
@@ -75,7 +89,7 @@ Numbers are the order; "per" is the rate domain.
 | 22 | OUT EQ | sample | The output equaliser, at the other end of the machine and deliberately before the limiter: a boost here is caught by protection further down. | OUT LOW/MID/HIGH, OUT HP/LP, ORDER, Q |
 | 23 | Neural stage | sample | A learned model as a per-channel nonlinearity, after the tape and before the transient shaper: a model trained on hardware is another saturation curve, and the shaper can still sharpen what it produced. Bit-for-bit pass-through at NEURAL 0 or with no model. | NEURAL |
 | 24 | Transient shaper | sample | Attack and sustain, blended by its own MIX. The only stage that changes the ENVELOPE rather than the waveform, which is why it comes after everything that bends the signal. | TR ATTACK, TR SUSTAIN, TR MIX |
-| 25 | Autotune | sample | Pitch correction: a YIN period detector gates a phase-locked granular shifter, pulling the reading onto the nearest degree of the chosen scale - but only once the reading is more than **±10 cents** off it (`Source/DSP/PitchCorrectionRule.h`), so a note that is nearly in tune is left alone. At 0 the stage and the detector are out of the path entirely. | AUTOTUNE, AMOUNT, TONIC, MODE |
+| 25 | Autotune | frame (the detector and the rules), block (the audio path - see below) | Pitch correction: a YIN period detector gates a phase-locked shifter, pulling the reading onto the nearest degree of the chosen scale - but only once the reading is more than **±10 cents** off it (`Source/DSP/PitchCorrectionRule.h`), so a note that is nearly in tune is left alone. At 0 the stage and the detector are out of the path entirely, and nothing of it is reported either. | AUTOTUNE, AMOUNT, TONIC, MODE |
 | 26 | Conventional compressor | sample | An ordinary feed-forward compressor on the finished signal, independent of the two glue stages, with its own mix. | COMP THRESH/RATIO/ATTACK/RELEASE/MAKEUP/MIX |
 | 27 | Track bleed | sample | What one head reads from the other track's recent history - a small, symmetric leak that is part of what the machine put on the tape. | TRACKS |
 | 28 | Stereo width | sample | Mid/side width on the finished image. | WIDTH |
@@ -114,7 +128,7 @@ machine produced.
 | the conventional compressor's ratio, knee and makeup | `tests/unit` (`StandardCompressor`) |
 | the transient shaper's ATTACK and SUSTAIN signs | `tests/unit` (`TransientShaper`) |
 | the transport rig and the repitch stage | `tests/transport` |
-| the pitch tracker and the granular shifter | `tests/pitch` |
+| the pitch tracker, the granular shifter, and the corrector stage in BOTH of its engines | `tests/pitch` |
 | the rate bridge and the guarded neural stage | `tests/neural` |
 | the room's tail length in seconds at three rates, its stereo width, and its silence at MIX 0 | `tests/reverb` |
 | the spectrum analyser, with and without its FFT | `tests/spectrum` |

@@ -132,6 +132,14 @@ jobs:
       # ordering of two loops - so this harness includes both stages and measures
       # the reading and the splice on generated signal. Same shape as
       # the harnesses above: no JUCE, no host, a few seconds.
+      #
+      # It builds the file TWICE, and the second build is the point of this
+      # comment: Source/DSP/CorrectorStage.h has two engines behind one interface,
+      # and the second binary is compiled exactly as -DJ37_CORRECTOR_USE_STRETCH=ON
+      # compiles the plugin. The numbers that keep that option OFF - 1216 frames of
+      # reported lookahead, a transposition 56 cents wide at 0.94x against the
+      # granular engine's sub-cent reading - are printed by that run rather than
+      # quoted here, so the flag and its evidence cannot drift apart.
       - name: Run the pitch harness
         run: bash tests/pitch/run.sh
 
@@ -588,10 +596,10 @@ jobs:
       # no toolkit, no host and no submodules, so they run here a second time
       # with ASan and UBSan turned on: the shipped DSP generator, the knob
       # strip's arithmetic, the state writer/reader, the transport rig, the
-      # pitch stage's delay line and the room's feedback network - with the
-      # vendored verb.c instrumented too, since that is where the tank's own
-      # delay buffers live - executed as compiled out of Source/ rather than as
-      # a copy of it.
+      # pitch stage's delay line, the corrector's ring buffers in BOTH of its
+      # engines, and the room's feedback network - with the vendored verb.c
+      # instrumented too, since that is where the tank's own delay buffers live -
+      # executed as compiled out of Source/ rather than as a copy of it.
       # -fno-sanitize-recover=all makes any finding fail the step instead of
       # printing and carrying on.
       - name: Run the harnesses under ASan and UBSan
