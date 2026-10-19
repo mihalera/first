@@ -148,9 +148,9 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
     // juce::Button* named explicitly: the members mix ToggleButton and
     // TextButton, and an initializer_list cannot be deduced from a
     // heterogeneous braced list - the common base is what the loop wants.
-    const std::array<juce::Button*, 15> stateButtons { { &bypassButton, &deltaButton, &polarityButton, &autoGainButton,
+    const std::array<juce::Button*, 14> stateButtons { { &bypassButton, &deltaButton, &polarityButton, &autoGainButton,
                           &modeCycleButton, &delaySyncButton,
-                          &themeButton, &glButton, &savePresetButton, &deletePresetButton,
+                          &themeButton, &savePresetButton, &deletePresetButton,
                           &copyAButton, &copyBButton, &compareButton,
                           &undoButton, &redoButton } };
     for (auto* button : stateButtons)
@@ -691,7 +691,7 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     setUpVinylSelectors();
     setUpTransportRow();
     setUpDelayRow();
-    setUpModeAndGlSwitches();
+    setUpModeSwitches();
     setUpSettingsSwitches();
     setUpModelButtons();
     setUpInlineLists();

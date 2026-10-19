@@ -115,8 +115,8 @@ namespace j37panel
                      2, 0, { 1, 2 } },
         //  flux, cabinet, presence. The vinyl stage's three voicing selectors
         //  - GENERATION / TURNTABLE / CARTRIDGE - are COMBO BOXES rather than
-        //  knobs (the grid only places knobs), so like GL and OVERSAMPLING they
-        //  are tab members whose visibility setCurrentTab asserts and resized()
+        //  knobs (the grid only places knobs), so like OVERSAMPLING they are
+        //  tab members whose visibility setCurrentTab asserts and resized()
         //  lays out, under the knobs here; the NEURAL model picker takes the
         //  band's fourth column.
         { "CHARACTER", "The head and the medium's tone: FLUX drives the head, "

@@ -128,28 +128,6 @@ public:
         active; otherwise the component paints the software scene. */
     void setSceneEnabled (bool shouldBeEnabled);
 
-    /** The backend selected by CMake and the backend actually used at runtime.
-        Unsupported native backends intentionally report CPU until implemented. */
-    [[nodiscard]] static constexpr j37::render::Backend configuredRenderBackend() noexcept
-    {
-        return j37::render::configuredBackend();
-    }
-
-    [[nodiscard]] static constexpr j37::render::Backend effectiveRenderBackend() noexcept
-    {
-        return j37::render::effectiveBackend();
-    }
-
-    [[nodiscard]] static constexpr const char* effectiveRenderBackendName() noexcept
-    {
-        return j37::render::effectiveName();
-    }
-
-    [[nodiscard]] static constexpr const char* renderBackendStatus() noexcept
-    {
-        return j37::render::statusText();
-    }
-
     /** Whether the context is up AND the program linked - i.e. whether the
         editor should keep drawing its own flat transport behind this one. Read on
         the message thread, so the GL thread's half of the answer is an atomic. */
@@ -170,8 +148,8 @@ public:
 
     /** CPU renderer used when the selected native backend is unavailable or
         explicitly set to CPU. It intentionally uses the same telemetry and
-        palette atomics as the accelerated scene, so switching backend does not
-        change the editor's state model. */
+        palette atomics as the accelerated scene, so both paths share one state
+        model. */
     void paint (juce::Graphics&) override;
     void resized() override;
 

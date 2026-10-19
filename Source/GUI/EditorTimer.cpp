@@ -227,9 +227,9 @@ juce::Rectangle<int> FirstAudioProcessorEditor::deckAnimationBounds() const
     //
     //   * the software transport - the small reel at deck.right - 42, deck.y + 14
     //     and the ribbon that falls from it to deck.y + 60. paint() draws it only
-    //     while the 3D scene is not live (a driver that will not give us a
-    //     context, GL switched off), which is exactly the case in which nothing
-    //     else is moving there at all.
+    //     while the 3D scene is not live (for example, when a driver cannot
+    //     create a context), which is exactly the case in which nothing else is
+    //     moving there at all.
     //   * the particles, in the corridor resized() measured from the gap the
     //     switches row actually left (deckParticleCorridorX/Y).
     //
@@ -293,19 +293,19 @@ void FirstAudioProcessorEditor::timerCallback()
     // Retry the automatic OpenGL accelerator while the host is still creating
     // its peer/context. The budget is bounded so an unavailable driver is not
     // polled forever; CPU painting remains available in the meantime.
-    if (glAttachAttemptsLeft > 0)
+    if (openGLAttachAttemptsLeft > 0)
     {
-        --glAttachAttemptsLeft;
+        --openGLAttachAttemptsLeft;
         if (openGLContext.isAttached())
         {
-            glAttachAttemptsLeft = 0;
+            openGLAttachAttemptsLeft = 0;
         }
         else if (j37::render::usesOpenGL())
         {
             openGLContext.attachTo (*this);
             if (openGLContext.isAttached())
             {
-                glAttachAttemptsLeft = 0;
+                openGLAttachAttemptsLeft = 0;
                 tapeScene.setSceneEnabled (true);
             }
         }

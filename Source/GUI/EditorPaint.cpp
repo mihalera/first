@@ -240,9 +240,9 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     //   - live shimmer: a sparse drift of dots whose positions are the shader's
     //     hash(face*40 + t*(1+GR)) evaluated at a walking time offset - so the
     //     surface visibly responds to DRIVE and to the compressors. THIS is
-    //     what the GL switch switches between: with the context attached the
-    //     scene's fragment shader draws the identical texture definition on
-    //     the GPU; without it, this ink does.
+    //     the CPU fallback for the scene: with a context attached the scene's
+    //     fragment shader draws the same texture definition on the GPU; without
+    //     it, this ink does.
     //  Every dose is centered, so no branch can shift the panel's colour.
     // ----------------------------------------------------------------------
     if (panelTextureImage.isValid())

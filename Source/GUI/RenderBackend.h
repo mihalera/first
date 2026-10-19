@@ -32,27 +32,6 @@ constexpr Backend configuredBackend() noexcept {
 #endif
 }
 
-constexpr const char *name(Backend backend) noexcept {
-    switch (backend) {
-    case Backend::autoDetect:
-        return "Auto";
-    case Backend::openGL:
-        return "OpenGL";
-    case Backend::vulkan:
-        return "Vulkan";
-    case Backend::metal:
-        return "Metal";
-    case Backend::directX11:
-        return "DirectX 11";
-    case Backend::directX12:
-        return "DirectX 12";
-    case Backend::cpu:
-        return "CPU";
-    }
-
-    return "Unknown";
-}
-
 // Native adapters currently provide presentation only, not the TapeScene draw
 // path. Do not select them as effective renderers until they render the scene.
 constexpr bool hasNativeImplementation(Backend) noexcept {
@@ -89,17 +68,4 @@ constexpr bool isFallbackActive() noexcept {
         && usesCpuFallback();
 }
 
-constexpr const char* effectiveName() noexcept {
-    return name (effectiveBackend());
-}
-
-constexpr const char* statusText() noexcept {
-    if (isFallbackActive())
-        return "CPU fallback (native scene renderer unavailable)";
-
-    if (usesOpenGL())
-        return "OpenGL";
-
-    return "CPU";
-}
 } // namespace j37::render

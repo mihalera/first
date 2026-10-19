@@ -1069,7 +1069,6 @@ continues through its normal software path. `VULKAN`, `METAL`, `D3D11`, `D3D12`,
 `BGFX`, `WGPU` and `DAWN` are explicit pending backend selections: until their
 native device implementations are added, they intentionally resolve to the CPU
 fallback rather than silently creating an OpenGL context or showing a blank editor.
-The SETTINGS control reports the active fallback and explains it in its tooltip.
 This makes backend capability explicit and keeps unsupported configurations safe
 in a DAW.
 

@@ -609,7 +609,7 @@ private:
     void setUpVinylSelectors();
     void setUpTransportRow();
     void setUpDelayRow();
-    void setUpModeAndGlSwitches();
+    void setUpModeSwitches();
     void setUpSettingsSwitches();
     void setUpModelButtons();
     void setUpInlineLists();
@@ -1176,12 +1176,11 @@ private:
     std::array<RenderOrb, decorativeOrbCount> renderOrbs {};
     juce::SpinLock renderOrbsLock;
     juce::OpenGLContext openGLContext;
+    int openGLAttachAttemptsLeft = 0;
 
     // =====================================================================
     //  The panel's arithmetic texture, 2D half. The GPU half lives in
-    //  TapeScene (uTextureWeights); both read the SAME three doses, so GL ON
-    //  and GL OFF are two renders of one texture definition - which is what
-    //  makes the GL switch change something the eye can see.
+    //  TapeScene (uTextureWeights); both read the same three doses.
     // =====================================================================
     struct PanelTextureWeights
     {

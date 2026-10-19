@@ -1188,7 +1188,7 @@ void FirstAudioProcessorEditor::setUpDelayRow()
     addAndMakeVisible (delayRateBox);
 }
 
-void FirstAudioProcessorEditor::setUpModeAndGlSwitches()
+void FirstAudioProcessorEditor::setUpModeSwitches()
 {
     // ---------------------------------------------------------------
     //  The two whole-machine modes.
@@ -1832,6 +1832,7 @@ void FirstAudioProcessorEditor::setUpOpenGlRendering()
             openGLContext.detach();
     }
 
+    openGLAttachAttemptsLeft = (! j37::render::usesOpenGL() || openGLContext.isAttached()) ? 0 : 90;
 }
 
 void FirstAudioProcessorEditor::finishConstruction()
