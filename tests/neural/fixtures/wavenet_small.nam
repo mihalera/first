@@ -1,0 +1,37 @@
+{
+  "version": "0.5.4",
+  "metadata": {
+    "date": { "year": 2026, "month": 10, "day": 19, "hour": 12, "minute": 0, "second": 0 },
+    "loudness": -20.0,
+    "gain": 0.2,
+    "name": "J37 WaveNet fixture",
+    "modeled_by": "tests/neural/fixtures (authored for the WP3 gate; not a real amp capture)"
+  },
+  "architecture": "WaveNet",
+  "config": {
+    "layers": [
+      {
+        "input_size": 1,
+        "condition_size": 1,
+        "head_size": 1,
+        "channels": 2,
+        "kernel_size": 2,
+        "dilations": [1, 2],
+        "activation": "Tanh",
+        "gated": false,
+        "head_bias": false
+      }
+    ],
+    "head": null,
+    "head_scale": 0.02
+  },
+  "weights": [
+    0.323101, 0.003639, -0.23571, 0.207062, 0.280458, -0.307327, -0.334172, 0.256199,
+    0.230441, -0.225224, -0.022358, 0.327168, -0.092419, -0.437415, 0.068936, 0.384387,
+    -0.075629, -0.214812, 0.225215, 0.12384, -0.392305, -0.157867, 0.40018, 0.14908,
+    -0.288512, 0.01752, 0.248604, -0.217838, -0.326471, 0.271627, 0.352761, -0.212488,
+    -0.207755, 0.228183, 0.01166, -0.364034, 0.054285, 0.448253, -0.019839, -0.354919,
+    0.02
+  ],
+  "sample_rate": 48000
+}

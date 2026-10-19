@@ -57,23 +57,26 @@
 # guard below fails if one of them is missing from the run.
 set -euo pipefail
 
-# Three passes, and the whole check is about three minutes on a single-core machine
-# (thirteen translation units and twelve headers, each one a full JUCE include tree).
+# Four passes, and the whole check is about three minutes on a single-core machine
+# (thirteen translation units, twelve headers and one opt-in shape, each a full JUCE
+# include tree).
 # A named pass can be run on its own for local iteration - `check_editor_juce.sh tu`,
-# `... headers`, `... probe` - and no name is a filter: a pass that is run, is run
-# over every file it finds. With no argument all three run, which is what CI does and
-# what the exit status means.
+# `... headers`, `... probe`, `... namcore` - and no name is a filter: a pass that is
+# run, is run over every file it finds. With no argument all four run, which is what CI
+# does and what the exit status means.
 RUN_TUS=1
 RUN_PROBE=1
 RUN_HEADERS=1
+RUN_NAMCORE=1
 
 case "${1:-}" in
     "") ;;
-    tu)      RUN_PROBE=0; RUN_HEADERS=0 ;;
-    probe)   RUN_TUS=0;   RUN_HEADERS=0 ;;
-    headers) RUN_TUS=0;   RUN_PROBE=0 ;;
+    tu)      RUN_PROBE=0;   RUN_HEADERS=0; RUN_NAMCORE=0 ;;
+    probe)   RUN_TUS=0;     RUN_HEADERS=0; RUN_NAMCORE=0 ;;
+    headers) RUN_TUS=0;     RUN_PROBE=0;   RUN_NAMCORE=0 ;;
+    namcore) RUN_TUS=0;     RUN_PROBE=0;   RUN_HEADERS=0 ;;
     *)
-        echo "check_editor_juce: usage: $0 [tu|probe|headers]" >&2
+        echo "check_editor_juce: usage: $0 [tu|probe|headers|namcore]" >&2
         exit 2
         ;;
 esac
@@ -219,7 +222,6 @@ INCLUDES=(
     -I "${REPO}/ThirdParty/xsimd/include"
     -I "${REPO}/ThirdParty/farbot/include"
     -I "${REPO}/ThirdParty/signalsmith-stretch/include"
-    -I "${REPO}/ThirdParty/soundtouch/include"
     -I "${REPO}/ThirdParty/pocketfft"
     # The room's library. Unlike the rest of this list it is not header-only -
     # verb.c is compiled into the plugin by cmake/J37Dependencies.cmake - but the
@@ -234,6 +236,11 @@ INCLUDES=(
 # decides (J37_HAS_POCKETFFT) is 1 here and 0 in a checkout with ThirdParty/ pruned,
 # which is the pair tests/spectrum compiles explicitly - so this pass is the one that
 # compiles the library-present shape of the stage in the plugin's own context.
+#
+# The NAM Core trees are NOT in the list above, deliberately: the TU and header passes
+# compile the shape CMake builds by default, where J37_NAMCORE is OFF. The namcore pass
+# at the bottom is the other shape, with its own include paths, so neither can make the
+# other pass by accident.
 
 # juce_audio_basics pulls juce_core in itself; the module defines are what a
 # module header checks before compiling its own sources.
@@ -411,7 +418,47 @@ if [ "${RUN_HEADERS}" -eq 1 ]; then
     run_in_batches compile_header_alone "${OWN_HEADERS[@]}"
 fi
 
+# -----------------------------------------------------------------------------
+#  The NAM Core shape, `-DJ37_NAMCORE=1`.
+#
+#  tests/neural compiles Source/DSP/NamBackend.h and NeuralStage.h against the REAL
+#  NeuralAmpModelerCore and Eigen - but against the DSP harness's shim, not JUCE. That
+#  proves the backend and the stage; it does not prove the plugin's own translation
+#  unit compiles with both engines in it. This pass closes that gap: the processor's TU,
+#  compiled with the option the CMake build throws and the two vendored trees on the
+#  include path, which is exactly the shape `-DJ37_NAMCORE=ON` builds.
+#
+#  One TU rather than thirteen: every file that includes PluginProcessor.h pulls the
+#  stage (and through it NamBackend.h) in, and the include paths the option adds come
+#  from CMake's namcore target, so they are identical for all of them. The probe is
+#  re-asserted first, because a missing include path otherwise compiles the
+#  pass-through and reports success for a shape it never built.
+# -----------------------------------------------------------------------------
+NAM_INCLUDES=(
+    -isystem "${REPO}/ThirdParty/namcore"
+    -isystem "${REPO}/ThirdParty/eigen"
+    -isystem "${REPO}/ThirdParty/nlohmann_json/single_include/nlohmann"
+)
+
+if [ "${RUN_NAMCORE}" -eq 1 ]; then
+    if [ ! -f "${REPO}/ThirdParty/namcore/NAM/get_dsp.h" ] \
+       || [ ! -f "${REPO}/ThirdParty/eigen/Eigen/Dense" ]; then
+        echo "check_editor_juce: ThirdParty/namcore or ThirdParty/eigen is missing -" \
+             "the NAM Core pass cannot compile the shape it exists for" >&2
+        exit 1
+    fi
+
+    printf '#include "DSP/OptionalLibraries.h"\n#if ! J37_HAS_NAMCORE\n#error "J37_HAS_NAMCORE did not come on"\n#endif\n' \
+        | "${CXX}" -std=c++20 -fsyntax-only -Wno-cpp -x c++ - \
+            "${INCLUDES[@]}" "${NAM_INCLUDES[@]}" "${DEFINES[@]}" -DJ37_NAMCORE=1
+
+    "${CXX}" -std=c++20 -fsyntax-only -Wno-cpp \
+        "${INCLUDES[@]}" "${NAM_INCLUDES[@]}" "${DEFINES[@]}" -DJ37_NAMCORE=1 \
+        "${REPO}/Source/PluginProcessor.cpp" \
+        && echo "  ok  Source/PluginProcessor.cpp (NAM Core on)"
+fi
+
 echo "check_editor_juce: ${#TUS[@]} translation unit(s) - the processor, the editor" \
      "and every file they are split into, plus ${#PROBE_TUS[@]} of them again with the" \
-     "hot-path probe on - and ${#OWN_HEADERS[@]} of the plugin's own header(s) compile" \
-     "against real JUCE"
+     "hot-path probe on, plus the processor again with NAM Core - and" \
+     "${#OWN_HEADERS[@]} of the plugin's own header(s) compile against real JUCE"

@@ -34,7 +34,8 @@ next to the thing.
 
 ## 2. Where every library stands
 
-`cmake/J37Dependencies.cmake` names 42 packages. They are grouped below by what they
+`cmake/J37Dependencies.cmake` names 43 packages - declarations, whether the vendored
+tree or the CPM fallback ends up serving them. They are grouped below by what they
 contribute, not by where they are declared. In every group the question is the same one:
 **what would have to become true for this to earn a place in the binary?** For most of
 them the honest answer is "nothing I can name", and that is a finding, not an omission.
@@ -43,7 +44,9 @@ them the honest answer is "nothing I can name", and that is a finding, not an om
 
 | Library | Pin | Licence | Caller |
 | --- | --- | --- | --- |
-| `RTNeural` | vendored `95c3c0f9` | BSD-3 | `Source/DSP/NeuralStage.h` |
+| `RTNeural` | vendored `95c3c0f9` | BSD-3 | `Source/DSP/NeuralStage.h`, the LSTM `.nam` path |
+| `NeuralAmpModelerCore` | vendored `0b3d3c97` (v0.6.0) | MIT | `Source/DSP/NamBackend.h` - **opt-in** via `J37_NAMCORE`, the WaveNet/ConvNet `.nam` path |
+| `Eigen` | vendored `bc3b3987` (3.5.0) | MPL-2.0 | NAM Core's linear algebra, and nothing else |
 | `dattorro-verb` | vendored `41e976a0` | MIT | `Source/DSP/DattorroRoom.h` |
 | `nlohmann/json` | vendored `v3.12.0` | MIT | preset + model parsing |
 | `pocketfft` | vendored `c90e55b3` | BSD-3 | `Source/DSP/SpectrumAnalyser.h` |
@@ -57,7 +60,7 @@ them the honest answer is "nothing I can name", and that is a finding, not an om
 | `signalsmith-stretch` (+ `signalsmith-linear`) | vendored `1.4.0` / `0.6.4` | MIT | `Source/DSP/CorrectorStage.h` engine 2, **off by default** |
 | `melatonin_inspector` | `9c483f86` | MIT | `JUCE_DEBUG` builds only |
 
-The two rows marked **opt-in** are the model for how an audio-changing library arrives:
+The three rows marked **opt-in** are the model for how an audio-changing library arrives:
 an `option()`, a probe, and a harness that prints what each shape renders.
 
 ### 2b. The defect: linked, never called - now gone
@@ -70,8 +73,10 @@ an `option()`, a probe, and a harness that prints what each shape renders.
 
 | Library | Licence | State |
 | --- | --- | --- |
-| `SoundTouch` | **LGPL-2.1** | Declared as a target, built by nothing. WP4 decides: delete, or measure it into the corrector as a third engine |
-| `farbot` | MIT | Real-time-safe utilities fetched for a caller that never arrived. Nothing needs it; `IrStage` and `NeuralStage` solve the same problem with JUCE and atomics |
+| `farbot` | MIT | Real-time-safe utilities fetched for a caller that never arrived. Nothing needs it; `IrStage` and `NeuralStage` solve the same problem with JUCE and atomics. `ThirdParty/farbot/` is small, header-only and MIT, so it stays as the one-line-away option §2d keeps for a stage that wants it |
+
+(SoundTouch left this table in WP4: its target, fetch and vendored tree are gone, and
+with them the last LGPL text in the repository.)
 
 ### 2d. Fetched, unlinked - and what would change that
 
@@ -104,9 +109,10 @@ repository's licence obligations for a binary.
 
 | Library | Licence | When |
 | --- | --- | --- |
-| `NeuralAmpModelerCore` | MIT | **WP3** - the rest of the `.nam` format |
-| `Eigen` | MPL-2.0 | **WP3**, as NAM Core's backend |
 | `Assimp` (OBJ importer only) | BSD-3 | **WP5** - blocked on a licence-clean mesh existing, not on time |
+
+`NeuralAmpModelerCore` and `Eigen` left this table in WP3: both are vendored under
+`ThirdParty/`, pinned by commit, and wired behind `J37_NAMCORE` - see 2a.
 
 ## 3. The plan
 
@@ -197,22 +203,39 @@ two prints of the same surface at different levels sound identical, which is the
 of what the control is for. A FLOAT file is therefore left alone; integer formats are
 exact by construction.
 
-**Not in this work package.** The panel has no picker yet: the engine's entry point is
-`FirstAudioProcessor::loadNoiseFile`, which the editor does not call, so a user reaches
-the feature through the public processor API and not through a button. The chooser to
-write is `loadIrFromFile`'s shape (an asynchronous `FileChooser` filtered to
-`*.wav;*.aif*`), and it is deliberately a separate change because it touches the panel
-layout and the theme wiring, both of which `tests/layout` and `tests/theme` measure.
+**The picker, landed after that gate.** The engine alone was not the feature: a print
+that can only be loaded through `FirstAudioProcessor::loadNoiseFile` is not a control a
+user has. So the VINYL page - which until then carried nothing but three knobs, and
+reserved no band under them at all - now owns the third file-fed picker, built beside
+the model and IR ones in `Source/GUI/EditorSetup.cpp` and filtered to `*.wav;*`: dr_wav
+is a WAV decoder, and `*` keeps an AIFF selectable so the readout can say what it was
+rather than hiding it from the dialogue. The band under the three knobs carries the
+print's name across two cells and LOAD PRINT / CLEAR PRINT under it, which is the same
+arrangement the MODELS and FRONT END pages use for their own member controls.
 
-**Cost so far.** The engine half of the day the plan estimated; the picker is the rest.
+The readout has FOUR states rather than the other pickers' two, because this is the
+only load that is not finished when the chooser's callback returns: the decode runs on
+`NoiseLoader`'s own thread, so `LOADING PRINT` covers the interval where `NO PRINT`
+would be a lie about a file that is being read, and `INVALID PRINT (reason)` adopts the
+loader's refusal from `getNoiseError()` on the next tick - the reason arrives after the
+callback, which is why this readout polls where the model and IR ones read
+synchronously. The reason outranks a print that is still playing, exactly as `INVALID
+IR` does. A print is not saved with the session, and the picker reopens in the folder
+the last one came from.
 
-### WP3 - `NeuralAmpModelerCore` + Eigen: the rest of the `.nam` format
+**Cost so far.** The engine half and the panel half, both done. The gates that measure
+the panel - `tests/layout`, `tests/theme`, `tests/translations` and the JUCE editor
+harness - were the reason the picker was a separate change, and all four pass with the
+page as built.
+
+### WP3 - `NeuralAmpModelerCore` + Eigen: the rest of the `.nam` format - **done**
 
 **Why.** `Source/DSP/NeuralStage.h` already *reads* `.nam` files, but only the `LSTM`
 architecture - it slices the flat weight vector into RTNeural layers and refuses anything
 else, loudly, because "a model that loads and sounds wrong" is worse than one that fails.
-WaveNet and Feather are most of the profiles in circulation. NAM Core is MIT and is the
-reference implementation of all of them.
+WaveNet is most of the profiles in circulation, and the convolutional nets the stage's
+comment calls "Feather" are the legacy half of the same refusal. NAM Core is MIT and is
+the reference implementation of them.
 
 **Where.** The seam already exists and does not change: `NeuralStage::loadFromJson`, the
 `buildFromNam` converter, and the `activeModel` / `retiredModels` hand-off. The work is a
@@ -222,31 +245,148 @@ second backend behind that same seam, not a second stage.
 
 1. Fetch `NeuralAmpModelerCore` (pin the newest release tag, currently `v0.5.x`, by
    commit SHA - see the pinning note at the top of `J37Dependencies.cmake`) and `Eigen`
-   as its backend, MPL-2.0. Both are configured, not vendored: NAM Core's own CMake is
-   a real project.
+   as its backend, MPL-2.0. **Landed as vendored trees with CPM fallbacks at the same
+   pins**, not as configured packages: that is what every other library here does, and
+   NAM Core's own CMake is a standalone project whose flags, version floor and `tools/`
+   executables a plugin build should not inherit.
 2. `J37_HAS_NAMCORE` in `OptionalLibraries.h`, guarded, default **off**
    (`-DJ37_NAMCORE=ON`). Two inference engines in one binary is a size and build-time
    cost, so it is an option until the measurement below says it is the default.
 3. New `Source/DSP/NamBackend.h`: `bool load(const nlohmann::json&)`, `void prepare(double
-   rate)`, `float process(float)`, `reset()`. RTNeural stays the LSTM path; NAM Core
-   takes WaveNet/Feather **and** LSTM, so the converter can then be deleted in one
-   follow-up commit once the differential test below passes.
+   rate)`, `float process(float)`, `reset()`. **Landed exactly that way.** RTNeural stays
+   the LSTM path and NAM Core takes WaveNet/ConvNet, and it takes LSTM too in a build
+   with NAM but no RTNeural; deleting the converter outright is a follow-up commit, and
+   deliberately not this one - it would delete the differential below.
 4. Model loading keeps the IR stage's shape: parse and build on the background thread,
    publish with `activeModel`, retire the old object. NAM Core's `Model` allocates on
    construction and that is exactly why it never happens on the audio thread.
-5. `tests/neural` grows a differential case: render one second of the same DI through
+5. `tests/neural` grows the differential case: render one second of the same DI through
    (a) the existing `buildFromNam` converter and (b) NAM Core, for a small LSTM `.nam`
    checked into `tests/neural/fixtures/`, and report max absolute difference. Then a
    WaveNet fixture, for which the gate is only "finite, bounded, and the right length" -
-   it has no counterpart in the old path to be equal to.
-6. Bypass stays bit-exact and the model rate still goes through `RateBridge`, which is
-   what makes a 48 kHz profile usable at 96 kHz.
+   it has no counterpart in the old path to be equal to. **The fixtures and the yardstick
+   half of this landed first**, because a backend written before its yardstick has
+   nothing to be compared against: see the section below and
+   `tests/neural/fixture_test.cpp`.
+6. Bypass stays bit-exact and the model rate still goes through `RateBridge`, which
+   is what makes a 48 kHz profile usable at 96 kHz.
 
-**Gate.** LSTM: max abs difference against the converter under -100 dBFS (they are the
-same arithmetic in a different order, so this is a formatting question, not a modelling
-one). WaveNet: no NaN/Inf, output peak within the fixture's expected range, and the
-process cost measured by `tests/dsp/run_bench.sh` and printed, not hidden. Bypass and
-"no model" remain bit-identical to a build without NAM Core.
+**What the fixtures pin, measured rather than assumed.** The first pass of this item did
+what the plan asked and stopped there - it wrote the yardstick, not the backend. The
+second pass built the backend behind it:
+
+- `tests/neural/fixtures/lstm_small.nam` (LSTM: 1 layer, 1 input, 4 hidden, 109 weights)
+  and `tests/neural/fixtures/wavenet_small.nam` (WaveNet: one layer array, 2 channels,
+  kernel 2, dilations 1 and 2, 41 weights) exist, are checked into the tree, and are
+  authored for this gate rather than copied from a capture - their `metadata` says so.
+  `tests/neural/fixture_test.cpp` parses them, computes the weight count each config's
+  layout implies and requires the file to match it, and drives them; `tests/neural/run.sh`
+  builds and runs it, and CI's `dsp-tests` job runs that script already, with and without
+  `J37_SANITIZE`. The pair is LSTM + WaveNet because those are the two the stage's
+  refusal named: the converter covers the LSTM and nothing else, and the `"Feather"` the
+  stage's comment calls out is legacy naming for a convolutional net the current
+  reference player has no such architecture for. The backend is asked for the WaveNet,
+  and the file says so.
+- The LSTM fixture goes through the SHIPPING stage - the real
+  `Source/DSP/NeuralStage.h`, against the REAL vendored RTNeural, via
+  `buildFromNam` - and reproduces NAM Core's own output for a fixed 64-frame input to
+  **1.19e-7** at frames [32, 48). NAM Core's numbers were produced from a clone of the
+  upstream project (its `get_dsp` path, 64 frames at 48 kHz, mono float) while the
+  fixtures were authored, and are recorded in the test as the oracle. The gate's -100
+  dBFS is therefore already met at about -138 dBFS, and the day RTNeural's conversion
+  drifts the fixture test says so.
+- The WaveNet fixture is rendered to **9.3e-10** by a reference evaluator that lives in
+  the test and covers exactly the shape the fixture declares (one layer array, no
+  post-stack head, ungated, Tanh, no FiLM, 1-in/1-out). It is a YARDSTICK, not a backend:
+  it refuses any other shape rather than approximating it, so it cannot grow into a
+  second implementation of what this item is meant to add.
+- Until the backend landed, the shipping stage REFUSED the WaveNet fixture and that
+  refusal was asserted as the known gap rather than as a failure - so it flipped on the
+  day there was an engine to accept the file.
+- The WaveNet refusal is GONE where there is a backend. `NeuralStage::buildFromNam`
+  sends an LSTM to the converter (when RTNeural is in the build) and everything else to
+  NAM Core; a build without NAM Core still refuses it, and the harness compiles that
+  build too rather than assuming it.
+
+**What the second pass landed, and why each piece is shaped the way it is.**
+
+- **Vendored, because that is what this tree does.** `ThirdParty/namcore/` is NAM Core's
+  `NAM/` tree with its `LICENSE` and `README.md` at commit `0b3d3c97` (the `v0.6.0`
+  tag); `ThirdParty/eigen/` is Eigen at `bc3b3987`, the commit NAM Core's own submodule
+  pins (3.5.0), with all four `COPYING.*` files beside it. Both blocks in
+  `cmake/J37Dependencies.cmake` fall back to CPM at the same pins when the trees are
+  absent, exactly like every other vendored library here. NAM Core's own CMake is
+  deliberately never configured: it is a standalone project with its own flags, a 3.10
+  floor CMake 4 rejects and a `tools/` directory of executables - the sources are
+  declared here instead.
+- **An OBJECT library, not a static one, and that is a real defect this pass found.**
+  NAM registers each architecture with a file-scope `static ConfigParserHelper` in its
+  own `.cpp`, and `get_dsp()` reaches them only through the registry - no architecture
+  object is referenced by name. A static archive is therefore pruned and every model
+  fails at RUNTIME with "No config parser registered for architecture: LSTM" after
+  linking cleanly. Objects on the link line cannot be pruned, which is also how
+  upstream's own tools build it.
+- **`J37_HAS_NAMCORE` is a two-header probe** (NAM's `get_dsp.h` and `Eigen/Dense`),
+  because NAM cannot be used without Eigen and a tree with one of them is not a tree
+  this backend can compile against. The option `J37_NAMCORE` is OFF by default; the
+  probe reads the option, as xsimd's and signalsmith's do.
+- **`Source/DSP/NamBackend.h` is NAM's own loader and per-sample loop**, with three
+  details that cost real behaviour:
+    - the sample buffers are `NAM_SAMPLE`, not `float`. The library defaults to double
+      and switches to float only when its build defines `NAM_SAMPLE_FLOAT`, so a
+      hard-coded float would either fail to compile or disagree with the library's ABI;
+    - prewarm is off TWICE. `DspLoadOptions{prewarm=false}` only covers the load, and
+      NAM restores the model to the caller's thread-local default (on) when it returns,
+      so the instance's own switch is turned off too. Prewarm runs the model over
+      silence, and the first samples of a take are what the player heard;
+    - `prepare` runs on the message thread, pushes one zero frame through to make NAM
+      grow its ring buffers while allocating is allowed, then resets. `reset` re-runs
+      NAM's `Reset` at the exact arguments `prepare` established, which is what makes
+      it allocation-free on the audio thread: NAM only resizes when a dimension
+      CHANGES, and those dimensions cannot.
+- **One seam in the stage.** `NeuralStage` now holds an `InferenceModel` - `forward` and
+  `reset` - with an RTNeural adapter and a NAM Core adapter behind it, so the rate
+  bridge, the active pointer, the retirement list and the deferred reset are still
+  written once. LSTM stays on RTNeural even when both are present, because that is what
+  keeps the two engines comparable; NAM Core takes the LSTM too in a build with NAM but
+  without RTNeural.
+- **One JSON version in the binary.** RTNeural bundles nlohmann 3.11.1 and includes it
+  by relative path; NAM Core's compiler objects take `const nlohmann::json&`. Two copies
+  in one translation unit are two TYPES with two mangled names and a linker error, so
+  `OptionalLibraries.h` now includes the vendored 3.12.0 ahead of RTNeural's
+  `model_loader.h` - the guard makes RTNeural's own include a no-op, and both libraries
+  share the one copy. This was found by the harness, not by reading the code.
+- **`Source/PluginProcessor.cpp`** compiles its "NEEDS LSTM" refusal only when
+  `J37_HAS_NAMCORE` is 0. With the backend in the build that check would be a lie about
+  what the stage can load, so the decision belongs to `buildFromNam`.
+- **`tests/neural/run.sh` now builds NAM Core** from its own sources (the same glob
+  upstream uses) and puts the objects on the link line for the reason above. It then
+  compiles the stage in every shape the dispatch has: `fixture_test.cpp` with both
+  engines (the differential build), the same file without NAM Core (the default build,
+  where WaveNet is still refused), and `nam_only_test.cpp` with NAM Core and
+  `J37_HAS_RTNEURAL=0` (where the LSTM has to go to NAM too, because there is no
+  converter). The library compiles in parallel, one job per core, because sixteen Eigen
+  translation units are about a minute serially and the same work is paid again under
+  ASan in CI.
+
+**Gate, and what it measured.** LSTM: max abs difference against the reference player
+under -100 dBFS - **1.19e-7** through the shipping converter, and **5.96e-8** between
+that converter and NAM Core's own LSTM on the same fixture (the fourth check in
+`fixture_test.cpp`, printed by every run). WaveNet: the same comparison through NAM Core - **9.31e-10** from the
+test's own evaluator, **2.79e-8** through the shipping stage, the larger number because
+that path also goes through `RateBridge` and the stage's crossfade. Both are three
+orders under the gate. Every sample is also checked finite and bounded, and clearing the
+model returns the stage to the bit-exact pass-through in both the LSTM and WaveNet
+cases.
+
+**What the gate does NOT yet include, and why the option stays OFF.** The process cost.
+The plan asked for it measured by `tests/dsp/run_bench.sh` and printed; that harness
+renders the plugin's own DSP blocks and has no model in it, so wiring NAM Core into it is
+a separate change (a benchmark needs a fixture with realistic channel counts, not the
+2-channel one the differential test uses). Until that number exists, `J37_NAMCORE` is
+OFF by default: the harness compiles and passes both shapes, so the backend cannot rot,
+but no shipped build pays for a convolutional stack it has not measured. Binary size
+moves with the same decision and is printed by the CMake summary when the option is on.
 
 **Licence.** MIT (NAM Core, © 2023 Steven Atkinson) and MPL-2.0 (Eigen). Neither is
 copyleft in the plugin-linking sense; both need a `THIRD_PARTY_NOTICES.md` row and a
@@ -259,13 +399,21 @@ never per-oversampled-sample), not a reason to refuse, but it has to be measured
 the option becomes a default. The other risk is that NAM Core's object model is heavier
 than the RTNeural seam expects - the `retiredModels` list is what keeps that safe.
 
-**Cost.** Two to three days, most of it the fixtures and the size/CPU measurement.
+**Cost, in the end.** One pass for the fixtures and the oracle, one for the fetch, the
+backend, the stage seam, the harness split and the documentation. The fixtures were the
+right thing to build first: they are what caught the JSON-version collision, the
+pruned-registration failure and the Reset-on-the-audio-thread question, each of which
+compiles and looks right on its own. What is left is the CPU measurement above, and the
+follow-up the plan already names - deleting the LSTM converter once the differential has
+been green for a release, which turns LSTM into NAM Core's too and leaves one engine.
+That deletion is deliberately NOT in this pass: it would take away the comparison the
+backend was accepted on.
 
-### WP4 - `SoundTouch`: decide, then delete or use
+### WP4 - `SoundTouch`: deleted - **done**
 
-**Why.** SoundTouch 2.4.1 is vendored under `ThirdParty/soundtouch`, buildable, and
-linked by nothing. It is **LGPL-2.1** - statically linked into a distributed plugin, that
-is the obligation the notices already flag, and it buys nothing today.
+**Why.** SoundTouch 2.4.1 was vendored under `ThirdParty/soundtouch`, buildable, and
+linked by nothing. It is **LGPL-2.1** - a static link into a distributed plugin is an
+obligation the notices had to flag - and it bought nothing.
 
 **The decision.** The corrector already has two engines, and the one that ships is the
 one that measured best (`tests/pitch` prints both: the granular shifter is sub-cent and
@@ -274,17 +422,36 @@ latency). A third stretcher has to beat *both* on that harness to be worth an LG
 obligation, and nothing in the code suggests it will: SoundTouch is a WSOLA shifter for
 time-stretching, which is the same family as the granular engine already shipping.
 
-**Recommendation.** Remove the `SoundTouch` target block from
-`cmake/J37Dependencies.cmake` and the vendored tree from `ThirdParty/`, together with its
-`THIRD_PARTY_NOTICES.md` section. If a future pass wants to test the hypothesis, it can
-be re-vendored cheaply - the target declaration is already written and the branches
-(`feature/soundtouch-vendored`) keep the work.
+**What was removed.** The target block in `cmake/J37Dependencies.cmake` (and with it
+the CPM fetch, so a configure no longer downloads an LGPL library), the vendored tree
+at `ThirdParty/soundtouch/` with its `COPYING.TXT`, the include path the editor harness
+carried for it, and its rows in `THIRD_PARTY_NOTICES.md`, `README.md` and `LICENSE`.
+That last one mattered: `LICENSE` still said SoundTouch was "linked statically" and
+that libsndfile was "on the link line", both false since the link line was trimmed -
+the file now states what ships. `Source/DSP/OptionalLibraries.h` keeps the history in
+its entry rather than erasing it, and the CMake file keeps the reason where the block
+was.
 
-**Gate (if it is ever used).** It enters `CorrectorStage` as engine 3 behind its own
-`option()`, and `tests/pitch` has to print its error/latency next to the other two before
-anything links it.
+**Why now, when the order said after WP3.** The wait was for the corrector's engine
+set to settle before pruning a stretcher. It is settled - two engines, both measured
+by `tests/pitch` - and WP3 adds an inference engine for `.nam` models, not a third
+pitch engine, so it cannot unsettle it. The order below is corrected rather than left
+to imply a dependency that does not exist.
 
-**Cost.** Deletion: minutes, once the licence text's removal is reviewed.
+**Gate.** `tests/linkline/check_linkline.py` still passes with no allowance: a target
+that no longer exists cannot be linked by accident. `tests/definitions`, `tests/theme`,
+`tests/translations` and `tests/layout` are unaffected, and the editor harness compiles
+the TUs with the include path gone. `grep -ri soundtouch` over everything but git
+history now finds prose only: the sentences that record the removal, and the
+snapshot in [plugin-analysis.md](plugin-analysis.md), which is explicitly labelled
+history and carries the correction where it matters.
+
+**If it is ever used.** It re-enters `CorrectorStage` as engine 3 behind its own
+`option()`, and `tests/pitch` has to print its error/latency next to the other two
+before anything links it; the vendored pin is still in this file's history.
+
+**Cost.** An hour, most of it checking that the licence text and the tables say what the
+tree now does.
 
 ### WP5 - `Assimp`, OBJ only: gated on there being a mesh
 
@@ -354,14 +521,26 @@ A library is finished - not merely added - when all seven are true:
 | Order | Item | Why here |
 | --- | --- | --- |
 | 1 | WP1 - drop `chowdsp_dsp_utils` | **Done.** Minutes of work, removed a GPLv3 obligation from the binary, needed no new measurement |
-| 2 | WP2 - `dr_wav` noise loader | **Done** (engine half; the panel picker is noted under WP2). It exercised the loader pattern WP3 reuses |
-| 3 | WP3 - NAM Core + Eigen | The largest user-visible gain (most `.nam` profiles load) and the largest measurement burden; start it only with the fixtures written first |
-| 4 | WP4 - delete `SoundTouch` | Follows WP3 so the corrector's engine set is settled before it is pruned |
+| 2 | WP2 - `dr_wav` noise loader | **Done** - engine, VINYL page picker and docs. It exercised the loader pattern WP3 reuses |
+| 3 | WP3 - NAM Core + Eigen | **Done.** The backend, the option (OFF by default), the stage seam and the differential harness are in the tree; WaveNet and ConvNet `.nam` files load where the option is on, and the unmatched half - process cost - is named in the WP3 gate |
+| 4 | WP4 - delete `SoundTouch` | **Done.** The corrector's engine set is settled (two engines, measured by `tests/pitch`), and WP3 does not touch it |
 | 5 | WP5 - `Assimp` | Blocked on an asset, not on time |
 | 6 | WP6 - inventory truth | Done with this file |
 
 WP1 and WP4 are the two that make the binary *smaller* and the licence story simpler.
 They are not glamorous, and they are the ones worth doing early for that reason: every
-later item inherits the link line they leave behind. WP1 and WP2 are done; WP4 waits for
-WP3 so the corrector's engine set is settled before it is pruned; WP3 is the largest
-remaining item and the only one that adds a new inference engine to the binary.
+later item inherits the link line they leave behind. WP1, WP2, WP3, WP4 and WP6 are
+done. WP3 is the only one that ADDS a library to the binary, and it is opt-in for that
+reason: the harness measures both shapes on every push, and the default waits for the
+process-cost number the gate still names.
+
+### What this leaves open
+
+Nothing else on the list is an integration to make. WP5 is blocked on an asset rather
+than on code, §4 records why the duplicate FFTs, the rival pitch detectors, the Q
+envelopes and the other UI/runtime toolkits are deliberately not adopted, and the two
+libraries a user can see (the IR and the noise print) already decode what their
+features need. The one common-audio-library question left - reading compressed or
+container formats - has no use case: a noise print is a recording the user makes, and
+the IR picker has JUCE's decoders behind it. So WP3 is the end of this plan, and after
+it the honest answer is that the tree's own stages are the answer.

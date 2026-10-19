@@ -16,7 +16,9 @@ Two things about how to read it:
 
 The two licence families this repository has to reproduce in full - MIT and
 BSD 3-Clause - are at the bottom under [Licence texts](#licence-texts), because
-almost every component here is under one of them.
+almost every component here is under one of them. The one stricter family,
+**MPL-2.0** (Eigen), is reproduced by shipping its own `COPYING.MPL2` in the
+vendored tree rather than a copy here - see the note under the vendored table.
 
 ## Vendored in `ThirdParty/`
 
@@ -27,6 +29,8 @@ column names the file in the tree that carries the text.
 | Component | Version / pin | Licence | Licence file |
 | --- | --- | --- | --- |
 | **RTNeural** - Jatin Chowdhury | `95c3c0f9` | BSD 3-Clause, Copyright (c) 2020, jatinchowdhury18 | `ThirdParty/RTNeural/LICENSE` |
+| **NeuralAmpModelerCore** (NAM Core) - Steven Atkinson | `0b3d3c97` (`v0.6.0`) | MIT, Copyright (c) 2023 Steven Atkinson | `ThirdParty/namcore/LICENSE` |
+| **Eigen** - Eigen authors (Gael Guennebaud, Benoit Jacob et al.) | `bc3b3987` (`3.5.0`) | **MPL-2.0**, with the Apache-2.0, BSD and MINPACK files it delegates parts of itself to | `ThirdParty/eigen/COPYING.MPL2` (and `COPYING.APACHE`, `COPYING.BSD`, `COPYING.MINPACK` beside it) |
 | **dattorro-verb** - El Visio (Pauli Pölkki) | `41e976a0` | MIT, Copyright (c) 2022 Pauli Pölkki | `ThirdParty/dattorro-verb/LICENSE` |
 | **dr_libs** (`dr_wav.h`) - mackron | `wav-0.14.5` | Unlicense **or** MIT-0, the user's choice | `ThirdParty/dr_libs/LICENSE` |
 | **farbot** - Fabian Renn | `d8f132c2` | MIT, Copyright (c) 2019 Fabian Renn | `ThirdParty/farbot/LICENSE` |
@@ -35,8 +39,16 @@ column names the file in the tree that carries the text.
 | **pocketfft** - Max-Planck-Society | `c90e55b3` | BSD 3-Clause, Copyright (C) 2010-2018 Max-Planck-Society | `ThirdParty/pocketfft/LICENSE.md` |
 | **signalsmith-stretch** - Signalsmith Audio | `1.4.0` | MIT, Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd. | `ThirdParty/signalsmith-stretch/LICENSE.txt` |
 | **signalsmith-linear** (inside the stretch checkout) | `0.6.4` | MIT, Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd. | `ThirdParty/signalsmith-stretch/signalsmith-linear/LICENSE.txt` |
-| **SoundTouch** - Olli Parviainen | `2.4.1` (`0047e0b1`) | **LGPL 2.1** - see the note below | `ThirdParty/soundtouch/COPYING.TXT` |
 | **xsimd** - xtensor-stack | `14.3.0` | BSD 3-Clause, Copyright (c) 2016 Johan Mabille, Sylvain Corlay, Wolf Vollprecht, Martin Renou; 2016 QuantStack; 2018 Serge Guelton | `ThirdParty/xsimd/LICENSE` |
+
+**Eigen is the one MPL-2.0 component here**, and MPL is file-level copyleft rather than
+the permissive terms the other rows carry. What it means in practice: Eigen's own files
+stay under MPL-2.0, and this repository does not modify them - the vendored tree is the
+commit NAM Core's own submodule pins, with its licence files beside it. The plugin's own
+sources and the linked binary as a whole are not placed under MPL by linking it. The
+complete corresponding source for the MPL-covered files is in `ThirdParty/eigen/`, which
+is what MPL-2.0 §3 asks a distributor to make available; when the tree is not vendored,
+`cmake/J37Dependencies.cmake` fetches the same commit from the upstream URL below.
 
 ## Fetched by CMake (CPM)
 
@@ -66,7 +78,8 @@ binary - see
 | **farbot** (fallback) | `d8f132c2` | MIT | <https://github.com/hogliux/farbot> |
 | **glm** (fallback) | `1.0.3` | Happy Bunny / MIT | <https://github.com/g-truc/glm> |
 | **RTNeural** (fallback) | `95c3c0f9` | BSD 3-Clause | <https://github.com/jatinchowdhury18/RTNeural> |
-| **SoundTouch** (fallback) | `0047e0b1` | **LGPL 2.1** | <https://codeberg.org/soundtouch/soundtouch> |
+| **NeuralAmpModelerCore** (fallback) | `0b3d3c97` (`v0.6.0`) | MIT | <https://github.com/sdatkinson/NeuralAmpModelerCore> |
+| **Eigen** (fallback) | `bc3b3987` (`3.5.0`) | MPL-2.0 | <https://gitlab.com/libeigen/eigen> |
 | **sokol_gfx** | `2e75443d` | zlib | <https://github.com/floooh/sokol> |
 | **q_dsp** / **cycfi_infra** | `v1.0.1` / `2024_MAY` | MIT | <https://github.com/cycfi/q> |
 | **AudioFFT** | `0893b532` | MIT | <https://github.com/HiFi-LoFi/AudioFFT> |
@@ -157,9 +170,11 @@ linked, and it used to be both.
   records how it was taken.
 * **SoundTouch 2.4.1** is LGPL-2.1 and **used to be linked statically** - which
   LGPL-2.1 section 6 makes a deliberate decision about object files or a
-  relinkable form. It is no longer on the link line: nothing under `Source/`
-  called it, so a shipped binary carries none of it, and the vendored copy and
-  its licence text stay for the stage that would use a stretcher.
+  relinkable form. It left the link line first, because nothing under `Source/`
+  called it, and WP4 then removed the CMake target, the CPM fetch and the
+  vendored tree with them: a shipped binary carries none of it, and no LGPL text
+  ships in this repository any more. The reasoning is in
+  [docs/library-integration-plan.md](docs/library-integration-plan.md#wp4---soundtouch-deleted---done).
 * **libsndfile** (LGPL-2.1) is fetched and **not linked**, and nothing under
   `Source/` includes it either - see
   [plugin-analysis.md, §5](docs/plugin-analysis.md#5-the-link-line-is-larger-than-the-code).
@@ -240,9 +255,10 @@ SOFTWARE, EVEN IF ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
 
 Neither is reproduced here, and neither is here by accident:
 
-* the **LGPL 2.1** text ships with SoundTouch at
-  `ThirdParty/soundtouch/COPYING.TXT`, and is also at
-  <https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt>;
+* no **LGPL 2.1** component ships in this repository any more - SoundTouch and its
+  `COPYING.TXT` were removed under WP4 - so nothing here reproduces that text; it
+  is at <https://www.gnu.org/licenses/old-licenses/lgpl-2.1.txt> if a future
+  dependency needs it;
 * the **AGPLv3** text ships with JUCE at `JUCE/LICENSE.md` inside the submodule,
   and is also at <https://www.gnu.org/licenses/agpl-3.0.html>.
 

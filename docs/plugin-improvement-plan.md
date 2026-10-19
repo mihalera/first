@@ -59,10 +59,14 @@ included by nothing.
    SoundTouch (LGPL-2.1) and libsndfile are no longer statically linked, because
    nothing called either, and `signalsmith-stretch` came off with them after the
    entry above was corrected - a library the code cannot call yet is not a use,
-   and the vendored source plus the CPM fetch stay for the corrector work. The
-   packages are still FETCHED; deleting those is the configure-time half of the
-   item and is still open, because a fetch is also what makes adopting one of
-   them a one-line change. `chowdsp_dsp_utils` **is off the line now**: the code
+   and the vendored source plus the CPM fetch stayed for the corrector work,
+   which then arrived (WP4 in [library-integration-plan.md](library-integration-plan.md)
+   later removed SoundTouch's target, fetch and vendored tree as well: the
+   corrector ships its own shifter and uses signalsmith as an opt-in engine, so
+   a third stretcher never became the caller that item 1.2's fetch would have
+   justified). The packages are still FETCHED; deleting those is the
+   configure-time half of the item and is still open for the rest, because a
+   fetch is also what makes adopting one of them a one-line change. `chowdsp_dsp_utils` **is off the line now**: the code
    calls only `chowdsp_math`'s approximators, so the GPLv3 module was dropped and
    with it the binary's GPL obligation - the third option in 1.1 above, taken
    under WP1 of [library-integration-plan.md](library-integration-plan.md). The

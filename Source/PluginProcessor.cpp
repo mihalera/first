@@ -1218,7 +1218,7 @@ bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
     // Same two-stages-at-once discipline as loadNeuralModel above, through the
     // .nam converter: the shared model pointer must not end up describing two
     // different networks on the two sides of the image.
-#if J37_HAS_RTNEURAL
+#if J37_HAS_RTNEURAL || J37_HAS_NAMCORE
     lastLoadErrorMessage = {};
 
     if (namJson.isEmpty())
@@ -1234,19 +1234,25 @@ bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
     {
         const auto parsed = nlohmann::json::parse (namJson.toStdString());
 
-        // The architecture is checked HERE rather than left to the converter, so
-        // the panel can say which kind of file arrived. WaveNet and the
-        // convolutional "Feather" nets are NAM's other two architectures and
-        // between them account for most models on the model-sharing sites, so
-        // "NEEDS AN LSTM MODEL" is the one failure a user is most likely to
-        // meet - and a bare "INVALID MODEL" would send them looking for a
-        // corrupt file rather than a different download.
+        // The architecture is checked HERE only when this build has NO engine for
+        // the other ones, so the panel can say which kind of file arrived. WaveNet
+        // and the convolutional nets are NAM's other architectures and between
+        // them account for most models on the model-sharing sites, so "NEEDS AN
+        // LSTM MODEL" is the one failure a user is most likely to meet in a build
+        // without NAM Core - and a bare "INVALID MODEL" would send them looking
+        // for a corrupt file rather than a different download.
+        //
+        // With NAM Core in the build that check would be a lie: WaveNet is exactly
+        // what the second engine is for, so the decision is left to the stage,
+        // which accepts what either engine can build and refuses the rest.
+    #if ! J37_HAS_NAMCORE
         if (! parsed.contains ("architecture") || ! parsed["architecture"].is_string()
             || parsed["architecture"].get<std::string>() != "LSTM")
         {
             lastLoadErrorMessage = "NEEDS LSTM";
             return false;
         }
+    #endif
 
         // The rate the model was TRAINED at. It is the one thing in a .nam file
         // the converter has no use for and the ENGINE does: a neural net's memory
