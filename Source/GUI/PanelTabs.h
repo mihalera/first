@@ -79,18 +79,15 @@ namespace j37panel
     // referred to indices that had silently been re-used for the EQ and DI
     // controls. The indices are now all listed.
     //
-    // The deck's non-knob switches follow the tabs too: GL and OVERSAMPLING show
-    // on SETTINGS, and the delay TYPE / RATE / SYNC trio shows on DELAY. They are
+    // The deck's non-knob switches follow the tabs too: OVERSAMPLING shows on
+    // SETTINGS, and the delay TYPE / RATE / SYNC trio shows on DELAY. They are
     // not knobs - the grid below cannot place them - so their visibility is
     // managed in setCurrentTab beside the knobs'.
-    //  The sixteen pages are grouped into THREE FAMILIES - TAPE, FX, SETUP - and
-    //  no page carries more than one subject, or more than one row of seven
-    //  knobs: DRIVE once held twelve and NOISE eleven, which is exactly the
-    //  crowding the tabs exist to avoid. The families are the three large
-    //  buttons ABOVE this bar (see setTabFamily); the column in each row below
-    //  is the page's family, and it is the single source the strip reads.
-    //  Sixteen now: MIX is a page of its own, split from SUBFUND because ten
-    //  knobs on one page is the crowding this table exists to prevent.
+    // The eighteen pages are grouped into THREE FAMILIES - TAPE, FX, SETUP -
+    // and no page carries more than one subject, or more than one row of seven
+    // knobs. The families are the three large buttons ABOVE this bar (see
+    // setTabFamily); the column in each row below is the page's family, and it
+    // is the single source the strip reads. AUTOTUNE and COMP are part of FX.
     //
     //  The page count is written ONCE, here, ABOVE the first array that needs
     //  it: the table below, the subtitle list and the coverage check further

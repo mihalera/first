@@ -165,9 +165,7 @@ void FirstAudioProcessorEditor::refreshModeButtonCaption()
     // The button's background is drawn by the base Look and Feel - this class
     // overrides captions, not button backgrounds - so the state has to arrive as
     // colours: lit with the accent while a mode is engaged, the raised panel
-    // colour at OFF, the same language the transport keys and the GL switch
-    // speak. Without this the button kept the base Look and Feel's own grey,
-    // which matched nothing else on the panel.
+    // colour at OFF, matching the transport keys.
     const auto& palette = paletteFor (darkTheme);
     const auto modeOn = modernOn || lofiOn;
     modeCycleButton.setColour (juce::TextButton::buttonColourId,
@@ -178,38 +176,6 @@ void FirstAudioProcessorEditor::refreshModeButtonCaption()
                                modeOn ? palette.readout : palette.text);
     modeCycleButton.setColour (juce::TextButton::textColourOnId,
                                modeOn ? palette.readout : palette.text);
-}
-
-void FirstAudioProcessorEditor::syncGlSwitchState()
-{
-    // A non-OpenGL backend is currently represented by the CPU fallback. Keep
-    // the existing control for compatibility, but do not claim that an
-    // unsupported native API has been initialised.
-    if (! j37::render::usesOpenGL())
-    {
-        glButton.setButtonText (juce::String ("CPU / ") + TapeScene::effectiveRenderBackendName());
-        glButton.setTooltip (TapeScene::renderBackendStatus());
-        styleGlButton (false);
-        tapeScene.setSceneEnabled (false);
-        rebuildPanelTextureLayers();
-        return;
-    }
-
-    // Read the context, never a cached flag: attachTo() returns void, so the only
-    // honest answer to "did it work" is to ask afterwards. The 3D transport takes
-    // the same answer, which is what stops the panel from showing a lit button
-    // beside a blank window - or a 3D transport on a machine where the user has
-    // turned the accelerator off.
-    const auto isOn = openGLContext.isAttached();
-
-    glButton.setButtonText (isOn ? "GL ON" : "GL OFF");
-    glButton.setTooltip ("OpenGL accelerated scene");
-    styleGlButton (isOn);
-    tapeScene.setSceneEnabled (isOn);
-
-    // The texture image is palette-aware (the ink follows the theme), so a
-    // theme flip rebuilds it on the spot.
-    rebuildPanelTextureLayers();
 }
 
 // The three transport keys plus the momentary spindown button. Same rule as the tab
@@ -324,35 +290,23 @@ void FirstAudioProcessorEditor::timerCallback()
     if (! isShowing())
         return;
 
-    // The startup retry for the OpenGL context, bounded and then forgotten. It runs
-    // first so a context that comes up is live before the meters ask for a repaint.
+    // Retry the automatic OpenGL accelerator while the host is still creating
+    // its peer/context. The budget is bounded so an unavailable driver is not
+    // polled forever; CPU painting remains available in the meantime.
     if (glAttachAttemptsLeft > 0)
     {
         --glAttachAttemptsLeft;
-
-        // Attach retries run while the user has NOT turned GL off by hand. The
-        // old guard short-circuited on isAttached() alone, which on a host whose
-        // context is killed/recreated (resize, plugin scan, some sandboxed
-        // players) left the retry budget dead with GL detached forever - the
-        // user's "no shaders, no 3D, ever". glUserDisabled is the switch's own
-        // state: only the user's click on GL OFF sets it, so a context the HOST
-        // dropped is retried, one the USER dropped is not.
-        if (glUserDisabled)
+        if (openGLContext.isAttached())
         {
             glAttachAttemptsLeft = 0;
         }
-        else if (openGLContext.isAttached())
-        {
-            glAttachAttemptsLeft = 0;
-        }
-        else
+        else if (j37::render::usesOpenGL())
         {
             openGLContext.attachTo (*this);
-
             if (openGLContext.isAttached())
             {
                 glAttachAttemptsLeft = 0;
-                syncGlSwitchState();
+                tapeScene.setSceneEnabled (true);
             }
         }
     }

@@ -14,12 +14,9 @@ namespace j37::render {
     into the editor or the audio thread.
 
     PRESENTATION. A plugin host owns the top-level window, so an adapter never
-    presents to the host's own surface. Each one attaches a child surface
-    instead - a child HWND (D3D11/D3D12), a CAMetalLayer (Metal) or a native
-    window handle plus an XCB/Wayland surface (Vulkan) - parented to the host
-    view. isPresentable() reports whether that surface exists: only then does
-    the caller suppress its own CPU painting, because a native surface that
-    failed to attach would otherwise leave the component blank.
+    presents to the host's own surface. The platform adapters can attach native
+    child surfaces, but currently only clear and present them; TapeScene keeps
+    them disabled as effective backends until they also draw its scene geometry.
 
     THREADING. Every method runs on the message thread. The adapters therefore
     create and destroy their native objects here rather than on a render

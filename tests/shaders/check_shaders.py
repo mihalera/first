@@ -185,7 +185,7 @@ for number, line in enumerate(drawing, 1):
     # A line of prose that mentions a setter is not a setter.
     if line.lstrip().startswith("//"):
         continue
-    for call in re.finditer(r"setUniform(?:Mat4)?\s*\(\s*\"([A-Za-z_][A-Za-z0-9_]*)\"", line):
+    for call in re.finditer(r"setUniform(?:Mat[234])?\s*\(\s*\"([A-Za-z_][A-Za-z0-9_]*)\"", line):
         supplied.setdefault(call.group(1), []).append(number)
 
 for name in sorted(set(declared) - set(supplied)):

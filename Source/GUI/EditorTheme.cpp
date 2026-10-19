@@ -139,7 +139,6 @@ void FirstAudioProcessorEditor::applyTheme()
     vinylTurntableLabel.setColour (juce::Label::textColourId, palette.secondary);
     vinylCartridgeLabel.setColour (juce::Label::textColourId, palette.secondary);
     delaySyncLabel.setColour (juce::Label::textColourId, palette.secondary);
-    glLabel.setColour (juce::Label::textColourId, palette.secondary);
     antiPhaseGuardLabel.setColour (juce::Label::textColourId, palette.secondary);
     neuralStatusLabel.setColour (juce::Label::textColourId, palette.secondary);
     // The IR readout re-inks itself in refreshIrStatus() on every change; this
@@ -316,7 +315,6 @@ void FirstAudioProcessorEditor::applyTheme()
     // calls do not own; it reads the palette through the look and feel, and its
     // caption is refreshed by refreshModeButtonCaption() below.
     styleCombo (userPresetBox);
-    styleGlButton (openGLContext.isAttached());
     styleWorkflowButton (copyAButton, audioProcessor.getActiveCompareSlot() == 0);
     styleWorkflowButton (copyBButton, audioProcessor.getActiveCompareSlot() == 1);
     styleWorkflowButton (compareButton, false);
@@ -395,28 +393,6 @@ void FirstAudioProcessorEditor::styleLabel (juce::Label& label, const juce::Stri
     label.setMinimumHorizontalScale (0.82f);
     label.setColour (juce::Label::textColourId, colour);
     label.setInterceptsMouseClicks (false, false);
-}
-
-//==============================================================================
-// The GL switch is the one panel control whose LOOK is its state, so both come from
-// the context. It is a plain TextButton, not a ToggleButton, which is what made it
-// look wrong in both states: it was the only TextButton in the panel never given a
-// themed buttonColourId, so it kept LookAndFeel_V4's light default background on a
-// dark panel, and because getToggleState() is always false for it, drawButtonText
-// read textColourOffId for ON as well - so GL ON and GL OFF were the same grey with
-// different words in them.
-void FirstAudioProcessorEditor::styleGlButton (bool isOn)
-{
-    const auto& palette = paletteFor (darkTheme);
-
-    glButton.setColour (juce::TextButton::buttonColourId, isOn ? palette.accent : palette.raised);
-    glButton.setColour (juce::TextButton::buttonOnColourId, isOn ? palette.accent : palette.raised);
-
-    // drawButtonText picks between textColourOnId and textColourOffId with
-    // getToggleState(), which is always false here, so OFF is the id that matters.
-    glButton.setColour (juce::TextButton::textColourOffId, isOn ? palette.readout : palette.text);
-    glButton.setColour (juce::TextButton::textColourOnId, isOn ? palette.readout : palette.text);
-    glButton.repaint();
 }
 
 void FirstAudioProcessorEditor::styleTransportButtons()

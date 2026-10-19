@@ -5,6 +5,7 @@
 #include <BinaryData.h>
 #include "PluginEditor.h"
 
+#include <array>
 #include <iostream>
 #include <utility>
 #include <vector>
@@ -795,7 +796,6 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     delayRateBox.setLookAndFeel (nullptr);
     delaySyncButton.setLookAndFeel (nullptr);
     modeCycleButton.setLookAndFeel (nullptr);
-    glButton.setLookAndFeel (nullptr);
     savePresetButton.setLookAndFeel (nullptr);
     deletePresetButton.setLookAndFeel (nullptr);
 
@@ -2128,10 +2128,7 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
         compressorControls[i].setVisible (geometry.compressorTab);
         compressorControlLabels[i].setVisible (geometry.compressorTab);
     }
-    glButton.setVisible (geometry.settingsTab);
-    glLabel.setVisible (geometry.settingsTab);
-    // The UI-sounds switch is on the same page as GL and OVERSAMPLING - it is the
-    // same kind of engine-level preference - so it follows the same tab.
+    // The UI-sounds switch shares SETTINGS with OVERSAMPLING as an engine-level preference.
     uiSoundsButton.setVisible (geometry.settingsTab);
     antiPhaseGuardLabel.setVisible (geometry.settingsTab);
     antiPhaseGuardButton.setVisible (geometry.settingsTab);
@@ -2241,10 +2238,9 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
     }
     else if (geometry.settingsTab)
     {
-        // SETTINGS: engine-level switches in the first band and interface
-        // preferences in the second.
-        placeDeckSwitch (geometry, glLabel, glButton, 0, 1, "GL");
-        placeDeckSwitch (geometry, oversamplingLabel, oversamplingBox, 1, 1, "OVER");
+        // SETTINGS: the engine-level oversampling selector and interface
+        // preferences.
+        placeDeckSwitch (geometry, oversamplingLabel, oversamplingBox, 0, 1, "OVER");
 
         // LANGUAGE keeps the first cell of the second band; UI SOUNDS takes the
         // second; the guard takes the third.
@@ -2509,7 +2505,7 @@ void FirstAudioProcessorEditor::placeMeters (const EditorLayout& layout)
 //==============================================================================
 void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
 {
-#if DEBUG
+#if JUCE_DEBUG
     // ------------------------------------------------------------------
     //  The overlap check.
     //
@@ -2571,7 +2567,6 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "oversampBox",   &oversamplingBox },
             { "instrLabel",    &instrumentLabel },
             { "instrBox",      &instrumentBox },
-            { "gl",            &glButton },
             { "harmonics",     &harmonicsLabel },
             { "harmonicsVal",  &harmonicsReadout },
             { "subfund",       &subfundLabel },
@@ -2627,7 +2622,6 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "uiSounds",       &uiSoundsButton },
             { "guardLabel",     &antiPhaseGuardLabel },
             { "guardBtn",       &antiPhaseGuardButton },
-            { "glLabel",        &glLabel },
             { "diPadLabel",     &diPadLabel },
             { "diPadBox",       &diPadBox },
             { "tracksLabel",    &tracksLabel },

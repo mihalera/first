@@ -1173,14 +1173,6 @@ void FirstAudioProcessorEditor::setUpDelayRow()
                 true, juce::Justification::left);
     styleLabel (delaySyncLabel, "SYNC DELAY", 9.0f, paletteFor (false).secondary,
                 true, juce::Justification::left);
-    // The GL pill carries its own caption ("GL ON" / "GL OFF"), so its LABEL is
-    // never drawn - the caption lives in placeDeckSwitch's SETTINGS branch, which
-    // setText()s it when that tab is laid out. The constructor keeps the text off:
-    // an empty label paints nothing, so the first frame (and every frame until the
-    // SETTINGS tab is opened) shows no stray "GL" floating in the deck block. The
-    // label still exists as the caption slot for placeDeckSwitch to fill.
-    styleLabel (glLabel, "", 9.0f, paletteFor (false).secondary,
-                true, juce::Justification::left);
     addAndMakeVisible (delayRateLabel);
     delayRateBox.addItemList (juce::StringArray { "1/1", "1/2", "1/4", "1/8", "1/16",
                                                   "1/4 T", "1/8 T", "1/4 D" }, 1);
@@ -1247,15 +1239,6 @@ void FirstAudioProcessorEditor::setUpModeAndGlSwitches()
     addAndMakeVisible (modeCycleButton);
     refreshModeButtonCaption();
 
-    // GL switch: the context is a best-effort accelerator (see the attach note
-    // above), and this button hands the choice to the user - drivers, remote
-    // sessions and VMs differ, and the software path draws the same panel.
-    setTip (glButton, "OpenGL - GPU-accelerated rendering of the panel. Turn off if "
-                         "your driver or remote session misbehaves; the software path "
-                         "draws the identical panel.");
-    glButton.setLookAndFeel (&customLookAndFeel);
-    addAndMakeVisible (glButton);
-    addAndMakeVisible (glLabel);
 }
 
 void FirstAudioProcessorEditor::setUpSettingsSwitches()
@@ -1831,6 +1814,7 @@ void FirstAudioProcessorEditor::setUpOpenGlRendering()
     // means those setups get a broken or blank editor, so the context is treated as a
     // best-effort accelerator. If it cannot attach, the component renderer draws the
     // same panel through the software path with no visual difference.
+    tapeScene.setSceneEnabled (j37::render::usesOpenGL());
     openGLContext.setComponentPaintingEnabled (true);
     openGLContext.setContinuousRepainting (false);
     // V-sync prevents the component-painting context from spinning at the
@@ -1838,67 +1822,16 @@ void FirstAudioProcessorEditor::setUpOpenGlRendering()
     // Explicit repaint() calls still wake it when the panel actually changes.
     openGLContext.setSwapInterval (1);
 
-    if (! j37::render::usesOpenGL())
+    // OpenGL is an automatic accelerator, not a user-facing mode. Attach once
+    // here; if the host's peer is not ready yet, the editor timer retries for a
+    // bounded period. CPU painting remains available when context creation fails.
+    if (j37::render::usesOpenGL())
     {
-        syncGlSwitchState();
-    }
-    else
-    {
-        // attachTo() returns void, so it cannot be tested directly - it would read as
-    // `if (!void)`, which is not a valid expression. The documented way to find out whether
-    // the context came up is to ask afterwards, and detach if it did not so the component
-    // renderer draws the panel instead.
         openGLContext.attachTo (*this);
-
         if (! openGLContext.isAttached())
             openGLContext.detach();
     }
 
-    // The renderer switch mirrors the context's real state rather than a wish: on
-    // machines where the context never came up the button reads OFF and the
-    // software renderer is what the user sees. The 3D transport follows the same
-    // switch, because it is an accelerator rather than a feature.
-    syncGlSwitchState();
-
-    // OpenGL is ON by default, and a failed first attach is usually not a final
-    // answer: the host may not have created the editor's native peer yet, and there
-    // is no context to attach to without one. The timer keeps trying for a few
-    // seconds and then gives up, because a driver, a remote session or a VM that
-    // cannot create a context will not manage on the last attempt either.
-    glAttachAttemptsLeft = (! j37::render::usesOpenGL() || openGLContext.isAttached()) ? 0 : 90;
-    glButton.onClick = [this]
-    {
-        if (! j37::render::usesOpenGL())
-        {
-            syncGlSwitchState();
-            return;
-        }
-
-        // Whatever the user asked for wins: stop the startup retries, or they would
-        // switch the accelerator back on seconds after the user turned it off.
-        // glUserDisabled records WHICH side dropped the context - only the user's
-        // own click sets it, so the timer's retries still recover a context the
-        // HOST lost (see the retry block in timerCallback).
-        glAttachAttemptsLeft = 0;
-
-        if (openGLContext.isAttached())
-        {
-            glUserDisabled = true;
-            openGLContext.detach();
-        }
-        else
-        {
-            glUserDisabled = false;
-            openGLContext.attachTo (*this);
-        }
-
-        // One place decides what the switch says, how it looks, and whether the
-        // 3D transport gets a context, and all three read the context's state
-        // afterwards: attachTo() can fail on a driver, a remote session or a VM,
-        // and a branch that assumed success would leave the button claiming GL is
-        // on while the software renderer is drawing the panel.
-        syncGlSwitchState();
-    };
 }
 
 void FirstAudioProcessorEditor::finishConstruction()

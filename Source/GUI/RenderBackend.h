@@ -2,11 +2,9 @@
   ============================================================================
     RenderBackend - renderer selection and capability boundary.
 
-    The scene currently has a complete JUCE/OpenGL implementation.  The other
-    API names are deliberately represented here before their native device
-    code is added: selecting one of them never leaves the editor without a
-    picture.  TapeScene falls back to JUCE's CPU paint path until that backend
-    is compiled in.
+    OpenGL is the only backend that renders the full scene. Other native
+    adapters currently provide surface presentation only, so they must not be
+    selected as effective scene renderers until they implement the geometry.
   ============================================================================
 */
 
@@ -55,24 +53,10 @@ constexpr const char *name(Backend backend) noexcept {
     return "Unknown";
 }
 
-// Native device adapters are compiled per-platform. OpenGL remains the
-// established renderer, while Vulkan, Metal and D3D12 now have command
-// resource initialization paths; unsupported platform/API combinations still
-// fall back to CPU at runtime.
-constexpr bool hasNativeImplementation(Backend backend) noexcept {
-#if defined (J37_NATIVE_VULKAN)
-    if (backend == Backend::vulkan) return true;
-#endif
-#if defined (J37_NATIVE_METAL)
-    if (backend == Backend::metal) return true;
-#endif
-#if defined (J37_NATIVE_D3D11)
-    if (backend == Backend::directX11) return true;
-#endif
-#if defined (J37_NATIVE_D3D12)
-    if (backend == Backend::directX12) return true;
-#endif
-    return backend == Backend::openGL || backend == Backend::cpu;
+// Native adapters currently provide presentation only, not the TapeScene draw
+// path. Do not select them as effective renderers until they render the scene.
+constexpr bool hasNativeImplementation(Backend) noexcept {
+    return false;
 }
 
 constexpr bool isNativeBackendPending(Backend backend) noexcept {
@@ -85,10 +69,10 @@ constexpr bool isNativeBackendPending(Backend backend) noexcept {
 constexpr Backend effectiveBackend() noexcept {
     constexpr auto configured = configuredBackend();
 
-    if (configured == Backend::autoDetect)
+    if (configured == Backend::autoDetect || configured == Backend::openGL)
         return Backend::openGL;
 
-    return hasNativeImplementation(configured) ? configured : Backend::cpu;
+    return Backend::cpu;
 }
 
 constexpr bool usesOpenGL() noexcept { return effectiveBackend() == Backend::openGL; }
@@ -97,10 +81,7 @@ constexpr bool usesCpuFallback() noexcept { return effectiveBackend() == Backend
 
 constexpr bool usesNativeCommandRenderer() noexcept
 {
-    return effectiveBackend() == Backend::vulkan
-        || effectiveBackend() == Backend::metal
-        || effectiveBackend() == Backend::directX11
-        || effectiveBackend() == Backend::directX12;
+    return false;
 }
 
 constexpr bool isFallbackActive() noexcept {
@@ -114,7 +95,7 @@ constexpr const char* effectiveName() noexcept {
 
 constexpr const char* statusText() noexcept {
     if (isFallbackActive())
-        return "CPU fallback (native renderer unavailable)";
+        return "CPU fallback (native scene renderer unavailable)";
 
     if (usesOpenGL())
         return "OpenGL";

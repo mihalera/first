@@ -7,6 +7,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include <chrono>
 #include "PluginProcessor.h"
 #include "GUI/TapeScene.h"
 
@@ -380,6 +381,7 @@ private:
         float displayedCombined = -70.0f;
         float peakHoldDb = -70.0f;
         float peakHoldTime = 0.0f;
+        std::chrono::steady_clock::time_point lastUpdate {};
     };
 
     /** Vertical gain-reduction bar for one glue compressor stage. */
@@ -397,6 +399,7 @@ private:
         bool darkTheme = false;
         float displayedDb = 0.0f;   // Smoothed reduction, always <= 0.
         float activity = 0.0f;
+        std::chrono::steady_clock::time_point lastUpdate {};
     };
 
     /** The saturation mix, read as a strip: one recessed cell per principle,
@@ -681,18 +684,6 @@ private:
         mappings, and re-applies every tooltip. */
     void applyLanguage (int languageIndex);
 
-    // The GL switch's colours follow the context rather than the theme alone: it is a
-    // plain TextButton, so it needs a themed background (it was the one TextButton in
-    // the panel without one) and an explicit ON colour, since getToggleState() is
-    // always false for it.
-    void styleGlButton (bool isOn);
-
-    /** The one place the GL switch's label, its styling and the 3D transport's
-        own context are decided together. All three read openGLContext's real
-        state rather than a wish - attachTo() can fail on a driver, a remote
-        session or a VM - so they cannot disagree about whether GL is on. */
-    void syncGlSwitchState();
-
     // Tabs. The grid used to be one five-row block of all twenty-one knobs with three
     // small section captions floating in the gaps above rows 3 and 4 - which is to
     // say, on top of the rows of knobs above them. The captions are gone and the
@@ -931,7 +922,6 @@ private:
     };
     SpindownButton spindownButton { "SPINDOWN" };
     juce::Label spindownLabel;
-    juce::TextButton glButton { "GL ON" };
     juce::ToggleButton bypassButton { "BYPASS" };
     juce::ToggleButton deltaButton { "DELTA" };
     juce::TextButton themeButton { "DARK THEME" };
@@ -965,7 +955,6 @@ private:
     juce::ComboBox delayTypeBox;
     juce::Label delayTypeLabel;
     juce::Label delaySyncLabel;
-    juce::Label glLabel;
 
     // Tempo sync: a switch plus the note value. A combo rather than a knob
     // because the note values are discrete and a knob through them would be a
@@ -1107,10 +1096,6 @@ private:
     float reelAngle = 0.0f;
     float reelSpeed = 0.0f;
     bool currentBypassDisplay = false;
-    // Who dropped the GL context last: only the user's own GL-switch click sets
-    // this. The timer's attach retries consult it, so a context the HOST lost
-    // is recovered automatically while one the USER turned off stays off.
-    bool glUserDisabled = false;
     // paint() draws the neural picker's card behind the MODELS page's member
     // band's first column - the page whose NEURAL knob the picker belongs to.
     bool activeTabIsShapers = false;
@@ -1229,15 +1214,6 @@ private:
     // never covers a knob, and it draws its own 2D reel and ribbon underneath
     // whenever no context came up. See Source/GUI/TapeScene.h.
     TapeScene tapeScene;
-
-    // OpenGL is ON by default, but the first attach in the constructor can fail for a
-    // reason that does not apply a moment later - the host has not necessarily created
-    // the editor's native peer yet, and there is no context to attach to without one.
-    // So the timer keeps trying for a few seconds and then stops for good: a driver, a
-    // remote session or a VM that cannot create a context will not manage on the last
-    // attempt either, and retrying forever would burn a frame every 33 ms for a panel
-    // that will never use it. Zero once the context is up, or once the user says OFF.
-    int glAttachAttemptsLeft = 0;
 
     /** The DRIVE parameter, normalised, read once per timer tick for the 3D
         transport's warmth. Kept here rather than sampled inside the scene so

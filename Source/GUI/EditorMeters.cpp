@@ -10,6 +10,7 @@
 
 #include "PluginEditor.h"
 #include <cmath>
+#include <chrono>
 #include <utility>
 #include "GUI/PanelPaint.h"
 #include "GUI/PanelTabs.h"
@@ -33,8 +34,14 @@ void FirstAudioProcessorEditor::LevelMeter::setLoudness (float peakDbIn, float r
                                                         float lufsIn, float vuDbIn,
                                                         float combinedDbIn, bool clippingIn)
 {
+    using Clock = std::chrono::steady_clock;
+    const auto now = Clock::now();
+    const auto frameSeconds = lastUpdate == Clock::time_point {}
+                                ? 1.0f / 30.0f
+                                : juce::jlimit (0.0f, 0.25f,
+                                    std::chrono::duration<float> (now - lastUpdate).count());
+    lastUpdate = now;
     constexpr float floorDb = -70.0f;
-    constexpr float frameSeconds = 1.0f / 30.0f;
 
     peakDb = juce::jlimit (floorDb, 6.0f, peakDbIn);
     rmsDb = juce::jlimit (floorDb, 6.0f, rmsDbIn);
@@ -52,16 +59,20 @@ void FirstAudioProcessorEditor::LevelMeter::setLoudness (float peakDbIn, float r
     // a lopsided way. Each rise/fall pair is now an order of magnitude apart (a clean
     // exponential envelope shape) and the RMS/LUFS rows share the same rise so the
     // two "honest average" rows move as one steady pair.
-    const auto smoothTowards = [] (float current, float target, float rise, float fall)
+    const auto smoothTowards = [frameSeconds] (float current, float target,
+                                                float riseSeconds, float fallSeconds)
     {
-        const auto coefficient = target > current ? rise : fall;
+        const auto timeConstant = target > current ? riseSeconds : fallSeconds;
+        const auto coefficient = timeConstant > 0.0f
+                                   ? 1.0f - std::exp (-frameSeconds / timeConstant)
+                                   : 1.0f;
         return current + (target - current) * coefficient;
     };
 
-    displayedRms = smoothTowards (displayedRms, rmsDb, 0.50f, 0.05f);
-    displayedLufs = smoothTowards (displayedLufs, lufs, 0.50f, 0.04f);
-    displayedVu = smoothTowards (displayedVu, vuDb, 0.15f, 0.08f);
-    displayedCombined = smoothTowards (displayedCombined, combinedDb, 0.35f, 0.07f);
+    displayedRms = smoothTowards (displayedRms, rmsDb, 0.045f, 0.20f);
+    displayedLufs = smoothTowards (displayedLufs, lufs, 0.045f, 0.25f);
+    displayedVu = smoothTowards (displayedVu, vuDb, 0.20f, 0.40f);
+    displayedCombined = smoothTowards (displayedCombined, combinedDb, 0.07f, 0.30f);
 
     // Peak hold, so a fast transient stays readable instead of flashing past. The
     // release is a fixed dB-per-second slope rather than an exponential decay, so the
@@ -330,13 +341,24 @@ FirstAudioProcessorEditor::CompressorMeter::CompressorMeter (juce::String meterT
 
 void FirstAudioProcessorEditor::CompressorMeter::setReduction (float reductionDb, float newActivity)
 {
-    // Smooth downwards instantly (so gain reduction is never under-reported) but
-    // let the bar fall back gracefully, like a real VU-driven reduction needle.
+    using Clock = std::chrono::steady_clock;
+    const auto now = Clock::now();
+    const auto frameSeconds = lastUpdate == Clock::time_point {}
+                                ? 1.0f / 30.0f
+                                : juce::jlimit (0.0f, 0.25f,
+                                    std::chrono::duration<float> (now - lastUpdate).count());
+    lastUpdate = now;
+
+    // Fast onset, slower release. Exponential coefficients keep the displayed
+    // response stable if UI ticks are delayed or the editor is reopened.
     const auto clamped = juce::jlimit (-12.0f, 0.0f, reductionDb);
-    const auto coefficient = clamped < displayedDb ? 0.55f : 0.10f;
+    const auto timeConstant = clamped < displayedDb ? 0.045f : 0.22f;
+    const auto coefficient = 1.0f - std::exp (-frameSeconds / timeConstant);
     displayedDb += (clamped - displayedDb) * coefficient;
 
-    activity += (juce::jlimit (0.0f, 1.0f, newActivity) - activity) * 0.22f;
+    const auto clampedActivity = juce::jlimit (0.0f, 1.0f, newActivity);
+    const auto activityCoefficient = 1.0f - std::exp (-frameSeconds / 0.12f);
+    activity += (clampedActivity - activity) * activityCoefficient;
 
     repaint();
 }

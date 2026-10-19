@@ -25,7 +25,6 @@
 
 #include <atomic>
 #include <array>
-#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -89,27 +88,9 @@ public:
                         float transportSpeed,
                         float outputPeak) noexcept;
 
-    /** The values of the controls standing in front of the machine, 0..1 each, in
-        the order of the scene's own placements - and NOT the plugin's parameter
-        order, because the window shows five of a bank of fifty-eight and which
-        five is a decision this class makes, not one the parameter tree does.
-
-        Called from the editor's timer, on the message thread. The values cross to
-        the render thread as atomics; nothing else does. */
+    /** Values for the decorative controls in scene-placement order, normalised
+        to 0..1. Missing values retain their neutral position. */
     void setControlValues (const float* values, int count) noexcept;
-
-    /** The captions under those controls, drawn in the window itself.
-
-        Not text on a 2D overlay: a label painted by juce::Graphics would sit at a
-        fixed screen position while the bank it belongs to moves with the camera,
-        which is exactly the mismatch this whole component exists to avoid. The
-        GLSL in here stamps each caption out of a procedural 5 x 7 alphabet, so a
-        knob's name is part of the same picture as the knob.
-
-        Message thread only, and it allocates: the editor calls it when the
-        visible bank changes, never per frame. A null pointer or non-positive
-        count clears the captions; conversion failures propagate to the caller. */
-    void setKnobCaptions (const juce::String* captions, int count);
 
     /** Which control a point in this component falls on, or -1 for none.
 
@@ -143,8 +124,8 @@ public:
         textureWeights.store (packed, std::memory_order_relaxed);
     }
 
-    /** The editor's renderer switch. False detaches the active accelerated
-        context and stops the scene; true starts attachment attempts again. */
+    /** Enables the scene's OpenGL path when the editor's automatic renderer is
+        active; otherwise the component paints the software scene. */
     void setSceneEnabled (bool shouldBeEnabled);
 
     /** The backend selected by CMake and the backend actually used at runtime.
@@ -260,10 +241,7 @@ private:
 
     static constexpr int controlBankCount = 5;
 
-    /** The first controlBankCount of those are knobs; the rest are keys. A
-        constant rather than a literal 3 because the GLSL's branch and the host's
-        placement table both read it, and the two drifting apart would put a knob
-        caption over a keycap. */
+    /** The first controlBankCount of those are knobs; the rest are keys. */
     static constexpr int bankKnobCount = 3;
 
     /** The control the editor puts a tooltip on, and the one a click on the bank
@@ -342,22 +320,8 @@ private:
     /** The GL thread's half of the answer to isSceneLive(). */
     std::atomic<int> programLinked { 0 };
 
-    /** The bank's knob angles, 0..1, and its captions. Three fixed-byte
-        caption banks let the message thread publish a free bank while the
-        renderer retains its current snapshot; neither thread needs to wait. */
+    /** The bank's knob angles, 0..1. */
     std::array<std::atomic<float>, bankKnobCount> knobValues {};
-    using CaptionBuffer = std::array<std::array<char, 32>, bankKnobCount>;
-    std::array<CaptionBuffer, 3> captionBuffers {};
-    std::atomic<int> activeCaptionBuffer { 0 };
-    std::atomic<int> renderCaptionBuffer { -1 };
-
-    /** The caption the panel's plate is currently drawing, as the shader's own
-        glyph indices. Written on the render thread and read only by it, so this
-        is a plain member and not an atomic - it is this thread's own scratch.
-        Floats, not ints: the shader reads them as a float uniform array, and
-        juce::OpenGLShaderProgram publishes only a GLfloat* overload. */
-    std::array<float, 8> labelGlyphs { -1.0f, -1.0f, -1.0f, -1.0f,
-                                       -1.0f, -1.0f, -1.0f, -1.0f };
 
     //==========================================================================
     //  Message thread only.
