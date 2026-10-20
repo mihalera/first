@@ -30,16 +30,21 @@ using j37panel::shrinkingFont;
 
 void FirstAudioProcessorEditor::applyTheme()
 {
-    // The editor's own bool is derived from the three-way choice, so every one of
-    // the ~50 `paletteFor (darkTheme)` call sites in this file keeps working
-    // unchanged - and the two dark themes genuinely DO share all of them. The
-    // only place the two are told apart is this next line.
+    // The dark/light flag keeps legacy drawing helpers on their existing paths;
+    // paletteForTheme carries the complete four-way theme selection.
     darkTheme = themeChoice != j37panel::ThemeChoice::ivory;
 
     liveThemeChoice = themeChoice;
 
     const auto& palette = paletteForTheme (themeChoice);
     customLookAndFeel.setTheme (themeChoice);
+    themeButton.setButtonText (themeChoice == j37panel::ThemeChoice::darkMetal
+                                   ? "DARK METAL"
+                                   : themeChoice == j37panel::ThemeChoice::metal
+                                         ? "METAL"
+                                         : themeChoice == j37panel::ThemeChoice::charcoal
+                                               ? "CHARCOAL"
+                                               : "IVORY");
     // The in-tab look and feel carries its own theme for the same reason the
     // deck's does: it reads the palette live at paint time, so the lists and the
     // pill switches recolour on the same frame as everything else.
@@ -47,13 +52,7 @@ void FirstAudioProcessorEditor::applyTheme()
     inputMeter.setDarkTheme (darkTheme);
     outputMeter.setDarkTheme (darkTheme);
 
-    // The 3D transport reads the same palette rather than keeping colours of its
-    // own, so it follows a theme switch on the same frame as everything else.
-    // The four are chosen for what each one IS rather than for which palette slot
-    // it resembles: the window is the panel's dead-black readout recess, the reel
-    // is its machined plate, the highlight and the head are the accent (so the
-    // specular reads as the machine's one indicator lamp), and the tape is the
-    // knob face warmed and desaturated - a roll of tape, not a second accent.
+    // The 3D transport reads the same active palette as the panel.
     tapeScene.setPalette (palette.readout,
                           palette.raised,
                           palette.accent,
@@ -357,8 +356,11 @@ void FirstAudioProcessorEditor::applyTheme()
             themeButton.setButtonText ("CHARCOAL");
             break;
         case j37panel::ThemeChoice::metal:
-        default:
             themeButton.setButtonText ("METAL");
+            break;
+        case j37panel::ThemeChoice::darkMetal:
+        default:
+            themeButton.setButtonText ("DARK METAL");
             break;
     }
 

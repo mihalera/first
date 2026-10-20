@@ -23,11 +23,10 @@
 // Only the names this file's own text uses: a header member that is not
 // reachable from here should not look reachable.
 using j37panel::paletteFor;
-using j37panel::principleParameterIds;
 using j37panel::parameterTooltipText;
+using j37panel::principleParameterIds;
 
-void FirstAudioProcessorEditor::refreshNeuralStatus()
-{
+void FirstAudioProcessorEditor::refreshNeuralStatus() {
     // The processor is the source of truth, not the label: a model can be
     // cleared from either button, so the readout follows whatever the stage
     // actually holds. It reports in THREE states: the loaded file's name while
@@ -44,16 +43,16 @@ void FirstAudioProcessorEditor::refreshNeuralStatus()
     // and a session that DOES need one can see that it is happening.
     const auto modelRate = audioProcessor.getNeuralModelRate();
     const auto engineRate = audioProcessor.getEngineSampleRate();
-    const auto modelKilo = juce::roundToInt (modelRate / 1000.0);
-    const auto rateTag = modelRate > 1.0 && std::abs (modelRate - engineRate) > 1.0
-                             ? juce::String (" @ ") + juce::String (modelKilo) + "K"
+    const auto modelKilo = juce::roundToInt(modelRate / 1000.0);
+    const auto rateTag = modelRate > 1.0 && std::abs(modelRate - engineRate) > 1.0
+                             ? juce::String(" @ ") + juce::String(modelKilo) + "K"
                              : juce::String();
 
     const auto status = neuralStatusReason.isNotEmpty()
-                            ? xlat ("INVALID MODEL") + " (" + neuralStatusReason + ")"
-                            : audioProcessor.hasNeuralModel() && loadedNeuralName.isNotEmpty()
-                                  ? loadedNeuralName + rateTag
-                                  : xlat ("NO MODEL");
+                            ? xlat("INVALID MODEL") + " (" + neuralStatusReason + ")"
+                        : audioProcessor.hasNeuralModel() && loadedNeuralName.isNotEmpty()
+                            ? loadedNeuralName + rateTag
+                            : xlat("NO MODEL");
 
     if (status == lastShownNeuralStatus)
         return;
@@ -61,37 +60,32 @@ void FirstAudioProcessorEditor::refreshNeuralStatus()
     lastShownNeuralStatus = status;
     // The file's name and the reason are DATA, not sentences, so they are not
     // looked up: the two state words around them are (see the note above xlat).
-    neuralStatusLabel.setText (status, juce::dontSendNotification);
-    neuralStatusLabel.setColour (juce::Label::textColourId,
-                                 audioProcessor.hasNeuralModel()
-                                     ? paletteFor (false).accent
-                                     : paletteFor (false).secondary);
+    neuralStatusLabel.setText(status, juce::dontSendNotification);
+    neuralStatusLabel.setColour(juce::Label::textColourId, audioProcessor.hasNeuralModel()
+                                                               ? paletteFor(false).accent
+                                                               : paletteFor(false).secondary);
 }
 
-void FirstAudioProcessorEditor::refreshIrStatus()
-{
+void FirstAudioProcessorEditor::refreshIrStatus() {
     // The processor is the source of truth, exactly as with the model status:
     // the stage can be cleared from either button, so the readout follows
     // whatever the convolvers actually hold.
     const auto status = irStatusReason.isNotEmpty()
-                            ? xlat ("INVALID IR") + " (" + irStatusReason + ")"
-                            : audioProcessor.hasIr() && loadedIrName.isNotEmpty()
-                                  ? loadedIrName
-                                  : xlat ("NO IR");
+                            ? xlat("INVALID IR") + " (" + irStatusReason + ")"
+                        : audioProcessor.hasIr() && loadedIrName.isNotEmpty() ? loadedIrName
+                                                                              : xlat("NO IR");
 
     if (status == lastShownIrStatus)
         return;
 
     lastShownIrStatus = status;
-    irStatusLabel.setText (status, juce::dontSendNotification);
-    irStatusLabel.setColour (juce::Label::textColourId,
-                             audioProcessor.hasIr()
-                                 ? paletteFor (false).accent
-                                 : paletteFor (false).secondary);
+    irStatusLabel.setText(status, juce::dontSendNotification);
+    irStatusLabel.setColour(juce::Label::textColourId, audioProcessor.hasIr()
+                                                           ? paletteFor(false).accent
+                                                           : paletteFor(false).secondary);
 }
 
-void FirstAudioProcessorEditor::refreshNoiseStatus()
-{
+void FirstAudioProcessorEditor::refreshNoiseStatus() {
     // The VINYL page's readout, in FOUR states rather than the two the other
     // pickers have - because this stage is the only one whose load is not
     // finished when the picker's callback returns. The decode runs on the
@@ -106,50 +100,45 @@ void FirstAudioProcessorEditor::refreshNoiseStatus()
     // needs the poll. The loader clears its error when the next load starts or
     // the stage is released, so the reason stays attached to the file that
     // earned it and to nothing else.
-    if (! audioProcessor.isNoiseLoading())
+    if (!audioProcessor.isNoiseLoading())
         noiseStatusReason = audioProcessor.getNoiseError();
 
     // Order matters and is: the reason a load was REFUSED outranks everything
     // (the previous print may well still be playing), then the busy state, then
     // the loaded file's own name, then the synthesised surface.
     const auto status = noiseStatusReason.isNotEmpty()
-                            ? xlat ("INVALID PRINT") + " (" + noiseStatusReason + ")"
-                            : audioProcessor.isNoiseLoading()
-                                  ? xlat ("LOADING PRINT")
-                                  : audioProcessor.hasNoisePrint()
-                                        ? audioProcessor.getNoiseFileName()
-                                        : xlat ("NO PRINT");
+                            ? xlat("INVALID PRINT") + " (" + noiseStatusReason + ")"
+                        : audioProcessor.isNoiseLoading() ? xlat("LOADING PRINT")
+                        : audioProcessor.hasNoisePrint()  ? audioProcessor.getNoiseFileName()
+                                                          : xlat("NO PRINT");
 
     if (status == lastShownNoiseStatus)
         return;
 
     lastShownNoiseStatus = status;
-    noiseStatusLabel.setText (status, juce::dontSendNotification);
-    noiseStatusLabel.setColour (juce::Label::textColourId,
-                                audioProcessor.hasNoisePrint()
-                                    ? paletteFor (false).accent
-                                    : paletteFor (false).secondary);
+    noiseStatusLabel.setText(status, juce::dontSendNotification);
+    noiseStatusLabel.setColour(juce::Label::textColourId, audioProcessor.hasNoisePrint()
+                                                              ? paletteFor(false).accent
+                                                              : paletteFor(false).secondary);
 }
 
-void FirstAudioProcessorEditor::refreshUserPresetList()
-{
-    userPresetBox.clear (juce::dontSendNotification);
+void FirstAudioProcessorEditor::refreshUserPresetList() {
+    userPresetBox.clear(juce::dontSendNotification);
     const auto names = audioProcessor.getUserPresetNames();
     for (auto i = 0; i < names.size(); ++i)
-        userPresetBox.addItem (names[i], i + 1);
+        userPresetBox.addItem(names[i], i + 1);
 
     const auto loaded = audioProcessor.getCurrentPresetName();
-    const auto index = names.indexOf (loaded);
-    userPresetBox.setSelectedItemIndex (index >= 0 ? index : -1, juce::dontSendNotification);
+    const auto index = names.indexOf(loaded);
+    userPresetBox.setSelectedItemIndex(index >= 0 ? index : -1, juce::dontSendNotification);
     lastShownUserPreset = index >= 0 ? loaded : juce::String();
 }
 
-void FirstAudioProcessorEditor::refreshPresetList()
-{
-    presetBox.clear (juce::dontSendNotification);
+void FirstAudioProcessorEditor::refreshPresetList() {
+    presetBox.clear(juce::dontSendNotification);
     const auto names = FirstAudioProcessor::getPresetNames();
     for (auto i = 0; i < names.size(); ++i)
-        presetBox.addItem (names[i], i + 1);
+        presetBox.addItem(names[i], i + 1);
 
     // A fresh instance has NO preset loaded (index -1): showing "Default" as the
     // box's selection then was a lie - the panel held the raw parameter defaults
@@ -157,35 +146,32 @@ void FirstAudioProcessorEditor::refreshPresetList()
     // looked like it had done nothing. Nothing selected is the honest display; the
     // first honest load happens when the user (or a session) actually applies one.
     const auto loaded = audioProcessor.getLastPresetIndex();
-    presetBox.setSelectedItemIndex (loaded >= 0 ? loaded : -1, juce::dontSendNotification);
+    presetBox.setSelectedItemIndex(loaded >= 0 ? loaded : -1, juce::dontSendNotification);
     lastShownPreset = loaded;
 }
 
-void FirstAudioProcessorEditor::refreshModeButtonCaption()
-{
+void FirstAudioProcessorEditor::refreshModeButtonCaption() {
     // The caption names the live mode, read from the parameters rather than from
     // a button-local bool: a session load, an undo or a preset can all change the
     // modes behind the panel's back, and the caption must follow all of them.
-    const auto modernOn = isModeOn ("modern_mode");
-    const auto lofiOn   = isModeOn ("lofi_mode");
-    modeCycleButton.setButtonText (modernOn ? "MODE: MODERN"
-                                  : lofiOn  ? "MODE: LO-FI"
-                                            : "MODE: OFF");
+    const auto modernOn = isModeOn("modern_mode");
+    const auto lofiOn = isModeOn("lofi_mode");
+    modeCycleButton.setButtonText(modernOn ? "MODE: MODERN" : lofiOn ? "MODE: LO-FI" : "MODE: OFF");
 
     // The button's background is drawn by the base Look and Feel - this class
     // overrides captions, not button backgrounds - so the state has to arrive as
     // colours: lit with the accent while a mode is engaged, the raised panel
     // colour at OFF, matching the transport keys.
-    const auto& palette = paletteFor (darkTheme);
+    const auto &palette = paletteFor(darkTheme);
     const auto modeOn = modernOn || lofiOn;
-    modeCycleButton.setColour (juce::TextButton::buttonColourId,
-                               modeOn ? palette.accent : palette.raised);
-    modeCycleButton.setColour (juce::TextButton::buttonOnColourId,
-                               modeOn ? palette.accent : palette.raised);
-    modeCycleButton.setColour (juce::TextButton::textColourOffId,
-                               modeOn ? palette.readout : palette.text);
-    modeCycleButton.setColour (juce::TextButton::textColourOnId,
-                               modeOn ? palette.readout : palette.text);
+    modeCycleButton.setColour(juce::TextButton::buttonColourId,
+                              modeOn ? palette.accent : palette.raised);
+    modeCycleButton.setColour(juce::TextButton::buttonOnColourId,
+                              modeOn ? palette.accent : palette.raised);
+    modeCycleButton.setColour(juce::TextButton::textColourOffId,
+                              modeOn ? palette.readout : palette.text);
+    modeCycleButton.setColour(juce::TextButton::textColourOnId,
+                              modeOn ? palette.readout : palette.text);
 }
 
 // The three transport keys plus the momentary spindown button. Same rule as the tab
@@ -194,44 +180,28 @@ void FirstAudioProcessorEditor::refreshModeButtonCaption()
 // the engine advances out of by itself - it becomes PLAY when the capstan arrives - so
 // its lamp is the only one that goes out on its own, and the key that is lit is the
 // state the machine is in.
-int FirstAudioProcessorEditor::currentTransportState() const
-{
+int FirstAudioProcessorEditor::currentTransportState() const {
     // Read through the parameter, not a local mirror, so an automation lane moving
     // the transport repaints the panel on the next frame. convertFrom0to1() gives
     // the choice index back as a 0..2 float for a three-entry AudioParameterChoice.
-    if (auto* parameter = audioProcessor.parameters.getParameter ("transport"))
-        return juce::jlimit (0, 2,
-                             juce::roundToInt (parameter->convertFrom0to1 (parameter->getValue())));
+    if (auto *parameter = audioProcessor.parameters.getParameter("transport"))
+        return juce::jlimit(0, 2,
+                            juce::roundToInt(parameter->convertFrom0to1(parameter->getValue())));
 
     return 1;
 }
 
 //==============================================================================
-juce::Rectangle<int> FirstAudioProcessorEditor::statusPillBounds() const
-{
-    // The machine-state badge: a raised pill across the header grid's THIRD row,
-    // wrapped around the statusLabel that lives there. The geometry is the header
-    // grid's own constants (see PluginEditor.h), read from the same three numbers
-    // resized() places the cells with - and it is written ONCE, here, because the
-    // pill contains a lamp that pulses with the compressor: a pill drawn on one
-    // rectangle by paint() and invalidated on another by the timer would be a lamp
-    // that never moves.
-    constexpr int headerGridWidth = headerColumnCount * headerColumnWidth
-                                  + (headerColumnCount - 1) * headerColumnGap;
+juce::Rectangle<int> FirstAudioProcessorEditor::statusPillBounds() const {
+    constexpr int headerGridWidth =
+        headerColumnCount * headerColumnWidth + (headerColumnCount - 1) * headerColumnGap;
     const auto layout = getEditorLayout();
-    const juce::Rectangle<int> pill (layout.header.getRight() - headerGridWidth,
-                                     layout.header.getY() + 62,
-                                     headerGridWidth - 18, 18);
-
-    // The lamp's halo is an ellipse wider than the pill it sits in (2.2 x the
-    // pulse radius on each side), so the invalidated rectangle has to be too -
-    // otherwise the glow is clipped at the pill's edges and reads as a hard-edged
-    // bar rather than as light.
-    return pill.expanded (2, 6);
+    const juce::Rectangle<int> pill(layout.header.getRight() - headerGridWidth,
+                                    layout.header.getY() + 62, headerGridWidth - 18, 18);
+    return pill.expanded(2, 6);
 }
 
-juce::Rectangle<int> FirstAudioProcessorEditor::deckAnimationBounds() const
-{
+juce::Rectangle<int> FirstAudioProcessorEditor::deckAnimationBounds() const {
     // The deck's animated picture is drawn by this component rather than by a
     // widget, so it can only be invalidated by REGION:
     //
@@ -248,25 +218,23 @@ juce::Rectangle<int> FirstAudioProcessorEditor::deckAnimationBounds() const
     // the corridor is the free gap the row reported. That is what keeps this from
     // reintroducing the popup lag a whole-panel repaint caused.
     const auto layout = getEditorLayout();
-    juce::Rectangle<int> area (layout.deck.getRight() - 60, layout.deck.getY() + 2, 52, 68);
+    juce::Rectangle<int> area(layout.deck.getRight() - 60, layout.deck.getY() + 2, 52, 68);
 
-    if (! deckParticleCorridorX.isEmpty() && ! deckParticleCorridorY.isEmpty())
-        area = area.getUnion ({ deckParticleCorridorX.getStart() - 2,
-                                deckParticleCorridorY.getStart() - 2,
-                                deckParticleCorridorX.getLength() + 4,
-                                deckParticleCorridorY.getLength() + 4 });
+    if (!deckParticleCorridorX.isEmpty() && !deckParticleCorridorY.isEmpty())
+        area = area.getUnion(
+            {deckParticleCorridorX.getStart() - 2, deckParticleCorridorY.getStart() - 2,
+             deckParticleCorridorX.getLength() + 4, deckParticleCorridorY.getLength() + 4});
 
     return area;
 }
 
-void FirstAudioProcessorEditor::repaintAnimatedSurfaces()
-{
+void FirstAudioProcessorEditor::repaintAnimatedSurfaces() {
     // The knobs. Their halos breathe with the compressor and their pointers ride
     // an orbit of the same phase; the ticks tremble with the transport's drift.
     // All of that is read from the look and feel at PAINT time, and a slider only
     // repaints itself when its VALUE changes - so a knob nobody is touching was
     // frozen mid-breath for as long as the panel stayed open.
-    for (auto& slider : controls)
+    for (auto &slider : controls)
         if (slider.isVisible())
             slider.repaint();
 
@@ -275,49 +243,45 @@ void FirstAudioProcessorEditor::repaintAnimatedSurfaces()
     // lamps light with the machine's activity, so they need the same per-frame
     // invalidation the knobs do. Twelve widgets, most of them hidden behind a
     // page: the visible ones are two to four per frame.
-    for (auto* toggle : { &deltaButton, &bypassButton, &polarityButton, &autoGainButton,
-                          &autoTuneButton, &uiSoundsButton, &antiPhaseGuardButton,
-                          &inputEqHpButton, &inputEqLpButton,
-                          &outputEqHpButton, &outputEqLpButton, &delaySyncButton })
+    for (auto *toggle : {&deltaButton, &bypassButton, &polarityButton, &autoGainButton,
+                         &autoTuneButton, &uiSoundsButton, &antiPhaseGuardButton, &inputEqHpButton,
+                         &inputEqLpButton, &outputEqHpButton, &outputEqLpButton, &delaySyncButton})
         if (toggle->isVisible())
             toggle->repaint();
 
     // The status lamp and the deck's own transport, both drawn by paint().
-    repaint (statusPillBounds());
+    repaint(statusPillBounds());
 
-    if (! tapeScene.isSceneLive())
-        repaint (deckAnimationBounds());
+    if (!tapeScene.isSceneLive())
+        repaint(deckAnimationBounds());
 }
 
 //==============================================================================
-void FirstAudioProcessorEditor::timerCallback()
-{
+void FirstAudioProcessorEditor::timerCallback() {
     audioProcessor.flushPendingTransportHostSync();
 
     // Hosts can keep an editor alive while its window is hidden. Do not poll
     // telemetry, advance physics, or issue repaint work in that state; the next
     // visible timer tick reconstructs all display-only state from the processor.
-    if (! isShowing())
+    if (!isShowing())
         return;
 
     // Retry context creation while the host is still creating its peer. The
     // budget is bounded so an unavailable driver is not polled forever.
-    if (openGLAttachAttemptsLeft > 0)
-    {
+    if (openGLAttachAttemptsLeft > 0) {
         --openGLAttachAttemptsLeft;
-        if (openGLContext.isAttached())
-        {
+        if (openGLContext.isAttached()) {
             openGLAttachAttemptsLeft = 0;
-        }
-        else
-        {
-            openGLContext.attachTo (*this);
-            if (openGLContext.isAttached())
-            {
+        } else {
+            openGLContext.attachTo(*this);
+            if (openGLContext.isAttached()) {
                 openGLAttachAttemptsLeft = 0;
             }
         }
     }
+
+    if (openGLContext.isAttached())
+        tapeScene.serviceContextAttachment();
 
     // Four meters: the two level meters each show the full four-way loudness reading
     // (peak dB, RMS, LUFS, VU and their equal-weighted combination), and each glue
@@ -347,56 +311,46 @@ void FirstAudioProcessorEditor::timerCallback()
     // busy flag when it is done (Source/DSP/NoiseLoader.h).
     refreshNoiseStatus();
 
-    inputMeter.setLoudness (telemetry.inputPeakDb,
-                            telemetry.inputRmsDb,
-                            telemetry.inputLufs,
-                            telemetry.inputVuDb,
-                            telemetry.inputCombinedDb,
-                            telemetry.inputClipping);
-    outputMeter.setLoudness (telemetry.outputPeakDb,
-                             telemetry.outputRmsDb,
-                             telemetry.outputLufs,
-                             telemetry.outputVuDb,
-                             telemetry.outputCombinedDb,
-                             telemetry.outputClipping);
+    inputMeter.setLoudness(telemetry.inputPeakDb, telemetry.inputRmsDb, telemetry.inputLufs,
+                           telemetry.inputVuDb, telemetry.inputCombinedDb, telemetry.inputClipping);
+    outputMeter.setLoudness(telemetry.outputPeakDb, telemetry.outputRmsDb, telemetry.outputLufs,
+                            telemetry.outputVuDb, telemetry.outputCombinedDb,
+                            telemetry.outputClipping);
 
-    compressorMeterIn.setReduction (telemetry.inputGainReductionDb,
-                                    telemetry.inputCompressorActivity);
-    compressorMeterOut.setReduction (telemetry.outputGainReductionDb,
-                                     telemetry.outputCompressorActivity);
+    compressorMeterIn.setReduction(telemetry.inputGainReductionDb,
+                                   telemetry.inputCompressorActivity);
+    compressorMeterOut.setReduction(telemetry.outputGainReductionDb,
+                                    telemetry.outputCompressorActivity);
 
     // The MIX page's bar. Read from the seven SOURCE parameters and normalised
     // exactly the way SaturationCore::setWeights normalises them - including its
     // all-zero fallback, so a bar that shows pure tape really is pure tape. It is
     // read only while the page that shows it is on screen: seven parameter reads
     // and a divide per frame is nothing, but nothing is cheaper than nothing.
-    if (mixBar.isVisible())
-    {
-        std::array<float, principleCount> shares {};
+    if (mixBar.isVisible()) {
+        std::array<float, principleCount> shares{};
         float shareSum = 0.0f;
 
-        for (int p = 0; p < principleCount; ++p)
-        {
-            if (const auto* parameter = audioProcessor.parameters.getParameter (
-                                          juce::String (principleParameterIds[static_cast<std::size_t> (p)])))
-                shares[static_cast<std::size_t> (p)] =
-                    juce::jlimit (0.0f, 1.0f, static_cast<float> (parameter->getValue()));
+        for (int p = 0; p < principleCount; ++p) {
+            if (const auto *parameter = audioProcessor.parameters.getParameter(
+                    juce::String(principleParameterIds[static_cast<std::size_t>(p)])))
+                shares[static_cast<std::size_t>(p)] =
+                    juce::jlimit(0.0f, 1.0f, static_cast<float>(parameter->getValue()));
 
-            shareSum += shares[static_cast<std::size_t> (p)];
+            shareSum += shares[static_cast<std::size_t>(p)];
         }
 
         if (shareSum > 1.0e-6f)
-            for (auto& share : shares)
+            for (auto &share : shares)
                 share /= shareSum;
-        else
-        {
+        else {
             // The same answer the core gives an empty mix: pure tape, the machine
             // the plugin is calibrated as. Painting anything else here would put
             // the bar and the sound in front of different stories.
-            shares = { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
+            shares = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
         }
 
-        mixBar.setShares (shares, juce::jlimit (0.0f, 1.0f, shareSum));
+        mixBar.setShares(shares, juce::jlimit(0.0f, 1.0f, shareSum));
     }
 
     const auto reduction = telemetry.inputGainReductionDb + telemetry.outputGainReductionDb;
@@ -417,32 +371,28 @@ void FirstAudioProcessorEditor::timerCallback()
     // is the same function paint() draws with, so the rectangle that is invalidated
     // is the rectangle that is drawn - see its declaration in PluginEditor.h.
     if (activeTabIsShapers)
-        repaint (shapersSpectrumBounds());
+        repaint(shapersSpectrumBounds());
 
     const auto evenRatio = telemetry.evenHarmonicRatio;
     const auto oddRatio = telemetry.oddHarmonicRatio;
-    harmonicsReadout.setText ("E " + juce::String (evenRatio * 100.0f, 1) + " %"
-                                  + "   O " + juce::String (oddRatio * 100.0f, 1) + " %",
-                              juce::dontSendNotification);
+    harmonicsReadout.setText("E " + juce::String(evenRatio * 100.0f, 1) + " %" + "   O " +
+                                 juce::String(oddRatio * 100.0f, 1) + " %",
+                             juce::dontSendNotification);
 
     // Colour the readout by which family dominates, so the character is readable at a
     // glance without needing to compare the numbers.
-    const auto harmonicPalette = paletteFor (darkTheme);
+    const auto harmonicPalette = paletteFor(darkTheme);
     const auto totalHarmonics = evenRatio + oddRatio;
     // The readouts breathe with the machine: a gentle luminance oscillation on
     // top of the state colour, so the numbers feel powered by the same signal
     // they report rather than painted on. The breath is bounded (±20 %), so the
     // colour coding stays readable at every phase.
-    const auto readoutBreath = 1.0f - 0.2f
-                                  * (0.5f + 0.5f * std::sin (customLookAndFeel.phase()));
-    const auto breathe = [&] (juce::Colour c)
-    {
-        return c.withMultipliedBrightness (readoutBreath);
-    };
-    harmonicsReadout.setColour (juce::Label::textColourId,
-                                breathe (totalHarmonics < 0.001f ? harmonicPalette.secondary
-                                            : evenRatio >= oddRatio ? harmonicPalette.status
-                                                                    : harmonicPalette.needle));
+    const auto readoutBreath = 1.0f - 0.2f * (0.5f + 0.5f * std::sin(customLookAndFeel.phase()));
+    const auto breathe = [&](juce::Colour c) { return c.withMultipliedBrightness(readoutBreath); };
+    harmonicsReadout.setColour(juce::Label::textColourId,
+                               breathe(totalHarmonics < 0.001f ? harmonicPalette.secondary
+                                       : evenRatio >= oddRatio ? harmonicPalette.status
+                                                               : harmonicPalette.needle));
 
     // The deck's tempo, as the host reports it. A host that offers no playhead
     // (an offline render, a bare player) leaves the readout at the machine's
@@ -450,14 +400,13 @@ void FirstAudioProcessorEditor::timerCallback()
     // fallback is worse than an honest dash.
     const auto deckBpm = audioProcessor.getDeckTempoBpm();
     const auto deckBpmValid = audioProcessor.getDeckTempoValid();
-    bpmReadout.setText (deckBpmValid
-                            ? juce::String (deckBpm, 1) + " " + xlat ("BPM")
-                            : juce::String (juce::roundToInt (deckBpm)) + " "
-                                  + xlat ("BPM") + " (" + xlat ("default") + ")",
-                        juce::dontSendNotification);
-    bpmReadout.setColour (juce::Label::textColourId,
-                          breathe (deckBpmValid ? paletteFor (darkTheme).status
-                                                : paletteFor (darkTheme).secondary));
+    bpmReadout.setText(deckBpmValid ? juce::String(deckBpm, 1) + " " + xlat("BPM")
+                                    : juce::String(juce::roundToInt(deckBpm)) + " " + xlat("BPM") +
+                                          " (" + xlat("default") + ")",
+                       juce::dontSendNotification);
+    bpmReadout.setColour(
+        juce::Label::textColourId,
+        breathe(deckBpmValid ? paletteFor(darkTheme).status : paletteFor(darkTheme).secondary));
 
     // ------------------------------------------------------------------
     //  Subharmonic tracking readout.
@@ -473,25 +422,22 @@ void FirstAudioProcessorEditor::timerCallback()
     const auto trackedHz = telemetry.subfundTrackedHz;
     const auto confidence = telemetry.subfundConfidence;
 
-    if (confidence < 0.05f || trackedHz <= 0.0f)
-    {
-        subfundReadout.setText (xlat ("idle - no note tracked"), juce::dontSendNotification);
-        subfundReadout.setColour (juce::Label::textColourId, harmonicPalette.secondary);
-    }
-    else
-    {
+    if (confidence < 0.05f || trackedHz <= 0.0f) {
+        subfundReadout.setText(xlat("idle - no note tracked"), juce::dontSendNotification);
+        subfundReadout.setColour(juce::Label::textColourId, harmonicPalette.secondary);
+    } else {
         // The confidence is shown as a percentage rather than hidden, because a
         // partial lock (say 40 %) is a real and useful state: the cascade IS
         // generating, but it is following a signal that is not steady enough for
         // a clean track, and the user should be able to see that.
-        subfundReadout.setText (juce::String (trackedHz, 1) + " Hz   "
-                                    + juce::String (juce::roundToInt (confidence * 100.0f)) + " %",
-                                juce::dontSendNotification);
+        subfundReadout.setText(juce::String(trackedHz, 1) + " Hz   " +
+                                   juce::String(juce::roundToInt(confidence * 100.0f)) + " %",
+                               juce::dontSendNotification);
         // Green while the track is solid, amber while it is partial: the colour is
         // the readout's own confidence bar.
-        subfundReadout.setColour (juce::Label::textColourId,
-                                  breathe (confidence > 0.75f ? harmonicPalette.status
-                                                              : harmonicPalette.needle));
+        subfundReadout.setColour(
+            juce::Label::textColourId,
+            breathe(confidence > 0.75f ? harmonicPalette.status : harmonicPalette.needle));
     }
 
     // ------------------------------------------------------------------
@@ -512,24 +458,22 @@ void FirstAudioProcessorEditor::timerCallback()
     //  from being off without the user knowing.
     // ------------------------------------------------------------------
     const auto antiPhaseNow = telemetry.antiPhaseAmount;
-    const auto* antiPhaseGuardSetting = audioProcessor.parameters
-                                            .getRawParameterValue ("anti_phase_guard");
-    const auto antiPhaseGuardOn = antiPhaseGuardSetting == nullptr
-                                  || antiPhaseGuardSetting->load() >= 0.5f;
-    const auto antiPhaseText = ! antiPhaseGuardOn
-                                   ? xlat ("off")
-                                   : antiPhaseNow < 0.01f
-                                       ? xlat ("clean")
-                                       : juce::String (juce::roundToInt (antiPhaseNow * 100.0f))
-                                             + " " + xlat ("% corrected");
-    if (antiPhaseText != lastShownAntiPhase)
-    {
+    const auto *antiPhaseGuardSetting =
+        audioProcessor.parameters.getRawParameterValue("anti_phase_guard");
+    const auto antiPhaseGuardOn =
+        antiPhaseGuardSetting == nullptr || antiPhaseGuardSetting->load() >= 0.5f;
+    const auto antiPhaseText =
+        !antiPhaseGuardOn ? xlat("off")
+        : antiPhaseNow < 0.01f
+            ? xlat("clean")
+            : juce::String(juce::roundToInt(antiPhaseNow * 100.0f)) + " " + xlat("% corrected");
+    if (antiPhaseText != lastShownAntiPhase) {
         lastShownAntiPhase = antiPhaseText;
-        antiPhaseReadout.setText (antiPhaseText, juce::dontSendNotification);
-        antiPhaseReadout.setColour (juce::Label::textColourId,
-                                    breathe (! antiPhaseGuardOn ? harmonicPalette.secondary
-                                            : antiPhaseNow < 0.01f ? harmonicPalette.status
-                                                                   : harmonicPalette.needle));
+        antiPhaseReadout.setText(antiPhaseText, juce::dontSendNotification);
+        antiPhaseReadout.setColour(juce::Label::textColourId,
+                                   breathe(!antiPhaseGuardOn      ? harmonicPalette.secondary
+                                           : antiPhaseNow < 0.01f ? harmonicPalette.status
+                                                                  : harmonicPalette.needle));
     }
 
     // Animated presentation state. Everything here is derived from audio
@@ -538,8 +482,7 @@ void FirstAudioProcessorEditor::timerCallback()
     if (glowPhase > juce::MathConstants<float>::twoPi)
         glowPhase -= juce::MathConstants<float>::twoPi;
 
-    const auto targetGlow = juce::jlimit (0.0f, 1.0f,
-                                          activity * 0.7f + std::abs (reduction) / 6.0f);
+    const auto targetGlow = juce::jlimit(0.0f, 1.0f, activity * 0.7f + std::abs(reduction) / 6.0f);
     glowAmount += (targetGlow - glowAmount) * 0.18f;
 
     const auto drift = telemetry.transportDrift;
@@ -552,11 +495,10 @@ void FirstAudioProcessorEditor::timerCallback()
     // for a bypass toggle to change the state first.
     const auto bypassed = telemetry.bypassActive;
     currentBypassDisplay = bypassed;
-    statusLabel.setText (bypassed ? xlat ("BYPASSED / DRY") : xlat ("STEREO / REAL TIME"),
-                         juce::dontSendNotification);
-    statusLabel.setColour (juce::Label::textColourId,
-                           bypassed ? paletteFor (darkTheme).secondary
-                                    : paletteFor (darkTheme).status);
+    statusLabel.setText(bypassed ? xlat("BYPASSED / DRY") : xlat("STEREO / REAL TIME"),
+                        juce::dontSendNotification);
+    statusLabel.setColour(juce::Label::textColourId, bypassed ? paletteFor(darkTheme).secondary
+                                                              : paletteFor(darkTheme).status);
 
     // The reels spin at the machine's ACTUAL platter speed, which is the transport
     // ramp multiplied by the spindown ramp - so a START makes them visibly come up
@@ -565,7 +507,7 @@ void FirstAudioProcessorEditor::timerCallback()
     // the SPEED combo, so the transport did not move them at all.
     // getSelectedId() returns 0 while nothing is selected, which would index the
     // combo's item list at -1, so the index is clamped before it is used.
-    const auto speedIndex = juce::jlimit (0, 2, speedBox.getSelectedId() - 1);
+    const auto speedIndex = juce::jlimit(0, 2, speedBox.getSelectedId() - 1);
     const auto speedScale = speedIndex == 0 ? 0.55f : (speedIndex == 1 ? 0.85f : 1.25f);
 
     // Follow the machine's own platter with a display-only lag, so the reels ease
@@ -583,18 +525,15 @@ void FirstAudioProcessorEditor::timerCallback()
     // the button's own mouse state (so the lamp is instant on a press, before the
     // 30 Hz poll would see the parameter change).
     const auto transportNow = currentTransportState();
-    const auto spindownNow = audioProcessor.isSpindownHeld()
-                              || spindownButton.isDown();
+    const auto spindownNow = audioProcessor.isSpindownHeld() || spindownButton.isDown();
 
     // The three transport keys relight only when the state actually changes.
-    if (transportNow != lastShownTransport)
-    {
+    if (transportNow != lastShownTransport) {
         lastShownTransport = transportNow;
         styleTransportButtons();
     }
 
-    if (spindownNow != lastShownSpindown)
-    {
+    if (spindownNow != lastShownSpindown) {
         lastShownSpindown = spindownNow;
         styleSpindownButton();
     }
@@ -607,11 +546,11 @@ void FirstAudioProcessorEditor::timerCallback()
     // for the DAW reads as START in the parameter (that is what keeps the key lit)
     // and is only distinguishable from a spin-up by asking the engine.
     const auto waitingForHost = audioProcessor.isTransportArmedForHost();
-    const auto machineStateText = spindownNow ? "SPINDOWN / POWER CUT"
-                                    : waitingForHost ? "START / WAITING FOR DAW"
-                                    : transportNow == 0 ? "STOPPED / AT REST"
-                                    : transportNow == 2 ? "START / SPINNING UP"
-                                                        : "PLAY / AT SPEED";
+    const auto machineStateText = spindownNow         ? "SPINDOWN / POWER CUT"
+                                  : waitingForHost    ? "START / WAITING FOR DAW"
+                                  : transportNow == 0 ? "STOPPED / AT REST"
+                                  : transportNow == 2 ? "START / SPINNING UP"
+                                                      : "PLAY / AT SPEED";
     // Explicit juce::String construction: comparing const char* against a
     // juce::String with != is ambiguous (candidates on both sides), so the
     // left operand is materialised first.
@@ -619,23 +558,27 @@ void FirstAudioProcessorEditor::timerCallback()
     // (session load, undo, preset, automation) shows up within one frame.
     refreshModeButtonCaption();
 
-    if (juce::String (machineStateText) != lastShownMachineState)
-    {
+    if (juce::String(machineStateText) != lastShownMachineState) {
         lastShownMachineState = machineStateText;
-        deckHintLabel.setText (machineStateText, juce::dontSendNotification);
-        deckHintLabel.setColour (juce::Label::textColourId,
-                                 spindownNow || waitingForHost ? paletteFor (darkTheme).needle
-                                 : transportNow == 0 ? paletteFor (darkTheme).secondary
-                                                     : paletteFor (darkTheme).status);
+        deckHintLabel.setText(machineStateText, juce::dontSendNotification);
+        deckHintLabel.setColour(juce::Label::textColourId,
+                                spindownNow || waitingForHost ? paletteFor(darkTheme).needle
+                                : transportNow == 0           ? paletteFor(darkTheme).secondary
+                                                              : paletteFor(darkTheme).status);
     }
 
-    customLookAndFeel.setActivity (glowAmount);
-    customLookAndFeel.setDrift (driftAmount);
-    customLookAndFeel.advanceFrame();
-    // The toggle thumbs' glide is one per-frame ease for every tracked switch
-    // (see J37LookAndFeel::updateToggleAnimations); run it on the same tick as
-    // the panel's other animation so the whole surface shares one clock.
-    customLookAndFeel.updateToggleAnimations();
+    using Clock = std::chrono::steady_clock;
+    const auto animationNow = Clock::now();
+    const auto animationDelta =
+        lastAnimationFrame == Clock::time_point{}
+            ? 1.0f / 30.0f
+            : juce::jlimit(0.0f, 0.25f,
+                           std::chrono::duration<float>(animationNow - lastAnimationFrame).count());
+    lastAnimationFrame = animationNow;
+    customLookAndFeel.setActivity(glowAmount);
+    customLookAndFeel.setDrift(driftAmount);
+    customLookAndFeel.advanceFrame(animationDelta);
+    customLookAndFeel.updateToggleAnimations(animationDelta);
 
     // ------------------------------------------------------------------
     //  Interface sounds.
@@ -656,13 +599,12 @@ void FirstAudioProcessorEditor::timerCallback()
         --uiSoundTickCountdown;
 
     const auto uiSoundEnabled = audioProcessor.getUiSoundsEnabled();
-    if (uiSoundEnabled != lastShownUiSoundEnabled)
-    {
+    if (uiSoundEnabled != lastShownUiSoundEnabled) {
         lastShownUiSoundEnabled = uiSoundEnabled;
-        uiSounds.setEnabled (uiSoundEnabled);
+        uiSounds.setEnabled(uiSoundEnabled);
     }
 
-    uiSounds.setBrightness (juce::jlimit (0.0f, 1.0f, glowAmount * 0.7f + activity * 0.3f));
+    uiSounds.setBrightness(juce::jlimit(0.0f, 1.0f, glowAmount * 0.7f + activity * 0.3f));
 
     // The texture layer is rebuilt (and the whole panel repainted) only when
     // something STRUCTURAL changes - a theme switch, a resize - through
@@ -687,19 +629,16 @@ void FirstAudioProcessorEditor::timerCallback()
     {
         juce::String hoveredControl;
         const auto mouse = getMouseXYRelative();
-        for (int i = 0; i < static_cast<int> (controlCount); ++i)
-            if (controls[i].isVisible() && controls[i].getBounds().contains (mouse))
-            {
+        for (int i = 0; i < static_cast<int>(controlCount); ++i)
+            if (controls[i].isVisible() && controls[i].getBounds().contains(mouse)) {
                 hoveredControl = controls[i].getName();
                 break;
             }
-        if (hoveredControl != lastShownHoverHint)
-        {
+        if (hoveredControl != lastShownHoverHint) {
             lastShownHoverHint = hoveredControl;
-            controlsHintLabel.setText (hoveredControl.isNotEmpty()
-                                          ? hoveredControl
-                                          : juce::String ("Shift = fine tune"),
-                                       juce::dontSendNotification);
+            controlsHintLabel.setText(
+                hoveredControl.isNotEmpty() ? hoveredControl : juce::String("Shift = fine tune"),
+                juce::dontSendNotification);
         }
     }
 
@@ -711,21 +650,19 @@ void FirstAudioProcessorEditor::timerCallback()
     const auto slotNow = audioProcessor.getActiveCompareSlot();
     const auto dirtyNow = audioProcessor.isCompareDirty();
     const auto presetNow = audioProcessor.getLastPresetIndex();
-    if (slotNow != lastShownSlot || dirtyNow != lastShownDirty
-        || canUndoNow != lastShownCanUndo || canRedoNow != lastShownCanRedo)
-    {
+    if (slotNow != lastShownSlot || dirtyNow != lastShownDirty || canUndoNow != lastShownCanUndo ||
+        canRedoNow != lastShownCanRedo) {
         lastShownSlot = slotNow;
         lastShownDirty = dirtyNow;
         lastShownCanUndo = canUndoNow;
         lastShownCanRedo = canRedoNow;
         updateWorkflowButtons();
     }
-    if (presetNow != lastShownPreset)
-    {
+    if (presetNow != lastShownPreset) {
         lastShownPreset = presetNow;
         // Item IDs are index + 1, so 0 means "no selection" - what a user preset
         // (index -1) should show in the FACTORY combo.
-        presetBox.setSelectedId (presetNow + 1, juce::dontSendNotification);
+        presetBox.setSelectedId(presetNow + 1, juce::dontSendNotification);
         refreshUserPresetList(); // a factory load clears the user-preset selection
     }
     // The box's SELECTED ENTRY follows the loaded preset, but a preset that is
@@ -734,8 +671,7 @@ void FirstAudioProcessorEditor::timerCallback()
 
     const auto userPresetNow = audioProcessor.getCurrentPresetName();
     const auto presetDirtyNow = audioProcessor.isPresetDirty();
-    if (userPresetNow != lastShownUserPreset || presetDirtyNow != lastShownPresetDirty)
-    {
+    if (userPresetNow != lastShownUserPreset || presetDirtyNow != lastShownPresetDirty) {
         lastShownUserPreset = userPresetNow;
         lastShownPresetDirty = presetDirtyNow;
         updateWorkflowButtons();
@@ -750,8 +686,7 @@ void FirstAudioProcessorEditor::timerCallback()
     // thread has least headroom, and the resulting dropouts are heard as clicks. It now
     // runs at ~5 Hz and only while the editor is actually on screen, which is far faster
     // than a person can hear the EDITED badge appear.
-    if (isShowing() && ++compareMirrorTick >= 6)
-    {
+    if (isShowing() && ++compareMirrorTick >= 6) {
         compareMirrorTick = 0;
         audioProcessor.updateActiveCompareSlot();
     }
@@ -759,19 +694,17 @@ void FirstAudioProcessorEditor::timerCallback()
     if (physicsWorld == nullptr)
         return;
 
-    physicsWorld->Step (1.0f / 30.0f, 6, 2);
+    physicsWorld->Step(1.0f / 30.0f, 6, 2);
 
     std::array<RenderOrb, decorativeOrbCount> nextFrame;
-    for (std::size_t i = 0; i < decorativeOrbCount; ++i)
-    {
+    for (std::size_t i = 0; i < decorativeOrbCount; ++i) {
         const auto position = physicsOrbs[i].body->GetPosition();
-        nextFrame[i] = { juce::Point<float> (position.x, position.y),
-                         physicsOrbs[i].radius,
-                         physicsOrbs[i].colour };
+        nextFrame[i] = {juce::Point<float>(position.x, position.y), physicsOrbs[i].radius,
+                        physicsOrbs[i].colour};
     }
 
     {
-        const juce::SpinLock::ScopedLockType lock (renderOrbsLock);
+        const juce::SpinLock::ScopedLockType lock(renderOrbsLock);
         renderOrbs = nextFrame;
     }
 
@@ -781,36 +714,35 @@ void FirstAudioProcessorEditor::timerCallback()
     // one thing that must never happen is a parameter tree or a JUCE Component
     // being read from there. Each is normalised here, in the thread that owns the
     // parameter, so the render thread has no idea what a dB is.
-    if (const auto* rawDrive = audioProcessor.parameters.getRawParameterValue ("drive"))
+    if (const auto *rawDrive = audioProcessor.parameters.getRawParameterValue("drive"))
         sceneDrive = rawDrive->load();
 
-    tapeScene.setAudioState (
+    tapeScene.setAudioState(
         // Output loudness over the range the meters themselves use for "moving":
         // below -48 dB the machine is at the noise floor and the scene goes quiet.
-        juce::jlimit (0.0f, 1.0f, juce::jmap (telemetry.outputCombinedDb, -48.0f, 0.0f, 0.0f, 1.0f)),
-        juce::jlimit (0.0f, 1.0f, sceneDrive),
+        juce::jlimit(0.0f, 1.0f, juce::jmap(telemetry.outputCombinedDb, -48.0f, 0.0f, 0.0f, 1.0f)),
+        juce::jlimit(0.0f, 1.0f, sceneDrive),
         // Both compressors' total reduction, on the same six-decibel scale the
         // panel's glow uses, so the reels' rim light and the knobs agree.
-        juce::jlimit (0.0f, 1.0f, std::abs (reduction) / 6.0f),
+        juce::jlimit(0.0f, 1.0f, std::abs(reduction) / 6.0f),
         // The transport's drift, re-centred: the panel carries it as 0..1 with
         // 0.5 as steady, and the scene wants it signed so the ribbon waves to
         // either side of the path rather than always to one.
-        juce::jlimit (-1.0f, 1.0f, (driftAmount - 0.5f) * 2.0f),
+        juce::jlimit(-1.0f, 1.0f, (driftAmount - 0.5f) * 2.0f),
         // The machine's own platter speed, already lagged in smoothedMachineSpeed
         // - so a STOP stops the reels and a held SPINDOWN coasts them down, and
         // the tape only transfers while the transport is actually running.
-        juce::jlimit (0.0f, 1.0f, smoothedMachineSpeed),
+        juce::jlimit(0.0f, 1.0f, smoothedMachineSpeed),
         // The frame's own loudest sample, linear 0..1, drained from the processor
         // once per tick (getOutputPeakLevel is an exchange) so the scene's peak
         // lamp reads the same transient the meter needle just fell for.
-        juce::jlimit (0.0f, 1.0f, audioProcessor.getOutputPeakLevel()));
+        juce::jlimit(0.0f, 1.0f, audioProcessor.getOutputPeakLevel()));
 
     // The texture's doses follow the machine: the shimmer term scales with
     // drive and with the compressors' reduction, so the panel's surface is
     // alive where the signal pushes. One call feeds both renderers - the 2D
     // ink in paint() and the scene's uTextureWeights uniform.
-    configureTextureWeights (sceneDrive,
-                             juce::jlimit (0.0f, 1.0f, std::abs (reduction) / 6.0f));
+    configureTextureWeights(sceneDrive, juce::jlimit(0.0f, 1.0f, std::abs(reduction) / 6.0f));
 
     // TapeScene retries its own context attachment from its resized callback
     // and from the repaint timer while its bounded attach budget remains.
@@ -832,8 +764,7 @@ void FirstAudioProcessorEditor::timerCallback()
     //  combos, sliders and popups the old whole-panel repaint used to stamp over.
     //  See repaintAnimatedSurfaces().
     // ------------------------------------------------------------------
-    if (++animationPaintTick >= 2)
-    {
+    if (++animationPaintTick >= 2) {
         animationPaintTick = 0;
         repaintAnimatedSurfaces();
     }

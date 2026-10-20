@@ -7,8 +7,6 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "RenderBackend.h"
-#include "NativeRenderer.h"
 
 // The GL typedefs (GLuint, GLint, GLsizei) and the GL commands this component
 // calls live in the module's own header, which the generated JuceHeader also
@@ -124,22 +122,19 @@ public:
         textureWeights.store (packed, std::memory_order_relaxed);
     }
 
-    /** Enables the OpenGL scene after the editor's context attaches. */
+    /** Controls the separate OpenGL transport context. A false scene uses the
+        software-painted transport instead. */
     void setSceneEnabled (bool shouldBeEnabled);
+
+    /** Retries attaching the scene context while its bounded retry budget remains. */
+    void serviceContextAttachment ();
 
     /** Whether the context is up AND the program linked - i.e. whether the
         editor should keep drawing its own flat transport behind this one. Read on
         the message thread, so the GL thread's half of the answer is an atomic. */
     [[nodiscard]] bool isSceneLive() const noexcept;
 
-    /** Retries OpenGL context attachment while the host creates its native peer. */
-    void serviceContextAttachment();
-    [[nodiscard]] j37::render::NativeRenderer::Config nativeRendererConfig() const;
-
-    /** CPU renderer used when the selected native backend is unavailable or
-        explicitly set to CPU. It intentionally uses the same telemetry and
-        palette atomics as the accelerated scene, so both paths share one state
-        model. */
+    /** CPU fallback rendered when the OpenGL context or shader is unavailable. */
     void paint (juce::Graphics&) override;
     void resized() override;
 
@@ -240,8 +235,6 @@ private:
 
     juce::OpenGLContext openGLContext;
     std::unique_ptr<juce::OpenGLShaderProgram> shaderProgram;
-    std::unique_ptr<j37::render::NativeRenderer> nativeRenderer;
-
     Mesh reel {};
     Mesh tapePack {};
     Mesh ribbon {};

@@ -6,10 +6,10 @@
 
 #pragma once
 
+#include "GUI/TapeScene.h"
+#include "PluginProcessor.h"
 #include <JuceHeader.h>
 #include <chrono>
-#include "PluginProcessor.h"
-#include "GUI/TapeScene.h"
 
 #include <array>
 #include <atomic>
@@ -39,17 +39,15 @@
 // its header is available here so a MagicProcessor-style editor can be built on
 // top of it; the current editor is still the hand-written one, so this is the
 // seam rather than a replacement.
-#if __has_include (<foleys_gui_magic/foleys_gui_magic.h>)
- #include <foleys_gui_magic/foleys_gui_magic.h>
- #define J37_HAS_FOLEYS 1
+#if __has_include(<foleys_gui_magic/foleys_gui_magic.h>)
+#include <foleys_gui_magic/foleys_gui_magic.h>
+#define J37_HAS_FOLEYS 1
 #else
- #define J37_HAS_FOLEYS 0
+#define J37_HAS_FOLEYS 0
 #endif
 
-
-class J37LookAndFeel final : public juce::LookAndFeel_V4
-{
-public:
+class J37LookAndFeel final : public juce::LookAndFeel_V4 {
+  public:
     // j37panel::ThemeChoice is j37panel::ThemeChoice, in Source/GUI/PanelPaint.h: the
     // palettes select on it, and a palette cannot be nested in the class that
     // paints with it - which is what every caller below was already reaching
@@ -58,40 +56,36 @@ public:
     // The bool entry point is kept because every paint routine in this file calls
     // it and the two DARK themes share every code path - this is the older,
     // coarser question ("is this a dark panel?"). setTheme() is the finer one.
-    void setDarkTheme (bool shouldUseDarkTheme) noexcept
-    {
+    void setDarkTheme(bool shouldUseDarkTheme) noexcept {
         theme = shouldUseDarkTheme ? j37panel::ThemeChoice::charcoal : j37panel::ThemeChoice::ivory;
     }
 
-    void setTheme (j37panel::ThemeChoice newTheme) noexcept { theme = newTheme; }
+    void setTheme(j37panel::ThemeChoice newTheme) noexcept { theme = newTheme; }
     j37panel::ThemeChoice getTheme() const noexcept { return theme; }
 
     /** True for the two dark panels. Used by every drawing routine, which only
         ever needs to know dark-or-light rather than which dark. */
     bool isDarkTheme() const noexcept { return theme != j37panel::ThemeChoice::ivory; }
 
-    void setActivity (float newActivity) noexcept { activity = newActivity; }
-    void setDrift (float newDrift) noexcept { drift = newDrift; }
-    // The editor's timer breathes the deck readouts with the SAME clock the
-    // knob halos use; the phase itself stays private and advances only here.
+    void setActivity(float newActivity) noexcept { activity = newActivity; }
+    void setDrift(float newDrift) noexcept { drift = newDrift; }
     float phase() const noexcept { return animationPhase; }
-    // 0.055 rather than 0.11: the phase drives the knob halos, specular sweep
-    // and tick tremble, and at 0.11 it completed a full breath every ~57 frames
-    // - a busy strobe the user read as "animations slightly broken". Halved, a
-    // breath takes about two seconds: still alive, no longer flickering.
-    void advanceFrame() noexcept { animationPhase += 0.055f; }
+    void advanceFrame(float elapsedSeconds) noexcept {
+        constexpr float radiansPerSecond = 1.65f;
+        animationPhase = std::fmod(animationPhase + radiansPerSecond * elapsedSeconds,
+                                   juce::MathConstants<float>::twoPi);
+    }
 
     // Toggle thumbs GLIDE between their stops instead of teleporting: the
     // editor's timer calls updateToggleAnimations() each frame, which eases
     // every tracked switch's position toward its target (a fast-attack
     // exponential glide, settled in about five frames). Toggles the L&F was
     // never told about sit at their true position, so nothing regresses.
-    void noteToggle (void* key, bool isOn)
-    {
+    void noteToggle(void *key, bool isOn) {
         const float target = isOn ? 1.0f : 0.0f;
-        auto& state = toggleGlides[key];
-        if (! state.initialised || std::abs (target - state.position) > 0.5f)
-            state.position = target;      // first sight / programmatic jump: no spin
+        auto &state = toggleGlides[key];
+        if (!state.initialised || std::abs(target - state.position) > 0.5f)
+            state.position = target; // first sight / programmatic jump: no spin
         state.target = target;
         state.initialised = true;
     }
@@ -107,50 +101,43 @@ public:
         Seven pointers and a seven-step walk: no allocation at paint time, and the
         same answer whether the knob is drawn from the mixer or from a repaint
         nobody asked for. */
-    void registerPrincipleKnob (juce::Slider& slider, int principle) noexcept
-    {
-        if (juce::isPositiveAndBelow (principle, principleCount))
-            principleKnobs[static_cast<std::size_t> (principle)] = &slider;
+    void registerPrincipleKnob(juce::Slider &slider, int principle) noexcept {
+        if (juce::isPositiveAndBelow(principle, principleCount))
+            principleKnobs[static_cast<std::size_t>(principle)] = &slider;
     }
 
     /** The principle this slider IS, or -1 when it is not one of the seven. */
-    int principleOf (juce::Slider& slider) const noexcept
-    {
+    int principleOf(juce::Slider &slider) const noexcept {
         for (int p = 0; p < principleCount; ++p)
-            if (principleKnobs[static_cast<std::size_t> (p)] == &slider)
+            if (principleKnobs[static_cast<std::size_t>(p)] == &slider)
                 return p;
 
         return -1;
     }
 
-    void updateToggleAnimations()
-    {
-        for (auto& entry : toggleGlides)
-        {
-            auto& state = entry.second;
-            const auto speed = 0.42f;   // per frame at 30 Hz: settled in ~5 frames
-            state.position += (state.target - state.position) * speed;
-            if (std::abs (state.target - state.position) < 0.005f)
+    void updateToggleAnimations(float elapsedSeconds) {
+        constexpr float timeConstantSeconds = 0.060f;
+        const auto coefficient = 1.0f - std::exp(-elapsedSeconds / timeConstantSeconds);
+        for (auto &entry : toggleGlides) {
+            auto &state = entry.second;
+            state.position += (state.target - state.position) * coefficient;
+            if (std::abs(state.target - state.position) < 0.005f)
                 state.position = state.target;
         }
     }
 
-    float toggleGlide (void* key, bool isOn) const
-    {
-        const auto it = toggleGlides.find (key);
+    float toggleGlide(void *key, bool isOn) const {
+        const auto it = toggleGlides.find(key);
         if (it == toggleGlides.end())
-            return isOn ? 1.0f : 0.0f;    // never noted: draw the honest state
+            return isOn ? 1.0f : 0.0f; // never noted: draw the honest state
         return it->second.position;
     }
 
-    void drawRotarySlider (juce::Graphics&,
-                           int, int, int, int,
-                           float, float, float,
-                           juce::Slider&) override;
+    void drawRotarySlider(
+        juce::Graphics &, int, int, int, int, float, float, float, juce::Slider &) override;
 
     /** Hardware rocker-switch drawing for the panel's on/off toggles. */
-    void drawToggleButton (juce::Graphics&, juce::ToggleButton&,
-                           bool, bool) override;
+    void drawToggleButton(juce::Graphics &, juce::ToggleButton &, bool, bool) override;
 
     /** Caption drawing for the panel's text buttons.
 
@@ -160,8 +147,7 @@ public:
         minimum panel size, so a caption that grows ("A (LIVE) *") used to be
         ellipsised by the default Look and Feel.
     */
-    void drawButtonText (juce::Graphics&, juce::TextButton&,
-                         bool, bool) override;
+    void drawButtonText(juce::Graphics &, juce::TextButton &, bool, bool) override;
 
     /** Where the ComboBox's value Label sits, and its font.
 
@@ -170,13 +156,13 @@ public:
         Label is what keeps the value printed exactly once; a custom
         drawComboBox that prints the text too shows it twice, slightly offset,
         which is the overlap that made the lists unreadable. */
-    void positionComboBoxText (juce::ComboBox&, juce::Label&) override;
+    void positionComboBoxText(juce::ComboBox &, juce::Label &) override;
 
     /** The combo value Label's own paint: ink only, no fill. juce::ComboBox
         paints its value with an internal juce::Label, and a Label carrying the
         base LookAndFeel's opaque background would cover the field's drawn
         face - the flat card that made the workflow lists unreadable. */
-    void drawLabel (juce::Graphics&, juce::Label&) override;
+    void drawLabel(juce::Graphics &, juce::Label &) override;
 
     // -----------------------------------------------------------------------
     //  THE CAMERA.
@@ -192,14 +178,14 @@ public:
     // -----------------------------------------------------------------------
 
     /** What one control looks like from the camera. */
-    struct Perspective
-    {
-        juce::Point<float> centre;   ///< the control's own centre, in its own coordinates
-        float squashX = 1.0f;       ///< across the panel: < 1 seen off to one side
-        float squashY = 1.0f;       ///< down the panel: < 1 the nearer the near edge
-        float tilt = 0.0f;          ///< 0 dead centre, 1 at a far corner: how edge-on
-        float wall = 0.0f;          ///< the side wall this angle makes visible, as a fraction of the radius
-        float lean = 0.0f;          ///< -1 left of centre, +1 right: which way this control is turned to the light
+    struct Perspective {
+        juce::Point<float> centre; ///< the control's own centre, in its own coordinates
+        float squashX = 1.0f;      ///< across the panel: < 1 seen off to one side
+        float squashY = 1.0f;      ///< down the panel: < 1 the nearer the near edge
+        float tilt = 0.0f;         ///< 0 dead centre, 1 at a far corner: how edge-on
+        float wall = 0.0f; ///< the side wall this angle makes visible, as a fraction of the radius
+        float lean =
+            0.0f; ///< -1 left of centre, +1 right: which way this control is turned to the light
     };
 
     /** Where the viewer is standing. Called from paint() with the whole editor.
@@ -209,7 +195,7 @@ public:
         bounds always start at (0, 0), so they cannot say where it stands on the
         panel. See perspectiveFor().
     */
-    void setPanelCamera (const juce::Component& panel) noexcept;
+    void setPanelCamera(const juce::Component &panel) noexcept;
 
     /** What one control looks like from the camera.
 
@@ -217,32 +203,33 @@ public:
         @param control  the control being drawn - its place in the component tree
                         is what locates it on the panel, never its own size
     */
-    Perspective perspectiveFor (juce::Rectangle<float> bounds,
-                                const juce::Component& control) const noexcept;
+    Perspective perspectiveFor(juce::Rectangle<float> bounds,
+                               const juce::Component &control) const noexcept;
 
-private:
+  private:
     /** A component's top-left corner in its top-level component's space.
 
         The panel and every control go through this, so a control nested inside a
         tab page lands at the same position on the panel as one that is a direct
         child of the editor. */
-    static juce::Point<float> offsetToTopLevel (const juce::Component& component) noexcept;
+    static juce::Point<float> offsetToTopLevel(const juce::Component &component) noexcept;
 
     j37panel::ThemeChoice theme = j37panel::ThemeChoice::ivory;
-    float activity = 0.0f;   ///< Compressor activity, drives the glow around the knobs.
-    juce::Rectangle<float> cameraPanel;   ///< The panel, in its top-level component's space.
-    const juce::Component* cameraRoot = nullptr;   ///< The top-level component the camera was measured in.
+    float activity = 0.0f;              ///< Compressor activity, drives the glow around the knobs.
+    juce::Rectangle<float> cameraPanel; ///< The panel, in its top-level component's space.
+    const juce::Component *cameraRoot =
+        nullptr; ///< The top-level component the camera was measured in.
 
     // Per-toggle glide state for the sliding thumbs (see noteToggle above).
-    struct ToggleGlide
-    {
+    struct ToggleGlide {
         float position = 0.0f;
         float target = 0.0f;
         bool initialised = false;
     };
-    std::map<void*, ToggleGlide> toggleGlides;
-    std::array<juce::Slider*, principleCount> principleKnobs {};
-    float drift = 0.0f;      ///< Transport drift, drives the fine wobble in the ticks.
+    std::chrono::steady_clock::time_point lastAnimationFrame{};
+    std::map<void *, ToggleGlide> toggleGlides;
+    std::array<juce::Slider *, principleCount> principleKnobs{};
+    float drift = 0.0f; ///< Transport drift, drives the fine wobble in the ticks.
     float animationPhase = 0.0f;
 };
 
@@ -282,29 +269,32 @@ private:
     colours are read live at paint time, so a theme switch recolours everything
     on the same frame with no per-control bookkeeping.
 */
-class J37InlineLookAndFeel final : public juce::LookAndFeel_V4
-{
-public:
-    void setTheme (j37panel::ThemeChoice newTheme) noexcept { theme = newTheme; }
-    void setDarkTheme (bool shouldUseDarkTheme) noexcept
-    {
-        theme = shouldUseDarkTheme ? j37panel::ThemeChoice::charcoal
-                                   : j37panel::ThemeChoice::ivory;
+class J37InlineLookAndFeel final : public juce::LookAndFeel_V4 {
+  public:
+    void setTheme(j37panel::ThemeChoice newTheme) noexcept { theme = newTheme; }
+    void setDarkTheme(bool shouldUseDarkTheme) noexcept {
+        theme = shouldUseDarkTheme ? j37panel::ThemeChoice::charcoal : j37panel::ThemeChoice::ivory;
     }
 
     /** The list drawing: a flat recessed field. */
-    void drawComboBox (juce::Graphics&, int width, int height, bool isButtonDown,
-                       int buttonX, int buttonY, int buttonW, int buttonH,
-                       juce::ComboBox&) override;
+    void drawComboBox(juce::Graphics &,
+                      int width,
+                      int height,
+                      bool isButtonDown,
+                      int buttonX,
+                      int buttonY,
+                      int buttonW,
+                      int buttonH,
+                      juce::ComboBox &) override;
 
     /** The popup's own geometry, so the in-tab lists open a compact menu rather
         than the deck's tall rows. */
-    juce::Font getComboBoxFont (juce::ComboBox&) override;
+    juce::Font getComboBoxFont(juce::ComboBox &) override;
     juce::Font getPopupMenuFont() override;
 
     /** Value placement for the in-tab lists: left-aligned like a settings row,
         clear of the caret (see J37LookAndFeel's note for why this exists). */
-    void positionComboBoxText (juce::ComboBox&, juce::Label&) override;
+    void positionComboBoxText(juce::ComboBox &, juce::Label &) override;
 
     /** The panel's own height, so an in-tab list's text inset can follow the
         window exactly as a deck list's does. The two list styles are drawn by
@@ -312,22 +302,20 @@ public:
         them have to be told how tall it is - set from paint(), where the deck's
         own camera is set, for the same reason: it is the panel's size that
         decides, and the panel has one size at paint time. */
-    void setPanelBounds (const juce::Component& panel) noexcept
-    {
-        panelHeight = panel.getHeight();
-    }
+    void setPanelBounds(const juce::Component &panel) noexcept { panelHeight = panel.getHeight(); }
 
     /** Ink-only value Label paint, matching the deck style's (no fill card). */
-    void drawLabel (juce::Graphics&, juce::Label&) override;
+    void drawLabel(juce::Graphics &, juce::Label &) override;
 
     /** The small pill switch used for the tab's on/off controls. */
-    void drawToggleButton (juce::Graphics&, juce::ToggleButton&,
-                           bool shouldDrawButtonAsHighlighted,
-                           bool shouldDrawButtonAsDown) override;
+    void drawToggleButton(juce::Graphics &,
+                          juce::ToggleButton &,
+                          bool shouldDrawButtonAsHighlighted,
+                          bool shouldDrawButtonAsDown) override;
 
-private:
+  private:
     j37panel::ThemeChoice theme = j37panel::ThemeChoice::ivory;
-    int panelHeight = 0;   ///< The panel the lists stand on; 0 until the first paint.
+    int panelHeight = 0; ///< The panel the lists stand on; 0 until the first paint.
 };
 
 // The panel's two counts and its text - the knob table and the sentence every
@@ -336,30 +324,31 @@ private:
 // because the class below sizes its sliders, labels and attachments from the count.
 #include "GUI/PanelText.h"
 
-class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor,
-                                        private juce::Timer
-{
-public:
-    explicit FirstAudioProcessorEditor (FirstAudioProcessor&);
+class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, private juce::Timer {
+  public:
+    explicit FirstAudioProcessorEditor(FirstAudioProcessor &);
     ~FirstAudioProcessorEditor() override;
 
-    void paint (juce::Graphics&) override;
+    void paint(juce::Graphics &) override;
     void resized() override;
 
-private:
-    class LevelMeter final : public juce::Component
-    {
-    public:
-        LevelMeter (juce::String meterTitle, juce::String meterSubtitle);
+  private:
+    class LevelMeter final : public juce::Component {
+      public:
+        LevelMeter(juce::String meterTitle, juce::String meterSubtitle);
 
         /** Feeds the four loudness views plus the equal-weighted combination, all in dB. */
-        void setLoudness (float peakDbIn, float rmsDbIn, float lufsIn, float vuDbIn,
-                          float combinedDbIn, bool clipping);
+        void setLoudness(float peakDbIn,
+                         float rmsDbIn,
+                         float lufsIn,
+                         float vuDbIn,
+                         float combinedDbIn,
+                         bool clipping);
 
-        void setDarkTheme (bool shouldUseDarkTheme) noexcept { darkTheme = shouldUseDarkTheme; }
-        void paint (juce::Graphics&) override;
+        void setDarkTheme(bool shouldUseDarkTheme) noexcept { darkTheme = shouldUseDarkTheme; }
+        void paint(juce::Graphics &) override;
 
-    private:
+      private:
         juce::String title;
         juce::String subtitle;
         bool darkTheme = false;
@@ -381,25 +370,24 @@ private:
         float displayedCombined = -70.0f;
         float peakHoldDb = -70.0f;
         float peakHoldTime = 0.0f;
-        std::chrono::steady_clock::time_point lastUpdate {};
+        std::chrono::steady_clock::time_point lastUpdate{};
     };
 
     /** Vertical gain-reduction bar for one glue compressor stage. */
-    class CompressorMeter final : public juce::Component
-    {
-    public:
-        CompressorMeter (juce::String meterTitle, juce::String stageCaption);
-        void setDarkTheme (bool shouldUseDarkTheme) noexcept { darkTheme = shouldUseDarkTheme; }
-        void setReduction (float reductionDb, float activity);
-        void paint (juce::Graphics&) override;
+    class CompressorMeter final : public juce::Component {
+      public:
+        CompressorMeter(juce::String meterTitle, juce::String stageCaption);
+        void setDarkTheme(bool shouldUseDarkTheme) noexcept { darkTheme = shouldUseDarkTheme; }
+        void setReduction(float reductionDb, float activity);
+        void paint(juce::Graphics &) override;
 
-    private:
+      private:
         juce::String title;
         juce::String caption;
         bool darkTheme = false;
-        float displayedDb = 0.0f;   // Smoothed reduction, always <= 0.
+        float displayedDb = 0.0f; // Smoothed reduction, always <= 0.
         float activity = 0.0f;
-        std::chrono::steady_clock::time_point lastUpdate {};
+        std::chrono::steady_clock::time_point lastUpdate{};
     };
 
     /** The saturation mix, read as a strip: one recessed cell per principle,
@@ -408,9 +396,8 @@ private:
         actually running, which after normalisation is a different thing - and
         it shows it in the panel's own material rather than as a number to
         read. Lives in the member band under the MIX page's two rows. */
-    class MixBar final : public juce::Component
-    {
-    public:
+    class MixBar final : public juce::Component {
+      public:
         MixBar() = default;
 
         /** The seven shares, already normalised by the caller to the same sum
@@ -419,38 +406,34 @@ private:
             is actually running. The seven cells always read 100 % between them,
             so without the total the strip would claim the mix is full even with
             every SOURCE knob at zero. */
-        void setShares (const std::array<float, principleCount>& newShares, float newTotal);
+        void setShares(const std::array<float, principleCount> &newShares, float newTotal);
 
-        void setDarkTheme (bool shouldUseDarkTheme) noexcept
-        {
+        void setDarkTheme(bool shouldUseDarkTheme) noexcept {
             darkTheme = shouldUseDarkTheme;
             repaint();
         }
 
-        void paint (juce::Graphics&) override;
+        void paint(juce::Graphics &) override;
 
-    private:
-        std::array<float, principleCount> shares { 1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f };
-        float total = 1.0f;   ///< the sum the shares were normalised FROM: the saturation amount
+      private:
+        std::array<float, principleCount> shares{1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+        float total = 1.0f; ///< the sum the shares were normalised FROM: the saturation amount
         bool darkTheme = false;
     };
 
-    struct PhysicsOrb
-    {
-        b2Body* body = nullptr;
+    struct PhysicsOrb {
+        b2Body *body = nullptr;
         float radius = 0.0f;
         juce::Colour colour;
     };
 
-    struct RenderOrb
-    {
+    struct RenderOrb {
         juce::Point<float> position;
         float radius = 0.0f;
         juce::Colour colour;
     };
 
-    struct EditorLayout
-    {
+    struct EditorLayout {
         juce::Rectangle<int> header;
         juce::Rectangle<int> deck;
         juce::Rectangle<int> controls;
@@ -466,8 +449,7 @@ private:
         strip's arithmetic was reachable from a place where the strip had not run yet.
         Passing the solved geometry is what makes that order a thing the compiler
         checks instead of a thing a comment promises. */
-    struct ControlGeometry
-    {
+    struct ControlGeometry {
         juce::Rectangle<int> grid;
         int cellWidth = 0;
         int memberRowY = 0;
@@ -543,26 +525,29 @@ private:
     //  statements in the same order, which is what keeps the layout harness's seven
     //  cut fragments the panel's own arithmetic.
     // -------------------------------------------------------------------------
-    void placeHeader (juce::Rectangle<int> header);
-    void placeDeck (juce::Rectangle<int> deck);
-    void placeControls (const EditorLayout& layout);
-    void placeTabBar (const juce::Rectangle<int>& controlsPanel);
+    void placeHeader(juce::Rectangle<int> header);
+    void placeDeck(juce::Rectangle<int> deck);
+    void placeControls(const EditorLayout &layout);
+    void placeTabBar(const juce::Rectangle<int> &controlsPanel);
 
     /** Lays the live page's knob strip out and returns the geometry the bands below
         measure in. The one band that hands anything on. */
-    ControlGeometry placeControlStrip (const EditorLayout& layout);
+    ControlGeometry placeControlStrip(const EditorLayout &layout);
 
-    void updateTabVisibility (const ControlGeometry& geometry);
-    void placeTabMembers (const ControlGeometry& geometry);
+    void updateTabVisibility(const ControlGeometry &geometry);
+    void placeTabMembers(const ControlGeometry &geometry);
 
     /** A tab member - a combo or a pill that is not a knob - in the member band's own
         cell arithmetic (the four columns above). It was a lambda inside resized(),
         which is why it is still called what that lambda was called. */
-    void placeDeckSwitch (const ControlGeometry& geometry, juce::Label& label,
-                          juce::Component& box, int column, int columnsWide,
-                          const juce::String& caption);
+    void placeDeckSwitch(const ControlGeometry &geometry,
+                         juce::Label &label,
+                         juce::Component &box,
+                         int column,
+                         int columnsWide,
+                         const juce::String &caption);
 
-    void placeMeters (const EditorLayout& layout);
+    void placeMeters(const EditorLayout &layout);
     void verifyPanelHasNoOverlaps() const;
 
     /** The rectangle the spectrum curve is drawn in: the MODELS page's member band,
@@ -636,8 +621,12 @@ private:
     // Shared by the constructor and by resized(): the knob-grid section captions
     // are created while laying out, so a constructor-local helper was out of scope
     // there and the build failed to compile (C2065 on `styleLabel`).
-    void styleLabel (juce::Label& label, const juce::String& text, float size,
-                     juce::Colour colour, bool bold, juce::Justification justification);
+    void styleLabel(juce::Label &label,
+                    const juce::String &text,
+                    float size,
+                    juce::Colour colour,
+                    bool bold,
+                    juce::Justification justification);
 
     // ---------------------------------------------------------------------
     //  Language and tooltips.
@@ -657,38 +646,38 @@ private:
     // not enough either - that is the read-only half, getTooltip with no
     // setter.) Every component this panel gives a tooltip to derives from
     // SettableTooltipClient.
-    void setTip (juce::SettableTooltipClient& component, const juce::String& english);
+    void setTip(juce::SettableTooltipClient &component, const juce::String &english);
 
     // The knob variant: registers the sentence alone (its translation key) and
     // shows it with the shared interaction hints appended, each half translated
     // independently so a language switch re-renders both.
-    void setTippedSentence (juce::SettableTooltipClient& component,
-                            const juce::String& englishSentence,
-                            const juce::String& englishHints);
+    void setTippedSentence(juce::SettableTooltipClient &component,
+                           const juce::String &englishSentence,
+                           const juce::String &englishHints);
     void updateTooltips();
 
     /** Loads the translation table for `languageIndex` (0 = English, 1 = Ukrainian)
         from the embedded Source/Translations data, installs it as JUCE's current
         mappings, and re-applies every tooltip. */
-    void applyLanguage (int languageIndex);
+    void applyLanguage(int languageIndex);
 
     // Tabs. The grid used to be one five-row block of all twenty-one knobs with three
     // small section captions floating in the gaps above rows 3 and 4 - which is to
     // say, on top of the rows of knobs above them. The captions are gone and the
     // three groups are real tabs, so only the active tab's controls are on screen
     // and each group has a whole grid to itself.
-    void setCurrentTab (int newTab);
+    void setCurrentTab(int newTab);
 
     // The three tab families select the visible page range and its first page.
-    void setTabFamily (int newFamily);
+    void setTabFamily(int newFamily);
     void styleTabButtons();
 
     void refreshPresetList();
     void refreshUserPresetList();
     void updateWorkflowButtons();
-    bool keyPressed (const juce::KeyPress&) override;
+    bool keyPressed(const juce::KeyPress &) override;
 
-    FirstAudioProcessor& audioProcessor;
+    FirstAudioProcessor &audioProcessor;
     J37LookAndFeel customLookAndFeel;
     // The second, deliberately different design for the lists and switches that
     // live INSIDE a tab. See the class comment for why it is a separate LookAndFeel
@@ -708,23 +697,23 @@ private:
     // component -> the English it was given, so updateTooltips() has something to
     // replay. A vector rather than a map: the order tooltips were set in is the
     // order they are refreshed in, and nothing here needs lookup by key.
-    struct TooltipSource
-    {
-        juce::SettableTooltipClient* component;
+    struct TooltipSource {
+        juce::SettableTooltipClient *component;
         juce::String english;
     };
     std::vector<TooltipSource> tooltipSources;
 
-    juce::Label languageLabel { {}, "LANGUAGE" };
+    juce::Label languageLabel{{}, "LANGUAGE"};
     juce::ComboBox languageBox;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> languageAttachment;
     juce::ComboBox tuningTonicBox;
     juce::ComboBox tuningModeBox;
-    juce::ToggleButton autoTuneButton { "AUTO TUNE" };
+    juce::ToggleButton autoTuneButton{"AUTO TUNE"};
     juce::Slider autoTuneAmountSlider;
     std::array<juce::Slider, 6> compressorControls;
     std::array<juce::Label, 6> compressorControlLabels;
-    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 6> compressorAttachments;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, 6>
+        compressorAttachments;
     juce::Label tuningTonicLabel;
     juce::Label tuningModeLabel;
     juce::Label autoTuneAmountLabel;
@@ -735,8 +724,8 @@ private:
 
     std::array<juce::Slider, controlCount> controls;
     std::array<juce::Label, controlCount> controlLabels;
-    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>,
-               controlCount> controlAttachments;
+    std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>, controlCount>
+        controlAttachments;
 
     juce::ComboBox tapeTypeBox;
     juce::ComboBox valveTypeBox;
@@ -757,11 +746,14 @@ private:
     juce::Label vinylGenerationLabel;
     juce::Label vinylTurntableLabel;
     juce::Label vinylCartridgeLabel;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> vinylGenerationAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> vinylTurntableAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> vinylCartridgeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        vinylGenerationAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        vinylTurntableAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        vinylCartridgeAttachment;
     // The UI-sounds switch, on the SETTINGS tab beside GL.
-    juce::ToggleButton uiSoundsButton { "UI SOUNDS" };
+    juce::ToggleButton uiSoundsButton{"UI SOUNDS"};
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> uiSoundsAttachment;
 
     // The anti-phase guard's switch, on the SETTINGS tab with the other
@@ -769,7 +761,7 @@ private:
     // the transport it belongs to; the SWITCH lives here because it is a
     // protection setting rather than a control that shapes the sound, and the
     // readout says so when it is off (see the deck readout in timerCallback).
-    juce::ToggleButton antiPhaseGuardButton { "GUARD" };
+    juce::ToggleButton antiPhaseGuardButton{"GUARD"};
     juce::Label antiPhaseGuardLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> antiPhaseGuardAttachment;
 
@@ -783,8 +775,8 @@ private:
     //  states the stage is in - "no model" or the loaded file's name - because
     //  the NEURAL knob alone cannot tell a user whether the stage is working.
     // -----------------------------------------------------------------------
-    juce::TextButton loadNeuralButton { "LOAD MODEL" };
-    juce::TextButton clearNeuralButton { "CLEAR" };
+    juce::TextButton loadNeuralButton{"LOAD MODEL"};
+    juce::TextButton clearNeuralButton{"CLEAR"};
     juce::Label neuralStatusLabel;
     void loadNeuralModelFromFile();
     void refreshNeuralStatus();
@@ -799,13 +791,13 @@ private:
     // the processor's convolvers, CLEAR IR releases it, and the status label
     // reports what the stage holds - the same three-widget shape as the
     // model picker beside it.
-    juce::TextButton loadIrButton { "LOAD IR" };
-    juce::TextButton clearIrButton { "CLEAR IR" };
+    juce::TextButton loadIrButton{"LOAD IR"};
+    juce::TextButton clearIrButton{"CLEAR IR"};
     juce::Label irStatusLabel;
     void loadIrFromFile();
     void refreshIrStatus();
     juce::String lastShownIrStatus;
-    juce::String irStatusReason;      // see neuralStatusReason above
+    juce::String irStatusReason; // see neuralStatusReason above
 
     // The VINYL stage's noise-print picker, on the page whose knob is VINYL MIX: a
     // WAV recording of a real surface, which REPLACES the surface the stage
@@ -816,17 +808,17 @@ private:
     // before the file is read, and the processor returns from loadNoiseFile()
     // before it is decoded. The readout therefore polls for all three states,
     // including the one the other two pickers do not have - a decode in flight.
-    juce::TextButton loadNoiseButton { "LOAD PRINT" };
-    juce::TextButton clearNoiseButton { "CLEAR PRINT" };
+    juce::TextButton loadNoiseButton{"LOAD PRINT"};
+    juce::TextButton clearNoiseButton{"CLEAR PRINT"};
     juce::Label noiseStatusLabel;
     void loadNoisePrintFromFile();
     void refreshNoiseStatus();
     juce::String lastShownNoiseStatus;
-    juce::String noiseStatusReason;   // see neuralStatusReason above
+    juce::String noiseStatusReason; // see neuralStatusReason above
 
     // Opens a file-fed stage's MIX to full after a load that succeeded, but only
     // while the blend is still fully closed; see the note on the definition.
-    void openStageMix (const juce::String& parameterId);
+    void openStageMix(const juce::String &parameterId);
     // The loaded model's filename, kept so the readout can name it after a
     // reload or a refresh. Empty when the stage holds no model.
     juce::String loadedNeuralName;
@@ -857,10 +849,10 @@ private:
     // filter apart from a filter sitting at its bypass. These are the explicit
     // answer, and they are pill switches rather than knobs because they are
     // state, like GL and the mode button.
-    juce::ToggleButton inputEqHpButton { "HP" };
-    juce::ToggleButton inputEqLpButton { "LP" };
-    juce::ToggleButton outputEqHpButton { "HP" };
-    juce::ToggleButton outputEqLpButton { "LP" };
+    juce::ToggleButton inputEqHpButton{"HP"};
+    juce::ToggleButton inputEqLpButton{"LP"};
+    juce::ToggleButton outputEqHpButton{"HP"};
+    juce::ToggleButton outputEqLpButton{"LP"};
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> inputEqHpAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> inputEqLpAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> outputEqHpAttachment;
@@ -875,42 +867,39 @@ private:
     // (START settles into PLAY), and START-to-STOP is a TOGGLE on the same key.
     // The editor drives it through FirstAudioProcessor::setTransportState and
     // paints the active state from the parameter, so panel and engine agree.
-    juce::TextButton transportStopButton { "STOP" };
-    juce::TextButton transportPlayButton { "PLAY" };
-    juce::TextButton transportStartButton { "START" };
+    juce::TextButton transportStopButton{"STOP"};
+    juce::TextButton transportPlayButton{"PLAY"};
+    juce::TextButton transportStartButton{"START"};
     juce::Label transportLabel;
     // SPINDOWN - the momentary platter hold. Press and hold and the machine runs
     // down under the current transport; release and it spins back up. A button's
     // onClick is a click, so the press/release edges are read from its
     // mouseDown/mouseUp through a Button subclass below.
-    class SpindownButton final : public juce::TextButton
-    {
-    public:
+    class SpindownButton final : public juce::TextButton {
+      public:
         // The member is brace-initialised with its caption ({ "SPINDOWN" }),
         // which needs TextButton's own constructors; a derived class without
         // this using-declaration has none of them and the initialiser does
         // not compile.
         using juce::TextButton::TextButton;
 
-        std::function<void (bool)> onHoldChanged;
-        void mouseDown (const juce::MouseEvent& e) override
-        {
-            juce::TextButton::mouseDown (e);
+        std::function<void(bool)> onHoldChanged;
+        void mouseDown(const juce::MouseEvent &e) override {
+            juce::TextButton::mouseDown(e);
             if (onHoldChanged != nullptr)
-                onHoldChanged (true);
+                onHoldChanged(true);
         }
-        void mouseUp (const juce::MouseEvent& e) override
-        {
-            juce::TextButton::mouseUp (e);
+        void mouseUp(const juce::MouseEvent &e) override {
+            juce::TextButton::mouseUp(e);
             if (onHoldChanged != nullptr)
-                onHoldChanged (false);
+                onHoldChanged(false);
         }
     };
-    SpindownButton spindownButton { "SPINDOWN" };
+    SpindownButton spindownButton{"SPINDOWN"};
     juce::Label spindownLabel;
-    juce::ToggleButton bypassButton { "BYPASS" };
-    juce::ToggleButton deltaButton { "DELTA" };
-    juce::TextButton themeButton { "DARK THEME" };
+    juce::ToggleButton bypassButton{"BYPASS"};
+    juce::ToggleButton deltaButton{"DELTA"};
+    juce::TextButton themeButton{"DARK THEME"};
 
 #if JUCE_DEBUG
     // Melatonin's component inspector, debug builds only (the module is linked
@@ -924,15 +913,15 @@ private:
     // undo/redo, polarity and auto-gain switches.
     juce::ComboBox presetBox;
     juce::ComboBox userPresetBox;
-    juce::TextButton savePresetButton { "SAVE" };
-    juce::TextButton deletePresetButton { "DEL" };
-    juce::TextButton copyAButton { "COPY A" };
-    juce::TextButton copyBButton { "COPY B" };
-    juce::TextButton compareButton { "A/B" };
-    juce::TextButton undoButton { "UNDO" };
-    juce::TextButton redoButton { "REDO" };
-    juce::ToggleButton polarityButton { "POLARITY" };
-    juce::ToggleButton autoGainButton { "AUTO GAIN" };
+    juce::TextButton savePresetButton{"SAVE"};
+    juce::TextButton deletePresetButton{"DEL"};
+    juce::TextButton copyAButton{"COPY A"};
+    juce::TextButton copyBButton{"COPY B"};
+    juce::TextButton compareButton{"A/B"};
+    juce::TextButton undoButton{"UNDO"};
+    juce::TextButton redoButton{"REDO"};
+    juce::ToggleButton polarityButton{"POLARITY"};
+    juce::ToggleButton autoGainButton{"AUTO GAIN"};
     juce::ComboBox oversamplingBox;
     juce::Label oversamplingLabel;
 
@@ -945,7 +934,7 @@ private:
     // Tempo sync: a switch plus the note value. A combo rather than a knob
     // because the note values are discrete and a knob through them would be a
     // scale the user has to learn.
-    juce::ToggleButton delaySyncButton { "SYNC DELAY" };
+    juce::ToggleButton delaySyncButton{"SYNC DELAY"};
     juce::ComboBox delayRateBox;
     juce::Label delayRateLabel;
 
@@ -954,7 +943,7 @@ private:
     // engine reads two bools, so the button is the only state holder on the panel
     // and writes both parameters itself (no attachment: a ButtonAttachment on
     // each side would fight the cycle).
-    juce::TextButton modeCycleButton { "MODE: OFF" };
+    juce::TextButton modeCycleButton{"MODE: OFF"};
     juce::Label presetHeadingLabel;
     juce::Label compareBadgeLabel;
     juce::Label presetBadgeLabel;
@@ -980,7 +969,8 @@ private:
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tapeTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> valveTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> ampTypeAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> transformerTypeAttachment;
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        transformerTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> digitalTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> vinylTypeAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> vinylSpeedAttachment;
@@ -1027,15 +1017,15 @@ private:
     std::array<juce::TextButton, numTabs> tabButtons;
     int currentTab = 0;
     int currentTabFamily = 0;
-    juce::TextButton tabFamilyTapeButton { "TAPE" };
-    juce::TextButton tabFamilyFxButton { "FX" };
-    juce::TextButton tabFamilySetupButton { "SETUP" };
+    juce::TextButton tabFamilyTapeButton{"TAPE"};
+    juce::TextButton tabFamilyFxButton{"FX"};
+    juce::TextButton tabFamilySetupButton{"SETUP"};
     // Sixteen pages under three large families (TAPE / FX / SETUP) - the page
     // is one subject and at most one row of seven knobs: IN EQ alone carried
     // six band knobs and three corner controls, DRIVE GAIN seven plus the DI
     // pad, and a page that scrolls is a page nobody dials.
     static constexpr int tabFamilyCount = 3;
-    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount { 9, 6, 3 };
+    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount{9, 6, 3};
     juce::Label metersHeadingLabel;
     juce::Label metersHintLabel;
     juce::Label compressorLabel;
@@ -1066,10 +1056,10 @@ private:
     // Four metering surfaces, arranged two by two:
     //   top row    - the INPUT and OUTPUT level VU meters
     //   bottom row - one gain-reduction meter per glue compressor stage
-    LevelMeter inputMeter { "INPUT", "LEVEL / dBFS" };
-    LevelMeter outputMeter { "OUTPUT", "LEVEL / dBFS" };
-    CompressorMeter compressorMeterIn { "COMP IN", "after input trim" };
-    CompressorMeter compressorMeterOut { "COMP OUT", "before output trim" };
+    LevelMeter inputMeter{"INPUT", "LEVEL / dBFS"};
+    LevelMeter outputMeter{"OUTPUT", "LEVEL / dBFS"};
+    CompressorMeter compressorMeterIn{"COMP IN", "after input trim"};
+    CompressorMeter compressorMeterOut{"COMP OUT", "before output trim"};
     /** The MIX page's mix bar. A member rather than something paint() draws: it
         changes when a knob moves, so it repaints itself from the timer without
         touching the panel behind it. */
@@ -1094,7 +1084,7 @@ private:
     // Twenty-four floats in one array rather than a member per band, and no
     // separate atomic per band: the frame is already the channel the audio thread
     // publishes through, and a curve is read as a whole or not at all.
-    std::array<float, SpectrumAnalyser::bandCount> spectrumBandsDb {};
+    std::array<float, SpectrumAnalyser::bandCount> spectrumBandsDb{};
 
     // -----------------------------------------------------------------------
     //  The front panel's theme.
@@ -1106,7 +1096,7 @@ private:
     //  of them apart, in the one place that has to (paletteForTheme).
     // -----------------------------------------------------------------------
     j37panel::ThemeChoice themeChoice = j37panel::ThemeChoice::ivory;
-    bool darkTheme = false;   // true for charcoal AND metal; see the note above
+    bool darkTheme = false; // true for charcoal, metal and dark metal
 
     // Transport presentation. `lastShownTransport` is the parameter index the
     // buttons were last painted for, so the three of them are only restyled when
@@ -1146,20 +1136,19 @@ private:
     // three things - the parameter exists, it is a bool, and it is on - and
     // answering that in one place is what keeps the mode button and the
     // attachment from disagreeing about the machine's state.
-    bool isModeOn (const juce::String& parameterID) const
-    {
+    bool isModeOn(const juce::String &parameterID) const {
         // getParameterAsValue hands back a juce::Value BY VALUE, and Value has
         // no conversion to var: its accessor is getValue(), which returns a var
         // by value. The local keeps that Value alive for the read.
-        const auto value = audioProcessor.parameters.getParameterAsValue (parameterID);
+        const auto value = audioProcessor.parameters.getParameterAsValue(parameterID);
         const auto underlying = value.getValue();
 
-        return underlying.isBool() && static_cast<bool> (underlying);
+        return underlying.isBool() && static_cast<bool>(underlying);
     }
 
     std::unique_ptr<b2World> physicsWorld;
-    std::array<PhysicsOrb, decorativeOrbCount> physicsOrbs {};
-    std::array<RenderOrb, decorativeOrbCount> renderOrbs {};
+    std::array<PhysicsOrb, decorativeOrbCount> physicsOrbs{};
+    std::array<RenderOrb, decorativeOrbCount> renderOrbs{};
     juce::SpinLock renderOrbsLock;
     juce::OpenGLContext openGLContext;
     int openGLAttachAttemptsLeft = 0;
@@ -1168,11 +1157,10 @@ private:
     //  The panel's arithmetic texture, 2D half. The GPU half lives in
     //  TapeScene (uTextureWeights); both read the same three doses.
     // =====================================================================
-    struct PanelTextureWeights
-    {
-        float grain = 0.0f;    // static per-pixel tooth
-        float shimmer = 0.0f;  // live tape grain (drive + gain reduction)
-        float wear = 0.0f;     // the slow wear blotches
+    struct PanelTextureWeights {
+        float grain = 0.0f;   // static per-pixel tooth
+        float shimmer = 0.0f; // live tape grain (drive + gain reduction)
+        float wear = 0.0f;    // the slow wear blotches
     };
 
     PanelTextureWeights panelTextureWeights;
@@ -1186,7 +1174,7 @@ private:
 
     /** Sets the three texture doses for BOTH renderers; called from the
         timer with the live drive and gain reduction. */
-    void configureTextureWeights (float drive, float gainReduction);
+    void configureTextureWeights(float drive, float gainReduction);
 
     /** Rebuilds the static texture image (grain + wear) from the current
         size and palette; called from resized() and after a theme change. */
@@ -1229,52 +1217,50 @@ private:
     //  3 a.m. does not want their interface ticking. The switch is on the
     //  SETTINGS tab next to GL.
     // -----------------------------------------------------------------------
-    class UiSoundEngine final : private juce::AudioIODeviceCallback
-    {
-    public:
+    class UiSoundEngine final : private juce::AudioIODeviceCallback {
+      public:
         UiSoundEngine();
         ~UiSoundEngine() override;
 
         /** One of the four interface sounds. Each is a different synthesis
             rather than the same beep at a different pitch. */
-        enum class Voice
-        {
-            click,    ///< a switch: a short, dry, bright tick
-            detent,   ///< a knob crossing a step: a softer, lower tick
-            press,    ///< a momentary key going down: a low thump
-            release   ///< ...and coming back up: a slightly higher thump
+        enum class Voice {
+            click,  ///< a switch: a short, dry, bright tick
+            detent, ///< a knob crossing a step: a softer, lower tick
+            press,  ///< a momentary key going down: a low thump
+            release ///< ...and coming back up: a slightly higher thump
         };
 
-        void setEnabled (bool shouldBeEnabled) noexcept { enabled = shouldBeEnabled; }
+        void setEnabled(bool shouldBeEnabled) noexcept { enabled = shouldBeEnabled; }
         bool isEnabled() const noexcept { return enabled; }
 
         /** Sets the brightness/pitch scale, 0..1. The panel feeds it the machine's
             own activity, so a busy machine ticks at a slightly higher pitch. */
-        void setBrightness (float newBrightness) noexcept
-        {
-            brightness = juce::jlimit (0.0f, 1.0f, newBrightness);
+        void setBrightness(float newBrightness) noexcept {
+            brightness = juce::jlimit(0.0f, 1.0f, newBrightness);
         }
 
         /** Plays a voice. Safe to call from the message thread at any rate. */
-        void trigger (Voice voice) noexcept;
+        void trigger(Voice voice) noexcept;
 
-    private:
-        void audioDeviceIOCallbackWithContext (const float* const* inputChannelData,
-                                               int numInputChannels,
-                                               float* const* outputChannelData,
-                                               int numOutputChannels,
-                                               int numSamples,
-                                               const juce::AudioIODeviceCallbackContext& context) override;
-        void audioDeviceAboutToStart (juce::AudioIODevice* device) override;
+      private:
+        void audioDeviceIOCallbackWithContext(
+            const float *const *inputChannelData,
+            int numInputChannels,
+            float *const *outputChannelData,
+            int numOutputChannels,
+            int numSamples,
+            const juce::AudioIODeviceCallbackContext &context) override;
+        void audioDeviceAboutToStart(juce::AudioIODevice *device) override;
         void audioDeviceStopped() override;
 
         // The current voice's state. The render is a simple two-stage envelope
         // over a sine and a noise burst, which is enough for a tick and cheap
         // enough to be plainly not worth a fancier synthesiser.
-        std::atomic<float> pendingAmplitude { 0.0f };
-        std::atomic<float> pendingPitch { 440.0f };
-        std::atomic<float> pendingDecay { 0.9995f };
-        std::atomic<float> pendingNoiseMix { 0.5f };
+        std::atomic<float> pendingAmplitude{0.0f};
+        std::atomic<float> pendingPitch{440.0f};
+        std::atomic<float> pendingDecay{0.9995f};
+        std::atomic<float> pendingNoiseMix{0.5f};
 
         float phase = 0.0f;
         float envelope = 0.0f;
@@ -1283,13 +1269,13 @@ private:
         float noiseMix = 0.5f;
         double deviceRate = 44100.0;
 
-        std::atomic<bool> enabled { false };
-        std::atomic<float> brightness { 0.5f };
+        std::atomic<bool> enabled{false};
+        std::atomic<float> brightness{0.5f};
 
         juce::AudioDeviceManager deviceManager;
         bool deviceOpen = false;
 
-        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (UiSoundEngine)
+        JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UiSoundEngine)
     };
 
     UiSoundEngine uiSounds;
@@ -1306,5 +1292,5 @@ private:
         Called once from the constructor, after the controls exist. */
     void attachInterfaceSounds();
 
-    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessorEditor)
+    JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(FirstAudioProcessorEditor)
 };

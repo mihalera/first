@@ -1020,18 +1020,13 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     //  THE GRID. Four switches occupy two rows of equal-width cells, so their
     //  columns line up and no pair overlaps at any editor size.
     //
-    //  The state readout occupies its own band below the two switch rows, with
-    //  the status pill painted behind it and its lamp at the left end.
     //
     //  Clearance at the 780 px minimum: the grid is 314 px wide (4 x 74 + 3 x 6)
     //  and starts at header.right - 314 = x + 438 on a 780 panel, clearing the
     //  title block (ends x + 346) by 92 px at the tightest size and more above it.
     // ------------------------------------------------------------------------------
     const auto headerRight = header.getRight();
-    // The grid's own geometry - the column count, the cell width and the gap -
-    // is declared ON THE CLASS (see PluginEditor.h), because paint() draws the
-    // status pill on the same arithmetic and a second copy of it is exactly how
-    // the pill kept the old 92 px cell and overhung its own band by 72 px.
+    // The grid dimensions are declared on the class so these cells stay aligned.
     constexpr int headerGap = headerColumnGap;
     constexpr int headerColumns = headerColumnCount;
     constexpr int headerSwitchHeight = 22;

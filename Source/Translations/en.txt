@@ -21,3 +21,4 @@
 "LANGUAGE_UKRAINIAN" = "Українська";
 "LANGUAGE_CAPTION" = "Language";
 "LANGUAGE" = "Language";
+"Cycle the front panel: IVORY, CHARCOAL, METAL, then DARK METAL. The button names the panel you are on; pressing it moves to the next one." = "Cycle the front panel: IVORY, CHARCOAL, METAL, then DARK METAL. The button names the panel you are on; pressing it moves to the next one.";
