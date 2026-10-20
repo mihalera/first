@@ -58,7 +58,11 @@ jobs:
   dsp-tests:
     name: DSP regression harness
     runs-on: ubuntu-latest
-    timeout-minutes: 10
+    # 20, not 10: tests/neural compiles NeuralAmpModelerCore's sixteen Eigen
+    # translation units for its fixture binaries, and the sanitizer step below
+    # pays that again with ASan + UBSan instrumentation. That is roughly a minute
+    # per shape on four cores, on top of every other harness and the Debug build.
+    timeout-minutes: 20
 
     steps:
       - name: Checkout repository
@@ -598,8 +602,12 @@ jobs:
       # strip's arithmetic, the state writer/reader, the transport rig, the
       # pitch stage's delay line, the corrector's ring buffers in BOTH of its
       # engines, and the room's feedback network - with the vendored verb.c
-      # instrumented too, since that is where the tank's own delay buffers live -
-      # executed as compiled out of Source/ rather than as a copy of it.
+      # instrumented too, since that is where the tank's own delay buffers live.
+      # tests/neural goes further than Source/: it compiles NAM Core's own
+      # translation units WITH the sanitizers as well, so the inference engine's
+      # ring buffers and Eigen arithmetic are instrumented alongside the stage
+      # that drives them. Everything is executed as compiled out of Source/
+      # rather than as a copy of it.
       # -fno-sanitize-recover=all makes any finding fail the step instead of
       # printing and carrying on.
       - name: Run the harnesses under ASan and UBSan

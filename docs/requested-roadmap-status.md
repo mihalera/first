@@ -47,7 +47,7 @@ section after the tables).
 
 | Item | Status | Where it is |
 | --- | --- | --- |
-| NeuralAmpModelerCore + Eigen | **open** | not fetched. `Source/DSP/NeuralStage.h` runs RTNeural models (a 1-in/1-out network per channel), not NAM weights |
+| NeuralAmpModelerCore + Eigen | **done** | vendored (`ThirdParty/namcore` @ `0b3d3c97` v0.6.0, `ThirdParty/eigen` @ `bc3b3987`) and wired behind `-DJ37_NAMCORE=ON`: `Source/DSP/NamBackend.h` is the backend, `Source/DSP/NeuralStage.h` dispatches LSTM to RTNeural and everything else to NAM Core, and `tests/neural` measures both engines against the reference player (1.19e-7 LSTM, 5.96e-8 converter-vs-NAM, 2.79e-8 WaveNet through the stage). OFF by default until the process cost is measured - see WP3 |
 | `mNAMEngine->process()` in `processBlock` | **not as written** | model inference on the audio thread is only safe if it allocates and locks nothing; the current stage runs a fixed graph with per-channel state, and the async machinery here is the IR loader's |
 | `juce::dsp::Convolution` IR loader | **done** | `Source/DSP/IrStage.h`: one Convolution per channel, `loadImpulseResponse` for the wait-free background decode, a stereo/mono rule, and a "loading" flag the panel reads |
 | RTNeural micro-models for valve/cabinet | **done (as the neural stage)** | `Source/DSP/NeuralStage.h` + `tests/neural`, which compiles the guarded half with RTNeural stubbed |
@@ -118,5 +118,11 @@ prints the reading so the trade stays visible.
    engine itself: a phase-locking configuration or a longer analysis window that
    makes the vocoder's transposition as accurate as the granular shifter's, and a
    formant path that survives the vowel measurement the roadmap row describes.
-3. **NAM Core + Eigen**, behind the existing `NeuralStage` seam, with a model-format
-   loader that follows the IR stage's background-load pattern.
+3. **~~NAM Core + Eigen~~**, done behind the existing `NeuralStage` seam: LSTM still
+   goes through RTNeural and everything else through NAM Core, behind `J37_NAMCORE`
+   (OFF by default). `tests/neural` now builds both shapes and compares both engines
+   with the reference player on `tests/neural/fixtures/` - the LSTM through the shipping
+   stage (1.19e-7), the converter against NAM Core's own LSTM (5.96e-8), and WaveNet
+   through the stage (2.79e-8). What is open is the process-cost measurement that would
+   make the option the default - see WP3 in
+   [library-integration-plan.md](library-integration-plan.md).

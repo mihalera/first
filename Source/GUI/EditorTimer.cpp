@@ -99,6 +99,16 @@ void FirstAudioProcessorEditor::refreshNoiseStatus()
     // the sound there is a real interval during which "NO PRINT" would be a lie
     // about a file that is being read: LOADING says which of the two is true.
     //
+    // The refusal of the last load arrives through the LOADER, not through the
+    // chooser's callback: the decode runs after that callback has returned, so
+    // this tick is where the reason is adopted. The model and IR pickers read
+    // theirs synchronously from lastLoadError(), which is why only this readout
+    // needs the poll. The loader clears its error when the next load starts or
+    // the stage is released, so the reason stays attached to the file that
+    // earned it and to nothing else.
+    if (! audioProcessor.isNoiseLoading())
+        noiseStatusReason = audioProcessor.getNoiseError();
+
     // Order matters and is: the reason a load was REFUSED outranks everything
     // (the previous print may well still be playing), then the busy state, then
     // the loaded file's own name, then the synthesised surface.

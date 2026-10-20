@@ -115,15 +115,17 @@ endfunction()
 #    ThirdParty/xsimd/               xtensor-stack/xsimd @ 14.3.0 (include/)
 #    ThirdParty/glm/                 g-truc/glm @ 1.0.3 (repo root)
 #    ThirdParty/RTNeural/            jatinchowdhury18/RTNeural @ 95c3c0f9 (STL backend)
-#    ThirdParty/soundtouch/          soundtouch/soundtouch @ 2.4.1 (include/ +
-#                                    source/SoundTouch/, compiled below)
+#    ThirdParty/namcore/             sdatkinson/NeuralAmpModelerCore @ 0b3d3c97 (v0.6.0,
+#                                    NAM/ only, compiled below - opt-in)
+#    ThirdParty/eigen/               libeigen/eigen @ bc3b3987 (3.5.0, the commit
+#                                    NAM Core's own submodule pins)
 #    ThirdParty/dattorro-verb/       el-visio/dattorro-verb @ 41e976a0 (verb.c,
 #                                    compiled below)
 #
 #  Every licence ships inside its own folder and THIRD_PARTY_NOTICES.md carries
-#  the attribution notices. One entry is the exception to the permissive rule
-#  this list used to state: SoundTouch is LGPL-2.1
-#  (ThirdParty/soundtouch/COPYING.TXT).
+#  the attribution notices. The list used to carry a second exception to the
+#  permissive rule - SoundTouch, LGPL-2.1 - which is gone with the rest of that
+#  dependency in WP4; see the note where its block used to be.
 # ------------------------------------------------------------------------------
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/farbot/include")
     j37_declare_header_only_library(farbot
@@ -169,76 +171,19 @@ if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/RTNeural/RTNeural/RTNeural.h"
 endif()
 
 # ==============================================================================
-#  SoundTouch - Olli Parviainen's SoundTouch Audio Processing Library: the
-#  WSOLA time-stretch and pitch-shift engine (SoundTouch, RateTransposer,
-#  TDStretch, the interpolators, the BPM detector).
+#  SoundTouch - REMOVED in WP4, and the reason is kept here because the absence
+#  of a dependency is a decision too.
 #
-#  A COMPILED library, not a header-only one, so it cannot be registered by
-#  include directory alone the way the blocks above are. The pattern is
-#  fftconvolver's below: the SOURCES are what is vendored or fetched, and the
-#  static library is declared here - upstream's own CMakeLists.txt is never
-#  configured at all. That is deliberate twice over:
-#
-#    * upstream's file is a STANDALONE project: it owns its own minimum-
-#      version floor and its own options (SOUNDSTRETCH builds a command-line
-#      tool this plugin has no use for, SOUNDTOUCH_DLL a C wrapper, and its
-#      install() rules would run against this project's tree), none of which
-#      a plugin build should inherit from a dependency;
-#    * declaring the sources HERE means the vendored tree and the CPM
-#      fallback compile the identical translation units with the identical
-#      definitions, so the two paths cannot quietly drift apart.
-#
-#  SOUNDTOUCH_FLOAT_SAMPLES is what the plugin's audio path speaks and is
-#  upstream's own default; the NEON kernels are switched on for the ARM
-#  builds the way upstream's CMake does, minus the -mfpu=neon flag on aarch64
-#  (where NEON is not optional and the flag is meaningless).
-#
-#  Licensed LGPL-2.1 - see THIRD_PARTY_NOTICES.md and the text vendored at
-#  ThirdParty/soundtouch/COPYING.TXT.
-#
-#  Vendored copy wins; CPM is the fallback.
+#  It was declared as a compiled static library here and linked by nothing. The
+#  corrector's two engines - the granular shifter that ships and the opt-in
+#  phase vocoder - are both measured by tests/pitch, and a third stretcher
+#  would have had to beat them on that harness to be worth an LGPL-2.1
+#  obligation. SoundTouch is WSOLA, the same family as the shifter already
+#  shipping, so the expectation was that it would not: the target, the CPM
+#  fetch and the vendored tree are therefore gone rather than left as a
+#  dependency nobody calls. Re-vendoring is the two branches this file used to
+#  hold - the include path and the source list - plus its COPYING.TXT.
 # ==============================================================================
-if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/soundtouch/include/SoundTouch.h")
-    set(J37_SOUNDTOUCH_ROOT "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/soundtouch")
-else()
-    CPMAddPackage(
-        NAME soundtouch
-        GIT_REPOSITORY https://codeberg.org/soundtouch/soundtouch.git
-        GIT_TAG 0047e0b1ecfceb041348579119bf79b73a322a3a   # the 2.4.1 tag
-        DOWNLOAD_ONLY YES)
-    set(J37_SOUNDTOUCH_ROOT "${soundtouch_SOURCE_DIR}")
-endif()
-
-# The target is named exactly SoundTouch - the name the top-level
-# target_link_libraries links - so neither branch above needs to know which one
-# won, and the include directory is PUBLIC because PluginProcessor.h probes for
-# <SoundTouch.h>.
-if(NOT TARGET SoundTouch)
-    add_library(SoundTouch STATIC EXCLUDE_FROM_ALL
-        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/AAFilter.cpp"
-        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/BPMDetect.cpp"
-        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/cpu_detect_x86.cpp"
-        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/FIFOSampleBuffer.cpp"
-        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/FIRFilter.cpp"
-        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/InterpolateCubic.cpp"
-        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/InterpolateLinear.cpp"
-        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/InterpolateShannon.cpp"
-        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/mmx_optimized.cpp"
-        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/PeakFinder.cpp"
-        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/RateTransposer.cpp"
-        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/SoundTouch.cpp"
-        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/sse_optimized.cpp"
-        "${J37_SOUNDTOUCH_ROOT}/source/SoundTouch/TDStretch.cpp")
-    target_include_directories(SoundTouch SYSTEM PUBLIC
-        "${J37_SOUNDTOUCH_ROOT}/include")
-    target_compile_definitions(SoundTouch PRIVATE SOUNDTOUCH_FLOAT_SAMPLES)
-    if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(armv7.*|armv8.*|aarch64.*)$")
-        target_compile_definitions(SoundTouch PRIVATE SOUNDTOUCH_USE_NEON)
-        if(NOT CMAKE_SYSTEM_PROCESSOR MATCHES "^aarch64.*$")
-            target_compile_options(SoundTouch PRIVATE -mfpu=neon)
-        endif()
-    endif()
-endif()
 
 # ==============================================================================
 #  Graphics and DSP toolboxes - configured packages
@@ -431,6 +376,124 @@ CPMAddPackage(
 
 j37_declare_header_only_library(nlohmann_json "${nlohmann_json_SOURCE_DIR}/single_include")
 endif ()
+
+# ==============================================================================
+#  NeuralAmpModelerCore (NAM Core) + Eigen - the second `.nam` inference engine.
+#
+#  Source/DSP/NeuralStage.h converts .nam files to RTNeural's layer JSON, and
+#  that conversion is an LSTM re-shape: NAM's WaveNet (and ConvNet, Linear,
+#  Sequential) store their weights in layouts it cannot express. NAM Core is the
+#  reference implementation of all of them, so it is the backend for everything
+#  the converter does not cover - see Source/DSP/NamBackend.h and WP3 in
+#  docs/library-integration-plan.md.
+#
+#  OPT-IN, and the default is OFF on purpose. It is a second inference engine in
+#  the binary - a convolutional stack of its own - and several minutes of
+#  compile time, so it has to earn the default with a measurement rather than
+#  arrive as one. `-DJ37_NAMCORE=ON` builds it; a build without it keeps the
+#  LSTM-only stage it has always had, refusal and "NEEDS LSTM" message included.
+#
+#  A COMPILED library, not a header-only one, so it cannot be registered by an
+#  include directory alone the way the blocks above are. The pattern is the one
+#  SoundTouch used to use: the SOURCES are what is vendored or fetched and the
+#  static library is declared HERE, because NAM Core's own CMakeLists.txt is a
+#  standalone project (it owns its compiler flags, its version floor and its
+#  tools/ executables, none of which a plugin build should inherit) and its
+#  CMake requires 3.10, below the floor CMake 4 still accepts. Both branches
+#  therefore compile the identical translation units with the identical
+#  definitions, so the vendored tree and the CPM fallback cannot drift apart.
+#
+#  Eigen rides beside it as an INTERFACE target: NAM's headers include
+#  <Eigen/Dense> and the convolutional layers <unsupported/Eigen/FFT>, and the
+#  vendored tree is the commit NAM Core's own submodule pins, which is the one
+#  combination upstream tests. MPL-2.0 - see THIRD_PARTY_NOTICES.md; its own
+#  files stay under MPL while the linked binary as a whole does not.
+#
+#  NAM_ENABLE_A2_FAST is deliberately NOT defined. It routes models whose
+#  config matches one hand-optimised shape to a fast-path WaveNet; every other
+#  model (and the fixtures under tests/neural/fixtures, which are tiny on
+#  purpose) goes through the generic path either way. Leaving it off keeps the
+#  backend on one code path that this repository's tests compare against the
+#  reference player, rather than two that are only partly covered.
+# ==============================================================================
+option(J37_NAMCORE
+    "Build NeuralAmpModelerCore + Eigen as the backend for WaveNet/ConvNet .nam models (adds an inference engine to the binary)"
+    OFF)
+
+if(J37_NAMCORE)
+    if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/namcore/NAM/get_dsp.h")
+        set(J37_NAMCORE_ROOT "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/namcore")
+    else()
+        CPMAddPackage(
+            NAME namcore
+            GITHUB_REPOSITORY sdatkinson/NeuralAmpModelerCore
+            GIT_TAG 0b3d3c97b0859a3a8c92a8628c4dd89a25eb5842   # the v0.6.0 tag
+            DOWNLOAD_ONLY YES)
+        set(J37_NAMCORE_ROOT "${namcore_SOURCE_DIR}")
+    endif()
+
+    if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/eigen/Eigen/Dense")
+        set(J37_EIGEN_ROOT "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/eigen")
+    else()
+        CPMAddPackage(
+            NAME eigen
+            GIT_REPOSITORY https://gitlab.com/libeigen/eigen.git
+            GIT_TAG bc3b39870ecb690a623a3f49149a358b95c5781d   # 3.5.0, NAM Core's pin
+            DOWNLOAD_ONLY YES)
+        set(J37_EIGEN_ROOT "${eigen_SOURCE_DIR}")
+    endif()
+
+    j37_declare_header_only_library(eigen "${J37_EIGEN_ROOT}")
+
+    # NAM's headers spell the JSON header "json.hpp", not
+    # <nlohmann/json.hpp> - upstream puts Dependencies/nlohmann on the include
+    # path for exactly that - so this is the nlohmann target's directory one
+    # level further down, and it is PUBLIC because the plugin's own translation
+    # units include <NAM/dsp.h>, which includes it in turn.
+    if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/nlohmann_json/single_include/nlohmann/json.hpp")
+        set(J37_NAM_JSON_INCLUDE
+            "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/nlohmann_json/single_include/nlohmann")
+    else()
+        set(J37_NAM_JSON_INCLUDE "${nlohmann_json_SOURCE_DIR}/single_include/nlohmann")
+    endif()
+
+    if(NOT TARGET namcore)
+        file(GLOB J37_NAMCORE_SOURCES CONFIGURE_DEPENDS
+             "${J37_NAMCORE_ROOT}/NAM/*.cpp"
+             "${J37_NAMCORE_ROOT}/NAM/*/*.cpp")
+
+        # OBJECT, not STATIC, and that is not a style choice. NAM Core registers
+        # each architecture with a file-scope `static ConfigParserHelper` in its
+        # own .cpp, and `get_dsp()` reaches them only through the registry - it
+        # names no symbol any architecture object defines. A static archive is
+        # therefore pruned: `lstm.o` and the WaveNet objects are never pulled in,
+        # their initialisers never run, and every model fails with "No config
+        # parser registered for architecture: LSTM" at runtime while linking
+        # perfectly. Objects on the link line cannot be pruned that way, which is
+        # what upstream does too (its tools compile the sources into each
+        # executable directly).
+        add_library(namcore OBJECT EXCLUDE_FROM_ALL ${J37_NAMCORE_SOURCES})
+
+        # SYSTEM for the same reason every vendored header target above is: a
+        # diagnostic raised inside NAM's or Eigen's headers is theirs, not this
+        # repository's, and the plugin is compiled with JUCE's full warning set.
+        target_include_directories(namcore SYSTEM PUBLIC
+            "${J37_NAMCORE_ROOT}"
+            "${J37_EIGEN_ROOT}"
+            "${J37_NAM_JSON_INCLUDE}")
+        target_link_libraries(namcore PUBLIC eigen)
+        target_compile_features(namcore PUBLIC cxx_std_20)
+
+        # NAM's own sources are compiled SILENTLY. -w rather than a -Wno- list
+        # because the list changes with every upstream commit; the headers are
+        # SYSTEM already, and this only covers NAM's .cpp files. MSVC keeps its
+        # default because /w would silence the plugin's own diagnostics too if
+        # this ever stopped being a separate target.
+        if(CMAKE_CXX_COMPILER_ID MATCHES "Clang|GNU")
+            target_compile_options(namcore PRIVATE -w)
+        endif()
+    endif()
+endif()
 
 # farbot - hogliux/farbot, "FAbian's Realtime Box o' Tricks": the
 # realtime-safe patterns (RealtimeObject, fifo, AsyncCaller). The library part

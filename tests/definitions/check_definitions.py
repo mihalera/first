@@ -39,10 +39,11 @@ What it deliberately does NOT check:
 
   * Macros `Source/` defines for ITSELF - `J37_HAS_RTNEURAL` and the rest come
     from `Source/DSP/OptionalLibraries.h` and are probed at compile time rather
-    than set by CMake. Two of them (SoundTouch, signalsmith-stretch) say in
-    their own entries that nothing reads them yet; that is a statement about a
-    stage that has not adopted them, not a build macro with no reader, and this
-    check is not the place to relitigate it.
+    than set by CMake. An entry there may say that nothing reads it YET (the
+    file records those decisions in prose, and WP4 removed the one library whose
+    probe had no reader for good rather than leaving it); that is a statement
+    about a stage that has not adopted the library, not a build macro with no
+    reader, and this check is not the place to relitigate it.
   * What a macro does when it IS read. This is a wiring check: a name that is
     read and then ignored passes here and fails in the audio, where
     `tests/dsp/` and the harnesses live.

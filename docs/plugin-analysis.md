@@ -240,7 +240,10 @@ Three consequences, only the first of which is about build time:
   is **`chowdsp_dsp_utils`**, which is **GPLv3** and is both included and linked
   (`chowdsp_math` and `chowdsp_simd` from the same repository are BSD, and
   `foleys_gui_magic` is BSD 3-Clause despite its reputation). Beyond that,
-  **SoundTouch** and **libsndfile** are LGPL-2.1 and linked statically, and
+  **SoundTouch** and **libsndfile** were LGPL-2.1 and linked statically when
+  this was measured; neither is on the link line now, and SoundTouch's target,
+  fetch and vendored tree have since been removed altogether (WP4 of
+  [library-integration-plan.md](library-integration-plan.md)).
   `rack_dsp` is GPL-3.0-or-later with a plugin exception. `aubio` is a fetched
 dependency that is neither linked nor included, so it is dead weight rather than
   an exposure. `THIRD_PARTY_NOTICES.md` lists each component's terms.

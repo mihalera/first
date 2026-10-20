@@ -404,7 +404,8 @@ because the recipe is what the rest of them follow:
   read it, because a header cannot depend on its includer having got there first. The
   whole optional-dependency block therefore left the plugin header: chowdsp's two
   probes, RTNeural's, xsimd's, and the four third-party utilities' (ReaderWriterQueue,
-  farbot, signalsmith-stretch, SoundTouch), all of them now in one file whose concern is
+  farbot, signalsmith-stretch, SoundTouch - whose entry is a removal record since WP4),
+  all of them now in one file whose concern is
   "which of these does this build have". It is included first by `PluginProcessor.h`, and
   directly by the stage that needs one of its answers - which is also the only way a
   harness with none of those libraries on its include path can compile that stage.

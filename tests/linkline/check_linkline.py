@@ -63,6 +63,12 @@ SPELLINGS = {
     "dattorro_verb": ("verb.h",),
     # Header-only, and reached through the folder the checkout publishes.
     "signalsmith-stretch": ("signalsmith-stretch/",),
+    # NAM Core, opt-in (`J37_NAMCORE`): Source/DSP/NamBackend.h includes the two
+    # headers its API publishes, spelled <NAM/...> because the checkout root is
+    # the include root. Eigen is not on the plugin's own link line - it reaches
+    # the build through namcore's INTERFACE include path, and no file under
+    # Source/ includes it by name.
+    "namcore": ("NAM/dsp.h", "NAM/get_dsp.h"),
 }
 
 # -----------------------------------------------------------------------------

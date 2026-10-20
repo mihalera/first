@@ -2,8 +2,9 @@
 //  Which optional libraries this build actually has.
 //
 //  Everything the engine uses that may be absent - chowdsp's math, RTNeural,
-//  xsimd, readerwriterqueue, pocketfft and signalsmith-stretch - is
-//  probed for HERE, once, and reported as a J37_HAS_* macro. Every one of those macros is read by a
+//  NeuralAmpModelerCore with Eigen, xsimd, readerwriterqueue, pocketfft and
+//  signalsmith-stretch - is probed for HERE, once, and reported as a J37_HAS_*
+//  macro. Every one of those macros is read by a
 //  stage, which is now checked: tests/linkline/check_linkline.py fails when a
 //  probe has no reader, and when the link line carries a library no include
 //  names. The stages that consume
@@ -65,13 +66,23 @@
  // library to include - the stage's .nam converter asks for the JSON type it
  // needs by including it ITSELF when this macro is 1.
 #elif ! defined (J37_DSP_HARNESS) && __has_include (<RTNeural/RTNeural.h>)
+ // nlohmann/json comes FIRST here, and the order is load-bearing. RTNeural
+ // bundles its own copy (3.11.1) at modules/json/json.hpp, and model_loader.h
+ // includes it BY RELATIVE PATH - so whichever copy is read first defines the
+ // include guard and the other one is silently skipped. Two copies in one
+ // translation unit are two `nlohmann::json` TYPES, and this one crosses a
+ // library boundary: NAM Core's compiled objects take `const nlohmann::json&`,
+ // so a TU that kept RTNeural's copy would not link against a NAM Core built
+ // with this repository's 3.12.0 (that is a real link failure, not a warning -
+ // the mangled names differ). Including the vendored header ahead of
+ // model_loader.h makes 3.12.0 the single copy for the whole build, RTNeural
+ // and NAM Core alike, and RTNeural's own relative include becomes a no-op.
+ #include <nlohmann/json.hpp>
  #include <RTNeural/RTNeural.h>
  // RTNeural's own model loader header, which is what carries json_parser. It is
  // not pulled in by RTNeural.h, so a translation unit that wants to LOAD a model
- // has to ask for it explicitly. nlohmann/json is on the same include path (and
- // RTNeural bundles a copy), so the JSON type it parses into is already available.
+ // has to ask for it explicitly.
  #include <RTNeural/model_loader.h>
- #include <nlohmann/json.hpp>
  #define J37_HAS_RTNEURAL 1
 #else
  #define J37_HAS_RTNEURAL 0
@@ -167,16 +178,18 @@
 //                               include path, a flag and a fallback rather than a
 //                               real-time utility with a JUCE-laden substitute.
 //
-//    SoundTouch                 The WSOLA time-stretch engine, LGPL-2.1 - the one
-//                               dependency in this file that was not
-//                               permissively licensed. It was probed, included
-//                               and compiled into the plugin, and no stage
-//                               called it, so it was contributing nothing but a
-//                               static LGPL link to the binary. That link is
-//                               gone; THIRD_PARTY_NOTICES.md records the
-//                               library, the fetch stays for the same reason
-//                               signalsmith's does, and the licence question it
-//                               raised with it.
+//    SoundTouch                 The WSOLA time-stretch engine, LGPL-2.1. It was
+//                               probed, included and compiled into the plugin,
+//                               and no stage called it, so it contributed
+//                               nothing but a static LGPL link; the link went
+//                               first, and WP4 in
+//                               docs/library-integration-plan.md then removed
+//                               the target, the fetch and the vendored tree
+//                               rather than keep a dependency nobody calls. Its
+//                               block in cmake/J37Dependencies.cmake now holds
+//                               the reasoning. The corrector's two engines are
+//                               its own shifter and signalsmith's vocoder, and
+//                               tests/pitch is what measures them.
 // ------------------------------------------------------------------------------
 #if ! defined (J37_DSP_HARNESS)
 
@@ -197,6 +210,45 @@
 
 #else
  #define J37_HAS_RWQ 0
+#endif
+
+// ------------------------------------------------------------------------------
+//  NeuralAmpModelerCore (NAM Core) + Eigen - the second inference engine.
+//
+//  Source/DSP/NeuralStage.h already reads .nam files through RTNeural, and that
+//  path is a CONVERSION: it re-shapes NAM's flat weight vector into RTNeural's
+//  layer JSON, which only the LSTM layout allows. WaveNet and the convolutional
+//  nets have their own layouts, so the reference implementation itself is the
+//  backend for them - Source/DSP/NamBackend.h wraps its loader and its
+//  per-sample loop, and the stage dispatches to it here.
+//
+//  OPT-IN, like xsimd and signalsmith-stretch above, and for a measured reason
+//  rather than a cautious one: a second inference engine is a second copy of a
+//  convolution stack in the binary and several minutes of extra compile time,
+//  so it is a build decision (J37_NAMCORE in CMakeLists.txt, OFF by default)
+//  until the size and CPU numbers say it should be the default. A build without
+//  it keeps the LSTM-only stage it has always had, refusal included.
+//
+//  TWO headers are probed because NAM Core cannot be used without Eigen: every
+//  NAM header includes <Eigen/Dense>, and the convolutional layers include
+//  <unsupported/Eigen/FFT>. A tree with one of them and not the other is not a
+//  tree this backend can be compiled against, so it reads as absent rather than
+//  failing halfway through a translation unit.
+//
+//  NOT behind the harness guard, for the same reason signalsmith-stretch is not:
+//  the way tests/neural compiles the NAM-backed half of the stage is to put the
+//  three vendored include paths on its command line and pass J37_NAMCORE - so a
+//  guard that forced the macro to 0 would make the only build that exercises the
+//  backend impossible. tests/dsp, which has none of those paths, gets 0 from
+//  __has_include and compiles the pass-through, exactly as it does for RTNeural.
+// ------------------------------------------------------------------------------
+#if ! defined (J37_HAS_NAMCORE)
+ #if defined (J37_NAMCORE) \
+     && __has_include (<NAM/get_dsp.h>) && __has_include (<Eigen/Dense>)
+  #define J37_HAS_NAMCORE 1
+ #else
+  #define J37_HAS_NAMCORE 0
+ #endif
 #endif
 
 // ------------------------------------------------------------------------------

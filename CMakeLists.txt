@@ -637,6 +637,25 @@ target_link_libraries(first
 j37_apply_vendor_libraries(first)
 
 # ------------------------------------------------------------------------------
+#  The second .nam backend: NeuralAmpModelerCore + Eigen.
+#
+#  The target, the sources and the option are declared in
+#  cmake/J37Dependencies.cmake; what is wired here is what the plugin sees - the
+#  link line, the include paths the namcore target carries, and the macro
+#  Source/DSP/OptionalLibraries.h probes. One line of CMake because the stage
+#  already had the seam: Source/DSP/NamBackend.h is compiled only when the macro
+#  is 1, and the plugin's own code does not branch on it at all.
+#
+#  OFF by default - see the block in J37Dependencies for the size and
+#  compile-time reasoning. A build with it off is the LSTM-only stage that
+#  shipped before this option existed.
+# ------------------------------------------------------------------------------
+if(J37_NAMCORE)
+    target_link_libraries(first PRIVATE namcore)
+    target_compile_definitions(first PRIVATE J37_NAMCORE=1)
+endif()
+
+# ------------------------------------------------------------------------------
 #  The shaper's tanh: the one switch in this build that changes the rendered
 #  audio, and the only place a library is wired to the engine by a macro.
 #
@@ -777,13 +796,18 @@ else()
     message(STATUS "  Formats     : VST3")
 endif()
 message(STATUS "  Libraries   : chowdsp_utils, melatonin_inspector, melatonin_blur, foleys_gui_magic, xsimd")
-message(STATUS "                signalsmith-stretch, SoundTouch (LGPL-2.1), fftconvolver,")
+message(STATUS "                signalsmith-stretch, fftconvolver,")
 message(STATUS "                imgui, iPlug2 (source only)")
 message(STATUS "                chowcentaur, vcv_prototype, rack, soundpipe, aubio (source only)")
 message(STATUS "                farbot, readerwriterqueue, kissfft, pocketfft, yasio, dywapitchtrack, pffft")
 message(STATUS "                RTNeural (neural inference, used by the DYNAMICS tab), dr_libs,")
 message(STATUS "                yin_pitch, pitch_detector (MPM), dattorro_verb, sndfile")
 message(STATUS "                nlohmann_json (header only)")
+if(J37_NAMCORE)
+    message(STATUS "                NeuralAmpModelerCore + Eigen (second .nam backend: WaveNet/ConvNet)")
+else()
+    message(STATUS "                NeuralAmpModelerCore OFF (LSTM-only .nam support; -DJ37_NAMCORE=ON adds it)")
+endif()
 message(STATUS "                q_dsp, sokol_gfx, glm (header only)")
 message(STATUS "                Optional graphics: BGFX, wgpu-native or Dawn (selected by J37_RENDER_BACKEND)")
 message(STATUS "                transdes, whetstone, multiband-transient-shaper (source only)")
