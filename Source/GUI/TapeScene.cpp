@@ -1569,9 +1569,16 @@ void TapeScene::renderOpenGL()
                      * glm::rotate (glm::mat4 (1.0f), cameraYawRadians, { 0.0f, 1.0f, 0.0f });
 
     // Save shared-context GL state before configuring this scene pass.
+    // Blend factors are saved per channel rather than as one pair: GL_BLEND_SRC
+    // and GL_BLEND_DST are desktop-GL spellings that the ES headers do not carry
+    // at all, and the control bank below sets both channels together - so a
+    // restore that only knew about the colour pair would flatten an
+    // alpha-blend the caller had set separately.
     GLint previousDepthFunction = GL_LESS;
-    GLint previousBlendSource = GL_ONE;
-    GLint previousBlendDestination = GL_ZERO;
+    GLint previousBlendSourceRgb = GL_ONE;
+    GLint previousBlendDestinationRgb = GL_ZERO;
+    GLint previousBlendSourceAlpha = GL_ONE;
+    GLint previousBlendDestinationAlpha = GL_ZERO;
     GLint previousViewport[4] {};
     GLint previousProgram = 0;
     GLint previousVertexArray = 0;
@@ -1582,8 +1589,10 @@ void TapeScene::renderOpenGL()
     const auto previousBlend = glIsEnabled (GL_BLEND);
     const auto previousCull = glIsEnabled (GL_CULL_FACE);
     glGetIntegerv (GL_DEPTH_FUNC, &previousDepthFunction);
-    glGetIntegerv (GL_BLEND_SRC, &previousBlendSource);
-    glGetIntegerv (GL_BLEND_DST, &previousBlendDestination);
+    glGetIntegerv (GL_BLEND_SRC_RGB, &previousBlendSourceRgb);
+    glGetIntegerv (GL_BLEND_DST_RGB, &previousBlendDestinationRgb);
+    glGetIntegerv (GL_BLEND_SRC_ALPHA, &previousBlendSourceAlpha);
+    glGetIntegerv (GL_BLEND_DST_ALPHA, &previousBlendDestinationAlpha);
     glGetIntegerv (GL_VIEWPORT, previousViewport);
     glGetIntegerv (GL_CURRENT_PROGRAM, &previousProgram);
     glGetIntegerv (GL_ARRAY_BUFFER_BINDING, &previousArrayBuffer);
@@ -1679,8 +1688,10 @@ void TapeScene::renderOpenGL()
 
     glDepthFunc (static_cast<GLenum> (previousDepthFunction));
     glDepthMask (previousDepthWrite);
-    glBlendFunc (static_cast<GLenum> (previousBlendSource),
-                 static_cast<GLenum> (previousBlendDestination));
+    glBlendFuncSeparate (static_cast<GLenum> (previousBlendSourceRgb),
+                         static_cast<GLenum> (previousBlendDestinationRgb),
+                         static_cast<GLenum> (previousBlendSourceAlpha),
+                         static_cast<GLenum> (previousBlendDestinationAlpha));
     if (previousDepthTest) glEnable (GL_DEPTH_TEST); else glDisable (GL_DEPTH_TEST);
     if (previousBlend) glEnable (GL_BLEND); else glDisable (GL_BLEND);
     if (previousCull) glEnable (GL_CULL_FACE); else glDisable (GL_CULL_FACE);
