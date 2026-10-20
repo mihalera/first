@@ -300,9 +300,8 @@ void FirstAudioProcessorEditor::timerCallback()
     if (! isShowing())
         return;
 
-    // Retry the automatic OpenGL accelerator while the host is still creating
-    // its peer/context. The budget is bounded so an unavailable driver is not
-    // polled forever; CPU painting remains available in the meantime.
+    // Retry context creation while the host is still creating its peer. The
+    // budget is bounded so an unavailable driver is not polled forever.
     if (openGLAttachAttemptsLeft > 0)
     {
         --openGLAttachAttemptsLeft;
@@ -310,13 +309,12 @@ void FirstAudioProcessorEditor::timerCallback()
         {
             openGLAttachAttemptsLeft = 0;
         }
-        else if (j37::render::usesOpenGL())
+        else
         {
             openGLContext.attachTo (*this);
             if (openGLContext.isAttached())
             {
                 openGLAttachAttemptsLeft = 0;
-                tapeScene.setSceneEnabled (true);
             }
         }
     }
@@ -814,11 +812,8 @@ void FirstAudioProcessorEditor::timerCallback()
     configureTextureWeights (sceneDrive,
                              juce::jlimit (0.0f, 1.0f, std::abs (reduction) / 6.0f));
 
-    // The scene's own attach retries, on the same timer and the same bounded
-    // budget as this editor's context: a child component cannot have a context
-    // until the host has given it a native peer, and that may not have happened
-    // on the first tick.
-    tapeScene.serviceContextAttachment();
+    // TapeScene retries its own context attachment from its resized callback
+    // and from the repaint timer while its bounded attach budget remains.
 
     // ------------------------------------------------------------------
     //  The frame's animations, invalidated.

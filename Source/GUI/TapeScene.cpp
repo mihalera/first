@@ -477,7 +477,6 @@ namespace
 //==============================================================================
 TapeScene::TapeScene()
 {
-    nativeRenderer = j37::render::createNativeRenderer (j37::render::effectiveBackend());
     setOpaque (true);
     setInterceptsMouseClicks (false, false);
     setWantsKeyboardFocus (false);
@@ -494,8 +493,6 @@ TapeScene::~TapeScene()
     // openGLContextClosing() called on the GL thread - which is the only thread
     // allowed to delete a buffer or a program.
     openGLContext.detach();
-    if (nativeRenderer != nullptr)
-        nativeRenderer->shutdown();
 }
 
 void TapeScene::setAudioState (float newOutputLevel,
@@ -575,10 +572,6 @@ j37::render::NativeRenderer::Config TapeScene::nativeRendererConfig() const
     // coordinate system, which is what child HWNDs and Metal layers expect.
     if (auto* peer = getPeer())
     {
-        // The argument is spelled out: JUCE declares localPointToGlobal for both
-        // Point<int> and Point<float>, and a brace-initialised { 0, 0 } is
-        // convertible to each, so every compiler rejects it as ambiguous. The
-        // Config fields are ints, so the int overload is the one meant here.
         const auto globalOrigin = localPointToGlobal (juce::Point<int> { 0, 0 });
         const auto peerOrigin = peer->getComponent().localPointToGlobal (juce::Point<int> { 0, 0 });
         config.positionX = globalOrigin.x - peerOrigin.x;
@@ -590,32 +583,19 @@ j37::render::NativeRenderer::Config TapeScene::nativeRendererConfig() const
 
 void TapeScene::setSceneEnabled (bool shouldBeEnabled)
 {
-    // OpenGL is automatic and never a user-facing mode. Non-OpenGL backends use
-    // the software scene and must not create an OpenGL context.
-    if (! j37::render::usesOpenGL())
-    {
-        sceneEnabled = false;
-        openGLContext.detach();
-        programLinked.store (0);
-        return;
-    }
-
+    shouldBeEnabled = shouldBeEnabled && j37::render::usesOpenGL();
     if (sceneEnabled == shouldBeEnabled)
         return;
 
     sceneEnabled = shouldBeEnabled;
-
     if (sceneEnabled)
     {
-        // A component has no context until the host has given it a native peer,
-        // and the editor may not have done that yet, so the first try is not a
-        // verdict. Thirty is about a second of the editor's 30 Hz timer, which
-        // is as long as the editor's own context gives itself.
-        attachAttemptsLeft = 30;
+        attachAttemptsLeft = 90;
         serviceContextAttachment();
     }
     else
     {
+        attachAttemptsLeft = 0;
         openGLContext.detach();
     }
 }
@@ -634,15 +614,15 @@ void TapeScene::serviceContextAttachment()
     if (attachAttemptsLeft <= 0)
         return;
 
-    --attachAttemptsLeft;
     openGLContext.attachTo (*this);
+    if (openGLContext.isAttached())
+        attachAttemptsLeft = 0;
+    else
+        --attachAttemptsLeft;
 }
 
 void TapeScene::paint (juce::Graphics& g)
 {
-    // Native command adapters currently do not draw the scene mesh, so their
-    // configured backends use the complete JUCE CPU scene.
-
     const auto width = static_cast<float> (getWidth());
     const auto height = static_cast<float> (getHeight());
     if (width <= 0.0f || height <= 0.0f)
@@ -744,19 +724,12 @@ void TapeScene::paint (juce::Graphics& g)
 
 void TapeScene::resized()
 {
-    // Native swapchains/render targets are resized on the message thread, never
-    // lazily from the render callback. The adapters defer GPU object recreation
-    // until their next beginFrame().
-    if (nativeRenderer != nullptr)
-    {
-        nativeRenderer->resize (nativeRendererConfig());
-    }
+    // A host may create the peer after the initial attach attempt. Retry while
+    // the bounded attachment budget remains.
+    serviceContextAttachment();
 
-    // Nothing to place: the projection is derived from the current size in
-    // renderOpenGL(), and CPU paint uses the same component bounds. A resize is
-    // also a frame the user must SEE - the viewport just changed shape - so the
-    // accelerated path is asked for one here too (see setAudioState for why a
-    // repaint() alone does not reach renderOpenGL() on this component).
+    // The component's CPU path and the GL callback both derive projection from
+    // the current bounds; invalidate each path after a resize.
     repaint();
 
     if (openGLContext.isAttached())

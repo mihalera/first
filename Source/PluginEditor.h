@@ -506,18 +506,11 @@ private:
     // and a fixed four columns made every page with six or seven knobs a pair of
     // half-height rows and half-size knobs.
     static constexpr int tabColumns = 4;
-    // Sixteen pages under three large families (TAPE / FX / SETUP), so no page
-    // has to carry more than one subject: DRIVE was twelve knobs on one page and
-    // NOISE eleven, which is exactly the crowding the tabs exist to avoid.
+    // Eighteen pages under three large families (TAPE / FX / SETUP).
     static constexpr int numTabs = 18;
     static constexpr std::size_t decorativeOrbCount = 6;
 
-    // The header's switch grid: four equal columns, three rows, one switch per
-    // cell. resized() places the cells with these and paint() draws the
-    // machine-state pill ON the grid's third row with them, so the pill and the
-    // switches it wraps can never be sized by two different arithmetics again -
-    // the first pass kept a second copy of the old 92 px cell in paint(), and
-    // the pill overhung its own band by 72 px.
+    // Header grid dimensions for the two engine-switch rows and language selector.
     static constexpr int headerColumnCount = 4;
     static constexpr int headerColumnWidth = 74;
     static constexpr int headerColumnGap = 6;
@@ -640,11 +633,6 @@ private:
         the 3D scene is live, which draws its own. */
     juce::Rectangle<int> deckAnimationBounds() const;
 
-    // Cycles the header's theme button: DARK -> IVORY -> LIGHT -> DARK. The tab
-    // families resolve the reverse way - one Control-strip button per family and
-    // pages beside it - so the header grid's four free columns stay free (see
-    // headerColumnCount / headerColumnWidth below).
-
     // Shared by the constructor and by resized(): the knob-grid section captions
     // are created while laying out, so a constructor-local helper was out of scope
     // there and the build failed to compile (C2065 on `styleLabel`).
@@ -691,9 +679,7 @@ private:
     // and each group has a whole grid to itself.
     void setCurrentTab (int newTab);
 
-    // The three tab families: selects which slice of the tab bar is visible and
-    // jumps to that slice's first page, then lays out and styles the bar. currentTab
-    // and every knob's tab membership are untouched - no tab is re-indexed.
+    // The three tab families select the visible page range and its first page.
     void setTabFamily (int newFamily);
     void styleTabButtons();
 

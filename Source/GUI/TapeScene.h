@@ -124,8 +124,7 @@ public:
         textureWeights.store (packed, std::memory_order_relaxed);
     }
 
-    /** Enables the scene's OpenGL path when the editor's automatic renderer is
-        active; otherwise the component paints the software scene. */
+    /** Enables the OpenGL scene after the editor's context attaches. */
     void setSceneEnabled (bool shouldBeEnabled);
 
     /** Whether the context is up AND the program linked - i.e. whether the
@@ -133,16 +132,7 @@ public:
         the message thread, so the GL thread's half of the answer is an atomic. */
     [[nodiscard]] bool isSceneLive() const noexcept;
 
-    /** Drives the attach retries, from the editor's timer.
-
-        A component cannot have a context until the host has given it a native
-        peer, and the editor may not have done that when this is constructed, so
-        a first failure is not a final answer. The retry budget is bounded and
-        then forgotten, for the same reason the editor's own context stops
-        retrying: a driver or a VM that cannot create a context will not manage on
-        the last attempt either, and retrying forever would burn a frame every
-        33 ms for a picture that is never going to arrive.
-    */
+    /** Retries OpenGL context attachment while the host creates its native peer. */
     void serviceContextAttachment();
     [[nodiscard]] j37::render::NativeRenderer::Config nativeRendererConfig() const;
 

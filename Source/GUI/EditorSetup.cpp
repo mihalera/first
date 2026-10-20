@@ -308,15 +308,8 @@ void FirstAudioProcessorEditor::setUpLanguageAndTuning()
 
 void FirstAudioProcessorEditor::setUpTooltipsAndPhysics()
 {
-    // Tooltips appear after a third of a second of hover: quick enough to be
-    // discoverable, slow enough not to flash while the user sweeps the panel.
-    //
-    // That third of a second is NOT this number any more. The window is
-    // j37panel::DwellTooltipWindow (Source/GUI/TipDwell.h), which restarts the
-    // dwell whenever the pointer changes control - the base class applies its own
-    // delay only to the first tip and shows every later one the instant the
-    // control under the pointer changes. So the delay is set to 0 here and the
-    // dwell in TipDwell is the one that decides; setting both would stack two.
+    // Tooltips use DwellTooltipWindow's single 350 ms dwell on every control change;
+    // the base class delay is zero to avoid stacking a second timeout.
     tooltipWindow->setMillisecondsBeforeTipAppears (0);
     createDecorativePhysics();
 }
@@ -1807,32 +1800,19 @@ void FirstAudioProcessorEditor::setUpSceneAndMeters()
 
 void FirstAudioProcessorEditor::setUpOpenGlRendering()
 {
-    // The selected backend is compile-time. OpenGL is only an optimisation for
-    // the animated panel, and it is the least portable part of the UI: some
-    // Windows drivers, remote sessions, virtual machines and headless hosts
-    // cannot create a context at all. Attaching unconditionally
-    // means those setups get a broken or blank editor, so the context is treated as a
-    // best-effort accelerator. If it cannot attach, the component renderer draws the
-    // same panel through the software path with no visual difference.
-    tapeScene.setSceneEnabled (j37::render::usesOpenGL());
+    if (! j37::render::usesOpenGL())
+        return;
+
+    // OpenGL is automatic and best-effort. If a context cannot be created,
+    // JUCE's ordinary component paint path remains enabled.
     openGLContext.setComponentPaintingEnabled (true);
     openGLContext.setContinuousRepainting (false);
-    // V-sync prevents the component-painting context from spinning at the
-    // monitor/driver maximum when the editor has no invalidated regions.
-    // Explicit repaint() calls still wake it when the panel actually changes.
     openGLContext.setSwapInterval (1);
+    openGLContext.attachTo (*this);
+    openGLAttachAttemptsLeft = openGLContext.isAttached() ? 0 : 90;
 
-    // OpenGL is an automatic accelerator, not a user-facing mode. Attach once
-    // here; if the host's peer is not ready yet, the editor timer retries for a
-    // bounded period. CPU painting remains available when context creation fails.
-    if (j37::render::usesOpenGL())
-    {
-        openGLContext.attachTo (*this);
-        if (! openGLContext.isAttached())
-            openGLContext.detach();
-    }
-
-    openGLAttachAttemptsLeft = (! j37::render::usesOpenGL() || openGLContext.isAttached()) ? 0 : 90;
+    // TapeScene owns its own context, independent from the editor's painter.
+    tapeScene.setSceneEnabled (true);
 }
 
 void FirstAudioProcessorEditor::finishConstruction()

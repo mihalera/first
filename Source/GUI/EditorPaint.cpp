@@ -158,9 +158,9 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     // the bottom; the member band is a fixed 50 px strip at the grid's bottom.
     // The picker rides the member band's FIRST column - its cell x is grid.x,
     // width cellWidth (cellWidth = gridW / 4).
-    constexpr int tabColumnsNow = 4;
-    constexpr int memberBandHeightNow = 50;
     auto gridNow = layout.controls.reduced (14);
+    constexpr int memberBandHeightNow = 50;
+    constexpr int tabColumnsNow = 4;
     gridNow.removeFromTop (controlsDividerOffset - 14 + 8);
     gridNow.removeFromBottom (8);
     const auto memberBandY = gridNow.getBottom() - memberBandHeightNow;
@@ -240,9 +240,7 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
     //   - live shimmer: a sparse drift of dots whose positions are the shader's
     //     hash(face*40 + t*(1+GR)) evaluated at a walking time offset - so the
     //     surface visibly responds to DRIVE and to the compressors. THIS is
-    //     the CPU fallback for the scene: with a context attached the scene's
-    //     fragment shader draws the same texture definition on the GPU; without
-    //     it, this ink does.
+    //     the CPU software renderer when the OpenGL context is unavailable.
     //  Every dose is centered, so no branch can shift the panel's colour.
     // ----------------------------------------------------------------------
     if (panelTextureImage.isValid())
@@ -325,20 +323,9 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
                           static_cast<float> (layout.deck.getX() + 16),
                           static_cast<float> (layout.deck.getRight() - 16));
 
-    // The machine-state badge: a raised pill across the header grid's THIRD row,
-    // wrapped around the statusLabel that lives there. The text moved to the
-    // deck in an earlier pass but the drawn pill stayed in the header, so the
-    // header switches printed over an empty badge plate - the user saw controls
-    // on a design that had lost its text. The design now lives with its text
-    // again, on a row nothing else occupies: the pill cannot be collided with.
-    // The pill is the header grid's own width - four columns and three gaps,
-    // less the 18 px the lamp takes - read from the SAME constants resized()
-    // places the cells with (see PluginEditor.h). The first pass left a second
-    // copy of the arithmetic here with the old 92 px cell in it, so the pill ran
-    // 72 px wide of its band and sat off to the left of the statusLabel it wraps.
-    // The pill's own rectangle comes from statusPillBounds(), which the timer
-    // invalidates: one definition, so the lamp inside it cannot be drawn here and
-    // repainted there.
+    // The machine-state badge wraps the statusLabel in the header's final row.
+    // statusPillBounds() is shared with the timer's invalidation region so the
+    // animated lamp and its background are redrawn together.
     const auto statusPill = statusPillBounds().toFloat();
     g.setColour (palette.raised.darker (0.16f));
     g.fillRoundedRectangle (statusPill, 4.0f);
@@ -490,10 +477,9 @@ void FirstAudioProcessorEditor::paint (juce::Graphics& g)
 
     // The reel and the ribbon below are the deck's SOFTWARE transport, and they are
     // drawn only when the 3D one is not. tapeScene.isSceneLive() is true only once
-    // its context is up AND its shader linked, so a failed context, a driver that
-    // will not oblige, and the user turning GL off all land back here - the panel
-    // is never left with a hole where the transport was, and never shows two
-    // transports at once. The particles further down are NOT gated: they live in
+    // its context is up AND its shader linked, so a failed context or an unavailable
+    // driver lands back here - the panel is never left with a hole where the
+    // transport was, and never shows two transports at once. The particles further down are NOT gated: they live in
     // the gap the switches row left, a different part of the deck from the 3D
     // transport's window, so the two never overlap.
     //

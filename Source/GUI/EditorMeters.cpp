@@ -74,9 +74,7 @@ void FirstAudioProcessorEditor::LevelMeter::setLoudness (float peakDbIn, float r
     displayedVu = smoothTowards (displayedVu, vuDb, 0.20f, 0.40f);
     displayedCombined = smoothTowards (displayedCombined, combinedDb, 0.07f, 0.30f);
 
-    // Peak hold, so a fast transient stays readable instead of flashing past. The
-    // release is a fixed dB-per-second slope rather than an exponential decay, so the
-    // hold marker falls in a straight, predictable line.
+    // Peak hold, so a fast transient stays readable instead of flashing past.
     if (peakDb >= peakHoldDb)
     {
         peakHoldDb = peakDb;
@@ -88,7 +86,9 @@ void FirstAudioProcessorEditor::LevelMeter::setLoudness (float peakDbIn, float r
     }
     else
     {
-        peakHoldDb = juce::jmax (peakDb, peakHoldDb - 12.0f * frameSeconds);
+        constexpr float releaseSeconds = 0.35f;
+        const auto coefficient = 1.0f - std::exp (-frameSeconds / releaseSeconds);
+        peakHoldDb += (peakDb - peakHoldDb) * coefficient;
     }
 
     repaint();

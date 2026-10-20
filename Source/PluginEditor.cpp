@@ -408,16 +408,22 @@ void FirstAudioProcessorEditor::setTabFamily (int newFamily)
     // pins the intended layout - nine TAPE pages, then four FX, then three
     // SETUP, in table order - so a page moved between families without the
     // order following is a build error, not a button that lights wrong.
-    static_assert (tabSpecs[0].family == 0 && tabSpecs[1].family == 0
-                       && tabSpecs[2].family == 0 && tabSpecs[3].family == 0
-                       && tabSpecs[4].family == 0 && tabSpecs[5].family == 0
-                       && tabSpecs[6].family == 0 && tabSpecs[7].family == 0
-                       && tabSpecs[8].family == 0 && tabSpecs[9].family == 1
-                       && tabSpecs[10].family == 1 && tabSpecs[11].family == 1
-                       && tabSpecs[12].family == 1 && tabSpecs[13].family == 2
-                       && tabSpecs[14].family == 2 && tabSpecs[15].family == 2,
-                   "the tab table's family column must be nine TAPE pages, "
-                   "then four FX, then three SETUP, in order");
+    static_assert (tabSpecs.size() == static_cast<std::size_t> (numTabs),
+                   "the tab family layout and tab table must have equal size");
+    static_assert ([]
+    {
+        std::array<int, tabFamilyCount> familyCounts {};
+        int previousFamily = -1;
+        for (const auto& tab : tabSpecs)
+        {
+            if (tab.family < 0 || tab.family >= tabFamilyCount
+                || tab.family < previousFamily)
+                return false;
+            ++familyCounts[static_cast<std::size_t> (tab.family)];
+            previousFamily = tab.family;
+        }
+        return familyCounts[0] == 9 && familyCounts[1] == 6 && familyCounts[2] == 3;
+    }(), "tab families must contain 9 TAPE, 6 FX and 3 SETUP pages in order");
 
     // A family change only filters the tab bar's visibility and jumps to the
     // family's first page: currentTab is set through setCurrentTab so the
@@ -862,15 +868,13 @@ FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayo
     EditorLayout layout;
 
     // Header and deck are fixed-height, so they keep their proportions at small panel
-    // sizes and on high-DPI displays. The header is 84 px - tall enough for three
-    // right-hand rows: the four engine switches (BYPASS / DELTA / POLARITY / AUTO GAIN),
-    // THEME with the language pair, and the machine-state readout on a full-width
-    // band of its own (see the header grid in resized()).
+    // sizes and on high-DPI displays. The header is 84 px - tall enough for the two
+    // rows of engine switches and the machine-state readout on its own band below.
     //
     // The deck is 278 px and was 322. The forty-four came out of the machine readouts,
     // which were a three-high vertical stack pinned to the deck's right edge and are
     // now three caption-over-value pairs side by side inside the 32 px band they share
-    // with OVER, INSTRUMENT and GL. Nothing was moved off the deck to buy it - the
+    // with OVER and INSTRUMENT. Nothing was moved off the deck to buy it - the
     // stack is the only thing that was taller than the band it was in - and the deck
     // keeps one band per group, so no two of them share a row.
     //
@@ -1013,21 +1017,11 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     // individual line is correct and only the SUM is wrong. With the cursor the
     // gap is the only number, and a row cannot overlap itself.
     //
-    //  THE GRID. Five switches used to sit here in two rows of per-button
-    //  widths (74 / 92 / 96 / 100 / 181), cursor-placed: no two buttons the
-    //  same width, their columns never lining up, which is exactly the
-    //  "arranged at random" look. The header is now ONE GRID - four equal
-    //  columns, three rows - and every switch is one cell. Rows read left to
-    //  right in the order a user scans them; nothing overlaps by construction
-    //  (cells cannot intersect) and nothing drifts (no elastic gaps to grow).
+    //  THE GRID. Four switches occupy two rows of equal-width cells, so their
+    //  columns line up and no pair overlaps at any editor size.
     //
-    //  Row three is the machine-state readout's own band. The first grid had
-    //  two rows and put them into the drawn badge's plate (right - 205, +20,
-    //  30 px tall) - switches ON the pill, which is what the user reported as
-    //  "overlapping the Real-Time/Stereo caption AND its design". The badge
-    //  lives on the grid's third row now: full grid width, 18 px, pill painted
-    //  under it in paint(), lamp at its left end, nothing else ever placed
-    //  there.
+    //  The state readout occupies its own band below the two switch rows, with
+    //  the status pill painted behind it and its lamp at the left end.
     //
     //  Clearance at the 780 px minimum: the grid is 314 px wide (4 x 74 + 3 x 6)
     //  and starts at header.right - 314 = x + 438 on a 780 panel, clearing the
@@ -1052,7 +1046,7 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     // (The width itself lives on the class now: see headerColumnWidth.)
     const auto headerRowOneY = header.getY() + 10;
     const auto headerRowTwoY = header.getY() + 36;
-    const auto headerRowThreeY = header.getY() + 62;
+    const auto statusRowY = header.getY() + 62;
     constexpr int headerStatusHeight = 18;
     const auto headerGridLeft = headerRight
                               - (headerColumns * headerColumnWidth
@@ -1084,17 +1078,8 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
                            2 * headerColumnWidth + headerGap,
                            headerSwitchHeight);
 
-    // Row three is the machine-state readout's OWN band, full grid width minus
-    // the header's corner screw. The
-    // first grid put row-two switches into the drawn badge's 30 px-tall plate
-    // (right - 205, y + 20) - switches ON the pill, the user's complaint. A
-    // two-row grid has no cell a 30 px badge fits in, so the header grew a
-    // third row: the pill returns to the header as a strip under the
-    // switches, painted in paint() exactly on these bounds, lamp at its left
-    // end, text after it. BYPASS ON swaps the text to BYPASSED / DRY from the
-    // telemetry timer; nothing else is ever placed on this row, so the pill
-    // cannot be collided with by construction.
-    statusLabel.setBounds (headerGridLeft, headerRowThreeY,
+    // The status readout gets its own full-width band below the switches.
+    statusLabel.setBounds (headerGridLeft, statusRowY,
                            headerColumns * headerColumnWidth
                                + (headerColumns - 1) * headerGap - 18,
                            headerStatusHeight);
@@ -1117,8 +1102,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     //  Six bands, none of them shared with another:
     //   y +   6  the DECK heading and the build id
     //   y +  30  MODEL     tape type | speed | BPM
-    //   y +  74  SWITCHES  oversampling | instrument | GL | HARMONICS | SUB
-    //              FUND | ANTI PHASE
+    //   y + 74  SWITCHES  oversampling | instrument | HARMONICS | SUBFUND | ANTI-PHASE
     //   y + 116  the six type switches, their captions above their boxes
     //   y + 183  TRANSPORT keys, the machine state, the mode switch
     //   y + 217  the preset workflow chain
@@ -1411,10 +1395,8 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     }
 
     // ---- row 2: SWITCHES ----------------------------------------------------
-    // OVERSAMPLING and GL are NOT in this row: they are SETTINGS-tab members and
-    // live in the member row under that tab's knobs (placeDeckSwitch below).
-    // They used to sit here on EVERY tab while being visible only on SETTINGS -
-    // so five tabs out of six showed two unexplained holes in this line.
+    // OVERSAMPLING is a SETTINGS-tab member and lives in the member row under
+    // that tab's knobs (placeDeckSwitch below).
     //
     //  Four equal 108 px columns, the type row's grid again: INSTRUMENT, then
     //  the three readout pairs - caption above value, one column each, all
@@ -1810,7 +1792,7 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     // its own. SETTINGS is the worst case and the reason the arithmetic is
     // shared: with no knobs at all, sizing the grid for knob rows alone left its
     // whole height for a member row that was then appended BELOW the grid, off
-    // the panel - GL and OVERSAMPLING were clipped by the window's bottom edge on
+    // the panel - OVERSAMPLING was clipped by the window's bottom edge on
     // the very tab that holds nothing else.
     //
     // The MIX page counts as a member page even though it owns no switch: the
@@ -2435,8 +2417,8 @@ void FirstAudioProcessorEditor::placeDeckSwitch (const ControlGeometry& geometry
         // The centring is measured against the band's NOMINAL height (50 px),
         // never against the cell's. On SETTINGS the band is the whole grid - the
         // page holds no knobs to take the rest of it - and measuring against
-        // that threw GL and OVERSAMPLING 168 px below their own captions while
-        // UI SOUNDS, which is placed directly at +20, stayed at the top: one
+        // that threw OVERSAMPLING 168 px below its own caption while UI SOUNDS,
+        // which is placed directly at +20, stayed at the top: one
         // page, two layouts. With the nominal band they sit under their captions
         // on every page, and the arithmetic is unchanged everywhere the band is
         // 50 px or a few pixels taller.
@@ -2505,7 +2487,7 @@ void FirstAudioProcessorEditor::placeMeters (const EditorLayout& layout)
 //==============================================================================
 void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
 {
-#if JUCE_DEBUG
+#if JUCE_DEBUG || DEBUG
     // ------------------------------------------------------------------
     //  The overlap check.
     //
