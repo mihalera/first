@@ -226,7 +226,6 @@ class J37LookAndFeel final : public juce::LookAndFeel_V4 {
         float target = 0.0f;
         bool initialised = false;
     };
-    std::chrono::steady_clock::time_point lastAnimationFrame{};
     std::map<void *, ToggleGlide> toggleGlides;
     std::array<juce::Slider *, principleCount> principleKnobs{};
     float drift = 0.0f; ///< Transport drift, drives the fine wobble in the ticks.
@@ -1106,6 +1105,14 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     int lastShownTransport = -1;
     bool lastShownSpindown = false;
     juce::String lastShownMachineState;
+
+    // The tick's own clock, read by EditorTimer.cpp to turn two refreshes into a
+    // frame delta. It belongs to the EDITOR, not to the look and feel beside it:
+    // the glide and the drift are what the tick ADVANCES, but the interval is
+    // measured where the tick runs. The split into files is what made the
+    // difference visible - as a member of the look and feel it was in scope for
+    // nothing that reads it.
+    std::chrono::steady_clock::time_point lastAnimationFrame{};
     // The hint bar's current text (empty when the pointer is over nothing), so
     // the per-frame poll only touches the label on an actual change.
     juce::String lastShownHoverHint;
