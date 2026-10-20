@@ -405,25 +405,30 @@ void FirstAudioProcessorEditor::setTabFamily (int newFamily)
     // The tab table's family column is the single source of truth: each page
     // states which family hosts it, and this strip reads the column rather
     // than a parallel count array that could drift from the table. The assert
-    // pins the intended layout - nine TAPE pages, then four FX, then three
-    // SETUP, in table order - so a page moved between families without the
-    // order following is a build error, not a button that lights wrong.
+    // pins the CABINET of pages - nine TAPE, six FX, three SETUP - so a page
+    // moved between families is a build error rather than a button that lights
+    // wrong, and the totals cannot drift from the family buttons' labels.
+    //
+    // Table ORDER is deliberately not asserted. The bar is a FILTER: it walks
+    // the table once and shows the pages whose family matches, so AUTOTUNE and
+    // COMP sitting at the end of the table - they were added after SETTINGS -
+    // still land at the end of FX. Demanding contiguous families here would
+    // force a reordering of the table and of the subtitle array beside it for a
+    // bar that was already right, which is the kind of "fix" that breaks the
+    // two things it was meant to protect.
     static_assert (tabSpecs.size() == static_cast<std::size_t> (numTabs),
                    "the tab family layout and tab table must have equal size");
     static_assert ([]
     {
         std::array<int, tabFamilyCount> familyCounts {};
-        int previousFamily = -1;
         for (const auto& tab : tabSpecs)
         {
-            if (tab.family < 0 || tab.family >= tabFamilyCount
-                || tab.family < previousFamily)
+            if (tab.family < 0 || tab.family >= tabFamilyCount)
                 return false;
             ++familyCounts[static_cast<std::size_t> (tab.family)];
-            previousFamily = tab.family;
         }
         return familyCounts[0] == 9 && familyCounts[1] == 6 && familyCounts[2] == 3;
-    }(), "tab families must contain 9 TAPE, 6 FX and 3 SETUP pages in order");
+    }(), "tab families must contain 9 TAPE, 6 FX and 3 SETUP pages");
 
     // A family change only filters the tab bar's visibility and jumps to the
     // family's first page: currentTab is set through setCurrentTab so the

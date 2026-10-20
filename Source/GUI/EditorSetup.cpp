@@ -25,6 +25,11 @@
 #include "GUI/PanelText.h"
 #include "GUI/PanelTranslations.h"
 
+// The renderer probe setUpOpenGlRendering() reads. It used to reach this file
+// through PluginEditor.cpp's include of it, which stopped being enough the day
+// this phase moved here: a translation unit includes what its own text names.
+#include "GUI/RenderBackend.h"
+
 // Only the names this file's own text uses: a header member that is not
 // reachable from here should not look reachable.
 using j37panel::controlSpecs;
