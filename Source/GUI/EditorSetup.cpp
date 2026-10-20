@@ -798,9 +798,9 @@ void FirstAudioProcessorEditor::setUpTopSwitches() {
         audioProcessor.parameters, "delta", deltaButton);
     addAndMakeVisible(deltaButton);
 
-    themeButton.setButtonText(themeChoice == j37panel::ThemeChoice::darkMetal ? "DARK METAL"
-                              : themeChoice == j37panel::ThemeChoice::metal     ? "METAL"
-                              : themeChoice == j37panel::ThemeChoice::charcoal  ? "CHARCOAL"
+    themeButton.setButtonText(themeChoice == j37panel::ThemeChoice::darkMetal  ? "DARK METAL"
+                              : themeChoice == j37panel::ThemeChoice::metal    ? "METAL"
+                              : themeChoice == j37panel::ThemeChoice::charcoal ? "CHARCOAL"
                                                                                : "IVORY");
     setTip(themeButton, "Cycle the front panel: IVORY, CHARCOAL, METAL, then DARK METAL. "
                         "The button names the panel you are on; pressing it moves "
@@ -1742,16 +1742,14 @@ void FirstAudioProcessorEditor::setUpOpenGlRendering() {
     if (!j37::render::usesOpenGL())
         return;
 
-    // OpenGL is automatic and best-effort. If a context cannot be created,
-    // JUCE's ordinary component paint path remains enabled.
+    // OpenGL is automatic and best-effort. JUCE's ordinary component paint
+    // path remains enabled when context creation fails.
+    tapeScene.setSceneEnabled(true);
     openGLContext.setComponentPaintingEnabled(true);
     openGLContext.setContinuousRepainting(false);
     openGLContext.setSwapInterval(1);
     openGLContext.attachTo(*this);
     openGLAttachAttemptsLeft = openGLContext.isAttached() ? 0 : 90;
-
-    // TapeScene owns its own context, independent from the editor's painter.
-    tapeScene.setSceneEnabled(true);
 }
 
 void FirstAudioProcessorEditor::finishConstruction() {

@@ -214,15 +214,16 @@ inline const UiPalette &paletteForTheme(j37panel::ThemeChoice theme) {
     }
 }
 
-// The bool overload remains the funnel for legacy draw helpers; it consults
-// the full live choice so all four themes resolve to their own palette.
+// The bool overload remains the funnel for legacy draw helpers. The live theme
+// enum selects the exact palette; this flag is retained for source compatibility.
 //
 // No `const` on this one: it is a free function, not a member, and a cv-
 // qualifier on a non-member function is a hard error ("cannot have
 // cv-qualifier") rather than something to be ignored.
 inline const UiPalette &paletteFor(bool darkTheme) noexcept {
+    const auto theme = liveThemeChoice;
     juce::ignoreUnused(darkTheme);
-    return paletteForTheme(liveThemeChoice);
+    return paletteForTheme(theme);
 }
 
 // -----------------------------------------------------------------------

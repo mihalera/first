@@ -514,15 +514,13 @@ void TapeScene::setPalette(juce::Colour background,
 
 void TapeScene::setSceneEnabled(bool shouldBeEnabled) {
     sceneEnabled = shouldBeEnabled && j37::render::usesOpenGL();
-    attachAttemptsLeft = sceneEnabled ? 90 : 0;
-
-    if (!sceneEnabled) {
+    if (sceneEnabled) {
+        attachAttemptsLeft = openGLContext.isAttached() ? 0 : 90;
+        serviceContextAttachment();
+    } else {
         attachAttemptsLeft = 0;
         openGLContext.detach();
-        return;
     }
-
-    serviceContextAttachment();
 }
 
 void TapeScene::serviceContextAttachment() {
@@ -532,7 +530,6 @@ void TapeScene::serviceContextAttachment() {
 
     --attachAttemptsLeft;
     openGLContext.attachTo(*this);
-
     if (openGLContext.isAttached())
         attachAttemptsLeft = 0;
 }
