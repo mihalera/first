@@ -38,8 +38,8 @@ than MIT in places. What you have to know before shipping a binary:
   **not linked** - it was the one library on the link line with no caller, and
   WP1 of `docs/library-integration-plan.md` removed it. `chowdsp_math` and
   `chowdsp_simd`, which the plugin does link, are BSD.
-- **`Eigen`** (vendored, used when `J37_NAMCORE` is on) is **MPL-2.0** -
-  file-level copyleft, not the permissive terms above. Its own files stay under
+- **`Eigen`** (vendored, linked by default through `J37_NAMCORE`; `-DJ37_NAMCORE=OFF`
+  drops it) is **MPL-2.0** - file-level copyleft, not the permissive terms above. Its own files stay under
   MPL-2.0 and this repository does not modify them; linking it does not place
   the rest of the binary under MPL. The complete corresponding source is the
   vendored tree at `ThirdParty/eigen/`. **NeuralAmpModelerCore** (also

@@ -646,9 +646,12 @@ j37_apply_vendor_libraries(first)
 #  already had the seam: Source/DSP/NamBackend.h is compiled only when the macro
 #  is 1, and the plugin's own code does not branch on it at all.
 #
-#  OFF by default - see the block in J37Dependencies for the size and
-#  compile-time reasoning. A build with it off is the LSTM-only stage that
-#  shipped before this option existed.
+#  ON by default, because the gate it arrived with - "measured before it is the
+#  default" - has been measured: tests/neural/run_bench.sh prints 14.5 % of one
+#  48 kHz core per mono channel for a 16-channel WaveNet and 2.8 % for an LSTM
+#  on NAM Core, paid only while a model is loaded. `-DJ37_NAMCORE=OFF` is still
+#  the LSTM-only stage that shipped before this option existed, with its
+#  refusal of WaveNet; see the block in J37Dependencies for the numbers.
 # ------------------------------------------------------------------------------
 if(J37_NAMCORE)
     target_link_libraries(first PRIVATE namcore)
@@ -806,7 +809,7 @@ message(STATUS "                nlohmann_json (header only)")
 if(J37_NAMCORE)
     message(STATUS "                NeuralAmpModelerCore + Eigen (second .nam backend: WaveNet/ConvNet)")
 else()
-    message(STATUS "                NeuralAmpModelerCore OFF (LSTM-only .nam support; -DJ37_NAMCORE=ON adds it)")
+    message(STATUS "                NeuralAmpModelerCore OFF (-DJ37_NAMCORE=OFF: LSTM-only .nam support)")
 endif()
 message(STATUS "                q_dsp, sokol_gfx, glm (header only)")
 message(STATUS "                Optional graphics: BGFX, wgpu-native or Dawn (selected by J37_RENDER_BACKEND)")

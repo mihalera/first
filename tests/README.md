@@ -33,6 +33,9 @@ tests/unit/run.sh         # the equaliser, the compressor and the transient shap
 tests/dsp/check_headers_juce.sh     # every Source/DSP/*.h against real JUCE
 tests/editor/check_editor_juce.sh   # every translation unit and Source/GUI/*.h against real JUCE
 
+tests/dsp/run_bench.sh    # measurement: the DSP hot paths, with and without the xsimd tanh
+tests/neural/run_bench.sh # measurement: .nam inference cost on NAM Core and RTNeural
+
 python3 tests/presets/check_presets.py           # the factory preset table
 python3 tests/theme/check_theme_wiring.py        # theme re-inking coverage
 python3 tests/translations/check_translations.py # the shipped translation tables
@@ -50,13 +53,23 @@ Two environment switches, both used by the workflows:
 | `CXX` | the compiler to use; `g++` by default |
 
 The micro-benchmarks are separate and **informational**: `tests/dsp/run_bench.sh`
-(nanobench, needs `-DJ37_BUILD_TESTS=ON` to have fetched it) and the hot-path
-probe step in `.github/workflows/build.yml`. Nothing fails a build because a
-benchmark got slower. It builds `tests/dsp/bench.cpp` TWICE - once as the engine
+(nanobench, needs `-DJ37_BUILD_TESTS=ON` to have fetched it), `tests/neural/run_bench.sh`
+(the .nam inference engines - see its row below), and the hot-path probe step in
+`.github/workflows/build.yml`. Nothing fails a build because a benchmark got slower. It builds `tests/dsp/bench.cpp` TWICE - once as the engine
 ships, once with `-DJ37_USE_SIMD_TANH=1` - so the rows the two logs share
 (`SaturationCore::process` above all) are the measurement of what that switch
 buys, on the same signal through the same file, rather than two benchmarks
 being compared from memory.
+
+`tests/neural/run_bench.sh` is the other measurement, and it is informational in
+the same way. It compiles NAM Core from its own sources, generates the models the
+`.nam` format actually ships from `tests/neural/nam_shapes.h` (a 16-channel,
+ten-dilation WaveNet and a 20-cell LSTM, not the tiny fixtures), and prints
+nanoseconds per sample and the share of one 48 kHz core for each engine - through
+the shipping stage and through the backend alone, with the fixtures beside them
+for scale. It fails only when a model does not load or renders a non-finite
+sample; those numbers are why `J37_NAMCORE` is ON - see WP3 in
+[docs/library-integration-plan.md](../docs/library-integration-plan.md).
 
 The unit suite needs a framework rather than a measurement, from the same
 `-DJ37_BUILD_TESTS=ON` configure: `tests/unit/run.sh` compiles Catch2's own
@@ -83,7 +96,7 @@ shipping header* tests the code the plugin compiles.
 | `gain` | `AutoGainCompensator` - the programme-level correction, its pole and its ceiling | `#include`s the shipping header from `Source/DSP/`, with no shim at all: the stage names nothing of JUCE, which is what lets this compile with `-I Source` and nothing else |
 | `limiter` | `SafetyLimiter` - the peak detector, the required gain, the catch/release pair and the ceiling | `#include`s the shipping header AND `Source/DSP/BlockRateCoefficients.h`, against the DSP harness's `shim.h`: the four coefficients come from the file the engine gets them from, so the harness measures the poles the plugin actually runs |
 | `mix_crossfader` | `MixCrossfader` - the equal-power gain pair, the two gated legs and the clamp | `#include`s the shipping header from `Source/DSP/` and renders signal through the legs to measure the level across the travel: no extractor, no replica and no shim, because the stage names nothing of JUCE |
-| `neural` | `RateBridge`, `NeuralStage` with `J37_HAS_RTNEURAL=1`, and the `.nam` fixtures in `tests/neural/fixtures/` through both engines | `#include`s the shipping headers. Five binaries: `rate_test.cpp` drives the bridge alone; `stage_test.cpp` stands RTNeural's two-method API in for (so the guarded half compiles with no library at all); `fixture_test.cpp` uses the REAL vendored `ThirdParty/RTNeural` AND `ThirdParty/namcore` off the probes in `OptionalLibraries.h` - which is why nothing there defines `J37_HAS_RTNEURAL` by hand - so a model FILE is loaded, driven through both engines and compared; the same file again WITHOUT `J37_NAMCORE`, which is the default build and keeps the WaveNet-refusal branch compiled; and `nam_only_test.cpp`, NAM Core with `J37_HAS_RTNEURAL=0`, where the dispatch has to send the LSTM to NAM too. The NAM Core sources are compiled from their own tree and put on the link line as objects, not an archive: their architectures register themselves in file-scope statics that an archive would prune |
+| `neural` | `RateBridge`, `NeuralStage` with `J37_HAS_RTNEURAL=1`, and the `.nam` fixtures in `tests/neural/fixtures/` through both engines | `#include`s the shipping headers. Five binaries: `rate_test.cpp` drives the bridge alone; `stage_test.cpp` stands RTNeural's two-method API in for (so the guarded half compiles with no library at all); `fixture_test.cpp` uses the REAL vendored `ThirdParty/RTNeural` AND `ThirdParty/namcore` off the probes in `OptionalLibraries.h` - which is why nothing there defines `J37_HAS_RTNEURAL` by hand - so a model FILE is loaded, driven through both engines and compared; the same file again WITHOUT `J37_NAMCORE`, which is the `-DJ37_NAMCORE=OFF` build and keeps the WaveNet-refusal branch compiled; and `nam_only_test.cpp`, NAM Core with `J37_HAS_RTNEURAL=0`, where the dispatch has to send the LSTM to NAM too. The NAM Core sources are compiled from their own tree and put on the link line as objects, not an archive: their architectures register themselves in file-scope statics that an archive would prune |
 | `spectrum` | `SpectrumAnalyser` | `#include`s the shipping header from `Source/DSP/`, compiled TWICE: with `ThirdParty/pocketfft` on the include path, and without it |
 | `reverb` | `DattorroRoom`, linked against the vendored `ThirdParty/dattorro-verb/verb.c` | `#include`s the shipping header against the DSP harness's `shim.h`, and compiles the library's own C source beside it: `verb.c` as C, the header as C++, which is also the only place the stage's `extern "C"` wrapping is measured |
 | `unit` | `ThreeBandEq`, `StandardCompressor` and `TransientShaper` - one stage per file | `#include`s the shipping headers from `Source/DSP/` against the same shim the DSP harness uses, and links Catch2's amalgamated sources: no replica of the engine, because none of the three needs one |

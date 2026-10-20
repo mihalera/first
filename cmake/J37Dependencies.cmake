@@ -116,7 +116,7 @@ endfunction()
 #    ThirdParty/glm/                 g-truc/glm @ 1.0.3 (repo root)
 #    ThirdParty/RTNeural/            jatinchowdhury18/RTNeural @ 95c3c0f9 (STL backend)
 #    ThirdParty/namcore/             sdatkinson/NeuralAmpModelerCore @ 0b3d3c97 (v0.6.0,
-#                                    NAM/ only, compiled below - opt-in)
+#                                    NAM/ only, compiled below - on by default)
 #    ThirdParty/eigen/               libeigen/eigen @ bc3b3987 (3.5.0, the commit
 #                                    NAM Core's own submodule pins)
 #    ThirdParty/dattorro-verb/       el-visio/dattorro-verb @ 41e976a0 (verb.c,
@@ -387,11 +387,25 @@ endif ()
 #  the converter does not cover - see Source/DSP/NamBackend.h and WP3 in
 #  docs/library-integration-plan.md.
 #
-#  OPT-IN, and the default is OFF on purpose. It is a second inference engine in
-#  the binary - a convolutional stack of its own - and several minutes of
-#  compile time, so it has to earn the default with a measurement rather than
-#  arrive as one. `-DJ37_NAMCORE=ON` builds it; a build without it keeps the
-#  LSTM-only stage it has always had, refusal and "NEEDS LSTM" message included.
+#  ON by default, and that default was EARNED rather than assumed. It arrived
+#  OFF, with the reason written down: a second inference engine in the binary -
+#  a convolutional stack of its own - and several minutes of compile time, so
+#  "measured before it is the default" was the gate. The measurement now exists
+#  and is printed by tests/neural/run_bench.sh on the models the format actually
+#  ships (a 16-channel, ten-dilation WaveNet and a 20-cell LSTM, not the tiny
+#  fixtures):
+#
+#    WaveNet 16ch / 10 dilations   3018 ns/sample   14.5 % of one 48 kHz core
+#    LSTM 20 cells (RTNeural)      1955 ns/sample    9.4 %
+#    LSTM 20 cells (NAM Core)       589 ns/sample    2.8 %
+#
+#  per MONO CHANNEL, and only while a model of that shape is loaded - the stage
+#  is a bit-exact pass-through with nothing loaded, so the cost is one the user
+#  asks for. The model runs at its own rate through RateBridge, so 8x
+#  oversampling does not multiply these. What a build pays for unconditionally
+#  is the object code and the compile time, and -DJ37_NAMCORE=OFF is the answer
+#  for a build that would rather not: it keeps the LSTM-only stage it had, its
+#  refusal of WaveNet included.
 #
 #  A COMPILED library, not a header-only one, so it cannot be registered by an
 #  include directory alone the way the blocks above are. The pattern is the one
@@ -418,7 +432,7 @@ endif ()
 # ==============================================================================
 option(J37_NAMCORE
     "Build NeuralAmpModelerCore + Eigen as the backend for WaveNet/ConvNet .nam models (adds an inference engine to the binary)"
-    OFF)
+    ON)
 
 if(J37_NAMCORE)
     if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/namcore/NAM/get_dsp.h")

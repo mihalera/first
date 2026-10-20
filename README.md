@@ -249,11 +249,14 @@ engine's, which is what every earlier build did.
   RTNeural's layer JSON and run there; that path predates NAM Core and is kept because
   `tests/neural` compares it with the reference implementation on every run - they agree
   to 5.96e-8. Everything else - **WaveNet**, ConvNet, Linear, Sequential - is run by
-  **NeuralAmpModelerCore**, the format's own reference implementation, behind the
-  `J37_NAMCORE` build option. That option is **off by default**: it is a second inference
-  engine in the binary, so it has to earn the default with a process-cost measurement
-  rather than arrive as one. A build without it keeps the LSTM converter and refuses the
-  other architectures by name; `tests/neural` builds both shapes, so neither can rot.
+  **NeuralAmpModelerCore**, the format's own reference implementation, which is linked
+  by default (`J37_NAMCORE`, ON). What that costs was measured rather than assumed:
+  `tests/neural/run_bench.sh` renders a 16-channel, ten-dilation WaveNet at **14.5 %** of
+  one 48 kHz core per mono channel and a 20-cell LSTM at **9.4 %** through RTNeural or
+  **2.8 %** through NAM Core - only while such a model is loaded, and at the model's own
+  rate, so oversampling does not multiply it. `-DJ37_NAMCORE=OFF` builds the LSTM-only
+  stage instead, which keeps the converter and refuses the other architectures by name;
+  `tests/neural` builds both shapes, so neither can rot.
 
 ## Tape condition: flux, wear, mechanics
 
@@ -1533,7 +1536,7 @@ this repository carries its licence text. A shipped binary carries none of them.
 | `dr_libs` (`dr_wav.h`) | `wav-0.14.5`, vendored in `ThirdParty/dr_libs/` | **Used.** The WAV decoder behind the vinyl stage's user noise print. `Source/DSP/NoiseDecoder.h` is the decode (and the refusals, with their reasons); `Source/DSP/NoiseLoader.h` reads the file on its own thread and hands the loop to the audio thread as one atomic pointer swap; `Source/DSP/NoiseDecoder.cpp` is the single translation unit that defines `DR_WAV_IMPLEMENTATION`. A loaded print **replaces** the synthesised surface hiss and leaves the damage model (CRACKLE, DUST, CLICKS, SCRATCH, WARP, ELECTRICAL) alone, and `tests/dsp` builds the decoder both with the library and without it |
 | `dattorro-verb` | commit `41e976a0`, vendored in `ThirdParty/dattorro-verb/` | **Used.** Jon Dattorro's 1997 plate reverb, 400 lines of C. `Source/DSP/DattorroRoom.h` is the stage: it runs the tank at the 48 kHz its delay lengths were chosen at and carries the session's signal to and from that rate, so the tail is the same length in seconds at any session rate - which is what `tests/reverb` measures. `verb.c` is compiled as C (`CMakeLists.txt` declares the language for it) and the header is included inside `extern "C"` |
 | `RTNeural` | commit `95c3c0f9` | **Used.** The real-time neural inference engine behind the DYN tab's optional model stage. `NeuralStage` runs a 1-in/1-out model per channel. Configured with `RTNEURAL_STL ON` and no `-mavx2`, so the binary still runs on machines without AVX. It also runs the **LSTM** half of `.nam` support, through a converter that re-shapes the file's flat weight vector into RTNeural's layer JSON |
-| `NeuralAmpModelerCore` | `v0.6.0` (`0b3d3c97`), vendored in `ThirdParty/namcore/` | **Used, behind `J37_NAMCORE` (OFF by default).** The reference implementation of the `.nam` format: `Source/DSP/NamBackend.h` wraps its loader and per-sample loop, and `NeuralStage` sends every architecture RTNeural cannot convert - **WaveNet**, ConvNet, Linear, Sequential - to it (and LSTM too in a build with NAM but no RTNeural). `tests/neural/fixture_test.cpp` compares both engines with the reference player's own output on the fixtures in `tests/neural/fixtures/`. Off by default until its process cost is measured - see WP3 in [docs/library-integration-plan.md](docs/library-integration-plan.md) |
+| `NeuralAmpModelerCore` | `v0.6.0` (`0b3d3c97`), vendored in `ThirdParty/namcore/` | **Used, linked by default behind `J37_NAMCORE` (ON).** The reference implementation of the `.nam` format: `Source/DSP/NamBackend.h` wraps its loader and per-sample loop, and `NeuralStage` sends every architecture RTNeural cannot convert - **WaveNet**, ConvNet, Linear, Sequential - to it (and LSTM too in a build with NAM but no RTNeural). `tests/neural/fixture_test.cpp` compares both engines with the reference player's own output on the fixtures in `tests/neural/fixtures/`, and `tests/neural/run_bench.sh` prints what it costs (14.5 % of one 48 kHz core per mono channel for a 16-channel WaveNet) - the number its default waited for. `-DJ37_NAMCORE=OFF` drops it. See WP3 in [docs/library-integration-plan.md](docs/library-integration-plan.md) |
 | `Eigen` | `3.5.0` (`bc3b3987`), vendored in `ThirdParty/eigen/` | **Used with NAM Core, MPL-2.0.** The linear algebra underneath every NAM layer. Header-only; the vendored commit is the one NAM Core's own submodule pins, because that is the combination upstream builds. Its own files stay under MPL while the linked binary as a whole does not - see `THIRD_PARTY_NOTICES.md` |
 | `nlohmann/json` | `v3.12.0` | **Used.** The JSON DOM `RTNeural::json_parser::parseJson` parses a model file into, and the one NAM Core's loader takes. One copy for the whole build: RTNeural bundles 3.11.1 and includes it by relative path, so `Source/DSP/OptionalLibraries.h` includes the vendored header first - two copies would be two C++ types with two mangled names, and NAM Core's objects take `const nlohmann::json&` |
 | `chowdsp_utils` | `v2.4.0` | Chowdhury DSP's toolbox. **Used:** the polynomial `exp`/`log`/dB approximations on the metering and auto-gain hot paths come from the BSD `chowdsp_math` module, which includes the BSD `chowdsp_simd` module and is why that one is linked as well. `chowdsp_dsp_utils` **is GPLv3** and sat on the link line with no caller; it is off it now, so no shipped binary carries it - `docs/library-integration-plan.md` WP1 has the evidence and the check that keeps it off |
@@ -1718,7 +1721,8 @@ the build files, with the terms in [LICENSE](LICENSE).
 
 A **built binary is not**, and the difference is worth reading before you publish
 one. The plugin links JUCE and a set of third-party libraries. Only two of the things
-it links - JUCE, and Eigen when `J37_NAMCORE` is on - carry terms stricter than MIT;
+it links - JUCE, and Eigen through `J37_NAMCORE`, which is on by default - carry terms
+stricter than MIT;
 the rest of this table is what the build fetches and deliberately keeps OFF the link
 line:
 
@@ -1728,7 +1732,7 @@ line:
 | **`chowdsp_dsp_utils`** | **GPLv3** (the modules the code calls, `chowdsp_math` and `chowdsp_simd`, are BSD) | **not linked**: no file under `Source/` included it, so it came off the link line and a binary carries none of it - the obligation goes with it, and putting the module back restores it |
 | **SoundTouch 2.4.1**, **libsndfile** | LGPL-2.1 | **not present**: SoundTouch was linked by nothing and its target, fetch and vendored tree were removed under WP4 of [library-integration-plan.md](docs/library-integration-plan.md); libsndfile is still fetched and still **not linked**. A linked-but-uncalled library is a licence obligation with no upside, and `tests/linkline/check_linkline.py` is what keeps the link line honest |
 | **`rack_dsp`** (VCVRack/Rack) | GPL-3.0-or-later, with a plugin exception for plugins distributed free of charge | **not linked** for the same reason: fetched, and named by no file of the plugin's own code |
-| **Eigen**, with **`NeuralAmpModelerCore`** | **MPL-2.0** (file-level copyleft), and MIT for NAM Core | **linked when `J37_NAMCORE=ON`**, which is OFF by default. Eigen stays under MPL-2.0 in its own files and this repository does not modify them; linking it does not place the binary as a whole under MPL. The complete corresponding source is vendored at `ThirdParty/eigen/`, which is what MPL-2.0 asks a distributor to make available. NAM Core is MIT: its notice is the only obligation |
+| **Eigen**, with **`NeuralAmpModelerCore`** | **MPL-2.0** (file-level copyleft), and MIT for NAM Core | **linked by default** (`J37_NAMCORE`, ON; `-DJ37_NAMCORE=OFF` removes both). Eigen stays under MPL-2.0 in its own files and this repository does not modify them; linking it does not place the binary as a whole under MPL. The complete corresponding source is vendored at `ThirdParty/eigen/`, which is what MPL-2.0 asks a distributor to make available. NAM Core is MIT: its notice is the only obligation |
 | everything else | MIT / BSD / zlib / public domain | the notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) are the obligation |
 
 **Binary distribution is currently blocked pending a licensing decision.** Before

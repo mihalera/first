@@ -59,6 +59,7 @@
 #include "shim.h"          // tests/dsp/shim.h - the juce stand-ins the DSP headers use
 #include "NeuralStage.h"   // the SHIPPING stage, with the real vendored RTNeural
 #include "NamBackend.h"    // and, when the build has it, NAM Core behind the same stage
+#include "nam_shapes.h"    // the two weight-layout rules, shared with bench_nam.cpp
 
 #include <cmath>
 #include <cstdio>
@@ -110,71 +111,12 @@ constexpr float wavenetOracle[windowLength] = {
 };
 
 //==============================================================================
-//  The weights array each architecture's layout implies, computed from the config
-//  the way the reference player slices it. Getting this wrong is the classic way
-//  a hand-authored fixture fails quietly, so both functions are written from the
-//  loader's own order rather than from a remembered count:
-//
-//  * LSTM  - one block per layer: the kernel (4H rows of I+H taps, PyTorch's
-//            i/f/c/o gate order), the bias (4H), the hidden and cell seeds (H
-//            each); then, on the last block, the output head (H taps) and its
-//            bias (1).
-//  * WaveNet - the rechannel (input_size -> channels, no bias), then per layer the
-//            dilated conv (channels -> channels, bias), the input mixin
-//            (condition_size -> channels, no bias) and the layer1x1
-//            (channels -> channels, bias), then the head rechannel
-//            (channels -> head_size, bias per head_bias), then the trailing
-//            head_scale - which the reference player READS FROM THE WEIGHTS, so
-//            the file's last number must equal the config's, and this function
-//            counts it.
+//  The weights array each architecture's layout implies is computed by
+//  nam_shapes.h, which states the layout (and why) once and is also what
+//  bench_nam.cpp generates its realistic-size models with. The check below is
+//  unchanged: a fixture whose flat array is not exactly as long as its own
+//  config implies is the classic silent fixture bug.
 //==============================================================================
-long long lstmWeightCount (const nlohmann::json& config)
-{
-    const auto input = config.at ("input_size").get<long long>();
-    const auto hidden = config.at ("hidden_size").get<long long>();
-    const auto layers = config.at ("num_layers").get<long long>();
-
-    long long total = hidden + 1;   // the output head and its bias, read last
-
-    for (long long layer = 0; layer < layers; ++layer)
-    {
-        const auto layerInput = layer == 0 ? input : hidden;
-        total += 4 * hidden * (layerInput + hidden)   // kernel, gate rows
-               + 4 * hidden                           // bias
-               + 2 * hidden;                          // hidden and cell seeds
-    }
-
-    return total;
-}
-
-long long wavenetWeightCount (const nlohmann::json& config)
-{
-    long long total = 0;
-
-    for (const auto& array : config.at ("layers"))
-    {
-        const auto channels = array.at ("channels").get<long long>();
-        const auto condition = array.at ("condition_size").get<long long>();
-        const auto inputSize = array.at ("input_size").get<long long>();
-        const auto headSize = array.at ("head_size").get<long long>();
-        const auto kernel = array.at ("kernel_size").get<long long>();
-        const auto gated = array.value ("gated", false);
-        const auto headBias = array.value ("head_bias", false);
-        const auto headKernel = array.value ("head_kernel_size", 1);
-        const auto bottleneck = array.value ("bottleneck", channels);
-        const auto convOut = gated ? 2 * bottleneck : bottleneck;
-
-        total += inputSize * channels;                                  // rechannel, no bias
-        total += static_cast<long long> (array.at ("dilations").size())
-                 * (convOut * channels * kernel + convOut              // dilated conv and bias
-                    + convOut * condition                              // input mixin, no bias
-                    + channels * bottleneck + channels);               // layer1x1 and bias
-        total += headKernel * headSize * channels                      // head rechannel
-                 + (headBias ? headSize : 0);
-    }
-
-    return total + 1;   // head_scale, the last value in the stream
-}
 
 //==============================================================================
 //  A reference evaluator for the WaveNet fixture's own shape.
