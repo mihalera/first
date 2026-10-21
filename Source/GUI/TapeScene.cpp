@@ -188,16 +188,16 @@ using SceneGeometry = j37::render::SceneMesh;
 void addVertex(SceneGeometry& geometry,
                const glm::vec3& position,
                const glm::vec3& normal,
-               float payload) {
+               float payload = 0.0f) {
     geometry.vertices.push_back({{position.x, position.y, position.z, payload},
                                  {normal.x, normal.y, normal.z}});
 }
 
-juce::uint32 addVertexReturningIndex(SceneGeometry& geometry,
-                                     const glm::vec3& position,
-                                     const glm::vec3& normal,
-                                     float payload = 0.0f) {
-    const auto index = static_cast<juce::uint32>(geometry.vertices.size());
+std::uint32_t addVertexReturningIndex(SceneGeometry& geometry,
+                                      const glm::vec3& position,
+                                      const glm::vec3& normal,
+                                      float payload = 0.0f) {
+    const auto index = static_cast<std::uint32_t>(geometry.vertices.size());
     addVertex(geometry, position, normal, payload);
     return index;
 }
