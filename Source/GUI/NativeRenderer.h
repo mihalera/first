@@ -13,15 +13,15 @@ namespace j37::render {
     JUCE/OpenGL means each API can record commands without leaking SDK types
     into the editor or the audio thread.
 
-    PRESENTATION. A plugin host owns the top-level window, so an adapter never
-    presents to the host's own surface. The platform adapters can attach native
-    child surfaces, but currently only clear and present them; TapeScene keeps
-    them disabled as effective backends until they also draw its scene geometry.
+    PRESENTATION. A plugin host owns the top-level window. Adapters must use a
+    surface scoped to the editor's scene bounds and must never paint over the
+    host-owned peer. A presentable surface alone is not a complete renderer: the
+    backend must draw the full scene before RenderBackend.h advertises it.
 
-    THREADING. Every method runs on the message thread. The adapters therefore
-    create and destroy their native objects here rather than on a render
-    thread, which is also why the interfaces carry no synchronisation of their
-    own.
+    THREADING. The current adapter methods are called from the message thread.
+    Implementations must bound waits and must not retain pointers into editor
+    components beyond shutdown. A later render-thread implementation must update
+    this contract explicitly rather than silently changing callback ownership.
 */
 class NativeRenderer {
   public:

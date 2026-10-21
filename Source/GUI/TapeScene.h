@@ -7,6 +7,7 @@
 #pragma once
 
 #include <JuceHeader.h>
+#include "SceneFrame.h"
 
 // The GL typedefs (GLuint, GLint, GLsizei) and the GL commands this component
 // calls live in the module's own header, which the generated JuceHeader also
@@ -175,6 +176,7 @@ private:
     static Geometry buildTapePack();
     static Geometry buildRibbon();
     static Geometry buildHead();
+    j37::render::SceneFrame buildSceneFrame (int width, int height, double elapsedSeconds) const;
 
     /** The control bank in FRONT of the deck, the one piece of geometry that is not
         part of the machine: a strip of three machined knobs and two raised keys on

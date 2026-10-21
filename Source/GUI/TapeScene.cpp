@@ -1,4 +1,4 @@
-/*
+﻿/*
   ==============================================================================
     TapeScene - the deck's transport, rendered as geometry and lit on the GPU.
   ==============================================================================
@@ -7,6 +7,7 @@
 #include "TapeScene.h"
 #include "RenderBackend.h"
 #include "TapeSceneShaders.h"
+#include "SceneFrame.h"
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -14,6 +15,7 @@
 
 #include <algorithm>
 #include <array>
+#include <cstddef>
 #include <cmath>
 #include <cstdint>
 #include <limits>
@@ -156,8 +158,16 @@ constexpr float lightZ = 0.53f;
 //  fourth being the payload the vertex shader branches on - and three of
 //  normal. Twenty-eight bytes, which is what drawMesh() strides with.
 //==========================================================================
-constexpr GLsizei vertexStride = static_cast<GLsizei>(7 * sizeof(float));
-constexpr GLsizei normalOffset = static_cast<GLsizei>(4 * sizeof(float));
+constexpr GLsizei vertexStride = static_cast<GLsizei>(sizeof(j37::render::SceneVertex));
+constexpr GLsizei normalOffset = static_cast<GLsizei>(offsetof(j37::render::SceneVertex, normal));
+constexpr std::uint32_t reelMeshIndex = 0;
+constexpr std::uint32_t tapePackMeshIndex = 1;
+constexpr std::uint32_t ribbonMeshIndex = 2;
+constexpr std::uint32_t headMeshIndex = 3;
+constexpr std::uint32_t bankBodyMeshIndex = 4;
+constexpr std::uint32_t bankKnobMeshIndex = 5;
+constexpr std::uint32_t bankKeyMeshIndex = 6;
+constexpr std::uint32_t bankGlowMeshIndex = 7;
 
 enum MeshMode {
     solidMode = 0,
@@ -173,37 +183,39 @@ enum MeshMode {
 // < 5.5, else), so the bank's own modes sit above the transport's three and
 // below the caption plate, which is the last branch of them all.
 
-void addVertex(std::vector<float> &vertices,
-               const glm::vec3 &position,
-               const glm::vec3 &normal,
+using SceneGeometry = j37::render::SceneMesh;
+
+void addVertex(SceneGeometry& geometry,
+               const glm::vec3& position,
+               const glm::vec3& normal,
                float payload) {
-    vertices.insert(vertices.end(),
-                    {position.x, position.y, position.z, payload, normal.x, normal.y, normal.z});
+    geometry.vertices.push_back({{position.x, position.y, position.z, payload},
+                                 {normal.x, normal.y, normal.z}});
 }
 
-juce::uint32 addVertexReturningIndex(std::vector<float> &vertices,
-                                     const glm::vec3 &position,
-                                     const glm::vec3 &normal,
+juce::uint32 addVertexReturningIndex(SceneGeometry& geometry,
+                                     const glm::vec3& position,
+                                     const glm::vec3& normal,
                                      float payload = 0.0f) {
-    const auto index = static_cast<juce::uint32>(vertices.size() / 7);
-    addVertex(vertices, position, normal, payload);
+    const auto index = static_cast<juce::uint32>(geometry.vertices.size());
+    addVertex(geometry, position, normal, payload);
     return index;
 }
 
-void addTriangle(std::vector<juce::uint32> &indices,
-                 juce::uint32 a,
-                 juce::uint32 b,
-                 juce::uint32 c) {
+void addTriangle(std::vector<std::uint32_t>& indices,
+                 std::uint32_t a,
+                 std::uint32_t b,
+                 std::uint32_t c) {
     indices.push_back(a);
     indices.push_back(b);
     indices.push_back(c);
 }
 
-void addQuad(std::vector<juce::uint32> &indices,
-             juce::uint32 a,
-             juce::uint32 b,
-             juce::uint32 c,
-             juce::uint32 d) {
+void addQuad(std::vector<std::uint32_t>& indices,
+             std::uint32_t a,
+             std::uint32_t b,
+             std::uint32_t c,
+             std::uint32_t d) {
     addTriangle(indices, a, b, c);
     addTriangle(indices, a, c, d);
 }
@@ -219,13 +231,14 @@ void addQuad(std::vector<juce::uint32> &indices,
     translation afterwards. It was implicit for the reel (which is modelled
     at z = 0 anyway) and is explicit here because the knurl below needs a
     band at a depth of its own. */
-void addDisc(std::vector<float> &vertices,
-             std::vector<juce::uint32> &indices,
-             const glm::vec3 &centre,
+void addDisc(SceneGeometry& geometry,
+             const glm::vec3& centre,
              float radius,
              float halfHeight,
              int segments,
              float payload = 0.0f) {
+    auto& vertices = geometry.vertices;
+    auto& indices = geometry.indices;
     const auto top = centre.z + halfHeight;
     const auto bottom = centre.z - halfHeight;
 
@@ -281,11 +294,12 @@ void addDisc(std::vector<float> &vertices,
 /** A box as six quads, optionally spun about z. The only place in the scene
     where a corner is a corner rather than a point on a circle: the head, and
     the spokes that make a reel's rotation readable at twenty pixels across. */
-void addBox(std::vector<float> &vertices,
-            std::vector<juce::uint32> &indices,
-            const glm::vec3 &centre,
-            const glm::vec3 &half,
+void addBox(SceneGeometry& geometry,
+            const glm::vec3& centre,
+            const glm::vec3& half,
             float rotationAboutZ = 0.0f) {
+    auto& vertices = geometry.vertices;
+    auto& indices = geometry.indices;
     const auto cosR = std::cos(rotationAboutZ);
     const auto sinR = std::sin(rotationAboutZ);
 
@@ -334,8 +348,8 @@ void addBox(std::vector<float> &vertices,
     from inside the boss to just short of the flange's rim, and sitting clear
     above the pack so the one part a user counts turns on is never buried in
     tape. */
-void addSpoke(std::vector<float> &vertices, std::vector<juce::uint32> &indices, float angle) {
-    addBox(vertices, indices, {0.58f * std::cos(angle), 0.58f * std::sin(angle), 0.145f},
+void addSpoke(SceneGeometry& geometry, float angle) {
+    addBox(geometry, {0.58f * std::cos(angle), 0.58f * std::sin(angle), 0.145f},
            {0.40f, 0.055f, 0.022f}, angle);
 }
 
@@ -352,12 +366,13 @@ void addSpoke(std::vector<float> &vertices, std::vector<juce::uint32> &indices, 
     The prisms span the knob's barrel only - the face above and the back below
     are the flat discs from addDisc - so the knurl is a band round the side
     rather than a replacement for the whole cylinder. */
-void addKnurl(std::vector<float> &vertices,
-              std::vector<juce::uint32> &indices,
+void addKnurl(SceneGeometry& geometry,
               float radius,
               float bottomZ,
               float topZ,
               int segments) {
+    auto& vertices = geometry.vertices;
+    auto& indices = geometry.indices;
     const auto step = juce::MathConstants<float>::twoPi / static_cast<float>(segments);
 
     for (int i = 0; i < segments; ++i) {
@@ -773,8 +788,6 @@ float TapeScene::getControlValue(int controlIndex) const noexcept {
 //==============================================================================
 TapeScene::Geometry TapeScene::buildReel() {
     Geometry geometry;
-    auto &vertices = geometry.vertices;
-    auto &indices = geometry.indices;
 
     constexpr int segments = 40;
 
@@ -786,18 +799,18 @@ TapeScene::Geometry TapeScene::buildReel() {
     constexpr float hubCentreZ = 0.130f;
     constexpr float hubHalfHeight = 0.095f;
 
-    addDisc(vertices, indices, {0.0f, 0.0f, 0.0f}, 1.0f, flangeHalfHeight, segments);
+    addDisc(geometry, {0.0f, 0.0f, 0.0f}, 1.0f, flangeHalfHeight, segments);
 
     // The boss. Its lower half is sunk into the flange so the two never end up
     // with coplanar faces fighting over the same pixels.
-    addDisc(vertices, indices, {0.0f, 0.0f, hubCentreZ}, hubRadius, hubHalfHeight, segments / 2);
+    addDisc(geometry, {0.0f, 0.0f, hubCentreZ}, hubRadius, hubHalfHeight, segments / 2);
 
     // Three spokes, because a bare disc does not read as spinning. They sit
     // clear above the pack, so the one part of the reel a user can count turns
     // on is the one part that is never buried in tape.
     for (int spoke = 0; spoke < 3; ++spoke) {
         const auto angle = juce::MathConstants<float>::twoPi * static_cast<float>(spoke) / 3.0f;
-        addSpoke(vertices, indices, angle);
+        addSpoke(geometry, angle);
     }
 
     return geometry;
@@ -805,8 +818,8 @@ TapeScene::Geometry TapeScene::buildReel() {
 
 TapeScene::Geometry TapeScene::buildTapePack() {
     Geometry geometry;
-    auto &vertices = geometry.vertices;
-    auto &indices = geometry.indices;
+    auto& vertices = geometry.vertices;
+    auto& indices = geometry.indices;
 
     constexpr int segments = 48;
 
@@ -875,8 +888,8 @@ TapeScene::Geometry TapeScene::buildTapePack() {
 
 TapeScene::Geometry TapeScene::buildRibbon() {
     Geometry geometry;
-    auto &vertices = geometry.vertices;
-    auto &indices = geometry.indices;
+    auto& vertices = geometry.vertices;
+    auto& indices = geometry.indices;
 
     constexpr int samples = 72;
     constexpr auto anchorCount = static_cast<int>(sizeof(ribbonAnchors) / sizeof(ribbonAnchors[0]));
@@ -909,7 +922,7 @@ TapeScene::Geometry TapeScene::buildRibbon() {
         const auto offset = side * (tapeWidth * 0.5f / sideLength);
 
         // The payload is t, which is what the shader waves the tape with.
-        const auto left = static_cast<juce::uint32>(vertices.size() / 7);
+        const auto left = static_cast<juce::uint32>(vertices.size());
         addVertex(vertices, point - offset, {0.0f, 0.0f, 1.0f}, t);
         const auto right = left + 1;
         addVertex(vertices, point + offset, {0.0f, 0.0f, 1.0f}, t);
@@ -926,8 +939,7 @@ TapeScene::Geometry TapeScene::buildRibbon() {
 
 TapeScene::Geometry TapeScene::buildHead() {
     Geometry geometry;
-    addBox(geometry.vertices, geometry.indices, {headCentreX, headCentreY, headCentreZ},
-           {headHalfX, headHalfY, headHalfZ});
+    addBox(geometry, {headCentreX, headCentreY, headCentreZ}, {headHalfX, headHalfY, headHalfZ});
     return geometry;
 }
 
@@ -939,8 +951,7 @@ TapeScene::ControlBank TapeScene::buildControlBank() {
     //  origin rather than at bankCentreZ, so drawControlBank() places it with a
     //  single translation and the four meshes it draws share that one matrix.
     // -------------------------------------------------------------------------
-    addBox(bank.body.vertices, bank.body.indices, {0.0f, 0.0f, 0.0f},
-           {bankHalfWidth, bankHalfHeight, bankHalfDepth});
+    addBox(bank.body, {0.0f, 0.0f, 0.0f}, {bankHalfWidth, bankHalfHeight, bankHalfDepth});
 
     // -------------------------------------------------------------------------
     //  One knob, built round its own origin: a machined barrel with a knurled
@@ -954,9 +965,9 @@ TapeScene::ControlBank TapeScene::buildControlBank() {
 
     // The body: the face and the back, with the knurl between them. The face is
     // a touch smaller than the grip so the rim reads as a machined step.
-    addDisc(bank.knob.vertices, bank.knob.indices, {0.0f, 0.0f, 0.020f}, 0.92f, 0.004f, segments);
-    addDisc(bank.knob.vertices, bank.knob.indices, {0.0f, 0.0f, -0.012f}, 0.94f, 0.004f, segments);
-    addKnurl(bank.knob.vertices, bank.knob.indices, 1.0f, -0.008f, 0.016f, segments);
+    addDisc(bank.knob, {0.0f, 0.0f, 0.020f}, 0.92f, 0.004f, segments);
+    addDisc(bank.knob, {0.0f, 0.0f, -0.012f}, 0.94f, 0.004f, segments);
+    addKnurl(bank.knob, 1.0f, -0.008f, 0.016f, segments);
 
     // The domed face. A stack of shrinking discs rather than a sphere: at twenty
     // pixels across the difference is invisible, and the rings cost a fifth of
@@ -965,22 +976,21 @@ TapeScene::ControlBank TapeScene::buildControlBank() {
     for (int ring = 1; ring <= 3; ++ring) {
         const auto t = static_cast<float>(ring) / 3.0f;
         const auto radius = 0.92f * std::sqrt(juce::jmax(0.0f, 1.0f - t * t));
-        addDisc(bank.knob.vertices, bank.knob.indices, {0.0f, 0.0f, 0.020f + 0.016f * t}, radius,
-                0.003f, segments);
+        addDisc(bank.knob, {0.0f, 0.0f, 0.020f + 0.016f * t}, radius, 0.003f, segments);
     }
 
     // The index mark: a raised bar from the hub to the rim. It is the whole of
     // how a user reads the knob's angle, so it is modelled rather than shaded - a
     // bar catches the key light on one side and goes dark on the other, which
     // reads at a glance where a painted line does not.
-    addBox(bank.knob.vertices, bank.knob.indices, {0.0f, 0.60f, 0.040f}, {0.045f, 0.34f, 0.012f});
+    addBox(bank.knob, {0.0f, 0.60f, 0.040f}, {0.045f, 0.34f, 0.012f});
 
     // -------------------------------------------------------------------------
     //  One keycap. A low prism with a shallow bevel, which is what a transport
     //  key on a deck is: flat enough to look pressed rather than turned.
     // -------------------------------------------------------------------------
-    addBox(bank.key.vertices, bank.key.indices, {0.0f, 0.0f, 0.0f}, {0.94f, 0.82f, 0.90f});
-    addBox(bank.key.vertices, bank.key.indices, {0.0f, 0.78f, 0.0f}, {0.72f, 0.62f, 0.30f});
+    addBox(bank.key, {0.0f, 0.0f, 0.0f}, {0.94f, 0.82f, 0.90f});
+    addBox(bank.key, {0.0f, 0.78f, 0.0f}, {0.72f, 0.62f, 0.30f});
 
     // -------------------------------------------------------------------------
     //  The lit disc: what a knob lays on the face when the machine is working.
@@ -988,8 +998,7 @@ TapeScene::ControlBank TapeScene::buildControlBank() {
     //  glow is ADDITIVE - it is drawn with blending on, over whatever is behind
     //  it, so it can bleed past the knob's rim without a second geometry pass.
     // -------------------------------------------------------------------------
-    addDisc(bank.knobGlow.vertices, bank.knobGlow.indices, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0005f,
-            segments, 1.0f);
+    addDisc(bank.knobGlow, {0.0f, 0.0f, 0.0f}, 1.0f, 0.0005f, segments, 1.0f);
 
     return bank;
 }
@@ -1010,12 +1019,12 @@ void TapeScene::uploadMesh(Mesh &mesh, const Geometry &geometry) {
         glGenBuffers(1, &mesh.indexBuffer);
 
     glBindBuffer(GL_ARRAY_BUFFER, mesh.vertexBuffer);
-    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(geometry.vertices.size() * sizeof(float)),
+    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(geometry.vertices.size() * sizeof(SceneVertex)),
                  geometry.vertices.data(), GL_STATIC_DRAW);
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.indexBuffer);
     glBufferData(GL_ELEMENT_ARRAY_BUFFER,
-                 static_cast<GLsizeiptr>(geometry.indices.size() * sizeof(juce::uint32)),
+                 static_cast<GLsizeiptr>(geometry.indices.size() * sizeof(std::uint32_t)),
                  geometry.indices.data(), GL_STATIC_DRAW);
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
@@ -1049,13 +1058,11 @@ void TapeScene::drawMesh(const Mesh &mesh) {
     // more here than the handful of redundant calls a 64 px column costs.
     glBindBuffer(GL_ARRAY_BUFFER, mesh.vertexBuffer);
     glVertexAttribPointer(static_cast<GLuint>(positionLocation), 4, GL_FLOAT, GL_FALSE,
-                          vertexStride, nullptr);
-    // C4312 keeps a GLsizei off a pointer cast honest: the offset goes up
-    // through uintptr_t, so the pointer is built from an integer of its own
-    // width instead of the compiler guessing at a widening it cannot verify.
+                          static_cast<GLsizei>(sizeof(SceneVertex)), nullptr);
     glVertexAttribPointer(
-        static_cast<GLuint>(normalLocation), 3, GL_FLOAT, GL_FALSE, vertexStride,
-        reinterpret_cast<const void *>(static_cast<std::uintptr_t>(normalOffset)));
+        static_cast<GLuint>(normalLocation), 3, GL_FLOAT, GL_FALSE,
+        static_cast<GLsizei>(sizeof(SceneVertex)),
+        reinterpret_cast<const void *>(static_cast<std::uintptr_t>(offsetof(SceneVertex, normal))));
     glEnableVertexAttribArray(static_cast<GLuint>(positionLocation));
     glEnableVertexAttribArray(static_cast<GLuint>(normalLocation));
 

@@ -2,9 +2,9 @@
   ============================================================================
     RenderBackend - renderer selection and capability boundary.
 
-    OpenGL is the only backend that renders the full scene. Other native
-    adapters currently provide surface presentation only, so they must not be
-    selected as effective scene renderers until they implement the geometry.
+    OpenGL is the only backend that currently renders the full scene. Native
+    API work is staged behind this capability boundary and must not be selected
+    until the scene draw path is complete.
   ============================================================================
 */
 
@@ -32,9 +32,11 @@ constexpr Backend configuredBackend() noexcept {
 #endif
 }
 
-// Native adapters currently provide presentation only, not the TapeScene draw
-// path. Do not select them as effective renderers until they render the scene.
-constexpr bool hasNativeImplementation(Backend) noexcept {
+// A native adapter is not a usable scene backend merely because it can present
+// a cleared surface. Keep every native selection on the established fallback
+// until it can draw the complete TapeScene frame.
+constexpr bool hasNativeImplementation(Backend backend) noexcept {
+    juce::ignoreUnused (backend);
     return false;
 }
 
