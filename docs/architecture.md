@@ -170,9 +170,10 @@ would not see a moved block with a missing include.
 
 One of them is wired the opposite way round, from a library to the audio: every tanh
 the saturation core runs goes through `j37Tanh`, the one seam a library switch can be
-thrown at, and the switch is `J37_USE_SIMD_TANH` (off by default, because it changes
-the rendered audio by ~1e-7). `tests/dsp/simd_tanh_test.cpp` is built in all three
-shapes - flag with xsimd, flag without it, and neither - and the three binaries'
+thrown at, and the switch is `J37_USE_SIMD_TANH` (on by default: xsimd's kernel costs
+~2.4 ns against `std::tanh`'s ~6.7 ns, for a ~1e-7 curve difference;
+`-DJ37_USE_SIMD_TANH=OFF` restores `std::tanh`). `tests/dsp/simd_tanh_test.cpp` is built
+in all three shapes - flag with xsimd, flag without it, and neither - and the three binaries'
 curve digests are compared against each other, because "the switch reaches the audio"
 is a claim about two builds rather than about one.
 

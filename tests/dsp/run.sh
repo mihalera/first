@@ -62,9 +62,10 @@ fi
 #
 #  j37Tanh (Source/DSP/HotPathMath.h) is the one place the saturation core's
 #  cost can be traded for xsimd's batch kernel, and the switch that trades it
-#  (J37_USE_SIMD_TANH, the CMake option of the same name) is OFF in every build
+#  (J37_USE_SIMD_TANH, the CMake option of the same name) is ON in every build
 #  this repository produces - which is exactly why the seam needs a harness. A
-#  branch that no build compiles rots, and this one had rotted twice over:
+#  branch that only one configuration compiles rots, and this one had rotted
+#  twice over:
 #  nothing called the function the flag switched, and the call it made
 #  (xsimd::tanh on a float) was std::tanh, so even with the flag thrown the
 #  branch was a no-op.
@@ -73,9 +74,9 @@ fi
 #  curve digests are compared ACROSS the binaries, because "the flag reaches
 #  the rendered audio" is a claim about two builds rather than about one:
 #
-#    flag + xsimd   J37_HAS_XSIMD 1, the approximation, the curves move
-#    flag alone     J37_HAS_XSIMD 0 and identical to the default
-#    neither        the shipping default
+#    flag + xsimd   J37_HAS_XSIMD 1, the approximation, the curves move  (SHIPPING)
+#    flag alone     J37_HAS_XSIMD 0 and identical to the std::tanh shape
+#    neither        the -DJ37_USE_SIMD_TANH=OFF shape
 #
 #  A build that asks for a library it has not got must render the default, and a
 #  build with the flag and the library must render different audio by the amount

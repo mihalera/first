@@ -27,8 +27,8 @@ section after the tables).
 
 | Item | Status | Where it is |
 | --- | --- | --- |
-| `foleys_gui_magic` in the build | **done (linked)** | `CMakeLists.txt` links it and `Source/PluginEditor.h` probes/embeds it; the panel itself is still the hand-written one |
-| Whole panel authored in foleys XML | **open** | the editor is 2,600 lines of computed geometry with a harness that measures it (`tests/layout`); an XML rewrite would have to move that geometry and its checks with it |
+| `foleys_gui_magic` in the build | **done (used)** | `CMakeLists.txt` links it, and `Source/GUI/ParameterSheet.h` builds the PARAMETERS sheet from a ValueTree the processor's own parameter tree generates; the panel itself is still the hand-written one |
+| Whole panel authored in foleys XML | **open, and no longer the only use** | the editor is 2,600 lines of computed geometry with a harness that measures it (`tests/layout`); an XML rewrite would have to move that geometry and its checks with it. The sheet is a real foleys surface without that rewrite |
 | Melatonin vector graphics for GR / spectrum | **partial** | `melatonin_blur` is used for the panel's shadows and halos (`Source/GUI/PanelPaint.h`, `J37LookAndFeel.cpp`); the GR readout and spectrum are drawn with `juce::Path` and the analyser's own curve |
 | Localised tooltips through `LocalisedStrings` and `TRANS()` | **done, differently** | `Source/GUI/PanelTranslations.h` uses `LocalisedStrings::translateWithCurrentMappings`; `en.txt` and `uk.txt` ship inside the binary, and `tests/translations/check_translations.py` fails on a dead key, a missing language or an empty entry |
 

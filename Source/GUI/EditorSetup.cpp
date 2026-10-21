@@ -1248,6 +1248,65 @@ void FirstAudioProcessorEditor::setUpSettingsSwitches() {
     styleLabel(antiPhaseGuardLabel, "ANTI-PHASE", 9.0f, paletteFor(false).secondary, true,
                juce::Justification::left);
     addAndMakeVisible(antiPhaseGuardLabel);
+
+    // ---------------------------------------------------------------
+    //  PARAMETERS - the parameter sheet's only entry point, in the fourth cell
+    //  of SETTINGS's second band.
+    //
+    //  The sheet is the other view of the plugin: every parameter, grouped as
+    //  the processor declares it, for finding a control the panel has on a page
+    //  the user is not looking at. It is built by foleys_gui_magic - the sheet's
+    //  own header explains why the declarative tree is the right shape for a
+    //  surface whose contents are the parameter tree itself.
+    //
+    //  The button is disabled rather than hidden when the module is absent (a
+    //  pruned checkout, or the JUCE-only harness): a page whose controls shift
+    //  about depending on which libraries were fetched is harder to read than
+    //  one dead key, and the tooltip says which build this is.
+    // ---------------------------------------------------------------
+    parameterSheetButton.setLookAndFeel(&inlineLookAndFeel);
+    parameterSheetButton.setColour(juce::TextButton::buttonColourId, paletteFor(false).raised);
+    parameterSheetButton.setColour(juce::TextButton::textColourOffId, paletteFor(false).text);
+    parameterSheetButton.setColour(juce::TextButton::buttonOnColourId,
+                                   paletteFor(false).raised.darker(0.15f));
+    parameterSheetButton.setEnabled(j37panel::ParameterSheet::available);
+    setTip(parameterSheetButton,
+           j37panel::ParameterSheet::available
+               ? "PARAMETERS - opens the sheet: every parameter the plugin "
+                 "exposes, grouped by the processor's own parameter tree, in one "
+                 "scrollable list. The panel shows eighteen pages of hand-placed "
+                 "controls for playing the machine; the sheet is for finding a "
+                 "control by name, and every row is a live attachment rather "
+                 "than a copy of the value. Escape or CLOSE returns to the panel."
+               : "PARAMETERS - this build has no parameter sheet: the "
+                 "foleys_gui_magic dependency was not fetched, so the sheet was "
+                 "compiled out.");
+    parameterSheetButton.onClick = [this] { toggleParameterSheet(); };
+    addAndMakeVisible(parameterSheetButton);
+}
+
+void FirstAudioProcessorEditor::toggleParameterSheet() {
+    if (!j37panel::ParameterSheet::available)
+        return;
+
+    // Built on first use and kept: creating 109 parameter attachments is a
+    // message-thread job worth doing once, not on every open.
+    if (parameterSheet == nullptr) {
+        parameterSheet = std::make_unique<j37panel::ParameterSheet>(
+            audioProcessor, paletteForTheme(themeChoice));
+        addAndMakeVisible(*parameterSheet);
+    }
+
+    if (parameterSheet->isOpen()) {
+        parameterSheet->close();
+        return;
+    }
+
+    // Covers the whole editor, including the tab bar it was opened from: the
+    // sheet is a different view of the plugin, not a fourth band on SETTINGS.
+    parameterSheet->setBounds(getLocalBounds());
+    parameterSheet->toFront(true);
+    parameterSheet->open();
 }
 
 void FirstAudioProcessorEditor::setUpModelButtons() {

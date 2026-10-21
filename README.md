@@ -10,7 +10,7 @@
 | **Build** | CMake 3.22+, MSVC on Windows, Xcode on macOS |
 | **Parameters** | 109, in 23 groups, with 29 factory presets |
 | **Checked by** | thirteen harnesses and seven text checks that need no JUCE, on every pull request |
-| **Licence** | MIT for this repository's own source; a *binary* also links JUCE (AGPLv3 or commercial) and a GPLv3 module - see [Licensing, and what ships in a binary](#licensing-and-what-ships-in-a-binary) |
+| **Licence** | MIT for this repository's own source; a *binary* also links JUCE (AGPLv3 or commercial) and the third-party libraries listed below - see [Licensing, and what ships in a binary](#licensing-and-what-ships-in-a-binary) |
 
 ### Where to go next
 
@@ -23,7 +23,7 @@
 | see what a proposed roadmap would actually cost | [docs/requested-roadmap-status.md](docs/requested-roadmap-status.md) - each item vs. what the tree already does |
 | know what the code is actually like | [docs/plugin-analysis.md](docs/plugin-analysis.md) - the review, with the numbers |
 | know what to do next | [docs/plugin-improvement-plan.md](docs/plugin-improvement-plan.md) |
-| add or adopt a library | [docs/library-integration-plan.md](docs/library-integration-plan.md) - the gate a dependency passes, where each one stands today, and the order to do them in |
+| add or adopt a library | [docs/library-candidates.md](docs/library-candidates.md) - every library in the build, the ones fetched but unused, and outside candidates with an adopt/reject verdict; [docs/library-integration-plan.md](docs/library-integration-plan.md) - the gate a dependency passes and the order to do the work in |
 | know how far the long files can be split | [SPLITTING-BIG-FILES.md](SPLITTING-BIG-FILES.md) |
 | know whose code this is | [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) |
 
@@ -781,6 +781,18 @@ make the processing linear: the analogue nonlinearity lives in the DSP, not in t
 control mapping. Knob drags are direct and fast - a full sweep takes about a third of the
 panel width - and Shift engages fine control, so nothing feels sluggish at any setting.
 
+### The parameter sheet
+
+The SETTINGS page's fourth key, **PARAMETERS**, opens the sheet: every parameter the
+plugin exposes, in one scrollable list, grouped and ordered by the processor's own
+parameter tree rather than by the eighteen pages this panel paints. It is the answer to
+the question the deck is bad at - "where is that control?" - and every row is a live
+attachment, not a copy of the value, so moving one moves the same parameter a knob does.
+The sheet covers the whole editor while it is open; **CLOSE** or Escape returns. It is
+built by `foleys_gui_magic` from a ValueTree, follows the current theme's palette, and
+is created on first open, because 109 attachments are not something an editor that never
+shows the sheet should pay for.
+
 ### Analogue nonlinearity
 
 This is a saturation model, so the transfer functions are deliberately nonlinear - that
@@ -1078,16 +1090,19 @@ One further option belongs to the audio rather than the panel, and it is the onl
 switch in the build that changes what the plugin *renders*:
 
 ```text
--DJ37_USE_SIMD_TANH=ON|OFF   (default OFF)
+-DJ37_USE_SIMD_TANH=ON|OFF   (default ON)
 ```
 
-With it on, the tanh every saturation curve runs becomes xsimd's batch kernel
-instead of `std::tanh`: measured through `tests/dsp/run_bench.sh` at ~2.4 ns per
-call against ~6.7 ns, which takes the saturation core from ~42 us to ~28 us per
-512-frame block (about 1.5x cheaper), at a curve difference of 1.19e-7
-(absolute, worst case) - below audibility, but not zero,
-which is why it is off until a listening test says otherwise. The build prints
-which one it is using in its configure summary.
+With it on - which is how the plugin ships - the tanh every saturation curve
+runs becomes xsimd's batch kernel instead of `std::tanh`: measured through
+`tests/dsp/run_bench.sh` at ~2.4 ns per call against ~6.7 ns, which takes the
+saturation core from ~42 us to ~28 us per 512-frame block (about 1.5x cheaper),
+at a curve difference of 1.19e-7 (absolute, worst case). That difference is why
+the switch existed at all while the seam was unproven; it is now pinned by
+`tests/dsp/simd_tanh_test.cpp`, which builds all three shapes and compares their
+curve digests, and 1.19e-7 is below audibility for a stage that is generating
+harmonics on purpose. `-DJ37_USE_SIMD_TANH=OFF` restores `std::tanh` bit for
+bit. The build prints which one it is using in its configure summary.
 
 `AUTO` and `OPENGL` use the existing JUCE/OpenGL scene. `CPU` uses a dedicated
 JUCE `Graphics` renderer for the animated transport, while the rest of the panel
@@ -1539,7 +1554,8 @@ this repository carries its licence text. A shipped binary carries none of them.
 | `chowdsp_utils` | `v2.4.0` | Chowdhury DSP's toolbox. **Used:** the polynomial `exp`/`log`/dB approximations on the metering and auto-gain hot paths come from the BSD `chowdsp_math` module, which includes the BSD `chowdsp_simd` module and is why that one is linked as well. `chowdsp_dsp_utils` **is GPLv3** and sat on the link line with no caller; it is off it now, so no shipped binary carries it - `docs/library-integration-plan.md` WP1 has the evidence and the check that keeps it off |
 | `melatonin_inspector` | commit `9c483f86` | JUCE component inspector, compiled under `JUCE_DEBUG` only. Passive in the shipped build |
 | `melatonin_blur` | `v1.4` | **Used.** Fast shadow/gradient blurring for JUCE Components. Three lights on the panel are `melatonin::DropShadow` now - the panel's own drop shadow (`Source/GUI/PanelPaint.h`) and the knob's halo and cap shadow (`Source/GUI/J37LookAndFeel.cpp`) - each cached against its path and radius, so a repaint at 30 Hz is a blit rather than a blur. The hand-drawn fallbacks (a stack of flat rounded rectangles, and a stack of stroked rings) are still there behind the module's probe |
-| `xsimd` | `14.3.0` (vendored) | **Used, behind `J37_USE_SIMD_TANH`.** Portable SIMD wrappers (SSE/AVX/NEON). `chowdsp::chowdsp_simd` already wraps xsimd, so this is the same code path rather than a second SIMD layer - and the shaper's own tanh goes through it too: every tanh the saturation core runs is `j37Tanh` (`Source/DSP/HotPathMath.h`), which is xsimd's batch kernel when the option is on: ~2.4 ns per call against std::tanh's ~6.7 ns, ~1.5x off the whole shaper, at a 1.19e-7 curve difference. Off by default because it changes the rendered audio; `tests/dsp/simd_tanh_test.cpp` builds all three shapes |
+| `foleys_gui_magic` | commit `d53d998e` | **Used.** Daniel Walz's declarative GUI framework. Its caller is `Source/GUI/ParameterSheet.h`: the PARAMETERS key on SETTINGS opens a sheet listing every parameter, grouped and ordered by the processor's own parameter tree, with a live attachment per control. The tree, the stylesheet and the layout are foleys'; the palette is the panel's. This module was linked for a long time with only an `#include` and no caller - see `docs/library-candidates.md` §4, item 1 - and the sheet is the use it was waiting for |
+| `xsimd` | `14.3.0` (vendored) | **Used, behind `J37_USE_SIMD_TANH`.** Portable SIMD wrappers (SSE/AVX/NEON). `chowdsp::chowdsp_simd` already wraps xsimd, so this is the same code path rather than a second SIMD layer - and the shaper's own tanh goes through it too: every tanh the saturation core runs is `j37Tanh` (`Source/DSP/HotPathMath.h`), which is xsimd's batch kernel when the option is on: ~2.4 ns per call against std::tanh's ~6.7 ns, ~1.5x off the whole shaper, at a 1.19e-7 curve difference. On by default, because 1.19e-7 is below audibility and the shaper is ~1.5x cheaper for it; `-DJ37_USE_SIMD_TANH=OFF` restores `std::tanh` bit for bit, and `tests/dsp/simd_tanh_test.cpp` builds all three shapes |
 
 Two dev-only libraries are **off by default**, so a plugin build never drags a test
 framework into its dependency graph. Enable with `-DJ37_BUILD_TESTS=ON`:
