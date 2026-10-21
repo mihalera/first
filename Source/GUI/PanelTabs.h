@@ -174,8 +174,11 @@ namespace j37panel
                      "point, SAG lets its supply yield under load, and SUBFUND "
                      "generates the octave below what plays.",
                      3, 0, { 17, 18, 25 } },
-        // ---- FX family (4 pages): the second head, the room, the envelope,
-        //  the output equaliser ------------------------------------------------
+        // ---- FX family (the first four of its six pages): the second head,
+        //  the room, the envelope, the output equaliser. AUTOTUNE and COMP are
+        //  FX too and sit at the END of the table, where they were appended;
+        //  the bar filters the table, so that order is the order they show in.
+        // --------------------------------------------------------------------
         //  delay_time, delay_feedback, st_offset, ping_pong. The deck's TYPE /
         //  SYNC DELAY / RATE switches belong to this page and ride the band
         //  under the knobs.
