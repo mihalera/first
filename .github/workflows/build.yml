@@ -469,6 +469,14 @@ jobs:
       - name: Run the DSP micro-benchmarks
         run: bash tests/dsp/run_bench.sh
 
+      # The other measurement, under the same contract: informational, and it
+      # fails only when a model does not load or renders a non-finite sample -
+      # never because a number is slow. It compiles NAM Core's sixteen Eigen
+      # translation units first, which is the minute this job's timeout was
+      # sized for on top of the DSP benchmark above.
+      - name: .nam inference cost (NAM Core vs RTNeural)
+        run: bash tests/neural/run_bench.sh
+
       # Informational only: record the CPU share of the naive tanh/exp hot
       # path against the same nanobench build, never a gate.
       - name: DSP hot-path probe (tanh/exp CPU share)

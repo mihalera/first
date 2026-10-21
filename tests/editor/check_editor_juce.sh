@@ -238,9 +238,10 @@ INCLUDES=(
 # compiles the library-present shape of the stage in the plugin's own context.
 #
 # The NAM Core trees are NOT in the list above, deliberately: the TU and header passes
-# compile the shape CMake builds by default, where J37_NAMCORE is OFF. The namcore pass
-# at the bottom is the other shape, with its own include paths, so neither can make the
-# other pass by accident.
+# compile the library-absent shape - the one tests/dsp and a checkout with ThirdParty/
+# pruned build, and the one -DJ37_NAMCORE=OFF asks for. The namcore pass at the bottom
+# is the shape CMake now builds BY DEFAULT (J37_NAMCORE is ON), with its own include
+# paths, so neither shape can make the other pass by accident.
 
 # juce_audio_basics pulls juce_core in itself; the module defines are what a
 # module header checks before compiling its own sources.
@@ -425,8 +426,9 @@ fi
 #  NeuralAmpModelerCore and Eigen - but against the DSP harness's shim, not JUCE. That
 #  proves the backend and the stage; it does not prove the plugin's own translation
 #  unit compiles with both engines in it. This pass closes that gap: the processor's TU,
-#  compiled with the option the CMake build throws and the two vendored trees on the
-#  include path, which is exactly the shape `-DJ37_NAMCORE=ON` builds.
+#  compiled with the option the CMake build throws by default (J37_NAMCORE is ON) and
+#  the two vendored trees on the include path, which is exactly the shape the default
+#  build compiles.
 #
 #  One TU rather than thirteen: every file that includes PluginProcessor.h pulls the
 #  stage (and through it NamBackend.h) in, and the include paths the option adds come
