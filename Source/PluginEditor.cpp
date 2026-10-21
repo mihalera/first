@@ -1,4 +1,4 @@
-#include "PluginProcessor.h"
+﻿#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
@@ -34,6 +34,7 @@
 #include "GUI/PanelPaint.h"
 #include "GUI/PanelText.h"
 #include "GUI/PanelTranslations.h"
+#include "GUI/RenderBackend.h"
 
 // The panel's paint kit and page table, from Source/GUI/PanelPaint.h and
 // Source/GUI/PanelTabs.h. Every call site below was written when the two lived
@@ -541,26 +542,42 @@ void FirstAudioProcessorEditor::openStageMix (const juce::String& parameterId)
 void FirstAudioProcessorEditor::loadNeuralModelFromFile()
 {
     // A model is chosen from a file, so a plain asynchronous file chooser is the
-    // whole dialogue. `chooser` is captured by the lambda so the chooser stays
-    // alive for the duration of the callback, which is what makes the launch
-    // safe to fire and forget.
+    // whole dialogue. The chooser is retained while active and captured to keep
+    // it alive; SafePointer below prevents callbacks from accessing a closed editor.
+    if (neuralFileChooser.active)
+        return;
     //
     // "*.nam" is NeuralAmpModeler's own extension - its files carry the SAME
     // networks in a different wire format (one flat weight vector rather than
     // a stack of named layers), and the picker reads both through the
-    // processor's own two entry points below.
+    // processor's own two entry points below. Keep one picker active per editor;
+    // the callback uses a SafePointer because a host may close the editor while
+    // the native file dialog is still open.
+    if (neuralFileChooser.active)
+        return;
+
     auto chooser = std::make_shared<juce::FileChooser> (
         "Load a neural model",
         rememberedFolder ("lastModelFolder"),
         "*.json;*.rtn;*.nam;*");
+    neuralFileChooser.chooser = chooser;
+    neuralFileChooser.active = true;
 
     // browserFlags, not `flags`: a local name that shadows nothing is cheaper
     // than proving no future member will ever be called flags (C4458).
     const auto browserFlags = juce::FileBrowserComponent::openMode
                             | juce::FileBrowserComponent::canSelectFiles;
 
-    chooser->launchAsync (browserFlags, [this, chooser] (const juce::FileChooser& fc)
+    chooser->launchAsync (browserFlags,
+        [safeThis = juce::Component::SafePointer<FirstAudioProcessorEditor> (this), chooser]
+        (const juce::FileChooser& fc)
     {
+        if (safeThis == nullptr)
+            return;
+        auto& editor = *safeThis;
+        if (editor.neuralFileChooser.chooser != chooser)
+            return;
+        editor.neuralFileChooser = {};
         const auto file = fc.getResult();
         if (! file.existsAsFile())
             return;
@@ -766,6 +783,20 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
 {
     stopTimer();
     openGLContext.detach();
+
+    // A FileChooser owns its asynchronous operation. Releasing it here cancels
+    // the picker and discards its callback before the editor or processor refs
+    // can be accessed by a later completion.
+    neuralFileChooser.reset();
+    irFileChooser.reset();
+    noiseFileChooser.reset();
+
+    // FileChooser callbacks use SafePointer, so clearing these handles prevents
+    // teardown from retaining a native dialog beyond the editor's lifetime.
+    neuralFileChooser = {};
+    irFileChooser = {};
+    noiseFileChooser = {};
+    nativeRenderer.reset();
 
     for (auto& slider : controls)
         slider.setLookAndFeel (nullptr);

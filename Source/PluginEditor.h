@@ -1160,6 +1160,8 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::OpenGLContext openGLContext;
     int openGLAttachAttemptsLeft = 0;
 
+
+
     // =====================================================================
     //  The panel's arithmetic texture, 2D half. The GPU half lives in
     //  TapeScene (uTextureWeights); both read the same three doses.

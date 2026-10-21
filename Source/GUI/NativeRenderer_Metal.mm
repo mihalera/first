@@ -91,6 +91,12 @@ public:
             return fail ("Metal: the host peer exposes no NSView");
         }
 
+        // A plugin editor may be embedded in a shared host NSView. Do not mutate
+        // that host view or place a layer across the host's entire plugin surface.
+        // Metal remains a prepared adapter until it owns a dedicated child view.
+        shutdown();
+        return fail ("Metal: embedded host surface integration is not enabled");
+
         commandQueue = [metalDevice newCommandQueue];
         if (commandQueue == nil)
         {
@@ -257,7 +263,7 @@ private:
     id<CAMetalDrawable> drawable = nil;
     id<MTLRenderCommandEncoder> encoder = nil;
     CAMetalLayer* metalLayer = nil;
-    __unsafe_unretained NSView* hostView = nil;
+    __weak NSView* hostView = nil;
     BOOL previousWantsLayer = NO;
     juce::Point<int> position;
     juce::Colour clearColour;

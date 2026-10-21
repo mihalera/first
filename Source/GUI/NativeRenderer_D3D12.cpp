@@ -208,19 +208,36 @@ public:
             return;
         }
 
-        createRenderTargets();
+        if (! createRenderTargets())
+        {
+            shutdown();
+            failure = "DirectX 12: back buffer recreation failed";
+        }
     }
 
     bool isPresentable() const noexcept override
     {
-        return initialised && swapChain != nullptr && childWindow != nullptr;
+        return initialised && swapChain != nullptr && childWindow != nullptr
+            && backBuffers[0] != nullptr && rtvHeap != nullptr;
     }
 
     void shutdown() noexcept override
     {
-        if (! waitForGpuIdle())
+        // shutdown() is also used by initialise() before any device exists. In that
+        // case there is nothing in flight and the empty state is already shut down.
+        if (queue != nullptr && fence != nullptr && fenceEvent != nullptr
+            && ! waitForGpuIdle())
+        {
+            // A timed-out but still-live device may be using resources. Preserve
+            // those objects, but ensure a later destructor cannot retry shutdown
+            // against a dead host HWND.
+            if (device == nullptr || device->GetDeviceRemovedReason() == S_OK)
+                return;
+            initialised = false;
             return;
+        }
 
+        activeSlot = commandLists.size();
         for (auto& buffer : backBuffers)
             buffer.Reset();
 
@@ -316,8 +333,19 @@ public:
 
     void endFrame() override
     {
-        if (! isPresentable() || activeSlot >= commandLists.size())
+        if (activeSlot >= commandLists.size())
             return;
+
+        // If device loss invalidated presentation after beginFrame(), still close
+        // and retire the open command list before leaving the frame slot reusable.
+        if (! isPresentable())
+        {
+            auto* abandonedList = commandLists[activeSlot].Get();
+            if (abandonedList != nullptr)
+                abandonedList->Close();
+            activeSlot = commandLists.size();
+            return;
+        }
 
         auto* list = commandLists[activeSlot].Get();
 
@@ -332,10 +360,17 @@ public:
 
         const auto presentResult = swapChain->Present (static_cast<UINT> (vsyncInterval), 0);
 
-        frameFenceValues[activeSlot] = ++fenceValue;
-        queue->Signal (fence.Get(), frameFenceValues[activeSlot]);
+        const auto submittedSlot = activeSlot;
+        frameFenceValues[submittedSlot] = ++fenceValue;
+        if (FAILED (queue->Signal (fence.Get(), frameFenceValues[submittedSlot])))
+        {
+            activeSlot = commandLists.size();
+            shutdown();
+            failure = "DirectX 12: failed to signal frame fence";
+            return;
+        }
 
-        frameIndex = (activeSlot + 1) % commandLists.size();
+        frameIndex = (submittedSlot + 1) % commandLists.size();
         activeSlot = commandLists.size();
 
         // DXGI_STATUS_OCCLUDED is the host minimising the editor, not a fault.
@@ -377,6 +412,9 @@ private:
 
     bool createRenderTargets()
     {
+        if (swapChain == nullptr || device == nullptr || rtvHeap == nullptr)
+            return false;
+
         auto handle = rtvHeap->GetCPUDescriptorHandleForHeapStart();
         const auto increment = descriptorIncrement();
 
@@ -399,8 +437,16 @@ private:
 
         const auto target = ++fenceValue;
         const auto signalResult = queue->Signal (fence.Get(), target);
-        const auto eventResult = signalResult == S_OK
-            ? fence->SetEventOnCompletion (target, fenceEvent) : signalResult;
+        if (signalResult != S_OK)
+        {
+            failure = "DirectX 12: failed to signal GPU-idle fence";
+            return false;
+        }
+
+        // Manual-reset events stay signalled. Reset before registering the new
+        // fence target so an earlier wait cannot make this wait return early.
+        ResetEvent (fenceEvent);
+        const auto eventResult = fence->SetEventOnCompletion (target, fenceEvent);
         const auto waitResult = eventResult == S_OK
             ? WaitForSingleObject (fenceEvent, 2000) : WAIT_FAILED;
 

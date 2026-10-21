@@ -47,10 +47,20 @@ public:
         // The device is created on the default adapter, so the scene shares the
         // host's GPU and needs no adapter enumeration or fallback ordering.
         const auto levels[] { D3D_FEATURE_LEVEL_11_0, D3D_FEATURE_LEVEL_10_0 };
-        if (FAILED (D3D11CreateDevice (nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
-                                       config.validation ? D3D11_CREATE_DEVICE_DEBUG : 0u,
-                                       levels, 2, D3D11_SDK_VERSION,
-                                       &device, &featureLevel, &context)))
+        auto createFlags = config.validation ? D3D11_CREATE_DEVICE_DEBUG : 0u;
+        auto createResult = D3D11CreateDevice (nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+                                               createFlags, levels, 2, D3D11_SDK_VERSION,
+                                               &device, &featureLevel, &context);
+        // Debug runtimes are optional. A validation-enabled build should still
+        // run on machines without the Graphics Tools feature installed.
+        if (FAILED (createResult) && config.validation)
+        {
+            createFlags = 0;
+            createResult = D3D11CreateDevice (nullptr, D3D_DRIVER_TYPE_HARDWARE, nullptr,
+                                              createFlags, levels, 2, D3D11_SDK_VERSION,
+                                              &device, &featureLevel, &context);
+        }
+        if (FAILED (createResult))
             return fail ("DirectX 11: device creation failed");
 
         childWindow = CreateWindowExW (0, L"STATIC", L"first-d3d11-surface",
@@ -148,7 +158,8 @@ public:
 
     bool isPresentable() const noexcept override
     {
-        return initialised && swapChain != nullptr && childWindow != nullptr;
+        return initialised && swapChain != nullptr && childWindow != nullptr
+            && renderTarget != nullptr;
     }
 
     void shutdown() noexcept override
