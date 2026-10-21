@@ -68,13 +68,13 @@ echo
 "${BUILD}/bench"
 
 # -----------------------------------------------------------------------------
-#  The same translation unit a second time, in the opt-in configuration of the
-#  shaper's tanh seam.
+#  The same translation unit a second time, with the shaper's tanh seam switched
+#  the other way.
 #
-#  J37_USE_SIMD_TANH is a CMake option (OFF by default) that routes every tanh
+#  J37_USE_SIMD_TANH is a CMake option (ON by default) that routes every tanh
 #  the saturation core runs through xsimd's batch kernel instead of libm's. The
-#  run above measures the shipping path, because that switch is off in every
-#  build this repository produces; this one measures what turning it on buys.
+#  run above measures the `-DJ37_USE_SIMD_TANH=OFF` shape, because that build
+#  passes no define; this one measures the branch the plugin actually ships.
 #
 #  The comparison is a subtraction rather than an inference: the SaturationCore
 #  and reference rows appear in BOTH logs, from the same file and the same
@@ -83,7 +83,7 @@ echo
 #  tests/dsp/simd_tanh_test.cpp is what pins the curve the switch changes.
 # -----------------------------------------------------------------------------
 echo
-echo "J37_USE_SIMD_TANH=ON - the shaper's tanh through xsimd's kernel"
+echo "J37_USE_SIMD_TANH=ON (the default) - the shaper's tanh through xsimd's kernel"
 echo "(compare the SaturationCore::process and std::tanh rows with the log above)"
 echo
 

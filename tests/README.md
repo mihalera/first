@@ -33,6 +33,9 @@ tests/unit/run.sh         # the equaliser, the compressor and the transient shap
 tests/dsp/check_headers_juce.sh     # every Source/DSP/*.h against real JUCE
 tests/editor/check_editor_juce.sh   # every translation unit and Source/GUI/*.h against real JUCE
 
+tests/dsp/run_bench.sh    # measurement: the DSP hot paths, with and without the xsimd tanh
+tests/neural/run_bench.sh # measurement: .nam inference cost on NAM Core and RTNeural
+
 python3 tests/presets/check_presets.py           # the factory preset table
 python3 tests/theme/check_theme_wiring.py        # theme re-inking coverage
 python3 tests/translations/check_translations.py # the shipped translation tables
@@ -50,13 +53,23 @@ Two environment switches, both used by the workflows:
 | `CXX` | the compiler to use; `g++` by default |
 
 The micro-benchmarks are separate and **informational**: `tests/dsp/run_bench.sh`
-(nanobench, needs `-DJ37_BUILD_TESTS=ON` to have fetched it) and the hot-path
-probe step in `.github/workflows/build.yml`. Nothing fails a build because a
-benchmark got slower. It builds `tests/dsp/bench.cpp` TWICE - once as the engine
+(nanobench, needs `-DJ37_BUILD_TESTS=ON` to have fetched it), `tests/neural/run_bench.sh`
+(the .nam inference engines - see its row below), and the hot-path probe step in
+`.github/workflows/build.yml`. Nothing fails a build because a benchmark got slower. It builds `tests/dsp/bench.cpp` TWICE - once as the engine
 ships, once with `-DJ37_USE_SIMD_TANH=1` - so the rows the two logs share
 (`SaturationCore::process` above all) are the measurement of what that switch
 buys, on the same signal through the same file, rather than two benchmarks
 being compared from memory.
+
+`tests/neural/run_bench.sh` is the other measurement, and it is informational in
+the same way. It compiles NAM Core from its own sources, generates the models the
+`.nam` format actually ships from `tests/neural/nam_shapes.h` (a 16-channel,
+ten-dilation WaveNet and a 20-cell LSTM, not the tiny fixtures), and prints
+nanoseconds per sample and the share of one 48 kHz core for each engine - through
+the shipping stage and through the backend alone, with the fixtures beside them
+for scale. It fails only when a model does not load or renders a non-finite
+sample; those numbers are why `J37_NAMCORE` is ON - see WP3 in
+[docs/library-integration-plan.md](../docs/library-integration-plan.md).
 
 The unit suite needs a framework rather than a measurement, from the same
 `-DJ37_BUILD_TESTS=ON` configure: `tests/unit/run.sh` compiles Catch2's own
@@ -83,7 +96,7 @@ shipping header* tests the code the plugin compiles.
 | `gain` | `AutoGainCompensator` - the programme-level correction, its pole and its ceiling | `#include`s the shipping header from `Source/DSP/`, with no shim at all: the stage names nothing of JUCE, which is what lets this compile with `-I Source` and nothing else |
 | `limiter` | `SafetyLimiter` - the peak detector, the required gain, the catch/release pair and the ceiling | `#include`s the shipping header AND `Source/DSP/BlockRateCoefficients.h`, against the DSP harness's `shim.h`: the four coefficients come from the file the engine gets them from, so the harness measures the poles the plugin actually runs |
 | `mix_crossfader` | `MixCrossfader` - the equal-power gain pair, the two gated legs and the clamp | `#include`s the shipping header from `Source/DSP/` and renders signal through the legs to measure the level across the travel: no extractor, no replica and no shim, because the stage names nothing of JUCE |
-| `neural` | `RateBridge`, `NeuralStage` with `J37_HAS_RTNEURAL=1`, and the `.nam` fixtures in `tests/neural/fixtures/` through both engines | `#include`s the shipping headers. Five binaries: `rate_test.cpp` drives the bridge alone; `stage_test.cpp` stands RTNeural's two-method API in for (so the guarded half compiles with no library at all); `fixture_test.cpp` uses the REAL vendored `ThirdParty/RTNeural` AND `ThirdParty/namcore` off the probes in `OptionalLibraries.h` - which is why nothing there defines `J37_HAS_RTNEURAL` by hand - so a model FILE is loaded, driven through both engines and compared; the same file again WITHOUT `J37_NAMCORE`, which is the default build and keeps the WaveNet-refusal branch compiled; and `nam_only_test.cpp`, NAM Core with `J37_HAS_RTNEURAL=0`, where the dispatch has to send the LSTM to NAM too. The NAM Core sources are compiled from their own tree and put on the link line as objects, not an archive: their architectures register themselves in file-scope statics that an archive would prune |
+| `neural` | `RateBridge`, `NeuralStage` with `J37_HAS_RTNEURAL=1`, and the `.nam` fixtures in `tests/neural/fixtures/` through both engines | `#include`s the shipping headers. Five binaries: `rate_test.cpp` drives the bridge alone; `stage_test.cpp` stands RTNeural's two-method API in for (so the guarded half compiles with no library at all); `fixture_test.cpp` uses the REAL vendored `ThirdParty/RTNeural` AND `ThirdParty/namcore` off the probes in `OptionalLibraries.h` - which is why nothing there defines `J37_HAS_RTNEURAL` by hand - so a model FILE is loaded, driven through both engines and compared; the same file again WITHOUT `J37_NAMCORE`, which is the `-DJ37_NAMCORE=OFF` build and keeps the WaveNet-refusal branch compiled; and `nam_only_test.cpp`, NAM Core with `J37_HAS_RTNEURAL=0`, where the dispatch has to send the LSTM to NAM too. The NAM Core sources are compiled from their own tree and put on the link line as objects, not an archive: their architectures register themselves in file-scope statics that an archive would prune |
 | `spectrum` | `SpectrumAnalyser` | `#include`s the shipping header from `Source/DSP/`, compiled TWICE: with `ThirdParty/pocketfft` on the include path, and without it |
 | `reverb` | `DattorroRoom`, linked against the vendored `ThirdParty/dattorro-verb/verb.c` | `#include`s the shipping header against the DSP harness's `shim.h`, and compiles the library's own C source beside it: `verb.c` as C, the header as C++, which is also the only place the stage's `extern "C"` wrapping is measured |
 | `unit` | `ThreeBandEq`, `StandardCompressor` and `TransientShaper` - one stage per file | `#include`s the shipping headers from `Source/DSP/` against the same shim the DSP harness uses, and links Catch2's amalgamated sources: no replica of the engine, because none of the three needs one |
@@ -99,7 +112,7 @@ shipping header* tests the code the plugin compiles.
 | `dsp` (subfund) | the undertone series is generated at the octave below, does not run away, stays silent below its threshold, and the anti-phase guard engages | the subharmonic generator shipping silent and then shipping louder than the programme |
 | `dsp` (tanh seam) | that the shaper's tanh is `std::tanh` bit for bit unless `J37_USE_SIMD_TANH` is thrown, that the flag WITHOUT xsimd on the include path renders the default curves byte for byte, and that the flag WITH xsimd really moves the rendered audio - by 1.19e-7 at worst, which is the accuracy the header quotes, and not by zero, which is what it used to do | a flag that switched a function nothing called, whose branch called `xsimd::tanh` on a float - and xsimd's scalar entry point is `using std::tanh;`, so the switch was a no-op that no build, test or CI job could notice. The three binaries are compared against each other because "the flag reaches the audio" is a claim about two builds rather than about one |
 | `dsp` (noise print) | that 16-bit, 24-bit and 32-bit-float WAVs decode to the samples that were written; that a mono print is the same surface on both sides; that a float print outside [-1, 1) is left alone; that a 44.1 kHz print is converted to the engine's rate with the loop's seam wrapped; that an empty buffer, a truncated file, a NaN sample and a print over a minute are each REFUSED with a reason; and that a loaded print replaces the synthesised hiss rather than doubling it, while CLICKS keeps firing over it | a loop padded with zeros after a short read (a dropout once per repeat), a print silently clipped or normalised so two surfaces at different levels sound identical, and a rate conversion that clamps at the seam instead of wrapping - a click on every repeat. Built twice, because "this build has no decoder" is a branch a pruned `ThirdParty/` compiles and nothing else would read |
-| `dsp` (loudness) | calibration, linearity, rate independence, the 3.01 LU channel sum, the floor, and that `prepare()` then `reset()` leaves the curve in place | the K-weighting filter running on one pair of state variables for two channels, and `reset()` zeroing the coefficients |
+| `dsp` (loudness) | calibration, linearity, rate independence, the 3.01 LU channel sum, the floor, that `prepare()` then `reset()` leaves the curve in place, and EBU Tech 3341's own three signals - 1 kHz stereo sine at -23, -33 and -36 dBFS reading -23.0, -33.0 and -36.0 LUFS within the standard's 0.1 LU. The curve behind those was also run against libebur128 outside the repository (50 Hz to 15 kHz, -3 to -60 dBFS, 44.1 to 192 kHz): the two agree within 0.06 LU, and the meter sits 0.005 LU from the exact digital response where the reference sits 0.044 above it | the K-weighting filter running on one pair of state variables for two channels, `reset()` zeroing the coefficients, and a meter that is self-consistent with a curve that is not BS.1770's - the standard's signals are the only numbers in the harness that were not derived from the code they check |
 | `tooltip` | a hint is withheld for the full 350 ms after the pointer lands on a control, the clock restarts when it moves to the NEXT control (so the second hint waits exactly as long as the first), a repeated reading of the same control restarts nothing, and hovering off the panel counts as a change | a hint that appeared instantly when the pointer moved between two switches, because `juce::TooltipWindow` applies its delay only to the first tip and shows every later one as soon as the hovered component changes |
 | `layout` | every knob's tile stands inside its page and above the member band; no two tiles overlap; the strip is centred; the disc is drawable at the 780 x 664 floor; the value text clears its field's wall; the painted disc is the solved disc; and the spectrum curve's level axis runs the right way up, is CLAMPED at both ends rather than rescaled, and keeps every point inside its cell at any box size | a layout drifting away from the paint routine, and a constructor phase that quietly never ran - plus a curve that draws smoothly, plausibly and upside down, which no screenshot review catches |
 | `state` | a written state reads back identical, an older state loads, an unknown key is ignored, and a missing parameter keeps its default | a bad pointer or an out-of-bounds read in the state path, which only ever shows up in someone's session |

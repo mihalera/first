@@ -1022,6 +1022,13 @@ void FirstAudioProcessorEditor::resized()
     placeTabMembers (geometry);
     placeMeters (layout);
 
+    // The sheet is an overlay, not a band: it covers the panel while open, so its
+    // bounds are the editor's own and it is deliberately not in the overlap
+    // check's furniture list (it would collide with every item on that list by
+    // design).
+    if (parameterSheet != nullptr)
+        parameterSheet->setBounds (getLocalBounds());
+
     verifyPanelHasNoOverlaps();
 }
 
@@ -2145,6 +2152,7 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     uiSoundsButton.setVisible (geometry.settingsTab);
     antiPhaseGuardLabel.setVisible (geometry.settingsTab);
     antiPhaseGuardButton.setVisible (geometry.settingsTab);
+    parameterSheetButton.setVisible (geometry.settingsTab);
     delayTypeLabel.setVisible (geometry.delayTab);
     delayTypeBox.setVisible (geometry.delayTab);
     delayRateLabel.setVisible (geometry.delayTab);
@@ -2263,7 +2271,14 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
                                   geometry.cellWidth - 24, 30);
         antiPhaseGuardLabel.setBounds (geometry.grid.getX() + 2 * geometry.cellWidth + 5, geometry.memberRowY + 56,
                                        geometry.cellWidth - 10, 17);
-        antiPhaseGuardButton.setBounds (geometry.grid.getX() + 2 * geometry.cellWidth + 12, geometry.memberRowY + 76,
+        antiPhaseGuardButton.setBounds (geometry.grid.getX() + 2 * geometry.cellWidth + 12,
+                                        geometry.memberRowY + 76,
+                                        geometry.cellWidth - 24, 30);
+        // The fourth cell of the same row: the parameter sheet's key. It shares
+        // the row with the three interface preferences because that is what it
+        // is - the other way to see the machine, not another control of it.
+        parameterSheetButton.setBounds (geometry.grid.getX() + 3 * geometry.cellWidth + 12,
+                                        geometry.memberRowY + 76,
                                         geometry.cellWidth - 24, 30);
 
         // The caption is put back to the left, where every other caption on the
@@ -2635,6 +2650,7 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "uiSounds",       &uiSoundsButton },
             { "guardLabel",     &antiPhaseGuardLabel },
             { "guardBtn",       &antiPhaseGuardButton },
+            { "paramSheet",     &parameterSheetButton },
             { "diPadLabel",     &diPadLabel },
             { "diPadBox",       &diPadBox },
             { "tracksLabel",    &tracksLabel },

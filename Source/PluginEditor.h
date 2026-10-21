@@ -27,24 +27,25 @@
 // kit is the one file the editor's own header has to include.
 #include "GUI/PanelPaint.h"
 
+// The parameter sheet: every parameter in one scrollable list, laid out by
+// foleys_gui_magic from the processor's own tree. Built lazily on first open,
+// because 109 attachments are not something an editor that never shows the
+// sheet should pay for. Its header decides the J37_HAS_PARAMETER_SHEET probe;
+// without the CPM dependency tree (the JUCE-only harness) the class is a stub
+// with `available == false` and the editor does not offer the button.
+#include "GUI/ParameterSheet.h"
+
 // The panel's tooltip window. juce::TooltipWindow shows the NEXT control's tip
 // at once while one is on screen; DwellTooltipWindow applies the dwell on every
 // change of control. See Source/GUI/TipDwell.h for the branch in JUCE that does
 // it and what this fixes on the panel.
 #include "GUI/DwellTooltipWindow.h"
 
-// foleys_gui_magic (fetched by CPM in CMakeLists.txt). Daniel Walz's declarative
-// GUI framework: the editor's controls can be described in XML and edited live,
-// instead of every position being computed by hand in resized(). It is linked and
-// its header is available here so a MagicProcessor-style editor can be built on
-// top of it; the current editor is still the hand-written one, so this is the
-// seam rather than a replacement.
-#if __has_include(<foleys_gui_magic/foleys_gui_magic.h>)
-#include <foleys_gui_magic/foleys_gui_magic.h>
-#define J37_HAS_FOLEYS 1
-#else
-#define J37_HAS_FOLEYS 0
-#endif
+// foleys_gui_magic (fetched by CPM in CMakeLists.txt) arrives through
+// GUI/ParameterSheet.h above, which owns the module's probe and its one caller:
+// the PARAMETERS sheet builds its controls from a ValueTree instead of another
+// 200 lines of setBounds. A build without the dependency gets that header's
+// stub, and the SETTINGS key is disabled rather than opening nothing.
 
 class J37LookAndFeel final : public juce::LookAndFeel_V4 {
   public:
@@ -676,6 +677,11 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void updateWorkflowButtons();
     bool keyPressed(const juce::KeyPress &) override;
 
+    /** Opens or closes the parameter sheet, building it on first use. Not one of
+        the constructor's phases: nothing in the panel is built from it, and the
+        layout harness checks that the phase block and the constructor agree. */
+    void toggleParameterSheet();
+
     FirstAudioProcessor &audioProcessor;
     J37LookAndFeel customLookAndFeel;
     // The second, deliberately different design for the lists and switches that
@@ -763,6 +769,15 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::ToggleButton antiPhaseGuardButton{"GUARD"};
     juce::Label antiPhaseGuardLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> antiPhaseGuardAttachment;
+
+    // PARAMETERS: the fourth cell of SETTINGS's second band. It opens the sheet
+    // (Source/GUI/ParameterSheet.h) - the one place every parameter is visible
+    // at once, grouped as the processor declares them rather than as the panel
+    // paints them. It is an interface preference like the other three, so it
+    // lives on this page; the sheet itself is a full-editor overlay and closes
+    // on Escape, on its own CLOSE key, or on the button again.
+    juce::TextButton parameterSheetButton{"PARAMETERS"};
+    std::unique_ptr<j37panel::ParameterSheet> parameterSheet;
 
     // -----------------------------------------------------------------------
     //  Neural model picker, on the DYNAMICS tab beside the NEURAL knob.

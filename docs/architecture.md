@@ -57,7 +57,7 @@ by stage, with the rate domain of each - and the short version is
 | transient shaper (attack / sustain) | `Source/DSP/TransientShaper.h` |
 | three-band EQ, high-pass, low-pass | `Source/DSP/ThreeBandEq.h` |
 | the loudness meter the readout reads | `Source/DSP/LoudnessMeter.h` |
-| neural stage (RTNeural, and NAM Core behind `J37_NAMCORE`, optional) | `Source/DSP/NeuralStage.h` |
+| neural stage (RTNeural, and NAM Core behind `J37_NAMCORE`, on by default) | `Source/DSP/NeuralStage.h` |
 | NAM Core's loader and per-sample loop, for the architectures RTNeural does not convert | `Source/DSP/NamBackend.h` |
 | IR cabinet (convolution, optional) | `Source/DSP/IrStage.h` |
 | the rate bridge between engine rate and a model's rate | `Source/DSP/RateBridge.h` |
@@ -170,9 +170,10 @@ would not see a moved block with a missing include.
 
 One of them is wired the opposite way round, from a library to the audio: every tanh
 the saturation core runs goes through `j37Tanh`, the one seam a library switch can be
-thrown at, and the switch is `J37_USE_SIMD_TANH` (off by default, because it changes
-the rendered audio by ~1e-7). `tests/dsp/simd_tanh_test.cpp` is built in all three
-shapes - flag with xsimd, flag without it, and neither - and the three binaries'
+thrown at, and the switch is `J37_USE_SIMD_TANH` (on by default: xsimd's kernel costs
+~2.4 ns against `std::tanh`'s ~6.7 ns, for a ~1e-7 curve difference;
+`-DJ37_USE_SIMD_TANH=OFF` restores `std::tanh`). `tests/dsp/simd_tanh_test.cpp` is built
+in all three shapes - flag with xsimd, flag without it, and neither - and the three binaries'
 curve digests are compared against each other, because "the switch reaches the audio"
 is a claim about two builds rather than about one.
 

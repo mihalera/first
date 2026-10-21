@@ -27,8 +27,8 @@ section after the tables).
 
 | Item | Status | Where it is |
 | --- | --- | --- |
-| `foleys_gui_magic` in the build | **done (linked)** | `CMakeLists.txt` links it and `Source/PluginEditor.h` probes/embeds it; the panel itself is still the hand-written one |
-| Whole panel authored in foleys XML | **open** | the editor is 2,600 lines of computed geometry with a harness that measures it (`tests/layout`); an XML rewrite would have to move that geometry and its checks with it |
+| `foleys_gui_magic` in the build | **done (used)** | `CMakeLists.txt` links it, and `Source/GUI/ParameterSheet.h` builds the PARAMETERS sheet from a ValueTree the processor's own parameter tree generates; the panel itself is still the hand-written one |
+| Whole panel authored in foleys XML | **open, and no longer the only use** | the editor is 2,600 lines of computed geometry with a harness that measures it (`tests/layout`); an XML rewrite would have to move that geometry and its checks with it. The sheet is a real foleys surface without that rewrite |
 | Melatonin vector graphics for GR / spectrum | **partial** | `melatonin_blur` is used for the panel's shadows and halos (`Source/GUI/PanelPaint.h`, `J37LookAndFeel.cpp`); the GR readout and spectrum are drawn with `juce::Path` and the analyser's own curve |
 | Localised tooltips through `LocalisedStrings` and `TRANS()` | **done, differently** | `Source/GUI/PanelTranslations.h` uses `LocalisedStrings::translateWithCurrentMappings`; `en.txt` and `uk.txt` ship inside the binary, and `tests/translations/check_translations.py` fails on a dead key, a missing language or an empty entry |
 
@@ -47,7 +47,7 @@ section after the tables).
 
 | Item | Status | Where it is |
 | --- | --- | --- |
-| NeuralAmpModelerCore + Eigen | **done** | vendored (`ThirdParty/namcore` @ `0b3d3c97` v0.6.0, `ThirdParty/eigen` @ `bc3b3987`) and wired behind `-DJ37_NAMCORE=ON`: `Source/DSP/NamBackend.h` is the backend, `Source/DSP/NeuralStage.h` dispatches LSTM to RTNeural and everything else to NAM Core, and `tests/neural` measures both engines against the reference player (1.19e-7 LSTM, 5.96e-8 converter-vs-NAM, 2.79e-8 WaveNet through the stage). OFF by default until the process cost is measured - see WP3 |
+| NeuralAmpModelerCore + Eigen | **done** | vendored (`ThirdParty/namcore` @ `0b3d3c97` v0.6.0, `ThirdParty/eigen` @ `bc3b3987`) and linked by default (`J37_NAMCORE`, ON; `-DJ37_NAMCORE=OFF` drops it): `Source/DSP/NamBackend.h` is the backend, `Source/DSP/NeuralStage.h` dispatches LSTM to RTNeural and everything else to NAM Core, and `tests/neural` measures both engines against the reference player (1.19e-7 LSTM, 5.96e-8 converter-vs-NAM, 2.79e-8 WaveNet through the stage). The process cost that its default waited for is printed by `tests/neural/run_bench.sh`: 14.5 % of one 48 kHz core per mono channel for a 16-channel WaveNet, 2.8 % for a 20-cell LSTM on NAM Core - see WP3 |
 | `mNAMEngine->process()` in `processBlock` | **not as written** | model inference on the audio thread is only safe if it allocates and locks nothing; the current stage runs a fixed graph with per-channel state, and the async machinery here is the IR loader's |
 | `juce::dsp::Convolution` IR loader | **done** | `Source/DSP/IrStage.h`: one Convolution per channel, `loadImpulseResponse` for the wait-free background decode, a stereo/mono rule, and a "loading" flag the panel reads |
 | RTNeural micro-models for valve/cabinet | **done (as the neural stage)** | `Source/DSP/NeuralStage.h` + `tests/neural`, which compiles the guarded half with RTNeural stubbed |
@@ -120,9 +120,10 @@ prints the reading so the trade stays visible.
    formant path that survives the vowel measurement the roadmap row describes.
 3. **~~NAM Core + Eigen~~**, done behind the existing `NeuralStage` seam: LSTM still
    goes through RTNeural and everything else through NAM Core, behind `J37_NAMCORE`
-   (OFF by default). `tests/neural` now builds both shapes and compares both engines
+   (now ON by default). `tests/neural` builds both shapes and compares both engines
    with the reference player on `tests/neural/fixtures/` - the LSTM through the shipping
    stage (1.19e-7), the converter against NAM Core's own LSTM (5.96e-8), and WaveNet
-   through the stage (2.79e-8). What is open is the process-cost measurement that would
-   make the option the default - see WP3 in
+   through the stage (2.79e-8) - and `tests/neural/run_bench.sh` prints the process cost
+   the default waited for (14.5 % of one core per mono channel for a 16-channel WaveNet).
+   See WP3 in
    [library-integration-plan.md](library-integration-plan.md).

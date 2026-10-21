@@ -646,9 +646,12 @@ j37_apply_vendor_libraries(first)
 #  already had the seam: Source/DSP/NamBackend.h is compiled only when the macro
 #  is 1, and the plugin's own code does not branch on it at all.
 #
-#  OFF by default - see the block in J37Dependencies for the size and
-#  compile-time reasoning. A build with it off is the LSTM-only stage that
-#  shipped before this option existed.
+#  ON by default, because the gate it arrived with - "measured before it is the
+#  default" - has been measured: tests/neural/run_bench.sh prints 14.5 % of one
+#  48 kHz core per mono channel for a 16-channel WaveNet and 2.8 % for an LSTM
+#  on NAM Core, paid only while a model is loaded. `-DJ37_NAMCORE=OFF` is still
+#  the LSTM-only stage that shipped before this option existed, with its
+#  refusal of WaveNet; see the block in J37Dependencies for the numbers.
 # ------------------------------------------------------------------------------
 if(J37_NAMCORE)
     target_link_libraries(first PRIVATE namcore)
@@ -659,28 +662,35 @@ endif()
 #  The shaper's tanh: the one switch in this build that changes the rendered
 #  audio, and the only place a library is wired to the engine by a macro.
 #
-#  OFF by default, deliberately. Source/DSP/HotPathMath.h's j37Tanh is the single
+#  ON by default, deliberately. Source/DSP/HotPathMath.h's j37Tanh is the single
 #  call that every saturation curve in Source/DSP/SaturationCore.h runs, and this
 #  option is what makes it xsimd's batch kernel instead of std::tanh: measured
 #  through tests/dsp/run_bench.sh (the same translation unit built both ways,
 #  section 6 of the log) at ~2.4 ns per call against std::tanh's ~6.7 ns, which
 #  makes the whole saturation core about 1.5x cheaper - ~42 us to ~28 us per 512
-#  frame block on the machine that measured it. It is off because it is a
-#  DIFFERENT CURVE: 1.19e-7 absolute at worst, which is far below audibility for
-#  a stage that is generating harmonics on purpose, but a measured difference in
-#  the rendered audio is a listening decision in this repository and not a build
-#  default.
+#  frame block on the machine that measured it.
 #
-#  xsimd is already on the plugin's include path - it is fetched into
-#  ThirdParty/ and linked as chowdsp::chowdsp_simd - so this option only has to
-#  define the macro the seam reads. tests/dsp/simd_tanh_test.cpp compiles all
-#  three shapes (flag with the library, flag without it, and neither) and asserts
-#  what each one renders, so the switch cannot quietly rot into a no-op again:
-#  as written it called xsimd::tanh on a float, which IS std::tanh.
+#  It was OFF while the seam was unproven, and what changed the default was not a
+#  preference. tests/dsp/simd_tanh_test.cpp now builds all three shapes (flag
+#  with xsimd, flag without it, and neither) and compares their curve digests,
+#  so "the switch reaches the audio" is a claim a build checks rather than a
+#  comment that hopes, and the branch cannot rot into the no-op it once was (it
+#  called xsimd::tanh on a float, which IS std::tanh). The curve it reaches is a
+#  DIFFERENT one - 1.19e-7 absolute at worst - and that number is the whole
+#  argument: far below audibility for a stage that is generating harmonics on
+#  purpose, against a 1.5x cost on the path every sample crosses. That is the
+#  listening decision this build has now made, and the OFF shape is one flag
+#  away rather than the other way round.
+#
+#  -DJ37_USE_SIMD_TANH=OFF is the documented way back to std::tanh bit for bit:
+#  it is the shape tests/dsp/run_bench.sh measures first, and the shape the
+#  three-way tanh harness compares the other two against. xsimd is already on the
+#  plugin's include path - it is fetched into ThirdParty/ and linked as
+#  chowdsp::chowdsp_simd - so this option only has to define the macro the seam
+#  reads.
 # ------------------------------------------------------------------------------
-# SIMD tanx is the default when xsimd is available - ~1.5x faster, ~1e-7 difference
 option(J37_USE_SIMD_TANH
-    "Run the shaper's tanh through xsimd's batch kernel instead of std::tanh (changes the rendered audio by ~1e-7)"
+    "Run the shaper's tanh through xsimd's batch kernel instead of std::tanh (the default; OFF restores std::tanh at a ~1.5x shaper cost)"
     ON)
 
 if(J37_USE_SIMD_TANH)
@@ -806,7 +816,7 @@ message(STATUS "                nlohmann_json (header only)")
 if(J37_NAMCORE)
     message(STATUS "                NeuralAmpModelerCore + Eigen (second .nam backend: WaveNet/ConvNet)")
 else()
-    message(STATUS "                NeuralAmpModelerCore OFF (LSTM-only .nam support; -DJ37_NAMCORE=ON adds it)")
+    message(STATUS "                NeuralAmpModelerCore OFF (-DJ37_NAMCORE=OFF: LSTM-only .nam support)")
 endif()
 message(STATUS "                q_dsp, sokol_gfx, glm (header only)")
 message(STATUS "                Optional graphics: BGFX, wgpu-native or Dawn (selected by J37_RENDER_BACKEND)")

@@ -257,6 +257,7 @@ void FirstAudioProcessorEditor::applyTheme() {
     stylePickerButton(clearIrButton);
     stylePickerButton(loadNoiseButton);
     stylePickerButton(clearNoiseButton);
+    stylePickerButton(parameterSheetButton);
 
     styleCombo(oversamplingBox);
     styleCombo(instrumentBox);
@@ -355,6 +356,17 @@ void FirstAudioProcessorEditor::applyTheme() {
     // The mode button's colours read the palette (see refreshModeButtonCaption),
     // so a theme switch must re-run it - the caption is unchanged, the ink is not.
     refreshModeButtonCaption();
+
+    // The sheet's stylesheet carries the palette it was built with, so a theme
+    // switch rebuilds it rather than leaving the old colours under the new
+    // panel. Rebuilt only if it had been opened; the next open builds it anyway.
+    if (parameterSheet != nullptr) {
+        const auto wasOpen = parameterSheet->isOpen();
+        parameterSheet.reset();
+        if (wasOpen)
+            toggleParameterSheet();
+    }
+
     repaint();
 }
 
