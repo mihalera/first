@@ -16,7 +16,10 @@ Read alongside:
 - [plugin-improvement-plan.md](plugin-improvement-plan.md) - the review's priorities,
   including the licence decision this file depends on;
 - [architecture.md](architecture.md) and [tests/README.md](../tests/README.md) - how a
-  stage is written and how a stage is measured.
+  stage is written and how a stage is measured;
+- [library-candidates.md](library-candidates.md) - the survey this file's plan came out
+  of: what is in the binary, what is fetched and unused, and which outside libraries
+  would help this plugin (and which would not).
 
 ## 1. The gate
 
@@ -52,11 +55,11 @@ them the honest answer is "nothing I can name", and that is a finding, not an om
 | `pocketfft` | vendored `c90e55b3` | BSD-3 | `Source/DSP/SpectrumAnalyser.h` |
 | `glm` | vendored `1.0.3` | MIT / Happy Bunny | `Source/GUI/TapeScene.*` |
 | `melatonin_blur` | `v1.4` | MIT | panel shadows and halos |
-| `foleys_gui_magic` | `d53d998e` | BSD-3 | `Source/PluginEditor.h` |
+| `foleys_gui_magic` | `d53d998e` | BSD-3 | `Source/GUI/ParameterSheet.h` - the parameter sheet the SETTINGS page opens |
 | `readerwriterqueue` | `v1.0.7` | BSD-2 | telemetry (WP2 deliberately did not add a second caller - see the WP2 note) |
 | `dr_libs` (`dr_wav.h`) | vendored `wav-0.14.5` | Unlicense / MIT-0 | `Source/DSP/NoiseDecoder.*`, the vinyl stage's noise print |
 | `chowdsp_math` (+ `chowdsp_simd`, which it includes) | `v2.4.0` | BSD-3 | metering and auto-gain dB/exp paths |
-| `xsimd` | vendored `14.3.0` | BSD-3 | **opt-in** via `J37_USE_SIMD_TANH` |
+| `xsimd` | vendored `14.3.0` | BSD-3 | **on by default** via `J37_USE_SIMD_TANH`; `-DOFF` restores `std::tanh` |
 | `signalsmith-stretch` (+ `signalsmith-linear`) | vendored `1.4.0` / `0.6.4` | MIT | `Source/DSP/CorrectorStage.h` engine 2, **off by default** |
 | `melatonin_inspector` | `9c483f86` | MIT | `JUCE_DEBUG` builds only |
 
