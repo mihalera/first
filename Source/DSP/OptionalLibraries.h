@@ -222,12 +222,13 @@
 //  backend for them - Source/DSP/NamBackend.h wraps its loader and its
 //  per-sample loop, and the stage dispatches to it here.
 //
-//  OPT-IN, like xsimd and signalsmith-stretch above, and for a measured reason
-//  rather than a cautious one: a second inference engine is a second copy of a
-//  convolution stack in the binary and several minutes of extra compile time,
-//  so it is a build decision (J37_NAMCORE in CMakeLists.txt, OFF by default)
-//  until the size and CPU numbers say it should be the default. A build without
-//  it keeps the LSTM-only stage it has always had, refusal included.
+//  ON by default (J37_NAMCORE in cmake/J37Dependencies.cmake), which it became
+//  when the number it was waiting for arrived: tests/neural/run_bench.sh measures
+//  a 16-channel, ten-dilation WaveNet at 14.5 % of one 48 kHz core per mono
+//  channel and a 20-cell LSTM at 2.8 % through NAM Core - only while a model is
+//  loaded, since the stage is a pass-through with none. -DJ37_NAMCORE=OFF keeps
+//  the LSTM-only stage this file described before, refusal included, for a build
+//  that would rather not carry a second inference engine and its compile time.
 //
 //  TWO headers are probed because NAM Core cannot be used without Eigen: every
 //  NAM header includes <Eigen/Dense>, and the convolutional layers include

@@ -57,7 +57,7 @@ by stage, with the rate domain of each - and the short version is
 | transient shaper (attack / sustain) | `Source/DSP/TransientShaper.h` |
 | three-band EQ, high-pass, low-pass | `Source/DSP/ThreeBandEq.h` |
 | the loudness meter the readout reads | `Source/DSP/LoudnessMeter.h` |
-| neural stage (RTNeural, and NAM Core behind `J37_NAMCORE`, optional) | `Source/DSP/NeuralStage.h` |
+| neural stage (RTNeural, and NAM Core behind `J37_NAMCORE`, on by default) | `Source/DSP/NeuralStage.h` |
 | NAM Core's loader and per-sample loop, for the architectures RTNeural does not convert | `Source/DSP/NamBackend.h` |
 | IR cabinet (convolution, optional) | `Source/DSP/IrStage.h` |
 | the rate bridge between engine rate and a model's rate | `Source/DSP/RateBridge.h` |

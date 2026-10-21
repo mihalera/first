@@ -45,7 +45,7 @@ them the honest answer is "nothing I can name", and that is a finding, not an om
 | Library | Pin | Licence | Caller |
 | --- | --- | --- | --- |
 | `RTNeural` | vendored `95c3c0f9` | BSD-3 | `Source/DSP/NeuralStage.h`, the LSTM `.nam` path |
-| `NeuralAmpModelerCore` | vendored `0b3d3c97` (v0.6.0) | MIT | `Source/DSP/NamBackend.h` - **opt-in** via `J37_NAMCORE`, the WaveNet/ConvNet `.nam` path |
+| `NeuralAmpModelerCore` | vendored `0b3d3c97` (v0.6.0) | MIT | `Source/DSP/NamBackend.h` - **on by default** (`J37_NAMCORE`), the WaveNet/ConvNet `.nam` path, measured at 14.5 % of one 48 kHz core per channel |
 | `Eigen` | vendored `bc3b3987` (3.5.0) | MPL-2.0 | NAM Core's linear algebra, and nothing else |
 | `dattorro-verb` | vendored `41e976a0` | MIT | `Source/DSP/DattorroRoom.h` |
 | `nlohmann/json` | vendored `v3.12.0` | MIT | preset + model parsing |
@@ -60,8 +60,10 @@ them the honest answer is "nothing I can name", and that is a finding, not an om
 | `signalsmith-stretch` (+ `signalsmith-linear`) | vendored `1.4.0` / `0.6.4` | MIT | `Source/DSP/CorrectorStage.h` engine 2, **off by default** |
 | `melatonin_inspector` | `9c483f86` | MIT | `JUCE_DEBUG` builds only |
 
-The three rows marked **opt-in** are the model for how an audio-changing library arrives:
-an `option()`, a probe, and a harness that prints what each shape renders.
+The rows marked **opt-in** are the model for how an audio-changing library arrives: an
+`option()`, a probe, and a harness that prints what each shape renders. NAM Core followed
+that model one step further: it arrived opt-in, printed its numbers, and became the
+default when they said it could - see WP3.
 
 ### 2b. The defect: linked, never called - now gone
 
@@ -249,9 +251,10 @@ second backend behind that same seam, not a second stage.
    pins**, not as configured packages: that is what every other library here does, and
    NAM Core's own CMake is a standalone project whose flags, version floor and `tools/`
    executables a plugin build should not inherit.
-2. `J37_HAS_NAMCORE` in `OptionalLibraries.h`, guarded, default **off**
-   (`-DJ37_NAMCORE=ON`). Two inference engines in one binary is a size and build-time
-   cost, so it is an option until the measurement below says it is the default.
+2. `J37_HAS_NAMCORE` in `OptionalLibraries.h`, guarded, default **off** at that point
+   (opt in with `-DJ37_NAMCORE=ON`). Two inference engines in one binary is a size and
+   build-time cost, so it was an option until the measurement below said it should be
+   the default - which it now is, and the opt-out is `-DJ37_NAMCORE=OFF`.
 3. New `Source/DSP/NamBackend.h`: `bool load(const nlohmann::json&)`, `void prepare(double
    rate)`, `float process(float)`, `reset()`. **Landed exactly that way.** RTNeural stays
    the LSTM path and NAM Core takes WaveNet/ConvNet, and it takes LSTM too in a build
@@ -328,8 +331,9 @@ second pass built the backend behind it:
   upstream's own tools build it.
 - **`J37_HAS_NAMCORE` is a two-header probe** (NAM's `get_dsp.h` and `Eigen/Dense`),
   because NAM cannot be used without Eigen and a tree with one of them is not a tree
-  this backend can compile against. The option `J37_NAMCORE` is OFF by default; the
-  probe reads the option, as xsimd's and signalsmith's do.
+  this backend can compile against. The option `J37_NAMCORE` is ON by default (it
+  arrived OFF, and the process-cost gate below is what moved it); the probe reads the
+  option, as xsimd's and signalsmith's do.
 - **`Source/DSP/NamBackend.h` is NAM's own loader and per-sample loop**, with three
   details that cost real behaviour:
     - the sample buffers are `NAM_SAMPLE`, not `float`. The library defaults to double
@@ -379,14 +383,96 @@ orders under the gate. Every sample is also checked finite and bounded, and clea
 model returns the stage to the bit-exact pass-through in both the LSTM and WaveNet
 cases.
 
-**What the gate does NOT yet include, and why the option stays OFF.** The process cost.
-The plan asked for it measured by `tests/dsp/run_bench.sh` and printed; that harness
-renders the plugin's own DSP blocks and has no model in it, so wiring NAM Core into it is
-a separate change (a benchmark needs a fixture with realistic channel counts, not the
-2-channel one the differential test uses). Until that number exists, `J37_NAMCORE` is
-OFF by default: the harness compiles and passes both shapes, so the backend cannot rot,
-but no shipped build pays for a convolutional stack it has not measured. Binary size
-moves with the same decision and is printed by the CMake summary when the option is on.
+**The second gate - process cost - and how it turned the default ON.** The first pass of
+this item ended with the option OFF and the reason stated: no shipped build pays for a
+convolutional stack it has not measured. It also said where that measurement belonged -
+`tests/dsp/run_bench.sh` - which turned out to be the one part of the plan that was
+wrong: that harness extracts headers and renders the engine's own DSP blocks, and it has
+no model, no NAM Core and no fixtures in it. The measurement needs both engines and a
+model of a realistic SHAPE, so it lives where those are, in `tests/neural`:
+
+- `tests/neural/bench_nam.cpp`, built and run by `tests/neural/run_bench.sh`. A
+  measurement, not a gate, for the same reason `tests/dsp/run_bench.sh` is one: it
+  fails only when a model does not load or renders a non-finite sample, never because a
+  number is slow.
+- `tests/neural/nam_shapes.h` holds the weight-layout rules the fixture gate already
+  checked against - now the single copy, used in both directions: `fixture_test.cpp`
+  checks a fixture's length against it, and the benchmark GENERATES its models with it.
+  A generator that disagreed with the loader cannot stay silent: NAM Core refuses a
+  weights array of the wrong length, and that is how the first run of the benchmark
+  found that a WaveNet with no post-stack head has eight output channels rather than
+  one - a document NAM's own loader accepts and this plugin's stage, correctly,
+  refuses.
+- The models are the shape the FORMAT ships rather than the shape the fixtures use: a
+  one-layer-array WaveNet with 16 channels, a 3-tap kernel, ten dilations from 1 to 512,
+  an eight-channel head and the standard 1-tap post-stack head that reduces it to one
+  output (10 874 weights), and a 20-cell LSTM (1 821 weights). Weights come from a
+  deterministic generator, small enough to keep every activation in its responsive
+  range - a profile with the real shape's arithmetic, which is all a cost measurement
+  needs and is labelled as such in the file.
+- Every row is measured twice: through `NeuralStage::process` (what one channel of the
+  plugin costs, rate bridge and mixdown included) and through `NamBackend::process`
+  alone, so the two bracket the stage's own share rather than it being estimated. The
+  two fixtures are measured beside them, and an empty visit of the same signal as the
+  loop's own cost. One sample per NAM call, because that is what a per-sample stage can
+  hand a block API.
+
+**What it measured**, on the machine that ran it (GCC, `-O2`, one core; `run_bench.sh`
+prints the same table for any host, and the share is the machine-independent column):
+
+| model | engine | ns/sample | share of one 48 kHz mono channel |
+| --- | --- | ---: | ---: |
+| WaveNet 16ch / 10 dilations | `NeuralStage` (NAM Core) | 3017.7 | **14.49 %** |
+| WaveNet 16ch / 10 dilations | `NamBackend` alone | 3188.0 | 15.30 % |
+| LSTM 20 cells | `NeuralStage` (RTNeural) | 1954.7 | **9.38 %** |
+| LSTM 20 cells | `NamBackend` (NAM Core) | 589.1 | **2.83 %** |
+| WaveNet fixture (2ch / 2 dilations) | `NamBackend` | 403.2 | 1.94 % |
+| LSTM fixture (4 cells) | `NeuralStage` (RTNeural) | 258.7 | 1.24 % |
+| empty visit (loop overhead) | neither | 0.6 | 0.00 % |
+
+Run-to-run spread is a few percent on a shared host - three runs of the same binary put
+the WaveNet row at 14.40, 14.49 and 14.66 %, and the RTNeural LSTM at 9.44, 9.38 and
+8.70 % - so the honest reading is the half-point and the order of the rows, not the
+digits. The benchmark prints all of it rather than a threshold for that reason.
+
+Three findings, in the order they matter:
+
+1. **The option is now ON.** A mono channel of the format's most common architecture
+   costs about 14.5 % of one core at 48 kHz - about seven mono channels per core, and the
+   stereo instance a master bus gets is 29 %. That is a cost the user asks for: with no
+   model loaded the stage is a bit-exact pass-through and the number is zero, the model
+   runs at its own rate so 8x oversampling does not multiply it, and what a build pays
+   unconditionally is the object code (about 0.95 MB of `.text` across NAM Core's
+   sixteen objects before the linker's dead-strip) and the compile time. A build that
+   would rather not pay either passes `-DJ37_NAMCORE=OFF`, which restores the LSTM-only
+   stage and its WaveNet refusal. The gate said "measured before it is the default";
+   this is the measurement, and the default follows it rather than staying off for a
+   number nobody had.
+2. **The fixtures would have said the wrong thing**, which is why the first pass refused
+   to measure them: 1.94 % for the WaveNet fixture against 14.49 % for the real shape,
+   and 1.24 % against 9.38 % for the LSTM. A gate measured on the fixture would have
+   concluded the stack was nearly free.
+3. **NAM Core's LSTM is more than three times cheaper than RTNeural's** on the same model
+   (2.83 % against 9.38 %). That is a real argument for the follow-up the plan names -
+   deleting the converter - and it does not change the order: the converter is what the
+   differential comparison runs against, and it stays until that comparison has been
+   green for a release. It does mean the deletion, when it comes, is a CPU win as well
+   as a deletion.
+
+The stage's own share is below what this harness can resolve: the two WaveNet rows land
+within a few percent of each other, and which one is nominally lower moves between runs
+(the backend reading slightly HIGHER is cache and clock placement - the two models are
+separate objects measured one after the other - not the stage being cheaper than the
+engine it calls). The honest reading is that the bookkeeping and the dry/wet mixdown
+are lost in the noise against a 3 microsecond model, and that with the two rates equal
+`RateBridge` is absent rather than busy, exactly as its header promises. At a session
+rate that does not match the model, that row would carry the conversion instead.
+
+**What the gate still does not include.** `NAM_ENABLE_A2_FAST` stays undefined: it
+routes one hand-optimised shape to a faster WaveNet and every other model to the generic
+path, so enabling it would make the measured number the cost of one branch rather than
+of the backend. The benchmark measures the generic path every model takes, and there is
+no second number to compare it against until that flag is on.
 
 **Licence.** MIT (NAM Core, © 2023 Steven Atkinson) and MPL-2.0 (Eigen). Neither is
 copyleft in the plugin-linking sense; both need a `THIRD_PARTY_NOTICES.md` row and a
@@ -394,20 +480,23 @@ README table row, and Eigen's MPL means its own files stay under MPL while the b
 as a whole does not.
 
 **Risk.** Binary size and CPU: WaveNet is a convolution stack and costs far more per
-sample than an LSTM. That is a scheduling decision (run the model at 48 kHz and bridge,
-never per-oversampled-sample), not a reason to refuse, but it has to be measured before
-the option becomes a default. The other risk is that NAM Core's object model is heavier
-than the RTNeural seam expects - the `retiredModels` list is what keeps that safe.
+sample than an LSTM (measured above: 14.5 % against 2.8 % of a core). That is a
+scheduling decision (run the model at 48 kHz and bridge, never per-oversampled-sample),
+not a reason to refuse, and it is why the cost is paid only while such a model is
+loaded. The other risk is that NAM Core's object model is heavier than the RTNeural seam
+expects - the `retiredModels` list is what keeps that safe.
 
 **Cost, in the end.** One pass for the fixtures and the oracle, one for the fetch, the
 backend, the stage seam, the harness split and the documentation. The fixtures were the
 right thing to build first: they are what caught the JSON-version collision, the
 pruned-registration failure and the Reset-on-the-audio-thread question, each of which
-compiles and looks right on its own. What is left is the CPU measurement above, and the
-follow-up the plan already names - deleting the LSTM converter once the differential has
-been green for a release, which turns LSTM into NAM Core's too and leaves one engine.
-That deletion is deliberately NOT in this pass: it would take away the comparison the
-backend was accepted on.
+compiles and looks right on its own. A third pass closed the last gate: the process-cost
+benchmark, the realistic model shapes it needed, and the default they justify. One
+follow-up the plan already names is still open - deleting the LSTM converter once the
+differential has been green for a release, which turns LSTM into NAM Core's too and
+leaves one engine, and which the benchmark now says is a CPU win as well. That deletion
+is deliberately not made here: it would take away the comparison the backend was
+accepted on.
 
 ### WP4 - `SoundTouch`: deleted - **done**
 
@@ -522,7 +611,7 @@ A library is finished - not merely added - when all seven are true:
 | --- | --- | --- |
 | 1 | WP1 - drop `chowdsp_dsp_utils` | **Done.** Minutes of work, removed a GPLv3 obligation from the binary, needed no new measurement |
 | 2 | WP2 - `dr_wav` noise loader | **Done** - engine, VINYL page picker and docs. It exercised the loader pattern WP3 reuses |
-| 3 | WP3 - NAM Core + Eigen | **Done.** The backend, the option (OFF by default), the stage seam and the differential harness are in the tree; WaveNet and ConvNet `.nam` files load where the option is on, and the unmatched half - process cost - is named in the WP3 gate |
+| 3 | WP3 - NAM Core + Eigen | **Done.** The backend, the stage seam, the differential harness and the process-cost benchmark are in the tree; WaveNet and ConvNet `.nam` files load in the default build, because the measurement that the option was waiting for says they should (`tests/neural/run_bench.sh`) |
 | 4 | WP4 - delete `SoundTouch` | **Done.** The corrector's engine set is settled (two engines, measured by `tests/pitch`), and WP3 does not touch it |
 | 5 | WP5 - `Assimp` | Blocked on an asset, not on time |
 | 6 | WP6 - inventory truth | Done with this file |
@@ -530,9 +619,10 @@ A library is finished - not merely added - when all seven are true:
 WP1 and WP4 are the two that make the binary *smaller* and the licence story simpler.
 They are not glamorous, and they are the ones worth doing early for that reason: every
 later item inherits the link line they leave behind. WP1, WP2, WP3, WP4 and WP6 are
-done. WP3 is the only one that ADDS a library to the binary, and it is opt-in for that
-reason: the harness measures both shapes on every push, and the default waits for the
-process-cost number the gate still names.
+done. WP3 is the only one that ADDS a library to the binary: it arrived opt-in, the
+harness measured both shapes on every push, and the default moved when the process-cost
+number arrived - 14.5 % of one core per channel for the format's most common
+architecture, paid only while such a model is loaded.
 
 ### What this leaves open
 
