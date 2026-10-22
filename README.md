@@ -1117,6 +1117,12 @@ continues through its normal software path. `VULKAN`, `METAL`, `D3D11`, `D3D12`,
 surface, and none of them draws the tape scene yet - so the editor keeps painting
 with JUCE instead of showing a blank or half-drawn frame.
 
+Which one is running is printed on the panel's header, beside the brand strip:
+`BACKEND  OPENGL`, and `BACKEND  CPU (VULKAN PENDING)` for a build that asks for a
+staged adapter and falls back. The caption is `RenderBackend.h`'s own
+`backendCaption()`, so it reads `effectiveBackend()` rather than the configured
+value and cannot claim a renderer the panel is not drawing with.
+
 At configure time, CMake validates platform-specific native requirements. Metal
 warns on non-Apple systems, DirectX warns on non-Windows systems, and Vulkan checks
 for a Vulkan SDK. These checks are prerequisites for the native integrations, not a

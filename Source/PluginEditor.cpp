@@ -1115,6 +1115,14 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
                            2 * headerColumnWidth + headerGap,
                            headerSwitchHeight);
 
+    // The renderer caption sits on the brand row's right end, ending one gap
+    // before the switch grid: the row above the title is the only part of the
+    // header with horizontal slack in it, and ending at headerGridLeft rather
+    // than at a fixed x is what keeps it clear of the switches at every width.
+    rendererLabel.setBounds (headerGridLeft - headerGap - rendererCaptionWidth,
+                             header.getY() + 8, rendererCaptionWidth, 12);
+    rendererLabel.setJustificationType (juce::Justification::centredRight);
+
     // The status readout gets its own full-width band below the switches.
     statusLabel.setBounds (headerGridLeft, statusRowY,
                            headerColumns * headerColumnWidth
@@ -2572,6 +2580,7 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
         const struct { const char* name; const juce::Component* component; } furniture[] = {
             // The header: the two switch rows, the theme key and the readout.
             { "brand",         &brandLabel },
+            { "renderer",      &rendererLabel },
             { "title",         &titleLabel },
             { "subtitle",      &subtitleLabel },
             { "status",        &statusLabel },

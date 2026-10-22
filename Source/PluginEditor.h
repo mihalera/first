@@ -496,6 +496,10 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     static constexpr int headerColumnCount = 4;
     static constexpr int headerColumnWidth = 74;
     static constexpr int headerColumnGap = 6;
+    /** The renderer caption on the brand row, wide enough for the longest form the
+        caption can take - "BACKEND  CPU (VULKAN PENDING)" - at its own 8.5 pt, and
+        ending one gap before the switch grid so the two can never meet. */
+    static constexpr int rendererCaptionWidth = 190;
 
     void timerCallback() override;
     void createDecorativePhysics();
@@ -1026,6 +1030,10 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoGainAttachment;
 
     juce::Label brandLabel;
+    /** The renderer the panel is actually drawn with, printed on the brand row.
+        A compile-time fact (RenderBackend.h), so it is set once in the constructor
+        and never refreshed: a build cannot change its backend while it runs. */
+    juce::Label rendererLabel;
     juce::Label titleLabel;
     juce::Label subtitleLabel;
     juce::Label statusLabel;

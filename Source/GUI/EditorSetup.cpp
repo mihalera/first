@@ -327,6 +327,14 @@ void FirstAudioProcessorEditor::stylePanelLabels() {
     titleLabel.setInterceptsMouseClicks(false, false);
     styleLabel(subtitleLabel, "NONLINEAR ANALOG / MIX BOX", 10.0f, paletteFor(false).secondary,
                true, juce::Justification::left);
+    // Which renderer the panel is drawn with, beside the brand strip. It is one
+    // compile-time fact from RenderBackend.h and it is worth a line on the panel:
+    // "the transport is on the GPU" and "the panel is software-painted" behave
+    // differently under a host's resize, and the header is where a user looks
+    // first. When the build asks for an adapter that is still staged, the caption
+    // names it too, so the panel never claims a renderer it is not running.
+    styleLabel(rendererLabel, j37::render::backendCaption(), 9.5f, paletteFor(false).secondary,
+               true, juce::Justification::centredRight);
     styleLabel(statusLabel, "STEREO / REAL TIME", 9.0f, paletteFor(false).status, true,
                juce::Justification::centred);
     styleLabel(deckHeadingLabel, "Deck", 10.0f, paletteFor(false).accent, true,
@@ -407,6 +415,7 @@ void FirstAudioProcessorEditor::stylePanelLabels() {
     addAndMakeVisible(antiPhaseReadout);
 
     addAndMakeVisible(brandLabel);
+    addAndMakeVisible(rendererLabel);
     addAndMakeVisible(titleLabel);
     addAndMakeVisible(subtitleLabel);
     addAndMakeVisible(statusLabel);

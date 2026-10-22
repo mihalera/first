@@ -88,4 +88,42 @@ constexpr bool isFallbackActive() noexcept {
         && usesCpuFallback();
 }
 
+/** The API's name in the spelling the build option uses, so the panel and
+    `-DJ37_RENDER_BACKEND=` say the same word for the same thing. */
+constexpr const char* backendName (Backend backend) noexcept {
+    switch (backend) {
+        case Backend::autoDetect: return "AUTO";
+        case Backend::openGL:     return "OPENGL";
+        case Backend::vulkan:     return "VULKAN";
+        case Backend::metal:      return "METAL";
+        case Backend::directX11:  return "D3D11";
+        case Backend::directX12:  return "D3D12";
+        case Backend::sokol:      return "SOKOL";
+        case Backend::bgfx:       return "BGFX";
+        case Backend::cpu:        return "CPU";
+    }
+
+    return "UNKNOWN";
+}
+
+/** What the panel's header prints: the API the frame is actually drawn with.
+
+    `effectiveBackend()` is the one that matters, not the configured value - a build
+    configured for an adapter that only clears its surface draws with the CPU, and
+    saying otherwise would be the panel claiming a renderer it is not running. When
+    the two differ the configured one is named too, as PENDING, which is the state
+    RenderBackend.h is in until the tape scene is ported. */
+inline juce::String backendCaption() {
+    constexpr auto running = effectiveBackend();
+    constexpr auto configured = configuredBackend();
+
+    juce::String caption ("BACKEND  ");
+    caption << backendName (running);
+
+    if (configured != running && configured != Backend::autoDetect)
+        caption << " (" << backendName (configured) << " PENDING)";
+
+    return caption;
+}
+
 } // namespace j37::render
