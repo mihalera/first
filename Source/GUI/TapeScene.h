@@ -178,7 +178,23 @@ private:
     static Geometry buildTapePack();
     static Geometry buildRibbon();
     static Geometry buildHead();
-    j37::render::SceneFrame buildSceneFrame (int width, int height, double elapsedSeconds) const;
+    j37::render::SceneFrame buildSceneFrame (int width, int height, double elapsedSeconds,
+                                              const glm::mat4& viewProjection,
+                                              const glm::mat4& scene,
+                                              const juce::Colour& background,
+                                              const juce::Colour& body,
+                                              const juce::Colour& highlight,
+                                              const juce::Colour& tape,
+                                              float driveAmount,
+                                              float flutter,
+                                              float reduction,
+                                              float elapsed) const;
+    void appendDraw (j37::render::SceneFrame& frame,
+                     std::uint32_t meshIndex,
+                     j37::render::SceneMaterial material,
+                     const glm::mat4& model,
+                     const juce::Colour& baseColour,
+                     std::array<float, 3> parameters = {}) const;
 
     /** The control bank in FRONT of the deck, the one piece of geometry that is not
         part of the machine: a strip of three machined knobs and two raised keys on

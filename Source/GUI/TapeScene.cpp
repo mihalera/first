@@ -1,4 +1,4 @@
-/*
+﻿/*
   ==============================================================================
     TapeScene - the deck's transport, rendered as geometry and lit on the GPU.
   ==============================================================================
@@ -1492,6 +1492,11 @@ void TapeScene::renderOpenGL() {
                               tape.getFloatGreen() * 1.35f + 0.02f,
                               tape.getFloatBlue() * 1.35f + 0.02f);
     drawMesh(ribbon);
+
+    const auto sceneFrame = buildSceneFrame(width, height, elapsed, viewProjection, scene,
+                                            background, body, highlight, tape, driveAmount,
+                                            flutter, reduction, static_cast<float>(elapsed));
+    jassert(j37::render::isValid(sceneFrame));
 
     // The control bank, in FRONT of the machine: it is the only geometry here
     // with a z of its own, and drawing it last costs nothing because the depth

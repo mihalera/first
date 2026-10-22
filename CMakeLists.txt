@@ -396,6 +396,7 @@ target_sources(first PRIVATE
     Source/GUI/EditorMeters.cpp
     Source/GUI/UiSoundEngine.cpp
     Source/GUI/TapeScene.cpp
+    Source/GUI/TapeSceneFrame.cpp
     Source/GUI/SceneFrame.cpp
     Source/GUI/NativeRenderer.cpp
     Source/GUI/NativeRenderer_D3D11.cpp
