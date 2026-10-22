@@ -63,6 +63,11 @@ SPELLINGS = {
     "dattorro_verb": ("verb.h",),
     # Header-only, and reached through the folder the checkout publishes.
     "signalsmith-stretch": ("signalsmith-stretch/",),
+    # sokol_gfx, opt-in (`J37_RENDER_BACKEND=SOKOL`): header-only, so what the link
+    # line carries is its include path, and NativeRenderer_Sokol.cpp includes the
+    # header by the name the library publishes. Its implementation lives in
+    # SokolGfxImpl.cpp, which includes the same header.
+    "sokol_gfx": ("sokol_gfx.h",),
     # NAM Core, opt-in (`J37_NAMCORE`): Source/DSP/NamBackend.h includes the two
     # headers its API publishes, spelled <NAM/...> because the checkout root is
     # the include root. Eigen is not on the plugin's own link line - it reaches

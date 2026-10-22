@@ -58,9 +58,9 @@ section after the tables).
 | Item | Status | Where it is |
 | --- | --- | --- |
 | 3D renderer with shaders and matrices | **done** | `Source/GUI/NativeRenderer_{OpenGL,Vulkan,Metal,D3D11,D3D12}.cpp`, `TapeSceneShaders.h` (GLSL, checked by `tests/shaders`), `glm` for the matrices |
-| BGFX or WebGPU/Dawn | **not as written** | `bgfx` is fetched and was on the link line with no caller until it was removed; the four native backends above are shipping and tested. Adopting BGFX is a renderer rewrite, not an addition |
+| BGFX or WebGPU/Dawn | **built as an option, not as a second renderer** | `bgfx` is now a `J37_RENDER_BACKEND` value with an adapter (`Source/GUI/NativeRenderer_Bgfx.cpp`) that creates a child surface inside the host's peer, initialises bgfx on it and presents a cleared frame. It is staged, not advertised: `hasNativeImplementation()` still returns false, because bgfx draws nothing without shader binaries and this build turns its shaderc tool off. Dawn/wgpu-native remain plumbing in `j37_setup_graphics_backend` that the option does not accept |
 | Assimp with only the OBJ importer | **open** | not fetched; no mesh assets exist in the tree, so there is nothing to import yet |
-| Sokol GFX as a light pipeline wrapper | **not as written** | `sokol_gfx` is fetched and has no caller; the panel's 2D is `juce::Graphics`, and the 3D backends already own their pipelines |
+| Sokol GFX as a light pipeline wrapper | **built as an option** | `sokol_gfx` is a `J37_RENDER_BACKEND` value with a real adapter (`Source/GUI/NativeRenderer_Sokol.cpp`): it attaches a JUCE `OpenGLContext`, compiles the library once in a JUCE-free TU, clears and presents through JUCE's render callback, and reports the backend it landed on. It is staged for the same reason as the others - the tape scene is not ported to it - so the editor still paints with JUCE |
 | GLM for camera and Lambert/Phong lighting | **done** | `Source/GUI/TapeScene.*` |
 | Procedural tape-grain / metal-roughness shader driven by DRIVE and the compressor | **partial** | the shaders generate grain and shading from the engine's telemetry; DRIVE and gain reduction are among the values the scene reads |
 | Multiband Linkwitz-Riley crossover + correlation-driven M/S squeeze | **done** | `Source/DSP/MultibandPhaseGuard.h`: the frame is split by Linkwitz-Riley 4th-order crossovers at 200 Hz and 2 kHz, each band's own correlation decides that band's rotation, and the rotation is orthogonal (side folds into mid, so the fix costs no level). A frame with no opposition comes back bit for bit, and `tests/phase` measures the per-band side energy that proves the fault's band is the band that moves. Separate from - and never mixed with - stage 18's undertone phase-lock in `processOneSample` |
@@ -79,9 +79,12 @@ section after the tables).
   unreviewable, break the check, and couple the preset format to every parameter's
   layout. `replaceState` is the right call for a *session* (it is what
   `setStateInformation` uses); it is the wrong shape for a factory preset.
-- **Re-adding the removed libraries.** `bgfx`, `sokol_gfx`, `dr_libs`, `PFFFT`,
-  `kissfft`, `dattorro_verb`, the pitch trackers and the rest came off the link line
-  because no file under `Source/` called them, and
+- **Re-adding a removed library without a caller.** `bgfx` and `sokol_gfx` came back
+  WITH callers this time - a backend option, an adapter from `createNativeRenderer`
+  down to a cleared frame, and a check in `tests/render_backend` that keeps the two
+  in step - which is the difference between a selection and a dependency. The ones
+  that are still off the link line (`PFFFT`, `kissfft`, the pitch trackers,
+  `yasio`, `imgui`) left it because no file under `Source/` called them, and
   `tests/linkline/check_linkline.py` fails when a linked target has no caller. Each
   one has to arrive with a caller and a harness, which is exactly the order this
   document lists them in.

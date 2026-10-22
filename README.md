@@ -1088,7 +1088,7 @@ The editor has a renderer-selection boundary in `Source/GUI/RenderBackend.h` and
 CMake exposes the following option:
 
 ```text
--DJ37_RENDER_BACKEND=AUTO|OPENGL|VULKAN|METAL|D3D11|D3D12|BGFX|WGPU|DAWN|CPU
+-DJ37_RENDER_BACKEND=AUTO|OPENGL|VULKAN|METAL|D3D11|D3D12|SOKOL|BGFX|WGPU|DAWN|CPU
 ```
 
 One further option belongs to the audio rather than the panel, and it is the only
@@ -1112,23 +1112,33 @@ bit. The build prints which one it is using in its configure summary.
 `AUTO` and `OPENGL` use the existing JUCE/OpenGL scene. `CPU` uses a dedicated
 JUCE `Graphics` renderer for the animated transport, while the rest of the panel
 continues through its normal software path. `VULKAN`, `METAL`, `D3D11`, `D3D12`,
-`BGFX`, `WGPU` and `DAWN` are explicit pending backend selections: until their
-native device implementations are added, they intentionally resolve to the CPU
-fallback rather than silently creating an OpenGL context or showing a blank editor.
-This makes backend capability explicit and keeps unsupported configurations safe
-in a DAW.
+`SOKOL` and `BGFX` are staged selections: each has an adapter in
+`Source/GUI/NativeRenderer_*.cpp` that can create its device and present a cleared
+surface, and none of them draws the tape scene yet - so the editor keeps painting
+with JUCE instead of showing a blank or half-drawn frame.
 
 At configure time, CMake validates platform-specific native requirements. Metal
 warns on non-Apple systems, DirectX warns on non-Windows systems, and Vulkan checks
 for a Vulkan SDK. These checks are prerequisites for the native integrations, not a
 claim that the native renderer is already linked.
 
-Selecting `BGFX` downloads and links bgfx.cmake. `WGPU` builds and links
-wgpu-native with Cargo, while `DAWN` downloads Dawn and its build dependencies;
-they are alternative implementations of the WebGPU API and cannot be selected
-together. `WGPU` requires Rust 1.87+/Cargo and a native single-architecture build.
-These selections wire the dependency only: their renderer adapters are still
-pending and the editor continues to use its CPU fallback. JUCE 9 has no separate
+`sokol_gfx` and `bgfx` are **alternatives, not additions**: each owns a device, a
+surface and a frame, so a build selects one and the other is not compiled at all -
+the same rule `J37_RENDER_BACKEND` applies to Vulkan and Metal. `SOKOL` links
+floooh/sokol and drives it through a JUCE `OpenGLContext` attached to the peer, from
+inside JUCE's own render callback, because JUCE does not expose "make the context
+current" on the message thread. `Source/GUI/SokolGfxImpl.cpp` is the one translation
+unit that compiles sokol's implementation, and it is deliberately JUCE-free: JUCE
+wraps the platform GL headers in `namespace juce::gl` and sokol needs them at global
+scope, so a single TU cannot host both. `BGFX` downloads and links bgfx.cmake and
+presents into a CHILD surface it creates inside the host's peer - the same rule the
+D3D11 adapter follows - because presenting into the host's own window would paint
+over its UI. bgfx draws nothing without shader binaries, and those are compiled by
+bgfx's own shaderc tool, which the BGFX block in `cmake/J37Dependencies.cmake`
+deliberately turns off; porting the tape scene to bgfx is that work, not a link line.
+`WGPU` and `DAWN` remain plumbing inside `j37_setup_graphics_backend` and are not
+accepted by the option yet: `WGPU` builds wgpu-native with Cargo (Rust 1.87+, native
+single-architecture only) and `DAWN` downloads Dawn with its dependencies. JUCE 9 has no separate
 `juce::MetalContext` CMake target; its Metal support comes from the JUCE GUI
 modules and Apple Metal frameworks. `J37_OFFLINE=ON` also disables Dawn's and
 Cargo's dependency downloads; the required sources must already be cached.

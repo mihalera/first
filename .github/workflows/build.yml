@@ -339,6 +339,17 @@ jobs:
       - name: Check the link line against the code
         run: python3 tests/linkline/check_linkline.py
 
+      # The renderer selection, against the adapters that implement it. A
+      # J37_RENDER_BACKEND value is a promise that a build can be configured for
+      # that API and land somewhere sensible; a value with no adapter, or an
+      # adapter that presents a cleared surface and then claims to draw the scene,
+      # is a promise the editor keeps by showing nothing. This reads the option
+      # list out of CMakeLists.txt and the adapters out of Source/GUI/ and fails
+      # on either kind of drift - including the two whole-library graphics
+      # layers, which are ALTERNATIVES and must stay one per build.
+      - name: Check the renderer backend boundary
+        run: python3 tests/render_backend/check_render_backend.py
+
       # The stages that have moved into Source/DSP/ are compiled by the harnesses
       # against their own small stand-in for juce::, which is what keeps a harness
       # seconds of work - but a name that stand-in provides is not proof that real
