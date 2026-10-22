@@ -714,13 +714,15 @@ cannot do: it reads the material through an analysis window, so the correction d
 shorten the note it corrects (100 ms of note comes back 103 ms where a resampler answers
 97 ms). What it costs, measured by building the same harness both ways, is stated in
 `CMakeLists.txt` beside the option rather than here: **1216 frames of lookahead at 48 kHz**
-(25 ms, reported to the host while AUTO TUNE is engaged) and a transposition that is a few
-percent wide of the ratio it is handed at a 20 ms window - 56 cents at 0.94x - against the
-granular engine's sub-cent reading. A corrector whose engine adds its own error at the scale
-of the ±10 cents it is correcting with is a worse corrector, so the default is the shifter
-and the option is there for the work that would earn the vocoder: a longer window and its
-latency, or a phase-locking configuration. Both shapes are compiled and measured on every
-run of `tests/pitch/run.sh`, so neither can rot.
+(25 ms, reported to the host while AUTO TUNE is engaged) and a transposition that is two
+percent wide of the ratio it is handed - 8 cents at 1.06x and 32 at 0.94x - against the
+granular engine's sub-cent reading. That figure is itself the result of a measurement: the
+error follows the analysis geometry, so eight analyses per window halve what the usual four
+cost (16 and 57 cents) for no extra latency, and a sixteenth would halve it again for four
+times the analysis work and still read 17 cents at 0.94x. A corrector whose engine adds its
+own error at three times the ±10 cents it is correcting with is a worse corrector, so the
+default is the shifter and the option is there for work that would earn the vocoder. Both
+shapes are compiled and measured on every run of `tests/pitch/run.sh`, so neither can rot.
 
 ## Noise floor level
 

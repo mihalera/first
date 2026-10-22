@@ -608,14 +608,16 @@ void testCorrectorMovesThePitch ()
 
         // The tolerance is each engine's own, and the number is printed either
         // way. The granular shifter reads a stationary tone to a couple of cents
-        // at every ratio. The vocoder's transposition is a property of its
-        // analysis window: with this stage's 20 ms one it reads 15 cents wide at
-        // 1.0595x and 56 at 0.9439x - a few percent, and the reason that engine is
-        // OFF by default - while the same test with a 60 ms window lands within a
-        // cent. 5 % is therefore the vocoder's bound here rather than an
-        // aspiration, and the cents in the line below are the measurement itself.
+        // at every ratio. The vocoder's transposition is a property of its analysis
+        // GEOMETRY, not of the window alone: with the stage's 20 ms window it reads
+        // 15.8 cents wide at 1.0595x and 56.9 at 0.9439x at four analyses per
+        // window, 8.4 and 32.4 at the eight this stage runs (the same numbers at 110 Hz
+        // with twice the window, so the cents do not follow the note). 2.5 % is
+        // therefore the vocoder's bound here rather than an aspiration - it is the
+        // eight-analysis measurement with a little room - and the cents in the line
+        // below are the measurement itself.
        #if J37_HAS_SIGNALSMITH
-        const auto withinTolerance = std::abs (measured / expected - 1.0) < 0.05;
+        const auto withinTolerance = std::abs (measured / expected - 1.0) < 0.025;
        #else
         const auto withinTolerance = error < 20.0;
        #endif
