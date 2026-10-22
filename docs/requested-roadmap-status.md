@@ -38,9 +38,9 @@ section after the tables).
 | --- | --- | --- |
 | DywaPitchTrack for the detector | **open** | `Source/DSP/PitchTracker.h` is YIN, with its confidence gate measured by `tests/pitch`. A second detector would need a reason better than "faster", and a harness comparison |
 | Sub generator from phase accumulators | **done** | `Source/DSP/SubharmonicGenerator.h` (the undertone series with downward saturation), stage 9 and 21 of [signal-path.md](signal-path.md) |
-| Signalsmith phase vocoder for autotune | **built, OFF by default** | `Source/DSP/CorrectorStage.h` is the stage: the granular shifter by default, signalsmith-stretch behind `-DJ37_CORRECTOR_USE_STRETCH=ON`. The restructure the row above predicted is done - the stage runs on blocks, at the top of `processPostMachineStages()`, and its lookahead is reported to the host. It is OFF because `tests/pitch` measured what it costs: 1216 frames of lookahead at 48 kHz, and a transposition 56 cents wide of the ratio it was given at 0.94x (a 60 ms window brings that to a cent, at three times the latency) against the granular engine's sub-cent reading. Both shapes are built and measured on every run |
+| Signalsmith phase vocoder for autotune | **built, OFF by default** | `Source/DSP/CorrectorStage.h` is the stage: the granular shifter by default, signalsmith-stretch behind `-DJ37_CORRECTOR_USE_STRETCH=ON`. The restructure the row above predicted is done - the stage runs on blocks, at the top of `processPostMachineStages()`, and its lookahead is reported to the host. It is OFF because `tests/pitch` measured what it costs: 1216 frames of lookahead at 48 kHz, and a transposition 8 cents wide of the ratio it was given at 1.06x and 32 at 0.94x against the granular engine's sub-cent reading. That 32 is already the GOOD configuration: the error follows the analysis geometry, so eight analyses per window halve what the usual four cost (16 and 57 cents) for no extra latency, and a sixteenth halves it again for four times the analysis work (6.7 % of a core per channel) and still reads 17 cents at 0.94x. A longer window does not close it either - 60 ms reads 13 cents at 1.06x at three times the lookahead. Both shapes are built and measured on every run |
 | **±10 cent dead zone** | **done** | `Source/DSP/PitchCorrectionRule.h`, used by `processAutoTuneSample`, pinned at exact cents by `tests/pitch` |
-| Formant preservation | **open, and tried** | `setFormantFactor (1, true)` was measured on a synthetic vowel at 1.06x and 1.5x, with the formant base given and autodetected, and the envelope's centroid moved with the pitch in both cases and identically with the compensation on and off - so the stage does not claim it and the row stays open |
+| Formant preservation | **not applicable to this stage** | The library does compensate: on a synthetic vowel with formants at 660/1211/2642 Hz shifted 1.5x, `setFormantFactor (1, true)` keeps them at 798/1149/2604 Hz where the uncompensated render puts them at 896/1007/1928. What rules it out is the RANGE, not the capability: the ratio this stage is handed is clamped to a semitone either way (`PitchCorrectionRule`), so the envelope moves by at most 6 % - inside the measurement's own band-tracking error, and what a correcting shifter has always done. The switch belongs to the commit that first asks the stage for an octave, and `tests/pitch` prints the pitch it does move |
 | cycfi/q true-RMS envelopes for the transient shaper | **open** | `Source/DSP/TransientShaper.h` has its own fast/slow envelopes, pinned by `tests/unit` |
 
 ## Stage 4 - NAM, IR, micro-models, noise loader
@@ -92,19 +92,39 @@ section after the tables).
 
 ## What changed in this pass
 
-`Source/DSP/PitchCorrectionRule.h` (new) + the call site in
-`processAutoTuneSample`: the corrector now has the **±10 cent dead zone** asked for
-in Stage 3. Inside the zone the ratio is exactly 1, so the shifter reads at unity and
-the note passes untouched; outside it the pull is the interval the reading asked for,
-scaled by TUNE AMOUNT, still clamped to a semitone. `tests/pitch` drives the rule at
-exact cent values (`0`, `±3`, `±9.9`, `±10`, `±10.5`, `±37`, `±50`, `±200`), including
-the boundary itself and the float round trip around it.
+The corrector's vocoder engine was given the configuration its own measurement asked
+for, and both open questions in this document about it were answered rather than left
+standing.
 
-One honest consequence worth knowing: the tracker's own reading at the bottom of its
-range is a few cents low (the harness's diagnostic prints -8.6 cents at 55 Hz), so a
-very low note is *inside* the dead zone and will not be corrected. That is the trade
-the zone makes - it is a statement that a few cents is not an error - and the harness
-prints the reading so the trade stays visible.
+`Source/DSP/CorrectorStage.h` now runs **eight analyses per 20 ms window** instead of
+four. On a 220 Hz tone the vocoder's transposition reads 15.8 cents wide at 1.0595x and
+56.9 at 0.9439x with the old geometry and **8.4 and 32.4** with the new one, and the
+lookahead is identical (1216 frames at 48 kHz, measured and reported to the host by the
+harness) because the lookahead is the window, not the interval. The cost is analysis
+work: 0.8 % of a core per channel became 1.6 %. A sixteenth analysis halves the error
+again and costs 6.7 %, and still loses to the granular shifter's sub-cent reading - so
+the interval stops at eight and `J37_CORRECTOR_USE_STRETCH` stays OFF.
+
+Two things that had been assumed were measured while doing it, and one assumption was
+wrong:
+
+- **The error does not follow the note.** The same cents appear at 110 Hz with twice
+the window, so what a corrector pays is set by the analysis geometry, not by how low
+the singer goes.
+- **A longer window is not the fix.** 60 ms brings 0.9439x to within a cent and pushes
+1.0595x to 13, at three times the lookahead - better than nothing and worse than eight
+analyses at 20 ms, which costs no latency at all.
+- **Formant compensation works, and was wrongly written off.** The header said
+`setFormantFactor (1, true)` changed nothing; on a vowel with formants at 660, 1211 and
+2642 Hz shifted 1.5x it holds them at 798, 1149 and 2604 Hz where the uncompensated
+render puts them at 896, 1007 and 1928. It still is not switched on, for a reason the
+range gives: this stage's ratio is clamped to a semitone, where the envelope moves
+6 % and the compensated and uncompensated renders agree to a few Hz.
+
+The tracker's own reading at the bottom of its range is still a few cents low (the
+harness's diagnostic prints -8.6 cents at 55 Hz), so a very low note is inside the
+±10 cent dead zone and will not be corrected - the trade the zone makes, printed on
+every run so it stays visible.
 
 ## The next three, in order
 
@@ -113,11 +133,19 @@ prints the reading so the trade stays visible.
    nothing calls; WP2 gave `dr_libs` a caller as the vinyl stage's user noise print,
    which is the shape that argument wanted - a library adopted by USING it.
    The multiband anti-phase guard this list used to open with is done (Stage 5).
-2. **Formant preservation and the block-based corrector** - the restructure is done
-   (`Source/DSP/CorrectorStage.h`, measured by `tests/pitch`), so what is left is the
-   engine itself: a phase-locking configuration or a longer analysis window that
-   makes the vocoder's transposition as accurate as the granular shifter's, and a
-   formant path that survives the vowel measurement the roadmap row describes.
+2. **~~Formant preservation and the block-based corrector~~**, answered by measurement
+   and closed - and the answer is that neither half is left to build. Formant
+   preservation exists in the library and works at 1.5x (the envelope holds to within
+   ~140 Hz where the uncompensated render moves it by 240), and the stage's ratio is
+   clamped to a semitone, where it changes nothing: the row says so now instead of
+   calling it open. The accuracy half turned out to be the analysis GEOMETRY, not the
+   window: going from four analyses per window to eight halves the vocoder's error
+   (16/57 cents to 8/32) at exactly the same lookahead, which is what
+   `Source/DSP/CorrectorStage.h` now runs, and it still leaves the vocoder three times
+   worse than the shifter it would replace - so the flag stays OFF with a number
+   behind it rather than a hope. The remaining next step is the one this list has not
+   had: **a second detector behind `PitchTracker`** would need the harness comparison
+   the Stage 3 row asks for, and nothing else on the list is waiting on code.
 3. **~~NAM Core + Eigen~~**, done behind the existing `NeuralStage` seam: LSTM still
    goes through RTNeural and everything else through NAM Core, behind `J37_NAMCORE`
    (now ON by default). `tests/neural` builds both shapes and compares both engines

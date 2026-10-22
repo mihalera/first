@@ -8,7 +8,7 @@
 //
 //    J37_HAS_SIGNALSMITH 1  signalsmith-stretch - a phase vocoder, BLOCK based,
 //                           25 ms of reported lookahead, and a transposition that
-//                           is a few percent wide of the ratio it is handed at
+//                           is under two percent wide of the ratio it is handed at
 //                           this stage's window (see the measurements below).
 //    J37_HAS_SIGNALSMITH 0  RealtimePitchShifter - the hand-written granular
 //                           shifter the plugin has always corrected with: one
@@ -16,8 +16,9 @@
 //
 //  The DEFAULT is the shifter, and that is a measurement rather than a preference:
 //  the vocoder's real win is that it does not shorten the note it corrects, and its
-//  real cost is both the lookahead and an error of the same order as the +-10 cents
-//  AUTOTUNE is built around. The option is there for the work that would earn it.
+//  real cost is both the lookahead (1216 frames at 48 kHz) and an error that is
+//  still up to three times the +-10 cents AUTOTUNE is built around, whatever the
+//  analysis window is set to. The option is there for the work that would earn it.
 //  Neither engine is a stub: a checkout with ThirdParty/ pruned builds and corrects
 //  exactly as every build before this file existed did.
 //
@@ -74,17 +75,25 @@
         the material rather than a block, and it is not reported because it was
         not reported before this file existed.
 
-    FORMANT COMPENSATION IS NOT TURNED ON, and it is worth saying why rather than
-    leaving a missing feature looking like an oversight: `setFormantFactor (1,
-    true)` - the call the library documents for holding the spectral envelope in
-    place while the pitch moves - was tried on a synthetic vowel at 1.06x and 1.5x,
-    with the formant base given explicitly and left to autodetect, and the
-    envelope's spectral centroid moved by the pitch ratio in every case: 942 Hz to
-    933 Hz at 1.06x and to 1489 Hz at 1.5x, identically with the compensation on
-    and off. So the stage does not claim it. What it does claim is what
-    tests/pitch measures: the pitch moves by the ratio it is given, the material
-    keeps its duration and its level, and the lookahead is the number the plugin
-    reports to the host.
+    FORMANT COMPENSATION IS NOT TURNED ON, and the reason is the RANGE this stage
+    works in rather than a limitation of the library. `setFormantFactor (1, true)`
+    does hold the envelope: on a synthetic vowel with formants at 660, 1211 and
+    2642 Hz, shifted 1.5x, the compensated render keeps them at 798, 1149 and
+    2604 Hz against 896, 1007 and 1928 uncompensated - the tracking is coarse (the
+    measurement finds the strongest partial in a band, and the bands overlap when
+    the envelope moves that far) but it is clearly compensation and not drift.
+
+    The autotune path never asks for 1.5x. The rule that decides the ratio is
+    clamped to a semitone either way (Source/DSP/PitchCorrectionRule.h), so the
+    envelope moves by at most 6 %, which is what a correcting shifter has always
+    done and is inside the ambiguity of the measurement above: at 1.0595x the
+    compensated and uncompensated renders agree to within a few Hz. So the call
+    would be a switch that costs an envelope estimate on every block and changes
+    nothing anyone can hear at the only ratios the stage is asked for - and if a
+    transposing feature ever asks this stage for an octave, that is the commit that
+    turns the flag on. What the stage does claim is what tests/pitch measures: the
+    pitch moves by the ratio it is given, the material keeps its duration and its
+    level, and the lookahead is the number the plugin reports to the host.
 
     Everything allocated is allocated in prepare(): the library's own buffers,
     the two block rings. processFrame() allocates nothing and locks nothing, which
@@ -109,11 +118,23 @@ struct CorrectorStage
         SECONDS rather than in frames: the library configures itself in samples, so
         the stage's own latency would otherwise move with the session rate, and a
         corrector whose lookahead depends on the sample rate is a corrector whose
-        feel does. Four analyses per window is the usual phase-vocoder overlap;
-        20 ms is short enough that a syllable is not smeared across it and long
-        enough that a low note has several periods inside it. */
+        feel does. 20 ms is short enough that a syllable is not smeared across it
+        and long enough that a low note has several periods inside it.
+
+        EIGHT ANALYSES PER WINDOW, not the usual four, and that is a measurement
+        rather than a taste. The vocoder's transposition error is a property of the
+        analysis GEOMETRY: on a 220 Hz tone it reads 15.8 cents wide at 1.0595x and
+        56.9 at 0.9439x with a 5 ms interval, 8.4 and 32.4 with 2.5 ms, and 5.5 and
+        17.0 with 1.25 ms - the same numbers at 110 Hz with twice the window, so the
+        cents do not depend on the note. Halving the interval halves the error and
+        costs NOTHING in latency (the lookahead is the window, not the interval);
+        what it costs is analysis work, which is 0.8 % of a core per channel at 5 ms
+        and 1.6 % at 2.5 ms. The third step is where that stops being a good trade -
+        6.7 % of a core for 17 cents that STILL loses to the granular shifter's
+        sub-cent reading - which is why the interval stops here and why the engine
+        is still the opt-in one. */
     static constexpr double windowSeconds = 0.020;
-    static constexpr double intervalSeconds = 0.005;
+    static constexpr double intervalSeconds = 0.0025;
 
     CorrectorStage() = default;
     ~CorrectorStage() = default;

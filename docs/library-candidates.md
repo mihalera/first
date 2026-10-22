@@ -46,7 +46,7 @@ build-time and reach no shipped binary.
 | **melatonin_blur** | `v1.4` | MIT | panel shadow, knob halo and cap shadow | **Keep.** Three cached `DropShadow`s; repaint is a blit rather than a blur |
 | **melatonin_inspector** | `9c483f86` | MIT | `createDebugInspector()` | **Keep.** Debug builds only; passive in a shipped binary |
 | **readerwriterqueue** | `v1.0.7` | BSD-2 | the telemetry queue, SPSC | **Keep.** One producer, one consumer, fixed capacity - exactly what it is for |
-| **signalsmith-stretch** | vendored `1.4.0` | MIT | `Source/DSP/CorrectorStage.h`, engine 2 | **Keep, OFF by default.** 1216 frames of latency at 48 kHz and up to 56 cents of its own error at a 20 ms window; the shifter stays the default until a longer or phase-locked configuration earns the swap |
+| **signalsmith-stretch** | vendored `1.4.0` | MIT | `Source/DSP/CorrectorStage.h`, engine 2 | **Keep, OFF by default.** 1216 frames of latency at 48 kHz and up to 32 cents of its own error at the stage's 20 ms window and eight analyses per window (a longer window does not close it: 60 ms reads 13 cents at 1.06x for three times the lookahead, and sixteen analyses still read 17 at 0.94x for four times the analysis work); the shifter stays the default until a configuration earns the swap |
 | **Catch2** | `v3.9.1` | BSL-1.0 | `tests/unit/` | **Keep, dev only.** The suite also runs under ASan + UBSan |
 | **nanobench** | `v4.6.0` | MIT | `tests/dsp/bench.cpp` | **Keep, dev only.** The shaper's micro-benchmark |
 | **CPM.cmake** | pinned in `cmake/J37Dependencies.cmake` | MIT | configure time | **Keep.** Every dependency pinned by tag or commit; Renovate watches the tags |

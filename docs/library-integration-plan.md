@@ -509,8 +509,8 @@ obligation the notices had to flag - and it bought nothing.
 
 **The decision.** The corrector already has two engines, and the one that ships is the
 one that measured best (`tests/pitch` prints both: the granular shifter is sub-cent and
-one period of delay; the vocoder's transposition is 6-10 cents wide at three times the
-latency). A third stretcher has to beat *both* on that harness to be worth an LGPL
+one period of delay; the vocoder's transposition is 8-32 cents wide for 1216 frames of
+lookahead). A third stretcher has to beat *both* on that harness to be worth an LGPL
 obligation, and nothing in the code suggests it will: SoundTouch is a WSOLA shifter for
 time-stretching, which is the same family as the granular engine already shipping.
 

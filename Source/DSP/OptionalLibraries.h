@@ -314,9 +314,10 @@
 //  flag is J37_CORRECTOR_USE_STRETCH (OFF by default), and the numbers behind
 //  "off by default" are in the option's own comment: the vocoder costs 1216
 //  frames of lookahead at 48 kHz against the granular shifter's one period, and
-//  this library's transposition measured 10 cents wide of the ratio it was given
-//  at 1.06x and 6 cents at 0.94x (tests/pitch prints both), which is the same
-//  order as the +-10 cent dead zone the control is built around.
+//  this library's transposition measured 8 cents wide of the ratio it was given
+//  at 1.06x and 32 at 0.94x with the eight analyses per window the stage now runs
+//  (tests/pitch prints both) - up to three times the +-10 cent dead zone the
+//  control is built around.
 //
 //  NOT behind the harness guard, because that guard exists so a stage can be
 //  compiled against a shim with no optional library on the include path - and the
