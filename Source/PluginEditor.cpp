@@ -1,4 +1,4 @@
-﻿#include "PluginProcessor.h"
+#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
@@ -587,8 +587,8 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
         // the wire format is the only thing that differs.
         const auto isNam = file.hasFileExtension (".nam");
         const auto text = file.loadFileAsString();
-        const bool loaded = isNam ? audioProcessor.loadNamModel (text)
-                                  : audioProcessor.loadNeuralModel (text);
+        const bool loaded = isNam ? editor.audioProcessor.loadNamModel (text)
+                                  : editor.audioProcessor.loadNeuralModel (text);
 
         if (! loaded)
         {
@@ -596,18 +596,18 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
             // readout says WHY this one was refused - a .nam that needs the LSTM
             // architecture is a different download, not a corrupt file, and the
             // reason is the one thing the user can act on.
-            neuralStatusReason = audioProcessor.lastLoadError();
-            lastShownNeuralStatus = {};   // force the next refresh to repaint the label
-            refreshNeuralStatus();
+            editor.neuralStatusReason = editor.audioProcessor.lastLoadError();
+            editor.lastShownNeuralStatus = {};   // force the next refresh to repaint the label
+            editor.refreshNeuralStatus();
             return;
         }
 
-        loadedNeuralName = file.getFileNameWithoutExtension();
-        neuralStatusReason = {};
+        editor.loadedNeuralName = file.getFileNameWithoutExtension();
+        editor.neuralStatusReason = {};
         rememberFolder ("lastModelFolder", file);
-        lastShownNeuralStatus = {};   // force the next refresh to repaint the label
-        openStageMix ("neural_mix");
-        refreshNeuralStatus();
+        editor.lastShownNeuralStatus = {};   // force the next refresh to repaint the label
+        editor.openStageMix ("neural_mix");
+        editor.refreshNeuralStatus();
     });
 }
 
@@ -796,7 +796,6 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     neuralFileChooser = {};
     irFileChooser = {};
     noiseFileChooser = {};
-    nativeRenderer.reset();
 
     for (auto& slider : controls)
         slider.setLookAndFeel (nullptr);
@@ -1115,6 +1114,14 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
                            headerRowTwoY,
                            2 * headerColumnWidth + headerGap,
                            headerSwitchHeight);
+
+    // The renderer caption sits on the brand row's right end, ending one gap
+    // before the switch grid: the row above the title is the only part of the
+    // header with horizontal slack in it, and ending at headerGridLeft rather
+    // than at a fixed x is what keeps it clear of the switches at every width.
+    rendererLabel.setBounds (headerGridLeft - headerGap - rendererCaptionWidth,
+                             header.getY() + 8, rendererCaptionWidth, 12);
+    rendererLabel.setJustificationType (juce::Justification::centredRight);
 
     // The status readout gets its own full-width band below the switches.
     statusLabel.setBounds (headerGridLeft, statusRowY,
@@ -2573,6 +2580,7 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
         const struct { const char* name; const juce::Component* component; } furniture[] = {
             // The header: the two switch rows, the theme key and the readout.
             { "brand",         &brandLabel },
+            { "renderer",      &rendererLabel },
             { "title",         &titleLabel },
             { "subtitle",      &subtitleLabel },
             { "status",        &statusLabel },

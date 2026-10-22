@@ -488,6 +488,23 @@ if(J37_NAMCORE)
         # executable directly).
         add_library(namcore OBJECT EXCLUDE_FROM_ALL ${J37_NAMCORE_SOURCES})
 
+        # PIC, explicitly, and this is the one property an OBJECT library does not
+        # inherit. CMake turns POSITION_INDEPENDENT_CODE on for the shared library
+        # that links a STATIC library (through INTERFACE_POSITION_INDEPENDENT_CODE),
+        # but an OBJECT library's files are inserted into the consumer rather than
+        # linked from an archive, and nothing propagates to them: the plugin's own
+        # sources are compiled -fPIC and NAM's were not. On Linux that is a link
+        # failure with the reason in the message - NAM/dsp.cpp holds
+        # `thread_local bool gPrewarmOnResetDefault`, a non-PIC object gives it the
+        # relocation R_X86_64_TPOFF32, and a shared object cannot take that one
+        # ("recompile with -fPIC"). Android never saw it because the whole build
+        # sets CMAKE_POSITION_INDEPENDENT_CODE above, and macOS and Windows never
+        # did because Mach-O and PE have no equivalent relocation. Turned on for
+        # every platform rather than only Linux: the property is what makes the
+        # objects usable in a shared library, and there is no platform where the
+        # plugin is built any other way.
+        set_target_properties(namcore PROPERTIES POSITION_INDEPENDENT_CODE ON)
+
         # SYSTEM for the same reason every vendored header target above is: a
         # diagnostic raised inside NAM's or Eigen's headers is theirs, not this
         # repository's, and the plugin is compiled with JUCE's full warning set.

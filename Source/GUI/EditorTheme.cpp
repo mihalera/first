@@ -60,6 +60,7 @@ void FirstAudioProcessorEditor::applyTheme() {
     }
 
     brandLabel.setColour(juce::Label::textColourId, palette.accent);
+    rendererLabel.setColour(juce::Label::textColourId, palette.secondary);
     titleLabel.setColour(juce::Label::textColourId, palette.text);
     subtitleLabel.setColour(juce::Label::textColourId, palette.secondary);
     statusLabel.setColour(juce::Label::textColourId, palette.status);

@@ -22,6 +22,36 @@ require("constexpr bool usesNativeCommandRenderer() noexcept\n{\n    return fals
 require("if (!j37::render::usesOpenGL())" in setup,
         "editor must retain the CPU paint path when OpenGL is not selected")
 
+# The two GPU abstraction layers are build OPTIONS, not additions: each owns the
+# device and the surface, so a build selects one and the other is not compiled.
+for name in ("SOKOL", "BGFX"):
+    require(f"J37_RENDER_BACKEND_{name}" in backend,
+            f"{name} must map to its own Backend value")
+    require(f'J37_RENDER_BACKEND_{name}=1' in (root / "CMakeLists.txt").read_text(),
+            f"{name} must be a selectable J37_RENDER_BACKEND")
+
+require("backend == Backend::sokol" in (root / "Source/GUI/NativeRenderer.cpp").read_text(),
+        "the sokol adapter must be reachable from createNativeRenderer")
+require("backend == Backend::bgfx" in (root / "Source/GUI/NativeRenderer.cpp").read_text(),
+        "the bgfx adapter must be reachable from createNativeRenderer")
+
+# sokol_gfx's implementation is compiled once, in a JUCE-free TU: JUCE wraps the
+# GL headers in a namespace and sokol needs them at global scope.
+sokol_impl = (root / "Source/GUI/SokolGfxImpl.cpp").read_text()
+require("SOKOL_IMPL" in sokol_impl and "#include <JuceHeader.h>" not in sokol_impl,
+        "sokol_gfx's implementation must be compiled once without JUCE's GL namespace")
+require("#include <sokol_gfx.h>" in (root / "Source/GUI/NativeRenderer_Sokol.cpp").read_text(),
+        "the sokol adapter must include sokol_gfx itself")
+
+# bgfx renders into a native window bgfx is handed. A plugin host owns the
+# editor's window, so the adapter must present into a CHILD surface, never the
+# host's peer - the same rule the Metal adapter states for its NSView.
+bgfx = (root / "Source/GUI/NativeRenderer_Bgfx.cpp").read_text()
+require("CreateWindowExW" in bgfx and "WS_CHILD" in bgfx,
+        "bgfx must present into a child surface, not the host-owned window")
+require("bgfx::init (init)" in bgfx,
+        "bgfx must be initialised through its own Init structure")
+
 # Backend-specific adapters should preserve explicit resource/lifecycle safety.
 d3d12 = (root / "Source/GUI/NativeRenderer_D3D12.cpp").read_text()
 require("if (queue != nullptr && fence != nullptr && fenceEvent != nullptr" in d3d12,

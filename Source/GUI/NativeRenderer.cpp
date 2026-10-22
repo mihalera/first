@@ -12,6 +12,12 @@
 #if defined(J37_NATIVE_METAL)
 #include "NativeRenderer_Metal.h"
 #endif
+#if defined(J37_NATIVE_SOKOL)
+#include "NativeRenderer_Sokol.h"
+#endif
+#if defined(J37_NATIVE_BGFX)
+#include "NativeRenderer_Bgfx.h"
+#endif
 namespace j37::render {
 namespace {
 /** The path taken when no native adapter is compiled in, or when the selected
@@ -67,6 +73,16 @@ std::unique_ptr<NativeRenderer> createNativeRenderer(Backend backend) {
 #if defined(J37_NATIVE_METAL)
     if (backend == Backend::metal)
         if (auto renderer = createMetalRenderer())
+            return renderer;
+#endif
+#if defined(J37_NATIVE_SOKOL)
+    if (backend == Backend::sokol)
+        if (auto renderer = createSokolRenderer())
+            return renderer;
+#endif
+#if defined(J37_NATIVE_BGFX)
+    if (backend == Backend::bgfx)
+        if (auto renderer = createBgfxRenderer())
             return renderer;
 #endif
     return std::make_unique<CpuRenderer>();

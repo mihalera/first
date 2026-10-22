@@ -229,9 +229,9 @@ option(COPY_PLUGIN_AFTER_BUILD "Copy plugins to the user plugin folders after bu
 # create their device, command resources and presentation surface; unsupported
 # platform/API combinations use the CPU fallback.
 set(J37_RENDER_BACKEND "AUTO" CACHE STRING
-    "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12 or CPU")
+    "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12, SOKOL, BGFX or CPU")
 set_property(CACHE J37_RENDER_BACKEND PROPERTY STRINGS
-    AUTO OPENGL VULKAN METAL D3D11 D3D12 CPU)
+    AUTO OPENGL VULKAN METAL D3D11 D3D12 SOKOL BGFX CPU)
 string(TOUPPER "${J37_RENDER_BACKEND}" J37_RENDER_BACKEND)
 set(J37_RENDER_DEFINITIONS)
 set(J37_NATIVE_RENDER_DEFINITIONS)
@@ -258,6 +258,12 @@ elseif(J37_RENDER_BACKEND STREQUAL "D3D12")
     if(WIN32)
         list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_D3D12=1)
     endif()
+elseif(J37_RENDER_BACKEND STREQUAL "SOKOL")
+    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_SOKOL=1)
+    list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_SOKOL=1)
+elseif(J37_RENDER_BACKEND STREQUAL "BGFX")
+    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_BGFX=1)
+    list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_BGFX=1)
 elseif(J37_RENDER_BACKEND STREQUAL "CPU")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_CPU=1)
 elseif(NOT J37_RENDER_BACKEND STREQUAL "AUTO")
@@ -395,6 +401,9 @@ target_sources(first PRIVATE
     Source/GUI/NativeRenderer_D3D11.cpp
     Source/GUI/NativeRenderer_D3D12.cpp
     Source/GUI/NativeRenderer_Vulkan.cpp
+    Source/GUI/NativeRenderer_Sokol.cpp
+    Source/GUI/SokolGfxImpl.cpp
+    Source/GUI/NativeRenderer_Bgfx.cpp
     Source/GUI/RenderBackend.h)
 
 target_include_directories(first PRIVATE Source)
@@ -417,9 +426,11 @@ elseif(APPLE AND J37_RENDER_BACKEND STREQUAL "METAL")
     target_link_libraries(first PRIVATE "-framework Metal" "-framework QuartzCore")
 endif()
 
-# Optional BGFX/WGPU/DAWN backends are not advertised until complete adapters and
-# platform surface implementations exist. The compiled native backends currently
-# supported by this target are OpenGL, Vulkan, Metal, D3D11 and D3D12.
+# WGPU and DAWN stay inside j37_setup_graphics_backend without being accepted by
+# J37_RENDER_BACKEND, because neither has an adapter here yet. What this target
+# compiles is OpenGL, Vulkan, Metal, D3D11, D3D12, SOKOL and BGFX - and the last
+# two still present only a cleared surface, so RenderBackend.h keeps every native
+# selection on the CPU fallback until one of them draws the tape scene.
 
 # ------------------------------------------------------------------------------
 #  Embedded resources - the factory presets and the translation tables.
@@ -632,6 +643,26 @@ target_link_libraries(first
         juce::juce_recommended_warning_flags)
 
 # ------------------------------------------------------------------------------
+#  The two GPU abstraction layers.
+#
+#  ONE PER BUILD. sokol_gfx and bgfx are both GPU abstraction layers - each owns
+#  a device, a surface and a frame - so a binary that linked both would have two
+#  owners of one window. J37_RENDER_BACKEND picks one, exactly as it picks
+#  Vulkan or Metal, and the other is not compiled at all.
+#
+#  sokol_gfx is header-only: the implementation is the SokolGfxImpl.cpp entry in
+#  target_sources, and what the link line carries is the include path. bgfx is a
+#  real library and its fetch/configure lives in j37_setup_graphics_backend
+#  (cmake/J37Dependencies.cmake), which is where the pinned bgfx.cmake revision
+#  and its build options are.
+# ------------------------------------------------------------------------------
+if(J37_RENDER_BACKEND STREQUAL "SOKOL")
+    target_link_libraries(first PRIVATE sokol_gfx)
+elseif(J37_RENDER_BACKEND STREQUAL "BGFX")
+    j37_setup_graphics_backend(first)
+endif()
+
+# ------------------------------------------------------------------------------
 #  Vendor vector libraries: wire what was found by cmake/J37VendorLibraries.cmake
 #  to the target. Both are additive accelerators; see that file for the detail.
 # ------------------------------------------------------------------------------
@@ -820,7 +851,8 @@ else()
     message(STATUS "                NeuralAmpModelerCore OFF (-DJ37_NAMCORE=OFF: LSTM-only .nam support)")
 endif()
 message(STATUS "                q_dsp, sokol_gfx, glm (header only)")
-message(STATUS "                Optional graphics: BGFX, wgpu-native or Dawn (selected by J37_RENDER_BACKEND)")
+message(STATUS "                Selectable graphics: SOKOL or BGFX (one per build, via J37_RENDER_BACKEND)")
+message(STATUS "                Cable-only graphics: wgpu-native, Dawn (in j37_setup_graphics_backend, not a backend value)")
 message(STATUS "                transdes, whetstone, multiband-transient-shaper (source only)")
 message(STATUS "                juce_opengl_3d: no such JUCE module, see cmake/J37Dependencies.cmake")
 if(J37_HAVE_VDSP)

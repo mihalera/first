@@ -121,10 +121,12 @@ why beside it.
 
 The editor draws through one boundary, `Source/GUI/RenderBackend.h`, selected at
 configure time with `-DJ37_RENDER_BACKEND=`. OpenGL is JUCE's own context; CPU is
-a JUCE `Graphics` renderer for the animated deck; Vulkan, Metal, D3D11 and D3D12
-have adapters under `Source/GUI/NativeRenderer*`; BGFX, WGPU and DAWN are wired
-as dependencies but their adapters are still pending and resolve to the CPU
-fallback rather than to a blank editor. `README.md § Rendering backends` has the
+a JUCE `Graphics` renderer for the animated deck; Vulkan, Metal, D3D11, D3D12,
+SOKOL and BGFX have adapters under `Source/GUI/NativeRenderer*`. Of those, only
+OpenGL draws the tape scene: every other selection creates its device, presents a
+cleared surface and then resolves to the CPU paint path rather than to a blank
+editor. WGPU and DAWN are wired inside `j37_setup_graphics_backend` but are not
+values `J37_RENDER_BACKEND` accepts, because neither has an adapter. `README.md § Rendering backends` has the
 detail, and
 [plugin-analysis.md](plugin-analysis.md#7-the-renderers-have-no-coverage) has the
 gap: those files are compiled by the platform builds and checked by nothing else.

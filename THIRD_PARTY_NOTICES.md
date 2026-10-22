@@ -105,8 +105,10 @@ binary - see
 
 ### Optional renderer backends
 
-Fetched only when `J37_RENDER_BACKEND` selects one of them. None of the three is
-in the default build.
+Fetched only when `J37_RENDER_BACKEND` selects one of them. None of these is in
+the default build. `sokol_gfx` in the table above is fetched by every configure
+(it is a header-only checkout in a single directory) but linked only when `SOKOL`
+selects it, which is the same rule the row below states for bgfx.
 
 | Component | Pin | Licence | Upstream |
 | --- | --- | --- | --- |

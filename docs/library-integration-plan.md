@@ -93,9 +93,11 @@ with them the last LGPL text in the repository.)
 | `dywapitchtrack`, `yin_pitch`, `pitch_detector` | MIT / see upstream | §4. Three rival detectors against a measured YIN. A replacement has to beat the printed error, not the include graph |
 | `sndfile` | **LGPL-2.1** | Not planned while `dr_wav` decodes the format the feature needs. An LGPL decoder is the same obligation WP4 is trying to shed |
 | `q_dsp` / `cycfi_infra` | MIT | §4. The transient shaper's envelopes are its own and pinned by `tests/unit` |
-| `rack`, `yasio`, `imgui`, `sokol_gfx` | GPL-3 + plugin exception, MIT + Anti-996, MIT, zlib | §4. A host runtime, a socket library, and two UI/graphics toolkits this product has its own answers for |
+| `rack`, `yasio`, `imgui` | GPL-3 + plugin exception, MIT + Anti-996, MIT | §4. A host runtime, a socket library, and a second immediate-mode UI inside a JUCE component that already has one |
+| `sokol_gfx` | zlib | **Selectable backend** (`J37_RENDER_BACKEND=SOKOL`), staged: `Source/GUI/NativeRenderer_Sokol.cpp` owns a JUCE GL context, clears and presents; `Source/GUI/SokolGfxImpl.cpp` compiles the library once and without JUCE. Not advertised for the scene until the tape scene is ported |
 | `transdes`, `whetstone`, `multiband_transient_shaper` | MIT, BSD-3, MIT | Research copies of shaper ideas. The shaper they informed is `Source/DSP/TransientShaper.h`; none of the three is a dependency of it |
-| `bgfx`, `wgpu-native`, `dawn` | CC0/BSD-2, Apache-2.0, BSD-3 | Renderer **options** (`J37_RENDER_BACKEND`), not in the default build. Adopting one is a renderer rewrite; the four native backends already ship |
+| `bgfx` | CC0/BSD-2 | **Selectable backend** (`J37_RENDER_BACKEND=BGFX`), staged: `Source/GUI/NativeRenderer_Bgfx.cpp` creates a child surface inside the host peer, initialises bgfx on it and presents a cleared frame. Its shaders need bgfx's shaderc tool, which the build turns off, so the scene port is open work rather than a link line |
+| `wgpu-native`, `dawn` | Apache-2.0, BSD-3 | Plumbing inside `j37_setup_graphics_backend` that `J37_RENDER_BACKEND` does not accept: `WGPU` needs Cargo and a native single-architecture build, `DAWN` a large dependency tree. Not planned |
 
 ### 2e. Fetched to read, never built
 
@@ -584,10 +586,15 @@ file.
 - **`cycfi/q` RMS envelopes.** The transient shaper's fast/slow envelopes are its own,
   pinned by `tests/unit`. Adopting a library here would replace ten lines of arithmetic
   with a dependency and change the rendered audio for no measured gain.
-- **`bgfx` / `sokol_gfx` / `ImGui` / `yasio` / `rack`.** Four of them are other people's
-  plugin frameworks, or a renderer rewrite, or a socket library a plugin does not need.
-  The four native renderer backends already ship and are tested; `ImGui` would be a
-  second, immediate-mode UI inside a JUCE component that already has one.
+- **`bgfx` / `sokol_gfx`.** Both are now selectable build options with adapters that
+  reach `createNativeRenderer`, which is as far as a renderer goes without porting the
+  tape scene onto it. What made them different from the rest of this section is a
+  caller: `J37_RENDER_BACKEND` selects ONE, `tests/render_backend` fails if the two
+  options and their adapters drift apart, and neither compiles a line of its library
+  unless that build asks for it - both adapters are empty stubs otherwise.
+- **`ImGui` / `yasio` / `rack`.** Another immediate-mode UI inside a JUCE component
+  that already has one, a socket library a plugin does not need, and a host runtime
+  this product has its own answers for.
 - **Preset XML blobs.** Not a library, but the same shape of mistake: see
   [requested-roadmap-status.md](requested-roadmap-status.md#items-that-should-not-be-applied-as-written).
 

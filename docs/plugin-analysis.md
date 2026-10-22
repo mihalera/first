@@ -314,6 +314,15 @@ build. A job that compiles each backend's translation unit and its shader header
 *without* linking, and without creating a device, would catch that class in
 seconds on Linux for all four.
 
+What runs today is `tests/render_backend/check_render_backend.py`, and it is a
+CONTRACT check rather than a compile: it reads the option list, the adapters and
+the capability boundary and fails when they drift apart - a selectable backend
+with no adapter, a sokol implementation that includes JUCE and loses the GL names
+to `namespace juce::gl`, a bgfx surface created on the host's own peer. The
+compile half is still the platform jobs', and it now covers two more adapters
+(`NativeRenderer_Sokol.cpp`, `NativeRenderer_Bgfx.cpp`) that only one
+configuration of the build compiles at all.
+
 ## 8. The one JUCE patch this repository carries
 
 `patches/juce-9.0.4/juce_opus_config.h` is JUCE's own 9.0.4 opus config header
