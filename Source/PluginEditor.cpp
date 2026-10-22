@@ -1,4 +1,4 @@
-﻿#include "PluginProcessor.h"
+#include "PluginProcessor.h"
 
 // The generated resource accessors: the factory presets and the translation
 // tables, both compiled into the binary by CMakeLists.txt.
@@ -587,8 +587,8 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
         // the wire format is the only thing that differs.
         const auto isNam = file.hasFileExtension (".nam");
         const auto text = file.loadFileAsString();
-        const bool loaded = isNam ? audioProcessor.loadNamModel (text)
-                                  : audioProcessor.loadNeuralModel (text);
+        const bool loaded = isNam ? editor.audioProcessor.loadNamModel (text)
+                                  : editor.audioProcessor.loadNeuralModel (text);
 
         if (! loaded)
         {
@@ -596,18 +596,18 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
             // readout says WHY this one was refused - a .nam that needs the LSTM
             // architecture is a different download, not a corrupt file, and the
             // reason is the one thing the user can act on.
-            neuralStatusReason = audioProcessor.lastLoadError();
-            lastShownNeuralStatus = {};   // force the next refresh to repaint the label
-            refreshNeuralStatus();
+            editor.neuralStatusReason = editor.audioProcessor.lastLoadError();
+            editor.lastShownNeuralStatus = {};   // force the next refresh to repaint the label
+            editor.refreshNeuralStatus();
             return;
         }
 
-        loadedNeuralName = file.getFileNameWithoutExtension();
-        neuralStatusReason = {};
+        editor.loadedNeuralName = file.getFileNameWithoutExtension();
+        editor.neuralStatusReason = {};
         rememberFolder ("lastModelFolder", file);
-        lastShownNeuralStatus = {};   // force the next refresh to repaint the label
-        openStageMix ("neural_mix");
-        refreshNeuralStatus();
+        editor.lastShownNeuralStatus = {};   // force the next refresh to repaint the label
+        editor.openStageMix ("neural_mix");
+        editor.refreshNeuralStatus();
     });
 }
 
@@ -796,7 +796,6 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     neuralFileChooser = {};
     irFileChooser = {};
     noiseFileChooser = {};
-    nativeRenderer.reset();
 
     for (auto& slider : controls)
         slider.setLookAndFeel (nullptr);

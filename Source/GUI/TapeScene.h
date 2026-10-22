@@ -159,11 +159,13 @@ private:
     //  radius from one uniform. The same trick makes the ribbon flutter, with w
     //  as the parameter along the path.
     //==========================================================================
-    struct Geometry
-    {
-        std::vector<float> vertices;
-        std::vector<juce::uint32> indices;
-    };
+    /** One indexed mesh in the backend-neutral form SceneFrame.h defines, so the
+        same geometry can be uploaded by the OpenGL path here and by an adapter
+        that is not OpenGL at all. It was a flat vector<float> of interleaved
+        attributes until the scene frame landed; the two layouts describe the same
+        28 bytes per vertex, and having one of them is what stops the upload code
+        and the builders from disagreeing about which one they mean. */
+    using Geometry = j37::render::SceneMesh;
 
     struct Mesh
     {

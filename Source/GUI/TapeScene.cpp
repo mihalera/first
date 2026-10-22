@@ -1,4 +1,4 @@
-﻿/*
+/*
   ==============================================================================
     TapeScene - the deck's transport, rendered as geometry and lit on the GPU.
   ==============================================================================
@@ -243,8 +243,8 @@ void addDisc(SceneGeometry& geometry,
     const auto bottom = centre.z - halfHeight;
 
     const auto centreTop =
-        addVertexReturningIndex(vertices, {centre.x, centre.y, top}, {0.0f, 0.0f, 1.0f}, payload);
-    const auto centreBottom = addVertexReturningIndex(vertices, {centre.x, centre.y, bottom},
+        addVertexReturningIndex(geometry, {centre.x, centre.y, top}, {0.0f, 0.0f, 1.0f}, payload);
+    const auto centreBottom = addVertexReturningIndex(geometry, {centre.x, centre.y, bottom},
                                                       {0.0f, 0.0f, -1.0f}, payload);
 
     std::vector<juce::uint32> topRing(static_cast<size_t>(segments));
@@ -256,11 +256,11 @@ void addDisc(SceneGeometry& geometry,
         const glm::vec3 outward{std::cos(angle), std::sin(angle), 0.0f};
 
         topRing[static_cast<size_t>(i)] = addVertexReturningIndex(
-            vertices, {centre.x + outward.x * radius, centre.y + outward.y * radius, top},
+            geometry, {centre.x + outward.x * radius, centre.y + outward.y * radius, top},
             {0.0f, 0.0f, 1.0f}, payload);
 
         bottomRing[static_cast<size_t>(i)] = addVertexReturningIndex(
-            vertices, {centre.x + outward.x * radius, centre.y + outward.y * radius, bottom},
+            geometry, {centre.x + outward.x * radius, centre.y + outward.y * radius, bottom},
             {0.0f, 0.0f, -1.0f}, payload);
     }
 
@@ -282,9 +282,9 @@ void addDisc(SceneGeometry& geometry,
         const glm::vec3 rim{centre.x + outward.x * radius, centre.y + outward.y * radius, 0.0f};
 
         const auto wallTop =
-            addVertexReturningIndex(vertices, rim + glm::vec3(0.0f, 0.0f, top), outward, payload);
+            addVertexReturningIndex(geometry, rim + glm::vec3(0.0f, 0.0f, top), outward, payload);
         const auto wallBottom = addVertexReturningIndex(
-            vertices, rim + glm::vec3(0.0f, 0.0f, bottom), outward, payload);
+            geometry, rim + glm::vec3(0.0f, 0.0f, bottom), outward, payload);
 
         const auto next = static_cast<size_t>((i + 1) % segments);
         addQuad(indices, wallTop, wallBottom, bottomRing[next], topRing[next]);
@@ -338,7 +338,7 @@ void addBox(SceneGeometry& geometry,
 
         for (int cornerIndex = 0; cornerIndex < 4; ++cornerIndex)
             ids[cornerIndex] = addVertexReturningIndex(
-                vertices, points[faceCorners[face][cornerIndex]], rotatedNormal);
+                geometry, points[faceCorners[face][cornerIndex]], rotatedNormal);
 
         addQuad(indices, ids[0], ids[1], ids[2], ids[3]);
     }
@@ -391,10 +391,10 @@ void addKnurl(SceneGeometry& geometry,
             return glm::vec3(direction.x * radius, direction.y * radius, z);
         };
 
-        const auto a = addVertexReturningIndex(vertices, corner(here, topZ), outward);
-        const auto b = addVertexReturningIndex(vertices, corner(next, topZ), outward);
-        const auto c = addVertexReturningIndex(vertices, corner(next, bottomZ), outward);
-        const auto d = addVertexReturningIndex(vertices, corner(here, bottomZ), outward);
+        const auto a = addVertexReturningIndex(geometry, corner(here, topZ), outward);
+        const auto b = addVertexReturningIndex(geometry, corner(next, topZ), outward);
+        const auto c = addVertexReturningIndex(geometry, corner(next, bottomZ), outward);
+        const auto d = addVertexReturningIndex(geometry, corner(here, bottomZ), outward);
 
         addQuad(indices, a, b, c, d);
     }
@@ -839,13 +839,13 @@ TapeScene::Geometry TapeScene::buildTapePack() {
                            static_cast<float>(segments);
         const glm::vec2 direction{std::cos(angle), std::sin(angle)};
 
-        inner.top[i] = addVertexReturningIndex(vertices, {direction.x, direction.y, 0.0f},
+        inner.top[i] = addVertexReturningIndex(geometry, {direction.x, direction.y, 0.0f},
                                                {0.0f, 0.0f, 1.0f}, packHalfThickness);
-        inner.bottom[i] = addVertexReturningIndex(vertices, {direction.x, direction.y, 0.0f},
+        inner.bottom[i] = addVertexReturningIndex(geometry, {direction.x, direction.y, 0.0f},
                                                   {0.0f, 0.0f, -1.0f}, -packHalfThickness);
-        outer.top[i] = addVertexReturningIndex(vertices, {direction.x, direction.y, 1.0f},
+        outer.top[i] = addVertexReturningIndex(geometry, {direction.x, direction.y, 1.0f},
                                                {0.0f, 0.0f, 1.0f}, packHalfThickness);
-        outer.bottom[i] = addVertexReturningIndex(vertices, {direction.x, direction.y, 1.0f},
+        outer.bottom[i] = addVertexReturningIndex(geometry, {direction.x, direction.y, 1.0f},
                                                   {0.0f, 0.0f, -1.0f}, -packHalfThickness);
     }
 
@@ -865,16 +865,16 @@ TapeScene::Geometry TapeScene::buildTapePack() {
         const glm::vec2 direction{std::cos(angle), std::sin(angle)};
 
         const auto outerTop =
-            addVertexReturningIndex(vertices, {direction.x, direction.y, 1.0f},
+            addVertexReturningIndex(geometry, {direction.x, direction.y, 1.0f},
                                     {direction.x, direction.y, 0.0f}, packHalfThickness);
         const auto outerBottom =
-            addVertexReturningIndex(vertices, {direction.x, direction.y, 1.0f},
+            addVertexReturningIndex(geometry, {direction.x, direction.y, 1.0f},
                                     {direction.x, direction.y, 0.0f}, -packHalfThickness);
         const auto innerTop =
-            addVertexReturningIndex(vertices, {direction.x, direction.y, 0.0f},
+            addVertexReturningIndex(geometry, {direction.x, direction.y, 0.0f},
                                     {-direction.x, -direction.y, 0.0f}, packHalfThickness);
         const auto innerBottom =
-            addVertexReturningIndex(vertices, {direction.x, direction.y, 0.0f},
+            addVertexReturningIndex(geometry, {direction.x, direction.y, 0.0f},
                                     {-direction.x, -direction.y, 0.0f}, -packHalfThickness);
 
         addQuad(indices, outerTop, outerBottom, outer.bottom[(i + 1) % segments],
@@ -923,9 +923,9 @@ TapeScene::Geometry TapeScene::buildRibbon() {
 
         // The payload is t, which is what the shader waves the tape with.
         const auto left = static_cast<juce::uint32>(vertices.size());
-        addVertex(vertices, point - offset, {0.0f, 0.0f, 1.0f}, t);
+        addVertex(geometry, point - offset, {0.0f, 0.0f, 1.0f}, t);
         const auto right = left + 1;
-        addVertex(vertices, point + offset, {0.0f, 0.0f, 1.0f}, t);
+        addVertex(geometry, point + offset, {0.0f, 0.0f, 1.0f}, t);
 
         if (i > 0)
             addQuad(indices, previous[0], left, right, previous[1]);
@@ -1019,7 +1019,8 @@ void TapeScene::uploadMesh(Mesh &mesh, const Geometry &geometry) {
         glGenBuffers(1, &mesh.indexBuffer);
 
     glBindBuffer(GL_ARRAY_BUFFER, mesh.vertexBuffer);
-    glBufferData(GL_ARRAY_BUFFER, static_cast<GLsizeiptr>(geometry.vertices.size() * sizeof(SceneVertex)),
+    glBufferData(GL_ARRAY_BUFFER,
+                 static_cast<GLsizeiptr>(geometry.vertices.size() * sizeof(j37::render::SceneVertex)),
                  geometry.vertices.data(), GL_STATIC_DRAW);
 
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, mesh.indexBuffer);
@@ -1058,11 +1059,12 @@ void TapeScene::drawMesh(const Mesh &mesh) {
     // more here than the handful of redundant calls a 64 px column costs.
     glBindBuffer(GL_ARRAY_BUFFER, mesh.vertexBuffer);
     glVertexAttribPointer(static_cast<GLuint>(positionLocation), 4, GL_FLOAT, GL_FALSE,
-                          static_cast<GLsizei>(sizeof(SceneVertex)), nullptr);
+                          static_cast<GLsizei>(sizeof(j37::render::SceneVertex)), nullptr);
     glVertexAttribPointer(
         static_cast<GLuint>(normalLocation), 3, GL_FLOAT, GL_FALSE,
-        static_cast<GLsizei>(sizeof(SceneVertex)),
-        reinterpret_cast<const void *>(static_cast<std::uintptr_t>(offsetof(SceneVertex, normal))));
+        static_cast<GLsizei>(sizeof(j37::render::SceneVertex)),
+        reinterpret_cast<const void *>(
+            static_cast<std::uintptr_t>(offsetof(j37::render::SceneVertex, normal))));
     glEnableVertexAttribArray(static_cast<GLuint>(positionLocation));
     glEnableVertexAttribArray(static_cast<GLuint>(normalLocation));
 

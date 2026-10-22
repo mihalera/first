@@ -780,6 +780,31 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     std::unique_ptr<j37panel::ParameterSheet> parameterSheet;
 
     // -----------------------------------------------------------------------
+    //  The asynchronous file pickers.
+    //
+    //  A juce::FileChooser owns a native dialog, so the editor keeps the one it
+    //  launched: a second click while it is open must not stack another dialog
+    //  on top, and the destructor has to be able to release a dialog whose
+    //  editor has been closed under it. The handle is cleared (not just reset)
+    //  when the callback arrives, which is what makes `active` false again.
+    // -----------------------------------------------------------------------
+    struct AsyncFileChooser
+    {
+        std::shared_ptr<juce::FileChooser> chooser;
+        bool active = false;
+
+        void reset() noexcept
+        {
+            chooser.reset();
+            active = false;
+        }
+    };
+
+    AsyncFileChooser neuralFileChooser;
+    AsyncFileChooser irFileChooser;
+    AsyncFileChooser noiseFileChooser;
+
+    // -----------------------------------------------------------------------
     //  Neural model picker, on the DYNAMICS tab beside the NEURAL knob.
     //
     //  A model is a FILE, not a parameter: it never goes into a session, a
