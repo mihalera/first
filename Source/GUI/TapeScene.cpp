@@ -237,7 +237,6 @@ void addDisc(SceneGeometry& geometry,
              float halfHeight,
              int segments,
              float payload = 0.0f) {
-    auto& vertices = geometry.vertices;
     auto& indices = geometry.indices;
     const auto top = centre.z + halfHeight;
     const auto bottom = centre.z - halfHeight;
@@ -298,7 +297,6 @@ void addBox(SceneGeometry& geometry,
             const glm::vec3& centre,
             const glm::vec3& half,
             float rotationAboutZ = 0.0f) {
-    auto& vertices = geometry.vertices;
     auto& indices = geometry.indices;
     const auto cosR = std::cos(rotationAboutZ);
     const auto sinR = std::sin(rotationAboutZ);
@@ -371,7 +369,6 @@ void addKnurl(SceneGeometry& geometry,
               float bottomZ,
               float topZ,
               int segments) {
-    auto& vertices = geometry.vertices;
     auto& indices = geometry.indices;
     const auto step = juce::MathConstants<float>::twoPi / static_cast<float>(segments);
 
@@ -818,7 +815,6 @@ TapeScene::Geometry TapeScene::buildReel() {
 
 TapeScene::Geometry TapeScene::buildTapePack() {
     Geometry geometry;
-    auto& vertices = geometry.vertices;
     auto& indices = geometry.indices;
 
     constexpr int segments = 48;
