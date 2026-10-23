@@ -1578,13 +1578,16 @@ this repository carries its licence text. A shipped binary carries none of them.
 | `foleys_gui_magic` | commit `d53d998e` | **Used.** Daniel Walz's declarative GUI framework. Its caller is `Source/GUI/ParameterSheet.h`: the PARAMETERS key on SETTINGS opens a sheet listing every parameter, grouped and ordered by the processor's own parameter tree, with a live attachment per control. The tree, the stylesheet and the layout are foleys'; the palette is the panel's. This module was linked for a long time with only an `#include` and no caller - see `docs/library-candidates.md` §4, item 1 - and the sheet is the use it was waiting for |
 | `xsimd` | `14.3.0` (vendored) | **Used, behind `J37_USE_SIMD_TANH`.** Portable SIMD wrappers (SSE/AVX/NEON). `chowdsp::chowdsp_simd` already wraps xsimd, so this is the same code path rather than a second SIMD layer - and the shaper's own tanh goes through it too: every tanh the saturation core runs is `j37Tanh` (`Source/DSP/HotPathMath.h`), which is xsimd's batch kernel when the option is on: ~2.4 ns per call against std::tanh's ~6.7 ns, ~1.5x off the whole shaper, at a 1.19e-7 curve difference. On by default, because 1.19e-7 is below audibility and the shaper is ~1.5x cheaper for it; `-DJ37_USE_SIMD_TANH=OFF` restores `std::tanh` bit for bit, and `tests/dsp/simd_tanh_test.cpp` builds all three shapes |
 
-Two dev-only libraries are **off by default**, so a plugin build never drags a test
-framework into its dependency graph. Enable with `-DJ37_BUILD_TESTS=ON`:
+Three dev-only libraries are **off by default**, so a plugin build never drags a test
+framework into its dependency graph. The first two are configured by
+`-DJ37_BUILD_TESTS=ON`; `libebur128` needs no configure at all, because the harness that
+uses it is one of the ones that compiles itself:
 
 | Library | Pinned at | Why |
 | --- | --- | --- |
 | `Catch2` | `v3.9.1` | **Used.** Unit tests for the pieces underneath the DSP harness - the equaliser, the conventional compressor and the transient designer, driven one call at a time rather than through a replica of the engine (`tests/unit/`, a gate in CI, and it also runs under ASan + UBSan) |
 | `nanobench` | `v4.6.0` | Micro-benchmarks. The shaper runs two `std::tanh` calls per sample per channel, so approximating or vectorising it is a real complexity cost that should only be paid once a benchmark shows the shaper actually dominates |
+| `libebur128` | `v1.2.6` (vendored) | **Used, dev only.** The loudness oracle: `tests/dsp/loudness_oracle_test.cpp` feeds the same buffer to the shipping `LoudnessMeter` and to this reference implementation and requires the two to agree within 0.25 LU - 0.054 LU at worst on steady signals from 50 Hz to 15 kHz, at -3 to -60 dBFS and at 44.1, 48, 96 and 192 kHz. It compiles into that one test binary and never into the plugin, so it is not on the link line and adds no obligation to a distributed build. It is vendored rather than fetched for the same reason `dr_wav` is: a harness that has to build the decoder BOTH ways cannot wait for a configure |
 
 What is deliberately **not** here: an FFT library (the harmonic analyser needs three
 bins, and a full transform would be slower than the Goertzel it uses) and a pitch

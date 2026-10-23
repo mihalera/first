@@ -41,6 +41,12 @@
 // it and what this fixes on the panel.
 #include "GUI/DwellTooltipWindow.h"
 
+// The USER theme's colour window: the fifth theme is DATA - j37panel::userPalette in
+// PanelPaint.h - and this is where it is edited. Its own header explains why it is a
+// desktop window rather than another page, and why it does not select the theme
+// itself: the editor's callback does, so one palette edit is one applyTheme().
+#include "GUI/UserThemeWindow.h"
+
 // foleys_gui_magic (fetched by CPM in CMakeLists.txt) arrives through
 // GUI/ParameterSheet.h above, which owns the module's probe and its one caller:
 // the PARAMETERS sheet builds its controls from a ValueTree instead of another
@@ -64,9 +70,18 @@ class J37LookAndFeel final : public juce::LookAndFeel_V4 {
     void setTheme(j37panel::ThemeChoice newTheme) noexcept { theme = newTheme; }
     j37panel::ThemeChoice getTheme() const noexcept { return theme; }
 
-    /** True for the two dark panels. Used by every drawing routine, which only
-        ever needs to know dark-or-light rather than which dark. */
-    bool isDarkTheme() const noexcept { return theme != j37panel::ThemeChoice::ivory; }
+    /** True when the selected palette is a dark one. Used by every drawing routine,
+        which only ever needs to know dark-or-light rather than which dark.
+
+        Derived from the palette's own panel colour rather than compared against
+        ivory, for the same reason the editor derives its flag that way: the USER
+        theme is whatever colours the user chose, so a light user palette has to
+        answer "light" here the way the ivory panel does. The four stock themes are
+        unchanged by the switch - their panel colours are 222, 54, 37 and 34 on this
+        scale - and the two of them that are dark still share every dark code path. */
+    bool isDarkTheme() const noexcept {
+        return j37panel::paletteForTheme(theme).panel.getPerceivedBrightness() < 0.5f;
+    }
 
     void setActivity(float newActivity) noexcept { activity = newActivity; }
     void setDrift(float newDrift) noexcept { drift = newDrift; }
@@ -504,6 +519,14 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void timerCallback() override;
     void createDecorativePhysics();
     void applyTheme();
+
+    /** Opens the USER THEME window, building it on first use (Source/GUI/UserThemeWindow.h).
+
+        Not one of the constructor's phases: nothing in the panel is built from it, and
+        the layout harness checks that the phase block and the constructor agree. The
+        window is kept for the session and HIDDEN on close, so reopening it is a
+        setVisible rather than fifteen fresh rows. */
+    void openUserThemeWindow();
     EditorLayout getEditorLayout() const;
 
     // -------------------------------------------------------------------------
@@ -944,6 +967,25 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::ToggleButton deltaButton{"DELTA"};
     juce::TextButton themeButton{"DARK THEME"};
 
+    // -----------------------------------------------------------------------
+    //  The USER theme's editor key, on SETTINGS's first band beside OVERSAMPLING.
+    //
+    //  The theme BUTTON in the header still cycles every theme, USER included - that
+    //  is what "also in the normal list" means - so this key is not a second way to
+    //  select a theme, it is the way to EDIT one. It lives on SETTINGS with the other
+    //  interface preferences because the palette is a preference about the panel
+    //  rather than a control of the machine, and because the header has no room for a
+    //  sixth cell (see the header grid's clearance note in PluginEditor.cpp).
+    //
+    //  The window itself is built on first press and hidden on close, so it is a
+    //  unique_ptr that outlives each visit - and a raw DocumentWindow that the editor
+    //  owns, because a window that deleted itself would leave this handle pointing at
+    //  freed memory on the next press.
+    // -----------------------------------------------------------------------
+    juce::TextButton userThemeButton{"COLOURS"};
+    juce::Label userThemeLabel;
+    std::unique_ptr<j37panel::UserThemeWindow> userThemeWindow;
+
 #if JUCE_DEBUG
     // Melatonin's component inspector, debug builds only (the module is linked
     // by CMake in every config, but only this member and the editor include
@@ -1136,15 +1178,15 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // -----------------------------------------------------------------------
     //  The front panel's theme.
     //
-    //  Three panels - ivory, charcoal and metal - so this is an enum rather
-    //  than the bool it used to be. The bool survives as isDarkTheme() because
-    //  every drawing routine only ever needs to know dark-or-light and the two
-    //  dark themes share all of those code paths; the enum is what tells the two
-    //  of them apart, in the one place that has to (paletteForTheme).
+    //  Five panels - ivory, charcoal, metal, dark metal and USER - so this is an
+    //  enum rather than the bool it used to be. The bool survives as isDarkTheme()
+    //  because every drawing routine only ever needs to know dark-or-light; it is
+    //  DERIVED from the selected palette's own brightness in applyTheme() now, so the
+    //  USER theme is dark or light according to the colours the user chose rather than
+    //  according to which slot it sits in.
     // -----------------------------------------------------------------------
     j37panel::ThemeChoice themeChoice = j37panel::ThemeChoice::ivory;
-    bool darkTheme = false; // true for charcoal, metal and dark metal
-
+    bool darkTheme = false; // derived from the active palette's panel colour
     // Transport presentation. `lastShownTransport` is the parameter index the
     // buttons were last painted for, so the three of them are only restyled when
     // the state actually changes; `lastShownSpindown` does the same for the

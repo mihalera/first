@@ -125,7 +125,15 @@ Fetched only under `-DJ37_BUILD_TESTS=ON`, which no shipped build sets, and
 | --- | --- | --- | --- |
 | **Catch2** | `v3.9.1` | BSL-1.0 | <https://github.com/catchorg/Catch2> |
 | **nanobench** | `v4.6.0` | MIT | <https://github.com/martinus/nanobench> |
+| **libebur128** | `v1.2.6` (vendored) | MIT | <https://github.com/jiixyj/libebur128> |
 | **CPM.cmake** (the fetch tool itself) | `0.40.2` | MIT | <https://github.com/cpm-cmake/CPM.cmake> |
+
+`libebur128` is the loudness ORACLE, and it is `tests/dsp`'s only dependency: it is
+compiled into `tests/dsp/loudness_oracle_test` and into nothing else, so it is not on
+the plugin's link line and carries no obligation for the distributed binary. It is
+MIT, vendored under `ThirdParty/libebur128` at `v1.2.6` with its `COPYING` beside it,
+so a checkout can run the comparison without a configure - the same reason `dr_libs`
+and `pocketfft` are vendored rather than fetched.
 
 ### Vendor vector libraries
 

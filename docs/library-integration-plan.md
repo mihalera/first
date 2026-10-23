@@ -112,6 +112,38 @@ repository's licence obligations for a binary.
 `Catch2` (`v3.9.1`, BSL-1.0) and `nanobench` (`v4.6.0`, MIT), under
 `-DJ37_BUILD_TESTS=ON`. No shipped build sets it.
 
+`libebur128` (`v1.2.6`, MIT, vendored under `ThirdParty/libebur128`) joined this
+group without a configure at all: `tests/dsp` compiles itself, so the oracle is a
+file in the tree and one line of `tests/dsp/run.sh`. It is an INDEPENDENT meter -
+the reference implementation of the standard `Source/DSP/LoudnessMeter.h`
+implements - and the claim it makes is the one this repository could previously only
+quote from a measurement made outside it: on the same frames the two agree to
+**0.054 LU** at worst (50 Hz to 15 kHz, -3 to -60 dBFS, 44.1 to 192 kHz), against a
+0.25 LU gate. It is compiled into `loudness_oracle_test` and into nothing else, so
+it is not on the link line and carries no obligation for a distributed binary.
+
+`libFuzzer` is not a library this build links either: it is clang's own fuzzing
+runtime, and it is the second thing in the tree whose job is to attack the code
+rather than run it. `tests/fuzz/fuzz_noise_decoder.cpp` compiles the shipping
+`NoiseDecoder.h` against the vendored `dr_wav` and asserts its CONTRACT on every
+input - a refusal names a reason and touches nothing, an acceptance is playable
+(non-zero length, both channels that long, a positive rate, finite samples), and
+the same bytes decode the same way twice. Two mutators, one source: the file's
+own `main` is a fixed, reproducible sweep of 1532 inputs (truncations, bit flips
+across the header, zeroed and maximal channel/rate/size fields, appended
+garbage, random buffers) that runs on any C++17 compiler under ASan + UBSan and
+reaches 5 of the decoder's refusal branches; with `-fsanitize=fuzzer` on a clang
+that has the runtime, the same assertions are driven by coverage for twenty
+seconds from the sweep's own seeds. The sweep is the half that cannot be
+skipped, which is why the harness is a gate on the compiler CI already uses
+rather than on a toolchain it would have to install.
+
+The `.nam` target is the other half of the item and is not done: `buildFromNam`
+is a member of a stage that needs JUCE's `String`, and driving it needs the
+RTNeural stand-in `tests/neural/stage_test.cpp` already carries, moved into a
+shared header first. That is a refactor of a working harness, so it is its own
+change rather than a corner of this one.
+
 ### 2g. Not fetched yet
 
 | Library | Licence | When |
@@ -594,7 +626,13 @@ file.
   unless that build asks for it - both adapters are empty stubs otherwise.
 - **`ImGui` / `yasio` / `rack`.** Another immediate-mode UI inside a JUCE component
   that already has one, a socket library a plugin does not need, and a host runtime
-  this product has its own answers for.
+  this product has its own answers for. `yasio` has since got a second reason: the
+  OSC surface staged in `Source/Net/` (`Osc.h` for the wire format,
+  `OscSurface.h` for the address map) is the half of OSC that a library would only
+  duplicate, and the transport it will sit on when it is switched on is
+  `juce::DatagramSocket` - already linked, already tested by JUCE. A socket library
+  would be a third layer between the two, and `tests/osc` is the evidence that the
+  first two are enough.
 - **Preset XML blobs.** Not a library, but the same shape of mistake: see
   [requested-roadmap-status.md](requested-roadmap-status.md#items-that-should-not-be-applied-as-written).
 
