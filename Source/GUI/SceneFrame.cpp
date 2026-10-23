@@ -48,9 +48,20 @@ bool isValid(const SceneFrame &frame) noexcept {
 
     for (const auto &draw : frame.draws) {
         if (draw.meshIndex >= frame.meshes.size() || !finite(draw.model) ||
-            !finite(draw.normalMatrix) || !finite(draw.baseColour) || !finite(draw.parameters))
+            !finite(draw.normalMatrix) || !finite(draw.baseColour) || !finite(draw.highlightColour)
+            || !finite(draw.parameters))
+            return false;
+
+        const auto channelInRange = [](float value) { return value >= 0.0f && value <= 1.0f; };
+        if (!std::all_of(draw.baseColour.begin(), draw.baseColour.end(), channelInRange)
+            || !std::all_of(draw.highlightColour.begin(), draw.highlightColour.end(), channelInRange))
             return false;
     }
+
+    return true;
+}
+
+} // namespace j37::render
 
     return true;
 }

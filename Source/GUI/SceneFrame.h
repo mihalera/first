@@ -32,6 +32,7 @@ struct SceneDraw {
     std::array<float, 16> model{};
     std::array<float, 9> normalMatrix{};
     std::array<float, 4> baseColour{};
+    std::array<float, 3> highlightColour{};
     std::array<float, 3> parameters{};
     std::uint32_t meshIndex = 0;
     SceneMaterial material = SceneMaterial::solid;

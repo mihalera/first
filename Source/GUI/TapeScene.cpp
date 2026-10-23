@@ -1,4 +1,4 @@
-﻿/*
+﻿﻿/*
   ==============================================================================
     TapeScene - the deck's transport, rendered as geometry and lit on the GPU.
   ==============================================================================
@@ -1497,6 +1497,7 @@ void TapeScene::renderOpenGL() {
                                             background, body, highlight, tape, driveAmount,
                                             flutter, reduction, static_cast<float>(elapsed));
     jassert(j37::render::isValid(sceneFrame));
+    juce::ignoreUnused(sceneFrame);
 
     // The control bank, in FRONT of the machine: it is the only geometry here
     // with a z of its own, and drawing it last costs nothing because the depth
