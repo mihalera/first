@@ -20,6 +20,35 @@ constexpr float bankHalfHeight = 0.085f;
 constexpr float bankHalfDepth = 0.040f;
 constexpr float bankCentreZ = -0.200f;
 constexpr float bankFaceZ = bankCentreZ + bankHalfDepth;
+// The deck's own geometry, mirrored from the block at the top of TapeScene.cpp.
+// This file BUILDS the frame the GPU path draws from, and the CPU paint path
+// beside it still draws the panel with its own copies - so the two have to agree
+// on where the supply reel, the take-up, the head and the light are, and the
+// numbers below are that agreement written down twice. They are the values
+// TapeScene.cpp's anonymous namespace declares, not a second opinion.
+constexpr float supplyCentreX = -0.315f;
+constexpr float supplyCentreY = 0.235f;
+constexpr float supplyRadius = 0.220f;
+
+constexpr float takeUpCentreX = 0.345f;
+constexpr float takeUpCentreY = -0.265f;
+constexpr float takeUpRadius = 0.190f;
+
+// The pack stands proud of the reel's flange on both faces, which is what makes a
+// wound pack read as a thick roll rather than as a painted disc.
+constexpr float packHalfThickness = 0.100f;
+constexpr float tapeWidth = 0.040f;
+
+constexpr float headCentreX = -0.175f;
+constexpr float headCentreY = -0.285f;
+constexpr float headCentreZ = 0.000f;
+
+// Over the operator's left shoulder and a little in front: the highlight on the
+// upper-left of each reel and a dark far rim.
+constexpr float lightX = -0.45f;
+constexpr float lightY = 0.72f;
+constexpr float lightZ = 0.53f;
+
 constexpr float bankKnobRadius = 0.060f;
 constexpr float bankKeyHalfX = 0.044f;
 constexpr float bankKeyHalfY = 0.028f;
