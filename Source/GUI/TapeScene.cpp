@@ -1473,11 +1473,12 @@ void TapeScene::renderOpenGL() {
                               tape.getFloatBlue() * 1.35f + 0.02f);
     drawMesh(ribbon);
 
+#if JUCE_DEBUG
     const auto sceneFrame = buildSceneFrame(width, height, elapsed, viewProjection, scene,
                                             background, body, highlight, tape, driveAmount,
                                             flutter, reduction, static_cast<float>(elapsed));
     jassert(j37::render::isValid(sceneFrame));
-    juce::ignoreUnused(sceneFrame);
+#endif
 
     // The control bank, in FRONT of the machine: it is the only geometry here
     // with a z of its own, and drawing it last costs nothing because the depth

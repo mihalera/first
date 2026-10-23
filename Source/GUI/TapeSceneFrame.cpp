@@ -45,8 +45,8 @@ using j37::render::scene::lightY;
 using j37::render::scene::lightZ;
 using j37::render::scene::bankPlacementsX;
 using j37::render::scene::bankPlacementsAreKeys;
-using j37::render::scene::j37::render::scene::controlBankCount;
-using j37::render::scene::j37::render::scene::bankKnobCount;
+using j37::render::scene::controlBankCount;
+using j37::render::scene::bankKnobCount;
 
 std::array<float, 16> matrix4(const glm::mat4 &matrix) {
     std::array<float, 16> result{};
@@ -118,18 +118,23 @@ j37::render::SceneFrame TapeScene::buildSceneFrame(int width,
     frame.textureWeights = {packedWeights.getFloatRed(), packedWeights.getFloatGreen(),
                             packedWeights.getFloatBlue()};
 
-    frame.meshes.reserve(8);
-    frame.meshes.push_back(buildReel());
-    frame.meshes.push_back(buildTapePack());
-    frame.meshes.push_back(buildRibbon());
-    frame.meshes.push_back(buildHead());
-    const auto bank = buildControlBank();
-    frame.meshes.push_back(bank.body);
-    frame.meshes.push_back(bank.knob);
-    frame.meshes.push_back(bank.key);
-    frame.meshes.push_back(bank.knobGlow);
+    static const auto sharedMeshes = [] {
+        auto built = std::make_shared<std::vector<j37::render::SceneMesh>>();
+        built->reserve(8);
+        built->push_back(buildReel());
+        built->push_back(buildTapePack());
+        built->push_back(buildRibbon());
+        built->push_back(buildHead());
+        const auto bank = buildControlBank();
+        built->push_back(bank.body);
+        built->push_back(bank.knob);
+        built->push_back(bank.key);
+        built->push_back(bank.knobGlow);
+        return std::shared_ptr<const std::vector<j37::render::SceneMesh>>(std::move(built));
+    }();
+    frame.meshes = sharedMeshes;
 
-    frame.draws.reserve(2 * 2 + 1 + 1 + 1 + j37::render::scene::controlBankCount + j37::render::scene::bankKnobCount);
+    frame.draws.reserve(10 + j37::render::scene::controlBankCount + j37::render::scene::bankKnobCount);
     const auto bodyLight = body.brighter(0.18f);
     const auto tapeOuterSupply =
         packEmptyFraction + (packFullFraction - packEmptyFraction) * (1.0f - tapeTransfer);
