@@ -21,6 +21,23 @@
 // rather than a file-local block in either - see its own banner.
 #include "DSP/HotPathMath.h"
 
+// -----------------------------------------------------------------------------
+//  OSC, STAGED: compiled here and STARTED NOWHERE.
+//
+//  Source/Net/Osc.h is the wire format and Source/Net/OscSurface.h is the address
+//  map onto the parameter tree. Neither is constructed by this file: there is no
+//  socket, no receiver thread, no port, and nothing in the plugin's state - so the
+//  include below changes no behaviour at all. It is here because the alternative is
+//  code that no build compiles until the day it is switched on, and that is the
+//  shape of defect this repository's harnesses exist to prevent.
+//
+//  The day it IS switched on, what it needs is: a juce::DatagramSocket on its own
+//  thread (never the audio thread), a Surface built from the parameter tree's ids,
+//  ranges and groups, and a listener for the port the UI would show. tests/osc
+//  already pins the half below the socket.
+// -----------------------------------------------------------------------------
+#include "Net/OscSurface.h"
+
 #include <array>
 #include <cstdint>
 #include <limits>

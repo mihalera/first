@@ -2160,6 +2160,10 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     antiPhaseGuardLabel.setVisible (geometry.settingsTab);
     antiPhaseGuardButton.setVisible (geometry.settingsTab);
     parameterSheetButton.setVisible (geometry.settingsTab);
+    // The USER theme's colour key rides SETTINGS's first band, beside OVERSAMPLING -
+    // both are interface preferences rather than controls of the machine.
+    userThemeButton.setVisible (geometry.settingsTab);
+    userThemeLabel.setVisible (geometry.settingsTab);
     delayTypeLabel.setVisible (geometry.delayTab);
     delayTypeBox.setVisible (geometry.delayTab);
     delayRateLabel.setVisible (geometry.delayTab);
@@ -2269,6 +2273,13 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
         // SETTINGS: the engine-level oversampling selector and interface
         // preferences.
         placeDeckSwitch (geometry, oversamplingLabel, oversamplingBox, 0, 1, "OVER");
+
+        // The USER theme's colour window, in the next cell of the same band. It is
+        // placed with placeDeckSwitch so its caption, its 30 px band and its centring
+        // are the same arithmetic as every other switch on the page - a button placed
+        // at its own coordinates is how this page grew one control that sat 168 px
+        // below its caption (see the note inside placeDeckSwitch).
+        placeDeckSwitch (geometry, userThemeLabel, userThemeButton, 1, 1, "USER THEME");
 
         // LANGUAGE keeps the first cell of the second band; UI SOUNDS takes the
         // second; the guard takes the third.
@@ -2659,6 +2670,13 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "guardLabel",     &antiPhaseGuardLabel },
             { "guardBtn",       &antiPhaseGuardButton },
             { "paramSheet",     &parameterSheetButton },
+            // The USER theme's caption and colour key, in SETTINGS's first band.
+            // They are here because this list is the one place a hand-placed switch
+            // has to be named to be covered: the key shares its page with the four
+            // second-band preferences, and "plausible on its own, painted over the
+            // control below it" is exactly the defect this sweep exists for.
+            { "userThemeLbl",   &userThemeLabel },
+            { "userThemeBtn",   &userThemeButton },
             { "diPadLabel",     &diPadLabel },
             { "diPadBox",       &diPadBox },
             { "tracksLabel",    &tracksLabel },

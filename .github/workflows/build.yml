@@ -248,6 +248,38 @@ jobs:
       - name: Run the room harness
         run: bash tests/reverb/run.sh
 
+      # The OSC codec and its address surface. Both are STAGED: the plugin compiles
+      # Source/Net/Osc.h and Source/Net/OscSurface.h and starts neither - no socket,
+      # no port, no thread - so nothing a user does can prove the decoder pads a
+      # string the way a client expects. A codec that agrees only with its own
+      # encoder round-trips perfectly and talks to nobody, which is why this harness
+      # checks the bytes the specification fixes and feeds the decoder hand-built
+      # packets as well as encoded ones: the padding, the big-endian int/float, the
+      # type tag string, a bundle's length-prefixed elements, and the refusals that
+      # keep a malformed packet from being read as a knob position.
+      - name: Run the OSC harness
+        run: bash tests/osc/run.sh
+
+      # The WAV decoder, fed bytes nobody wrote. tests/dsp proves the decoder reads
+      # the files it was written against; it cannot say what a truncated header, a
+      # channel count of zero or a data chunk claiming more frames than it holds
+      # does, and dr_wav is the one library here that parses untrusted bytes. So the
+      # contract in NoiseDecoder.h is asserted on every input the sweep can reach: a
+      # refusal names its reason and leaves the caller's print untouched, an
+      # acceptance is playable (a length, both channels that long, a positive rate,
+      # every sample finite), and the same bytes decode the same way twice.
+      #
+      # Two mutators, one source. The fixed sweep runs here under ASan and UBSan on
+      # the compiler this job already uses, so it is never skipped; where clang is on
+      # the image the same file is rebuilt with -fsanitize=fuzzer and run for twenty
+      # seconds from the sweep's own seeds, which is the coverage-guided half. On a
+      # machine with no libFuzzer that half says so and the sweep still runs - the
+      # harness is evidence, not a toolchain requirement. The fuzz run carries a
+      # per-input timeout and an outer one, so a pathological input fails this step
+      # with its log instead of leaving the job running until someone cancels it.
+      - name: Run the WAV decoder fuzz gate
+        run: bash tests/fuzz/run.sh
+
       # The factory presets cannot fail at runtime - a name list that is a row
       # short, or a parameter with no column in the table, both just quietly
       # load the wrong sound - so they are checked against the source instead.
@@ -644,6 +676,10 @@ jobs:
           J37_SANITIZE=address,undefined bash tests/neural/run.sh
           J37_SANITIZE=address,undefined bash tests/spectrum/run.sh
           J37_SANITIZE=address,undefined bash tests/reverb/run.sh
+          J37_SANITIZE=address,undefined bash tests/osc/run.sh
+          # The sweep only: this pass is "every harness under the sanitizers", and the
+          # coverage-guided run already has its own step above with its own budget.
+          J37_SANITIZE=address,undefined J37_FUZZ_COVERAGE=0 bash tests/fuzz/run.sh
 
       - name: Configure CMake (Debug)
         run: |

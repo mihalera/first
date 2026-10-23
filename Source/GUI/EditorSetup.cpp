@@ -812,14 +812,11 @@ void FirstAudioProcessorEditor::setUpTopSwitches() {
         audioProcessor.parameters, "delta", deltaButton);
     addAndMakeVisible(deltaButton);
 
-    themeButton.setButtonText(themeChoice == j37panel::ThemeChoice::darkMetal  ? "DARK METAL"
-                              : themeChoice == j37panel::ThemeChoice::metal    ? "METAL"
-                              : themeChoice == j37panel::ThemeChoice::charcoal ? "CHARCOAL"
-                                                                               : "IVORY");
-    setTip(themeButton, "Cycle the front panel: IVORY, CHARCOAL, METAL, then DARK METAL. "
-                        "The button names the panel you are on; pressing it moves "
-                        "to the next one.");
     themeButton.setLookAndFeel(&customLookAndFeel);
+    setTip(themeButton, "Cycle the front panel: IVORY, CHARCOAL, METAL, DARK METAL, then USER. "
+                        "The button names the panel you are on; pressing it moves "
+                        "to the next one. USER is the palette you edit yourself, in "
+                        "the colour window SETTINGS opens.");
     themeButton.onClick = [this] {
         switch (themeChoice) {
         case j37panel::ThemeChoice::ivory:
@@ -832,12 +829,46 @@ void FirstAudioProcessorEditor::setUpTopSwitches() {
             themeChoice = j37panel::ThemeChoice::darkMetal;
             break;
         case j37panel::ThemeChoice::darkMetal:
+            themeChoice = j37panel::ThemeChoice::user;
+            break;
+        case j37panel::ThemeChoice::user:
         default:
             themeChoice = j37panel::ThemeChoice::ivory;
             break;
         }
         applyTheme();
     };
+
+    // ---------------------------------------------------------------
+    //  USER THEME - the colour window's only entry point.
+    //
+    //  The header's THEME key above CYCLES the five panels, USER included; this key
+    //  opens the editor for the one of them that is data. Both routes matter: cycling
+    //  onto USER is how a palette chosen in a previous visit is reselected, and this
+    //  key is how it is changed.
+    //
+    //  It is inked here with paletteFor(false) because the constructor always builds
+    //  the ivory panel, and re-inked in applyTheme() with stylePickerButton() for the
+    //  same reason every other picker button is - see that list. The caption beside it
+    //  is placed by placeTabMembers() with the rest of the SETTINGS band.
+    // ---------------------------------------------------------------
+    userThemeButton.setLookAndFeel(&inlineLookAndFeel);
+    userThemeButton.setColour(juce::TextButton::buttonColourId, paletteFor(false).raised);
+    userThemeButton.setColour(juce::TextButton::textColourOffId, paletteFor(false).text);
+    userThemeButton.setColour(juce::TextButton::buttonOnColourId,
+                              paletteFor(false).raised.darker(0.15f));
+    setTip(userThemeButton,
+           "USER THEME - opens the colour window: one row for every colour the "
+           "panel is painted from. Change one and the panel switches to USER on "
+           "the same frame, with the swatch you are dragging already showing the "
+           "result. USER also sits in the THEME key's cycle, so a palette you like "
+           "is one press away afterwards; RESET in the window restores the seed "
+           "palette (DARK METAL) and CLOSE hides the window without losing it.");
+    userThemeButton.onClick = [this] { openUserThemeWindow(); };
+    styleLabel(userThemeLabel, "USER THEME", 9.0f, paletteFor(false).secondary, true,
+               juce::Justification::left);
+    addAndMakeVisible(userThemeButton);
+    addAndMakeVisible(userThemeLabel);
 
     // ---------------------------------------------------------------
     //  Output-stage switches: polarity invert and auto gain.

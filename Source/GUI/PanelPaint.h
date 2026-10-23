@@ -59,8 +59,16 @@
 inline constexpr int principleCount = 7;
 
 namespace j37panel {
-/** The four front-panel choices, moved here from J37LookAndFeel. */
-enum class ThemeChoice { ivory = 0, charcoal = 1, metal = 2, darkMetal = 3 };
+/** The front-panel choices, moved here from J37LookAndFeel.
+
+    `user` is the fifth and it is a different kind of entry from the other four: they
+    select a palette that is a constant in this file, and it selects `userPalette`
+    below, which the USER THEME window edits while the panel is open. It sits in the
+    same enum, in the same cycle and behind the same paletteForTheme() lookup on
+    purpose - a user palette that needed a second code path through the theme would
+    be a fourth theme wearing a fifth name.
+*/
+enum class ThemeChoice { ivory = 0, charcoal = 1, metal = 2, darkMetal = 3, user = 4 };
 
 // Symmetric decibel range shared by the input and output trims, matching the
 // processor's parameter layout exactly.
@@ -184,6 +192,28 @@ inline const UiPalette darkMetalPalette{
     juce::Colour::fromRGB(163, 224, 191)  // status - mint
 };
 
+// ------------------------------------------------------------------
+//  The USER palette: the one palette that is DATA rather than a constant.
+//
+//  `userThemeSeed` is what RESET restores and what the first session of the
+//  USER theme starts from - DARK METAL, because that is the palette a user who
+//  opens a colour editor has already chosen to look at, and because seeding from
+//  ivory would make the first edit a jump into the dark.
+//
+//  `userPalette` is mutable and global for the same reason `liveThemeChoice` is:
+//  the paint routines under Source/GUI/ ask paletteFor() for the active palette,
+//  and a palette carried on the editor could not answer them. Nothing on the
+//  audio thread reads either - the panel is painted on the message thread, and
+//  the editor's own copy is what the window edits.
+//
+//  It is not saved to the session, a preset or a state file. A front-panel colour
+//  is a property of the person at the desk, not of the take, so it lives as long
+//  as the editor that owns it - the same lifetime the theme button's choice has
+//  always had.
+// ------------------------------------------------------------------
+inline const UiPalette userThemeSeed = darkMetalPalette;
+inline UiPalette userPalette = userThemeSeed;
+
 // The live choice, kept in step with the editor's by applyTheme(). It lives
 // in the anonymous namespace beside the palettes so both lookups share it.
 inline j37panel::ThemeChoice liveThemeChoice = j37panel::ThemeChoice::ivory;
@@ -202,6 +232,8 @@ inline j37panel::ThemeChoice liveThemeChoice = j37panel::ThemeChoice::ivory;
 // functions did not exist at all.
 inline const UiPalette &paletteForTheme(j37panel::ThemeChoice theme) {
     switch (theme) {
+    case j37panel::ThemeChoice::user:
+        return userPalette;
     case j37panel::ThemeChoice::darkMetal:
         return darkMetalPalette;
     case j37panel::ThemeChoice::metal:
