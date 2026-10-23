@@ -274,7 +274,9 @@ jobs:
       # the image the same file is rebuilt with -fsanitize=fuzzer and run for twenty
       # seconds from the sweep's own seeds, which is the coverage-guided half. On a
       # machine with no libFuzzer that half says so and the sweep still runs - the
-      # harness is evidence, not a toolchain requirement.
+      # harness is evidence, not a toolchain requirement. The fuzz run carries a
+      # per-input timeout and an outer one, so a pathological input fails this step
+      # with its log instead of leaving the job running until someone cancels it.
       - name: Run the WAV decoder fuzz gate
         run: bash tests/fuzz/run.sh
 
@@ -675,7 +677,9 @@ jobs:
           J37_SANITIZE=address,undefined bash tests/spectrum/run.sh
           J37_SANITIZE=address,undefined bash tests/reverb/run.sh
           J37_SANITIZE=address,undefined bash tests/osc/run.sh
-          J37_SANITIZE=address,undefined bash tests/fuzz/run.sh
+          # The sweep only: this pass is "every harness under the sanitizers", and the
+          # coverage-guided run already has its own step above with its own budget.
+          J37_SANITIZE=address,undefined J37_FUZZ_COVERAGE=0 bash tests/fuzz/run.sh
 
       - name: Configure CMake (Debug)
         run: |

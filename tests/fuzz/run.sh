@@ -66,10 +66,31 @@ mkdir -p "${BUILD}/corpus"
 # Coverage-guided half. The probe is the library, not the compiler's name: a
 # clang without libFuzzer's runtime links this and fails, which would be a gate
 # that breaks on a tool it does not need.
+#
+# J37_FUZZ_COVERAGE=0 skips this half and keeps the sweep. It exists because the
+# shape the sanitizer pass wants ("every harness under ASan and UBSan") is the
+# sweep, and the coverage run already has its own step in the regression job. The
+# first CI run that had both proved why a switch is worth having: the fuzzer was
+# still inside one execution twenty minutes later, waiting on a symboliser, and a
+# gate that can hold a job hostage is worse than one that says what it covers.
+#
+# Three bounds on top of that, none of them optional:
+#   -timeout=10          libFuzzer's own per-execution limit: a single input that
+#                        runs for ten seconds is a finding, not a corpus entry.
+#   detect_leaks=0       LeakSanitizer's exit-time pass buys nothing here (every
+#                        allocation is inside one decode) and is the usual reason
+#                        an ASan process does not return.
+#   timeout N+120        the belt to those braces: whatever the fuzzer thinks, this
+#                        script returns. A run that trips it FAILS the gate with
+#                        its log rather than hanging the job silently.
 CLANG="$(command -v clang++ || true)"
 SECONDS_TO_FUZZ="${J37_FUZZ_SECONDS:-20}"
+FUZZ_COVERAGE="${J37_FUZZ_COVERAGE:-1}"
 
-if [ -n "${CLANG}" ] \
+if [ "${FUZZ_COVERAGE}" = "0" ]; then
+    echo ""
+    echo "  skip  coverage-guided run: J37_FUZZ_COVERAGE=0 (the sweep above is the sanitizer pass)"
+elif [ -n "${CLANG}" ] \
    && printf 'extern "C" int LLVMFuzzerTestOneInput(const unsigned char*, unsigned long) { return 0; }\n' \
       | "${CLANG}" -x c++ -fsanitize=fuzzer -o "${BUILD}/fuzzer_probe" - > /dev/null 2>&1; then
     rm -f "${BUILD}/fuzzer_probe"
@@ -88,8 +109,10 @@ if [ -n "${CLANG}" ] \
     # cap turns it into a reported OOM instead of an unrecoverable host. The corpus
     # directory is written by the run and is what a later run starts from.
     set +e
-    "${BUILD}/fuzz_noise_decoder_libfuzzer" \
-        -max_total_time="${SECONDS_TO_FUZZ}" -rss_limit_mb=2048 \
+    ASAN_OPTIONS=detect_leaks=0:symbolize=1 \
+    timeout $((SECONDS_TO_FUZZ + 120)) \
+        "${BUILD}/fuzz_noise_decoder_libfuzzer" \
+        -max_total_time="${SECONDS_TO_FUZZ}" -timeout=10 -rss_limit_mb=2048 \
         -print_final_stats=1 "${BUILD}/corpus" \
         > "${BUILD}/libfuzzer.log" 2>&1
     status=$?
@@ -97,8 +120,13 @@ if [ -n "${CLANG}" ] \
 
     tail -12 "${BUILD}/libfuzzer.log"
 
-    if [ "${status}" -ne 0 ] \
-       && grep -q "ERROR: libFuzzer: deadly signal\|ERROR: AddressSanitizer\|SUMMARY: \|ERROR: libFuzzer: out-of-memory\|crash-" "${BUILD}/libfuzzer.log"; then
+    if [ "${status}" -eq 124 ]; then
+        echo ""
+        echo "fuzz_noise_decoder: the fuzzer did not return inside its budget - log:" >&2
+        tail -40 "${BUILD}/libfuzzer.log" >&2
+        exit 1
+    elif [ "${status}" -ne 0 ] \
+       && grep -q "ERROR: libFuzzer: deadly signal\|ERROR: AddressSanitizer\|SUMMARY: \|ERROR: libFuzzer: out-of-memory\|ERROR: libFuzzer: timeout\|crash-\|timeout-" "${BUILD}/libfuzzer.log"; then
         echo ""
         echo "fuzz_noise_decoder: the fuzzer found a failure - full log below" >&2
         cat "${BUILD}/libfuzzer.log" >&2
