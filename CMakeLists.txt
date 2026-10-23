@@ -20,7 +20,7 @@
 #
 # ==============================================================================
 
-cmake_minimum_required(VERSION 3.22...4.0)
+cmake_minimum_required(VERSION 3.22)
 
 # ------------------------------------------------------------------------------
 #  macOS deployment target.
@@ -229,9 +229,9 @@ option(COPY_PLUGIN_AFTER_BUILD "Copy plugins to the user plugin folders after bu
 # create their device, command resources and presentation surface; unsupported
 # platform/API combinations use the CPU fallback.
 set(J37_RENDER_BACKEND "AUTO" CACHE STRING
-    "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12, SOKOL, BGFX or CPU")
+    "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12 or CPU")
 set_property(CACHE J37_RENDER_BACKEND PROPERTY STRINGS
-    AUTO OPENGL VULKAN METAL D3D11 D3D12 SOKOL BGFX CPU)
+    AUTO OPENGL VULKAN METAL D3D11 D3D12 CPU)
 string(TOUPPER "${J37_RENDER_BACKEND}" J37_RENDER_BACKEND)
 set(J37_RENDER_DEFINITIONS)
 set(J37_NATIVE_RENDER_DEFINITIONS)
@@ -258,14 +258,22 @@ elseif(J37_RENDER_BACKEND STREQUAL "D3D12")
     if(WIN32)
         list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_D3D12=1)
     endif()
-elseif(J37_RENDER_BACKEND STREQUAL "SOKOL")
-    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_SOKOL=1)
-    list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_SOKOL=1)
-elseif(J37_RENDER_BACKEND STREQUAL "BGFX")
-    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_BGFX=1)
-    list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_BGFX=1)
 elseif(J37_RENDER_BACKEND STREQUAL "CPU")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_CPU=1)
+elseif(J37_RENDER_BACKEND STREQUAL "SOKOL_GFX")
+    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_SOKOL_GFX=1)
+    # Sokol_gfx is header-only; no external libs needed.
+    # Platform backend is auto-detected by Sokol_gfx itself,
+    # but we expose the option for explicit control.
+    if(APPLE)
+        list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_SOKOL_GFX=1)
+    elseif(WIN32)
+        # On Windows, user can choose OpenGL or Vulkan backend
+        if(J37_RENDER_BACKEND_SOKOL_GFX_VULKAN)
+            list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_SOKOL_GFX_VULKAN=1)
+        endif
+        list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_SOKOL_GFX=1)
+    endif()
 elseif(NOT J37_RENDER_BACKEND STREQUAL "AUTO")
     message(FATAL_ERROR "Unknown J37_RENDER_BACKEND='${J37_RENDER_BACKEND}'")
 endif()
@@ -386,7 +394,6 @@ target_sources(first PRIVATE
     Source/ParameterTable.cpp
     Source/ProcessorPresets.cpp
     Source/ProcessorSignalPath.cpp
-    Source/DSP/NoiseDecoder.cpp
     Source/PluginEditor.cpp
     Source/GUI/EditorSetup.cpp
     Source/GUI/EditorTheme.cpp
@@ -396,15 +403,10 @@ target_sources(first PRIVATE
     Source/GUI/EditorMeters.cpp
     Source/GUI/UiSoundEngine.cpp
     Source/GUI/TapeScene.cpp
-    Source/GUI/TapeSceneFrame.cpp
-    Source/GUI/SceneFrame.cpp
     Source/GUI/NativeRenderer.cpp
     Source/GUI/NativeRenderer_D3D11.cpp
     Source/GUI/NativeRenderer_D3D12.cpp
     Source/GUI/NativeRenderer_Vulkan.cpp
-    Source/GUI/NativeRenderer_Sokol.cpp
-    Source/GUI/SokolGfxImpl.cpp
-    Source/GUI/NativeRenderer_Bgfx.cpp
     Source/GUI/RenderBackend.h)
 
 target_include_directories(first PRIVATE Source)
@@ -427,11 +429,9 @@ elseif(APPLE AND J37_RENDER_BACKEND STREQUAL "METAL")
     target_link_libraries(first PRIVATE "-framework Metal" "-framework QuartzCore")
 endif()
 
-# WGPU and DAWN stay inside j37_setup_graphics_backend without being accepted by
-# J37_RENDER_BACKEND, because neither has an adapter here yet. What this target
-# compiles is OpenGL, Vulkan, Metal, D3D11, D3D12, SOKOL and BGFX - and the last
-# two still present only a cleared surface, so RenderBackend.h keeps every native
-# selection on the CPU fallback until one of them draws the tape scene.
+# Optional BGFX/WGPU/DAWN backends are not advertised until complete adapters and
+# platform surface implementations exist. The compiled native backends currently
+# supported by this target are OpenGL, Vulkan, Metal, D3D11 and D3D12.
 
 # ------------------------------------------------------------------------------
 #  Embedded resources - the factory presets and the translation tables.
@@ -597,14 +597,9 @@ target_include_directories(first PRIVATE "${CMAKE_CURRENT_BINARY_DIR}/generated"
 #  The PACKAGES are still declared in cmake/J37Dependencies.cmake: the fetch is
 #  what makes "use it" a one-line change, and several of the removed entries are
 #  candidates for a stage that does not exist yet (dr_libs for a file the IR
-#  stage might read, the pitch trackers for a second opinion on PitchTracker).
-#  Two of them have since come back, and they are the model for how: dattorro_verb
-#  is linked below because Source/DSP/DattorroRoom.h calls it and tests/reverb
-#  renders through it, and signalsmith-stretch because the corrector calls its
-#  header - header-only, so what the link line carries is the include path - in
-#  that order both times: the caller first, the harness with it.
-#  What is not true is that the shipping plugin links them, and the link line is
-#  a claim about the binary rather than about intent.
+#  stage might read, dattorro_verb for a room, the pitch trackers for a second
+#  opinion on PitchTracker). What is not true is that the shipping plugin links
+#  them, and the link line is a claim about the binary rather than about intent.
 #
 #  `signalsmith-stretch` left with the rest of them, and it is the one worth
 #  saying out loud: the plan names it as the corrector's engine, but
@@ -623,6 +618,7 @@ target_link_libraries(first
         juce::juce_gui_extra
         juce::juce_opengl
         juce::juce_box2d
+        chowdsp::chowdsp_dsp_utils
         chowdsp::chowdsp_math
         chowdsp::chowdsp_simd
         melatonin_inspector
@@ -634,34 +630,11 @@ target_link_libraries(first
         RTNeural
         nlohmann_json
         glm
-        dattorro_verb
-        dr_libs
-        signalsmith-stretch
         PluginResources
     PUBLIC
         juce::juce_recommended_config_flags
         juce::juce_recommended_lto_flags
         juce::juce_recommended_warning_flags)
-
-# ------------------------------------------------------------------------------
-#  The two GPU abstraction layers.
-#
-#  ONE PER BUILD. sokol_gfx and bgfx are both GPU abstraction layers - each owns
-#  a device, a surface and a frame - so a binary that linked both would have two
-#  owners of one window. J37_RENDER_BACKEND picks one, exactly as it picks
-#  Vulkan or Metal, and the other is not compiled at all.
-#
-#  sokol_gfx is header-only: the implementation is the SokolGfxImpl.cpp entry in
-#  target_sources, and what the link line carries is the include path. bgfx is a
-#  real library and its fetch/configure lives in j37_setup_graphics_backend
-#  (cmake/J37Dependencies.cmake), which is where the pinned bgfx.cmake revision
-#  and its build options are.
-# ------------------------------------------------------------------------------
-if(J37_RENDER_BACKEND STREQUAL "SOKOL")
-    target_link_libraries(first PRIVATE sokol_gfx)
-elseif(J37_RENDER_BACKEND STREQUAL "BGFX")
-    j37_setup_graphics_backend(first)
-endif()
 
 # ------------------------------------------------------------------------------
 #  Vendor vector libraries: wire what was found by cmake/J37VendorLibraries.cmake
@@ -670,114 +643,34 @@ endif()
 j37_apply_vendor_libraries(first)
 
 # ------------------------------------------------------------------------------
-#  The second .nam backend: NeuralAmpModelerCore + Eigen.
-#
-#  The target, the sources and the option are declared in
-#  cmake/J37Dependencies.cmake; what is wired here is what the plugin sees - the
-#  link line, the include paths the namcore target carries, and the macro
-#  Source/DSP/OptionalLibraries.h probes. One line of CMake because the stage
-#  already had the seam: Source/DSP/NamBackend.h is compiled only when the macro
-#  is 1, and the plugin's own code does not branch on it at all.
-#
-#  ON by default, because the gate it arrived with - "measured before it is the
-#  default" - has been measured: tests/neural/run_bench.sh prints 14.5 % of one
-#  48 kHz core per mono channel for a 16-channel WaveNet and 2.8 % for an LSTM
-#  on NAM Core, paid only while a model is loaded. `-DJ37_NAMCORE=OFF` is still
-#  the LSTM-only stage that shipped before this option existed, with its
-#  refusal of WaveNet; see the block in J37Dependencies for the numbers.
-# ------------------------------------------------------------------------------
-if(J37_NAMCORE)
-    target_link_libraries(first PRIVATE namcore)
-    target_compile_definitions(first PRIVATE J37_NAMCORE=1)
-endif()
-
-# ------------------------------------------------------------------------------
 #  The shaper's tanh: the one switch in this build that changes the rendered
 #  audio, and the only place a library is wired to the engine by a macro.
 #
-#  ON by default, deliberately. Source/DSP/HotPathMath.h's j37Tanh is the single
+#  OFF by default, deliberately. Source/DSP/HotPathMath.h's j37Tanh is the single
 #  call that every saturation curve in Source/DSP/SaturationCore.h runs, and this
 #  option is what makes it xsimd's batch kernel instead of std::tanh: measured
 #  through tests/dsp/run_bench.sh (the same translation unit built both ways,
 #  section 6 of the log) at ~2.4 ns per call against std::tanh's ~6.7 ns, which
 #  makes the whole saturation core about 1.5x cheaper - ~42 us to ~28 us per 512
-#  frame block on the machine that measured it.
+#  frame block on the machine that measured it. It is off because it is a
+#  DIFFERENT CURVE: 1.19e-7 absolute at worst, which is far below audibility for
+#  a stage that is generating harmonics on purpose, but a measured difference in
+#  the rendered audio is a listening decision in this repository and not a build
+#  default.
 #
-#  It was OFF while the seam was unproven, and what changed the default was not a
-#  preference. tests/dsp/simd_tanh_test.cpp now builds all three shapes (flag
-#  with xsimd, flag without it, and neither) and compares their curve digests,
-#  so "the switch reaches the audio" is a claim a build checks rather than a
-#  comment that hopes, and the branch cannot rot into the no-op it once was (it
-#  called xsimd::tanh on a float, which IS std::tanh). The curve it reaches is a
-#  DIFFERENT one - 1.19e-7 absolute at worst - and that number is the whole
-#  argument: far below audibility for a stage that is generating harmonics on
-#  purpose, against a 1.5x cost on the path every sample crosses. That is the
-#  listening decision this build has now made, and the OFF shape is one flag
-#  away rather than the other way round.
-#
-#  -DJ37_USE_SIMD_TANH=OFF is the documented way back to std::tanh bit for bit:
-#  it is the shape tests/dsp/run_bench.sh measures first, and the shape the
-#  three-way tanh harness compares the other two against. xsimd is already on the
-#  plugin's include path - it is fetched into ThirdParty/ and linked as
-#  chowdsp::chowdsp_simd - so this option only has to define the macro the seam
-#  reads.
+#  xsimd is already on the plugin's include path - it is fetched into
+#  ThirdParty/ and linked as chowdsp::chowdsp_simd - so this option only has to
+#  define the macro the seam reads. tests/dsp/simd_tanh_test.cpp compiles all
+#  three shapes (flag with the library, flag without it, and neither) and asserts
+#  what each one renders, so the switch cannot quietly rot into a no-op again:
+#  as written it called xsimd::tanh on a float, which IS std::tanh.
 # ------------------------------------------------------------------------------
 option(J37_USE_SIMD_TANH
-    "Run the shaper's tanh through xsimd's batch kernel instead of std::tanh (the default; OFF restores std::tanh at a ~1.5x shaper cost)"
-    ON)
+    "Run the shaper's tanh through xsimd's batch kernel instead of std::tanh (changes the rendered audio by ~1e-7)"
+    OFF)
 
 if(J37_USE_SIMD_TANH)
     target_compile_definitions(first PRIVATE J37_USE_SIMD_TANH=1)
-endif()
-# J37_HAS_XSIMD is automatically set by CMake when xsimd is found; the code in HotPathMath.h uses it directly
-
-# ------------------------------------------------------------------------------
-#  The corrector's engine: OFF by default, deliberately, and this is the second
-#  switch in the build that changes the rendered audio.
-#
-#  Source/DSP/CorrectorStage.h has two engines behind one interface. The default
-#  is the granular shifter the plugin has always corrected with: one period of
-#  latency, inaudible when AUTOTUNE is off, and no latency reported because the
-#  plugin has never reported one. The option swaps in signalsmith-stretch, a phase
-#  vocoder that renders the correction with a whole analysis window and is handed
-#  whole blocks.
-#
-#  What that measures, from tests/pitch, which builds BOTH shapes of the same file
-#  and prints these numbers on every run:
-#
-#    latency      1216 frames at 48 kHz (25 ms) against the shifter's one period.
-#                 The plugin reports it while AUTOTUNE is engaged - see
-#                 publishReportedLatency - so it is not hidden, but it is in the
-#                 monitoring path and a performer feels it.
-#    duration     100 ms of note comes back 103 ms at ratio 1.0293 where a
-#                 resampler would answer 97 ms. This is the vocoder's real win:
-#                 the correction no longer shortens the note it corrects.
-#    pitch        a few percent wide of the ratio it is handed, and the error is a
-#                 property of the analysis window: 15 cents at 1.0595x and 56 at
-#                 0.9439x with this stage's 20 ms window, within a cent with a 60 ms
-#                 one. The granular shifter reads under a cent at every ratio on a
-#                 stationary tone. So the engine that is accurate to a couple of
-#                 cents costs one period of latency and the one that is accurate to
-#                 a few percent costs a window of it - and since AUTOTUNE's whole
-#                 job is moving a note by less than the dead zone's +-10 cents, an
-#                 engine that is 56 cents wide of a 5.7 % correction is correcting
-#                 with its own error on top. That is why it is OFF, and the option
-#                 is here for the work that would earn it: a longer window and the
-#                 latency it brings, or a phase-locking configuration.
-#
-#  So the default is the shifter, the option is there for the work that would make
-#  the vocoder the better engine (a phase-locking configuration, or a longer
-#  window and the latency that comes with it), and the harness measures both rather
-#  than describing either. The library is on the link line either way, because the
-#  stage includes its header under this flag - which is what makes the flag, rather
-#  than the include path, the thing that decides.
-# ------------------------------------------------------------------------------
-option(J37_CORRECTOR_USE_STRETCH
-    "Correct with signalsmith-stretch's phase vocoder instead of the granular shifter (adds 1216 frames of reported latency at 48 kHz; measured up to 56 cents of its own error at a 20 ms window)"
-    OFF)
-
-if(J37_CORRECTOR_USE_STRETCH)
-    target_compile_definitions(first PRIVATE J37_CORRECTOR_USE_STRETCH=1)
 endif()
 
 # ------------------------------------------------------------------------------
@@ -839,21 +732,15 @@ else()
     message(STATUS "  Formats     : VST3")
 endif()
 message(STATUS "  Libraries   : chowdsp_utils, melatonin_inspector, melatonin_blur, foleys_gui_magic, xsimd")
-message(STATUS "                signalsmith-stretch, fftconvolver,")
+message(STATUS "                signalsmith-stretch, SoundTouch (LGPL-2.1), fftconvolver,")
 message(STATUS "                imgui, iPlug2 (source only)")
 message(STATUS "                chowcentaur, vcv_prototype, rack, soundpipe, aubio (source only)")
 message(STATUS "                farbot, readerwriterqueue, kissfft, pocketfft, yasio, dywapitchtrack, pffft")
 message(STATUS "                RTNeural (neural inference, used by the DYNAMICS tab), dr_libs,")
 message(STATUS "                yin_pitch, pitch_detector (MPM), dattorro_verb, sndfile")
 message(STATUS "                nlohmann_json (header only)")
-if(J37_NAMCORE)
-    message(STATUS "                NeuralAmpModelerCore + Eigen (second .nam backend: WaveNet/ConvNet)")
-else()
-    message(STATUS "                NeuralAmpModelerCore OFF (-DJ37_NAMCORE=OFF: LSTM-only .nam support)")
-endif()
 message(STATUS "                q_dsp, sokol_gfx, glm (header only)")
-message(STATUS "                Selectable graphics: SOKOL or BGFX (one per build, via J37_RENDER_BACKEND)")
-message(STATUS "                Cable-only graphics: wgpu-native, Dawn (in j37_setup_graphics_backend, not a backend value)")
+message(STATUS "                Optional graphics: BGFX, wgpu-native or Dawn (selected by J37_RENDER_BACKEND)")
 message(STATUS "                transdes, whetstone, multiband-transient-shaper (source only)")
 message(STATUS "                juce_opengl_3d: no such JUCE module, see cmake/J37Dependencies.cmake")
 if(J37_HAVE_VDSP)
@@ -875,15 +762,10 @@ elseif(J37_ENABLE_IPP)
 else()
     message(STATUS "                Intel IPP disabled by J37_ENABLE_IPP=OFF")
 endif()
-if(J37_USE_SIMD_TANH OR J37_HAS_XSIMD)
-    message(STATUS "  Shaper tanh : xsimd's batch kernel (default when xsimd available - ~1.5x faster, ~1e-7 curve difference)")
+if(J37_USE_SIMD_TANH)
+    message(STATUS "  Shaper tanh : xsimd's batch kernel (J37_USE_SIMD_TANH=ON - a different curve, ~1e-7)")
 else()
-    message(STATUS "  Shaper tanh : std::tanh (xsimd not configured in this build)")
-endif()
-if(J37_CORRECTOR_USE_STRETCH)
-    message(STATUS "  Corrector   : signalsmith-stretch (J37_CORRECTOR_USE_STRETCH=ON - 25 ms of reported latency at 48 kHz)")
-else()
-    message(STATUS "  Corrector   : the granular shifter (-DJ37_CORRECTOR_USE_STRETCH=ON for the vocoder)")
+    message(STATUS "  Shaper tanh : std::tanh (-DJ37_USE_SIMD_TANH=ON for xsimd's kernel)")
 endif()
 if(J37_BUILD_TESTS)
     message(STATUS "  Dev tests   : ON  (Catch2, nanobench)")

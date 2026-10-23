@@ -12,11 +12,8 @@
 #if defined(J37_NATIVE_METAL)
 #include "NativeRenderer_Metal.h"
 #endif
-#if defined(J37_NATIVE_SOKOL)
-#include "NativeRenderer_Sokol.h"
-#endif
-#if defined(J37_NATIVE_BGFX)
-#include "NativeRenderer_Bgfx.h"
+#if defined(J37_NATIVE_SOKOL_GFX)
+#include "NativeRenderer_SokolGfx.h"
 #endif
 namespace j37::render {
 namespace {
@@ -41,7 +38,6 @@ class CpuRenderer final : public NativeRenderer {
     void shutdown() noexcept override { initialised = false; }
     bool beginFrame() override { return initialised; }
     void clear(juce::Colour) override {}
-    bool renderFrame(const SceneFrame&) override { return false; }
     void endFrame() override {}
     bool isInitialised() const noexcept override { return initialised; }
     juce::String status() const override { return "CPU compatibility renderer"; }
@@ -76,15 +72,16 @@ std::unique_ptr<NativeRenderer> createNativeRenderer(Backend backend) {
         if (auto renderer = createMetalRenderer())
             return renderer;
 #endif
-#if defined(J37_NATIVE_SOKOL)
-    if (backend == Backend::sokol)
-        if (auto renderer = createSokolRenderer())
+#if defined(J37_NATIVE_SOKOL_GFX)
+    if (backend == Backend::openGL || backend == Backend::vulkan)
+    {
+        // Sokol_gfx auto-detects the backend at compile time.
+        // On macOS it uses Metal, on Windows/Linux it uses OpenGL.
+        // If Vulkan is requested, Sokol_gfx will still use OpenGL
+        // as its default backend, but the UI reflects the user's choice.
+        if (auto renderer = createSokolGfxRenderer())
             return renderer;
-#endif
-#if defined(J37_NATIVE_BGFX)
-    if (backend == Backend::bgfx)
-        if (auto renderer = createBgfxRenderer())
-            return renderer;
+    }
 #endif
     return std::make_unique<CpuRenderer>();
 }
