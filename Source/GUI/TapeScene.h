@@ -234,14 +234,10 @@ private:
         uses the real one. */
     static constexpr int bankInteractiveIndex = 0;
 
-    void drawControlBank (const glm::mat4& viewProjection,
-                          const glm::mat4& scene,
-                          const juce::Colour& bodyColour,
-                          const juce::Colour& highlightColour);
-
     void uploadMesh (Mesh& mesh, const Geometry& geometry);
     void releaseMesh (Mesh& mesh) noexcept;
     void drawMesh (const Mesh& mesh);
+    void drawSceneFrameOpenGL (const j37::render::SceneFrame& frame);
 
     //==========================================================================
     //  OpenGL backend

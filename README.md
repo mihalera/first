@@ -1149,13 +1149,14 @@ single-architecture only) and `DAWN` downloads Dawn with its dependencies. JUCE 
 modules and Apple Metal frameworks. `J37_OFFLINE=ON` also disables Dawn's and
 Cargo's dependency downloads; the required sources must already be cached.
 
-`Source/GUI/SceneFrame.h` now defines the backend-neutral frame contract: shared
+`Source/GUI/SceneFrame.h` defines the backend-neutral frame contract: shared
 immutable mesh topology plus frame transforms, materials and draw parameters.
-`TapeSceneFrame.cpp` builds the snapshot; native adapters expose a `drawScene`
-hook but it deliberately returns failure until that API draws every material,
-including the bank and additive glow. This is why native selections continue on
-the known JUCE/OpenGL or CPU path rather than painting a blank overlay. The audio
-processor and plugin format do not need to change; renderer choice is an editor-only concern.
+`TapeSceneFrame.cpp` builds the snapshot, and the existing JUCE/OpenGL renderer now
+draws from that same material-indexed frame. Native adapters expose `drawScene`,
+but refuse it by default until they implement every material, including the bank
+and additive glow. Their compile-time selections therefore remain on the known
+JUCE/OpenGL or CPU fallback rather than painting a blank overlay. Renderer choice
+is an editor-only concern; the audio processor and plugin formats are unchanged.
 
 The editor also avoids unnecessary GPU/CPU work: the OpenGL contexts use vsync
 and explicit invalidation rather than an unrestricted repaint loop, while hidden

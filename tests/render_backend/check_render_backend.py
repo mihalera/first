@@ -10,6 +10,7 @@ native_api = (root / "Source/GUI/NativeRenderer.h").read_text()
 frame_submission = (root / "Source/GUI/NativeFrameSubmission.h").read_text()
 scene_frame = (root / "Source/GUI/SceneFrame.h").read_text()
 tape_frame = (root / "Source/GUI/TapeSceneFrame.cpp").read_text()
+tape_scene = (root / "Source/GUI/TapeScene.cpp").read_text()
 
 errors = []
 
@@ -45,11 +46,21 @@ require("built->push_back(buildReel())" in tape_frame
 layout = (root / "Source/GUI/SceneLayout.h").read_text()
 require("inline constexpr std::array<float, 5> bankPlacementsX" in layout,
         "scene layout constants must have a single shared definition")
-tape_scene = (root / "Source/GUI/TapeScene.cpp").read_text()
 require("j37::render::scene::bankPlacementsX" in tape_scene,
         "OpenGL hit-testing and drawing must use the shared scene control positions")
+require("void TapeScene::drawSceneFrameOpenGL" in tape_scene
+        and "drawMesh(*gpuMeshes[draw.meshIndex])" in tape_scene,
+        "the active OpenGL backend must consume the neutral draw list")
+require("switch (draw.material)" in tape_scene and "SceneMaterial::glow" in tape_scene,
+        "OpenGL must dispatch the neutral material variants including glow")
 require("appendDraw(frame" in tape_frame and "SceneMaterial::glow" in tape_frame,
         "frame builder must describe the full scene including additive glows")
+require("drawSceneFrameOpenGL(sceneFrame)" in tape_scene,
+        "OpenGL must render the canonical SceneFrame rather than duplicate its draw list")
+require("switch (draw.material)" in tape_scene and "drawMesh(*gpuMeshes[draw.meshIndex])" in tape_scene,
+        "OpenGL SceneFrame dispatcher must map materials and mesh indices to GPU meshes")
+require("drawControlBank(viewProjection, scene, body, highlight)" not in tape_scene,
+        "legacy duplicated control-bank draw path must not remain active beside SceneFrame")
 
 
 # The two GPU abstraction layers are build OPTIONS, not additions: each owns the
@@ -100,10 +111,12 @@ require("&& renderTarget != nullptr;" in d3d11,
         "D3D11 presentability must require a valid render target")
 
 metal = (root / "Source/GUI/NativeRenderer_Metal.mm").read_text()
-require("embedded host surface integration is not enabled" in metal,
-        "Metal must not mutate a host-owned view until child-surface integration is safe")
-require("__weak NSView* hostView" in metal,
-        "Metal host view reference must not outlive the host view")
+require("editor-scoped native surface unavailable" in metal,
+        "Metal must report why initialization declines the host-owned peer")
+require("class MetalRenderer final" in metal and "bool drawScene (const SceneFrame&) override { return false; }" in metal,
+        "Metal must compile as an explicitly pending adapter, not unreachable pseudo-implementation")
+require("MTLCreateSystemDefaultDevice" not in metal and "CAMetalLayer" not in metal,
+        "staged Metal adapter must not allocate or attach resources before a safe surface exists")
 
 if errors:
     print("render backend checks failed:", file=sys.stderr)

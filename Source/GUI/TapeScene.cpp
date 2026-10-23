@@ -1052,123 +1052,87 @@ void TapeScene::drawMesh(const Mesh &mesh) {
         glBindVertexArray(0);
 }
 
-//==============================================================================
-//  The control bank
-//==============================================================================
-void TapeScene::drawControlBank(const glm::mat4 &viewProjection,
-                                const glm::mat4 &scene,
-                                const juce::Colour &body,
-                                const juce::Colour &highlight) {
-    // -------------------------------------------------------------------------
-    //  Where the bank's face is, in the camera's own terms.
-    //
-    //  A knob's angle has to be set from the LOCAL position of the vertex - which
-    //  is what the knob shader mode reads, and what makes the lit arc turn with
-    //  the knob - so the arc's start angle is computed here, from the value, and
-    //  handed over as one uniform. The 2D panel's rotary drawing sweeps the same
-    //  two constants, so a knob in the window and a knob in the panel travel
-    //  through the same arc.
-    // -------------------------------------------------------------------------
-    const auto bankModel = scene * glm::translate(glm::mat4(1.0f), {0.0f, 0.0f, j37::render::scene::bankCentreZ});
-    const auto faceModel = bankModel * glm::translate(glm::mat4(1.0f), {0.0f, 0.0f, j37::render::scene::bankHalfDepth});
+namespace {
+void setOpenGLModel(juce::OpenGLShaderProgram& program,
+                    const j37::render::SceneDraw& draw) {
+    program.setUniformMat4("uModel", draw.model.data(), 1, GL_FALSE);
+    program.setUniformMat3("uNormalMatrix", draw.normalMatrix.data(), 1, GL_FALSE);
+}
 
-    // -------------------------------------------------------------------------
-    // The face is drawn first so the controls sit visibly on its surface.
-    // Draw the face first so the controls and glows sit above it.
-    shaderProgram->setUniformMat4("uModel", glm::value_ptr(faceModel), 1, GL_FALSE);
-    shaderProgram->setUniform("uMode", static_cast<float>(panelMode));
-    shaderProgram->setUniform("uBaseColour", body.getFloatRed(), body.getFloatGreen(),
-                              body.getFloatBlue());
-    shaderProgram->setUniform("uPanelHalf", j37::render::scene::bankHalfWidth, j37::render::scene::bankHalfHeight, j37::render::scene::bankHalfDepth);
+void setOpenGLColour(juce::OpenGLShaderProgram& program,
+                     const char* uniform,
+                     const std::array<float, 3>& colour) {
+    program.setUniform(uniform, colour[0], colour[1], colour[2]);
+}
+} // namespace
+void TapeScene::drawSceneFrameOpenGL(const j37::render::SceneFrame& frame) {
+    if (!j37::render::isValid(frame) || frame.meshes == nullptr
+        || frame.meshes->size() != 8 || shaderProgram == nullptr)
+        return;
 
-    drawMesh(bankBody);
+    const Mesh* gpuMeshes[] { &reel, &tapePack, &ribbon, &head,
+                              &bankBody, &bankKnob, &bankKey, &bankGlow };
+    shaderProgram->use();
+    shaderProgram->setUniformMat4("uViewProjection", frame.viewProjection.data(), 1, GL_FALSE);
+    shaderProgram->setUniform("uTime", frame.timeSeconds);
+    shaderProgram->setUniform("uFlutter", frame.flutter);
+    shaderProgram->setUniform("uGlow", frame.glow);
+    shaderProgram->setUniform("uDrive", frame.drive);
+    shaderProgram->setUniform("uLightDirection", frame.lightDirection[0],
+                              frame.lightDirection[1], frame.lightDirection[2]);
+    shaderProgram->setUniform("uTextureWeights", frame.textureWeights[0],
+                              frame.textureWeights[1], frame.textureWeights[2]);
 
-    // -------------------------------------------------------------------------
-    //  The knobs and the keys, from the one placement table.
-    // -------------------------------------------------------------------------
-    for (int i = 0; i < bankPlacementCount; ++i) {
-        const auto placementX = j37::render::scene::bankPlacementsX[static_cast<std::size_t>(i)];
-        const auto isKey = j37::render::scene::bankPlacementsAreKeys[static_cast<std::size_t>(i)];
-        const auto isKnob = !isKey;
+    for (const auto& draw : frame.draws) {
+        if (draw.meshIndex >= std::size(gpuMeshes))
+            continue;
 
-        // A knob's value is its own parameter, 0..1. The keys have no value: they
-        // are state, so they rest at the middle of their travel and are lit by
-        // the same glow the knobs use when the machine is working.
-        const auto value =
-            isKnob ? knobValues[static_cast<std::size_t>(i)].load(std::memory_order_relaxed) : 0.5f;
+        const auto mode = static_cast<float>(draw.material);
+        setOpenGLModel(*shaderProgram, draw);
+        shaderProgram->setUniform("uMode", mode);
+        setOpenGLColour(*shaderProgram, "uBaseColour",
+                        {draw.baseColour[0], draw.baseColour[1], draw.baseColour[2]});
+        setOpenGLColour(*shaderProgram, "uHighlightColour", draw.highlightColour);
 
-        const auto angle = j37::render::scene::knobMinimumAngle + value * (j37::render::scene::knobMaximumAngle - j37::render::scene::knobMinimumAngle);
+        switch (draw.material) {
+            case j37::render::SceneMaterial::tapePack:
+                shaderProgram->setUniform("uPackInner", draw.parameters[0]);
+                shaderProgram->setUniform("uPackOuter", draw.parameters[1]);
+                break;
+            case j37::render::SceneMaterial::ribbon:
+                shaderProgram->setUniform("uFlutter", draw.parameters[0]);
+                shaderProgram->setUniform("uTime", draw.parameters[1]);
+                break;
+            case j37::render::SceneMaterial::controlPanel:
+                shaderProgram->setUniform("uPanelHalf", draw.parameters[0],
+                                          draw.parameters[1], draw.parameters[2]);
+                break;
+            case j37::render::SceneMaterial::knob:
+                shaderProgram->setUniform("uArcAngle", draw.parameters[0]);
+                break;
+            case j37::render::SceneMaterial::key:
+                shaderProgram->setUniform("uKeyDown", draw.parameters[1]);
+                break;
+            case j37::render::SceneMaterial::glow:
+                shaderProgram->setUniform("uGlow", draw.parameters[0]);
+                break;
+            case j37::render::SceneMaterial::solid:
+                break;
+        }
 
-        // The knob's own frame: place it, turn it, size it. A key is not turned -
-        // its cap is what reads as pressed - so its rotation is the identity and
-        // its scale is the cap's own half-extents.
-        const auto model =
-            isKnob
-                ? faceModel * glm::translate(glm::mat4(1.0f), {placementX, 0.0f, 0.0f}) *
-                      glm::rotate(glm::mat4(1.0f), angle, {0.0f, 0.0f, 1.0f}) *
-                      glm::scale(glm::mat4(1.0f), {j37::render::scene::bankKnobRadius, j37::render::scene::bankKnobRadius, j37::render::scene::bankKnobRadius})
-                : faceModel * glm::translate(glm::mat4(1.0f), {placementX, 0.0f, j37::render::scene::bankKeyHalfZ}) *
-                      glm::scale(glm::mat4(1.0f), {j37::render::scene::bankKeyHalfX, j37::render::scene::bankKeyHalfY, j37::render::scene::bankKeyHalfZ});
-
-        shaderProgram->setUniformMat4("uModel", glm::value_ptr(model), 1, GL_FALSE);
-        shaderProgram->setUniform("uBaseColour", body.brighter(0.18f).getFloatRed(),
-                                  body.brighter(0.18f).getFloatGreen(),
-                                  body.brighter(0.18f).getFloatBlue());
-
-        if (isKnob) {
-            shaderProgram->setUniform("uMode", static_cast<float>(knobMode));
-            shaderProgram->setUniform("uArcAngle", j37::render::scene::knobMinimumAngle);
-            drawMesh(bankKnob);
-        } else {
-            // A key is pressed when the machine is running and released when it
-            // is not - which is the whole of what a key on this bank has to say,
-            // and is why there is no per-key state to keep in step with anything.
-            const auto pressed = (i == bankPlacementCount - 2) ? bankSpinning : bankRecording;
-
-            shaderProgram->setUniform("uMode", static_cast<float>(keyMode));
-            shaderProgram->setUniform("uKeyDown", pressed ? 1.0f : 0.0f);
-            drawMesh(bankKey);
+        const auto additiveGlow = draw.material == j37::render::SceneMaterial::glow;
+        if (additiveGlow) {
+            glEnable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+        }
+        drawMesh(*gpuMeshes[draw.meshIndex]);
+        if (additiveGlow) {
+            glDisable(GL_BLEND);
+            glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
         }
     }
+}
 
-    // -------------------------------------------------------------------------
-    //  The lit discs, additive, over the face and under nothing.
-    //
-    //  One per knob, drawn with the blend on so it reads as light on the face
-    //  rather than as a second material. The glow under a knob follows the
-    //  machine rather than the knob's own value: it is the deck's activity lamp,
-    //  repeated - so a bank of three knobs lights up together when the tape is
-    //  working, which is what a real machine does.
-    // -------------------------------------------------------------------------
-    const auto glowAmount =
-        juce::jlimit(0.0f, 1.0f, 0.25f * bankDrive + 0.35f * bankPeak + 0.40f * bankReduction);
-
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-
-    for (int i = 0; i < j37::render::scene::bankKnobCount; ++i) {
-        // 1.55 rather than 1.9: at 1.9 the disc reached 0.115 from the knob's
-        // centre and crossed a keycap's own edge at 0.100, which is the light the
-        // key was standing on. At 1.55 it reaches 0.093 and the key's edge is at
-        // 0.108 - the halo is still the deck's activity lamp, and it is now a
-        // light ON the face around its own knob instead of one spilling onto the
-        // control beside it.
-        const auto model =
-            faceModel * glm::translate(glm::mat4(1.0f), {j37::render::scene::bankPlacementsX[static_cast<std::size_t>(i)], 0.0f, 0.008f}) *
-            glm::scale(glm::mat4(1.0f), {j37::render::scene::bankKnobRadius * 1.55f, j37::render::scene::bankKnobRadius * 1.55f, 1.0f});
-
-        shaderProgram->setUniformMat4("uModel", glm::value_ptr(model), 1, GL_FALSE);
-        shaderProgram->setUniform("uMode", static_cast<float>(glowMode));
-        shaderProgram->setUniform("uHighlightColour", highlight.getFloatRed(),
-                                  highlight.getFloatGreen(), highlight.getFloatBlue());
-        shaderProgram->setUniform("uGlow", glowAmount);
-        drawMesh(bankGlow);
-    }
-
-    glDisable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    juce::ignoreUnused(viewProjection);
 } //==============================================================================
 //  OpenGLRenderer
 //==============================================================================
@@ -1406,84 +1370,17 @@ void TapeScene::renderOpenGL() {
     glDisable(GL_BLEND);
     glDisable(GL_TEXTURE_2D);
 
-    shaderProgram->use();
-    shaderProgram->setUniformMat4("uViewProjection", glm::value_ptr(viewProjection), 1, GL_FALSE);
-    shaderProgram->setUniform("uTime", static_cast<float>(elapsed));
-    shaderProgram->setUniform("uFlutter", flutter);
-    shaderProgram->setUniform("uGlow", reduction);
-    shaderProgram->setUniform("uDrive", driveAmount);
-    shaderProgram->setUniform("uLightDirection", lightX, lightY, lightZ);
-    const auto normalMatrix = glm::transpose(glm::inverse(glm::mat3(scene)));
-    shaderProgram->setUniformMat3("uNormalMatrix", glm::value_ptr(normalMatrix), 1, GL_FALSE);
-    // The arithmetic texture's three doses (grain / tape shimmer / wear), one
-    // palette-carried vector - see panelTexture in the fragment source. Snapshot
-    // the packed atomic once so a theme switch cannot mix channels from two states.
-    const auto texturePalette = juce::Colour(textureWeights.load(std::memory_order_relaxed));
-    shaderProgram->setUniform("uTextureWeights", texturePalette.getFloatRed(),
-                              texturePalette.getFloatGreen(), texturePalette.getFloatBlue());
-
-    const auto drawReel = [this, &scene, &body, &tape](float centreX, float centreY, float radius,
-                                                       float angle, float packOuter) {
-        const auto model = scene * glm::translate(glm::mat4(1.0f), {centreX, centreY, 0.0f}) *
-                           glm::rotate(glm::mat4(1.0f), angle, {0.0f, 0.0f, 1.0f}) *
-                           glm::scale(glm::mat4(1.0f), {radius, radius, radius});
-
-        shaderProgram->setUniformMat4("uModel", glm::value_ptr(model), 1, GL_FALSE);
-
-        shaderProgram->setUniform("uMode", static_cast<float>(solidMode));
-        shaderProgram->setUniform("uBaseColour", body.getFloatRed(), body.getFloatGreen(),
-                                  body.getFloatBlue());
-        drawMesh(reel);
-
-        shaderProgram->setUniform("uMode", static_cast<float>(packMode));
-        shaderProgram->setUniform("uPackInner", j37::render::scene::packInnerFraction);
-        shaderProgram->setUniform("uPackOuter", packOuter);
-        shaderProgram->setUniform("uBaseColour", tape.getFloatRed(), tape.getFloatGreen(),
-                                  tape.getFloatBlue());
-        drawMesh(tapePack);
-    };
-
-    // The supply reel empties as the take-up one fills: the same two numbers,
-    // one of them the other one's complement.
-    const auto supplyPackOuter =
-        j37::render::scene::packEmptyFraction + (j37::render::scene::packFullFraction - j37::render::scene::packEmptyFraction) * (1.0f - tapeTransfer);
-    const auto takeUpPackOuter =
-        j37::render::scene::packEmptyFraction + (j37::render::scene::packFullFraction - j37::render::scene::packEmptyFraction) * tapeTransfer;
-
-    drawReel(j37::render::scene::supplyCentreX, j37::render::scene::supplyCentreY, j37::render::scene::supplyRadius, supplyAngle, supplyPackOuter);
-    drawReel(j37::render::scene::takeUpCentreX, j37::render::scene::takeUpCentreY, j37::render::scene::takeUpRadius, takeUpAngle, takeUpPackOuter);
-
-    // The head: the one solid in the scene that does not move, which is what
-    // makes the tape's movement between the two reels readable as movement
-    // rather than as everything spinning together.
-    const auto headModel =
-        scene * glm::translate(glm::mat4(1.0f), {j37::render::scene::headCentreX, j37::render::scene::headCentreY, j37::render::scene::headCentreZ});
-    shaderProgram->setUniformMat4("uModel", glm::value_ptr(headModel), 1, GL_FALSE);
-    shaderProgram->setUniform("uMode", static_cast<float>(solidMode));
-    shaderProgram->setUniform("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
-                              highlight.getFloatGreen() * 0.55f + 0.06f,
-                              highlight.getFloatBlue() * 0.55f + 0.07f);
-    drawMesh(head);
-
-    // The tape itself, last so it is over the head's face.
-    shaderProgram->setUniformMat4("uModel", glm::value_ptr(scene), 1, GL_FALSE);
-    shaderProgram->setUniform("uMode", static_cast<float>(ribbonMode));
-    shaderProgram->setUniform("uBaseColour", tape.getFloatRed() * 1.35f + 0.02f,
-                              tape.getFloatGreen() * 1.35f + 0.02f,
-                              tape.getFloatBlue() * 1.35f + 0.02f);
-    drawMesh(ribbon);
-
-#if JUCE_DEBUG
     const auto sceneFrame = buildSceneFrame(width, height, elapsed, viewProjection, scene,
                                             background, body, highlight, tape, driveAmount,
                                             flutter, reduction, static_cast<float>(elapsed));
-    jassert(j37::render::isValid(sceneFrame));
-#endif
-
-    // The control bank, in FRONT of the machine: it is the only geometry here
-    // with a z of its own, and drawing it last costs nothing because the depth
-    // buffer is what decides, not the order.
-    drawControlBank(viewProjection, scene, body, highlight);
+    if (!j37::render::isValid(sceneFrame))
+    {
+        jassertfalse;
+    }
+    else
+    {
+        drawSceneFrameOpenGL(sceneFrame);
+    }
 
     glDepthFunc(static_cast<GLenum>(previousDepthFunction));
     glDepthMask(previousDepthWrite);
