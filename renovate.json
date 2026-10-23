@@ -1,0 +1,49 @@
+{
+  "$schema": "https://docs.renovatebot.com/renovate-schema.json",
+  "extends": ["config:recommended"],
+  "branchPrefix": "renovate-bot/",
+  "enabledManagers": ["custom.regex", "devcontainer"],
+  "schedule": ["before 6am on monday"],
+  "timezone": "Etc/UTC",
+  "prConcurrentLimit": 5,
+  "customManagers": [
+    {
+      "customType": "regex",
+      "description": "Update version-tagged CPM dependencies",
+      "managerFilePatterns": [
+        "/^cmake\\/J37Dependencies\\.cmake$/",
+        "/^cmake\\/J37Tests\\.cmake$/"
+      ],
+      "matchStrings": [
+        "CPMAddPackage\\([^)]*?GITHUB_REPOSITORY\\s+(?<depName>[\\w.-]+/[\\w.-]+)[^)]*?GIT_TAG\\s+(?<currentValue>v?\\d+\\.\\d+(?:\\.\\d+)?(?:-[\\w.-]+)?(?:\\+[\\w.-]+)?)"
+      ],
+      "datasourceTemplate": "github-tags",
+      "versioningTemplate": "semver-coerced"
+    },
+    {
+      "customType": "regex",
+      "description": "Update the pinned CPM.cmake release",
+      "managerFilePatterns": ["/^cmake\\/J37Dependencies\\.cmake$/"],
+      "matchStrings": [
+        "set\\(CPM_DOWNLOAD_VERSION\\s+(?<currentValue>\\d+\\.\\d+\\.\\d+)\\)"
+      ],
+      "depNameTemplate": "CPM.cmake",
+      "packageNameTemplate": "cpm-cmake/CPM.cmake",
+      "datasourceTemplate": "github-tags",
+      "extractVersionTemplate": "^v?(?<version>.*)$",
+      "versioningTemplate": "semver-coerced"
+    },
+    {
+      "customType": "regex",
+      "description": "Update the Gradle distribution used by Android CI",
+      "managerFilePatterns": ["/^\\.github\\/workflows\\/build\\.yml$/"],
+      "matchStrings": [
+        "gradle-(?<currentValue>\\d+[.]\\d+([.]\\d+)?)",
+        "--gradle-version\\s+(?<currentValue>\\d+[.]\\d+([.]\\d+)?)"
+      ],
+      "depNameTemplate": "gradle",
+      "datasourceTemplate": "gradle-version",
+      "versioningTemplate": "gradle"
+    }
+  ]
+}
