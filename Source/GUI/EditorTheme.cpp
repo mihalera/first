@@ -29,17 +29,23 @@ using j37panel::paletteForTheme;
 using j37panel::shrinkingFont;
 
 void FirstAudioProcessorEditor::applyTheme() {
-    // The bool selects only the dark/light rendering mode; the live enum carries
-    // the specific palette, including the new Dark Metal theme.
-    darkTheme = themeChoice != j37panel::ThemeChoice::ivory;
+    // The live enum comes FIRST, before anything reads a palette: paletteFor(bool) -
+    // the older entry point every legacy draw helper still calls - answers from
+    // liveThemeChoice, so setting it after the palette lookup would leave the first
+    // read of a theme switch describing the previous theme.
     liveThemeChoice = themeChoice;
 
     const auto &palette = paletteForTheme(themeChoice);
+
+    // Dark-or-light is DERIVED from the palette rather than from which slot the
+    // choice sits in. The four stock themes answer exactly what the old
+    // `themeChoice != ivory` said - their panel colours are 222, 54, 37 and 34 on the
+    // perceived-brightness scale - and USER answers for the colours the user picked,
+    // which is what lets a light user palette get the ivory panel's texture doses and
+    // meter ink instead of a light panel drawn with a dark panel's shading.
+    darkTheme = palette.panel.getPerceivedBrightness() < 0.5f;
+
     customLookAndFeel.setTheme(themeChoice);
-    themeButton.setButtonText(themeChoice == j37panel::ThemeChoice::darkMetal  ? "DARK METAL"
-                              : themeChoice == j37panel::ThemeChoice::metal    ? "METAL"
-                              : themeChoice == j37panel::ThemeChoice::charcoal ? "CHARCOAL"
-                                                                               : "IVORY");
     // The in-tab look and feel carries its own theme for the same reason the
     // deck's does: it reads the palette live at paint time, so the lists and the
     // pill switches recolour on the same frame as everything else.
@@ -259,6 +265,12 @@ void FirstAudioProcessorEditor::applyTheme() {
     stylePickerButton(loadNoiseButton);
     stylePickerButton(clearNoiseButton);
     stylePickerButton(parameterSheetButton);
+    // The USER theme's editor key is an interface preference like PARAMETERS beside
+    // it, and it takes the same raised pill. Without this line the key would keep the
+    // constructor's ivory face on every dark panel - the exact defect the picker
+    // buttons above were collected here to fix.
+    stylePickerButton(userThemeButton);
+    userThemeLabel.setColour(juce::Label::textColourId, palette.secondary);
 
     styleCombo(oversamplingBox);
     styleCombo(instrumentBox);
@@ -346,6 +358,12 @@ void FirstAudioProcessorEditor::applyTheme() {
         break;
     case j37panel::ThemeChoice::metal:
         themeButton.setButtonText("METAL");
+        break;
+    case j37panel::ThemeChoice::user:
+        // The caption is the theme's NAME, not its state: USER is a palette the user
+        // owns, and a caption that changed with every edit ("USER (3 EDITS)") would
+        // turn a theme name into a counter.
+        themeButton.setButtonText("USER");
         break;
     case j37panel::ThemeChoice::darkMetal:
     default:
@@ -515,4 +533,50 @@ void FirstAudioProcessorEditor::updateWorkflowButtons() {
     presetBadgeLabel.setColour(juce::Label::textColourId, presetIsDirty
                                                               ? paletteFor(darkTheme).accent
                                                               : paletteFor(darkTheme).secondary);
+}
+
+void FirstAudioProcessorEditor::openUserThemeWindow() {
+    if (userThemeWindow == nullptr) {
+        userThemeWindow =
+            std::make_unique<j37panel::UserThemeWindow>(j37panel::userPalette);
+
+        // ONE edit is ONE applyTheme. The order is load-bearing: the palette first,
+        // because applyTheme() derives darkTheme FROM the palette (a user who picks a
+        // light panel gets the ivory shading), and the theme choice second because
+        // applyTheme() paints the theme it is told. The window does not switch the
+        // theme itself - see its header for why that belongs here.
+        //
+        // The whole palette is re-applied on every drag event of a selector, not just
+        // on release, because a colour editor whose result arrives on mouse-up is a
+        // colour editor you cannot tune. That is also why it goes through applyTheme()
+        // rather than a lighter "repaint the panel" path: one funnel is what keeps a
+        // half-painted panel from existing for a frame, and the texture rebuild inside
+        // it is the cached one.
+        userThemeWindow->onPaletteChanged = [this](const j37panel::UiPalette &edited) {
+            j37panel::userPalette = edited;
+            themeChoice = j37panel::ThemeChoice::user;
+            applyTheme();
+        };
+
+        // Placed over the editor ONCE, at construction, and left where it is dragged
+        // afterwards: a window that re-centred on every press would jump out from under
+        // the pointer that pressed the key. It is placed before the first show, because
+        // a DocumentWindow is already on the desktop the moment it exists (it is
+        // constructed with addToDesktop) - so "was it on the desktop a moment ago" is
+        // not a question that can tell a first open from a fifth.
+        userThemeWindow->show();
+
+        const auto editor = getScreenBounds();
+        userThemeWindow->setTopLeftPosition(
+            editor.getX() + juce::jmax(0, (editor.getWidth() - userThemeWindow->getWidth()) / 2),
+            editor.getY() + 48);
+
+        return;
+    }
+
+    // The live palette, every press: the window keeps what it was last shown, and a
+    // window left open across a RESET (or across a session in which the kit's palette
+    // was replaced) would otherwise display colours the panel is not painted from.
+    userThemeWindow->setPalette(j37panel::userPalette);
+    userThemeWindow->show();
 }

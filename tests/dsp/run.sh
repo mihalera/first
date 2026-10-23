@@ -58,6 +58,46 @@ fi
 "${BUILD}/loudness_test"
 
 # -----------------------------------------------------------------------------
+#  The loudness ORACLE: the shipping meter and libebur128, on the same frames.
+#
+#  The loudness harness above checks the meter against the standard and against
+#  EBU Tech 3341's own signals. Neither can say the CURVE is BS.1770's rather than
+#  a self-consistent approximation - only a second implementation can, and the
+#  comparison the harness header quotes was made outside this repository. This
+#  builds it here: two implementations of the same specification, one buffer, and
+#  0.25 LU of disagreement allowed (see the test's banner for why a band rather
+#  than an equality, and where the two are SUPPOSED to differ).
+#
+#  This is the one library in the tree that is a DEV dependency and never reaches
+#  the plugin: libebur128 is MIT, vendored under ThirdParty/libebur128 at v1.2.6,
+#  and it is compiled into this binary and nothing else. A pruned checkout, or a
+#  compiler whose C library has no <sys/queue.h> (MSVC's does not), SKIPS it and
+#  says so rather than failing a build for a tool that does not ship.
+# -----------------------------------------------------------------------------
+ORACLE_SOURCE="${HERE}/../../ThirdParty/libebur128"
+
+if [ -f "${ORACLE_SOURCE}/ebur128.c" ] \
+   && printf '#include <sys/queue.h>\n' | "${CXX}" -E -x c - > /dev/null 2>&1; then
+    # gnu99, not c99: the library uses M_PI, which glibc only declares under a
+    # non-strict dialect (or _GNU_SOURCE). It is C either way; the extensions are
+    # the header's, which is why the upstream file carries the MSVC note about
+    # _USE_MATH_DEFINES next to its own includes.
+    "${CXX}" -std=gnu99 -O2 "${sanitize_flags[@]}" -x c -c \
+        "${ORACLE_SOURCE}/ebur128.c" -o "${BUILD}/ebur128.o"
+
+    "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+        "${sanitize_flags[@]}" \
+        -I "${HERE}" -I "${SOURCE}" -I "${ORACLE_SOURCE}" \
+        "${HERE}/loudness_oracle_test.cpp" "${BUILD}/ebur128.o" -lm \
+        -o "${BUILD}/loudness_oracle_test"
+
+    "${BUILD}/loudness_oracle_test"
+else
+    echo "  skip  loudness oracle: ThirdParty/libebur128 is absent, or this platform" \
+         "has no <sys/queue.h>"
+fi
+
+# -----------------------------------------------------------------------------
 #  The shaper's tanh seam, in the three shapes a build can have it in.
 #
 #  j37Tanh (Source/DSP/HotPathMath.h) is the one place the saturation core's
