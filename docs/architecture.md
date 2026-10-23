@@ -121,15 +121,16 @@ why beside it.
 
 The editor's scene contract is `Source/GUI/SceneFrame.h`: immutable shared meshes,
 column-major transforms, material IDs, and per-draw constants. `TapeSceneFrame.cpp`
-produces that snapshot. JUCE/OpenGL now consumes the same `SceneFrame` draw list,
-including material selection and additive glow; the existing software paint remains
-the fallback. The Metal, Vulkan, D3D11, D3D12, SOKOL and BGFX adapters expose a
-`drawScene(SceneFrame)` hook which refuses by default, so `RenderBackend.h` keeps
-them on the fallback until each API implements all materials and passes. WGPU and
-DAWN remain dependency plumbing rather than accepted `J37_RENDER_BACKEND` values.
-See `README.md § Rendering backends` and
-[plugin-analysis.md](plugin-analysis.md#7-the-renderers-have-no-coverage) for the
-remaining platform implementation and validation work.
+produces that snapshot. JUCE/OpenGL consumes the same `SceneFrame` draw list,
+including material selection and additive glow; software paint remains the fallback.
+Metal, Vulkan, D3D11, D3D12, SOKOL and BGFX expose `drawScene(SceneFrame)` hooks,
+but these refuse by default, so `RenderBackend.h` keeps them disabled until each
+backend draws every material and passes. The native port order is Metal, D3D11/12,
+Vulkan, Sokol, then BGFX. Metal first needs an editor-clipped child `NSView`; the
+JUCE ComponentPeer handle is host-owned. Sokol and BGFX are alternatives, and BGFX
+also needs working shader-binary generation. WGPU and DAWN remain dependency plumbing,
+not accepted `J37_RENDER_BACKEND` values. See `README.md § Rendering backends` and
+[plugin-analysis.md](plugin-analysis.md#7-the-renderers-have-no-coverage).
 
 ## Build layers
 

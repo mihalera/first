@@ -1,12 +1,12 @@
-﻿#include "NativeRenderer_Metal.h"
+#include "NativeRenderer_Metal.h"
 
 #if defined (J37_NATIVE_METAL) && JUCE_MAC
 namespace j37::render
 {
 namespace
 {
-/** Metal is staged until a native child view clipped to the editor is available.
-    Never attach a drawable to the DAW-owned ComponentPeer. */
+/** Pending Metal adapter. JUCE's ComponentPeer exposes the host-owned peer, not
+    a child NSView clipped to this editor, so no layer is attached yet. */
 class MetalRenderer final : public NativeRenderer
 {
 public:

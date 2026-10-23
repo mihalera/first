@@ -1828,6 +1828,8 @@ void FirstAudioProcessorEditor::addDeckControlsToPanel() {
 }
 
 void FirstAudioProcessorEditor::setUpSceneAndMeters() {
+    tapeScene.setNativeSurfaceOwner (this);
+
     // The 3D transport goes in FIRST, so it is the bottom-most child. It is a
     // child component rather than part of this editor's own painting because it
     // needs a custom renderer and this editor's context is a component painter -

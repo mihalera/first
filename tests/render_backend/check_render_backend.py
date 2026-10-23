@@ -113,10 +113,13 @@ require("&& renderTarget != nullptr;" in d3d11,
 metal = (root / "Source/GUI/NativeRenderer_Metal.mm").read_text()
 require("editor-scoped native surface unavailable" in metal,
         "Metal must report why initialization declines the host-owned peer")
-require("class MetalRenderer final" in metal and "bool drawScene (const SceneFrame&) override { return false; }" in metal,
-        "Metal must compile as an explicitly pending adapter, not unreachable pseudo-implementation")
+require("class MetalRenderer final" in metal
+        and "bool drawScene (const SceneFrame&) override { return false; }" in metal,
+        "Metal must be an explicit pending adapter until its scene draw hook is complete")
 require("MTLCreateSystemDefaultDevice" not in metal and "CAMetalLayer" not in metal,
-        "staged Metal adapter must not allocate or attach resources before a safe surface exists")
+        "pending Metal source must not allocate or attach a native surface")
+require(not (root / "Source/GUI/TapeSceneMetalShaders.h").exists(),
+        "do not keep a Metal shader prototype that is not compiled or consumed")
 
 if errors:
     print("render backend checks failed:", file=sys.stderr)

@@ -69,6 +69,10 @@ public:
     TapeScene();
     ~TapeScene() override;
 
+    /** Owner for native backends that need peer-relative child surfaces. */
+    void setNativeSurfaceOwner (juce::Component* owner) noexcept { nativeSurfaceOwner = owner; }
+    juce::Component* getNativeSurfaceOwner() const noexcept { return nativeSurfaceOwner; }
+
     /** One frame of what the machine is doing. Every argument arrives already
         normalised to a range the shader can use directly, so the render thread
         never has to know what a dB is or where a parameter lives.
@@ -252,6 +256,7 @@ private:
 
     juce::OpenGLContext openGLContext;
     std::unique_ptr<juce::OpenGLShaderProgram> shaderProgram;
+    juce::Component* nativeSurfaceOwner = nullptr;
     Mesh reel {};
     Mesh tapePack {};
     Mesh ribbon {};

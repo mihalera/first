@@ -1112,10 +1112,9 @@ bit. The build prints which one it is using in its configure summary.
 `AUTO` and `OPENGL` use the existing JUCE/OpenGL scene. `CPU` uses a dedicated
 JUCE `Graphics` renderer for the animated transport, while the rest of the panel
 continues through its normal software path. `VULKAN`, `METAL`, `D3D11`, `D3D12`,
-`SOKOL` and `BGFX` are staged selections: each has an adapter in
-`Source/GUI/NativeRenderer_*.cpp` that can create its device and present a cleared
-surface, and none of them draws the tape scene yet - so the editor keeps painting
-with JUCE instead of showing a blank or half-drawn frame.
+`SOKOL` and `BGFX` are staged selections. Their adapters are not yet complete
+scene renderers, so they stay disabled and the editor continues through the
+existing JUCE/OpenGL or CPU path.
 
 Which one is running is printed on the panel's header, beside the brand strip:
 `BACKEND  OPENGL`, and `BACKEND  CPU (VULKAN PENDING)` for a build that asks for a
@@ -1128,20 +1127,17 @@ warns on non-Apple systems, DirectX warns on non-Windows systems, and Vulkan che
 for a Vulkan SDK. These checks are prerequisites for the native integrations, not a
 claim that the native renderer is already linked.
 
-`sokol_gfx` and `bgfx` are **alternatives, not additions**: each owns a device, a
-surface and a frame, so a build selects one and the other is not compiled at all -
-the same rule `J37_RENDER_BACKEND` applies to Vulkan and Metal. `SOKOL` links
-floooh/sokol and drives it through a JUCE `OpenGLContext` attached to the peer, from
-inside JUCE's own render callback, because JUCE does not expose "make the context
-current" on the message thread. `Source/GUI/SokolGfxImpl.cpp` is the one translation
-unit that compiles sokol's implementation, and it is deliberately JUCE-free: JUCE
-wraps the platform GL headers in `namespace juce::gl` and sokol needs them at global
-scope, so a single TU cannot host both. `BGFX` downloads and links bgfx.cmake and
-presents into a CHILD surface it creates inside the host's peer - the same rule the
-D3D11 adapter follows - because presenting into the host's own window would paint
-over its UI. bgfx draws nothing without shader binaries, and those are compiled by
-bgfx's own shaderc tool, which the BGFX block in `cmake/J37Dependencies.cmake`
-deliberately turns off; porting the tape scene to bgfx is that work, not a link line.
+The adapters are an explicit sequence, not five simultaneous integrations. The
+shared `SceneFrame` contract is the source for every backend, and each backend must
+render all materials, use a child/editor-scoped surface, pass resize/device-loss
+checks, and fall back if initialization or drawing fails. The current milestone is
+OpenGL consuming that shared frame. Metal is first in the native sequence, but its
+JUCE `ComponentPeer` handle is the host-owned peer; it must not attach a drawable
+layer there until an editor-clipped child `NSView` is available. After Metal, port
+the frame contract to D3D11/12, then Vulkan, then Sokol and BGFX. Sokol and BGFX
+remain alternatives because each owns its device, surface and frame. BGFX additionally
+needs shader binaries from `shaderc`; its current CMake setup disables that tool, so
+that dependency work is a prerequisite to its complete port.
 `WGPU` and `DAWN` remain plumbing inside `j37_setup_graphics_backend` and are not
 accepted by the option yet: `WGPU` builds wgpu-native with Cargo (Rust 1.87+, native
 single-architecture only) and `DAWN` downloads Dawn with its dependencies. JUCE 9 has no separate
