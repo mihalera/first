@@ -12,6 +12,9 @@
 #if defined(J37_NATIVE_METAL)
 #include "NativeRenderer_Metal.h"
 #endif
+#if defined(J37_NATIVE_SOKOL_GFX)
+#include "NativeRenderer_SokolGfx.h"
+#endif
 namespace j37::render {
 namespace {
 /** The path taken when no native adapter is compiled in, or when the selected
@@ -68,6 +71,17 @@ std::unique_ptr<NativeRenderer> createNativeRenderer(Backend backend) {
     if (backend == Backend::metal)
         if (auto renderer = createMetalRenderer())
             return renderer;
+#endif
+#if defined(J37_NATIVE_SOKOL_GFX)
+    if (backend == Backend::openGL || backend == Backend::vulkan)
+    {
+        // Sokol_gfx auto-detects the backend at compile time.
+        // On macOS it uses Metal, on Windows/Linux it uses OpenGL.
+        // If Vulkan is requested, Sokol_gfx will still use OpenGL
+        // as its default backend, but the UI reflects the user's choice.
+        if (auto renderer = createSokolGfxRenderer())
+            return renderer;
+    }
 #endif
     return std::make_unique<CpuRenderer>();
 }

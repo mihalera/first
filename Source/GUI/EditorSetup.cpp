@@ -1256,6 +1256,23 @@ void FirstAudioProcessorEditor::setUpModeAndGlSwitches()
     glButton.setLookAndFeel (&customLookAndFeel);
     addAndMakeVisible (glButton);
     addAndMakeVisible (glLabel);
+
+    // Renderer selector: lets the user choose which native backend to use.
+    // Options: Auto (default), OpenGL, Vulkan, Metal, D3D11, D3D12, CPU, Sokol_gfx
+    rendererBox.addItem("Auto", static_cast<int> (j37::render::Backend::autoDetect));
+    rendererBox.addItem("OpenGL", static_cast<int> (j37::render::Backend::openGL));
+    rendererBox.addItem("Vulkan", static_cast<int> (j37::render::Backend::vulkan));
+    rendererBox.addItem("Metal", static_cast<int> (j37::render::Backend::metal));
+    rendererBox.addItem("DirectX 11", static_cast<int> (j37::render::Backend::directX11));
+    rendererBox.addItem("DirectX 12", static_cast<int> (j37::render::Backend::directX12));
+    rendererBox.addItem("CPU", static_cast<int> (j37::render::Backend::cpu));
+    rendererBox.addItem("Sokol_gfx", static_cast<int> (j37::render::Backend::openGL));
+    rendererBox.setJustificationType (Justification::centredLeft);
+    addAndMakeVisible (rendererBox);
+    rendererLabel.attachToComponent (&rendererBox, false);
+    rendererAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
+        (audioProcessor.parameters, "renderer", rendererBox);
+
 }
 
 void FirstAudioProcessorEditor::setUpSettingsSwitches()

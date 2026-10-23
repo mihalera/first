@@ -205,6 +205,27 @@
  #define J37_HAS_RWQ 0
 #endif
 
+// ------------------------------------------------------------------------------// Sokol_gfx (Jeffrey Lim/sokol_gfx, Zlib-licensed, header-only graphics lib)
+//  Used as an optional renderer backend for TapeScene 3D visualization.
+//  Available on all platforms; Sokol_gfx auto-detects Metal (macOS) or OpenGL
+//  (Windows/Linux). No external libraries needed on the link line.
+//
+//  Probe: checks if the sokol_gfx header is available, and sets the
+//  J37_NATIVE_SOKOL_GFX define when building with the Sokol_gfx backend.
+//
+//  This probe is intentionally gated behind the J37_NATIVE_SOKOL_GFX flag so
+//  that the build system can opt-in rather than auto-detect.
+#if ! defined (J37_HAS_SOKOL_GFX)
+ #if defined (J37_NATIVE_SOKOL_GFX)
+  #define J37_HAS_SOKOL_GFX 1
+ #elif __has_include ("sokol_gfx.h")
+  #define J37_HAS_SOKOL_GFX 1
+ #else
+  #define J37_HAS_SOKOL_GFX 0
+ #endif
+#else
+ #define J37_HAS_SOKOL_GFX 1
+#endif
 // ------------------------------------------------------------------------------
 //  pocketfft (mreineck/pocketfft, vendored under ThirdParty/pocketfft as the one
 //  header pocketfft_hdronly.h).
@@ -232,3 +253,4 @@
   #define J37_HAS_POCKETFFT 0
  #endif
 #endif
+

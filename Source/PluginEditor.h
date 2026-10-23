@@ -914,6 +914,9 @@ private:
     SpindownButton spindownButton { "SPINDOWN" };
     juce::Label spindownLabel;
     juce::TextButton glButton { "GL ON" };
+    juce::ComboBox rendererBox;
+    juce::Label rendererLabel { "RENDERER:", Justification::centredLeft };
+    juce::AudioProcessorValueTreeState::ComboBoxAttachment* rendererAttachment = nullptr;
     juce::ToggleButton bypassButton { "BYPASS" };
     juce::ToggleButton deltaButton { "DELTA" };
     juce::TextButton themeButton { "DARK THEME" };

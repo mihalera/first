@@ -6,6 +6,9 @@
 
 #include "TapeScene.h"
 #include "TapeSceneShaders.h"
+#if defined(J37_NATIVE_SOKOL_GFX)
+#include "NativeRenderer_SokolGfx.h"
+#endif
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
@@ -1619,6 +1622,81 @@ void TapeScene::renderOpenGL()
 {
     if (programLinked.load() == 0 || shaderProgram == nullptr)
         return;
+
+#if defined(J37_NATIVE_SOKOL_GFX)
+    if (sokolGfxBackend != nullptr && sokolGfxBackend->isInitialised())
+    {
+        const auto width = getWidth();
+        const auto height = getHeight();
+
+        if (width <= 0 || height <= 0)
+        {
+            sokolGfxBackend->shutdown();
+            return;
+        }
+
+        // Sokol_gfx immediate-mode rendering for waveform/spectrum visualization
+        // Clear the framebuffer with the background colour
+        sokolGfxBackend->clear(juce::Colour (backgroundColour.load(std::memory_order_relaxed)));
+
+        // Record transport visualization commands
+        const auto level = outputLevel.load(std::memory_order_relaxed);
+        const auto peak = outputPeak.load(std::memory_order_relaxed);
+        const auto speed = transportSpeed.load(std::memory_order_relaxed);
+        const auto flutter = wowFlutter.load(std::memory_order_relaxed);
+
+        // Draw spectrum bars based on audio level
+        const int barCount = 32;
+        const float barWidth = width / static_cast<float>(barCount);
+        const float maxBarHeight = height * 0.4f;
+
+        for (int i = 0; i < barCount; ++i)
+        {
+            const float levelPerBar = level / static_cast<float>(barCount);
+            const float barHeight = jlimit(1.0f, maxBarHeight, levelPerBar * (i + 1) * 20.0f);
+            const float x = i * barWidth;
+            const float y = height - barHeight;
+
+            // Sokol_gfx draw rectangle for spectrum bar
+            // Using sok_gfx API: begin passing, draw rect, end passing
+            // Sokol_gfx uses immediate mode, so we record commands and they execute
+            // on the next render cycle
+            sokolGfxBackend->beginDraw();
+            sokolGfxBackend->setViewport({0, 0, width, height});
+            // Draw a vertical bar
+            sokolGfxBackend->drawRect({x, y, barWidth, barHeight}, juce::Colour::fromFloatRGBA(1.0f, 0.5f, 0.0f, 0.8f));
+            sokolGfxBackend->endDraw();
+        }
+
+        // Draw waveform curve from tape transfer
+        sokolGfxBackend->beginDraw();
+        sokolGfxBackend->setViewport({0, 0, width, height});
+        const auto now = juce::Time::getMillisecondCounterHiRes();
+        if (timeOriginSeconds <= 0.0)
+        {
+            timeOriginSeconds = now;
+        }
+        const auto elapsed = now - timeOriginSeconds;
+        const float tapePhase = fmod(elapsed * 0.0026f * speed, 6.2831855f);
+
+        // Draw tape path as a curve
+        sokolGfxBackend->moveTo(width * 0.1f, height * 0.5f);
+        sokolGfxBackend->lineTo(width * 0.3f, height * (0.5f + 0.3f * sinf(tapePhase)));
+        sokolGfxBackend->lineTo(width * 0.5f, height * 0.5f);
+        sokolGfxBackend->lineTo(width * 0.7f, height * (0.5f + 0.3f * sinf(tapePhase + 2.0f)));
+        sokolGfxBackend->lineTo(width * 0.9f, height * 0.5f);
+        sokolGfxBackend->setPenColor(juce::Colour::fromFloatRGBA(0.8f, 0.4f, 0.2f, 0.9f));
+        sokolGfxBackend->stroke();
+        sokolGfxBackend->endDraw();
+
+        // Present the frame
+        if (!sokolGfxBackend->present()){
+            return;
+        }
+
+        return;
+    }
+#endif
 
     const auto width = getWidth();
     const auto height = getHeight();

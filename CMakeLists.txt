@@ -260,6 +260,20 @@ elseif(J37_RENDER_BACKEND STREQUAL "D3D12")
     endif()
 elseif(J37_RENDER_BACKEND STREQUAL "CPU")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_CPU=1)
+elseif(J37_RENDER_BACKEND STREQUAL "SOKOL_GFX")
+    list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_SOKOL_GFX=1)
+    # Sokol_gfx is header-only; no external libs needed.
+    # Platform backend is auto-detected by Sokol_gfx itself,
+    # but we expose the option for explicit control.
+    if(APPLE)
+        list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_SOKOL_GFX=1)
+    elseif(WIN32)
+        # On Windows, user can choose OpenGL or Vulkan backend
+        if(J37_RENDER_BACKEND_SOKOL_GFX_VULKAN)
+            list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_SOKOL_GFX_VULKAN=1)
+        endif
+        list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_SOKOL_GFX=1)
+    endif()
 elseif(NOT J37_RENDER_BACKEND STREQUAL "AUTO")
     message(FATAL_ERROR "Unknown J37_RENDER_BACKEND='${J37_RENDER_BACKEND}'")
 endif()
