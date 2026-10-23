@@ -6,6 +6,7 @@
 
 #include "TapeScene.h"
 #include "RenderBackend.h"
+#include "SceneLayout.h"
 #include "TapeSceneShaders.h"
 #include "SceneFrame.h"
 
@@ -28,6 +29,40 @@ using namespace juce::gl;
 // scene namespace until they moved to a header of their own.
 using j37scene::fragmentShaderSource;
 using j37scene::vertexShaderSource;
+using j37::render::scene::supplyCentreX;
+using j37::render::scene::supplyCentreY;
+using j37::render::scene::supplyRadius;
+using j37::render::scene::takeUpCentreX;
+using j37::render::scene::takeUpCentreY;
+using j37::render::scene::takeUpRadius;
+using j37::render::scene::packInnerFraction;
+using j37::render::scene::packEmptyFraction;
+using j37::render::scene::packFullFraction;
+using j37::render::scene::packHalfThickness;
+using j37::render::scene::tapeWidth;
+using j37::render::scene::headCentreX;
+using j37::render::scene::headCentreY;
+using j37::render::scene::headCentreZ;
+using j37::render::scene::headHalfX;
+using j37::render::scene::headHalfY;
+using j37::render::scene::headHalfZ;
+using j37::render::scene::bankHalfWidth;
+using j37::render::scene::bankHalfHeight;
+using j37::render::scene::bankHalfDepth;
+using j37::render::scene::bankCentreZ;
+using j37::render::scene::bankKnobRadius;
+using j37::render::scene::bankKeyHalfX;
+using j37::render::scene::bankKeyHalfY;
+using j37::render::scene::bankKeyHalfZ;
+using j37::render::scene::knobMinimumAngle;
+using j37::render::scene::knobMaximumAngle;
+using j37::render::scene::bankPlacementsX;
+using j37::render::scene::bankPlacementsAreKeys;
+using j37::render::scene::controlBankCount;
+using j37::render::scene::bankKnobCount;
+using j37::render::scene::lightX;
+using j37::render::scene::lightY;
+using j37::render::scene::lightZ;
 
 namespace {
 //==========================================================================
@@ -47,42 +82,9 @@ namespace {
 //
 //  Right-handed, +x right, +y up, +z toward the eye.
 //==========================================================================
-constexpr float supplyCentreX = -0.315f;
-constexpr float supplyCentreY = 0.235f;
-constexpr float supplyRadius = 0.220f;
-
-constexpr float takeUpCentreX = 0.345f;
-constexpr float takeUpCentreY = -0.265f;
-constexpr float takeUpRadius = 0.190f;
-
-// The pack is stored as fractions of its own reel's radius, so the same two
-// numbers describe both reels whatever size each is drawn at.
-constexpr float packInnerFraction = 0.30f;
-constexpr float packEmptyFraction = 0.50f; // a supply reel running out
-constexpr float packFullFraction = 0.94f;  // a take-up reel running over
-
-// The pack stands proud of the reel's flange on both faces, which is what
-// makes a wound pack read as a thick roll rather than as a painted disc.
-constexpr float packHalfThickness = 0.100f;
-
-constexpr float tapeWidth = 0.040f;
-
-// The ribbon's six anchors: off the supply pack, down the middle, onto the
-// head's face, round the head's left edge, away along the bottom and onto the
-// take-up pack. Each one's z is the height the tape runs at there, which is
-// what puts it behind the reels' faces and in front of the head's without a
-// single depth-sorting rule. The first and last sit inside their own pack, so
-// the tape emerges from one and disappears into the other.
 const glm::vec3 ribbonAnchors[] = {{-0.205f, 0.085f, 0.00f},  {-0.075f, -0.145f, 0.05f},
                                    {-0.125f, -0.265f, 0.07f}, {-0.265f, -0.325f, 0.06f},
                                    {0.045f, -0.365f, 0.03f},  {0.245f, -0.165f, 0.00f}};
-
-constexpr float headCentreX = -0.175f;
-constexpr float headCentreY = -0.285f;
-constexpr float headCentreZ = 0.000f;
-constexpr float headHalfX = 0.075f;
-constexpr float headHalfY = 0.065f;
-constexpr float headHalfZ = 0.050f;
 
 //==========================================================================
 //  The control bank - the row of knobs and keys standing in FRONT of the
@@ -100,34 +102,20 @@ constexpr float headHalfZ = 0.050f;
 //  x with the bank's own centre at the origin so the five placements below
 //  are symmetric about it by construction rather than by arithmetic.
 //==========================================================================
-constexpr float bankHalfWidth = 0.345f;
-constexpr float bankHalfHeight = 0.085f;
-constexpr float bankHalfDepth = 0.040f;
-constexpr float bankCentreZ = -0.200f;
-
 // The face of the bank, and the depth a knob's disc sits at. A knob is built
 // round its own origin with its face at +0.020, so its dial stands 0.045
 // proud of the bank's face - which is what makes the rim cast the shadow that
 // reads as "this is a knob" rather than "this is a circle".
-constexpr float bankFaceZ = bankCentreZ + bankHalfDepth;
-constexpr float bankKnobFaceZ = bankFaceZ + 0.020f;
 
-constexpr float bankKnobRadius = 0.060f;
 // The keycaps are smaller than they were (0.052 x 0.034). A key sits at the
 // end of the bank, one placement away from the third knob's own lit disc, and
 // at the old size the two met: the cap's right edge at 0.100 against a glow
 // that reaches 0.115 from that knob's centre - a key standing on the arc
 // around the knob beside it. Both numbers moved, and the glow moved further
 // (see its own scale below), so the gap is real rather than renamed.
-constexpr float bankKeyHalfX = 0.044f;
-constexpr float bankKeyHalfY = 0.028f;
-constexpr float bankKeyHalfZ = 0.026f;
-
 // The sweep a knob's index mark travels, and the sweep its lit arc covers -
 // the same two numbers the 2D panel's rotary drawing uses, so a knob in the
 // window and a knob in the panel move through the same arc.
-constexpr float knobMinimumAngle = -2.443461f; // -140 degrees
-constexpr float knobMaximumAngle = 2.443461f;  // +140 degrees
 constexpr float knobArcMargin = 0.244346f;     // 14 degrees, where the arc starts
 
 // How much of the scene the camera has to keep in frame, in the same units
@@ -149,9 +137,6 @@ constexpr float cameraYawRadians = -0.18f;
 // The light: over the operator's left shoulder and a little in front, which
 // is where a desk lamp on a real machine would be, and is what puts the
 // highlight on the upper-left of each reel and leaves the far rim dark.
-constexpr float lightX = -0.45f;
-constexpr float lightY = 0.72f;
-constexpr float lightZ = 0.53f;
 
 //==========================================================================
 //  Vertex layout, shared by every mesh: four floats of position - the
@@ -168,6 +153,7 @@ constexpr std::uint32_t bankBodyMeshIndex = 4;
 constexpr std::uint32_t bankKnobMeshIndex = 5;
 constexpr std::uint32_t bankKeyMeshIndex = 6;
 constexpr std::uint32_t bankGlowMeshIndex = 7;
+constexpr int bankPlacementCount = j37::render::scene::controlBankCount;
 
 enum MeshMode {
     solidMode = 0,
@@ -414,20 +400,9 @@ glm::vec3 catmullRom(
     is which row of this table it came from. It is also what the editor's
     click handling reads, so a knob cannot be drawn in one place and respond
     to the mouse in another. */
-struct BankPlacement {
-    float x;
-    bool isKey;
-};
 
-constexpr BankPlacement bankPlacements[] = {
-    {-0.245f, false}, // a knob
-    {-0.122f, false}, // a knob
-    {0.001f, false},  // a knob
-    {0.152f, true},   // a key
-    {0.266f, true}    // a key
-};
 
-constexpr int bankPlacementCount = static_cast<int>(std::size(bankPlacements));
+
 
 /** Pastes the precision literal through, and routes the source through
     JUCE's own v3 translators, which prepend `#version 150` and rewrite
@@ -500,9 +475,9 @@ void TapeScene::setAudioState(float newOutputLevel,
 void TapeScene::setControlValues(const float *values, int count) noexcept {
     // A caller that hands over fewer values than the bank holds leaves the rest
     // at the panel's rest position rather than retaining a stale angle.
-    const auto usable = values != nullptr ? juce::jlimit(0, bankKnobCount, count) : 0;
+    const auto usable = values != nullptr ? juce::jlimit(0, j37::render::scene::bankKnobCount, count) : 0;
 
-    for (int i = 0; i < bankKnobCount; ++i)
+    for (int i = 0; i < j37::render::scene::bankKnobCount; ++i)
         knobValues[static_cast<std::size_t>(i)].store(i < usable ? values[i] : 0.5f,
                                                       std::memory_order_relaxed);
 
@@ -712,7 +687,7 @@ int TapeScene::controlIndexAt(juce::Point<int> position) const {
     // The face's plane, in world space: its point is the bank's centre pushed
     // out to its front, and its normal is the scene's own z turned by the two
     // camera rotations.
-    const auto planePoint = glm::vec3(scene * glm::vec4(0.0f, 0.0f, bankFaceZ, 1.0f));
+    const auto planePoint = glm::vec3(scene * glm::vec4(0.0f, 0.0f, j37::render::scene::bankCentreZ + j37::render::scene::bankHalfDepth, 1.0f));
     const auto normalVector = glm::vec3(scene * glm::vec4(0.0f, 0.0f, 1.0f, 0.0f));
     const auto normalLengthSquared = glm::dot(normalVector, normalVector);
     if (!std::isfinite(normalLengthSquared) || normalLengthSquared < 1.0e-12f)
@@ -735,7 +710,8 @@ int TapeScene::controlIndexAt(juce::Point<int> position) const {
     const auto hit = rayOrigin + rayDirection * distance;
 
     // Into the bank's own frame, where a placement's x is what it was written as.
-    const auto bankTransform = scene * glm::translate(glm::mat4(1.0f), {0.0f, 0.0f, bankCentreZ});
+    const auto bankTransform = scene * glm::translate(glm::mat4(1.0f),
+                                                      {0.0f, 0.0f, j37::render::scene::bankCentreZ});
     const auto bankDeterminant = glm::determinant(bankTransform);
     if (!std::isfinite(bankDeterminant) || std::abs(bankDeterminant) < 1.0e-8f)
         return -1;
@@ -750,11 +726,14 @@ int TapeScene::controlIndexAt(juce::Point<int> position) const {
     auto bestDistance = std::numeric_limits<float>::max();
 
     for (int i = 0; i < bankPlacementCount; ++i) {
-        const auto &placement = bankPlacements[i];
-        const auto halfWidth = placement.isKey ? bankKeyHalfX : bankKnobRadius;
-        const auto halfHeight = placement.isKey ? bankKeyHalfY : bankKnobRadius;
+        const auto placementX = j37::render::scene::bankPlacementsX[static_cast<std::size_t>(i)];
+        const auto isKey = j37::render::scene::bankPlacementsAreKeys[static_cast<std::size_t>(i)];
+        const auto halfWidth = isKey ? j37::render::scene::bankKeyHalfX
+                                     : j37::render::scene::bankKnobRadius;
+        const auto halfHeight = isKey ? j37::render::scene::bankKeyHalfY
+                                      : j37::render::scene::bankKnobRadius;
 
-        const auto offsetX = std::abs(local.x - placement.x);
+        const auto offsetX = std::abs(local.x - placementX);
         const auto offsetY = std::abs(local.y);
 
         if (offsetX > halfWidth || offsetY > halfHeight)
@@ -774,7 +753,7 @@ int TapeScene::controlIndexAt(juce::Point<int> position) const {
 }
 
 float TapeScene::getControlValue(int controlIndex) const noexcept {
-    if (controlIndex < 0 || controlIndex >= bankKnobCount)
+    if (controlIndex < 0 || controlIndex >= j37::render::scene::bankKnobCount)
         return 0.5f;
 
     return knobValues[static_cast<std::size_t>(controlIndex)].load(std::memory_order_relaxed);
@@ -836,13 +815,13 @@ TapeScene::Geometry TapeScene::buildTapePack() {
         const glm::vec2 direction{std::cos(angle), std::sin(angle)};
 
         inner.top[i] = addVertexReturningIndex(geometry, {direction.x, direction.y, 0.0f},
-                                               {0.0f, 0.0f, 1.0f}, packHalfThickness);
+                                               {0.0f, 0.0f, 1.0f}, j37::render::scene::packHalfThickness);
         inner.bottom[i] = addVertexReturningIndex(geometry, {direction.x, direction.y, 0.0f},
-                                                  {0.0f, 0.0f, -1.0f}, -packHalfThickness);
+                                                  {0.0f, 0.0f, -1.0f}, -j37::render::scene::packHalfThickness);
         outer.top[i] = addVertexReturningIndex(geometry, {direction.x, direction.y, 1.0f},
-                                               {0.0f, 0.0f, 1.0f}, packHalfThickness);
+                                               {0.0f, 0.0f, 1.0f}, j37::render::scene::packHalfThickness);
         outer.bottom[i] = addVertexReturningIndex(geometry, {direction.x, direction.y, 1.0f},
-                                                  {0.0f, 0.0f, -1.0f}, -packHalfThickness);
+                                                  {0.0f, 0.0f, -1.0f}, -j37::render::scene::packHalfThickness);
     }
 
     for (int i = 0; i < segments; ++i) {
@@ -862,16 +841,16 @@ TapeScene::Geometry TapeScene::buildTapePack() {
 
         const auto outerTop =
             addVertexReturningIndex(geometry, {direction.x, direction.y, 1.0f},
-                                    {direction.x, direction.y, 0.0f}, packHalfThickness);
+                                    {direction.x, direction.y, 0.0f}, j37::render::scene::packHalfThickness);
         const auto outerBottom =
             addVertexReturningIndex(geometry, {direction.x, direction.y, 1.0f},
-                                    {direction.x, direction.y, 0.0f}, -packHalfThickness);
+                                    {direction.x, direction.y, 0.0f}, -j37::render::scene::packHalfThickness);
         const auto innerTop =
             addVertexReturningIndex(geometry, {direction.x, direction.y, 0.0f},
-                                    {-direction.x, -direction.y, 0.0f}, packHalfThickness);
+                                    {-direction.x, -direction.y, 0.0f}, j37::render::scene::packHalfThickness);
         const auto innerBottom =
             addVertexReturningIndex(geometry, {direction.x, direction.y, 0.0f},
-                                    {-direction.x, -direction.y, 0.0f}, -packHalfThickness);
+                                    {-direction.x, -direction.y, 0.0f}, -j37::render::scene::packHalfThickness);
 
         addQuad(indices, outerTop, outerBottom, outer.bottom[(i + 1) % segments],
                 outer.top[(i + 1) % segments]);
@@ -915,7 +894,7 @@ TapeScene::Geometry TapeScene::buildRibbon() {
         const auto tangent = after - before;
         const glm::vec3 side{-tangent.y, tangent.x, 0.0f};
         const auto sideLength = std::max(glm::length(side), 0.0001f);
-        const auto offset = side * (tapeWidth * 0.5f / sideLength);
+        const auto offset = side * (j37::render::scene::tapeWidth * 0.5f / sideLength);
 
         // The payload is t, which is what the shader waves the tape with.
         const auto left = static_cast<juce::uint32>(vertices.size());
@@ -935,7 +914,7 @@ TapeScene::Geometry TapeScene::buildRibbon() {
 
 TapeScene::Geometry TapeScene::buildHead() {
     Geometry geometry;
-    addBox(geometry, {headCentreX, headCentreY, headCentreZ}, {headHalfX, headHalfY, headHalfZ});
+    addBox(geometry, {j37::render::scene::headCentreX, j37::render::scene::headCentreY, j37::render::scene::headCentreZ}, {j37::render::scene::headHalfX, j37::render::scene::headHalfY, j37::render::scene::headHalfZ});
     return geometry;
 }
 
@@ -944,10 +923,10 @@ TapeScene::ControlBank TapeScene::buildControlBank() {
 
     // -------------------------------------------------------------------------
     //  The face the controls are set into. One box, modelled at the scene's
-    //  origin rather than at bankCentreZ, so drawControlBank() places it with a
+    //  origin rather than at j37::render::scene::bankCentreZ, so drawControlBank() places it with a
     //  single translation and the four meshes it draws share that one matrix.
     // -------------------------------------------------------------------------
-    addBox(bank.body, {0.0f, 0.0f, 0.0f}, {bankHalfWidth, bankHalfHeight, bankHalfDepth});
+    addBox(bank.body, {0.0f, 0.0f, 0.0f}, {j37::render::scene::bankHalfWidth, j37::render::scene::bankHalfHeight, j37::render::scene::bankHalfDepth});
 
     // -------------------------------------------------------------------------
     //  One knob, built round its own origin: a machined barrel with a knurled
@@ -1090,8 +1069,8 @@ void TapeScene::drawControlBank(const glm::mat4 &viewProjection,
     //  two constants, so a knob in the window and a knob in the panel travel
     //  through the same arc.
     // -------------------------------------------------------------------------
-    const auto bankModel = scene * glm::translate(glm::mat4(1.0f), {0.0f, 0.0f, bankCentreZ});
-    const auto faceModel = bankModel * glm::translate(glm::mat4(1.0f), {0.0f, 0.0f, bankHalfDepth});
+    const auto bankModel = scene * glm::translate(glm::mat4(1.0f), {0.0f, 0.0f, j37::render::scene::bankCentreZ});
+    const auto faceModel = bankModel * glm::translate(glm::mat4(1.0f), {0.0f, 0.0f, j37::render::scene::bankHalfDepth});
 
     // -------------------------------------------------------------------------
     // The face is drawn first so the controls sit visibly on its surface.
@@ -1100,7 +1079,7 @@ void TapeScene::drawControlBank(const glm::mat4 &viewProjection,
     shaderProgram->setUniform("uMode", static_cast<float>(panelMode));
     shaderProgram->setUniform("uBaseColour", body.getFloatRed(), body.getFloatGreen(),
                               body.getFloatBlue());
-    shaderProgram->setUniform("uPanelHalf", bankHalfWidth, bankHalfHeight, bankHalfDepth);
+    shaderProgram->setUniform("uPanelHalf", j37::render::scene::bankHalfWidth, j37::render::scene::bankHalfHeight, j37::render::scene::bankHalfDepth);
 
     drawMesh(bankBody);
 
@@ -1108,8 +1087,9 @@ void TapeScene::drawControlBank(const glm::mat4 &viewProjection,
     //  The knobs and the keys, from the one placement table.
     // -------------------------------------------------------------------------
     for (int i = 0; i < bankPlacementCount; ++i) {
-        const auto &placement = bankPlacements[i];
-        const auto isKnob = !placement.isKey;
+        const auto placementX = j37::render::scene::bankPlacementsX[static_cast<std::size_t>(i)];
+        const auto isKey = j37::render::scene::bankPlacementsAreKeys[static_cast<std::size_t>(i)];
+        const auto isKnob = !isKey;
 
         // A knob's value is its own parameter, 0..1. The keys have no value: they
         // are state, so they rest at the middle of their travel and are lit by
@@ -1117,18 +1097,18 @@ void TapeScene::drawControlBank(const glm::mat4 &viewProjection,
         const auto value =
             isKnob ? knobValues[static_cast<std::size_t>(i)].load(std::memory_order_relaxed) : 0.5f;
 
-        const auto angle = knobMinimumAngle + value * (knobMaximumAngle - knobMinimumAngle);
+        const auto angle = j37::render::scene::knobMinimumAngle + value * (j37::render::scene::knobMaximumAngle - j37::render::scene::knobMinimumAngle);
 
         // The knob's own frame: place it, turn it, size it. A key is not turned -
         // its cap is what reads as pressed - so its rotation is the identity and
         // its scale is the cap's own half-extents.
         const auto model =
             isKnob
-                ? faceModel * glm::translate(glm::mat4(1.0f), {placement.x, 0.0f, 0.0f}) *
+                ? faceModel * glm::translate(glm::mat4(1.0f), {placementX, 0.0f, 0.0f}) *
                       glm::rotate(glm::mat4(1.0f), angle, {0.0f, 0.0f, 1.0f}) *
-                      glm::scale(glm::mat4(1.0f), {bankKnobRadius, bankKnobRadius, bankKnobRadius})
-                : faceModel * glm::translate(glm::mat4(1.0f), {placement.x, 0.0f, bankKeyHalfZ}) *
-                      glm::scale(glm::mat4(1.0f), {bankKeyHalfX, bankKeyHalfY, bankKeyHalfZ});
+                      glm::scale(glm::mat4(1.0f), {j37::render::scene::bankKnobRadius, j37::render::scene::bankKnobRadius, j37::render::scene::bankKnobRadius})
+                : faceModel * glm::translate(glm::mat4(1.0f), {placementX, 0.0f, j37::render::scene::bankKeyHalfZ}) *
+                      glm::scale(glm::mat4(1.0f), {j37::render::scene::bankKeyHalfX, j37::render::scene::bankKeyHalfY, j37::render::scene::bankKeyHalfZ});
 
         shaderProgram->setUniformMat4("uModel", glm::value_ptr(model), 1, GL_FALSE);
         shaderProgram->setUniform("uBaseColour", body.brighter(0.18f).getFloatRed(),
@@ -1137,7 +1117,7 @@ void TapeScene::drawControlBank(const glm::mat4 &viewProjection,
 
         if (isKnob) {
             shaderProgram->setUniform("uMode", static_cast<float>(knobMode));
-            shaderProgram->setUniform("uArcAngle", knobMinimumAngle);
+            shaderProgram->setUniform("uArcAngle", j37::render::scene::knobMinimumAngle);
             drawMesh(bankKnob);
         } else {
             // A key is pressed when the machine is running and released when it
@@ -1166,7 +1146,7 @@ void TapeScene::drawControlBank(const glm::mat4 &viewProjection,
     glEnable(GL_BLEND);
     glBlendFunc(GL_SRC_ALPHA, GL_ONE);
 
-    for (int i = 0; i < bankKnobCount; ++i) {
+    for (int i = 0; i < j37::render::scene::bankKnobCount; ++i) {
         // 1.55 rather than 1.9: at 1.9 the disc reached 0.115 from the knob's
         // centre and crossed a keycap's own edge at 0.100, which is the light the
         // key was standing on. At 1.55 it reaches 0.093 and the key's edge is at
@@ -1174,8 +1154,8 @@ void TapeScene::drawControlBank(const glm::mat4 &viewProjection,
         // light ON the face around its own knob instead of one spilling onto the
         // control beside it.
         const auto model =
-            faceModel * glm::translate(glm::mat4(1.0f), {bankPlacements[i].x, 0.0f, 0.008f}) *
-            glm::scale(glm::mat4(1.0f), {bankKnobRadius * 1.55f, bankKnobRadius * 1.55f, 1.0f});
+            faceModel * glm::translate(glm::mat4(1.0f), {j37::render::scene::bankPlacementsX[static_cast<std::size_t>(i)], 0.0f, 0.008f}) *
+            glm::scale(glm::mat4(1.0f), {j37::render::scene::bankKnobRadius * 1.55f, j37::render::scene::bankKnobRadius * 1.55f, 1.0f});
 
         shaderProgram->setUniformMat4("uModel", glm::value_ptr(model), 1, GL_FALSE);
         shaderProgram->setUniform("uMode", static_cast<float>(glowMode));
@@ -1456,7 +1436,7 @@ void TapeScene::renderOpenGL() {
         drawMesh(reel);
 
         shaderProgram->setUniform("uMode", static_cast<float>(packMode));
-        shaderProgram->setUniform("uPackInner", packInnerFraction);
+        shaderProgram->setUniform("uPackInner", j37::render::scene::packInnerFraction);
         shaderProgram->setUniform("uPackOuter", packOuter);
         shaderProgram->setUniform("uBaseColour", tape.getFloatRed(), tape.getFloatGreen(),
                                   tape.getFloatBlue());
@@ -1466,18 +1446,18 @@ void TapeScene::renderOpenGL() {
     // The supply reel empties as the take-up one fills: the same two numbers,
     // one of them the other one's complement.
     const auto supplyPackOuter =
-        packEmptyFraction + (packFullFraction - packEmptyFraction) * (1.0f - tapeTransfer);
+        j37::render::scene::packEmptyFraction + (j37::render::scene::packFullFraction - j37::render::scene::packEmptyFraction) * (1.0f - tapeTransfer);
     const auto takeUpPackOuter =
-        packEmptyFraction + (packFullFraction - packEmptyFraction) * tapeTransfer;
+        j37::render::scene::packEmptyFraction + (j37::render::scene::packFullFraction - j37::render::scene::packEmptyFraction) * tapeTransfer;
 
-    drawReel(supplyCentreX, supplyCentreY, supplyRadius, supplyAngle, supplyPackOuter);
-    drawReel(takeUpCentreX, takeUpCentreY, takeUpRadius, takeUpAngle, takeUpPackOuter);
+    drawReel(j37::render::scene::supplyCentreX, j37::render::scene::supplyCentreY, j37::render::scene::supplyRadius, supplyAngle, supplyPackOuter);
+    drawReel(j37::render::scene::takeUpCentreX, j37::render::scene::takeUpCentreY, j37::render::scene::takeUpRadius, takeUpAngle, takeUpPackOuter);
 
     // The head: the one solid in the scene that does not move, which is what
     // makes the tape's movement between the two reels readable as movement
     // rather than as everything spinning together.
     const auto headModel =
-        scene * glm::translate(glm::mat4(1.0f), {headCentreX, headCentreY, headCentreZ});
+        scene * glm::translate(glm::mat4(1.0f), {j37::render::scene::headCentreX, j37::render::scene::headCentreY, j37::render::scene::headCentreZ});
     shaderProgram->setUniformMat4("uModel", glm::value_ptr(headModel), 1, GL_FALSE);
     shaderProgram->setUniform("uMode", static_cast<float>(solidMode));
     shaderProgram->setUniform("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,

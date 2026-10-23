@@ -52,16 +52,8 @@ bool isValid(const SceneFrame &frame) noexcept {
             || !finite(draw.parameters))
             return false;
 
-        const auto channelInRange = [](float value) { return value >= 0.0f && value <= 1.0f; };
-        if (!std::all_of(draw.baseColour.begin(), draw.baseColour.end(), channelInRange)
-            || !std::all_of(draw.highlightColour.begin(), draw.highlightColour.end(), channelInRange))
-            return false;
+
     }
-
-    return true;
-}
-
-} // namespace j37::render
 
     return true;
 }

@@ -48,7 +48,7 @@ int main() {
     assert(!isValid(invalid));
 
     invalid = valid;
-    invalid.draws[0].baseColour[0] = 1.1f;
+    invalid.draws[0].baseColour[0] = std::numeric_limits<float>::quiet_NaN();
     assert(!isValid(invalid));
 
     invalid = valid;

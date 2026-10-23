@@ -194,7 +194,8 @@ private:
                      j37::render::SceneMaterial material,
                      const glm::mat4& model,
                      const juce::Colour& baseColour,
-                     std::array<float, 3> parameters = {}) const;
+                     std::array<float, 3> parameters,
+                     const juce::Colour& highlightColour) const;
 
     /** The control bank in FRONT of the deck, the one piece of geometry that is not
         part of the machine: a strip of three machined knobs and two raised keys on
