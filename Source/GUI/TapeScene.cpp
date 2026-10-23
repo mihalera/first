@@ -1,4 +1,4 @@
-﻿﻿/*
+/*
   ==============================================================================
     TapeScene - the deck's transport, rendered as geometry and lit on the GPU.
   ==============================================================================
@@ -1133,7 +1133,6 @@ void TapeScene::drawSceneFrameOpenGL(const j37::render::SceneFrame& frame) {
     }
 }
 
-} //==============================================================================
 //  OpenGLRenderer
 //==============================================================================
 void TapeScene::newOpenGLContextCreated() {
