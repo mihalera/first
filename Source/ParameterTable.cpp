@@ -664,6 +664,40 @@ namespace
 
     /** The interface language.
     */
+    void addRenderSettingsControl (ParamLayout& layout)
+    {
+        // -------------------------------------------------------------------------
+        //  Renderer backend selector.
+        //
+        //  A host-visible choice, so the user's pick survives in the session and in
+        //  a preset and is exactly what a host automation lane addresses. This is the
+        //  counterpart to the deck's oversampler switch: the engine-level preference
+        //  that the panel exposes in the SETTINGS tab beside GL and oversampling.
+        //
+        //  It is a ComboBox bound to the "renderer" parameter, so the same name the
+        //  panel's attachment reads is the name the parameter table registers - two
+        //  different files, one id, no second store to keep in step.
+        //
+        //  The list mirrors the panel's combo, because the panel is built from the
+        //  same enum the table names here. When either side changes the other must
+        //  change with it, which is why the two live in the same review rather than
+        //  one of them drifting out of date.
+        // -------------------------------------------------------------------------
+        layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "renderer", 1 },
+                                                                  "Renderer",
+                                                                  juce::StringArray {
+                                                                      "Auto",
+                                                                      "OpenGL",
+                                                                      "Vulkan",
+                                                                      "Metal",
+                                                                      "DirectX 11",
+                                                                      "DirectX 12",
+                                                                      "CPU",
+                                                                      "Sokol_gfx"
+                                                                  },
+                                                                  0));
+    }
+
     void addLanguageControl (ParamLayout& layout)
     {
         // -------------------------------------------------------------------------
@@ -684,7 +718,7 @@ namespace
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "language", 1 },
                                                                   "Language",
                                                                   juce::StringArray { "English",
-                                                                      juce::CharPointer_UTF8 ("\xd0\xa3\xd0\xba\xd1\x80\xd0\xb0\xd1\x97\xd0\xbd\xd1\x81\xd1\x8c\xd0\xba\xd0\xb0") },
+                                                                      juce::CharPointer_UTF8 ("\xd0\xa3\xd0\xba\xd1\x80\xd0\xb0\xd1\x97\xd0\xbd\xd1\x83\xd0\xb0\xd0\xb9\xd1\x81\xd1\x8c\xd0\xba\xd0\xb0") },
                                                                   0));
     }
 
@@ -1339,6 +1373,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     addTuningControls (layout);
     addCompressorControls (layout);
     addLanguageControl (layout);
+    addRenderSettingsControl (layout);
     addSaturationMixControls (layout);
     addAmpVoicingControls (layout);
     addPreampControl (layout);

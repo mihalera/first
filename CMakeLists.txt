@@ -273,6 +273,10 @@ elseif(J37_RENDER_BACKEND STREQUAL "SOKOL_GFX")
             list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_SOKOL_GFX_VULKAN=1)
         endif
         list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_SOKOL_GFX=1)
+    else()
+        # Linux and any other platform: enable the Sokol adapter so the build's
+        # configured backend is the one the panel and the engine actually recognise.
+        list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_SOKOL_GFX=1)
     endif()
 elseif(NOT J37_RENDER_BACKEND STREQUAL "AUTO")
     message(FATAL_ERROR "Unknown J37_RENDER_BACKEND='${J37_RENDER_BACKEND}'")
