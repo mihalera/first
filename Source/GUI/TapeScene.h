@@ -160,13 +160,17 @@ private:
     //  radius from one uniform. The same trick makes the ribbon flutter, with w
     //  as the parameter along the path.
     //==========================================================================
-    /** One indexed mesh in the backend-neutral form SceneFrame.h defines, so the
-        same geometry can be uploaded by the OpenGL path here and by an adapter
-        that is not OpenGL at all. It was a flat vector<float> of interleaved
-        attributes until the scene frame landed; the two layouts describe the same
-        28 bytes per vertex, and having one of them is what stops the upload code
-        and the builders from disagreeing about which one they mean. */
+    /** Indexed mesh in the backend-neutral SceneFrame representation. */
     using Geometry = j37::render::SceneMesh;
+
+    /** Control-bank topology shared by the OpenGL and native SceneFrame renderers. */
+    struct ControlBank
+    {
+        Geometry body;
+        Geometry knob;
+        Geometry key;
+        Geometry knobGlow;
+    };
 
     struct Mesh
     {
@@ -179,6 +183,8 @@ private:
     static Geometry buildTapePack();
     static Geometry buildRibbon();
     static Geometry buildHead();
+    static std::shared_ptr<const std::vector<Geometry>> sharedSceneMeshes();
+    static ControlBank buildControlBank();
     j37::render::SceneFrame buildSceneFrame (int width, int height, double elapsedSeconds,
                                               const glm::mat4& viewProjection,
                                               const glm::mat4& scene,
@@ -197,20 +203,6 @@ private:
                      const juce::Colour& baseColour,
                      std::array<float, 3> parameters,
                      const juce::Colour& highlightColour) const;
-
-    /** The control bank in FRONT of the deck, the one piece of geometry that is not
-        part of the machine: a strip of three machined knobs and two raised keys on
-        a common face, each built round its own origin so drawKnob() can place and
-        turn one with a single matrix. */
-    struct ControlBank
-    {
-        Geometry body;      ///< the face they are set into
-        Geometry knob;      ///< one knob with its own index mark, built round the origin
-        Geometry key;       ///< one switch cap, built round the origin
-        Geometry knobGlow;  ///< the disc a lit knob lays on the face
-    };
-
-    static ControlBank buildControlBank();
 
     /** One control in the bank, and where it sits on the face. */
     struct ControlPlacement
@@ -237,14 +229,10 @@ private:
         uses the real one. */
     static constexpr int bankInteractiveIndex = 0;
 
-    void drawControlBank (const glm::mat4& viewProjection,
-                          const glm::mat4& scene,
-                          const juce::Colour& bodyColour,
-                          const juce::Colour& highlightColour);
-
     void uploadMesh (Mesh& mesh, const Geometry& geometry);
     void releaseMesh (Mesh& mesh) noexcept;
     void drawMesh (const Mesh& mesh);
+    void drawSceneFrameOpenGL (const j37::render::SceneFrame& frame);
 
     //==========================================================================
     //  OpenGL backend

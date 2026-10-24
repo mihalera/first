@@ -1,4 +1,4 @@
-#include "TapeScene.h"
+﻿#include "TapeScene.h"
 #include "SceneLayout.h"
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -58,12 +58,6 @@ std::array<float, 16> matrix4(const glm::mat4 &matrix) {
     return result;
 }
 
-std::array<float, 9> matrix3(const glm::mat3 &matrix) {
-    std::array<float, 9> result{};
-    std::copy_n(glm::value_ptr(matrix), result.size(), result.begin());
-    return result;
-}
-
 std::array<float, 4> colour4(juce::Colour colour) {
     return {colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue(),
             colour.getFloatAlpha()};
@@ -83,8 +77,8 @@ void TapeScene::appendDraw(j37::render::SceneFrame &frame,
                            const juce::Colour &highlightColour) const {
     j37::render::SceneDraw draw;
     draw.model = matrix4(model);
-    const auto normal = glm::transpose(glm::inverse(glm::mat3(model)));
-    draw.normalMatrix = matrix3(normal);
+    const auto normal = glm::transpose(glm::inverse(model));
+    draw.normalMatrix = matrix4(normal);
     draw.baseColour = colour4(baseColour);
     draw.highlightColour = colour3(highlightColour);
     draw.parameters = parameters;
@@ -125,21 +119,7 @@ j37::render::SceneFrame TapeScene::buildSceneFrame(int width,
     // The topology is the same on every frame, so it is built once and shared:
     // rebuild at the editor's refresh rate would allocate tens of thousands of
     // vertices per paint for data that never moves.
-    static const auto sharedMeshes = [] {
-        auto built = std::make_shared<std::vector<j37::render::SceneMesh>>();
-        built->reserve(8);
-        built->push_back(buildReel());
-        built->push_back(buildTapePack());
-        built->push_back(buildRibbon());
-        built->push_back(buildHead());
-        const auto bank = buildControlBank();
-        built->push_back(bank.body);
-        built->push_back(bank.knob);
-        built->push_back(bank.key);
-        built->push_back(bank.knobGlow);
-        return std::shared_ptr<const std::vector<j37::render::SceneMesh>>(std::move(built));
-    }();
-    frame.meshes = sharedMeshes;
+    frame.meshes = sharedSceneMeshes();
 
     frame.draws.reserve(10 + controlBankCount + bankKnobCount);
     const auto bodyLight = body.brighter(0.18f);

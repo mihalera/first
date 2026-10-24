@@ -871,6 +871,24 @@ TapeScene::Geometry TapeScene::buildHead() {
     return geometry;
 }
 
+std::shared_ptr<const std::vector<TapeScene::Geometry>> TapeScene::sharedSceneMeshes() {
+    static const auto meshes = [] {
+        auto built = std::make_shared<std::vector<Geometry>>();
+        built->reserve(8);
+        built->push_back(buildReel());
+        built->push_back(buildTapePack());
+        built->push_back(buildRibbon());
+        built->push_back(buildHead());
+        const auto bank = buildControlBank();
+        built->push_back(bank.body);
+        built->push_back(bank.knob);
+        built->push_back(bank.key);
+        built->push_back(bank.knobGlow);
+        return std::shared_ptr<const std::vector<Geometry>>(std::move(built));
+    }();
+    return meshes;
+}
+
 TapeScene::ControlBank TapeScene::buildControlBank() {
     ControlBank bank;
 
@@ -1008,120 +1026,7 @@ void TapeScene::drawMesh(const Mesh &mesh) {
 //==============================================================================
 //  The control bank
 //==============================================================================
-void TapeScene::drawControlBank(const glm::mat4 &viewProjection,
-                                const glm::mat4 &scene,
-                                const juce::Colour &body,
-                                const juce::Colour &highlight) {
-    // -------------------------------------------------------------------------
-    //  Where the bank's face is, in the camera's own terms.
-    //
-    //  A knob's angle has to be set from the LOCAL position of the vertex - which
-    //  is what the knob shader mode reads, and what makes the lit arc turn with
-    //  the knob - so the arc's start angle is computed here, from the value, and
-    //  handed over as one uniform. The 2D panel's rotary drawing sweeps the same
-    //  two constants, so a knob in the window and a knob in the panel travel
-    //  through the same arc.
-    // -------------------------------------------------------------------------
-    const auto bankModel = scene * glm::translate(glm::mat4(1.0f), {0.0f, 0.0f, bankCentreZ});
-    const auto faceModel = bankModel * glm::translate(glm::mat4(1.0f), {0.0f, 0.0f, bankHalfDepth});
-
-    // -------------------------------------------------------------------------
-    // The face is drawn first so the controls sit visibly on its surface.
-    // Draw the face first so the controls and glows sit above it.
-    shaderProgram->setUniformMat4("uModel", glm::value_ptr(faceModel), 1, GL_FALSE);
-    shaderProgram->setUniform("uMode", static_cast<float>(panelMode));
-    shaderProgram->setUniform("uBaseColour", body.getFloatRed(), body.getFloatGreen(),
-                              body.getFloatBlue());
-    shaderProgram->setUniform("uPanelHalf", bankHalfWidth, bankHalfHeight, bankHalfDepth);
-
-    drawMesh(bankBody);
-
-    // -------------------------------------------------------------------------
-    //  The knobs and the keys, from the one placement table.
-    // -------------------------------------------------------------------------
-    for (int i = 0; i < controlBankCount; ++i) {
-        const auto &placement = controlPlacements[i];
-        const auto isKnob = !placement.isKey;
-
-        // A knob's value is its own parameter, 0..1. The keys have no value: they
-        // are state, so they rest at the middle of their travel and are lit by
-        // the same glow the knobs use when the machine is working.
-        const auto value =
-            isKnob ? knobValues[static_cast<std::size_t>(i)].load(std::memory_order_relaxed) : 0.5f;
-
-        const auto angle = knobMinimumAngle + value * (knobMaximumAngle - knobMinimumAngle);
-
-        // The knob's own frame: place it, turn it, size it. A key is not turned -
-        // its cap is what reads as pressed - so its rotation is the identity and
-        // its scale is the cap's own half-extents.
-        const auto model =
-            isKnob
-                ? faceModel * glm::translate(glm::mat4(1.0f), {placement.x, 0.0f, 0.0f}) *
-                      glm::rotate(glm::mat4(1.0f), angle, {0.0f, 0.0f, 1.0f}) *
-                      glm::scale(glm::mat4(1.0f), {bankKnobRadius, bankKnobRadius, bankKnobRadius})
-                : faceModel * glm::translate(glm::mat4(1.0f), {placement.x, 0.0f, bankKeyHalfZ}) *
-                      glm::scale(glm::mat4(1.0f), {bankKeyHalfX, bankKeyHalfY, bankKeyHalfZ});
-
-        shaderProgram->setUniformMat4("uModel", glm::value_ptr(model), 1, GL_FALSE);
-        shaderProgram->setUniform("uBaseColour", body.brighter(0.18f).getFloatRed(),
-                                  body.brighter(0.18f).getFloatGreen(),
-                                  body.brighter(0.18f).getFloatBlue());
-
-        if (isKnob) {
-            shaderProgram->setUniform("uMode", static_cast<float>(knobMode));
-            shaderProgram->setUniform("uArcAngle", knobMinimumAngle);
-            drawMesh(bankKnob);
-        } else {
-            // A key is pressed when the machine is running and released when it
-            // is not - which is the whole of what a key on this bank has to say,
-            // and is why there is no per-key state to keep in step with anything.
-            const auto pressed = (i == controlBankCount - 2) ? bankSpinning : bankRecording;
-
-            shaderProgram->setUniform("uMode", static_cast<float>(keyMode));
-            shaderProgram->setUniform("uKeyDown", pressed ? 1.0f : 0.0f);
-            drawMesh(bankKey);
-        }
-    }
-
-    // -------------------------------------------------------------------------
-    //  The lit discs, additive, over the face and under nothing.
-    //
-    //  One per knob, drawn with the blend on so it reads as light on the face
-    //  rather than as a second material. The glow under a knob follows the
-    //  machine rather than the knob's own value: it is the deck's activity lamp,
-    //  repeated - so a bank of three knobs lights up together when the tape is
-    //  working, which is what a real machine does.
-    // -------------------------------------------------------------------------
-    const auto glowAmount =
-        juce::jlimit(0.0f, 1.0f, 0.25f * bankDrive + 0.35f * bankPeak + 0.40f * bankReduction);
-
-    glEnable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE);
-
-    for (int i = 0; i < bankKnobCount; ++i) {
-        // 1.55 rather than 1.9: at 1.9 the disc reached 0.115 from the knob's
-        // centre and crossed a keycap's own edge at 0.100, which is the light the
-        // key was standing on. At 1.55 it reaches 0.093 and the key's edge is at
-        // 0.108 - the halo is still the deck's activity lamp, and it is now a
-        // light ON the face around its own knob instead of one spilling onto the
-        // control beside it.
-        const auto model =
-            faceModel * glm::translate(glm::mat4(1.0f), {controlPlacements[i].x, 0.0f, 0.008f}) *
-            glm::scale(glm::mat4(1.0f), {bankKnobRadius * 1.55f, bankKnobRadius * 1.55f, 1.0f});
-
-        shaderProgram->setUniformMat4("uModel", glm::value_ptr(model), 1, GL_FALSE);
-        shaderProgram->setUniform("uMode", static_cast<float>(glowMode));
-        shaderProgram->setUniform("uHighlightColour", highlight.getFloatRed(),
-                                  highlight.getFloatGreen(), highlight.getFloatBlue());
-        shaderProgram->setUniform("uGlow", glowAmount);
-        drawMesh(bankGlow);
-    }
-
-    glDisable(GL_BLEND);
-    glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
-
-    juce::ignoreUnused(viewProjection);
-} //==============================================================================
+//==============================================================================
 //  OpenGLRenderer
 //==============================================================================
 void TapeScene::newOpenGLContextCreated() {
