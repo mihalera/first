@@ -1,6 +1,5 @@
 #pragma once
 #include "RenderBackend.h"
-#include "SceneFrame.h"
 #include <JuceHeader.h>
 
 #include <memory>
@@ -57,8 +56,6 @@ class NativeRenderer {
     /** Whether a presentation surface is attached and can be drawn into. */
     virtual bool isPresentable() const noexcept = 0;
 
-
-
     /** Releases every native object, including the child surface. */
     virtual void shutdown() noexcept = 0;
 
@@ -66,14 +63,8 @@ class NativeRenderer {
         this slot. Returns false when the frame must be skipped entirely. */
     virtual bool beginFrame() = 0;
 
-    /** Compatibility clear operation for adapters still under construction. */
+    /** Records the clear for the frame begun by beginFrame(). */
     virtual void clear (juce::Colour) = 0;
-
-    /** Backend draw hook for a validated scene. Default refusal keeps legacy
-        adapters safe until every scene material and transform is implemented. */
-    virtual bool drawScene (const SceneFrame&) { return false; }
-
-
 
     /** Submits and presents the frame. Always safe to call after a failed
         beginFrame(), where it is a no-op. */

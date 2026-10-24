@@ -188,17 +188,6 @@ for number, line in enumerate(drawing, 1):
     for call in re.finditer(r"setUniform(?:Mat[234])?\s*\(\s*\"([A-Za-z_][A-Za-z0-9_]*)\"", line):
         supplied.setdefault(call.group(1), []).append(number)
 
-# SceneFrame dispatches a material's colour through a small helper, so these
-# two names are intentionally supplied indirectly rather than as call literals.
-scene_drawing = without_comments("\n".join(drawing))
-colour_helper = re.search(r"void\s+setOpenGLColour\s*\([^)]*\)\s*\{([^}]*)\}", scene_drawing, re.S)
-if colour_helper:
-    # The helper's uniform argument is indirect; the concrete names are checked
-    # at its call sites below (the helper declaration itself is not a shader name).
-    for uniform in ("uBaseColour", "uHighlightColour"):
-        if f'"{uniform}"' in scene_drawing:
-            supplied.setdefault(uniform, []).append(0)
-
 for name in sorted(set(declared) - set(supplied)):
     problems.append("%s declares uniform \"%s\" and nothing sets it: the shader reads the "
                     "value's default, so whatever it drives never happens"

@@ -2274,16 +2274,6 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
         // preferences.
         placeDeckSwitch (geometry, oversamplingLabel, oversamplingBox, 0, 1, "OVER");
 
-
-
-// The renderer selector is the one deck switch whose caption lives in the
-// header, not beside its box: the RENDERER label is placed in the header row
-// above the switches, and the box itself uses a free-floating caption band
-// only while it is visible. Placing it here, in the first cell of the band,
-// is what gives the combo a size on the screen - the addAndMakeVisible in
-// setUpOversamplingAndInstrument is not a placement and the label's header
-// placement is not enough for the box.
-        placeDeckSwitch (geometry, rendererLabel, rendererBox, 0, 1, "RENDERER");
         // The USER theme's colour window, in the next cell of the same band. It is
         // placed with placeDeckSwitch so its caption, its 30 px band and its centring
         // are the same arithmetic as every other switch on the page - a button placed

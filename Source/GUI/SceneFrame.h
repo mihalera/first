@@ -1,7 +1,6 @@
 #pragma once
 #include <array>
 #include <cstdint>
-#include <memory>
 #include <vector>
 
 namespace j37::render {
@@ -33,7 +32,6 @@ struct SceneDraw {
     std::array<float, 16> model{};
     std::array<float, 9> normalMatrix{};
     std::array<float, 4> baseColour{};
-    std::array<float, 3> highlightColour{};
     std::array<float, 3> parameters{};
     std::uint32_t meshIndex = 0;
     SceneMaterial material = SceneMaterial::solid;
@@ -54,10 +52,7 @@ struct SceneFrame {
     float drive = 0.0f;
     float flutter = 0.0f;
     float glow = 0.0f;
-    // Immutable and shared: mesh topology does not change per frame, while draw
-    // state does. Sharing avoids allocating/copying tens of thousands of vertices
-    // at the editor's refresh rate.
-    std::shared_ptr<const std::vector<SceneMesh>> meshes;
+    std::vector<SceneMesh> meshes;
     std::vector<SceneDraw> draws;
 };
 

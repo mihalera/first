@@ -1,9 +1,10 @@
 // =============================================================================
 //  Which optional libraries this build actually has.
 //
-//  Everything the engine uses that may be absent - chowdsp's math and DSP utils,
-//  RTNeural, xsimd, readerwriterqueue and pocketfft - is probed for HERE, once,
-//  and reported as a J37_HAS_* macro. Every one of those macros is read by a
+//  Everything the engine uses that may be absent - chowdsp's math, RTNeural,
+//  NeuralAmpModelerCore with Eigen, xsimd, readerwriterqueue, pocketfft and
+//  signalsmith-stretch - is probed for HERE, once, and reported as a J37_HAS_*
+//  macro. Every one of those macros is read by a
 //  stage, which is now checked: tests/linkline/check_linkline.py fails when a
 //  probe has no reader, and when the link line carries a library no include
 //  names. The stages that consume
@@ -32,24 +33,20 @@
 // conditional so the DSP regression harness - which compiles these headers
 // against a shim, without chowdsp on its include path - is never asked for it.
 //
-// chowdsp_dsp_utils is pulled in alongside it. It is a full JUCE module rather
-// than a header, so it needs the plugin target's include path, which the harness
-// does not provide; the same guard covers both. What the engine uses from it is
-// named where it is used.
+// chowdsp_math includes chowdsp_simd itself, so the simd module arrives with it
+// and is linked for that reason rather than for a call of its own.
+//
+// chowdsp_dsp_utils used to be probed here too, and the probe was the defect:
+// nothing under Source/ included it, so the macro guarded a branch that did not
+// exist and the module sat on the link line carrying GPLv3 terms for no caller.
+// Both are gone - the module off the link line, the probe out of this file - and
+// tests/linkline/check_linkline.py now fails on either coming back.
 #if ! defined (J37_DSP_HARNESS) && ! defined (J37_HAS_CHOWDSP_MATH) \
     && __has_include (<chowdsp_math/chowdsp_math.h>)
  #include <chowdsp_math/chowdsp_math.h>
  #define J37_HAS_CHOWDSP_MATH 1
 #elif ! defined (J37_HAS_CHOWDSP_MATH)
  #define J37_HAS_CHOWDSP_MATH 0
-#endif
-
-#if ! defined (J37_DSP_HARNESS) && ! defined (J37_HAS_CHOWDSP_DSP) \
-    && __has_include (<chowdsp_dsp_utils/chowdsp_dsp_utils.h>)
- #include <chowdsp_dsp_utils/chowdsp_dsp_utils.h>
- #define J37_HAS_CHOWDSP_DSP 1
-#elif ! defined (J37_HAS_CHOWDSP_DSP)
- #define J37_HAS_CHOWDSP_DSP 0
 #endif
 
 // RTNeural (fetched by CPM in CMakeLists.txt). The real-time neural inference
@@ -69,13 +66,23 @@
  // library to include - the stage's .nam converter asks for the JSON type it
  // needs by including it ITSELF when this macro is 1.
 #elif ! defined (J37_DSP_HARNESS) && __has_include (<RTNeural/RTNeural.h>)
+ // nlohmann/json comes FIRST here, and the order is load-bearing. RTNeural
+ // bundles its own copy (3.11.1) at modules/json/json.hpp, and model_loader.h
+ // includes it BY RELATIVE PATH - so whichever copy is read first defines the
+ // include guard and the other one is silently skipped. Two copies in one
+ // translation unit are two `nlohmann::json` TYPES, and this one crosses a
+ // library boundary: NAM Core's compiled objects take `const nlohmann::json&`,
+ // so a TU that kept RTNeural's copy would not link against a NAM Core built
+ // with this repository's 3.12.0 (that is a real link failure, not a warning -
+ // the mangled names differ). Including the vendored header ahead of
+ // model_loader.h makes 3.12.0 the single copy for the whole build, RTNeural
+ // and NAM Core alike, and RTNeural's own relative include becomes a no-op.
+ #include <nlohmann/json.hpp>
  #include <RTNeural/RTNeural.h>
  // RTNeural's own model loader header, which is what carries json_parser. It is
  // not pulled in by RTNeural.h, so a translation unit that wants to LOAD a model
- // has to ask for it explicitly. nlohmann/json is on the same include path (and
- // RTNeural bundles a copy), so the JSON type it parses into is already available.
+ // has to ask for it explicitly.
  #include <RTNeural/model_loader.h>
- #include <nlohmann/json.hpp>
  #define J37_HAS_RTNEURAL 1
 #else
  #define J37_HAS_RTNEURAL 0
@@ -127,12 +134,12 @@
 //                               thread can publish a frame of metering and the
 //                               editor can read it WITHOUT every field being its
 //                               own atomic and without a lock on the audio thread.
-//                               It is the ONLY one of the four that survived:
-//                               every use site reads J37_HAS_RWQ and falls back
-//                               to plain atomics without it.
+//                               It is the ONLY one of the four probed in this
+//                               block: every use site reads J37_HAS_RWQ and falls
+//                               back to plain atomics without it.
 //
-//    The other three left, and they left the same way xsimd and pocketfft did
-//    not: they were LINKED, INCLUDED and probed here, and read by nothing.
+//    The other three left this block, and two of them left the hard way: they
+//    were LINKED, INCLUDED and probed here, and read by nothing.
 //
 //    farbot::RealtimeObject     The entry used to claim the machine-state
 //                               hand-off used it, so the message thread could
@@ -149,9 +156,10 @@
 //                               away.
 //
 //    signalsmith-stretch        A phase-vocoder time stretcher: it changes how
-//                               long material takes while keeping its PITCH. Two
-//                               claims here were false. The transport does not
-//                               use it - the transport's speed change is
+//                               long material takes while keeping its PITCH.
+//                               This block used to say two things about it, and
+//                               both were false. The transport does not use it -
+//                               the transport's speed change is
 //                               Source/DSP/RepitchStage.h, which is deliberately
 //                               a VARISPEED, because a tape at half speed is
 //                               supposed to come out an octave down. And the
@@ -159,30 +167,29 @@
 //                               never probed, so it read 0 everywhere and said
 //                               it to nobody.
 //
-//                               The one stage that wants it is the CORRECTOR:
-//                               moving a note onto the grid without changing
-//                               how long it lasts is a pitch shift at constant
-//                               duration. AUTOTUNE does that today with the
-//                               hand-written granular shifter in
-//                               Source/DSP/RealtimePitchShifter.h, which is
-//                               driven one FRAME at a time from the tape loop -
-//                               and this library works one BLOCK at a time. So
-//                               adopting it is a restructure of the frame loop
-//                               rather than a swap, which is why the library is
-//                               not on the link line: the line describes the
-//                               binary, not the intention. The vendored source
-//                               and the CPM fetch stay for that work.
+//                               It has since come back as a stage: the CORRECTOR
+//                               moves a note onto the grid without changing how
+//                               long it lasts, which is a pitch shift at
+//                               constant duration, and Source/DSP/CorrectorStage.h
+//                               is that stage - with this library as an OPT-IN
+//                               engine and the shifter above as its default. Its
+//                               probe is at the bottom of this file rather than
+//                               in this block, because what it needs is an
+//                               include path, a flag and a fallback rather than a
+//                               real-time utility with a JUCE-laden substitute.
 //
-//    SoundTouch                 The WSOLA time-stretch engine, LGPL-2.1 - the one
-//                               dependency in this file that was not
-//                               permissively licensed. It was probed, included
-//                               and compiled into the plugin, and no stage
-//                               called it, so it was contributing nothing but a
-//                               static LGPL link to the binary. That link is
-//                               gone; THIRD_PARTY_NOTICES.md records the
-//                               library, the fetch stays for the same reason
-//                               signalsmith's does, and the licence question it
-//                               raised with it.
+//    SoundTouch                 The WSOLA time-stretch engine, LGPL-2.1. It was
+//                               probed, included and compiled into the plugin,
+//                               and no stage called it, so it contributed
+//                               nothing but a static LGPL link; the link went
+//                               first, and WP4 in
+//                               docs/library-integration-plan.md then removed
+//                               the target, the fetch and the vendored tree
+//                               rather than keep a dependency nobody calls. Its
+//                               block in cmake/J37Dependencies.cmake now holds
+//                               the reasoning. The corrector's two engines are
+//                               its own shifter and signalsmith's vocoder, and
+//                               tests/pitch is what measures them.
 // ------------------------------------------------------------------------------
 #if ! defined (J37_DSP_HARNESS)
 
@@ -205,27 +212,46 @@
  #define J37_HAS_RWQ 0
 #endif
 
-// ------------------------------------------------------------------------------// Sokol_gfx (Jeffrey Lim/sokol_gfx, Zlib-licensed, header-only graphics lib)
-//  Used as an optional renderer backend for TapeScene 3D visualization.
-//  Available on all platforms; Sokol_gfx auto-detects Metal (macOS) or OpenGL
-//  (Windows/Linux). No external libraries needed on the link line.
+// ------------------------------------------------------------------------------
+//  NeuralAmpModelerCore (NAM Core) + Eigen - the second inference engine.
 //
-//  Probe: checks if the sokol_gfx header is available, and sets the
-//  J37_NATIVE_SOKOL_GFX define when building with the Sokol_gfx backend.
+//  Source/DSP/NeuralStage.h already reads .nam files through RTNeural, and that
+//  path is a CONVERSION: it re-shapes NAM's flat weight vector into RTNeural's
+//  layer JSON, which only the LSTM layout allows. WaveNet and the convolutional
+//  nets have their own layouts, so the reference implementation itself is the
+//  backend for them - Source/DSP/NamBackend.h wraps its loader and its
+//  per-sample loop, and the stage dispatches to it here.
 //
-//  This probe is intentionally gated behind the J37_NATIVE_SOKOL_GFX flag so
-//  that the build system can opt-in rather than auto-detect.
-#if ! defined (J37_HAS_SOKOL_GFX)
- #if defined (J37_NATIVE_SOKOL_GFX)
-  #define J37_HAS_SOKOL_GFX 1
- #elif __has_include ("sokol_gfx.h")
-  #define J37_HAS_SOKOL_GFX 1
+//  ON by default (J37_NAMCORE in cmake/J37Dependencies.cmake), which it became
+//  when the number it was waiting for arrived: tests/neural/run_bench.sh measures
+//  a 16-channel, ten-dilation WaveNet at 14.5 % of one 48 kHz core per mono
+//  channel and a 20-cell LSTM at 2.8 % through NAM Core - only while a model is
+//  loaded, since the stage is a pass-through with none. -DJ37_NAMCORE=OFF keeps
+//  the LSTM-only stage this file described before, refusal included, for a build
+//  that would rather not carry a second inference engine and its compile time.
+//
+//  TWO headers are probed because NAM Core cannot be used without Eigen: every
+//  NAM header includes <Eigen/Dense>, and the convolutional layers include
+//  <unsupported/Eigen/FFT>. A tree with one of them and not the other is not a
+//  tree this backend can be compiled against, so it reads as absent rather than
+//  failing halfway through a translation unit.
+//
+//  NOT behind the harness guard, for the same reason signalsmith-stretch is not:
+//  the way tests/neural compiles the NAM-backed half of the stage is to put the
+//  three vendored include paths on its command line and pass J37_NAMCORE - so a
+//  guard that forced the macro to 0 would make the only build that exercises the
+//  backend impossible. tests/dsp, which has none of those paths, gets 0 from
+//  __has_include and compiles the pass-through, exactly as it does for RTNeural.
+// ------------------------------------------------------------------------------
+#if ! defined (J37_HAS_NAMCORE)
+ #if defined (J37_NAMCORE) \
+     && __has_include (<NAM/get_dsp.h>) && __has_include (<Eigen/Dense>)
+  #define J37_HAS_NAMCORE 1
  #else
-  #define J37_HAS_SOKOL_GFX 0
+  #define J37_HAS_NAMCORE 0
  #endif
-#else
- #define J37_HAS_SOKOL_GFX 1
 #endif
+
 // ------------------------------------------------------------------------------
 //  pocketfft (mreineck/pocketfft, vendored under ThirdParty/pocketfft as the one
 //  header pocketfft_hdronly.h).
@@ -254,3 +280,61 @@
  #endif
 #endif
 
+// ------------------------------------------------------------------------------
+//  dr_wav (mackron/dr_libs, vendored under ThirdParty/dr_libs as the one header
+//  dr_wav.h, with the implementation compiled by Source/DSP/NoiseDecoder.cpp).
+//
+//  Deliberately NOT behind the harness guard, for the same reason pocketfft is
+//  not: tests/dsp compiles the decoder BOTH ways - with ThirdParty/dr_libs on
+//  the include path and without it - to compile the absent-library branch rather
+//  than assume it. A harness guard here would force the empty build to be the
+//  only one, and the branch that says "this build has no WAV decoder" would
+//  never be executed by anything.
+//
+//  Unguarded also means a checkout that has pruned ThirdParty/ still builds: the
+//  probe answers 0, and Source/DSP/NoiseLoader.h reports that as a load error
+//  with a reason rather than failing to compile.
+// ------------------------------------------------------------------------------
+#if ! defined (J37_HAS_DRWAV)
+ #if __has_include (<dr_wav.h>)
+  #define J37_HAS_DRWAV 1
+ #else
+  #define J37_HAS_DRWAV 0
+ #endif
+#endif
+
+// ------------------------------------------------------------------------------
+//  signalsmith-stretch (vendored under ThirdParty/signalsmith-stretch, with the
+//  sibling signalsmith-linear checkout inside it that its own header includes by
+//  a relative path).
+//
+//  OPT-IN, exactly like xsimd above and for the same kind of reason: the two
+//  engines do not render the same audio, so which one the build uses is a
+//  listening decision that belongs in CMakeLists.txt rather than in a probe. The
+//  flag is J37_CORRECTOR_USE_STRETCH (OFF by default), and the numbers behind
+//  "off by default" are in the option's own comment: the vocoder costs 1216
+//  frames of lookahead at 48 kHz against the granular shifter's one period, and
+//  this library's transposition measured 8 cents wide of the ratio it was given
+//  at 1.06x and 32 at 0.94x with the eight analyses per window the stage now runs
+//  (tests/pitch prints both) - up to three times the +-10 cent dead zone the
+//  control is built around.
+//
+//  NOT behind the harness guard, because that guard exists so a stage can be
+//  compiled against a shim with no optional library on the include path - and the
+//  way to compile the library shape is to ask for it, which is what
+//  tests/pitch/run.sh's second binary and the CMake option both do. A guard that
+//  forced the macro to 0 would make that impossible.
+//
+//  And like pocketfft, the file that only decides the macro includes nothing:
+//  Source/DSP/CorrectorStage.h includes the library ITSELF when this is 1, so a
+//  checkout that has pruned ThirdParty/ carries the fallback engine and none of
+//  the four-thousand-line header.
+// ------------------------------------------------------------------------------
+#if ! defined (J37_HAS_SIGNALSMITH)
+ #if defined (J37_CORRECTOR_USE_STRETCH) \
+     && __has_include (<signalsmith-stretch/signalsmith-stretch.h>)
+  #define J37_HAS_SIGNALSMITH 1
+ #else
+  #define J37_HAS_SIGNALSMITH 0
+ #endif
+#endif

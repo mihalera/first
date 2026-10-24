@@ -7,11 +7,7 @@
 #pragma once
 
 #include <JuceHeader.h>
-#include "RenderBackend.h"
-#include "NativeRenderer.h"
-#if defined(J37_NATIVE_SOKOL_GFX)
-#include "NativeRenderer_SokolGfx.h"
-#endif
+#include "SceneFrame.h"
 
 // The GL typedefs (GLuint, GLint, GLsizei) and the GL commands this component
 // calls live in the module's own header, which the generated JuceHeader also
@@ -28,7 +24,6 @@
 
 #include <atomic>
 #include <array>
-#include <cstring>
 #include <memory>
 #include <vector>
 
@@ -92,27 +87,9 @@ public:
                         float transportSpeed,
                         float outputPeak) noexcept;
 
-    /** The values of the controls standing in front of the machine, 0..1 each, in
-        the order of the scene's own placements - and NOT the plugin's parameter
-        order, because the window shows five of a bank of fifty-eight and which
-        five is a decision this class makes, not one the parameter tree does.
-
-        Called from the editor's timer, on the message thread. The values cross to
-        the render thread as atomics; nothing else does. */
+    /** Values for the decorative controls in scene-placement order, normalised
+        to 0..1. Missing values retain their neutral position. */
     void setControlValues (const float* values, int count) noexcept;
-
-    /** The captions under those controls, drawn in the window itself.
-
-        Not text on a 2D overlay: a label painted by juce::Graphics would sit at a
-        fixed screen position while the bank it belongs to moves with the camera,
-        which is exactly the mismatch this whole component exists to avoid. The
-        GLSL in here stamps each caption out of a procedural 5 x 7 alphabet, so a
-        knob's name is part of the same picture as the knob.
-
-        Message thread only, and it allocates: the editor calls it when the
-        visible bank changes, never per frame. A null pointer or non-positive
-        count clears the captions; conversion failures propagate to the caller. */
-    void setKnobCaptions (const juce::String* captions, int count);
 
     /** Which control a point in this component falls on, or -1 for none.
 
@@ -146,54 +123,19 @@ public:
         textureWeights.store (packed, std::memory_order_relaxed);
     }
 
-    /** The editor's renderer switch. False detaches the active accelerated
-        context and stops the scene; true starts attachment attempts again. */
+    /** Controls the separate OpenGL transport context. A false scene uses the
+        software-painted transport instead. */
     void setSceneEnabled (bool shouldBeEnabled);
 
-    /** The backend selected by CMake and the backend actually used at runtime.
-        Unsupported native backends intentionally report CPU until implemented. */
-    [[nodiscard]] static constexpr j37::render::Backend configuredRenderBackend() noexcept
-    {
-        return j37::render::configuredBackend();
-    }
-
-    [[nodiscard]] static constexpr j37::render::Backend effectiveRenderBackend() noexcept
-    {
-        return j37::render::effectiveBackend();
-    }
-
-    [[nodiscard]] static constexpr const char* effectiveRenderBackendName() noexcept
-    {
-        return j37::render::effectiveName();
-    }
-
-    [[nodiscard]] static constexpr const char* renderBackendStatus() noexcept
-    {
-        return j37::render::statusText();
-    }
+    /** Retries attaching the scene context while its bounded retry budget remains. */
+    void serviceContextAttachment ();
 
     /** Whether the context is up AND the program linked - i.e. whether the
         editor should keep drawing its own flat transport behind this one. Read on
         the message thread, so the GL thread's half of the answer is an atomic. */
     [[nodiscard]] bool isSceneLive() const noexcept;
 
-    /** Drives the attach retries, from the editor's timer.
-
-        A component cannot have a context until the host has given it a native
-        peer, and the editor may not have done that when this is constructed, so
-        a first failure is not a final answer. The retry budget is bounded and
-        then forgotten, for the same reason the editor's own context stops
-        retrying: a driver or a VM that cannot create a context will not manage on
-        the last attempt either, and retrying forever would burn a frame every
-        33 ms for a picture that is never going to arrive.
-    */
-    void serviceContextAttachment();
-    [[nodiscard]] j37::render::NativeRenderer::Config nativeRendererConfig() const;
-
-    /** CPU renderer used when the selected native backend is unavailable or
-        explicitly set to CPU. It intentionally uses the same telemetry and
-        palette atomics as the accelerated scene, so switching backend does not
-        change the editor's state model. */
+    /** CPU fallback rendered when the OpenGL context or shader is unavailable. */
     void paint (juce::Graphics&) override;
     void resized() override;
 
@@ -217,11 +159,13 @@ private:
     //  radius from one uniform. The same trick makes the ribbon flutter, with w
     //  as the parameter along the path.
     //==========================================================================
-    struct Geometry
-    {
-        std::vector<float> vertices;
-        std::vector<juce::uint32> indices;
-    };
+    /** One indexed mesh in the backend-neutral form SceneFrame.h defines, so the
+        same geometry can be uploaded by the OpenGL path here and by an adapter
+        that is not OpenGL at all. It was a flat vector<float> of interleaved
+        attributes until the scene frame landed; the two layouts describe the same
+        28 bytes per vertex, and having one of them is what stops the upload code
+        and the builders from disagreeing about which one they mean. */
+    using Geometry = j37::render::SceneMesh;
 
     struct Mesh
     {
@@ -234,6 +178,23 @@ private:
     static Geometry buildTapePack();
     static Geometry buildRibbon();
     static Geometry buildHead();
+    j37::render::SceneFrame buildSceneFrame (int width, int height, double elapsedSeconds,
+                                              const glm::mat4& viewProjection,
+                                              const glm::mat4& scene,
+                                              const juce::Colour& background,
+                                              const juce::Colour& body,
+                                              const juce::Colour& highlight,
+                                              const juce::Colour& tape,
+                                              float driveAmount,
+                                              float flutter,
+                                              float reduction,
+                                              float elapsed) const;
+    void appendDraw (j37::render::SceneFrame& frame,
+                     std::uint32_t meshIndex,
+                     j37::render::SceneMaterial material,
+                     const glm::mat4& model,
+                     const juce::Colour& baseColour,
+                     std::array<float, 3> parameters = {}) const;
 
     /** The control bank in FRONT of the deck, the one piece of geometry that is not
         part of the machine: a strip of three machined knobs and two raised keys on
@@ -263,10 +224,7 @@ private:
 
     static constexpr int controlBankCount = 5;
 
-    /** The first controlBankCount of those are knobs; the rest are keys. A
-        constant rather than a literal 3 because the GLSL's branch and the host's
-        placement table both read it, and the two drifting apart would put a knob
-        caption over a keycap. */
+    /** The first controlBankCount of those are knobs; the rest are keys. */
     static constexpr int bankKnobCount = 3;
 
     /** The control the editor puts a tooltip on, and the one a click on the bank
@@ -297,12 +255,6 @@ private:
 
     juce::OpenGLContext openGLContext;
     std::unique_ptr<juce::OpenGLShaderProgram> shaderProgram;
-    std::unique_ptr<j37::render::NativeRenderer> nativeRenderer;
-
-#if defined(J37_NATIVE_SOKOL_GFX)
-    std::unique_ptr<class SokolGfxBackend> sokolGfxBackend;
-#endif
-
     Mesh reel {};
     Mesh tapePack {};
     Mesh ribbon {};
@@ -349,22 +301,8 @@ private:
     /** The GL thread's half of the answer to isSceneLive(). */
     std::atomic<int> programLinked { 0 };
 
-    /** The bank's knob angles, 0..1, and its captions. Three fixed-byte
-        caption banks let the message thread publish a free bank while the
-        renderer retains its current snapshot; neither thread needs to wait. */
+    /** The bank's knob angles, 0..1. */
     std::array<std::atomic<float>, bankKnobCount> knobValues {};
-    using CaptionBuffer = std::array<std::array<char, 32>, bankKnobCount>;
-    std::array<CaptionBuffer, 3> captionBuffers {};
-    std::atomic<int> activeCaptionBuffer { 0 };
-    std::atomic<int> renderCaptionBuffer { -1 };
-
-    /** The caption the panel's plate is currently drawing, as the shader's own
-        glyph indices. Written on the render thread and read only by it, so this
-        is a plain member and not an atomic - it is this thread's own scratch.
-        Floats, not ints: the shader reads them as a float uniform array, and
-        juce::OpenGLShaderProgram publishes only a GLfloat* overload. */
-    std::array<float, 8> labelGlyphs { -1.0f, -1.0f, -1.0f, -1.0f,
-                                       -1.0f, -1.0f, -1.0f, -1.0f };
 
     //==========================================================================
     //  Message thread only.
