@@ -132,10 +132,12 @@ answer is not re-derived next time.
 | **mimalloc / jemalloc / tcmalloc** | latest | MIT / BSD-2 / Apache-2.0 | Replacing the allocator inside a host process is a footgun, and rule 5 already forbids allocating on the audio thread - fixing the call sites is cheaper than swapping the allocator under the host |
 | **chowdsp_dsp_utils** | `v2.4.0` | GPLv3 | Removed in WP1 and not coming back: the only GPLv3 entry that ever sat on the link line, with no caller |
 
-### 3d. Already in the tree, and free
+### 3d. Already in the tree, or a CMake switch away
 
-Five options that need no new dependency. Two of them (`Oversampling` and `Convolution`)
-are part of why several candidates above are rejections rather than backlog.
+Four of these need no new dependency at all; CLAP is the one real format gap and is here
+because it is the only remaining format question - it is not free, and §3b carries its
+cost. `Oversampling` and `Convolution` are also why several candidates above are
+rejections rather than backlog.
 
 | Option | Where it is | What it would cost | Verdict |
 | --- | --- | --- | --- |

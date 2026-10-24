@@ -1,10 +1,11 @@
 # Integrating and implementing the external libraries
 
-Every library below JUCE is already *present*: `cmake/J37Dependencies.cmake` fetches it
-at configure time or `ThirdParty/` vendors it. What is not present for most of them is a
-**caller**. This file is the plan that turns "fetched" into "used", in the order that
-costs least and proves the most, with the gate each one has to pass before its name goes
-on `target_link_libraries`.
+Every package below JUCE is either vendored under `ThirdParty/` or fetched by
+`cmake/J37Dependencies.cmake`. At the start of this work most of them were present with
+no **caller**; this file is the plan that turned "fetched" into "used" - or recorded why
+a package should stay unlinked - and the record of what each step found. It is now mostly
+history: WP1-WP4 and WP6 are done, WP5 is blocked on a licence-clean mesh, and the
+section below states the answer to "integrate everything" for the tree as it stands.
 
 It is deliberately not a wish list. Three of the sections below end in "do not do this",
 and they say why.
@@ -20,6 +21,46 @@ Read alongside:
 - [library-candidates.md](library-candidates.md) - the survey this file's plan came out
   of: what is in the binary, what is fetched and unused, and which outside libraries
   would help this plugin (and which would not).
+
+## The answer, up front
+
+The request was to integrate every external library **or** explain why doing so would
+only interfere. The tree's answer is the second half of that sentence, and it is
+deliberate: **every library that has a caller is already integrated, and the ones that
+do not have a caller are alternatives to libraries it already uses - not capabilities
+the plugin lacks.** Linking them would add a licence, build time and binary size for a
+job that is already done, and several of them would add a copyleft obligation the
+repository has already paid to remove (WP1, WP4).
+
+The numbers the build can prove today:
+
+- **43 packages** in `cmake/J37Dependencies.cmake`: twelve vendored under `ThirdParty/`
+  (each with a CPM fallback beside it), the rest CPM-only; bgfx, wgpu-native and Dawn
+  are fetched only when their renderer option asks.
+- **33 targets** in the link-line closure: a direct list of eight JUCE modules, fourteen
+  third-party libraries and `PluginResources` (plus `namcore` when `J37_NAMCORE=ON`),
+  with `tests/linkline/check_linkline.py` following the dependencies from there.
+- **8 `J37_HAS_*` probes**, every one read by a file outside the header that decides it,
+  and the harnesses that can take the library away compile that branch too.
+- The optional link targets are `namcore` (`J37_NAMCORE`, ON by default) and one of the
+  staged renderers, `SOKOL` or `BGFX` - and neither renderer draws the tape scene yet.
+
+So the plan, in one table, with the detail below it:
+
+| Item | Decision | What remains |
+| --- | --- | --- |
+| The fourteen libraries with callers (`dr_libs`, `pocketfft`, `dattorro-verb`, `glm`, `xsimd`, `chowdsp_math`/`_simd`, `nlohmann_json`, `readerwriterqueue`, `RTNeural`, `melatonin_blur`/`_inspector`, `foleys_gui_magic`, `signalsmith-stretch`) | **Integrated and used** | Nothing. Each has a caller and a notices row; the audio-affecting ones have a harness |
+| `NeuralAmpModelerCore` + Eigen | **Integrated, ON by default** | Keep the `J37_NAMCORE=OFF` opt-out and the process-cost benchmark; deleting the LSTM converter is a recorded follow-up, not a new dependency |
+| `sokol_gfx`, `bgfx`, wgpu-native, Dawn | **Build options, staged** | Port the tape scene before advertising them; no runtime integration to add now |
+| Platform SDKs (OpenGL, Vulkan, D3D11/12, Metal; IPP/vDSP discovered on the build machine) | **Used only when the build selects or has them** | No fetch or link step to add; `THIRD_PARTY_NOTICES.md` records the licence implication of a binary built where IPP is present |
+| Fetched duplicates and alternatives (four FFTs + `fftconvolver`, three pitch detectors, Q/`cycfi_infra` envelopes, ImGui, yasio, farbot, research copies) | **Not integrated - would interfere** | None, unless a benchmark names the existing implementation as the bottleneck |
+| Copyleft fetched code (`chowdsp_dsp_utils`, `libsndfile`, `aubio`, `rack`, `vcv_prototype`) | **Not integrated** | None while a permissive library already covers the need; linking them is a licence decision, not a technical one |
+| `Assimp` | **Not integrated - gated on content** | Fetch only after a licence-clean mesh exists, then follow WP5's steps. A loader before an asset is the exact pattern that left eighteen entries on the link line |
+| Dev/CI tools (RTSan, pluginval, clang-tidy, libFuzzer, sccache, Tracy, CLAP) | **Not runtime libraries** | The order is in [library-candidates.md §5](library-candidates.md#5-order-of-work); each has a trigger and none belongs in `target_link_libraries` |
+
+The sections below are the evidence for those rows: §1 the gate every dependency passes,
+§2 the state of every package, §3 the work items (WP1-WP6), §4 what is deliberately not
+planned, and §5/§6 the definition of done and the order.
 
 ## 1. The gate
 
@@ -188,7 +229,7 @@ would have removed the SIMD module `chowdsp_math` compiles against. It stays, an
 `EXEMPT` row now names the right parent. That is the whole argument for reading the
 dependency's own file instead of trusting a comment about it - including this one.
 
-**Gate.** `tests/linkline/check_linkline.py`: 30 targets, 6 probes, every linked library
+**Gate.** `tests/linkline/check_linkline.py`: 33 targets, 8 probes, every linked library
 has a caller, every probe is read, no deferrals. A configure and a CI build are the
 remaining half of the gate and run on the next push.
 

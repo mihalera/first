@@ -103,6 +103,7 @@ binary - see
 | **Yin-Pitch-Tracking** | `69483b04` | see upstream | <https://github.com/ashokfernandez/Yin-Pitch-Tracking> |
 | **audio_fft** | `922b30a8` | see upstream | <https://github.com/adamski/audio_fft> |
 | **pitch_detector** | `d3b60970` | see upstream | <https://github.com/adamski/pitch_detector> |
+| **dywapitchtrack** - Jean Laroche / Schmitt trigger tracker | `a05bef4b` | MIT (upstream; fetched from `hzeller/pitch-hero`, which vendors the two library files unmodified - the author's own repository is gone) | <https://github.com/hzeller/pitch-hero> |
 
 ### Optional renderer backends
 
