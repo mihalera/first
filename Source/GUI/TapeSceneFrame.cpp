@@ -17,10 +17,10 @@ constexpr std::uint32_t bankKnobMeshIndex = 5;
 constexpr std::uint32_t bankKeyMeshIndex = 6;
 constexpr std::uint32_t bankGlowMeshIndex = 7;
 
-// The deck's own geometry. The values live in SceneLayout.h so this builder and
-// tests/scene_frame read one copy rather than two, and so a change to the
-// layout is a change in a header the harness can see. The GL paint path in
-// TapeScene.cpp still carries its own copy of these numbers.
+// The deck's own geometry. The values live in SceneLayout.h so this builder,
+// the GL path in TapeScene.cpp and tests/scene_frame read one copy rather than
+// one each, and so a change to the layout is a change in a header the harness
+// can see.
 using j37::render::scene::bankCentreZ;
 using j37::render::scene::bankHalfDepth;
 using j37::render::scene::bankHalfHeight;
@@ -30,9 +30,8 @@ using j37::render::scene::bankKeyHalfY;
 using j37::render::scene::bankKeyHalfZ;
 using j37::render::scene::bankKnobCount;
 using j37::render::scene::bankKnobRadius;
-using j37::render::scene::bankPlacementsAreKeys;
-using j37::render::scene::bankPlacementsX;
 using j37::render::scene::controlBankCount;
+using j37::render::scene::controlPlacements;
 using j37::render::scene::headCentreX;
 using j37::render::scene::headCentreY;
 using j37::render::scene::headCentreZ;
@@ -181,17 +180,19 @@ j37::render::SceneFrame TapeScene::buildSceneFrame(int width,
 
     for (int i = 0; i < controlBankCount; ++i) {
         const auto slot = static_cast<std::size_t>(i);
-        const auto isKnob = !bankPlacementsAreKeys[slot];
+        const auto isKnob = !controlPlacements[slot].isKey;
         const auto value =
             isKnob ? knobValues[slot].load(std::memory_order_relaxed) : 0.5f;
         const auto angle = knobMinimumAngle + value * (knobMaximumAngle - knobMinimumAngle);
         const auto model =
             isKnob
-                ? faceModel * glm::translate(glm::mat4(1.0f), {bankPlacementsX[slot], 0.0f, 0.0f}) *
+                ? faceModel *
+                      glm::translate(glm::mat4(1.0f), {controlPlacements[slot].x, 0.0f, 0.0f}) *
                       glm::rotate(glm::mat4(1.0f), angle, {0.0f, 0.0f, 1.0f}) *
                       glm::scale(glm::mat4(1.0f), {bankKnobRadius, bankKnobRadius, bankKnobRadius})
                 : faceModel *
-                      glm::translate(glm::mat4(1.0f), {bankPlacementsX[slot], 0.0f, bankKeyHalfZ}) *
+                      glm::translate(glm::mat4(1.0f),
+                                     {controlPlacements[slot].x, 0.0f, bankKeyHalfZ}) *
                       glm::scale(glm::mat4(1.0f), {bankKeyHalfX, bankKeyHalfY, bankKeyHalfZ});
         appendDraw(frame, isKnob ? bankKnobMeshIndex : bankKeyMeshIndex,
                    isKnob ? j37::render::SceneMaterial::knob : j37::render::SceneMaterial::key,
@@ -209,7 +210,7 @@ j37::render::SceneFrame TapeScene::buildSceneFrame(int width,
         const auto model =
             faceModel *
             glm::translate(glm::mat4(1.0f),
-                           {bankPlacementsX[static_cast<std::size_t>(i)], 0.0f, 0.008f}) *
+                           {controlPlacements[static_cast<std::size_t>(i)].x, 0.0f, 0.008f}) *
             glm::scale(glm::mat4(1.0f), {bankKnobRadius * 1.55f, bankKnobRadius * 1.55f, 1.0f});
         appendDraw(frame, bankGlowMeshIndex, j37::render::SceneMaterial::glow, model, highlight,
                    {glowAmount, elapsed, 0.0f}, highlight);

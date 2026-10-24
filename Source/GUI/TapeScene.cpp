@@ -6,6 +6,7 @@
 
 #include "TapeScene.h"
 #include "RenderBackend.h"
+#include "SceneLayout.h"
 #include "TapeSceneShaders.h"
 #include "SceneFrame.h"
 
@@ -46,112 +47,66 @@ namespace {
 //  the reels side by side instead and the box is half empty above and below.
 //
 //  Right-handed, +x right, +y up, +z toward the eye.
-//==========================================================================
-constexpr float supplyCentreX = -0.315f;
-constexpr float supplyCentreY = 0.235f;
-constexpr float supplyRadius = 0.220f;
-
-constexpr float takeUpCentreX = 0.345f;
-constexpr float takeUpCentreY = -0.265f;
-constexpr float takeUpRadius = 0.190f;
-
-// The pack is stored as fractions of its own reel's radius, so the same two
-// numbers describe both reels whatever size each is drawn at.
-constexpr float packInnerFraction = 0.30f;
-constexpr float packEmptyFraction = 0.50f; // a supply reel running out
-constexpr float packFullFraction = 0.94f;  // a take-up reel running over
-
-// The pack stands proud of the reel's flange on both faces, which is what
-// makes a wound pack read as a thick roll rather than as a painted disc.
-constexpr float packHalfThickness = 0.100f;
-
-constexpr float tapeWidth = 0.040f;
-
-// The ribbon's six anchors: off the supply pack, down the middle, onto the
-// head's face, round the head's left edge, away along the bottom and onto the
-// take-up pack. Each one's z is the height the tape runs at there, which is
-// what puts it behind the reels' faces and in front of the head's without a
-// single depth-sorting rule. The first and last sit inside their own pack, so
-// the tape emerges from one and disappears into the other.
-const glm::vec3 ribbonAnchors[] = {{-0.205f, 0.085f, 0.00f},  {-0.075f, -0.145f, 0.05f},
-                                   {-0.125f, -0.265f, 0.07f}, {-0.265f, -0.325f, 0.06f},
-                                   {0.045f, -0.365f, 0.03f},  {0.245f, -0.165f, 0.00f}};
-
-constexpr float headCentreX = -0.175f;
-constexpr float headCentreY = -0.285f;
-constexpr float headCentreZ = 0.000f;
-constexpr float headHalfX = 0.075f;
-constexpr float headHalfY = 0.065f;
-constexpr float headHalfZ = 0.050f;
-
-//==========================================================================
-//  The control bank - the row of knobs and keys standing in FRONT of the
-//  machine, in the foreground strip the camera's downward tilt leaves empty.
 //
-//  It is the one piece of geometry in the scene that is not part of the
-//  transport, and it is here rather than in the 2D panel because the two are
-//  the same picture: a knob drawn by a LookAndFeel cannot be turned by the
-//  same camera that turns the reels, so a panel of 2D controls beside a 3D
-//  machine reads as a screenshot pasted onto a window. These are lit by the
-//  same light, occluded by the same depth buffer and turned by the same
-//  matrices as everything else.
-//
-//  Every number is in the scene's own units, and the strip is laid out along
-//  x with the bank's own centre at the origin so the five placements below
-//  are symmetric about it by construction rather than by arithmetic.
+//  Every number this scene is made of lives in SceneLayout.h - the deck, the
+//  bank's control table, the camera and the light - so the composition is one
+//  file rather than a copy per reader. These builders, the frame builder in
+//  TapeSceneFrame.cpp and tests/scene_frame all read that one copy.
 //==========================================================================
-constexpr float bankHalfWidth = 0.345f;
-constexpr float bankHalfHeight = 0.085f;
-constexpr float bankHalfDepth = 0.040f;
-constexpr float bankCentreZ = -0.200f;
+using j37::render::scene::bankCentreZ;
+using j37::render::scene::bankFaceZ;
+using j37::render::scene::bankHalfDepth;
+using j37::render::scene::bankHalfHeight;
+using j37::render::scene::bankHalfWidth;
+using j37::render::scene::bankKeyHalfX;
+using j37::render::scene::bankKeyHalfY;
+using j37::render::scene::bankKeyHalfZ;
+using j37::render::scene::bankKnobCount;
+using j37::render::scene::bankKnobFaceZ;
+using j37::render::scene::bankKnobRadius;
+using j37::render::scene::cameraFieldOfViewDegrees;
+using j37::render::scene::cameraPitchRadians;
+using j37::render::scene::cameraYawRadians;
+using j37::render::scene::controlBankCount;
+using j37::render::scene::controlPlacements;
+using j37::render::scene::headCentreX;
+using j37::render::scene::headCentreY;
+using j37::render::scene::headCentreZ;
+using j37::render::scene::headHalfX;
+using j37::render::scene::headHalfY;
+using j37::render::scene::headHalfZ;
+using j37::render::scene::knobArcMargin;
+using j37::render::scene::knobMaximumAngle;
+using j37::render::scene::knobMinimumAngle;
+using j37::render::scene::lightX;
+using j37::render::scene::lightY;
+using j37::render::scene::lightZ;
+using j37::render::scene::packEmptyFraction;
+using j37::render::scene::packFullFraction;
+using j37::render::scene::packHalfThickness;
+using j37::render::scene::packInnerFraction;
+using j37::render::scene::ribbonAnchorPositions;
+using j37::render::scene::sceneHalfDepth;
+using j37::render::scene::sceneHalfHeight;
+using j37::render::scene::sceneHalfWidth;
+using j37::render::scene::supplyCentreX;
+using j37::render::scene::supplyCentreY;
+using j37::render::scene::supplyRadius;
+using j37::render::scene::takeUpCentreX;
+using j37::render::scene::takeUpCentreY;
+using j37::render::scene::takeUpRadius;
+using j37::render::scene::tapeWidth;
 
-// The face of the bank, and the depth a knob's disc sits at. A knob is built
-// round its own origin with its face at +0.020, so its dial stands 0.045
-// proud of the bank's face - which is what makes the rim cast the shadow that
-// reads as "this is a knob" rather than "this is a circle".
-constexpr float bankFaceZ = bankCentreZ + bankHalfDepth;
-constexpr float bankKnobFaceZ = bankFaceZ + 0.020f;
-
-constexpr float bankKnobRadius = 0.060f;
-// The keycaps are smaller than they were (0.052 x 0.034). A key sits at the
-// end of the bank, one placement away from the third knob's own lit disc, and
-// at the old size the two met: the cap's right edge at 0.100 against a glow
-// that reaches 0.115 from that knob's centre - a key standing on the arc
-// around the knob beside it. Both numbers moved, and the glow moved further
-// (see its own scale below), so the gap is real rather than renamed.
-constexpr float bankKeyHalfX = 0.044f;
-constexpr float bankKeyHalfY = 0.028f;
-constexpr float bankKeyHalfZ = 0.026f;
-
-// The sweep a knob's index mark travels, and the sweep its lit arc covers -
-// the same two numbers the 2D panel's rotary drawing uses, so a knob in the
-// window and a knob in the panel move through the same arc.
-constexpr float knobMinimumAngle = -2.443461f; // -140 degrees
-constexpr float knobMaximumAngle = 2.443461f;  // +140 degrees
-constexpr float knobArcMargin = 0.244346f;     // 14 degrees, where the arc starts
-
-// How much of the scene the camera has to keep in frame, in the same units
-// as everything above and with a little slack for the view angle. The camera
-// distance is derived from these and the window's aspect every frame, so the
-// same composition survives the deck being 40 px shorter.
-constexpr float sceneHalfWidth = 0.56f;
-constexpr float sceneHalfHeight = 0.48f;
-constexpr float sceneHalfDepth = 0.30f;
-
-constexpr float cameraFieldOfViewDegrees = 30.0f;
-
-// How far round and down onto the deck the scene is turned. A little of both
-// is the whole of the 3D in the composition: the reels' discs read as
-// ellipses, the packs read as cylinders, and the head reads as a block.
-constexpr float cameraPitchRadians = 0.20f;
-constexpr float cameraYawRadians = -0.18f;
-
-// The light: over the operator's left shoulder and a little in front, which
-// is where a desk lamp on a real machine would be, and is what puts the
-// highlight on the upper-left of each reel and leaves the far rim dark.
-constexpr float lightX = -0.45f;
-constexpr float lightY = 0.72f;
-constexpr float lightZ = 0.53f;
+// The anchors as points. SceneLayout.h keeps them as plain numbers so a
+// harness with no maths library can include it; this is the one place in the
+// scene that wants them as vectors.
+const std::array<glm::vec3, ribbonAnchorPositions.size()> ribbonAnchors = [] {
+    std::array<glm::vec3, ribbonAnchorPositions.size()> anchors{};
+    for (std::size_t i = 0; i < anchors.size(); ++i)
+        anchors[i] = {ribbonAnchorPositions[i][0], ribbonAnchorPositions[i][1],
+                      ribbonAnchorPositions[i][2]};
+    return anchors;
+}();
 
 //==========================================================================
 //  Vertex layout, shared by every mesh: four floats of position - the
@@ -405,29 +360,6 @@ glm::vec3 catmullRom(
     return 0.5f * ((2.0f * p1) + (-p0 + p2) * t + (2.0f * p0 - 5.0f * p1 + 4.0f * p2 - p3) * t2 +
                    (-p0 + 3.0f * p1 - 3.0f * p2 + p3) * t3);
 }
-
-/** Where one control sits on the bank's face, and which mesh draws it.
-
-    The five are a TABLE rather than five blocks of code, for the same reason
-    the deck's rows are: the arithmetic that turns a placement into a matrix
-    is written once, and the only thing that differs between a knob and a key
-    is which row of this table it came from. It is also what the editor's
-    click handling reads, so a knob cannot be drawn in one place and respond
-    to the mouse in another. */
-struct BankPlacement {
-    float x;
-    bool isKey;
-};
-
-constexpr BankPlacement bankPlacements[] = {
-    {-0.245f, false}, // a knob
-    {-0.122f, false}, // a knob
-    {0.001f, false},  // a knob
-    {0.152f, true},   // a key
-    {0.266f, true}    // a key
-};
-
-constexpr int bankPlacementCount = static_cast<int>(std::size(bankPlacements));
 
 /** Pastes the precision literal through, and routes the source through
     JUCE's own v3 translators, which prepend `#version 150` and rewrite
@@ -749,8 +681,8 @@ int TapeScene::controlIndexAt(juce::Point<int> position) const {
     auto best = -1;
     auto bestDistance = std::numeric_limits<float>::max();
 
-    for (int i = 0; i < bankPlacementCount; ++i) {
-        const auto &placement = bankPlacements[i];
+    for (int i = 0; i < controlBankCount; ++i) {
+        const auto &placement = controlPlacements[i];
         const auto halfWidth = placement.isKey ? bankKeyHalfX : bankKnobRadius;
         const auto halfHeight = placement.isKey ? bankKeyHalfY : bankKnobRadius;
 
@@ -888,7 +820,7 @@ TapeScene::Geometry TapeScene::buildRibbon() {
     auto& indices = geometry.indices;
 
     constexpr int samples = 72;
-    constexpr auto anchorCount = static_cast<int>(sizeof(ribbonAnchors) / sizeof(ribbonAnchors[0]));
+    constexpr auto anchorCount = static_cast<int>(ribbonAnchors.size());
 
     // Catmull-Rom through the anchors, with the ends repeated so the curve starts
     // and finishes ON the reels rather than on a copy of one.
@@ -1107,8 +1039,8 @@ void TapeScene::drawControlBank(const glm::mat4 &viewProjection,
     // -------------------------------------------------------------------------
     //  The knobs and the keys, from the one placement table.
     // -------------------------------------------------------------------------
-    for (int i = 0; i < bankPlacementCount; ++i) {
-        const auto &placement = bankPlacements[i];
+    for (int i = 0; i < controlBankCount; ++i) {
+        const auto &placement = controlPlacements[i];
         const auto isKnob = !placement.isKey;
 
         // A knob's value is its own parameter, 0..1. The keys have no value: they
@@ -1143,7 +1075,7 @@ void TapeScene::drawControlBank(const glm::mat4 &viewProjection,
             // A key is pressed when the machine is running and released when it
             // is not - which is the whole of what a key on this bank has to say,
             // and is why there is no per-key state to keep in step with anything.
-            const auto pressed = (i == bankPlacementCount - 2) ? bankSpinning : bankRecording;
+            const auto pressed = (i == controlBankCount - 2) ? bankSpinning : bankRecording;
 
             shaderProgram->setUniform("uMode", static_cast<float>(keyMode));
             shaderProgram->setUniform("uKeyDown", pressed ? 1.0f : 0.0f);
@@ -1174,7 +1106,7 @@ void TapeScene::drawControlBank(const glm::mat4 &viewProjection,
         // light ON the face around its own knob instead of one spilling onto the
         // control beside it.
         const auto model =
-            faceModel * glm::translate(glm::mat4(1.0f), {bankPlacements[i].x, 0.0f, 0.008f}) *
+            faceModel * glm::translate(glm::mat4(1.0f), {controlPlacements[i].x, 0.0f, 0.008f}) *
             glm::scale(glm::mat4(1.0f), {bankKnobRadius * 1.55f, bankKnobRadius * 1.55f, 1.0f});
 
         shaderProgram->setUniformMat4("uModel", glm::value_ptr(model), 1, GL_FALSE);

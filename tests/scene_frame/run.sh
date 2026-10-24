@@ -5,10 +5,10 @@
 #   tests/scene_frame/run.sh
 #
 # Source/GUI/SceneFrame.h is the contract a native adapter receives, and
-# Source/GUI/SceneLayout.h is the deck geometry the frame builder and this test
-# both read. Neither needs JUCE, a GPU or a host: the frame is plain data and
-# isValid() is arithmetic on it, so the boundary can be measured on every pull
-# request instead of only where a native backend is built.
+# Source/GUI/SceneLayout.h is the deck geometry the scene, the frame builder
+# and this test all read. Neither needs JUCE, a GPU or a host: the frame is
+# plain data and isValid() is arithmetic on it, so the boundary can be measured
+# on every pull request instead of only where a native backend is built.
 #
 # The header is compiled exactly as it ships, and so is its implementation:
 # there is no extractor and no replica here.

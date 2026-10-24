@@ -8,7 +8,7 @@
 int main() {
     using namespace j37::render;
 
-    static_assert(scene::controlBankCount == static_cast<int>(scene::bankPlacementsX.size()));
+    static_assert(scene::controlBankCount == static_cast<int>(scene::controlPlacements.size()));
     static_assert(scene::bankKnobCount == 3);
     assert(scene::packInnerFraction < scene::packEmptyFraction);
     assert(scene::packEmptyFraction < scene::packFullFraction);

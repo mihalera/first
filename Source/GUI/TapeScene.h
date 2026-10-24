@@ -8,6 +8,7 @@
 
 #include <JuceHeader.h>
 #include "SceneFrame.h"
+#include "SceneLayout.h"
 
 // The GL typedefs (GLuint, GLint, GLsizei) and the GL commands this component
 // calls live in the module's own header, which the generated JuceHeader also
@@ -223,10 +224,12 @@ private:
         float colour[3] { 0.0f, 0.0f, 0.0f };
     };
 
-    static constexpr int controlBankCount = 5;
+    /** The bank's size, read from the layout header rather than restated: the
+        scene, the frame builder and the harness count the same controls. */
+    static constexpr int controlBankCount = j37::render::scene::controlBankCount;
 
     /** The first controlBankCount of those are knobs; the rest are keys. */
-    static constexpr int bankKnobCount = 3;
+    static constexpr int bankKnobCount = j37::render::scene::bankKnobCount;
 
     /** The control the editor puts a tooltip on, and the one a click on the bank
         is taken to mean. One control, not three: the bank is a picture of the
