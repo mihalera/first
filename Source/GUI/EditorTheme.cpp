@@ -137,6 +137,9 @@ void FirstAudioProcessorEditor::applyTheme() {
     vinylCartridgeLabel.setColour(juce::Label::textColourId, palette.secondary);
     delaySyncLabel.setColour(juce::Label::textColourId, palette.secondary);
     antiPhaseGuardLabel.setColour(juce::Label::textColourId, palette.secondary);
+    // The renderer selector's caption is a settings row's caption like LANGUAGE's -
+    // unstyled it would keep the ivory ink on the charcoal and metal panels.
+    backendLabel.setColour(juce::Label::textColourId, palette.secondary);
     neuralStatusLabel.setColour(juce::Label::textColourId, palette.secondary);
     // The IR readout re-inks itself in refreshIrStatus() on every change; this
     // covers the theme switch, which repaints without a status change.
@@ -204,6 +207,9 @@ void FirstAudioProcessorEditor::applyTheme() {
     // the reason applyLanguage re-inks textColourId itself is only to colour the
     // window BETWEEN those two moments.
     styleCombo(languageBox);
+    // The renderer selector is the settings band's fourth combo and follows the
+    // same palette as the three above it.
+    styleCombo(backendBox);
 
     // The lists' popup menus paint through the LookAndFeel_V4 item drawing, which
     // reads THESE colour ids off the attached LookAndFeel - at theme time there is

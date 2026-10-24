@@ -228,7 +228,7 @@ namespace j37panel
                      2, 2, { 62, 63 } },
         //  No knobs of its own: SETTINGS holds the engine and interface
         //  preferences, shown by setCurrentTab rather than by the knob grid.
-             { "SETTINGS", "The engine-level switches and interface preferences: rate, language and UI sounds.",
+             { "SETTINGS", "The engine-level switches and interface preferences: rate, language, renderer and UI sounds.",
                                0, 2, {} },
              { "AUTOTUNE", "Pitch correction with safe realtime tracking and scale quantisation.",
                                0, 1, {} },

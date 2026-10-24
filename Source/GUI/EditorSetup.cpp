@@ -30,6 +30,10 @@
 // this phase moved here: a translation unit includes what its own text names.
 #include "GUI/RenderBackend.h"
 
+// The machine-wide preferences file the renderer selector remembers its choice
+// in - the same file the two file pickers remember their folders in.
+#include "GUI/EditorPreferences.h"
+
 // Only the names this file's own text uses: a header member that is not
 // reachable from here should not look reachable.
 using j37panel::controlSpecs;
@@ -1323,6 +1327,69 @@ void FirstAudioProcessorEditor::setUpSettingsSwitches() {
                  "compiled out.");
     parameterSheetButton.onClick = [this] { toggleParameterSheet(); };
     addAndMakeVisible(parameterSheetButton);
+
+    // ---------------------------------------------------------------
+    //  BACKEND - which renderer draws the panel's transport, in SETTINGS's
+    //  first band beside OVERSAMPLING and USER THEME.
+    //
+    //  The header already names the renderer that is RUNNING; this is the only
+    //  place the user can say what it should run. The list is the paths this
+    //  build can HONOUR rather than every name the enum has: a native adapter
+    //  that does not draw the TapeScene frame yet is added as PENDING and stays
+    //  disabled, because a selectable entry that changed nothing would be the
+    //  panel claiming a capability the build does not have. RenderBackend.h owns
+    //  both decisions - which backends are selectable and what a choice runs.
+    //
+    //  The choice is stored in the editor's preferences file rather than in a
+    //  parameter: it describes the machine's renderer, not the sound, so a
+    //  session opened on another computer must not carry it - and it must
+    //  survive the host closing and re-creating the editor.
+    // ---------------------------------------------------------------
+    backendBox.addItem(j37::render::backendName(j37::render::Backend::autoDetect), 1);
+    backendBox.addItem(j37::render::backendName(j37::render::Backend::openGL), 2);
+    backendBox.addItem(j37::render::backendName(j37::render::Backend::cpu), 3);
+    backendBox.setItemEnabled(2, j37::render::isBackendSelectable(j37::render::Backend::openGL));
+
+    if (const auto configured = j37::render::configuredBackend();
+        j37::render::isNativeBackendPending(configured)) {
+        backendBox.addItem(juce::String(j37::render::backendName(configured)) + " (PENDING)", 4);
+        backendBox.setItemEnabled(4, false);
+    }
+
+    renderBackendChoice = j37panel::rememberedRenderBackend();
+    backendBox.setSelectedId(renderBackendChoice == j37::render::Backend::cpu      ? 3
+                                 : renderBackendChoice == j37::render::Backend::openGL ? 2
+                                                                                     : 1,
+                             juce::dontSendNotification);
+    backendBox.setLookAndFeel(&customLookAndFeel);
+    setTip(backendBox, "BACKEND - which renderer draws the panel's 3D transport. "
+                       "AUTO runs the renderer this build was configured for; "
+                       "OPENGL forces the GPU path; CPU draws the transport with "
+                       "JUCE's software painter, which is the choice for a driver, "
+                       "a remote session or a VM where OpenGL misbehaves. A backend "
+                       "this build only stages is listed as PENDING and cannot be "
+                       "selected, because it does not draw the scene yet. The choice "
+                       "is remembered for this machine, not saved in the session: it "
+                       "describes what this computer can draw with, not what the mix "
+                       "is.");
+    backendBox.onChange = [this] {
+        const auto selected = backendBox.getSelectedId();
+        const auto chosen = selected == 3 ? j37::render::Backend::cpu
+                            : selected == 2 ? j37::render::Backend::openGL
+                                            : j37::render::Backend::autoDetect;
+        j37panel::rememberRenderBackend(chosen);
+        applyRenderBackend(chosen);
+    };
+    styleLabel(backendLabel, "BACKEND", 9.0f, paletteFor(false).secondary, true,
+               juce::Justification::left);
+    addAndMakeVisible(backendLabel);
+    addAndMakeVisible(backendBox);
+
+    // The caption follows the choice that will actually run, not the wish: a
+    // stored OPENGL on a build whose scene has no GL path reads BACKEND CPU, the
+    // same answer setUpOpenGlRendering() acts on.
+    rendererLabel.setText(j37::render::backendCaption(renderBackendChoice),
+                          juce::dontSendNotification);
 }
 
 void FirstAudioProcessorEditor::toggleParameterSheet() {
@@ -1842,6 +1909,43 @@ void FirstAudioProcessorEditor::setUpSceneAndMeters() {
     applyTheme();
 }
 
+void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend) {
+    renderBackendChoice = backend;
+    rendererLabel.setText(j37::render::backendCaption(backend), juce::dontSendNotification);
+
+    const auto runsOnGpu = j37::render::runsOnOpenGL(backend);
+
+    // Whatever the user asked for wins: stop the startup retries, or they would
+    // switch the accelerator back on seconds after the user chose CPU.
+    openGLAttachAttemptsLeft = 0;
+
+    if (runsOnGpu) {
+        // The same context settings setUpOpenGlRendering() applies: a machine that
+        // STARTED on CPU never ran that phase's block, and attaching a context
+        // whose component painting is off would show a blank panel.
+        openGLContext.setComponentPaintingEnabled(true);
+        openGLContext.setContinuousRepainting(false);
+        openGLContext.setSwapInterval(1);
+        openGLContext.attachTo(*this);
+        // attachTo() returns void, so the documented way to find out whether the
+        // context came up is to ask afterwards - and to keep the bounded retry
+        // budget when the host has not created its peer yet.
+        if (!openGLContext.isAttached())
+            openGLAttachAttemptsLeft = 90;
+    } else {
+        openGLContext.detach();
+    }
+
+    // The scene owns a second context. A false scene detaches it and leaves the
+    // component's own paint drawing the transport, so the strip is never empty.
+    tapeScene.setSceneEnabled(runsOnGpu);
+
+    // Both paths need the strip redrawn: the GPU path draws the scene, the CPU
+    // path the flat transport underneath it.
+    tapeScene.repaint();
+    repaint(deckAnimationBounds());
+}
+
 void FirstAudioProcessorEditor::setUpOpenGlRendering() {
     // Native command renderers currently implement presentation only. Do not
     // attach them to a host-owned child surface until TapeScene's scene geometry
@@ -1849,6 +1953,12 @@ void FirstAudioProcessorEditor::setUpOpenGlRendering() {
     // This is intentionally a no-op for native backends: selecting Vulkan,
     // Metal, or DirectX must not create a second surface that covers the host UI.
     if (!j37::render::usesOpenGL())
+        return;
+
+    // The user's remembered choice has the last word over the build's default: a
+    // machine set to CPU in SETTINGS must open on the software path rather than
+    // re-attaching the context the user turned off.
+    if (!j37::render::runsOnOpenGL(renderBackendChoice))
         return;
 
     // OpenGL is automatic and best-effort. JUCE's ordinary component paint
