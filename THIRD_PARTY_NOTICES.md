@@ -38,7 +38,7 @@ column names the file in the tree that carries the text.
 | **nlohmann/json** - Niels Lohmann | `v3.12.0` | MIT, Copyright (c) 2013-2025 Niels Lohmann | `ThirdParty/nlohmann_json/LICENSE.MIT` |
 | **pocketfft** - Max-Planck-Society | `c90e55b3` | BSD 3-Clause, Copyright (C) 2010-2018 Max-Planck-Society | `ThirdParty/pocketfft/LICENSE.md` |
 | **signalsmith-stretch** - Signalsmith Audio | `1.4.0` | MIT, Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd. | `ThirdParty/signalsmith-stretch/LICENSE.txt` |
-| **signalsmith-linear** (inside the stretch checkout) | `0.6.4` | MIT, Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd. | `ThirdParty/signalsmith-stretch/signalsmith-linear/LICENSE.txt` |
+| **signalsmith-linear** (inside the stretch checkout) | `0.6.6` | MIT, Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd. | `ThirdParty/signalsmith-stretch/signalsmith-linear/LICENSE.txt` |
 | **xsimd** - xtensor-stack | `14.3.0` | BSD 3-Clause, Copyright (c) 2016 Johan Mabille, Sylvain Corlay, Wolf Vollprecht, Martin Renou; 2016 QuantStack; 2018 Serge Guelton | `ThirdParty/xsimd/LICENSE` |
 
 **Eigen is the one MPL-2.0 component here**, and MPL is file-level copyleft rather than
@@ -72,7 +72,7 @@ binary - see
 | **readerwriterqueue** | `v1.0.7` | Simplified BSD (BSD-2-Clause) | <https://github.com/cameron314/readerwriterqueue> |
 | **xsimd** (fallback for the vendored copy) | `14.3.0` | BSD 3-Clause | <https://github.com/xtensor-stack/xsimd> |
 | **signalsmith-stretch** (fallback) | `1.4.0` | MIT | <https://github.com/Signalsmith-Audio/signalsmith-stretch> |
-| **signalsmith-linear** (fallback) | `0.6.4` | MIT | <https://github.com/Signalsmith-Audio/linear> |
+| **signalsmith-linear** (fallback) | `0.6.6` | MIT | <https://github.com/Signalsmith-Audio/linear> |
 | **pocketfft** (fallback) | `c90e55b3` | BSD 3-Clause | <https://github.com/mreineck/pocketfft> |
 | **nlohmann_json** (fallback) | `v3.12.0` | MIT | <https://github.com/nlohmann/json> |
 | **farbot** (fallback) | `d8f132c2` | MIT | <https://github.com/hogliux/farbot> |
@@ -81,15 +81,16 @@ binary - see
 | **NeuralAmpModelerCore** (fallback) | `0b3d3c97` (`v0.6.0`) | MIT | <https://github.com/sdatkinson/NeuralAmpModelerCore> |
 | **Eigen** (fallback) | `bc3b3987` (`3.5.0`) | MPL-2.0 | <https://gitlab.com/libeigen/eigen> |
 | **sokol_gfx** | `2e75443d` | zlib | <https://github.com/floooh/sokol> |
-| **q_dsp** / **cycfi_infra** | `v1.0.1` / `2024_MAY` | MIT | <https://github.com/cycfi/q> |
+| **q_dsp** (cycfi/q) | `v1.5.4` | MIT | <https://github.com/cycfi/q> |
+| **cycfi_infra** | `2024_MAY` | **no licence file upstream** - see the note below | <https://github.com/cycfi/infra> |
 | **AudioFFT** | `0893b532` | MIT | <https://github.com/HiFi-LoFi/AudioFFT> |
 | **dattorro-verb** (fallback) | `41e976a0` | MIT | <https://github.com/el-visio/dattorro-verb> |
 | **dr_libs** (fallback for the vendored copy) | `wav-0.14.5` | Unlicense **or** MIT-0, the user's choice | <https://github.com/mackron/dr_libs> |
 | **whetstone** | `83d715a0` | BSD 3-Clause | <https://github.com/unicornsasfuel/whetstone> |
 | **multiband-transient-shaper** | `7c77e23c` | MIT | <https://github.com/sevagh/multiband-transient-shaper> |
 | **transdes** | `0.0.3` | MIT | <https://github.com/ylmrx/transdes> |
-| **kissfft** | `131.1.0` | BSD-3-Clause (`SPDX-License-Identifier` in its `COPYING`) | <https://github.com/mborgerding/kissfft> |
-| **imgui** | `v1.91.5` | MIT | <https://github.com/ocornut/imgui> |
+| **kissfft** | `131.2.0` | BSD-3-Clause (`SPDX-License-Identifier` in its `COPYING`) | <https://github.com/mborgerding/kissfft> |
+| **imgui** | `v1.93.0` | MIT | <https://github.com/ocornut/imgui> |
 | **yasio** | `v4.4.1` | MIT, with the Anti-996 Licence appended in the same file | <https://github.com/yasio/yasio> |
 | **soundpipe** | `3efb43bd` | MIT | <https://github.com/paulbatchelor/soundpipe> |
 | **ChowDSP_ChowCentaur** | `2c0414f3` | BSD 3-Clause | <https://github.com/AviateAudio/ChowDSP_ChowCentaur> |
@@ -126,7 +127,7 @@ Fetched only under `-DJ37_BUILD_TESTS=ON`, which no shipped build sets, and
 | **Catch2** | `v3.9.1` | BSL-1.0 | <https://github.com/catchorg/Catch2> |
 | **nanobench** | `v4.6.0` | MIT | <https://github.com/martinus/nanobench> |
 | **libebur128** | `v1.2.6` (vendored) | MIT | <https://github.com/jiixyj/libebur128> |
-| **CPM.cmake** (the fetch tool itself) | `0.40.2` | MIT | <https://github.com/cpm-cmake/CPM.cmake> |
+| **CPM.cmake** (the fetch tool itself) | `0.43.2` | MIT | <https://github.com/cpm-cmake/CPM.cmake> |
 
 `libebur128` is the loudness ORACLE, and it is `tests/dsp`'s only dependency: it is
 compiled into `tests/dsp/loudness_oracle_test` and into nothing else, so it is not on
@@ -196,6 +197,13 @@ linked, and it used to be both.
 * **aubio** is fetched by CMake and is **GPL-3.0**, but it is not linked and not
   included - it cannot affect a binary. It is dead dependency weight rather than
   a licensing problem, and it is on the list to remove.
+* **cycfi_infra** ships **no licence file at all** - no `LICENSE`, no SPDX
+  metadata, and a README that does not mention one - so there is no grant of
+  rights to rely on. It is fetched only because `q_dsp` cannot compile without
+  its `<infra/support.hpp>`, and nothing in `Source/` includes either of them.
+  Both stay off the link line; vendoring or shipping anything built against
+  them needs the licence question answered first, which is why this row says so
+  rather than repeating the MIT of its neighbour.
 
 Before publishing a binary, read the three documents that already say this in
 the build's own words: `cmake/J37Dependencies.cmake` (what each package is for),

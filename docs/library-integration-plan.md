@@ -60,7 +60,7 @@ them the honest answer is "nothing I can name", and that is a finding, not an om
 | `dr_libs` (`dr_wav.h`) | vendored `wav-0.14.5` | Unlicense / MIT-0 | `Source/DSP/NoiseDecoder.*`, the vinyl stage's noise print |
 | `chowdsp_math` (+ `chowdsp_simd`, which it includes) | `v2.4.0` | BSD-3 | metering and auto-gain dB/exp paths |
 | `xsimd` | vendored `14.3.0` | BSD-3 | **on by default** via `J37_USE_SIMD_TANH`; `-DOFF` restores `std::tanh` |
-| `signalsmith-stretch` (+ `signalsmith-linear`) | vendored `1.4.0` / `0.6.4` | MIT | `Source/DSP/CorrectorStage.h` engine 2, **off by default** |
+| `signalsmith-stretch` (+ `signalsmith-linear`) | vendored `1.4.0` / `0.6.6` | MIT | `Source/DSP/CorrectorStage.h` engine 2, **off by default** |
 | `melatonin_inspector` | `9c483f86` | MIT | `JUCE_DEBUG` builds only |
 
 The rows marked **opt-in** are the model for how an audio-changing library arrives: an
@@ -92,7 +92,7 @@ with them the last LGPL text in the repository.)
 (One row left this table in WP2: `dr_libs` had a caller added rather than a reason found, and it now sits in 2a.)
 | `dywapitchtrack`, `yin_pitch`, `pitch_detector` | MIT / see upstream | §4. Three rival detectors against a measured YIN. A replacement has to beat the printed error, not the include graph |
 | `sndfile` | **LGPL-2.1** | Not planned while `dr_wav` decodes the format the feature needs. An LGPL decoder is the same obligation WP4 is trying to shed |
-| `q_dsp` / `cycfi_infra` | MIT | §4. The transient shaper's envelopes are its own and pinned by `tests/unit` |
+| `q_dsp` / `cycfi_infra` | MIT / **none upstream** (`cycfi_infra`) | §4. The transient shaper's envelopes are its own and pinned by `tests/unit`. `q_dsp` is MIT; `cycfi_infra`, which Q includes, ships no licence file - see `THIRD_PARTY_NOTICES.md`. Neither is linked |
 | `rack`, `yasio`, `imgui` | GPL-3 + plugin exception, MIT + Anti-996, MIT | §4. A host runtime, a socket library, and a second immediate-mode UI inside a JUCE component that already has one |
 | `sokol_gfx` | zlib | **Selectable backend** (`J37_RENDER_BACKEND=SOKOL`), staged: `Source/GUI/NativeRenderer_Sokol.cpp` owns a JUCE GL context, clears and presents; `Source/GUI/SokolGfxImpl.cpp` compiles the library once and without JUCE. Not advertised for the scene until the tape scene is ported |
 | `transdes`, `whetstone`, `multiband_transient_shaper` | MIT, BSD-3, MIT | Research copies of shaper ideas. The shaper they informed is `Source/DSP/TransientShaper.h`; none of the three is a dependency of it |
@@ -129,10 +129,10 @@ rather than run it. `tests/fuzz/fuzz_noise_decoder.cpp` compiles the shipping
 input - a refusal names a reason and touches nothing, an acceptance is playable
 (non-zero length, both channels that long, a positive rate, finite samples), and
 the same bytes decode the same way twice. Two mutators, one source: the file's
-own `main` is a fixed, reproducible sweep of 1532 inputs (truncations, bit flips
+own `main` is a fixed, reproducible sweep of 1541 inputs (truncations, bit flips
 across the header, zeroed and maximal channel/rate/size fields, appended
 garbage, random buffers) that runs on any C++17 compiler under ASan + UBSan and
-reaches 5 of the decoder's refusal branches; with `-fsanitize=fuzzer` on a clang
+reaches 6 of the decoder's refusal branches; with `-fsanitize=fuzzer` on a clang
 that has the runtime, the same assertions are driven by coverage for twenty
 seconds from the sweep's own seeds. The sweep is the half that cannot be
 skipped, which is why the harness is a gate on the compiler CI already uses

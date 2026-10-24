@@ -110,7 +110,7 @@ endfunction()
 #    ThirdParty/farbot/              hogliux/farbot  @ d8f132c2 (include/)
 #    ThirdParty/pocketfft/           mreineck/pocketfft @ c90e55b3 (root header)
 #    ThirdParty/signalsmith-stretch/ Signalsmith-Audio/signalsmith-stretch @ 1.4.0
-#                                    + sibling signalsmith-linear @ 0.6.4 inside
+#                                    + sibling signalsmith-linear @ 0.6.6 inside
 #    ThirdParty/nlohmann_json/       nlohmann/json @ v3.12.0 (single_include/)
 #    ThirdParty/xsimd/               xtensor-stack/xsimd @ 14.3.0 (include/)
 #    ThirdParty/glm/                 g-truc/glm @ 1.0.3 (repo root)
@@ -301,7 +301,9 @@ CPMAddPackage(
 #  "signalsmith-linear" - the include resolves against the includING file's
 #  directory first, so that layout is the whole integration; exposing linear's
 #  root on the include path would NOT work, because the include is namespaced
-#  by the folder name. Pinned to the 0.6.4 tag.
+#  by the folder name. Pinned to the 0.6.6 tag, which is also the version the
+#  vendored sibling inside ThirdParty/signalsmith-stretch carries - the two paths
+#  must name the same release or the vendored build and the fetched one differ.
 #
 #  Both fetches are guarded together and registered together: the sibling
 #  download's SOURCE_DIR is derived from the stretch checkout's, so fetching
@@ -999,8 +1001,8 @@ endif()
 #  than being wrapped in a target that would fail to link or a note that would
 #  have to be found later.
 #
-#  Five of the six carry a permissive licence - BSL-1.0, Zlib, MIT, BSD-3 and
-#  MIT - so they are safe to vendor into a closed-source plugin. The sixth
+#  Five of the six carry a permissive licence - MIT, Zlib and BSD-3 among them -
+#  so they are safe to vendor into a closed-source plugin. The sixth
 #  (cycfi/infra, below) ships NO licence at all, which is a question for a
 #  lawyer rather than something to paper over; it is fetched because Q cannot
 #  compile without it, and it is called out again at its own block.
@@ -1012,10 +1014,10 @@ endif()
 
 # ------------------------------------------------------------------------------
 #  Q - cycfi/q, the Q Audio DSP Library. A header-only C++20 audio DSP library
-#  (BSL-1.0, the Boost licence: permissive, and not MIT as one might assume from
-#  the author's other projects): filters, oscillators, envelopes, pitch and
-#  onset detection, written to run on small microcontrollers. Pin v1.0.1, the
-#  1.0 release. C++20 matches this project, so the standard is not a barrier.
+#  (MIT - read from its own LICENSE at the pin below): filters, oscillators,
+#  envelopes, pitch and onset detection, written to run on small
+#  microcontrollers. Pin v1.5.4, the release current when the pin was last
+#  checked. C++20 matches this project, so the standard is not a barrier.
 #
 #  DOWNLOAD_ONLY and exposed include-only rather than added as a subproject. Q
 #  DOES ship a CMakeLists - it declares an INTERFACE target called libq, so
