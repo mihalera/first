@@ -1,8 +1,10 @@
 #include "TapeScene.h"
+#include "SceneLayout.h"
 
 #include <glm/gtc/matrix_transform.hpp>
 #include <glm/gtc/type_ptr.hpp>
 
+#include <algorithm>
 #include <array>
 
 namespace {
@@ -15,51 +17,41 @@ constexpr std::uint32_t bankKnobMeshIndex = 5;
 constexpr std::uint32_t bankKeyMeshIndex = 6;
 constexpr std::uint32_t bankGlowMeshIndex = 7;
 
-constexpr float bankHalfWidth = 0.345f;
-constexpr float bankHalfHeight = 0.085f;
-constexpr float bankHalfDepth = 0.040f;
-constexpr float bankCentreZ = -0.200f;
-constexpr float bankFaceZ = bankCentreZ + bankHalfDepth;
-// The deck's own geometry, mirrored from the block at the top of TapeScene.cpp.
-// This file BUILDS the frame the GPU path draws from, and the CPU paint path
-// beside it still draws the panel with its own copies - so the two have to agree
-// on where the supply reel, the take-up, the head and the light are, and the
-// numbers below are that agreement written down twice. They are the values
-// TapeScene.cpp's anonymous namespace declares, not a second opinion.
-constexpr float supplyCentreX = -0.315f;
-constexpr float supplyCentreY = 0.235f;
-constexpr float supplyRadius = 0.220f;
-
-constexpr float takeUpCentreX = 0.345f;
-constexpr float takeUpCentreY = -0.265f;
-constexpr float takeUpRadius = 0.190f;
-
-// The pack stands proud of the reel's flange on both faces, which is what makes a
-// wound pack read as a thick roll rather than as a painted disc.
-constexpr float packHalfThickness = 0.100f;
-constexpr float tapeWidth = 0.040f;
-
-constexpr float headCentreX = -0.175f;
-constexpr float headCentreY = -0.285f;
-constexpr float headCentreZ = 0.000f;
-
-// Over the operator's left shoulder and a little in front: the highlight on the
-// upper-left of each reel and a dark far rim.
-constexpr float lightX = -0.45f;
-constexpr float lightY = 0.72f;
-constexpr float lightZ = 0.53f;
-
-constexpr float bankKnobRadius = 0.060f;
-constexpr float bankKeyHalfX = 0.044f;
-constexpr float bankKeyHalfY = 0.028f;
-constexpr float bankKeyHalfZ = 0.026f;
-constexpr float knobMinimumAngle = -2.443461f;
-constexpr float knobMaximumAngle = 2.443461f;
-constexpr float packInnerFraction = 0.30f;
-constexpr float packEmptyFraction = 0.50f;
-constexpr float packFullFraction = 0.94f;
-constexpr float bankPlacementsX[]{-0.245f, -0.122f, 0.001f, 0.152f, 0.266f};
-constexpr bool bankPlacementsAreKeys[]{false, false, false, true, true};
+// The deck's own geometry. The values live in SceneLayout.h so this builder and
+// tests/scene_frame read one copy rather than two, and so a change to the
+// layout is a change in a header the harness can see. The GL paint path in
+// TapeScene.cpp still carries its own copy of these numbers.
+using j37::render::scene::bankCentreZ;
+using j37::render::scene::bankHalfDepth;
+using j37::render::scene::bankHalfHeight;
+using j37::render::scene::bankHalfWidth;
+using j37::render::scene::bankKeyHalfX;
+using j37::render::scene::bankKeyHalfY;
+using j37::render::scene::bankKeyHalfZ;
+using j37::render::scene::bankKnobCount;
+using j37::render::scene::bankKnobRadius;
+using j37::render::scene::bankPlacementsAreKeys;
+using j37::render::scene::bankPlacementsX;
+using j37::render::scene::controlBankCount;
+using j37::render::scene::headCentreX;
+using j37::render::scene::headCentreY;
+using j37::render::scene::headCentreZ;
+using j37::render::scene::knobMaximumAngle;
+using j37::render::scene::knobMinimumAngle;
+using j37::render::scene::lightX;
+using j37::render::scene::lightY;
+using j37::render::scene::lightZ;
+using j37::render::scene::packEmptyFraction;
+using j37::render::scene::packFullFraction;
+using j37::render::scene::packHalfThickness;
+using j37::render::scene::packInnerFraction;
+using j37::render::scene::supplyCentreX;
+using j37::render::scene::supplyCentreY;
+using j37::render::scene::supplyRadius;
+using j37::render::scene::takeUpCentreX;
+using j37::render::scene::takeUpCentreY;
+using j37::render::scene::takeUpRadius;
+using j37::render::scene::tapeWidth;
 
 std::array<float, 16> matrix4(const glm::mat4 &matrix) {
     std::array<float, 16> result{};
@@ -82,17 +74,20 @@ std::array<float, 3> colour3(juce::Colour colour) {
     return {colour.getFloatRed(), colour.getFloatGreen(), colour.getFloatBlue()};
 }
 } // namespace
+
 void TapeScene::appendDraw(j37::render::SceneFrame &frame,
                            std::uint32_t meshIndex,
                            j37::render::SceneMaterial material,
                            const glm::mat4 &model,
                            const juce::Colour &baseColour,
-                           std::array<float, 3> parameters) const {
+                           std::array<float, 3> parameters,
+                           const juce::Colour &highlightColour) const {
     j37::render::SceneDraw draw;
     draw.model = matrix4(model);
     const auto normal = glm::transpose(glm::inverse(glm::mat3(model)));
     draw.normalMatrix = matrix3(normal);
     draw.baseColour = colour4(baseColour);
+    draw.highlightColour = colour3(highlightColour);
     draw.parameters = parameters;
     draw.meshIndex = meshIndex;
     draw.material = material;
@@ -112,11 +107,6 @@ j37::render::SceneFrame TapeScene::buildSceneFrame(int width,
                                                    float flutter,
                                                    float reduction,
                                                    float elapsed) const {
-    using j37::render::SceneDraw;
-    using j37::render::SceneMaterial;
-    using j37::render::SceneMesh;
-    using j37::render::SceneVertex;
-
     j37::render::SceneFrame frame;
     frame.width = width;
     frame.height = height;
@@ -133,18 +123,26 @@ j37::render::SceneFrame TapeScene::buildSceneFrame(int width,
     frame.textureWeights = {packedWeights.getFloatRed(), packedWeights.getFloatGreen(),
                             packedWeights.getFloatBlue()};
 
-    frame.meshes.reserve(8);
-    frame.meshes.push_back(buildReel());
-    frame.meshes.push_back(buildTapePack());
-    frame.meshes.push_back(buildRibbon());
-    frame.meshes.push_back(buildHead());
-    const auto bank = buildControlBank();
-    frame.meshes.push_back(bank.body);
-    frame.meshes.push_back(bank.knob);
-    frame.meshes.push_back(bank.key);
-    frame.meshes.push_back(bank.knobGlow);
+    // The topology is the same on every frame, so it is built once and shared:
+    // rebuild at the editor's refresh rate would allocate tens of thousands of
+    // vertices per paint for data that never moves.
+    static const auto sharedMeshes = [] {
+        auto built = std::make_shared<std::vector<j37::render::SceneMesh>>();
+        built->reserve(8);
+        built->push_back(buildReel());
+        built->push_back(buildTapePack());
+        built->push_back(buildRibbon());
+        built->push_back(buildHead());
+        const auto bank = buildControlBank();
+        built->push_back(bank.body);
+        built->push_back(bank.knob);
+        built->push_back(bank.key);
+        built->push_back(bank.knobGlow);
+        return std::shared_ptr<const std::vector<j37::render::SceneMesh>>(std::move(built));
+    }();
+    frame.meshes = sharedMeshes;
 
-    frame.draws.reserve(2 * 2 + 1 + 1 + 1 + controlBankCount + bankKnobCount);
+    frame.draws.reserve(10 + controlBankCount + bankKnobCount);
     const auto bodyLight = body.brighter(0.18f);
     const auto tapeOuterSupply =
         packEmptyFraction + (packFullFraction - packEmptyFraction) * (1.0f - tapeTransfer);
@@ -155,9 +153,10 @@ j37::render::SceneFrame TapeScene::buildSceneFrame(int width,
         const auto model = scene * glm::translate(glm::mat4(1.0f), {x, y, 0.0f}) *
                            glm::rotate(glm::mat4(1.0f), angle, {0.0f, 0.0f, 1.0f}) *
                            glm::scale(glm::mat4(1.0f), {radius, radius, radius});
-        appendDraw(frame, reelMeshIndex, SceneMaterial::solid, model, body);
-        appendDraw(frame, tapePackMeshIndex, SceneMaterial::tapePack, model, tape,
-                   {packInnerFraction, outer, packHalfThickness});
+        appendDraw(frame, reelMeshIndex, j37::render::SceneMaterial::solid, model, body, {},
+                   highlight);
+        appendDraw(frame, tapePackMeshIndex, j37::render::SceneMaterial::tapePack, model, tape,
+                   {packInnerFraction, outer, packHalfThickness}, highlight);
     };
     addReelDraws(supplyCentreX, supplyCentreY, supplyRadius, supplyAngle, tapeOuterSupply);
     addReelDraws(takeUpCentreX, takeUpCentreY, takeUpRadius, takeUpAngle, tapeOuterTakeUp);
@@ -167,47 +166,53 @@ j37::render::SceneFrame TapeScene::buildSceneFrame(int width,
     const juce::Colour headColour(juce::Colour::fromFloatRGBA(
         highlight.getFloatRed() * 0.55f + 0.06f, highlight.getFloatGreen() * 0.55f + 0.06f,
         highlight.getFloatBlue() * 0.55f + 0.07f, 1.0f));
-    appendDraw(frame, headMeshIndex, SceneMaterial::solid, headModel, headColour);
+    appendDraw(frame, headMeshIndex, j37::render::SceneMaterial::solid, headModel, headColour, {},
+               highlight);
     const auto ribbonColour = juce::Colour::fromFloatRGBA(
         tape.getFloatRed() * 1.35f + 0.02f, tape.getFloatGreen() * 1.35f + 0.02f,
         tape.getFloatBlue() * 1.35f + 0.02f, 1.0f);
-    appendDraw(frame, ribbonMeshIndex, SceneMaterial::ribbon, scene, ribbonColour,
-               {flutter, elapsed, tapeWidth});
+    appendDraw(frame, ribbonMeshIndex, j37::render::SceneMaterial::ribbon, scene, ribbonColour,
+               {flutter, elapsed, tapeWidth}, highlight);
 
     const auto bankModel = scene * glm::translate(glm::mat4(1.0f), {0.0f, 0.0f, bankCentreZ});
     const auto faceModel = bankModel * glm::translate(glm::mat4(1.0f), {0.0f, 0.0f, bankHalfDepth});
-    appendDraw(frame, bankBodyMeshIndex, SceneMaterial::controlPanel, faceModel, body,
-               {bankHalfWidth, bankHalfHeight, bankHalfDepth});
+    appendDraw(frame, bankBodyMeshIndex, j37::render::SceneMaterial::controlPanel, faceModel, body,
+               {bankHalfWidth, bankHalfHeight, bankHalfDepth}, highlight);
 
     for (int i = 0; i < controlBankCount; ++i) {
-        const auto isKnob = !bankPlacementsAreKeys[i];
+        const auto slot = static_cast<std::size_t>(i);
+        const auto isKnob = !bankPlacementsAreKeys[slot];
         const auto value =
-            isKnob ? knobValues[static_cast<std::size_t>(i)].load(std::memory_order_relaxed) : 0.5f;
+            isKnob ? knobValues[slot].load(std::memory_order_relaxed) : 0.5f;
         const auto angle = knobMinimumAngle + value * (knobMaximumAngle - knobMinimumAngle);
         const auto model =
             isKnob
-                ? faceModel * glm::translate(glm::mat4(1.0f), {bankPlacementsX[i], 0.0f, 0.0f}) *
+                ? faceModel * glm::translate(glm::mat4(1.0f), {bankPlacementsX[slot], 0.0f, 0.0f}) *
                       glm::rotate(glm::mat4(1.0f), angle, {0.0f, 0.0f, 1.0f}) *
                       glm::scale(glm::mat4(1.0f), {bankKnobRadius, bankKnobRadius, bankKnobRadius})
                 : faceModel *
-                      glm::translate(glm::mat4(1.0f), {bankPlacementsX[i], 0.0f, bankKeyHalfZ}) *
+                      glm::translate(glm::mat4(1.0f), {bankPlacementsX[slot], 0.0f, bankKeyHalfZ}) *
                       glm::scale(glm::mat4(1.0f), {bankKeyHalfX, bankKeyHalfY, bankKeyHalfZ});
         appendDraw(frame, isKnob ? bankKnobMeshIndex : bankKeyMeshIndex,
-                   isKnob ? SceneMaterial::knob : SceneMaterial::key, model, bodyLight,
+                   isKnob ? j37::render::SceneMaterial::knob : j37::render::SceneMaterial::key,
+                   model, bodyLight,
                    {isKnob ? knobMinimumAngle : 0.0f,
                     i == controlBankCount - 2 ? (bankSpinning ? 1.0f : 0.0f)
                                               : (bankRecording ? 1.0f : 0.0f),
-                    0.0f});
+                    0.0f},
+                   isKnob ? highlight : bodyLight);
     }
 
     const auto glowAmount =
         juce::jlimit(0.0f, 1.0f, 0.25f * bankDrive + 0.35f * bankPeak + 0.40f * bankReduction);
     for (int i = 0; i < bankKnobCount; ++i) {
         const auto model =
-            faceModel * glm::translate(glm::mat4(1.0f), {bankPlacementsX[i], 0.0f, 0.008f}) *
+            faceModel *
+            glm::translate(glm::mat4(1.0f),
+                           {bankPlacementsX[static_cast<std::size_t>(i)], 0.0f, 0.008f}) *
             glm::scale(glm::mat4(1.0f), {bankKnobRadius * 1.55f, bankKnobRadius * 1.55f, 1.0f});
-        appendDraw(frame, bankGlowMeshIndex, SceneMaterial::glow, model, highlight,
-                   {glowAmount, elapsed, 0.0f});
+        appendDraw(frame, bankGlowMeshIndex, j37::render::SceneMaterial::glow, model, highlight,
+                   {glowAmount, elapsed, 0.0f}, highlight);
     }
 
     return frame;

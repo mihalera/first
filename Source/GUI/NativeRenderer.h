@@ -1,5 +1,6 @@
 #pragma once
 #include "RenderBackend.h"
+#include "SceneFrame.h"
 #include <JuceHeader.h>
 
 #include <memory>
@@ -72,6 +73,15 @@ class NativeRenderer {
 
     virtual bool isInitialised() const noexcept = 0;
     virtual juce::String status() const = 0;
+
+    /** Draws a validated scene frame into the surface begun by beginFrame().
+
+        Adapters that only create, clear and present a surface keep this
+        default: false, which is what tells NativeFrameSubmission's caller to
+        leave the JUCE painting path in place. An adapter that implements the
+        full scene draw overrides it and is the only kind RenderBackend.h may
+        ever advertise as a scene backend. */
+    virtual bool drawScene (const SceneFrame&) { return false; }
 };
 
 std::unique_ptr<NativeRenderer> createNativeRenderer(Backend);

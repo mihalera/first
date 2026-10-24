@@ -26,14 +26,15 @@ bool finite(const std::array<float, 3> &values) noexcept {
 }
 } // namespace
 bool isValid(const SceneFrame &frame) noexcept {
-    if (frame.width <= 0 || frame.height <= 0 || frame.meshes.empty() || frame.draws.empty() ||
-        !finite(frame.viewProjection) || !finite(frame.lightDirection) ||
-        !finite(frame.textureWeights) || !finite(frame.backgroundColour) ||
-        !finite(frame.highlightColour) || !std::isfinite(frame.timeSeconds) ||
+    if (frame.width <= 0 || frame.height <= 0 || frame.meshes == nullptr
+        || frame.meshes->empty() || frame.draws.empty() || !finite(frame.viewProjection)
+        || !finite(frame.lightDirection) || !finite(frame.textureWeights)
+        || !finite(frame.backgroundColour) || !finite(frame.highlightColour)
+        || !std::isfinite(frame.timeSeconds) ||
         !std::isfinite(frame.drive) || !std::isfinite(frame.flutter) || !std::isfinite(frame.glow))
         return false;
 
-    for (const auto &mesh : frame.meshes) {
+    for (const auto &mesh : *frame.meshes) {
         if (mesh.vertices.empty() || mesh.indices.empty() || mesh.indices.size() % 3 != 0)
             return false;
 
@@ -47,8 +48,9 @@ bool isValid(const SceneFrame &frame) noexcept {
     }
 
     for (const auto &draw : frame.draws) {
-        if (draw.meshIndex >= frame.meshes.size() || !finite(draw.model) ||
-            !finite(draw.normalMatrix) || !finite(draw.baseColour) || !finite(draw.parameters))
+        if (draw.meshIndex >= frame.meshes->size() || !finite(draw.model) ||
+            !finite(draw.normalMatrix) || !finite(draw.baseColour) || !finite(draw.highlightColour)
+            || !finite(draw.parameters))
             return false;
     }
 
