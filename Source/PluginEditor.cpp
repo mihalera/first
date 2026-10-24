@@ -35,6 +35,9 @@
 #include "GUI/PanelText.h"
 #include "GUI/PanelTranslations.h"
 #include "GUI/RenderBackend.h"
+// The one machine-wide preferences file: the pickers' folders and the renderer
+// selector's choice live there together (see the header for why it is ONE file).
+#include "GUI/EditorPreferences.h"
 
 // The panel's paint kit and page table, from Source/GUI/PanelPaint.h and
 // Source/GUI/PanelTabs.h. Every call site below was written when the two lived
@@ -478,19 +481,12 @@ namespace
     // One file for the whole plugin and one KEY per picker, so the two stages
     // never fight over a single "last folder" - models and IRs live in different
     // places and each picker returns to its own.
+    // The store itself is Source/GUI/EditorPreferences.h: the renderer selector
+    // remembers its choice in the SAME file, and two caches of one file would
+    // overwrite each other's keys on save.
     juce::PropertiesFile& folderMemory()
     {
-        static juce::PropertiesFile settings ([] {
-            juce::PropertiesFile::Options options;
-            options.applicationName      = "MiBoX";
-            options.folderName           = "MiBoX";
-            options.filenameSuffix       = "settings";
-            options.osxLibrarySubFolder  = "Application Support";
-            options.commonToAllUsers     = false;
-            options.ignoreCaseOfKeyNames = true;
-            return options;
-        }());
-        return settings;
+        return j37panel::editorPreferences();
     }
 
     juce::File rememberedFolder (const juce::String& key)
@@ -2164,6 +2160,9 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     // both are interface preferences rather than controls of the machine.
     userThemeButton.setVisible (geometry.settingsTab);
     userThemeLabel.setVisible (geometry.settingsTab);
+    // The renderer selector is an interface preference like the two above it.
+    backendLabel.setVisible (geometry.settingsTab);
+    backendBox.setVisible (geometry.settingsTab);
     delayTypeLabel.setVisible (geometry.delayTab);
     delayTypeBox.setVisible (geometry.delayTab);
     delayRateLabel.setVisible (geometry.delayTab);
@@ -2280,6 +2279,11 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
         // at its own coordinates is how this page grew one control that sat 168 px
         // below its caption (see the note inside placeDeckSwitch).
         placeDeckSwitch (geometry, userThemeLabel, userThemeButton, 1, 1, "USER THEME");
+
+        // The renderer selector takes the next cell of the same band. The choice
+        // is an interface preference, so it belongs beside OVERSAMPLING and the
+        // colour window rather than on any page that shapes the sound.
+        placeDeckSwitch (geometry, backendLabel, backendBox, 2, 1, "BACKEND");
 
         // LANGUAGE keeps the first cell of the second band; UI SOUNDS takes the
         // second; the guard takes the third.
@@ -2677,6 +2681,10 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             // control below it" is exactly the defect this sweep exists for.
             { "userThemeLbl",   &userThemeLabel },
             { "userThemeBtn",   &userThemeButton },
+            // The renderer selector's caption and combo share the first band with
+            // them, and a hand-placed pair is covered here or not at all.
+            { "backendLbl",     &backendLabel },
+            { "backendBox",     &backendBox },
             { "diPadLabel",     &diPadLabel },
             { "diPadBox",       &diPadBox },
             { "tracksLabel",    &tracksLabel },

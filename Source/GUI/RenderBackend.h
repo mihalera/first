@@ -78,6 +78,44 @@ constexpr bool usesOpenGL() noexcept { return effectiveBackend() == Backend::ope
 
 constexpr bool usesCpuFallback() noexcept { return effectiveBackend() == Backend::cpu; }
 
+/** Whether SETTINGS may offer this backend at RUNTIME.
+
+    A build configured for a native adapter still draws the scene with the CPU
+    until that adapter's scene draw exists, so the choices that can be honoured
+    now are AUTO (whatever the build selected), OPENGL (the one full scene path)
+    and CPU (the software painter). Everything else is listed as PENDING and
+    stays unselectable: an entry that changed nothing would be the panel claiming
+    a capability the build does not have. */
+constexpr bool isBackendSelectable (Backend backend) noexcept {
+    return backend == Backend::autoDetect
+        || backend == Backend::cpu
+        || (backend == Backend::openGL && usesOpenGL());
+}
+
+/** The renderer a CHOSEN backend actually runs.
+
+    CPU is always CPU and AUTO defers to the build. OPENGL resolves to the
+    software path in a build whose scene has no GL path, and a native adapter is
+    answered by its capability probe rather than by its name - so a selection
+    made in one build can never make another build claim a renderer it cannot
+    draw with. */
+constexpr Backend runningBackend (Backend choice) noexcept {
+    if (choice == Backend::autoDetect)
+        return effectiveBackend();
+
+    if (choice == Backend::openGL)
+        return usesOpenGL() ? Backend::openGL : Backend::cpu;
+
+    if (choice == Backend::cpu)
+        return Backend::cpu;
+
+    return hasNativeImplementation (choice) ? choice : Backend::cpu;
+}
+
+constexpr bool runsOnOpenGL (Backend choice) noexcept {
+    return runningBackend (choice) == Backend::openGL;
+}
+
 constexpr bool usesNativeCommandRenderer() noexcept
 {
     return false;
@@ -108,19 +146,21 @@ constexpr const char* backendName (Backend backend) noexcept {
 
 /** What the panel's header prints: the API the frame is actually drawn with.
 
-    `effectiveBackend()` is the one that matters, not the configured value - a build
-    configured for an adapter that only clears its surface draws with the CPU, and
-    saying otherwise would be the panel claiming a renderer it is not running. When
-    the two differ the configured one is named too, as PENDING, which is the state
-    RenderBackend.h is in until the tape scene is ported. */
-inline juce::String backendCaption() {
-    constexpr auto running = effectiveBackend();
+    `choice` is the renderer selected in SETTINGS (AUTO when there is no choice),
+    and `runningBackend()` is what that choice actually runs - not what it asks
+    for - because a build configured for an adapter that only clears its surface
+    draws with the CPU, and saying otherwise would be the panel claiming a
+    renderer it is not running. When the build's own adapter is still staged it is
+    named too, as PENDING, which is the state RenderBackend.h is in until the tape
+    scene is ported. */
+inline juce::String backendCaption (Backend choice = Backend::autoDetect) {
     constexpr auto configured = configuredBackend();
+    const auto running = runningBackend (choice);
 
     juce::String caption ("BACKEND  ");
     caption << backendName (running);
 
-    if (configured != running && configured != Backend::autoDetect)
+    if (isNativeBackendPending (configured) && running != configured)
         caption << " (" << backendName (configured) << " PENDING)";
 
     return caption;

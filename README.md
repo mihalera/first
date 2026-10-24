@@ -1119,8 +1119,14 @@ with JUCE instead of showing a blank or half-drawn frame.
 
 Which one is running is printed on the panel's header, beside the brand strip:
 `BACKEND  OPENGL`, and `BACKEND  CPU (VULKAN PENDING)` for a build that asks for a
-staged adapter and falls back. The caption is `RenderBackend.h`'s own
-`backendCaption()`, so it reads `effectiveBackend()` rather than the configured
+staged adapter and falls back. The SETTINGS tab carries the matching selector:
+AUTO runs the build's own choice, OPENGL forces the GPU path and CPU forces the
+software painter - the two paths the editor can switch between while it runs. A
+staged adapter is listed there as PENDING and cannot be selected, because it does
+not draw the scene yet. The choice is remembered per machine in the editor's
+preferences file (`Source/GUI/EditorPreferences.h`), not in the session, and the
+header caption follows what actually came up. The caption is `RenderBackend.h`'s
+own `backendCaption()`, so it reads `runningBackend()` rather than the requested
 value and cannot claim a renderer the panel is not drawing with.
 
 At configure time, CMake validates platform-specific native requirements. Metal

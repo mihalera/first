@@ -125,8 +125,13 @@ a JUCE `Graphics` renderer for the animated deck; Vulkan, Metal, D3D11, D3D12,
 SOKOL and BGFX have adapters under `Source/GUI/NativeRenderer*`. Of those, only
 OpenGL draws the tape scene: every other selection creates its device, presents a
 cleared surface and then resolves to the CPU paint path rather than to a blank
-editor. WGPU and DAWN are wired inside `j37_setup_graphics_backend` but are not
-values `J37_RENDER_BACKEND` accepts, because neither has an adapter. `README.md § Rendering backends` has the
+editor. The build's selection is the DEFAULT: SETTINGS also carries a BACKEND
+selector that forces OpenGL or CPU while the plugin runs, with a staged adapter
+listed as PENDING and disabled. That runtime choice is a property of the machine
+and lives in the editor's preferences file
+(`Source/GUI/EditorPreferences.h`), not in the session. WGPU and DAWN are wired
+inside `j37_setup_graphics_backend` but are not values `J37_RENDER_BACKEND`
+accepts, because neither has an adapter. `README.md § Rendering backends` has the
 detail, and
 [plugin-analysis.md](plugin-analysis.md#7-the-renderers-have-no-coverage) has the
 gap: those files are compiled by the platform builds and checked by nothing else.

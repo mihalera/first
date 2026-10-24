@@ -2,8 +2,8 @@
 #if defined (J37_NATIVE_METAL) && JUCE_MAC
  #import <Metal/Metal.h>
  #import <QuartzCore/CAMetalLayer.h>
+ #import <simd/simd.h>
 
-#include "SceneLayout.h"
 #include "TapeSceneMetalShaders.h"
 #include <juce_gui_extra/embedding/juce_NSViewComponent.h>
 #include <algorithm>
@@ -25,13 +25,12 @@ CGFloat backingScaleFor (NSView* view)
     return screen != nil && screen.backingScaleFactor > 0.0 ? screen.backingScaleFactor : 1.0;
 }
 
+// One buffer, one binding, exactly the layout TapeSceneMetalShaders.h declares.
 struct alignas(16) MetalUniforms
 {
     simd_float4x4 viewProjection;
     simd_float4x4 model;
-    simd_float4 normalColumn0;
-    simd_float4 normalColumn1;
-    simd_float4 normalColumn2;
+    simd_float4x4 normalMatrix;
     simd_float4 baseColour;
     simd_float4 highlightColour;
     simd_float4 parameters;
@@ -56,11 +55,6 @@ simd_float4 colour3(const std::array<float, 3>& c)
     return {c[0], c[1], c[2], 1.0f};
 }
 
-simd_float4 pack3(const std::array<float, 3>& c, float w)
-{
-    return {c[0], c[1], c[2], w};
-}
-
 class MetalRenderer final : public NativeRenderer
 {
     struct GpuMesh
@@ -69,35 +63,6 @@ class MetalRenderer final : public NativeRenderer
         id<MTLBuffer> indices = nil;
         NSUInteger indexCount = 0;
     };
-
-    struct MetalDrawUniforms
-    {
-        simd_float4x4 viewProjection;
-        simd_float4x4 model;
-        simd_float4x4 normalMatrix;
-        simd_float4 baseColour;
-        simd_float4 highlightColour;
-        simd_float4 parameters;
-        simd_float4 globals;
-        simd_float4 lightDirection;
-    };
-
-    static simd_float4x4 copyMatrix4 (const std::array<float, 16>& source)
-    {
-        simd_float4x4 result {};
-        std::memcpy (&result, source.data(), sizeof (result));
-        return result;
-    }
-
-    static simd_float4 makeColour4 (const std::array<float, 4>& c)
-    {
-        return { c[0], c[1], c[2], c[3] };
-    }
-
-    static simd_float4 makeColour3 (const std::array<float, 3>& c)
-    {
-        return { c[0], c[1], c[2], 1.0f };
-    }
 
 public:
     bool initialise(juce::Component& component, Config config) override
@@ -121,11 +86,6 @@ public:
         metalDevice = MTLCreateSystemDefaultDevice();
         if (metalDevice == nil)
             return fail("Metal: no system device");
-
-        // Mesh topology is immutable and shared with OpenGL, not rebuilt per frame.
-        sceneMeshes = TapeScene::sharedSceneMeshes();
-        if (sceneMeshes == nullptr || sceneMeshes->size() != 8)
-            return fail("Metal: shared scene meshes unavailable");
 
         metalLayer = [CAMetalLayer layer];
         metalLayer.device = metalDevice;
@@ -154,7 +114,7 @@ public:
         commandQueue = [metalDevice newCommandQueue];
         if (commandQueue == nil)
             return fail("Metal: command queue creation failed");
-        if (!createPipeline() || !createDepthState() || !uploadMeshes())
+        if (!createPipeline() || !createDepthState())
             return fail(failure.isNotEmpty() ? failure : "Metal: GPU resource creation failed");
 
         initialised = true;
@@ -186,7 +146,7 @@ public:
     bool isPresentable() const noexcept override
     {
         return initialised && metalLayer != nil && commandQueue != nil
-            && pipeline != nil && depthTexture != nil && !gpuMeshes.empty();
+            && pipeline != nil && depthTexture != nil;
     }
 
     void shutdown() noexcept override
@@ -203,7 +163,7 @@ public:
             metalLayer = nil;
         }
         gpuMeshes.clear();
-        sceneMeshes.reset();
+        uploadedMeshes.reset();
         pipeline = nil;
         depthState = nil;
         depthTexture = nil;
@@ -262,7 +222,7 @@ public:
     {
         activePassIsDrawable = false;
         if (!isPresentable() || encoder == nil || !isValid(frame)
-            || frame.meshes == nullptr || frame.meshes->size() != gpuMeshes.size())
+            || !ensureMeshes(frame))
             return false;
 
         for (const auto& draw : frame.draws)
@@ -290,6 +250,11 @@ public:
                                indexBuffer:gpuMeshes[draw.meshIndex].indices
                          indexBufferOffset:0];
         }
+
+        // Every draw was recorded into the drawable's own pass, so this frame
+        // can be presented. drawScene() cleared the flag first precisely so a
+        // refusal below would leave the fallback painting the panel.
+        activePassIsDrawable = true;
         return true;
     }
 
@@ -404,14 +369,12 @@ private:
         return depthTexture != nil;
     }
 
-    bool uploadMeshes()
+    bool uploadMeshes (const std::vector<SceneMesh>& meshes)
     {
-        if (sceneMeshes == nullptr || sceneMeshes->size() != 8)
-            return false;
-        gpuMeshes.resize(sceneMeshes->size());
-        for (std::size_t i = 0; i < sceneMeshes->size(); ++i)
+        gpuMeshes.resize(meshes.size());
+        for (std::size_t i = 0; i < meshes.size(); ++i)
         {
-            const auto& source = (*sceneMeshes)[i];
+            const auto& source = meshes[i];
             if (source.vertices.empty() || source.indices.empty())
                 return false;
             auto& gpu = gpuMeshes[i];
@@ -425,11 +388,31 @@ private:
             if (gpu.vertices == nil || gpu.indices == nil)
                 return false;
         }
+
         return true;
     }
 
+    /** Uploads the frame's topology once.
+
+        The frame's meshes are immutable and shared, so a pointer comparison is
+        enough to tell "the topology I already uploaded" from a new one - and
+        taking them from the FRAME rather than from TapeScene is what keeps this
+        adapter independent of the editor's classes: it receives plain vertex and
+        index arrays, exactly as the backend boundary promises. */
+    bool ensureMeshes (const SceneFrame& frame)
+    {
+        const auto& meshes = frame.meshes;
+        if (meshes == nullptr || meshes->empty())
+            return false;
+        if (meshes == uploadedMeshes && gpuMeshes.size() == meshes->size())
+            return true;
+
+        uploadedMeshes = meshes;
+        return uploadMeshes (*uploadedMeshes);
+    }
+
     std::unique_ptr<juce::NSViewComponent> sceneView;
-    std::shared_ptr<const std::vector<TapeScene::Geometry>> sceneMeshes;
+    std::shared_ptr<const std::vector<SceneMesh>> uploadedMeshes;
     id<MTLDevice> metalDevice = nil;
     id<MTLCommandQueue> commandQueue = nil;
     id<MTLCommandBuffer> commandBuffer = nil;
@@ -443,7 +426,6 @@ private:
     bool activePassIsDrawable = false;
     std::vector<GpuMesh> gpuMeshes;
     juce::String failure;
-    juce::Point<int> position;
     int width = 1;
     int height = 1;
     bool initialised = false;

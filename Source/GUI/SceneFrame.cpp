@@ -10,11 +10,6 @@ bool finite(const std::array<float, 16> &values) noexcept {
                        [](float value) { return std::isfinite(value); });
 }
 
-bool finite(const std::array<float, 9> &values) noexcept {
-    return std::all_of(values.begin(), values.end(),
-                       [](float value) { return std::isfinite(value); });
-}
-
 bool finite(const std::array<float, 4> &values) noexcept {
     return std::all_of(values.begin(), values.end(),
                        [](float value) { return std::isfinite(value); });

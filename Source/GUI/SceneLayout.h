@@ -114,7 +114,7 @@ inline constexpr float bankKnobRadius = 0.060f;
 // the old size the two met: the cap's right edge at 0.100 against a glow that
 // reaches 0.115 from that knob's centre - a key standing on the arc around the
 // knob beside it. Both numbers moved, and the glow moved further (see its own
-// scale in drawControlBank), so the gap is real rather than renamed.
+// scale in the frame builder), so the gap is real rather than renamed.
 inline constexpr float bankKeyHalfX = 0.044f;
 inline constexpr float bankKeyHalfY = 0.028f;
 inline constexpr float bankKeyHalfZ = 0.026f;

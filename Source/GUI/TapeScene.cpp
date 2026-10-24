@@ -1,4 +1,4 @@
-﻿/*
+/*
   ==============================================================================
     TapeScene - the deck's transport, rendered as geometry and lit on the GPU.
   ==============================================================================
@@ -124,19 +124,9 @@ constexpr std::uint32_t bankKnobMeshIndex = 5;
 constexpr std::uint32_t bankKeyMeshIndex = 6;
 constexpr std::uint32_t bankGlowMeshIndex = 7;
 
-enum MeshMode {
-    solidMode = 0,
-    packMode = 1,
-    ribbonMode = 2,
-    panelMode = 3,
-    knobMode = 4,
-    keyMode = 5,
-    glowMode = 6
-};
-
-// The fragment shader's mode ranges are bands (uMode < 0.5, < 3.5, < 4.5,
-// < 5.5, else), so the bank's own modes sit above the transport's three and
-// below the caption plate, which is the last branch of them all.
+// A draw's material IS the shader's uMode: SceneMaterial numbers the same
+// seven materials the GLSL branches on, and the fragment shader's ranges are
+// bands (uMode < 0.5, < 3.5, < 4.5, < 5.5, else) chosen to hold them.
 
 using SceneGeometry = j37::render::SceneMesh;
 
@@ -894,8 +884,8 @@ TapeScene::ControlBank TapeScene::buildControlBank() {
 
     // -------------------------------------------------------------------------
     //  The face the controls are set into. One box, modelled at the scene's
-    //  origin rather than at bankCentreZ, so drawControlBank() places it with a
-    //  single translation and the four meshes it draws share that one matrix.
+    //  origin rather than at bankCentreZ, so drawSceneFrameOpenGL() places it
+    //  with a single translation and the four meshes it draws share that one matrix.
     // -------------------------------------------------------------------------
     addBox(bank.body, {0.0f, 0.0f, 0.0f}, {bankHalfWidth, bankHalfHeight, bankHalfDepth});
 
@@ -1024,8 +1014,103 @@ void TapeScene::drawMesh(const Mesh &mesh) {
 }
 
 //==============================================================================
-//  The control bank
+//  One frame, drawn from the frame
+//
+//  Every draw in a SceneFrame names a mesh, a matrix, a material and the three
+//  numbers that material reads - so the OpenGL context can draw the same frame
+//  a native backend receives, rather than a second copy of the deck's
+//  arithmetic kept in step with it by hand. That second copy is what the two
+//  keycaps and the lit discs used to be, and it is why a change to the bank had
+//  to be made in two places.
 //==============================================================================
+void TapeScene::drawSceneFrameOpenGL(const j37::render::SceneFrame &frame) {
+    if (shaderProgram == nullptr || frame.meshes == nullptr)
+        return;
+
+    // SceneFrame numbers its meshes in the order sharedSceneMeshes() builds
+    // them, and these eight buffers are uploaded in that order.
+    const Mesh *const meshes[] = {&reel,     &tapePack,  &ribbon,  &head,
+                                  &bankBody, &bankKnob,  &bankKey, &bankGlow};
+    constexpr std::uint32_t meshCount = sizeof(meshes) / sizeof(meshes[0]);
+
+    shaderProgram->setUniformMat4("uViewProjection", frame.viewProjection.data(), 1, GL_FALSE);
+    shaderProgram->setUniform("uLightDirection", frame.lightDirection[0],
+                              frame.lightDirection[1], frame.lightDirection[2]);
+    shaderProgram->setUniform("uTime", frame.timeSeconds);
+    shaderProgram->setUniform("uDrive", frame.drive);
+    shaderProgram->setUniform("uGlow", frame.glow);
+    shaderProgram->setUniform("uTextureWeights", frame.textureWeights[0],
+                              frame.textureWeights[1], frame.textureWeights[2]);
+
+    bool glowBlending = false;
+
+    for (const auto &draw : frame.draws) {
+        if (draw.meshIndex >= meshCount)
+            continue;
+
+        // The frame carries a full 4x4 inverse transpose because a native
+        // backend's shader multiplies a float4; the GLSL here declares a mat3,
+        // whose nine entries are that matrix's first three columns of three.
+        const std::array<float, 9> normalMatrix{draw.normalMatrix[0], draw.normalMatrix[1],
+                                                draw.normalMatrix[2], draw.normalMatrix[4],
+                                                draw.normalMatrix[5], draw.normalMatrix[6],
+                                                draw.normalMatrix[8], draw.normalMatrix[9],
+                                                draw.normalMatrix[10]};
+
+        shaderProgram->setUniformMat4("uModel", draw.model.data(), 1, GL_FALSE);
+        shaderProgram->setUniformMat3("uNormalMatrix", normalMatrix.data(), 1, GL_FALSE);
+        shaderProgram->setUniform("uBaseColour", draw.baseColour[0], draw.baseColour[1],
+                                  draw.baseColour[2]);
+        shaderProgram->setUniform("uHighlightColour", draw.highlightColour[0],
+                                  draw.highlightColour[1], draw.highlightColour[2]);
+        shaderProgram->setUniform("uMode", static_cast<float>(draw.material));
+
+        switch (draw.material) {
+        case j37::render::SceneMaterial::tapePack:
+            // Where this reel's pack starts and ends, in scene units.
+            shaderProgram->setUniform("uPackInner", draw.parameters[0]);
+            shaderProgram->setUniform("uPackOuter", draw.parameters[1]);
+            break;
+        case j37::render::SceneMaterial::ribbon:
+            shaderProgram->setUniform("uFlutter", draw.parameters[0]);
+            break;
+        case j37::render::SceneMaterial::controlPanel:
+            shaderProgram->setUniform("uPanelHalf", draw.parameters[0], draw.parameters[1],
+                                      draw.parameters[2]);
+            break;
+        case j37::render::SceneMaterial::knob:
+            shaderProgram->setUniform("uArcAngle", draw.parameters[0]);
+            break;
+        case j37::render::SceneMaterial::key:
+            shaderProgram->setUniform("uKeyDown", draw.parameters[1]);
+            break;
+        case j37::render::SceneMaterial::glow:
+            // A lit disc is light ON the face, so it is added rather than
+            // composited - and uGlow here is the disc's own amount, not the
+            // machine's, which is why it is restored after the draw.
+            shaderProgram->setUniform("uGlow", draw.parameters[0]);
+            if (!glowBlending) {
+                glEnable(GL_BLEND);
+                glBlendFunc(GL_SRC_ALPHA, GL_ONE);
+                glowBlending = true;
+            }
+            break;
+        case j37::render::SceneMaterial::solid:
+            break;
+        }
+
+        drawMesh(*meshes[draw.meshIndex]);
+
+        if (draw.material == j37::render::SceneMaterial::glow)
+            shaderProgram->setUniform("uGlow", frame.glow);
+    }
+
+    if (glowBlending) {
+        glDisable(GL_BLEND);
+        glBlendFunc(GL_SRC_ALPHA, GL_ONE_MINUS_SRC_ALPHA);
+    }
+}
+
 //==============================================================================
 //  OpenGLRenderer
 //==============================================================================
@@ -1264,81 +1349,16 @@ void TapeScene::renderOpenGL() {
     glDisable(GL_TEXTURE_2D);
 
     shaderProgram->use();
-    shaderProgram->setUniformMat4("uViewProjection", glm::value_ptr(viewProjection), 1, GL_FALSE);
-    shaderProgram->setUniform("uTime", static_cast<float>(elapsed));
-    shaderProgram->setUniform("uFlutter", flutter);
-    shaderProgram->setUniform("uGlow", reduction);
-    shaderProgram->setUniform("uDrive", driveAmount);
-    shaderProgram->setUniform("uLightDirection", lightX, lightY, lightZ);
-    const auto normalMatrix = glm::transpose(glm::inverse(glm::mat3(scene)));
-    shaderProgram->setUniformMat3("uNormalMatrix", glm::value_ptr(normalMatrix), 1, GL_FALSE);
-    // The arithmetic texture's three doses (grain / tape shimmer / wear), one
-    // palette-carried vector - see panelTexture in the fragment source. Snapshot
-    // the packed atomic once so a theme switch cannot mix channels from two states.
-    const auto texturePalette = juce::Colour(textureWeights.load(std::memory_order_relaxed));
-    shaderProgram->setUniform("uTextureWeights", texturePalette.getFloatRed(),
-                              texturePalette.getFloatGreen(), texturePalette.getFloatBlue());
 
-    const auto drawReel = [this, &scene, &body, &tape](float centreX, float centreY, float radius,
-                                                       float angle, float packOuter) {
-        const auto model = scene * glm::translate(glm::mat4(1.0f), {centreX, centreY, 0.0f}) *
-                           glm::rotate(glm::mat4(1.0f), angle, {0.0f, 0.0f, 1.0f}) *
-                           glm::scale(glm::mat4(1.0f), {radius, radius, radius});
-
-        shaderProgram->setUniformMat4("uModel", glm::value_ptr(model), 1, GL_FALSE);
-
-        shaderProgram->setUniform("uMode", static_cast<float>(solidMode));
-        shaderProgram->setUniform("uBaseColour", body.getFloatRed(), body.getFloatGreen(),
-                                  body.getFloatBlue());
-        drawMesh(reel);
-
-        shaderProgram->setUniform("uMode", static_cast<float>(packMode));
-        shaderProgram->setUniform("uPackInner", packInnerFraction);
-        shaderProgram->setUniform("uPackOuter", packOuter);
-        shaderProgram->setUniform("uBaseColour", tape.getFloatRed(), tape.getFloatGreen(),
-                                  tape.getFloatBlue());
-        drawMesh(tapePack);
-    };
-
-    // The supply reel empties as the take-up one fills: the same two numbers,
-    // one of them the other one's complement.
-    const auto supplyPackOuter =
-        packEmptyFraction + (packFullFraction - packEmptyFraction) * (1.0f - tapeTransfer);
-    const auto takeUpPackOuter =
-        packEmptyFraction + (packFullFraction - packEmptyFraction) * tapeTransfer;
-
-    drawReel(supplyCentreX, supplyCentreY, supplyRadius, supplyAngle, supplyPackOuter);
-    drawReel(takeUpCentreX, takeUpCentreY, takeUpRadius, takeUpAngle, takeUpPackOuter);
-
-    // The head: the one solid in the scene that does not move, which is what
-    // makes the tape's movement between the two reels readable as movement
-    // rather than as everything spinning together.
-    const auto headModel =
-        scene * glm::translate(glm::mat4(1.0f), {headCentreX, headCentreY, headCentreZ});
-    shaderProgram->setUniformMat4("uModel", glm::value_ptr(headModel), 1, GL_FALSE);
-    shaderProgram->setUniform("uMode", static_cast<float>(solidMode));
-    shaderProgram->setUniform("uBaseColour", highlight.getFloatRed() * 0.55f + 0.06f,
-                              highlight.getFloatGreen() * 0.55f + 0.06f,
-                              highlight.getFloatBlue() * 0.55f + 0.07f);
-    drawMesh(head);
-
-    // The tape itself, last so it is over the head's face.
-    shaderProgram->setUniformMat4("uModel", glm::value_ptr(scene), 1, GL_FALSE);
-    shaderProgram->setUniform("uMode", static_cast<float>(ribbonMode));
-    shaderProgram->setUniform("uBaseColour", tape.getFloatRed() * 1.35f + 0.02f,
-                              tape.getFloatGreen() * 1.35f + 0.02f,
-                              tape.getFloatBlue() * 1.35f + 0.02f);
-    drawMesh(ribbon);
-
+    // The frame is the whole picture: the reels and their packs, the head, the
+    // ribbon and the control bank in front of them. Building it here and drawing
+    // it is the OpenGL half of the same boundary a native backend consumes, so
+    // the window and a Metal or Vulkan surface cannot drift apart.
     const auto sceneFrame = buildSceneFrame(width, height, elapsed, viewProjection, scene,
                                             background, body, highlight, tape, driveAmount,
                                             flutter, reduction, static_cast<float>(elapsed));
     jassert(j37::render::isValid(sceneFrame));
-
-    // The control bank, in FRONT of the machine: it is the only geometry here
-    // with a z of its own, and drawing it last costs nothing because the depth
-    // buffer is what decides, not the order.
-    drawControlBank(viewProjection, scene, body, highlight);
+    drawSceneFrameOpenGL(sceneFrame);
 
     glDepthFunc(static_cast<GLenum>(previousDepthFunction));
     glDepthMask(previousDepthWrite);

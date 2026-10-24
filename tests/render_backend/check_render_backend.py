@@ -70,10 +70,17 @@ require("&& renderTarget != nullptr;" in d3d11,
         "D3D11 presentability must require a valid render target")
 
 metal = (root / "Source/GUI/NativeRenderer_Metal.mm").read_text()
-require("embedded host surface integration is not enabled" in metal,
-        "Metal must not mutate a host-owned view until child-surface integration is safe")
-require("__weak NSView* hostView" in metal,
-        "Metal host view reference must not outlive the host view")
+# Metal now draws the scene frame, into a CHILD NSView of the editor rather than
+# the host-owned peer: a CAMetalLayer attached to the editor's own view would
+# paint outside the plugin's bounds and outlive it.
+require("sceneView->getPeer()" in metal and "addSublayer:metalLayer" in metal,
+        "Metal must present into the editor's child NSView, never a host-owned view")
+require("component.getPeer()" not in metal,
+        "Metal must not attach its layer to the host's peer")
+require("bool drawScene(const SceneFrame& frame) override" in metal,
+        "Metal must implement the scene draw its backend claims")
+require("ensureMeshes(frame)" in metal,
+        "Metal must upload the frame's own immutable topology, not rebuild the scene")
 
 if errors:
     print("render backend checks failed:", file=sys.stderr)

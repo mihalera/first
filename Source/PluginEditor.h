@@ -27,6 +27,10 @@
 // kit is the one file the editor's own header has to include.
 #include "GUI/PanelPaint.h"
 
+// The renderer boundary: SETTINGS offers the backends this build can actually
+// switch to, and the header's caption reads the one that is running.
+#include "GUI/RenderBackend.h"
+
 // The parameter sheet: every parameter in one scrollable list, laid out by
 // foleys_gui_magic from the processor's own tree. Built lazily on first open,
 // because 109 attachments are not something an editor that never shows the
@@ -625,6 +629,12 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void setUpOpenGlRendering();
     void finishConstruction();
 
+    /** Applies a renderer chosen on SETTINGS: the OpenGL scene and the panel's own
+        context come up, or both are released and the software painter draws the
+        transport. Also rewrites the header caption, because that caption is the
+        user's only confirmation of what actually came up. */
+    void applyRenderBackend(j37::render::Backend backend);
+
     /** Invalidates the surfaces the timer ANIMATES: the visible knobs, the panel's
         switches, the deck's own reel and particles, and the header's status lamp.
 
@@ -784,6 +794,24 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         vinylTurntableAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment>
         vinylCartridgeAttachment;
+    // -----------------------------------------------------------------------
+    //  The renderer selector, on SETTINGS's first band beside OVERSAMPLING and
+    //  USER THEME.
+    //
+    //  The header's caption names what is RUNNING; this is the one place the user
+    //  says what it should run. The list is the paths this build can honour rather
+    //  than every name the enum has - RenderBackend.h owns that decision - and a
+    //  staged native adapter is shown as PENDING, disabled, because a selectable
+    //  entry that changed nothing would be the panel lying about a capability.
+    //
+    //  The choice is remembered in the editor's preferences file (Source/GUI/
+    //  EditorPreferences.h), not in the session: it describes what this computer
+    //  can draw with, not what the mix is.
+    // -----------------------------------------------------------------------
+    juce::Label backendLabel;
+    juce::ComboBox backendBox;
+    j37::render::Backend renderBackendChoice = j37::render::Backend::autoDetect;
+
     // The UI-sounds switch, on the SETTINGS tab beside GL.
     juce::ToggleButton uiSoundsButton{"UI SOUNDS"};
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> uiSoundsAttachment;
