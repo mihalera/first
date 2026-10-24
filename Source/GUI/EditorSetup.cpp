@@ -1828,8 +1828,6 @@ void FirstAudioProcessorEditor::addDeckControlsToPanel() {
 }
 
 void FirstAudioProcessorEditor::setUpSceneAndMeters() {
-    tapeScene.setNativeSurfaceOwner (this);
-
     // The 3D transport goes in FIRST, so it is the bottom-most child. It is a
     // child component rather than part of this editor's own painting because it
     // needs a custom renderer and this editor's context is a component painter -
@@ -1845,9 +1843,11 @@ void FirstAudioProcessorEditor::setUpSceneAndMeters() {
 }
 
 void FirstAudioProcessorEditor::setUpOpenGlRendering() {
-    // Native command backends remain on the existing fallback until they accept
-    // and draw a complete SceneFrame; merely creating a presentation surface is
-    // not sufficient and can cover host-owned controls.
+    // Native command renderers currently implement presentation only. Do not
+    // attach them to a host-owned child surface until TapeScene's scene geometry
+    // and clipping are implemented for that API; keep JUCE's CPU painting active.
+    // This is intentionally a no-op for native backends: selecting Vulkan,
+    // Metal, or DirectX must not create a second surface that covers the host UI.
     if (!j37::render::usesOpenGL())
         return;
 

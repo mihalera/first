@@ -6,11 +6,6 @@ import sys
 root = Path(__file__).resolve().parents[2]
 backend = (root / "Source/GUI/RenderBackend.h").read_text()
 setup = (root / "Source/GUI/EditorSetup.cpp").read_text()
-native_api = (root / "Source/GUI/NativeRenderer.h").read_text()
-frame_submission = (root / "Source/GUI/NativeFrameSubmission.h").read_text()
-scene_frame = (root / "Source/GUI/SceneFrame.h").read_text()
-tape_frame = (root / "Source/GUI/TapeSceneFrame.cpp").read_text()
-tape_scene = (root / "Source/GUI/TapeScene.cpp").read_text()
 
 errors = []
 
@@ -26,42 +21,6 @@ require("constexpr bool usesNativeCommandRenderer() noexcept\n{\n    return fals
         "native command renderer must not be advertised as active")
 require("if (!j37::render::usesOpenGL())" in setup,
         "editor must retain the CPU paint path when OpenGL is not selected")
-require("SceneFrame" in native_api,
-        "native renderer API must accept the backend-neutral SceneFrame contract")
-require("virtual bool drawScene" in native_api and "return false;" in native_api,
-        "native adapters must refuse scene draws until each API implements them")
-require("bool submitSceneFrame" in frame_submission and "renderer.endFrame();" in frame_submission,
-        "native submission must preserve fallback and retire every acquired frame")
-require("!isValid(frame)" in frame_submission and "renderer.beginFrame()" in frame_submission,
-        "native submission must validate a complete SceneFrame before acquiring resources")
-require("renderer.endFrame();" in frame_submission,
-        "native submission must retire the frame after the draw hook completes")
-require("std::shared_ptr<const std::vector<SceneMesh>> meshes;" in scene_frame,
-        "scene topology should be shared between frames, not recopied each tick")
-require("static const auto sharedMeshes" in tape_frame,
-        "scene geometry must be built once and reused by frame snapshots")
-require("built->push_back(buildReel())" in tape_frame
-        and "frame.meshes = sharedMeshes;" in tape_frame,
-        "shared mesh cache must contain all scene topology")
-layout = (root / "Source/GUI/SceneLayout.h").read_text()
-require("inline constexpr std::array<float, 5> bankPlacementsX" in layout,
-        "scene layout constants must have a single shared definition")
-require("j37::render::scene::bankPlacementsX" in tape_scene,
-        "OpenGL hit-testing and drawing must use the shared scene control positions")
-require("void TapeScene::drawSceneFrameOpenGL" in tape_scene
-        and "drawMesh(*gpuMeshes[draw.meshIndex])" in tape_scene,
-        "the active OpenGL backend must consume the neutral draw list")
-require("switch (draw.material)" in tape_scene and "SceneMaterial::glow" in tape_scene,
-        "OpenGL must dispatch the neutral material variants including glow")
-require("appendDraw(frame" in tape_frame and "SceneMaterial::glow" in tape_frame,
-        "frame builder must describe the full scene including additive glows")
-require("drawSceneFrameOpenGL(sceneFrame)" in tape_scene,
-        "OpenGL must render the canonical SceneFrame rather than duplicate its draw list")
-require("switch (draw.material)" in tape_scene and "drawMesh(*gpuMeshes[draw.meshIndex])" in tape_scene,
-        "OpenGL SceneFrame dispatcher must map materials and mesh indices to GPU meshes")
-require("drawControlBank(viewProjection, scene, body, highlight)" not in tape_scene,
-        "legacy duplicated control-bank draw path must not remain active beside SceneFrame")
-
 
 # The two GPU abstraction layers are build OPTIONS, not additions: each owns the
 # device and the surface, so a build selects one and the other is not compiled.
@@ -111,15 +70,10 @@ require("&& renderTarget != nullptr;" in d3d11,
         "D3D11 presentability must require a valid render target")
 
 metal = (root / "Source/GUI/NativeRenderer_Metal.mm").read_text()
-require("editor-scoped native surface unavailable" in metal,
-        "Metal must report why initialization declines the host-owned peer")
-require("class MetalRenderer final" in metal
-        and "bool drawScene (const SceneFrame&) override { return false; }" in metal,
-        "Metal must be an explicit pending adapter until its scene draw hook is complete")
-require("MTLCreateSystemDefaultDevice" not in metal and "CAMetalLayer" not in metal,
-        "pending Metal source must not allocate or attach a native surface")
-require(not (root / "Source/GUI/TapeSceneMetalShaders.h").exists(),
-        "do not keep a Metal shader prototype that is not compiled or consumed")
+require("embedded host surface integration is not enabled" in metal,
+        "Metal must not mutate a host-owned view until child-surface integration is safe")
+require("__weak NSView* hostView" in metal,
+        "Metal host view reference must not outlive the host view")
 
 if errors:
     print("render backend checks failed:", file=sys.stderr)

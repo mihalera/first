@@ -8,6 +8,7 @@
 
 #include <JuceHeader.h>
 #include "SceneFrame.h"
+#include "SceneLayout.h"
 
 // The GL typedefs (GLuint, GLint, GLsizei) and the GL commands this component
 // calls live in the module's own header, which the generated JuceHeader also
@@ -68,10 +69,6 @@ class TapeScene final : public juce::Component,
 public:
     TapeScene();
     ~TapeScene() override;
-
-    /** Owner for native backends that need peer-relative child surfaces. */
-    void setNativeSurfaceOwner (juce::Component* owner) noexcept { nativeSurfaceOwner = owner; }
-    juce::Component* getNativeSurfaceOwner() const noexcept { return nativeSurfaceOwner; }
 
     /** One frame of what the machine is doing. Every argument arrives already
         normalised to a range the shader can use directly, so the render thread
@@ -227,10 +224,12 @@ private:
         float colour[3] { 0.0f, 0.0f, 0.0f };
     };
 
-    static constexpr int controlBankCount = 5;
+    /** The bank's size, read from the layout header rather than restated: the
+        scene, the frame builder and the harness count the same controls. */
+    static constexpr int controlBankCount = j37::render::scene::controlBankCount;
 
     /** The first controlBankCount of those are knobs; the rest are keys. */
-    static constexpr int bankKnobCount = 3;
+    static constexpr int bankKnobCount = j37::render::scene::bankKnobCount;
 
     /** The control the editor puts a tooltip on, and the one a click on the bank
         is taken to mean. One control, not three: the bank is a picture of the
@@ -238,10 +237,14 @@ private:
         uses the real one. */
     static constexpr int bankInteractiveIndex = 0;
 
+    void drawControlBank (const glm::mat4& viewProjection,
+                          const glm::mat4& scene,
+                          const juce::Colour& bodyColour,
+                          const juce::Colour& highlightColour);
+
     void uploadMesh (Mesh& mesh, const Geometry& geometry);
     void releaseMesh (Mesh& mesh) noexcept;
     void drawMesh (const Mesh& mesh);
-    void drawSceneFrameOpenGL (const j37::render::SceneFrame& frame);
 
     //==========================================================================
     //  OpenGL backend
@@ -256,7 +259,6 @@ private:
 
     juce::OpenGLContext openGLContext;
     std::unique_ptr<juce::OpenGLShaderProgram> shaderProgram;
-    juce::Component* nativeSurfaceOwner = nullptr;
     Mesh reel {};
     Mesh tapePack {};
     Mesh ribbon {};

@@ -41,7 +41,6 @@ class CpuRenderer final : public NativeRenderer {
     void shutdown() noexcept override { initialised = false; }
     bool beginFrame() override { return initialised; }
     void clear(juce::Colour) override {}
-    bool renderFrame(const SceneFrame&) override { return false; }
     void endFrame() override {}
     bool isInitialised() const noexcept override { return initialised; }
     juce::String status() const override { return "CPU compatibility renderer"; }

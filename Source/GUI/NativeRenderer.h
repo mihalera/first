@@ -57,8 +57,6 @@ class NativeRenderer {
     /** Whether a presentation surface is attached and can be drawn into. */
     virtual bool isPresentable() const noexcept = 0;
 
-
-
     /** Releases every native object, including the child surface. */
     virtual void shutdown() noexcept = 0;
 
@@ -66,14 +64,8 @@ class NativeRenderer {
         this slot. Returns false when the frame must be skipped entirely. */
     virtual bool beginFrame() = 0;
 
-    /** Compatibility clear operation for adapters still under construction. */
+    /** Records the clear for the frame begun by beginFrame(). */
     virtual void clear (juce::Colour) = 0;
-
-    /** Backend draw hook for a validated scene. Default refusal keeps legacy
-        adapters safe until every scene material and transform is implemented. */
-    virtual bool drawScene (const SceneFrame&) { return false; }
-
-
 
     /** Submits and presents the frame. Always safe to call after a failed
         beginFrame(), where it is a no-op. */
@@ -81,6 +73,15 @@ class NativeRenderer {
 
     virtual bool isInitialised() const noexcept = 0;
     virtual juce::String status() const = 0;
+
+    /** Draws a validated scene frame into the surface begun by beginFrame().
+
+        Adapters that only create, clear and present a surface keep this
+        default: false, which is what tells NativeFrameSubmission's caller to
+        leave the JUCE painting path in place. An adapter that implements the
+        full scene draw overrides it and is the only kind RenderBackend.h may
+        ever advertise as a scene backend. */
+    virtual bool drawScene (const SceneFrame&) { return false; }
 };
 
 std::unique_ptr<NativeRenderer> createNativeRenderer(Backend);

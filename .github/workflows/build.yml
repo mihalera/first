@@ -248,6 +248,16 @@ jobs:
       - name: Run the room harness
         run: bash tests/reverb/run.sh
 
+      # The frame a native backend receives. SceneFrame.h is plain data and
+      # isValid() is arithmetic on it, so the validation every adapter trusts is
+      # measurable without a GPU: a null shared mesh array, an index past the
+      # mesh, a two-index triangle and a NaN or infinity in a matrix, a colour or
+      # the per-draw highlight are each refused before the frame crosses into
+      # backend code. SceneLayout.h's constants are asserted against each other
+      # too, since the frame builder and the paint path both read them.
+      - name: Run the scene frame harness
+        run: bash tests/scene_frame/run.sh
+
       # The OSC codec and its address surface. Both are STAGED: the plugin compiles
       # Source/Net/Osc.h and Source/Net/OscSurface.h and starts neither - no socket,
       # no port, no thread - so nothing a user does can prove the decoder pads a
@@ -676,6 +686,7 @@ jobs:
           J37_SANITIZE=address,undefined bash tests/neural/run.sh
           J37_SANITIZE=address,undefined bash tests/spectrum/run.sh
           J37_SANITIZE=address,undefined bash tests/reverb/run.sh
+          J37_SANITIZE=address,undefined bash tests/scene_frame/run.sh
           J37_SANITIZE=address,undefined bash tests/osc/run.sh
           # The sweep only: this pass is "every harness under the sanitizers", and the
           # coverage-guided run already has its own step above with its own budget.

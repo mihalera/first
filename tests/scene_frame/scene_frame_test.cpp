@@ -8,7 +8,7 @@
 int main() {
     using namespace j37::render;
 
-    static_assert(scene::controlBankCount == static_cast<int>(scene::bankPlacementsX.size()));
+    static_assert(scene::controlBankCount == static_cast<int>(scene::controlPlacements.size()));
     static_assert(scene::bankKnobCount == 3);
     assert(scene::packInnerFraction < scene::packEmptyFraction);
     assert(scene::packEmptyFraction < scene::packFullFraction);
@@ -33,11 +33,18 @@ int main() {
     draw.model[0] = draw.model[5] = draw.model[10] = draw.model[15] = 1.0f;
     draw.normalMatrix[0] = draw.normalMatrix[4] = draw.normalMatrix[8] = 1.0f;
     draw.baseColour = {1.0f, 1.0f, 1.0f, 1.0f};
+    draw.highlightColour = {1.0f, 0.5f, 0.0f};
     valid.draws.push_back(draw);
     assert(isValid(valid));
 
     auto invalid = valid;
     invalid.width = 0;
+    assert(!isValid(invalid));
+
+    // The mesh array is shared and therefore optional: a frame without one is
+    // a frame with nothing to draw, not a frame with an empty list to draw.
+    invalid = valid;
+    invalid.meshes = nullptr;
     assert(!isValid(invalid));
 
     invalid = valid;
@@ -62,6 +69,10 @@ int main() {
 
     invalid = valid;
     invalid.draws[0].baseColour[0] = std::numeric_limits<float>::quiet_NaN();
+    assert(!isValid(invalid));
+
+    invalid = valid;
+    invalid.draws[0].highlightColour[2] = std::numeric_limits<float>::infinity();
     assert(!isValid(invalid));
 
     invalid = valid;
