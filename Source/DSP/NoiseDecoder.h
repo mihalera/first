@@ -113,6 +113,81 @@ inline constexpr double maxNoisePrintSeconds = 60.0;
     it; defined below, beside the arithmetic it describes. */
 inline bool resamplePrint (const NoisePrint& in, double targetRate, NoisePrint& out);
 
+/** Whether every RIFF chunk the bytes announce actually fits in the buffer.
+
+    dr_wav walks the chunk list itself, and skips the leftover of a "fmt " chunk
+    with a 32-bit RELATIVE seek: `(int) (header.sizeInBytes - bytesReadSoFar)`.
+    A declared size above 2^31 - 1 makes that subtraction negative, so the reader
+    seeks BACKWARDS over the chunk it has just read; when the rewind happens to
+    equal what the iteration consumed, the same chunk is read forever. A size
+    field of 0xfffffff8 does exactly that, and the whole hang fits in a 174-byte
+    file. This walk exists so those bytes are refused before they reach the
+    library, because nothing outside dr_wav's own loop can stop it once it starts.
+
+    The rule is the one dr_wav applies everywhere else: a chunk that does not fit
+    in the file is not readable. Two shapes are therefore NOT decided here:
+
+      * a "data" chunk, because a truncated data chunk is accepted and clamped to
+        the frames really present - a header that oversells its own length is what
+        tests/dsp asserts on;
+      * an RF64 chunk claiming 0xffffffff, whose real size its own ds64 chunk
+        carries.
+
+    Only the RIFF family is walked. AIFF skips its chunks with a forward 64-bit
+    seek that fails cleanly at the end of the buffer, so it needs no guard, and a
+    buffer that is not RIFF at all is left to dr_wav to judge.
+*/
+inline bool riffChunksFitInBuffer (const std::uint8_t* bytes, std::size_t size)
+{
+    const auto isFourCC = [bytes] (std::size_t at, const char* text)
+    {
+        return std::memcmp (bytes + at, text, 4) == 0;
+    };
+
+    // Needs the 12-byte RIFF/WAVE preamble before anything below reads past it.
+    if (size < 12 || ! isFourCC (8, "WAVE"))
+        return true;
+
+    const auto bigEndian = isFourCC (0, "RIFX");
+    const auto rf64 = isFourCC (0, "RF64");
+
+    if (! bigEndian && ! rf64 && ! isFourCC (0, "RIFF"))
+        return true;
+
+    const auto sizeFieldAt = [bytes, bigEndian] (std::size_t at)
+    {
+        std::uint32_t value = 0;
+
+        for (int i = 0; i < 4; ++i)
+            value |= static_cast<std::uint32_t> (
+                         bytes[at + static_cast<std::size_t> (bigEndian ? 3 - i : i)])
+                     << (8 * i);
+
+        return value;
+    };
+
+    for (auto position = std::size_t (12); position + 8 <= size; )
+    {
+        const auto declared = sizeFieldAt (position + 4);
+
+        if (isFourCC (position, "data"))
+            return true;
+
+        if (rf64 && declared == 0xffffffffu)
+            return true;
+
+        position += 8;
+
+        if (declared > size - position)
+            return false;
+
+        // Chunks are word aligned, exactly as dr_wav pads them.
+        position += declared + (declared & 1u);
+    }
+
+    return true;
+}
+
 //==============================================================================
 /**
     Decode WAV bytes into a loop.
@@ -134,8 +209,10 @@ inline bool resamplePrint (const NoisePrint& in, double targetRate, NoisePrint& 
         would invent one.
 
     What IS refused, with a reason the caller can print: an empty buffer, bytes
-    dr_wav will not parse, a header with no frames, a file containing NaN or
-    infinity, and anything over `maxNoisePrintSeconds`.
+    dr_wav will not parse, a chunk list that does not fit in the file (see
+    `riffChunksFitInBuffer`, which is what keeps a lying chunk size from being a
+    hang rather than a refusal), a header with no frames, a file containing NaN
+    or infinity, and anything over `maxNoisePrintSeconds`.
 */
 inline NoiseDecodeOutcome decodeWavMemory (const void* data, std::size_t size,
                                            NoisePrint& out, double targetRate = 0.0)
@@ -152,6 +229,10 @@ inline NoiseDecodeOutcome decodeWavMemory (const void* data, std::size_t size,
 #else
     if (data == nullptr || size == 0)
         return { NoiseDecodeStatus::unreadable, "the file is empty", 0, 0 };
+
+    if (! riffChunksFitInBuffer (static_cast<const std::uint8_t*> (data), size))
+        return { NoiseDecodeStatus::unreadable,
+                 "the WAV file's chunks claim more bytes than the file holds", 0, 0 };
 
     drwav wav;
 

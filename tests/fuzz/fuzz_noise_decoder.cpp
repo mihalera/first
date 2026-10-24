@@ -277,6 +277,13 @@ void sweep (const Bytes& seed, Stats& stats)
     for (const auto& riffSize : { Bytes { 0, 0, 0, 0 }, Bytes { 0xff, 0xff, 0xff, 0xff } })
         overwrite (4, riffSize);
 
+    // The fmt chunk's own size. 0xfffffff8 is the value that made dr_wav skip the
+    // chunk with a negative relative seek and read it again forever, which is the
+    // reason NoiseDecoder.h refuses a chunk list that does not fit the file.
+    for (const auto& fmtSize : { Bytes { 0, 0, 0, 0 }, Bytes { 0xff, 0xff, 0xff, 0xff },
+                                 Bytes { 0xf8, 0xff, 0xff, 0xff } })
+        overwrite (16, fmtSize);
+
     for (const auto& dataSize : { Bytes { 0, 0, 0, 0 }, Bytes { 0xff, 0xff, 0xff, 0x7f },
                                   Bytes { 0x10, 0, 0, 0 } })
         overwrite (40, dataSize);

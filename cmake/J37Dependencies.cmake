@@ -311,7 +311,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME signalsmith-linear
     GITHUB_REPOSITORY Signalsmith-Audio/linear
-    GIT_TAG 0.6.5
+    GIT_TAG 0.6.6
     # ...inside the stretch checkout, because the stretch header sits at that
     # checkout's ROOT (not under include/), so the quoted include resolves
     # against the checkout root as the base directory.
