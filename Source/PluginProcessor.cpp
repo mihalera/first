@@ -486,6 +486,7 @@ FirstAudioProcessor::FirstAudioProcessor()
 
 FirstAudioProcessor::~FirstAudioProcessor()
 {
+    cancelPendingUpdate();
     for (const auto* parameterID : parametersTrackedForDirtyBadge())
         parameters.removeParameterListener (parameterID, this);
 }
@@ -555,6 +556,7 @@ void FirstAudioProcessor::changeProgramName (int, const juce::String&)
 //==============================================================================
 void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerBlock)
 {
+    cancelPendingUpdate();
     sampleRate = static_cast<float> (sampleRateToUse);
 
     // The oversampling engines only depend on rate and block size, so they are
@@ -961,19 +963,14 @@ void FirstAudioProcessor::resetSampleRateDependentState()
 
 void FirstAudioProcessor::publishReportedLatency()
 {
-    // One number out of its two parts. The oversampler's share is fixed for a
-    // factor and the corrector's is zero until AUTOTUNE is switched in, so the
-    // host is told whenever either moves - switching the corrector on is a real
-    // change in how far behind the plugin runs, and a host that is not told about
-    // it will place every other track a block too early against this one.
-    //
-    // setLatencySamples is the inherited non-virtual host-notification setter, and
-    // it is called from the audio thread by both of its callers (an oversampling
-    // change and an AUTOTUNE switch). That is the same trade the oversampler's own
-    // initProcessing makes: both are parameter changes, and neither has a path to
-    // the message thread that would not add a lock to the audio path.
     const auto total = oversamplerLatencySamples + publishedCorrectorLatencySamples;
+    requestedLatencySamples.store (total, std::memory_order_release);
+    triggerAsyncUpdate();
+}
 
+void FirstAudioProcessor::handleAsyncUpdate()
+{
+    const auto total = requestedLatencySamples.load (std::memory_order_acquire);
     if (getLatencySamples() != total)
         AudioProcessor::setLatencySamples (total);
 }
@@ -1132,6 +1129,7 @@ void FirstAudioProcessor::updateToneCoefficients (float toneValue, float engineS
 
 void FirstAudioProcessor::releaseResources()
 {
+    cancelPendingUpdate();
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
@@ -1195,8 +1193,8 @@ FirstAudioProcessor::TelemetryFrame FirstAudioProcessor::getTelemetry() const
 //==============================================================================
 bool FirstAudioProcessor::loadNeuralModel (const juce::String& modelJson)
 {
-    // Each stage keeps replaced models alive until teardown, so this installation
-    // cannot invalidate a model pointer already captured by process().
+    // The new model is staged for adoption at the next audio block, so loading
+    // never replaces the instance currently in inference.
     lastLoadErrorMessage = {};
 
     if (modelJson.isEmpty())

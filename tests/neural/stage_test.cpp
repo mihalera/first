@@ -148,7 +148,8 @@ void install (NeuralStage& stage, double modelRate, double engineRate)
     RTNeural::loggedInputs().clear();
     stage.setSampleRates (modelRate, engineRate);
     check (stage.buildFromNam (minimalNamFile()), "the stage installs a model");
-    check (stage.isActive(), "and reports itself active");
+    stage.adoptPendingModel();
+    check (stage.isActive(), "audio-thread adoption installs and activates the model");
 }
 
 /** One sample of a sine at the ENGINE's rate, which is what the stage is handed. */
@@ -265,7 +266,8 @@ void testTheStageIsUnchangedAtMatchingRates()
     check (exact, "the stage is the identity, frame for frame, with no delay of its own");
 
     stage.clear();
-    check (! stage.isActive(), "clearing the model takes the stage out of circuit");
+    stage.adoptPendingModel();
+    check (! stage.isActive(), "audio-thread adoption of clear removes the model");
 
     bool cleared = true;
 

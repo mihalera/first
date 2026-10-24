@@ -306,7 +306,8 @@ inline juce::StringArray vinylTypeNameList()
       -> output trim -> stereo width
 */
 class FirstAudioProcessor  : public juce::AudioProcessor,
-                             private juce::AudioProcessorValueTreeState::Listener
+                             private juce::AudioProcessorValueTreeState::Listener,
+                             private juce::AsyncUpdater
 {
 public:
     //==============================================================================
@@ -941,6 +942,10 @@ private:
     /** (Re)creates the oversampling engine for the requested factor and reports latency. */
     void setOversamplingFactor (OversamplingFactor factor, int samplesPerBlock);
 
+    /** AsyncUpdater callback: host latency notifications must not be issued from
+        processBlock, where JUCE synchronously calls processor listeners. */
+    void handleAsyncUpdate() override;
+
     /** Pure function of the parameter snapshot - the factory preset table. */
     static std::map<juce::String, float> factoryPresetValues (int index);
 
@@ -1227,6 +1232,7 @@ private:
     // only ever told a number that matches what the audio path is actually doing.
     int oversamplerLatencySamples = 0;
     int publishedCorrectorLatencySamples = 0;
+    std::atomic<int> requestedLatencySamples { 0 };
     void publishReportedLatency();
 
 

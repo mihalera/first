@@ -564,6 +564,31 @@ CorrectorRender renderCorrector (double sampleRate, float ratio, int periodHint,
     return render;
 }
 
+void testCorrectorUsesBlockAlignedRatio()
+{
+    std::printf ("\nthe corrector captures the ratio belonging to its input block\n");
+#if J37_HAS_SIGNALSMITH
+    CorrectorStage stage;
+    stage.prepare (48000.0, 1);
+    const int hints[2] { 220, 220 };
+    std::array<float, 2> frame {};
+    float ratios[2] { 1.0f, 1.0f };
+
+    for (int n = 0; n < CorrectorStage::blockFrames; ++n)
+    {
+        frame[0] = frame[1] = static_cast<float> (std::sin (kTwoPi * 220.0 * n / 48000.0));
+        ratios[0] = ratios[1] = n < CorrectorStage::blockFrames / 2 ? 0.95f : 1.05f;
+        stage.processFrame (frame.data(), ratios, hints);
+    }
+
+    // The block's input trajectory averages to unity. A bug applying only the
+    // last-frame value would instead transpose this whole block by +5 percent.
+    const auto& captured = stage.capturedRatiosForTest();
+    check (captured[0] > 0.999f && captured[0] < 1.001f,
+           "captured block ratio is the mean of its own samples, not the final ratio");
+#endif
+}
+
 void testCorrectorShape()
 {
     std::printf ("\nthe corrector stage: which engine this build has, and what it costs\n");
@@ -825,6 +850,7 @@ int main()
     testUnityIsTransparent();
     testShifterKeepsItsFooting();
     testCorrectionDeadZone();
+    testCorrectorUsesBlockAlignedRatio();
     testCorrectorShape();
     testCorrectorMovesThePitch();
     testCorrectorKeepsTheDuration();

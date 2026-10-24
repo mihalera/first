@@ -291,6 +291,14 @@ void testResetIsOpen()
     // And the first frame after it is not ducked by a stale correction.
     check (limiter.process (0.2f) == 1.0f,
            "the first frame after reset() is untouched");
+
+    // A post-effect peak must still be caught by the shared frame limiter. Its
+    // linked gain cannot exceed the ceiling at steady state.
+    float gain = 1.0f;
+    for (int i = 0; i < 24000; ++i)
+        gain = limiter.process (1.4f);
+    check (1.4f * gain <= coefficients.ceiling * 1.0002f,
+           "the final post-effect guard contains a sustained over-ceiling peak");
 }
 
 } // namespace

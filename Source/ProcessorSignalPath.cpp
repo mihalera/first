@@ -242,7 +242,7 @@ bool FirstAudioProcessor::processBypassedBlock (juce::dsp::AudioBlock<float>& bl
             for (int channel = 0; channel < frameChannels; ++channel)
                 frame[static_cast<std::size_t> (channel)] = block.getSample (channel, sample);
 
-            corrector.delayFrame (frame.data());
+            corrector.delayFrame (frame.data(), frameChannels);
 
             for (int channel = 0; channel < frameChannels; ++channel)
                 block.setSample (channel, sample, frame[static_cast<std::size_t> (channel)]);
@@ -299,6 +299,11 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
     const auto vinylMix = vinylSmoothed.getCurrentValue();
     const auto irMix = irMixSmoothed.getCurrentValue();
     if (channels <= 0 || samples <= 0) return;
+
+    // Adopt model loads/clears on the audio thread before the per-sample neural
+    // stage runs. The handoff is once per block, outside the neural inference loop.
+    neuralL.adoptPendingModel();
+    neuralR.adoptPendingModel();
 
     // -----------------------------------------------------------------------
     //  AUTOTUNE - the corrector's audio path, on the finished block.
@@ -416,6 +421,24 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
                                        noiseLevel * vinylMix);
             }
             data[i] = value;
+        }
+    }
+
+    // IR, reverb and vinyl are intentionally post-machine effects, but their
+    // convolution, tank and generated surface can all add peaks. Run a final
+    // frame-linked safety stage after them so none can exceed the output ceiling.
+    // Below the ceiling its gain remains exactly unity, preserving normal audio.
+    for (int i = 0; i < samples; ++i)
+    {
+        float peak = 0.0f;
+        for (int c = 0; c < frameWidth; ++c)
+            peak = juce::jmax (peak, std::abs (block.getChannelPointer (c)[i]));
+
+        const auto gain = limiter.process (peak);
+        for (int c = 0; c < frameWidth; ++c)
+        {
+            auto* data = block.getChannelPointer (c);
+            data[i] = j37dsp::softClip (data[i] * gain);
         }
     }
 }
@@ -835,6 +858,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         return;
 
     bypassActive.store (false, std::memory_order_relaxed);
+    neuralL.adoptPendingModel();
+    neuralR.adoptPendingModel();
 
     const auto tapeType = static_cast<int> (tapeTypeParam->load());
     const auto speed = static_cast<int> (speedParam->load());

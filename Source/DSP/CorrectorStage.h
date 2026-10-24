@@ -209,6 +209,12 @@ struct CorrectorStage
         for (auto& ring : outputRings)
             ring.fill (0.0f);
 
+        for (auto& ring : ratioRings)
+            ring.fill (1.0f);
+        for (auto& ring : periodRings)
+            ring.fill (0);
+        lastBlockRatios.fill (1.0f);
+
         for (auto& shifter : fallbackShifters)
             shifter.reset();
 
@@ -245,10 +251,11 @@ struct CorrectorStage
     */
     void processFrame (float* frame, const float* ratios, const int* periodHints) noexcept
     {
-        if (! prepared || frame == nullptr)
+        if (! prepared || frame == nullptr || ratios == nullptr || periodHints == nullptr)
             return;
 
-        for (int channel = 0; channel < activeChannels; ++channel)
+        const auto frameChannels = std::min (activeChannels, maxChannels);
+        for (int channel = 0; channel < frameChannels; ++channel)
         {
             const auto index = static_cast<std::size_t> (channel);
             const auto ratio = juce::jlimit (0.5f, 2.0f, ratios[index]);
@@ -257,8 +264,10 @@ struct CorrectorStage
            #if J37_HAS_SIGNALSMITH
             if (engines[index] != nullptr)
             {
-                // Collected, not processed: the block is handed over below.
-                inputRings[index][static_cast<std::size_t> (framesHeld)] = frame[index];
+                const auto frameIndex = static_cast<std::size_t> (framesHeld);
+                inputRings[index][frameIndex] = frame[index];
+                ratioRings[index][frameIndex] = ratio;
+                periodRings[index][frameIndex] = hint;
                 continue;
             }
            #endif
@@ -273,17 +282,17 @@ struct CorrectorStage
             {
                 framesHeld = 0;
 
-                for (int channel = 0; channel < activeChannels; ++channel)
+                for (int channel = 0; channel < frameChannels; ++channel)
                 {
                     const auto index = static_cast<std::size_t> (channel);
                     auto& engine = *engines[index];
 
-                    // The ratio this block reads at is the one the caller has
-                    // NOW, which is the smoothed correction: applying it per block
-                    // rather than per frame costs nothing audible (the vocoder
-                    // analyses every `interval` frames anyway) and keeps the
-                    // library's own rate of change the only rate there is.
-                    engine.setTransposeFactor (juce::jlimit (0.5f, 2.0f, ratios[index]));
+                    float ratioSum = 0.0f;
+                    for (int frameIndex = 0; frameIndex < blockFrames; ++frameIndex)
+                        ratioSum += ratioRings[index][static_cast<std::size_t> (frameIndex)];
+                    const auto meanRatio = ratioSum / blockFrames;
+                    lastBlockRatios[index] = meanRatio;
+                    engine.setTransposeFactor (juce::jlimit (0.5f, 2.0f, meanRatio));
 
                     float* inputChannels[1] { inputRings[index].data() };
                     float* outputChannels[1] { outputRings[index].data() };
@@ -295,7 +304,7 @@ struct CorrectorStage
                 blockReady = true;
             }
 
-            for (int channel = 0; channel < activeChannels; ++channel)
+            for (int channel = 0; channel < frameChannels; ++channel)
             {
                 const auto index = static_cast<std::size_t> (channel);
                 frame[index] = blockReady
@@ -309,6 +318,11 @@ struct CorrectorStage
        #endif
     }
 
+    const std::array<float, blockFrames>& capturedRatiosForTest() const noexcept
+    {
+        return lastBlockRatios;
+    }
+
     /** One frame through the stage's own delay, with nothing done to it.
 
         This is the bypassed plugin's path: it still owes the host the lookahead it
@@ -318,12 +332,13 @@ struct CorrectorStage
         that the block handed over is the identity rather than the vocoder. A stage
         whose latency is zero (the fallback, with nothing engaged) does nothing.
     */
-    void delayFrame (float* frame) noexcept
+    void delayFrame (float* frame, int channels = maxChannels) noexcept
     {
         if (! prepared || frame == nullptr || latencyFrames() == 0)
             return;
 
-        for (int channel = 0; channel < activeChannels; ++channel)
+        const auto frameChannels = std::max (0, std::min (std::min (activeChannels, maxChannels), channels));
+        for (int channel = 0; channel < frameChannels; ++channel)
             inputRings[static_cast<std::size_t> (channel)][static_cast<std::size_t> (framesHeld)]
                 = frame[static_cast<std::size_t> (channel)];
 
@@ -341,7 +356,10 @@ struct CorrectorStage
             blockPosition = 0;
         }
 
-        for (int channel = 0; channel < activeChannels; ++channel)
+        for (int channel = frameChannels; channel < activeChannels; ++channel)
+            outputRings[static_cast<std::size_t> (channel)][static_cast<std::size_t> (blockPosition)] = 0.0f;
+
+        for (int channel = 0; channel < frameChannels; ++channel)
             frame[static_cast<std::size_t> (channel)]
                 = blockReady ? outputRings[static_cast<std::size_t> (channel)][static_cast<std::size_t> (blockPosition)]
                              : 0.0f;
@@ -364,6 +382,12 @@ private:
     // because the audio thread may not grow anything, and the size is a constant.
     std::array<std::array<float, blockFrames>, maxChannels> inputRings {};
     std::array<std::array<float, blockFrames>, maxChannels> outputRings {};
+    // Ratios and fallback period hints are captured alongside each input frame;
+    // a block therefore uses the correction that belonged to those samples, not
+    // the detector's reading at the block's final frame.
+    std::array<std::array<float, blockFrames>, maxChannels> ratioRings {};
+    std::array<std::array<int, blockFrames>, maxChannels> periodRings {};
+    std::array<float, maxChannels> lastBlockRatios { 1.0f, 1.0f };
 
 
     // The absent-library path, and the thing this stage replaced when the library

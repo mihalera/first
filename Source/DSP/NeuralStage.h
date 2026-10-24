@@ -174,10 +174,10 @@ struct NeuralStage
     //  not exist and every method below is the pass-through.
     // -----------------------------------------------------------------------
     std::unique_ptr<InferenceModel> model;
-    // Old model objects are kept alive until stage destruction. Model replacement
-    // is rare; retaining them avoids deallocation while an audio callback may be
-    // finishing inference with a previously loaded pointer.
-    std::vector<std::unique_ptr<InferenceModel>> retiredModels;
+    // Control-thread-built model awaiting adoption by the audio thread. Access to
+    // `pendingModel` is protected by controlMutex; once adopted, `model` and the
+    // active pointer are owned and used only by the audio thread.
+    std::unique_ptr<InferenceModel> pendingModel;
     std::mutex controlMutex;
     std::atomic<InferenceModel*> activeModel { nullptr };
     std::atomic<bool> clearRequested { false };
@@ -275,16 +275,15 @@ struct NeuralStage
 #endif
     }
 
-    /** Releases the model, returning the stage to the pass-through. */
+    /** Releases the model, returning the stage to the pass-through. The control
+        thread first closes the stage and waits for any in-flight sample to leave;
+        the outgoing model is then retired by the next audio-thread handoff. */
     void clear() noexcept
     {
 #if J37_HAS_RTNEURAL || J37_HAS_NAMCORE
         std::lock_guard<std::mutex> lock (controlMutex);
         clearRequested.store (true, std::memory_order_release);
         activeModel.store (nullptr, std::memory_order_release);
-        if (model != nullptr)
-            retiredModels.push_back (std::move (model));
-        resetRequested.store (true, std::memory_order_release);
 #endif
     }
 
@@ -585,19 +584,53 @@ struct NeuralStage
     }
     #endif
 
-    /** Publishes a built model: the pointer the audio thread reads, the retirement
-        list that keeps the previous one alive, and the deferred reset that stops
-        the new model resuming from the old one's state. */
+    /** Publishes a completed model for adoption at the next audio-thread block.
+        It never replaces an object that process() may currently be using. */
     void publish (std::unique_ptr<InferenceModel> built)
     {
         std::lock_guard<std::mutex> lock (controlMutex);
+        pendingModel = std::move (built);
         clearRequested.store (true, std::memory_order_release);
-        if (model != nullptr)
-            retiredModels.push_back (std::move (model));
-        model = std::move (built);
-        activeModel.store (model.get(), std::memory_order_release);
-        clearRequested.store (false, std::memory_order_release);
-        resetRequested.store (true, std::memory_order_release);
+        activeModel.store (nullptr, std::memory_order_release);
+        resetRequested.store (false, std::memory_order_relaxed);
+    }
+
+    /** Audio-thread-only handoff, called once before processing a block. Any
+        outgoing model is destroyed here, never on the message thread while it may
+        be in forward(), nor deferred until plugin teardown. */
+    void adoptPendingModel()
+    {
+        bool clear = false;
+        bool adopt = false;
+        std::unique_lock<std::mutex> lock (controlMutex);
+        clear = clearRequested.load (std::memory_order_acquire);
+        if (pendingModel != nullptr)
+        {
+            adopt = true;
+            model = std::move (pendingModel);
+        }
+
+        if (clear && ! adopt)
+        {
+            clearRequested.store (false, std::memory_order_release);
+            lock.unlock();
+            activeModel.store (nullptr, std::memory_order_release);
+            model.reset();
+            resetRequested.store (false, std::memory_order_relaxed);
+            bridge.reset();
+            return;
+        }
+
+        if (adopt)
+        {
+            lock.unlock();
+            activeModel.store (nullptr, std::memory_order_release);
+            model->reset();
+            bridge.reset();
+            activeModel.store (model.get(), std::memory_order_release);
+            clearRequested.store (false, std::memory_order_release);
+            resetRequested.store (false, std::memory_order_relaxed);
+        }
     }
 
     /** Whether a .nam document declares the one architecture the converter above
@@ -638,18 +671,12 @@ struct NeuralStage
             return x;
 
         auto* active = activeModel.load (std::memory_order_acquire);
-        if (active == nullptr || clearRequested.load (std::memory_order_acquire))
-            return x;
-
-        if (activeModel.load (std::memory_order_acquire) != active
-            || clearRequested.load (std::memory_order_acquire))
+        if (active == nullptr)
             return x;
 
         // The rates, latched here rather than written into the bridge by the
-        // thread that knows them: see `setSampleRates`. Checked per sample, which
-        // is one relaxed load against the two the guards above already make, and
-        // it has to be here rather than per block because this stage is called
-        // per sample.
+        // thread that knows them: see `setSampleRates`. Checked per sample because
+        // this stage is called per sample.
         // Claim the pending update BEFORE reading the rates. If setSampleRates()
         // publishes another update during these loads, its store of true remains
         // pending for the next inference instead of being erased by a trailing clear.
