@@ -942,8 +942,7 @@ private:
     /** (Re)creates the oversampling engine for the requested factor and reports latency. */
     void setOversamplingFactor (OversamplingFactor factor, int samplesPerBlock);
 
-    /** AsyncUpdater callback: host latency notifications must not be issued from
-        processBlock, where JUCE synchronously calls processor listeners. */
+    /** Message-thread callback for realtime-safe latency changes. */
     void handleAsyncUpdate() override;
 
     /** Pure function of the parameter snapshot - the factory preset table. */
@@ -1441,6 +1440,8 @@ private:
     // processAutoTuneSample, which is the only caller.
     std::array<PitchTracker, 2> autoTuneTrackers;
     std::array<float, 2> autoTuneCorrectionSmoothed { 1.0f, 1.0f };
+    std::array<float, 2> autoTuneRatiosForFrame { 1.0f, 1.0f };
+    std::array<int, 2> autoTunePeriodHintsFor { 0, 0 };
     juce::AudioBuffer<float> postFxScratch;
 
     // Measures the harmonics the tape shaper is actually producing, separating even from

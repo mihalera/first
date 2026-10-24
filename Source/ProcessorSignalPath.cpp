@@ -300,11 +300,6 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
     const auto irMix = irMixSmoothed.getCurrentValue();
     if (channels <= 0 || samples <= 0) return;
 
-    // Adopt model loads/clears on the audio thread before the per-sample neural
-    // stage runs. The handoff is once per block, outside the neural inference loop.
-    neuralL.adoptPendingModel();
-    neuralR.adoptPendingModel();
-
     // -----------------------------------------------------------------------
     //  AUTOTUNE - the corrector's audio path, on the finished block.
     //
@@ -345,6 +340,8 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
                     = block.getChannelPointer (static_cast<std::size_t> (c))[i];
 
             processAutoTuneSample (tuneFrame.data(), frameChannels, context.sampleRate);
+            corrector.processFrame (tuneFrame.data(), autoTuneRatiosForFrame.data(),
+                                    autoTunePeriodHintsFor.data(), frameChannels);
 
             for (int c = 0; c < frameChannels; ++c)
                 block.getChannelPointer (static_cast<std::size_t> (c))[i]
@@ -365,6 +362,8 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
 
     if (reverbMix <= 1.0e-5f && vinylMix <= 1.0e-5f && ! irActive) return;
     const auto reverbSize = reverbSizeSmoothed.getCurrentValue();
+    j37dsp::SafetyLimiter postFxLimiter;
+    postFxLimiter.prepare (limiter.getCoefficients());
 
     // The room takes the WHOLE frame rather than one channel of it: Dattorro's
     // network is fed one signal and its width comes from tapping the tank twice,
@@ -434,7 +433,7 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
         for (int c = 0; c < frameWidth; ++c)
             peak = juce::jmax (peak, std::abs (block.getChannelPointer (c)[i]));
 
-        const auto gain = limiter.process (peak);
+        const auto gain = postFxLimiter.process (peak);
         for (int c = 0; c < frameWidth; ++c)
         {
             auto* data = block.getChannelPointer (c);
@@ -512,8 +511,8 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
     // splices on. The ratios start at unity, so a channel the loop never reaches
     // (a mono bus) is a pass-through rather than a stale value, and a channel whose
     // reading is gated out simply keeps it.
-    std::array<float, 2> ratios { 1.0f, 1.0f };
-    std::array<int, 2> periodHints { 0, 0 };
+    autoTuneRatiosForFrame = { 1.0f, 1.0f };
+    autoTunePeriodHintsFor = { 0, 0 };
 
     for (int channel = 0; channel < juce::jlimit (0, 2, channels); ++channel)
     {
@@ -531,7 +530,7 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
         if (confidence < 0.5f || detected < 45.0f || detected > 1400.0f)
         {
             autoTuneCorrectionSmoothed[i] += (1.0f - autoTuneCorrectionSmoothed[i]) * glide;
-            ratios[i] = autoTuneCorrectionSmoothed[i];
+            autoTuneRatiosForFrame[i] = autoTuneCorrectionSmoothed[i];
             continue;
         }
 
@@ -584,15 +583,16 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
         // it is rescaled here - the one place that knows both rates.
         const auto stagePeriod = tracker.periodFrames() * stageRate / tracker.analysisRateHz();
 
-        ratios[i] = autoTuneCorrectionSmoothed[i];
-        periodHints[i] = stagePeriod > 0.0f ? juce::roundToInt (stagePeriod) : 0;
+        autoTuneRatiosForFrame[i] = autoTuneCorrectionSmoothed[i];
+        autoTunePeriodHintsFor[i] = stagePeriod > 0.0f ? juce::roundToInt (stagePeriod) : 0;
     }
 
     // The audio path, once for the frame. Everything above this line is the
     // CONTROL - what note is playing, where it should sit, how fast the pull is
     // allowed to travel - and the line below is the engine that does it. Which
     // engine is Source/DSP/CorrectorStage.h's business, not this function's.
-    corrector.processFrame (samples, ratios.data(), periodHints.data());
+    corrector.processFrame (samples, autoTuneRatiosForFrame.data(),
+                            autoTunePeriodHintsFor.data(), channels);
 }
 
 void FirstAudioProcessor::publishBlockTelemetry (const BlockContext& context,

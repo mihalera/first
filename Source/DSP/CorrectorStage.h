@@ -247,14 +247,15 @@ struct CorrectorStage
         `ratios` is the pitch to read each channel at (1 is the input's own
         pitch) and `periodHints` the material's period in frames for the fallback
         shifter - 0 when the caller has no reading. Both are read as
-        `activeChannels` long.
+        `activeChannels` long. `channels` is the number of valid samples in frame.
     */
-    void processFrame (float* frame, const float* ratios, const int* periodHints) noexcept
+    void processFrame (float* frame, const float* ratios, const int* periodHints,
+                       int channels = maxChannels) noexcept
     {
         if (! prepared || frame == nullptr || ratios == nullptr || periodHints == nullptr)
             return;
 
-        const auto frameChannels = std::min (activeChannels, maxChannels);
+        const auto frameChannels = std::max (0, std::min (std::min (activeChannels, maxChannels), channels));
         for (int channel = 0; channel < frameChannels; ++channel)
         {
             const auto index = static_cast<std::size_t> (channel);
@@ -318,7 +319,7 @@ struct CorrectorStage
        #endif
     }
 
-    const std::array<float, blockFrames>& capturedRatiosForTest() const noexcept
+    const std::array<float, maxChannels>& capturedRatiosForTest() const noexcept
     {
         return lastBlockRatios;
     }

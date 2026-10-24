@@ -174,13 +174,12 @@ struct NeuralStage
     //  not exist and every method below is the pass-through.
     // -----------------------------------------------------------------------
     std::unique_ptr<InferenceModel> model;
-    // Control-thread-built model awaiting adoption by the audio thread. Access to
-    // `pendingModel` is protected by controlMutex; once adopted, `model` and the
-    // active pointer are owned and used only by the audio thread.
     std::unique_ptr<InferenceModel> pendingModel;
+    std::unique_ptr<InferenceModel> retiredModel;
     std::mutex controlMutex;
     std::atomic<InferenceModel*> activeModel { nullptr };
     std::atomic<bool> clearRequested { false };
+    std::atomic<bool> audioQuiescent { true };
     std::atomic<bool> resetRequested { false };
 
     // The conversion, for a model whose own rate is not the engine's (see
@@ -281,9 +280,15 @@ struct NeuralStage
     void clear() noexcept
     {
 #if J37_HAS_RTNEURAL || J37_HAS_NAMCORE
-        std::lock_guard<std::mutex> lock (controlMutex);
-        clearRequested.store (true, std::memory_order_release);
-        activeModel.store (nullptr, std::memory_order_release);
+        std::unique_ptr<InferenceModel> discard;
+        {
+            std::lock_guard<std::mutex> lock (controlMutex);
+            discard = std::move (pendingModel);
+            clearRequested.store (true, std::memory_order_release);
+            activeModel.store (nullptr, std::memory_order_release);
+        }
+        discard.reset();
+        reclaimRetiredModel();
 #endif
     }
 
@@ -588,54 +593,73 @@ struct NeuralStage
         It never replaces an object that process() may currently be using. */
     void publish (std::unique_ptr<InferenceModel> built)
     {
-        std::lock_guard<std::mutex> lock (controlMutex);
-        pendingModel = std::move (built);
-        clearRequested.store (true, std::memory_order_release);
-        activeModel.store (nullptr, std::memory_order_release);
-        resetRequested.store (false, std::memory_order_relaxed);
+        std::unique_ptr<InferenceModel> displaced;
+        {
+            std::lock_guard<std::mutex> lock (controlMutex);
+            displaced = std::move (pendingModel);
+            pendingModel = std::move (built);
+            clearRequested.store (false, std::memory_order_release);
+            resetRequested.store (false, std::memory_order_relaxed);
+        }
+        displaced.reset();
+        reclaimRetiredModel();
     }
 
-    /** Audio-thread-only handoff, called once before processing a block. Any
-        outgoing model is destroyed here, never on the message thread while it may
-        be in forward(), nor deferred until plugin teardown. */
+    /** Handoff called before a block. The outgoing model is not destroyed here:
+        destruction can allocate/free or acquire library locks, so control-thread
+        code reclaims it only after observing the audio thread's quiescent epoch. */
     void adoptPendingModel()
     {
-        bool clear = false;
+        std::unique_ptr<InferenceModel> previous;
         bool adopt = false;
-        std::unique_lock<std::mutex> lock (controlMutex);
-        clear = clearRequested.load (std::memory_order_acquire);
-        if (pendingModel != nullptr)
+        bool clear = false;
         {
-            adopt = true;
-            model = std::move (pendingModel);
-        }
+            std::lock_guard<std::mutex> lock (controlMutex);
+            clear = clearRequested.load (std::memory_order_acquire);
+            adopt = pendingModel != nullptr;
+            if (! clear && ! adopt)
+                return;
 
-        if (clear && ! adopt)
-        {
-            clearRequested.store (false, std::memory_order_release);
-            lock.unlock();
             activeModel.store (nullptr, std::memory_order_release);
-            model.reset();
-            resetRequested.store (false, std::memory_order_relaxed);
-            bridge.reset();
-            return;
+            previous = std::move (model);
+            if (adopt)
+                model = std::move (pendingModel);
+            clearRequested.store (false, std::memory_order_release);
         }
 
         if (adopt)
         {
-            lock.unlock();
-            activeModel.store (nullptr, std::memory_order_release);
             model->reset();
             bridge.reset();
             activeModel.store (model.get(), std::memory_order_release);
-            clearRequested.store (false, std::memory_order_release);
+        }
+        else
+        {
             resetRequested.store (false, std::memory_order_relaxed);
+            bridge.reset();
+        }
+
+        if (previous != nullptr)
+        {
+            std::lock_guard<std::mutex> lock (controlMutex);
+            retiredModel = std::move (previous);
         }
     }
 
     /** Whether a .nam document declares the one architecture the converter above
         covers. Every other architecture is NAM Core's, and a build without NAM
         Core refuses it. */
+    void reclaimRetiredModel() noexcept
+    {
+        std::unique_ptr<InferenceModel> retired;
+        {
+            std::lock_guard<std::mutex> lock (controlMutex);
+            if (! audioQuiescent.load (std::memory_order_acquire))
+                return;
+            retired = std::move (retiredModel);
+        }
+    }
+
     static bool isLstm (const nlohmann::json& namJson)
     {
         return namJson.contains ("architecture")
@@ -674,6 +698,11 @@ struct NeuralStage
         if (active == nullptr)
             return x;
 
+        if (activeModel.load (std::memory_order_acquire) != active)
+            return x;
+
+        audioQuiescent.store (false, std::memory_order_release);
+
         // The rates, latched here rather than written into the bridge by the
         // thread that knows them: see `setSampleRates`. Checked per sample because
         // this stage is called per sample.
@@ -702,8 +731,10 @@ struct NeuralStage
             return active->forward (input);
         });
 
-        return converted.dry
-             + (converted.wet - converted.dry) * juce::jlimit (0.0f, 1.0f, amount);
+        const auto output = converted.dry
+                          + (converted.wet - converted.dry) * juce::jlimit (0.0f, 1.0f, amount);
+        audioQuiescent.store (true, std::memory_order_release);
+        return output;
 #else
         juce::ignoreUnused (amount);
         return x;

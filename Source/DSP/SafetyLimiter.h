@@ -73,6 +73,7 @@ public:
     };
 
     void prepare (const Coefficients& toUse) noexcept { coefficients = toUse; }
+    const Coefficients& getCoefficients() const noexcept { return coefficients; }
 
     /** Open, with no detector history: a stale gain from the previous session must
         not duck the first block audibly. */

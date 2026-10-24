@@ -556,7 +556,6 @@ void FirstAudioProcessor::changeProgramName (int, const juce::String&)
 //==============================================================================
 void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerBlock)
 {
-    cancelPendingUpdate();
     sampleRate = static_cast<float> (sampleRateToUse);
 
     // The oversampling engines only depend on rate and block size, so they are
@@ -1129,7 +1128,6 @@ void FirstAudioProcessor::updateToneCoefficients (float toneValue, float engineS
 
 void FirstAudioProcessor::releaseResources()
 {
-    cancelPendingUpdate();
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations
