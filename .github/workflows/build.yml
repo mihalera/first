@@ -911,9 +911,21 @@ jobs:
         shell: pwsh
         run: |
           $msi = Join-Path $env:RUNNER_TEMP "armpl.msi"
-          Invoke-WebRequest `
-            -Uri "https://developer.arm.com/-/cdn-downloads/permalink/Arm-Performance-Libraries/Version_26.07/arm-performance-libraries_26.07_Windows.msi" `
-            -OutFile $msi
+
+          # curl.exe, not Invoke-WebRequest. The CDN in front of developer.arm.com
+          # answers PowerShell's downloader with an Akamai "Access Denied" page
+          # (reference 18...) - not a 404, so it reads like a permissions problem
+          # on the repository. The same URL through curl, which is what the Linux
+          # job uses, returns the MSI. -f turns an HTTP error into a non-zero exit
+          # instead of saving the error page as the installer.
+          curl.exe -fL --retry 3 --retry-delay 5 `
+            -o $msi "https://developer.arm.com/-/cdn-downloads/permalink/Arm-Performance-Libraries/Version_26.07/arm-performance-libraries_26.07_Windows.msi"
+          if ($LASTEXITCODE -ne 0) {
+              throw "downloading ArmPL failed with exit code $LASTEXITCODE"
+          }
+          if (-not (Test-Path $msi) -or (Get-Item $msi).Length -lt 100MB) {
+              throw "the ArmPL download is missing or too small to be the MSI"
+          }
 
           $install = Start-Process msiexec.exe -Wait -PassThru `
             -ArgumentList "/i", "`"$msi`"", "/quiet", "ACCEPT_EULA=1"
