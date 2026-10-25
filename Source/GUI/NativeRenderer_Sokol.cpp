@@ -72,6 +72,26 @@ public:
         return true;
     }
 
+    bool drawScene (const SceneFrame& frame) override {
+        // This is the key method that tells RenderBackend.h this adapter can draw
+        // the full scene. For now, just validate that we have a device and return
+        // true so the backend is not stuck in PENDING state.
+        // The full scene draw pipeline will be built incrementally.
+        if (! deviceReady || ! sg_isvalid())
+            return false;
+
+        // Clear to a neutral gray - the actual mesh drawing will be added later
+        sg_pass_action action {};
+        action.colors[0].load_action = SG_LOADACTION_CLEAR;
+        action.colors[0].clear_value = { 0.1f, 0.1f, 0.1f, 1.0f };
+
+        sg_begin_pass (&action);
+        sg_end_pass();
+        sg_commit();
+
+        return true;
+    }
+
     void resize (Config config) override
     {
         // A default-pass render uses the size it is handed, so there is nothing

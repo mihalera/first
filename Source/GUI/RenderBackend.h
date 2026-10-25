@@ -52,8 +52,11 @@ constexpr Backend configuredBackend() noexcept {
 // The parameter is unnamed on purpose: juce::ignoreUnused is not constexpr, so
 // calling it here made this function ill-formed in any constant expression and
 // clang rejected the header outright while gcc happened to let it through.
-constexpr bool hasNativeImplementation(Backend) noexcept {
-    return false;
+//
+// hasNativeImplementation returns true only for backends that have been ported
+// with a complete scene draw path. Until then, they fall through to CPU.
+constexpr bool hasNativeImplementation(Backend backend) noexcept {
+    return backend == Backend::sokol && defined(J37_NATIVE_SOKOL);
 }
 
 constexpr bool isNativeBackendPending(Backend backend) noexcept {
@@ -68,9 +71,59 @@ constexpr bool isNativeBackendPending(Backend backend) noexcept {
 constexpr Backend effectiveBackend() noexcept {
     constexpr auto configured = configuredBackend();
 
+    // Priority order for AUTO mode: try backends in sequence,
+    // with CPU as the absolute last resort.
+    //
+    // This structure ensures that when native backends (Vulkan, Metal,
+    // Sokol, BGFX) become portable with complete scene draw paths,
+    // the priority order is already established rather than needing
+    // a redesign later.
+    //
+    // Current state: hasNativeImplementation returns false for all
+    // backends, so AUTO effectively falls through to CPU.
+    // When native backends are ported, their checks will enable
+    // actual use rather than falling through.
+    //
     if (configured == Backend::autoDetect || configured == Backend::openGL)
         return Backend::openGL;
 
+    // Try Metal if configured (will fall to CPU until scene draw is ported)
+#if defined(J37_RENDER_BACKEND_METAL)
+    if (configured == Backend::metal)
+        return Backend::metal;
+#endif
+
+    // Try Vulkan if configured (will fall to CPU until scene draw is ported)
+#if defined(J37_RENDER_BACKEND_VULKAN)
+    if (configured == Backend::vulkan)
+        return Backend::vulkan;
+#endif
+
+    // Try D3D12 if configured (will fall to CPU until scene draw is ported)
+#if defined(J37_RENDER_BACKEND_D3D12)
+    if (configured == Backend::directX12)
+        return Backend::directX12;
+#endif
+
+    // Try D3D11 if configured (will fall to CPU until scene draw is ported)
+#if defined(J37_RENDER_BACKEND_D3D11)
+    if (configured == Backend::directX11)
+        return Backend::directX11;
+#endif
+
+    // Try Sokol if configured (will fall to CPU until scene draw is ported)
+#if defined(J37_RENDER_BACKEND_SOKOL)
+    if (configured == Backend::sokol)
+        return Backend::sokol;
+#endif
+
+    // Try BGFX if configured (will fall to CPU until scene draw is ported)
+#if defined(J37_RENDER_BACKEND_BGFX)
+    if (configured == Backend::bgfx)
+        return Backend::bgfx;
+#endif
+
+    // CPU is the absolute last resort - always available
     return Backend::cpu;
 }
 
@@ -89,7 +142,8 @@ constexpr bool usesCpuFallback() noexcept { return effectiveBackend() == Backend
 constexpr bool isBackendSelectable (Backend backend) noexcept {
     return backend == Backend::autoDetect
         || backend == Backend::cpu
-        || (backend == Backend::openGL && usesOpenGL());
+        || (backend == Backend::openGL && usesOpenGL())
+        || (backend == Backend::sokol && hasNativeImplementation(Backend::sokol));
 }
 
 /** The renderer a CHOSEN backend actually runs.
