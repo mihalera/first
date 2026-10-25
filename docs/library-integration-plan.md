@@ -723,3 +723,19 @@ features need. The one common-audio-library question left - reading compressed o
 container formats - has no use case: a noise print is a recording the user makes, and
 the IR picker has JUCE's decoders behind it. So WP3 is the end of this plan, and after
 it the honest answer is that the tree's own stages are the answer.
+
+## 7. Since this audit
+
+Two additions landed after the review above. Neither changes its conclusion - they are a
+format and an accelerator, not new DSP - but both are recorded here rather than left to be
+discovered in a diff:
+
+| Item | What it is | How it meets §5 |
+| --- | --- | --- |
+| **clap-juce-extensions** | The CLAP wrapper JUCE does not have. Pinned by commit SHA in `cmake/J37Dependencies.cmake`, MIT, with CLAP and clap-helpers as its own submodules | §5 is written for a library a stage calls; a format wrapper is a different shape, so only points 1, 6 and 7 apply - and they do: pinned, in the notices, and built by every desktop CI job (the ARM jobs verify the artefact explicitly). There is no `J37_HAS_*` probe because CLAP is not optional on a desktop build: `first_CLAP` is part of ALL, so a wrapper that stopped compiling fails the build rather than silently dropping a format |
+| **Arm Performance Libraries (ArmPL)** | The AArch64 counterpart of Intel IPP. Found on the build machine, never vendored; `Source/DSP/SpectrumAnalyser.h` calls its FFTW3-compatible FFT | All seven. Not fetched, so not pinned here - the ARM CI jobs name the version (26.07) and `cmake/J37VendorLibraries.cmake` discovers the prefix the installer left; `J37_HAS_ARMPL` in `OptionalLibraries.h`; `J37_ENABLE_ARMPL` and `J37_ARMPL_REQUIRED` as the two switches; a caller in the analyser, so the link line has no new dead entry; a third `tests/spectrum` pass that compiles and RUNS the branch against a stand-in FFTW, on every push; rows in `THIRD_PARTY_NOTICES.md` and the README; and `build-linux-arm64` / `build-windows-arm64`, which install it and configure with `J37_ARMPL_REQUIRED=ON` |
+
+What ArmPL deliberately does not do is accelerate JUCE's own FFT: JUCE 9.0.4 has engines
+for IPP, MKL and vDSP only, so there is no `juce_dsp` macro for an AArch64 library. The
+analyser is therefore the caller, and pocketfft remains the path everywhere else - the same
+additive arrangement IPP has, one level lower in the stack.

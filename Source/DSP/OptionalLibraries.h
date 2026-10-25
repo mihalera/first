@@ -281,6 +281,26 @@
 #endif
 
 // ------------------------------------------------------------------------------
+//  Arm Performance Libraries (cmake/J37VendorLibraries.cmake discovers it).
+//
+//  This is the one probe here with no __has_include test, and the omission is
+//  the point. ArmPL is FOUND, not vendored, so what decides the branch is
+//  whether the build links it - and only CMake knows that. A header probe would
+//  accept any system FFTW, including one whose symbols are not on the link line:
+//  the analyser would compile, take the ArmPL path, and fail to link. CMake
+//  defines J37_HAS_ARMPL=1 on the plugin target when it links the library, and
+//  this block is what makes every other build read 0 rather than be undefined.
+//
+//  tests/spectrum compiles this branch against a stand-in fftw3.h with
+//  -DJ37_HAS_ARMPL=1 - the same way tests/neural stands in for RTNeural's API -
+//  so the header half is built and run even on a machine that has no ARM
+//  toolchain at all.
+// ------------------------------------------------------------------------------
+#if ! defined (J37_HAS_ARMPL)
+ #define J37_HAS_ARMPL 0
+#endif
+
+// ------------------------------------------------------------------------------
 //  dr_wav (mackron/dr_libs, vendored under ThirdParty/dr_libs as the one header
 //  dr_wav.h, with the implementation compiled by Source/DSP/NoiseDecoder.cpp).
 //

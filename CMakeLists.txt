@@ -342,6 +342,44 @@ include(J37ThirdPartyWarnings)
 j37_apply_thirdparty_warnings(first)
 
 # ------------------------------------------------------------------------------
+#  CLAP - the one format JUCE does not produce.
+#
+#  CLAP is deliberately NOT in FORMATS above, and cannot be: JUCE's plugin-kind
+#  list has no CLAP in it, so juce_add_plugin would intersect the name away and
+#  this build would ship one wrapper fewer with nothing in the log to say so.
+#  clap-juce-extensions wraps the JUCE target instead - it compiles CLAP's own
+#  entry point into a MODULE target called first_CLAP, linking the SAME shared
+#  code the VST3 and AU wrappers link, so the CLAP build is not a second copy of
+#  the processor and cannot drift from the others.
+#
+#  What that means for the build:
+#
+#    * `cmake --build build` builds it too, because the target is part of ALL.
+#      There is no separate switch to forget.
+#    * its artefact is first_CLAP, a file on Linux and Windows and a .clap
+#      bundle on macOS - the platform's own convention, which is what a host
+#      expects to find in its CLAP folder.
+#    * Android is excluded. That build is Standalone-only for the reason stated
+#      above the FORMATS list, and a CLAP module has no host to load it there.
+#
+#  CLAP_ID is the plugin's reverse-DNS identity to a CLAP host and is the key a
+#  host saves session state under, so it is as load-bearing as PLUGIN_CODE is to
+#  a VST3 host: it must never change once shipped. It is the product's name
+#  rather than the CMake target's, because "first" is the target name and MiBoX
+#  is the product a host lists.
+#
+#  The features are CLAP's own vocabulary - audio-effect, distortion, stereo -
+#  and they are what a host filters and sorts by. `instrument` is notably NOT
+#  among them: this is an insert effect, and a host that offered it as a synth
+#  would be offering a channel with no note input.
+# ------------------------------------------------------------------------------
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
+    clap_juce_extensions_plugin(TARGET first
+        CLAP_ID         "com.mcsmes.mibox"
+        CLAP_FEATURES   audio-effect distortion stereo)
+endif()
+
+# ------------------------------------------------------------------------------
 #  Generated JuceHeader.h
 #
 #  The plugin sources include <JuceHeader.h>, which is how the previous Projucer
@@ -834,11 +872,14 @@ message(STATUS "  Build commit: ${J37_BUILD_COMMIT}")
 if(APPLE)
     message(STATUS "  Archs       : ${CMAKE_OSX_ARCHITECTURES}")
     message(STATUS "  macOS floor : ${CMAKE_OSX_DEPLOYMENT_TARGET}")
-    message(STATUS "  Formats     : VST3, AU, AUv3")
+    message(STATUS "  Formats     : VST3, AU, AUv3, CLAP")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    message(STATUS "  Formats     : Standalone")
 else()
-    message(STATUS "  Formats     : VST3")
+    message(STATUS "  Formats     : VST3, CLAP")
 endif()
 message(STATUS "  Libraries   : chowdsp_utils, melatonin_inspector, melatonin_blur, foleys_gui_magic, xsimd")
+message(STATUS "                clap-juce-extensions (CLAP wrapper - JUCE has no CLAP format)")
 message(STATUS "                signalsmith-stretch, fftconvolver,")
 message(STATUS "                imgui, iPlug2 (source only)")
 message(STATUS "                chowcentaur, vcv_prototype, rack, soundpipe, aubio (source only)")
@@ -874,6 +915,13 @@ elseif(J37_ENABLE_IPP)
     message(STATUS "                Intel IPP not installed - portable paths only")
 else()
     message(STATUS "                Intel IPP disabled by J37_ENABLE_IPP=OFF")
+endif()
+if(J37_HAVE_ARMPL)
+    message(STATUS "                ArmPL found: ${J37_ARMPL_HOW} - the spectrum analyser's FFT is ArmPL's")
+elseif(J37_ENABLE_ARMPL)
+    message(STATUS "                ArmPL not installed - the spectrum analyser uses pocketfft")
+else()
+    message(STATUS "                ArmPL disabled by J37_ENABLE_ARMPL=OFF")
 endif()
 if(J37_USE_SIMD_TANH OR J37_HAS_XSIMD)
     message(STATUS "  Shaper tanh : xsimd's batch kernel (default when xsimd available - ~1.5x faster, ~1e-7 curve difference)")

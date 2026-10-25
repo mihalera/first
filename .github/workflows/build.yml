@@ -847,11 +847,169 @@ jobs:
           "bundle=$($bundle.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "binary=$($binary.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
-      - name: Upload VST3 Artifact
+      # A separate target, so a separate check - see the Linux job.
+      - name: Verify the CLAP module was produced
+        id: clap
+        shell: pwsh
+        run: |
+          $module = Get-ChildItem -Path "build/first_artefacts/${{ env.BUILD_TYPE }}/CLAP" `
+                              -Filter "*.clap" -File -ErrorAction SilentlyContinue |
+                        Sort-Object FullName | Select-Object -First 1
+          if ($null -eq $module) {
+              Write-Error "No .clap module found under build/first_artefacts/${{ env.BUILD_TYPE }}/CLAP"
+              Get-ChildItem -Recurse build/first_artefacts -ErrorAction SilentlyContinue |
+                  Select-Object -First 40 FullName
+              exit 1
+          }
+          Write-Host "CLAP: $($module.FullName)"
+          "clap=$($module.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload Windows artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: MiBoX-VST3-Windows
-          path: ${{ steps.vst3.outputs.bundle }}
+          name: MiBoX-VST3-CLAP-Windows
+          path: |
+            ${{ steps.vst3.outputs.bundle }}
+            ${{ steps.clap.outputs.clap }}
+          if-no-files-found: error
+
+  # ============================================================================
+  #  Windows ARM64 - VST3 + CLAP, with Arm Performance Libraries
+  #
+  #  The Windows counterpart of build-linux-arm64, and separate from
+  #  build-windows for the same reasons: windows-11-arm is a native ARM64 host
+  #  with the MSVC ARM64 toolset, ArmPL is the Windows MSI rather than the Linux
+  #  tarball, and the ArmPL wiring is only proven on a machine that has it.
+  #
+  #  -A ARM64 is what selects the architecture. Without it the default generator
+  #  would build x64 on an ARM64 machine - a green build that says nothing about
+  #  the platform the job exists for - and JUCE would compile its x64 wrappers.
+  #  ArmPL is installed BEFORE the configure so that
+  #  -DJ37_ARMPL_REQUIRED=ON can do its job: if the MSI layout moves and the
+  #  header cannot be located, this fails here rather than producing a build with
+  #  the portable FFT in it.
+  # ============================================================================
+  build-windows-arm64:
+    name: build-windows-arm64 (ArmPL)
+    runs-on: windows-11-arm
+    timeout-minutes: 60
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      # The MSI is the documented non-interactive form on Windows; winget would
+      # depend on a package source the ARM image may not have configured. The
+      # installer puts include/, lib/ and bin/ under
+      # "<Program Files>\Arm\Arm Performance Libraries\armpl_<version>_...", a
+      # path that carries the version - so the prefix is located by finding
+      # fftw3.h rather than guessed. ARMPL_DIR is Arm's own variable and is what
+      # cmake/J37VendorLibraries.cmake reads first.
+      - name: Install Arm Performance Libraries
+        shell: pwsh
+        run: |
+          $msi = Join-Path $env:RUNNER_TEMP "armpl.msi"
+          Invoke-WebRequest `
+            -Uri "https://developer.arm.com/-/cdn-downloads/permalink/Arm-Performance-Libraries/Version_26.07/arm-performance-libraries_26.07_Windows.msi" `
+            -OutFile $msi
+
+          $install = Start-Process msiexec.exe -Wait -PassThru `
+            -ArgumentList "/i", "`"$msi`"", "/quiet", "ACCEPT_EULA=1"
+          if ($install.ExitCode -ne 0) {
+              throw "ArmPL installer exited with $($install.ExitCode)"
+          }
+
+          $header = Get-ChildItem -Path "${env:ProgramFiles}\Arm" -Recurse -Filter "fftw3.h" `
+                                 -ErrorAction SilentlyContinue |
+                    Sort-Object FullName | Select-Object -First 1
+          if ($null -eq $header) {
+              throw "No fftw3.h under ${env:ProgramFiles}\Arm after the install"
+          }
+
+          $prefix = Split-Path (Split-Path $header.FullName -Parent) -Parent
+          Write-Host "ArmPL prefix: $prefix"
+          "ARMPL_DIR=$prefix" | Out-File -FilePath $env:GITHUB_ENV -Append -Encoding utf8
+
+      - name: Configure CMake (ARM64, ArmPL required)
+        shell: pwsh
+        run: |
+          cmake -S . -B build -A ARM64 `
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} `
+            -DJ37_FAST_WINDOWS_BUILD=ON `
+            -DJ37_ENABLE_ARMPL=ON `
+            -DJ37_ARMPL_REQUIRED=ON 2>&1 | Tee-Object -FilePath configure.log
+
+          # Tee-Object succeeding is not cmake succeeding, and a failed configure
+          # would otherwise let the build step fail with a misleading message.
+          if ($LASTEXITCODE -ne 0) {
+              Write-Error "CMake configure failed with exit code $LASTEXITCODE"
+              exit $LASTEXITCODE
+          }
+
+          # J37_ARMPL_REQUIRED fails the configure when the library is absent;
+          # this asserts that it was also WIRED to the plugin target, which is
+          # the half a found-but-never-linked library would still miss.
+          if (-not (Select-String -Path configure.log -Pattern "ArmPL: linked" -Quiet)) {
+              Write-Error "ArmPL was found but never wired to the plugin target"
+              exit 1
+          }
+
+      - name: Build
+        shell: pwsh
+        run: |
+          $env:CMAKE_BUILD_PARALLEL_LEVEL = [Environment]::ProcessorCount
+          $env:CL_MPCount = [Environment]::ProcessorCount
+
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel 2>&1 |
+            ForEach-Object {
+                if ($_ -match 'cl : .*warning|error|Error|warning [A-Z]+[0-9]+') { $_ }
+            }
+
+          if ($LASTEXITCODE -ne 0) {
+              Write-Error "Build failed with exit code $LASTEXITCODE"
+              exit $LASTEXITCODE
+          }
+
+      - name: Verify the ARM64 VST3 and CLAP bundles
+        id: bundles
+        shell: pwsh
+        run: |
+          $base = "build/first_artefacts/${{ env.BUILD_TYPE }}"
+
+          $vst3 = Get-ChildItem -Path "$base/VST3" -Recurse -Filter "*.vst3" -Directory |
+                      Sort-Object FullName | Select-Object -First 1
+          if ($null -eq $vst3) {
+              Write-Error "No .vst3 bundle under $base/VST3"
+              Get-ChildItem -Recurse build/first_artefacts -ErrorAction SilentlyContinue |
+                  Select-Object -First 40 FullName
+              exit 1
+          }
+
+          # CLAP on Windows is a single .clap file next to the format folders,
+          # not a bundle - a directory search would report it missing.
+          $clap = Get-ChildItem -Path "$base/CLAP" -Filter "*.clap" -File |
+                      Sort-Object FullName | Select-Object -First 1
+          if ($null -eq $clap) {
+              Write-Error "No .clap module under $base/CLAP"
+              Get-ChildItem -Recurse build/first_artefacts -ErrorAction SilentlyContinue |
+                  Select-Object -First 40 FullName
+              exit 1
+          }
+
+          Write-Host "VST3: $($vst3.FullName)"
+          Write-Host "CLAP: $($clap.FullName)"
+          "vst3=$($vst3.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+          "clap=$($clap.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
+      - name: Upload Windows ARM64 artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: MiBoX-VST3-CLAP-Windows-arm64
+          path: |
+            ${{ steps.bundles.outputs.vst3 }}
+            ${{ steps.bundles.outputs.clap }}
           if-no-files-found: error
 
   # ============================================================================
@@ -948,15 +1106,19 @@ jobs:
           sign VST3 vst3
           sign AU component
           sign AUv3 appex
+          # CLAP is a MODULE target of its own (cmake/J37Dependencies.cmake), so
+          # it is a fourth bundle in the same tree and needs the same signature:
+          # a .clap whose arm64 slice is unsigned is one macOS refuses to load.
+          sign CLAP clap
 
       # JUCE's CMake build lays the bundles out as
       #   <build>/first_artefacts/<Config>/<FORMAT>/<PRODUCT_NAME>.<extension>
-      # so the paths are Release/VST3/*.vst3, Release/AU/*.component and
-      # Release/AUv3/*.appex - not first.vst3 directly inside Release/. They are
-      # located by pattern so a future PRODUCT_NAME change cannot silently break
-      # the check. Each located bundle is exported to $RUNNER_TEMP/bundles.txt for
-      # the following steps.
-      - name: Verify all three formats were produced
+      # so the paths are Release/VST3/*.vst3, Release/AU/*.component,
+      # Release/AUv3/*.appex and Release/CLAP/*.clap - not first.vst3 directly
+      # inside Release/. They are located by pattern so a future PRODUCT_NAME
+      # change cannot silently break the check. Each located bundle is exported to
+      # $RUNNER_TEMP/bundles.txt for the following steps.
+      - name: Verify all four formats were produced
         run: |
           set -euo pipefail
           BASE="build/first_artefacts/${{ env.BUILD_TYPE }}"
@@ -979,6 +1141,7 @@ jobs:
           locate VST3 vst3
           locate AU component
           locate AUv3 appex
+          locate CLAP clap
 
           if [ "$missing" -ne 0 ]; then
             echo "--- what was actually built ---"
@@ -1361,11 +1524,211 @@ jobs:
           file "$binary"
           echo "bundle=$bundle" >> "$GITHUB_OUTPUT"
 
-      - name: Upload Linux VST3 Artifact
+      # CLAP is a target of its own (cmake/J37Dependencies.cmake), so it is
+      # checked on its own: a VST3 that linked while the CLAP wrapper did not
+      # would otherwise be the only thing this job looked at.
+      - name: Verify the CLAP module was produced
+        id: clap
+        run: |
+          set -euo pipefail
+          BASE="build/first_artefacts/${{ env.BUILD_TYPE }}/CLAP"
+          module=$(find "$BASE" -maxdepth 1 -name "*.clap" -print -quit 2>/dev/null || true)
+          if [ -z "$module" ]; then
+            echo "No .clap module found under $BASE"
+            find build/first_artefacts -maxdepth 4 2>/dev/null || true
+            exit 1
+          fi
+          echo "Found CLAP module: $module"
+          file "$module"
+          echo "clap=$module" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Linux artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: MiBoX-VST3-Linux
-          path: ${{ steps.vst3.outputs.bundle }}
+          name: MiBoX-VST3-CLAP-Linux
+          path: |
+            ${{ steps.vst3.outputs.bundle }}
+            ${{ steps.clap.outputs.clap }}
+          if-no-files-found: error
+
+  # ============================================================================
+  #  Linux ARM64 - VST3 + CLAP, with Arm Performance Libraries
+  #
+  #  A job of its own rather than a matrix leg of build-linux, because almost
+  #  nothing about it is shared: a different runner image (ubuntu-24.04-arm is a
+  #  native AArch64 host, not an emulated x64 one), a different vendor library -
+  #  ArmPL is the AArch64 counterpart of Intel IPP and an x64 runner cannot
+  #  install it - and a different thing to prove.
+  #
+  #  What it proves, in order of how easily each could be false:
+  #    * the plugin configures and compiles for AArch64 with ArmPL PRESENT;
+  #      -DJ37_ARMPL_REQUIRED=ON is what makes that a fact rather than an
+  #      intention, because a broken install step fails the configure instead of
+  #      quietly building the portable FFT and reporting green;
+  #    * the spectrum analyser's ArmPL branch is the one in the binary, which is
+  #      the same switch the configure log names ("ArmPL: linked");
+  #    * the VST3 and the CLAP wrappers are both produced for this architecture -
+  #      CLAP is a separate target, so a format that failed on ARM would not hide
+  #      behind the VST3 beside it.
+  #
+  #  It does NOT replace build-linux. That job is the x64 one and is where the
+  #  IPP path, the sanitizer harnesses and the editor checks run; this one is the
+  #  architecture the plugin has never been built for before.
+  # ============================================================================
+  build-linux-arm64:
+    name: build-linux-arm64 (ArmPL)
+    runs-on: ubuntu-24.04-arm
+    timeout-minutes: 45
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Verify JUCE submodule is present
+        run: |
+          if [ ! -f "JUCE/CMakeLists.txt" ]; then
+            echo "JUCE submodule missing - CMakeLists.txt adds it via add_subdirectory(JUCE)."
+            echo "Run: git submodule update --init --recursive"
+            exit 1
+          fi
+
+      - name: Install Linux audio and GUI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev \
+            libjack-jackd2-dev \
+            libfreetype6-dev \
+            libfontconfig1-dev \
+            libfontconfig-dev \
+            libcurl4-openssl-dev \
+            libgtk-3-dev \
+            libwebkit2gtk-4.1-dev \
+            libx11-dev \
+            libxcomposite-dev \
+            libxcursor-dev \
+            libxext-dev \
+            libxinerama-dev \
+            libxrandr-dev \
+            libxrender-dev \
+            libgl1-mesa-dev \
+            libglu1-mesa-dev \
+            libxi-dev
+
+      # ArmPL is NOT installed with apt here even though Arm publishes a package
+      # for it: that route needs Arm's own toolchain repository and signing key,
+      # which is a moving target for a workflow file. The documented tarball and
+      # its own non-interactive installer are the stable form, and -a is the
+      # EULA acceptance Arm documents for exactly this (a CI install).
+      #
+      # The prefix has to be LOCATED rather than computed, for the same reason
+      # the IPP step above locates its own: the installer creates
+      # armpl_<version>_<compiler>/ under the directory it is given, and that
+      # version is the installer's business, not this file's. ARMPL_DIR is Arm's
+      # own variable and is what cmake/J37VendorLibraries.cmake reads first.
+      - name: Install Arm Performance Libraries
+        run: |
+          set -euo pipefail
+          curl -fL -o "$RUNNER_TEMP/armpl.tar" \
+            "https://developer.arm.com/-/cdn-downloads/permalink/Arm-Performance-Libraries/Version_26.07/arm-performance-libraries_26.07_deb_gcc.tar"
+          tar xf "$RUNNER_TEMP/armpl.tar" -C "$RUNNER_TEMP"
+          installer=$(find "$RUNNER_TEMP" -maxdepth 2 -name "arm-performance-libraries_*_deb.sh" -print -quit)
+          test -n "$installer" || { echo "the ArmPL tarball held no installer"; exit 1; }
+          sh "$installer" -a -i "$HOME/armpl"
+
+          header=$(find "$HOME/armpl" -name fftw3.h -path '*/include/*' -print -quit)
+          test -n "$header" || { echo "no fftw3.h under $HOME/armpl after the install"; exit 1; }
+          prefix=$(dirname "$(dirname "$header")")
+          echo "ArmPL prefix: $prefix"
+          echo "ARMPL_DIR=$prefix" >> "$GITHUB_ENV"
+
+      # `python`, not `python3`: the CMake install below is written the way the
+      # x64 Linux job writes it, and setup-python is what provides that name on
+      # the image (Ubuntu 24.04 ships python3 only).
+      - name: Set up Python
+        uses: actions/setup-python@v7
+        with:
+          python-version: '3.x'
+
+      - name: Set up and verify CMake 4.x
+        run: |
+          python -m pip install --user --upgrade "cmake>=4,<5"
+          export PATH="$HOME/.local/bin:$PATH"
+          echo "$HOME/.local/bin" >> "$GITHUB_PATH"
+
+          cmake --version
+          cmake_version=$(cmake --version | sed -n '1s/^cmake version //p')
+          case "$cmake_version" in
+            4.*) ;;
+            *)
+              echo "Expected CMake 4.x, got: $cmake_version" >&2
+              exit 1
+              ;;
+          esac
+
+      - name: Configure CMake (ArmPL required)
+        run: |
+          set -euo pipefail
+          cmake -S . -B build \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DJ37_ENABLE_ARMPL=ON \
+            -DJ37_ARMPL_REQUIRED=ON 2>&1 | tee configure.log
+
+          # J37_ARMPL_REQUIRED already fails the configure when ArmPL is absent;
+          # this asserts the OTHER half - that CMake reached the wiring and put
+          # the imported target on the plugin's link line - because a found
+          # library that never gets linked is the same green build with the
+          # portable FFT in it.
+          grep -q "ArmPL: linked" configure.log || {
+            echo "ArmPL was found but never wired to the plugin target"
+            exit 1
+          }
+
+      - name: Build
+        run: |
+          set -o pipefail
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel "$J37_BUILD_JOBS" 2>&1 |
+            grep -E 'error|warning|Error|FAILED|BUILD' || true
+
+          cmake --build build --config ${{ env.BUILD_TYPE }} --parallel "$J37_BUILD_JOBS" > /dev/null 2>&1 || {
+            echo "Build failed - re-running with full output:"
+            cmake --build build --config ${{ env.BUILD_TYPE }} --parallel "$J37_BUILD_JOBS"
+            exit 1
+          }
+
+      - name: Verify the ARM64 VST3 and CLAP bundles
+        id: bundles
+        run: |
+          set -euo pipefail
+          BASE="build/first_artefacts/${{ env.BUILD_TYPE }}"
+
+          vst3=$(find "$BASE/VST3" -maxdepth 1 -name "*.vst3" -print -quit 2>/dev/null || true)
+          clap=$(find "$BASE/CLAP" -maxdepth 1 -name "*.clap" -print -quit 2>/dev/null || true)
+          test -n "$vst3" || { echo "No VST3 bundle under $BASE/VST3"; find build/first_artefacts -maxdepth 4 || true; exit 1; }
+          test -n "$clap" || { echo "No CLAP module under $BASE/CLAP"; find build/first_artefacts -maxdepth 4 || true; exit 1; }
+
+          binary=$(find "$vst3" -name "*.so" -print -quit)
+          file "$binary" "$clap"
+
+          # The architecture is part of the claim. A build that somehow produced
+          # an x86_64 module on this runner would still be a .clap file.
+          file -b "$clap" | grep -q "aarch64" || {
+            echo "The CLAP module is not an AArch64 object"
+            exit 1
+          }
+
+          echo "vst3=$vst3" >> "$GITHUB_OUTPUT"
+          echo "clap=$clap" >> "$GITHUB_OUTPUT"
+
+      - name: Upload Linux ARM64 artifacts
+        uses: actions/upload-artifact@v7
+        with:
+          name: MiBoX-VST3-CLAP-Linux-arm64
+          path: |
+            ${{ steps.bundles.outputs.vst3 }}
+            ${{ steps.bundles.outputs.clap }}
           if-no-files-found: error
 
   # ============================================================================

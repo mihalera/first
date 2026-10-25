@@ -253,6 +253,39 @@ CPMAddPackage(
     EXCLUDE_FROM_ALL YES
     SYSTEM YES)
 
+# ==============================================================================
+#  clap-juce-extensions - the CLAP wrapper JUCE does not ship.
+#
+#  CLAP is not one of JUCE's plugin formats. juce_audio_plugin_client contains
+#  AAX, AU, LV2, Standalone, Unity and VST3 and nothing else, so `FORMATS CLAP`
+#  is not a value juce_add_plugin accepts - it intersects the unknown name away
+#  and leaves the build with one format fewer and no message. The wrapper is a
+#  separate MODULE target (<target>_CLAP) that compiles CLAP's entry point
+#  against the same shared code the VST3/AU wrappers use, which is why it is
+#  added here rather than in the FORMATS list: it is an extension of the plugin
+#  target, not a format JUCE knows.
+#
+#  Pinned to a commit rather than the 0.26.0 tag: the tagged release predates
+#  the JUCE 8.0.11 rename and the JUCE 9 API change this checkout builds against
+#  (JUCE 9.0.4), so a tag build fails on names JUCE has since moved. The commit
+#  below is the current main head, whose CI covers JUCE 9.
+#
+#  The checkout carries two git submodules of its own - clap-libs/clap (the
+#  headers and ABI definition) and clap-libs/clap-helpers (the C++ layer the
+#  wrapper is written in) - and CPM initialises submodules by default. That is
+#  deliberate: CLAP is an ABI, not a single header, so a checkout without them
+#  cannot compile the wrapper at all, and the alternative (a second pin for each
+#  submodule) would be a version of CLAP nobody tested the wrapper against.
+#
+#  Licence: MIT, the same as CLAP itself. See THIRD_PARTY_NOTICES.md.
+# ==============================================================================
+CPMAddPackage(
+    NAME clap-juce-extensions
+    GITHUB_REPOSITORY free-audio/clap-juce-extensions
+    GIT_TAG 7adee3a1bd4684d4caa5601100e364abccff4b4d
+    EXCLUDE_FROM_ALL YES
+    SYSTEM YES)
+
 # xsimd: header-only portable SIMD. Pinned by tag like everything else.
 # BUILD_TESTS is already OFF by default upstream, but it is stated here anyway:
 # it pulls in xsimd's own test suite, and a plugin build must not pay for that.

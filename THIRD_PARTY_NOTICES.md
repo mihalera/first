@@ -68,6 +68,7 @@ binary - see
 | **melatonin_inspector** | `9c483f86` | MIT | <https://github.com/sudara/melatonin_inspector> |
 | **melatonin_blur** | `v1.4` | MIT | <https://github.com/sudara/melatonin_blur> |
 | **foleys_gui_magic** | `d53d998e` | BSD 3-Clause (stated in the module header) | <https://github.com/ffAudio/foleys_gui_magic> |
+| **clap-juce-extensions** | `7adee3a1` | MIT - with **CLAP** and **clap-helpers** (both MIT) as its own git submodules | <https://github.com/free-audio/clap-juce-extensions> · <https://github.com/free-audio/clap> |
 | **fftconvolver** | `f2cdeb04` | MIT | <https://github.com/HiFi-LOFi/FFTConvolver> |
 | **readerwriterqueue** | `v1.0.7` | Simplified BSD (BSD-2-Clause) | <https://github.com/cameron314/readerwriterqueue> |
 | **xsimd** (fallback for the vendored copy) | `14.3.0` | BSD 3-Clause | <https://github.com/xtensor-stack/xsimd> |
@@ -105,6 +106,14 @@ binary - see
 | **pitch_detector** | `d3b60970` | see upstream | <https://github.com/adamski/pitch_detector> |
 | **dywapitchtrack** - Jean Laroche / Schmitt trigger tracker | `a05bef4b` | MIT (upstream; fetched from `hzeller/pitch-hero`, which vendors the two library files unmodified - the author's own repository is gone) | <https://github.com/hzeller/pitch-hero> |
 
+`clap-juce-extensions` is a build-time wrapper rather than a component the binary
+links a library of: it compiles CLAP's ABI entry point into the `MiBoX.clap`
+module and links this plugin's shared code. CLAP itself is a specification plus a
+header, MIT-licensed like the wrapper, and the two submodules above are checked
+out by CPM with the wrapper so there is no second pin to drift. It is listed here
+because it is fetched, compiled and shipped - the MIT notice has to travel with
+the binary just as JUCE's does.
+
 ### Optional renderer backends
 
 Fetched only when `J37_RENDER_BACKEND` selects one of them. None of these is in
@@ -140,8 +149,8 @@ and `pocketfft` are vendored rather than fetched.
 ### Vendor vector libraries
 
 Discovered on the build machine rather than fetched - see
-`cmake/J37VendorLibraries.cmake`. Both are optional accelerators, and the
-portable path is used when neither is present.
+`cmake/J37VendorLibraries.cmake`. All three are optional accelerators, and the
+portable path is used when none is present.
 
 **IPP is not merely probed, and that is the one licence fact here that depends on
 whose machine built the binary.** The build throws the IPP linking-model macro
@@ -156,8 +165,19 @@ Accelerate, under the Xcode licence - this repository throws no switch for it.
 
 | Component | Platform | Licence |
 | --- | --- | --- |
-| **Intel Integrated Performance Primitives (IPP)** | Windows / Linux | Commercial, free of charge for use with Intel silicon under the Intel Simplified Software License; installed by the user, never vendored here - and **linked into a binary built where it is present** |
+| **Intel Integrated Performance Primitives (IPP)** | Windows / Linux x64 | Commercial, free of charge for use with Intel silicon under the Intel Simplified Software License; installed by the user, never vendored here - and **linked into a binary built where it is present** |
 | **Apple Accelerate / vDSP** | macOS | Apple SDK, covered by the Xcode licence |
+| **Arm Performance Libraries (ArmPL)** | Windows arm64 / Linux arm64 | Arm EULA, free of charge; installed by the user, never vendored here - and **linked into a binary built where it is present**, where `Source/DSP/SpectrumAnalyser.h` calls its FFTW3-compatible FFT interface. Redistribution of a binary carrying ArmPL object code is governed by that EULA, exactly as IPP is by Intel's |
+
+ArmPL's FFTW-compatible header (`fftw3.h`) is distributed by Arm and is BSD-2-Clause
+according to Arm's own third-party licence list, which is the only part of that package
+this repository's source includes. The library itself is not covered by it.
+
+Unlike IPP and vDSP, ArmPL is not merely linked: it has a caller. JUCE 9.0.4 has no ArmPL
+FFT engine, so there is no `juce_dsp` switch to throw, and linking the library without a
+caller would be a dead link-line entry - the defect the audit removed sixteen of. The
+spectrum analyser therefore takes ArmPL's transform when `J37_HAS_ARMPL` is defined, and
+pocketfft's otherwise.
 
 ## What the copyleft components mean for a binary
 

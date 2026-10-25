@@ -12,7 +12,7 @@ was measured, and the command that measures it is in
 
 ## The whole thing in one paragraph
 
-`first` is a VST3 / AU / AUv3 / Standalone audio effect: **one** `AudioProcessor`
+`first` is a VST3 / AU / AUv3 / CLAP / Standalone audio effect: **one** `AudioProcessor`
 (`FirstAudioProcessor`) and **one** editor (`FirstAudioProcessorEditor`). The
 processor owns a parameter tree of **109** parameters, a tape-machine signal path
 that runs entirely on the audio thread, and a saved state of its own format with

@@ -66,6 +66,7 @@
 #include <cmath>
 #include <complex>
 #include <cstddef>
+#include <memory>
 
 #include "OptionalLibraries.h"
 
@@ -76,6 +77,13 @@
 // has a use for.
 #if J37_HAS_POCKETFFT
  #include <pocketfft_hdronly.h>
+#endif
+
+// ArmPL's transform is reached through its FFTW3-compatible interface, so this
+// is the FFTW header ArmPL ships rather than a separate FFTW install. The build
+// only defines J37_HAS_ARMPL when it links the library; see OptionalLibraries.h.
+#if J37_HAS_ARMPL
+ #include <fftw3.h>
 #endif
 
 //==============================================================================
@@ -109,13 +117,23 @@
     a tone in a band wider than a bin reads in exactly its own band, and a tone in a
     band narrower than one reads within a single band of it.
 
-    With pocketfft absent from the build (J37_HAS_POCKETFFT 0) the stage still
-    compiles, still prepares and still accepts samples, and reports every band at
-    the floor: `compiledIn` is what a caller checks before it draws anything, so a
-    build without the library shows no curve rather than a wrong one. That is the
-    same shape as the engine's other optional stages (a build with no model loaded
-    is a bit-for-bit pass-through) and it is what keeps the header compilable
-    under every harness.
+    WHICH TRANSFORM RUNS. pocketfft is the portable one and the one every build
+    carries. A build that links Arm Performance Libraries runs the same transform
+    through ArmPL's FFTW3-compatible interface instead (cmake/
+    J37VendorLibraries.cmake finds it and defines J37_HAS_ARMPL): both compute the
+    same unnormalised forward DFT, so the calibration, the band ladder and the
+    scale below are the same code in both builds - only the engine differs. ArmPL
+    takes precedence when present because that is what linking it is FOR.
+
+    With neither available (J37_HAS_POCKETFFT 0 and J37_HAS_ARMPL 0) the stage
+    still compiles, still prepares and still accepts samples, and reports every
+    band at the floor: `compiledIn` is what a caller checks before it draws
+    anything, so a build without a transform shows no curve rather than a wrong
+    one. The ArmPL path has one more failure to report than that, because its
+    plan is created at prepare() time: a null plan leaves the stage unready for
+    the same reason. That is the same shape as the engine's other optional stages
+    (a build with no model loaded is a bit-for-bit pass-through) and it is what
+    keeps the header compilable under every harness.
 */
 struct SpectrumAnalyser
 {
@@ -138,9 +156,10 @@ struct SpectrumAnalyser
         is never mistaken for programme. */
     static constexpr float floorDb = -90.0f;
 
-    /** True when this TRANSLATION UNIT was built with pocketfft on its include
-        path. Constant, not a member: it is a property of the build. */
-    static constexpr bool compiledIn = J37_HAS_POCKETFFT != 0;
+    /** True when this TRANSLATION UNIT was built with a transform available at
+        all: pocketfft on its include path, or ArmPL on the link line. Constant,
+        not a member: it is a property of the build. */
+    static constexpr bool compiledIn = J37_HAS_POCKETFFT != 0 || J37_HAS_ARMPL != 0;
 
     /** The newest reading, one per band, in dBFS and never above 0. */
     std::array<float, bandCount> bandsDb {};
@@ -175,13 +194,36 @@ struct SpectrumAnalyser
 
         buildBandEdges();
 
+#if J37_HAS_ARMPL
+        // ArmPL plans the transform once and executes it per window: planning
+        // allocates and, with any planner other than FFTW_ESTIMATE, measures -
+        // which is exactly what must not happen on the audio thread, while
+        // prepareToPlay is allowed to. The plan is built
+        // with FFTW_ESTIMATE (no measurement, the cheap planner) and
+        // FFTW_UNALIGNED, and it is EXECUTED with the new-array variant below,
+        // so it does not retain the addresses it was created against - which is
+        // what keeps this stage movable and lets a later prepare() re-plan in
+        // place. Re-planning here also destroys the previous plan.
+        plan.reset (fftwf_plan_dft_r2c_1d (fftSize,
+                                           windowed.data(),
+                                           reinterpret_cast<fftwf_complex*> (spectrum.data()),
+                                           FFTW_ESTIMATE | FFTW_UNALIGNED));
+#endif
+
         // The window is what makes the stage able to read anything at all, so it
         // is the last thing built and it is what `ready` reports. It is set from
         // `compiledIn` rather than to true because it is a property of the BUILD:
-        // a translation unit compiled without pocketfft has no transform to run,
-        // and a stage that claimed to be ready there would be a caller's green
-        // light over a curve that never moves.
+        // a translation unit with no transform has nothing to run, and a stage
+        // that claimed to be ready there would be a caller's green light over a
+        // curve that never moves. The ArmPL build has one runtime failure as
+        // well - the planner can return null - and a null plan is reported the
+        // same way, because executing it would be undefined behaviour rather
+        // than a curve.
+#if J37_HAS_ARMPL
+        ready = plan != nullptr;
+#else
         ready = compiledIn;
+#endif
 
         reset();
     }
@@ -205,7 +247,7 @@ struct SpectrumAnalyser
             ready = false;
     }
 
-#if J37_HAS_POCKETFFT
+#if J37_HAS_POCKETFFT || J37_HAS_ARMPL
     /** Feeds one block of the channel being measured.
 
         Length is arbitrary and need not divide the transform: the samples are
@@ -234,7 +276,7 @@ struct SpectrumAnalyser
         }
     }
 #else
-    /** Feeds a block. A build without pocketfft has no transform to run, so the
+    /** Feeds a block. A build without a transform has nothing to run, so the
         samples are dropped and the reading stays at the floor. Present rather
         than absent so that a caller needs no #if of its own. */
     void process (const float*, int) noexcept {}
@@ -281,6 +323,19 @@ private:
             windowed[static_cast<std::size_t> (i)] =
                 window[static_cast<std::size_t> (i)] * pending[static_cast<std::size_t> (i)];
 
+#if J37_HAS_ARMPL
+        // The same unnormalised forward real-to-complex transform pocketfft
+        // computes below - FFTW leaves it unnormalised too, which is why the
+        // scale that follows is shared rather than duplicated per engine. The
+        // new-array execute is deliberate: the plan was created with
+        // FFTW_UNALIGNED, so it may be handed these arrays whatever their
+        // addresses are, and it therefore does not break when this object moves.
+        if (plan == nullptr)
+            return;
+
+        fftwf_execute_dft_r2c (plan.get(), windowed.data(),
+                               reinterpret_cast<fftwf_complex*> (spectrum.data()));
+#else
         const pocketfft::shape_t shape { static_cast<std::size_t> (fftSize) };
         const pocketfft::stride_t strideIn { static_cast<std::ptrdiff_t> (sizeof (float)) };
         const pocketfft::stride_t strideOut { static_cast<std::ptrdiff_t> (sizeof (std::complex<float>)) };
@@ -288,6 +343,7 @@ private:
 
         pocketfft::r2c (shape, strideIn, strideOut, axes, true,
                         windowed.data(), spectrum.data(), 1.0f, 1);
+#endif
 
         const auto binHz = sampleRate / static_cast<float> (fftSize);
         const auto scale = 2.0f / windowSum;
@@ -326,8 +382,26 @@ private:
     std::array<float, fftSize> pending {};
     std::array<float, fftSize> windowed {};
     std::array<float, fftSize> window {};
-#if J37_HAS_POCKETFFT
+#if J37_HAS_POCKETFFT || J37_HAS_ARMPL
     std::array<std::complex<float>, fftSize / 2 + 1> spectrum {};
+#endif
+
+#if J37_HAS_ARMPL
+    /** ArmPL's plan, owned. Unique ownership is what makes the stage movable
+        without a hand-written move constructor - which would have to name every
+        array here and would silently drop the next one added - and what destroys
+        the plan when the stage does. Copying is not meaningful (two owners of
+        one plan) and is therefore deleted by the unique_ptr itself. */
+    struct PlanDeleter
+    {
+        void operator() (fftwf_plan_s* value) const noexcept
+        {
+            if (value != nullptr)
+                fftwf_destroy_plan (value);
+        }
+    };
+
+    std::unique_ptr<fftwf_plan_s, PlanDeleter> plan;
 #endif
 
     float sampleRate = 48000.0f;
