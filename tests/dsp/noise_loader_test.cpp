@@ -309,6 +309,12 @@ void testRateConversion()
     check (! failedConversion && preserved.sampleRate == atFileRate.sampleRate
                && preserved.sample (0, 0) == preservedFirst,
            "failed rate conversion leaves the prior valid print unchanged");
+
+    j37dsp::NoisePrint recovered;
+    check (j37dsp::resamplePrint (preserved, 48000.0, recovered)
+               && recovered.sampleRate == 48000.0
+               && recovered.sourceRate == preserved.sourceRate,
+           "a valid rate conversion recovers the retained source print");
 }
 
 //==============================================================================

@@ -74,19 +74,30 @@ struct RealtimePitchShifter
     */
     float process (float input, float targetRatio, int periodHint) noexcept
     {
+        if (! std::isfinite (input))
+            input = 0.0f;
+        if (! std::isfinite (targetRatio))
+            targetRatio = 1.0f;
+
         buffer[static_cast<std::size_t> (writePosition)] = input;
         writePosition = (writePosition + 1) % bufferSize;
 
         period = juce::jlimit (minPeriod, maxPeriod,
                                periodHint > 0 ? periodHint : fallbackPeriod);
+        for (auto& position : tapPosition)
+            if (! std::isfinite (position))
+                position = 0.0f;
         ratio += (juce::jlimit (0.5f, 2.0f, targetRatio) - ratio) * ratioSmoothing;
 
         const auto read = [&] (float position) noexcept
         {
-            while (position < 0.0f) position += static_cast<float> (bufferSize);
-            while (position >= static_cast<float> (bufferSize)) position -= static_cast<float> (bufferSize);
+            if (! std::isfinite (position))
+                position = 0.0f;
+            position = std::fmod (position, static_cast<float> (bufferSize));
+            if (position < 0.0f)
+                position += static_cast<float> (bufferSize);
 
-            const auto index = static_cast<int> (position);
+            const auto index = juce::jlimit (0, bufferSize - 1, static_cast<int> (position));
             const auto next = (index + 1) % bufferSize;
             const auto fraction = position - static_cast<float> (index);
 

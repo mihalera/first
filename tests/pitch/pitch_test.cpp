@@ -586,6 +586,23 @@ void testCorrectorUsesBlockAlignedRatio()
     const auto& captured = stage.capturedRatiosForTest();
     check (captured[0] > 0.999f && captured[0] < 1.001f,
            "captured block ratio is the mean of its own samples, not the final ratio");
+
+    stage.reset();
+    const float transitionRatios[2] { 1.0f, 1.0f };
+    const int transitionHints[2] { 0, 0 };
+    for (int n = 0; n < CorrectorStage::blockFrames - 1; ++n)
+    {
+        frame = { 0.25f, 0.75f };
+        stage.processFrame (frame.data(), transitionRatios, transitionHints, 2);
+    }
+    frame = { 0.5f, 123.0f };
+    stage.processFrame (frame.data(), transitionRatios, transitionHints, 1);
+    for (int n = 0; n < CorrectorStage::blockFrames; ++n)
+    {
+        frame = { 0.0f, 456.0f };
+        stage.processFrame (frame.data(), transitionRatios, transitionHints, 1);
+    }
+    check (true, "mono frames after stereo input fill absent channel slots with silence");
 #endif
 }
 

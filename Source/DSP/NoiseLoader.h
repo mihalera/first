@@ -103,7 +103,6 @@ public:
             if (! rebuildAtEngineRate())
             {
                 lastErrorMessage = "the print could not be converted to the engine rate";
-                publish (nullptr);
             }
             else
             {

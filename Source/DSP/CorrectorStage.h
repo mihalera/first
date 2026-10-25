@@ -256,6 +256,24 @@ struct CorrectorStage
             return;
 
         const auto frameChannels = std::max (0, std::min (std::min (activeChannels, maxChannels), channels));
+
+       #if J37_HAS_SIGNALSMITH
+        if (engines[0] != nullptr)
+        {
+            jassert (framesHeld >= 0 && framesHeld < blockFrames);
+            if (framesHeld < 0 || framesHeld >= blockFrames)
+                return;
+            const auto frameIndex = static_cast<std::size_t> (framesHeld);
+            for (int channel = 0; channel < activeChannels; ++channel)
+            {
+                const auto index = static_cast<std::size_t> (channel);
+                const auto present = channel < frameChannels;
+                inputRings[index][frameIndex] = present ? frame[index] : 0.0f;
+                ratioRings[index][frameIndex] = present ? juce::jlimit (0.5f, 2.0f, ratios[index]) : 1.0f;
+                periodRings[index][frameIndex] = present ? periodHints[index] : 0;
+            }
+        }
+       #endif
         for (int channel = 0; channel < frameChannels; ++channel)
         {
             const auto index = static_cast<std::size_t> (channel);
@@ -264,13 +282,7 @@ struct CorrectorStage
 
            #if J37_HAS_SIGNALSMITH
             if (engines[index] != nullptr)
-            {
-                const auto frameIndex = static_cast<std::size_t> (framesHeld);
-                inputRings[index][frameIndex] = frame[index];
-                ratioRings[index][frameIndex] = ratio;
-                periodRings[index][frameIndex] = hint;
                 continue;
-            }
            #endif
 
             frame[index] = fallbackShifters[index].process (frame[index], ratio, hint);
@@ -283,7 +295,7 @@ struct CorrectorStage
             {
                 framesHeld = 0;
 
-                for (int channel = 0; channel < frameChannels; ++channel)
+                for (int channel = 0; channel < activeChannels; ++channel)
                 {
                     const auto index = static_cast<std::size_t> (channel);
                     auto& engine = *engines[index];
