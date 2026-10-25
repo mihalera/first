@@ -903,10 +903,15 @@ jobs:
       # The MSI is the documented non-interactive form on Windows; winget would
       # depend on a package source the ARM image may not have configured. The
       # installer puts include/, lib/ and bin/ under
-      # "<Program Files>\Arm\Arm Performance Libraries\armpl_<version>_...", a
-      # path that carries the version - so the prefix is located by finding
-      # fftw3.h rather than guessed. ARMPL_DIR is Arm's own variable and is what
+      # "<Program Files>\Arm Performance Libraries\armpl_<version>", a path that
+      # carries the version - so the prefix is located by finding fftw3.h rather
+      # than guessed. ARMPL_DIR is Arm's own variable and is what
       # cmake/J37VendorLibraries.cmake reads first.
+      #
+      # The root is "Arm Performance Libraries", NOT "Arm": the MSI's Directory
+      # table puts INSTALLFOLDER straight under ProgramFiles64Folder and only
+      # the version folder below it. Searching "Arm" found nothing after a
+      # successful install and failed the job on a path that never existed.
       - name: Install Arm Performance Libraries
         shell: pwsh
         run: |
@@ -933,11 +938,12 @@ jobs:
               throw "ArmPL installer exited with $($install.ExitCode)"
           }
 
-          $header = Get-ChildItem -Path "${env:ProgramFiles}\Arm" -Recurse -Filter "fftw3.h" `
+          $root = Join-Path $env:ProgramFiles "Arm Performance Libraries"
+          $header = Get-ChildItem -Path $root -Recurse -Filter "fftw3.h" `
                                  -ErrorAction SilentlyContinue |
                     Sort-Object FullName | Select-Object -First 1
           if ($null -eq $header) {
-              throw "No fftw3.h under ${env:ProgramFiles}\Arm after the install"
+              throw "No fftw3.h under $root after the install"
           }
 
           $prefix = Split-Path (Split-Path $header.FullName -Parent) -Parent

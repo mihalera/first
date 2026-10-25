@@ -437,7 +437,12 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
         for (int c = 0; c < frameWidth; ++c)
         {
             auto* data = block.getChannelPointer (c);
-            data[i] = j37dsp::softClip (data[i] * gain);
+            // `softClip` is Source/DSP/HotPathMath.h's, and that header is
+            // deliberately namespace-free - it was lifted out of this file's
+            // anonymous namespace and its comment says the move removed the
+            // indentation and nothing else. Qualifying it with j37dsp, as the
+            // safety-limiter commit did, does not compile.
+            data[i] = softClip (data[i] * gain);
         }
     }
 }

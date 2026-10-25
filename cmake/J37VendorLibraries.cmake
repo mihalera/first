@@ -409,10 +409,13 @@ if(J37_ENABLE_ARMPL)
     endforeach()
 
     # Stock locations, globbed because the path carries the version on both
-    # platforms. Linux is Arm's documented default; Windows is the MSI's.
+    # platforms. Linux is Arm's documented default; Windows is the MSI's, whose
+    # Directory table puts "Arm Performance Libraries/armpl_<version>" straight
+    # under Program Files - there is no "Arm" level above it.
     file(GLOB j37_armpl_defaults LIST_DIRECTORIES true
         "/opt/arm/armpl_*"
-        "$ENV{ProgramFiles}/Arm/Arm Performance Libraries/armpl_*")
+        "$ENV{ProgramFiles}/Arm Performance Libraries/armpl_*")
+
     list(APPEND j37_armpl_roots ${j37_armpl_defaults})
 
     # Cached from a previous configure that pointed somewhere else otherwise,
