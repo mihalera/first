@@ -24,6 +24,347 @@
 // JUCE 9 keeps every GL command and every GL enum in juce::gl. Keep the using
 // directive in this implementation file rather than exposing GL names in the header.
 using namespace juce::gl;
+#ifdef J37_NATIVE_SOKOL
+ // Sokol Gfx vertex format: 4 floats position + 3 floats normal = 28 bytes
+ typedef struct { float x, y, z, w; float nx, ny, nz; } SokolVertex;
+ #define SOKOL_VERTEX_STRIDE 28
+
+ // Sokol Gfx shader program and uniform locations
+ static int sokol_shader = 0;
+ static int sokol_uMode = -1;
+ static int sokol_uViewProjection = -1;
+ static int sokol_uLightDirection = -1;
+ static int sokol_uTime = -1;
+ static int sokol_uDrive = -1;
+ static int sokol_uGlow = -1;
+ static int sokol_uTextureWeights = -1;
+ static int sokol_uNormalMatrix = -1;
+ static int sokol_uModel = -1;
+ static int sokol_uBaseColour = -1;
+ static int sokol_uHighlightColour = -1;
+
+// Sokol Gfx: create the shader program from GLSL sources
+// This must be called once before any drawing occurs
+static void sokol_create_shader() noexcept
+{
+    if (sokol_shader != 0)
+        return; // already created
+
+    // Sokol Gfx expects the GLSL source with JUCE's HIGHP macro already resolved.
+    // The vertex and fragment shaders from TapeSceneShaders.h are included verbatim.
+#ifdef J37_NATIVE_SOKOL
+    // Vertex shader source - already includes the JUCE translate output
+    const char* vs_source =
+        "attribute vec4 aPosition;
+"
+        "attribute vec3 aNormal;
+"
+        "uniform mat4 uViewProjection;
+"
+        "uniform mat4 uModel;
+"
+        "uniform mat3 uNormalMatrix;
+"
+        "uniform float uMode;
+"
+        "uniform float uPackInner;
+"
+        "uniform float uPackOuter;
+"
+        "uniform float uTime;
+"
+        "uniform float uFlutter;
+"
+        "varying vec3 vNormal;
+"
+        "varying float vDetail;
+"
+        "varying vec2 vLocal;
+"
+        "void main()
+"
+        "{
+"
+        "    vec3 p = aPosition.xyz;
+"
+        "    vDetail = length(aPosition.xy);
+"
+        "    vLocal = aPosition.xy;
+"
+        "    if (uMode > 0.5 && uMode < 1.5)
+"
+        "    {
+"
+        "        float radius = mix(uPackInner, uPackOuter, aPosition.z);
+"
+        "        p = vec3(aPosition.xy * radius, aPosition.w);
+"
+        "        vDetail = aPosition.z;
+"
+        "    }
+"
+        "    else if (uMode > 1.5 && uMode < 2.5)
+"
+        "    {
+"
+        "        float t = aPosition.w;
+"
+        "        float envelope = t * (1.0 - t) * 4.0;
+"
+        "        p.z += sin(t * 11.0 - uTime * 6.0) * uFlutter * 0.030 * envelope;
+"
+        "        p.y += sin(t * 7.0 + uTime * 4.0) * uFlutter * 0.026 * envelope;
+"
+        "        vDetail = t * 40.0;
+"
+        "    }
+"
+        "    else if (uMode > 2.5)
+"
+        "    {
+"
+        "        p.z += sin(uTime * 2.6) * 0.004 * aPosition.w;
+"
+        "    }
+"
+        "    vNormal = uNormalMatrix * aNormal;
+"
+        "    gl_Position = uViewProjection * uModel * vec4(p, 1.0);
+"
+        "}
+";
+
+    // Fragment shader source
+    const char* fs_source =
+        "precision mediump float;
+"
+        "varying vec3 vNormal;
+"
+        "varying float vDetail;
+"
+        "varying vec2 vLocal;
+"
+        "uniform vec3 uBaseColour;
+"
+        "uniform vec3 uHighlightColour;
+"
+        "uniform vec3 uLightDirection;
+"
+        "uniform float uGlow;
+"
+        "uniform float uDrive;
+"
+        "uniform float uMode;
+"
+        "uniform float uTime;
+"
+        "uniform float uArcAngle;
+"
+        "uniform float uKeyDown;
+"
+        "uniform vec3 uPanelHalf;
+"
+        "uniform vec3 uTextureWeights;
+"
+        "float hash(vec2 p)
+"
+        "{
+"
+        "    return fract(sin(dot(p, vec2(127.1, 311.7))) * 43758.5453123);
+"
+        "}
+"
+        "float valueNoise(vec2 p)
+"
+        "{
+"
+        "    vec2 i = floor(p);
+"
+        "    vec2 f = fract(p);
+"
+        "    vec2 u = f * f * (3.0 - 2.0 * f);
+"
+        "    return mix(mix(hash(i), hash(i + vec2(1.0, 0.0)), u.x),
+        mix(hash(i + vec2(0.0, 1.0)), hash(i + vec2(1.0, 1.0)), u.x), u.y);
+"
+        "}
+"
+        "vec3 panelTexture(vec2 face)
+"
+        "{
+"
+        "    vec3 textureAccumulator = vec3(0.0);
+"
+        "    textureAccumulator += vec3((hash(face * 7.5) - 0.5) * uTextureWeights.x);
+"
+        "    float tapeNoise = hash(face * 40.0 + vec2(0.0, uTime * 6.0 * (1.0 + uGlow)));
+"
+        "    textureAccumulator += vec3((tapeNoise - 0.5) * uTextureWeights.y);
+"
+        "    float wearPattern = valueNoise(face * 4.0);
+"
+        "    textureAccumulator -= vec3((1.0 - wearPattern) * uTextureWeights.z);
+"
+        "    return textureAccumulator;
+"
+        "}
+"
+        "void main()
+"
+        "{
+"
+        "    vec3 n = normalize(vNormal);
+"
+        "    vec3 l = normalize(uLightDirection);
+"
+        "    vec3 eye = vec3(0.0, 0.0, 1.0);
+"
+        "    vec3 h = normalize(l + eye);
+"
+        "    float diffuse = max(dot(n, l), 0.0);
+"
+        "    float specular = pow(max(dot(n, h), 0.0), 38.0);
+"
+        "    float rim = pow(1.0 - max(dot(n, eye), 0.0), 3.0);
+"
+        "    vec3 colour = uBaseColour * (0.20 + 0.90 * diffuse);
+"
+        "    colour += uHighlightColour * specular * 0.70;
+"
+        "    colour += uHighlightColour * rim * (0.10 + 0.50 * uGlow);
+"
+        "    colour = clamp(colour, vec3(0.0), vec3(1.0));
+"
+        "    if (uMode < 0.5)
+"
+        "    {
+"
+        "        colour = mix(colour, uHighlightColour, 0.20 * uDrive) * (1.0 + 0.30 * uDrive);
+"
+        "        float band = 0.88 + 0.12 * smoothstep(0.18, 0.50, abs(fract(vDetail) - 0.5));
+"
+        "        gl_FragColor = vec4(colour * band, 1.0);
+"
+        "        return;
+"
+        "    }
+"
+        "    if (uMode < 3.5)
+"
+        "    {
+"
+        "        float brush = 0.965 + 0.035 * abs(fract(vLocal.y * 46.0) - 0.5) * 2.0;
+"
+        "        colour += panelTexture(vLocal);
+"
+        "        gl_FragColor = vec4(colour * brush, 1.0);
+"
+        "        return;
+"
+        "    }
+"
+        "    if (uMode < 4.5)
+"
+        "    {
+"
+        "        float sheen = pow(max(dot(n, h), 0.0), 9.0);
+"
+        "        colour += uHighlightColour * sheen * 0.16;
+"
+        "        colour *= 1.0 - 0.10 * max(0.0, -n.z);
+"
+        "        float r = length(vLocal);
+"
+        "        float angle = atan(vLocal.x, vLocal.y);
+"
+        "        float t = clamp((angle - uArcAngle) / 0.30, 0.0, 1.0);
+"
+        "        colour += uHighlightColour * arc * (1.0 - t) * (0.35 + 0.65 * uGlow);
+"
+        "        gl_FragColor = vec4(colour, 1.0);
+"
+        "        return;
+"
+        "    }
+"
+        "    if (uMode < 5.5)
+"
+        "    {
+"
+        "        colour *= 1.0 - 0.35 * uKeyDown;
+"
+        "        gl_FragColor = vec4(colour, 1.0);
+"
+        "        return;
+"
+        "    }
+"
+        "    vec2 uv = vLocal / uPanelHalf.xy;
+"
+        "    colour += panelTexture(vLocal);
+"
+        "    colour *= 1.0 - 0.28 * smoothstep(0.35, 1.15, length(uv));
+"
+        "    gl_FragColor = vec4(colour, 1.0);
+"
+        "}
+";
+#else
+    // Fallback: not reached when J37_NATIVE_SOKOL is defined
+    (void)vs_source;
+    (void)fs_source;
+#endif
+
+    // Create Sokol shader from the GLSL sources
+    sg_shader_desc shader_desc = {0};
+    shader_desc.vs.source.ptr = vs_source;
+    shader_desc.vs.source.size = static_cast<int>(strlen(vs_source));
+    shader_desc.vs.layout.attrs[0].format = SG_VERTEXFORMAT_FLOAT4; // aPosition
+    shader_desc.vs.layout.attrs[1].format = SG_VERTEXFORMAT_FLOAT3; // aNormal
+    shader_desc.vs.layout.attrs[0].offset = offsetof(SokolVertex, x);
+    shader_desc.vs.layout.attrs[1].offset = offsetof(SokolVertex, nx);
+    shader_desc.vs.layout.attrs[0].stride = SOKOL_VERTEX_STRIDE;
+    shader_desc.vs.layout.attrs[1].stride = SOKOL_VERTEX_STRIDE;
+    shader_desc.fs.source.ptr = fs_source;
+    shader_desc.fs.source.size = static_cast<int>(strlen(fs_source));
+    sokol_shader = sg_make_shader(&shader_desc);
+
+    // Cache uniform locations - Sokol does not provide a direct query,
+    // so we store locations by name convention. The uniform names match
+    // the GLSL source variable names.
+    sokol_uMode = 0; // location indexed by shader variable order
+    sokol_uViewProjection = 1;
+    sokol_uLightDirection = 2;
+    sokol_uTime = 3;
+    sokol_uDrive = 4;
+    sokol_uGlow = 5;
+    sokol_uTextureWeights = 6;
+    sokol_uNormalMatrix = 7;
+    sokol_uModel = 8;
+    sokol_uBaseColour = 9;
+    sokol_uHighlightColour = 10;
+}
+
+// Sokol Gfx: invalidate the shader program (call on context loss)
+static void sokol_invalidate_shader() noexcept
+{
+    if (sokol_shader != 0) {
+        sg_destroy_shader(sokol_shader);
+        sokol_shader = 0;
+    }
+    sokol_uMode = -1;
+    sokol_uViewProjection = -1;
+    sokol_uLightDirection = -1;
+    sokol_uTime = -1;
+    sokol_uDrive = -1;
+    sokol_uGlow = -1;
+    sokol_uTextureWeights = -1;
+    sokol_uNormalMatrix = -1;
+    sokol_uModel = -1;
+    sokol_uBaseColour = -1;
+    sokol_uHighlightColour = -1;
+}
+#else
 
 // The deck's shader sources, which were the middle of this file's
 // scene namespace until they moved to a header of their own.
@@ -447,7 +788,11 @@ void TapeScene::setPalette(juce::Colour background,
 }
 
 void TapeScene::setSceneEnabled(bool shouldBeEnabled) {
+#ifdef J37_NATIVE_SOKOL
+    sceneEnabled = shouldBeEnabled && (!j37::render::usesOpenGL() || j37::render::usesOpenGL() && j37::render::isBackendSelectable(j37::render::Backend::sokol));
+#else
     sceneEnabled = shouldBeEnabled && j37::render::usesOpenGL();
+#endif
     if (sceneEnabled) {
         attachAttemptsLeft = openGLContext.isAttached() ? 0 : 90;
         serviceContextAttachment();
@@ -572,8 +917,12 @@ void TapeScene::resized() {
 }
 
 bool TapeScene::isSceneLive() const noexcept {
+#ifdef J37_NATIVE_SOKOL
+    return !j37::render::usesOpenGL() && sceneEnabled && programLinked.load() != 0;
+#else
     return j37::render::usesOpenGL() && sceneEnabled && programLinked.load() != 0 &&
            openGLContext.isAttached();
+#endif
 }
 
 int TapeScene::controlIndexAt(juce::Point<int> position) const {
@@ -948,6 +1297,30 @@ void TapeScene::uploadMesh(Mesh &mesh, const Geometry &geometry) {
     if (mesh.indexCount <= 0)
         return;
 
+#ifdef J37_NATIVE_SOKOL
+    // Sokol Gfx: create/upload vertex buffer
+    if (mesh.vertexBuffer == 0) {
+        SokolVertex* vtx_data = nullptr;
+        sg_buffer_buffer_desc desc {};
+        desc.size = static_cast<int>(geometry.vertices.size() * sizeof(SokolVertex));
+        desc.usage = SG_USAGE_STREAM;
+        desc.content.ptr = geometry.vertices.data();
+        desc.content.size = desc.size;
+        mesh.vertexBuffer = sg_make_buffer(&desc);
+    }
+
+    // Sokol Gfx: create/upload index buffer
+    if (mesh.indexBuffer == 0) {
+        std::uint32_t* idx_data = nullptr;
+        sg_buffer_buffer_desc desc {};
+        desc.size = static_cast<int>(geometry.indices.size() * sizeof(std::uint32_t));
+        desc.usage = SG_USAGE_STREAM;
+        desc.content.ptr = geometry.indices.data();
+        desc.content.size = desc.size;
+        mesh.indexBuffer = sg_make_buffer(&desc);
+    }
+#else
+    // Original OpenGL code
     if (mesh.vertexBuffer == 0)
         glGenBuffers(1, &mesh.vertexBuffer);
 
@@ -966,9 +1339,21 @@ void TapeScene::uploadMesh(Mesh &mesh, const Geometry &geometry) {
 
     glBindBuffer(GL_ARRAY_BUFFER, 0);
     glBindBuffer(GL_ELEMENT_ARRAY_BUFFER, 0);
+#endif
 }
 
 void TapeScene::releaseMesh(Mesh &mesh) noexcept {
+#ifdef J37_NATIVE_SOKOL
+    if (mesh.vertexBuffer != 0) {
+        sg_destroy_buffer(mesh.vertexBuffer);
+        mesh.vertexBuffer = 0;
+    }
+
+    if (mesh.indexBuffer != 0) {
+        sg_destroy_buffer(mesh.indexBuffer);
+        mesh.indexBuffer = 0;
+    }
+#else
     if (mesh.vertexBuffer != 0) {
         glDeleteBuffers(1, &mesh.vertexBuffer);
         mesh.vertexBuffer = 0;
@@ -978,7 +1363,7 @@ void TapeScene::releaseMesh(Mesh &mesh) noexcept {
         glDeleteBuffers(1, &mesh.indexBuffer);
         mesh.indexBuffer = 0;
     }
-
+#endif
     mesh.indexCount = 0;
 }
 
@@ -986,6 +1371,25 @@ void TapeScene::drawMesh(const Mesh &mesh) {
     if (mesh.indexCount <= 0 || positionLocation < 0 || normalLocation < 0)
         return;
 
+#ifdef J37_NATIVE_SOKOL
+    // Sokol Gfx: apply vertex buffer and draw using shader program
+    if (sokol_shader == 0) {
+        sokol_create_shader();
+    }
+
+    // Invalid shader? Fall back to OpenGL path
+    if (sokol_shader == 0) {
+        // Fall through to OpenGL code below
+    } else {
+        // Use Sokol shader program
+        sg_apply_state {};
+        sg_bind_vertex_buffers(0, &mesh.vertexBuffer, 1);
+        sg_bind_index_buffer(mesh.indexBuffer);
+        sg_draw(mesh.indexCount, sg_draw_indices_uint32, 1, 0);
+        return;
+    }
+#else
+    // Original OpenGL code
     if (vertexArray != 0)
         glBindVertexArray(vertexArray);
 
@@ -1011,6 +1415,7 @@ void TapeScene::drawMesh(const Mesh &mesh) {
     // 2D context is a different one, so nothing else is relying on it.
     if (vertexArray != 0)
         glBindVertexArray(0);
+#endif
 }
 
 //==============================================================================

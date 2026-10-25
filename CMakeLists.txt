@@ -229,7 +229,7 @@ option(COPY_PLUGIN_AFTER_BUILD "Copy plugins to the user plugin folders after bu
 # create their device, command resources and presentation surface; unsupported
 # platform/API combinations use the CPU fallback.
 set(J37_RENDER_BACKEND "AUTO" CACHE STRING
-    "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12, SOKOL, BGFX or CPU")
+    "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12, SOKOL, BGFX, CPU")
 set_property(CACHE J37_RENDER_BACKEND PROPERTY STRINGS
     AUTO OPENGL VULKAN METAL D3D11 D3D12 SOKOL BGFX CPU)
 string(TOUPPER "${J37_RENDER_BACKEND}" J37_RENDER_BACKEND)
