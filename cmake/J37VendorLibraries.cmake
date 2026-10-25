@@ -117,12 +117,11 @@
 #   those dispatchers live in the vector-math library. That failure is the
 #   reason J37_IPP_VM_LIBRARY exists.
 #
-#   The layout left unwired is Intel's Windows wheel, which ships the mt
-#   libraries only (ippsmt.lib, ippcoremt.lib, ippvmmt.lib) and no
-#   libiomp5md.lib, while MSVC's own headers answer _IPP_PARALLEL_STATIC with
-#   #pragma comment (lib, "libiomp5md"). That has to be settled by someone with
-#   a Windows linker in front of them rather than guessed at from Linux; until
-#   then the switch is thrown only where the recipe above holds.
+#   The Windows wheel ships the mt libraries only (ippsmt.lib,
+#   ippcoremt.lib, ippvmmt.lib) and no libiomp5md.lib, while MSVC's own headers
+#   answer _IPP_PARALLEL_STATIC with #pragma comment (lib, "libiomp5md"). Keep
+#   the JUCE IPP FFT switch off for that layout unless its full link recipe has
+#   been verified; the portable FFT path remains available on Windows x64.
 #
 # ==============================================================================
 

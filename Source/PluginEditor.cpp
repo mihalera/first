@@ -623,28 +623,34 @@ void FirstAudioProcessorEditor::loadIrFromFile()
     const auto browserFlags = juce::FileBrowserComponent::openMode
                             | juce::FileBrowserComponent::canSelectFiles;
 
-    chooser->launchAsync (browserFlags, [this, chooser] (const juce::FileChooser& fc)
+    chooser->launchAsync (browserFlags,
+        [safeThis = juce::Component::SafePointer<FirstAudioProcessorEditor> (this), chooser]
+        (const juce::FileChooser& fc)
     {
+        if (safeThis == nullptr)
+            return;
+
+        auto& editor = *safeThis;
         const auto file = fc.getResult();
         if (! file.existsAsFile())
             return;
 
-        if (! audioProcessor.loadIrFile (file))
+        if (! editor.audioProcessor.loadIrFile (file))
         {
             // A file that would not decode leaves the previous IR in place and
             // says WHICH failure it was, in the same shape the model picker uses.
-            irStatusReason = audioProcessor.lastLoadError();
-            lastShownIrStatus = {};      // force the next refresh to repaint
-            refreshIrStatus();
+            editor.irStatusReason = editor.audioProcessor.lastLoadError();
+            editor.lastShownIrStatus = {};      // force the next refresh to repaint
+            editor.refreshIrStatus();
             return;
         }
 
-        loadedIrName = file.getFileNameWithoutExtension();
-        irStatusReason = {};
+        editor.loadedIrName = file.getFileNameWithoutExtension();
+        editor.irStatusReason = {};
         rememberFolder ("lastIrFolder", file);
-        lastShownIrStatus = {};      // force the next refresh to repaint
-        openStageMix ("ir_mix");
-        refreshIrStatus();
+        editor.lastShownIrStatus = {};      // force the next refresh to repaint
+        editor.openStageMix ("ir_mix");
+        editor.refreshIrStatus();
     });
 }
 
@@ -664,8 +670,14 @@ void FirstAudioProcessorEditor::loadNoisePrintFromFile()
     const auto browserFlags = juce::FileBrowserComponent::openMode
                             | juce::FileBrowserComponent::canSelectFiles;
 
-    chooser->launchAsync (browserFlags, [this, chooser] (const juce::FileChooser& fc)
+    chooser->launchAsync (browserFlags,
+        [safeThis = juce::Component::SafePointer<FirstAudioProcessorEditor> (this), chooser]
+        (const juce::FileChooser& fc)
     {
+        if (safeThis == nullptr)
+            return;
+
+        auto& editor = *safeThis;
         const auto file = fc.getResult();
         if (! file.existsAsFile())
             return;
@@ -675,12 +687,12 @@ void FirstAudioProcessorEditor::loadNoisePrintFromFile()
         // a file that is not there. Everything else - bad WAV, no frames, NaN,
         // over the minute cap - arrives through getNoiseError() on a later
         // tick, which is exactly what the readout is for.
-        audioProcessor.loadNoiseFile (file);
+        editor.audioProcessor.loadNoiseFile (file);
 
-        noiseStatusReason = {};
+        editor.noiseStatusReason = {};
         rememberFolder ("lastNoiseFolder", file);
-        lastShownNoiseStatus = {};    // force the next refresh to repaint
-        refreshNoiseStatus();
+        editor.lastShownNoiseStatus = {};    // force the next refresh to repaint
+        editor.refreshNoiseStatus();
     });
 }
 

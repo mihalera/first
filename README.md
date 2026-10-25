@@ -47,7 +47,7 @@ This is, first and foremost, a **bus / mastering tool**: two independent glue co
 
 ## Overview
 
-This project is a mastering-oriented audio effect plugin built with JUCE for Windows (x64), macOS (universal), Linux (x64 VST3), and Android (arm64-v8a Standalone).
+This project is a mastering-oriented audio effect plugin built with JUCE for Windows (x64 and arm64), macOS (universal), Linux (x64 and arm64 VST3), and Android (arm64-v8a Standalone).
 It provides a tape-saturation mastering workflow with:
 
 - drive and harmonic character controls

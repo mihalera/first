@@ -9,7 +9,7 @@
 #   build reads directly instead of as generated files that can drift.
 #
 #   Supported configurations
-#     Windows : Visual Studio / x64                -> VST3
+#     Windows : Visual Studio / x64                -> VST3, CLAP
 #     macOS   : Xcode / universal (arm64 + x86_64) -> VST3, AU, AUv3
 #     Linux   : GCC / Clang x64                    -> VST3
 #     Android : NDK (arm64-v8a)                    -> Standalone (the only format

@@ -124,7 +124,7 @@ inline void appendString (Packet& packet, std::string_view text)
 
 inline bool readUint32 (std::string_view bytes, std::size_t& position, std::uint32_t& value)
 {
-    if (position + 4 > bytes.size())
+    if (position > bytes.size() || bytes.size() - position < 4)
         return false;
 
     value = (static_cast<std::uint32_t> (static_cast<std::uint8_t> (bytes[position])) << 24)
@@ -383,7 +383,7 @@ inline std::vector<Message> decodePacket (std::string_view bytes, std::string* r
             return {};
         }
 
-        if (position + length > bytes.size())
+        if (position > bytes.size() || length > bytes.size() - position)
         {
             if (reason != nullptr)
                 *reason = "a bundle element is longer than the packet";
