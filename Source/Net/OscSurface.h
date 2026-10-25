@@ -33,6 +33,7 @@
 
 #include "Net/Osc.h"
 
+#include <cmath>
 #include <optional>
 #include <string>
 #include <vector>
@@ -130,13 +131,14 @@ public:
         `normalised` is what the tree stores; the slot's range is what a client that
         wants engineering units gets, so a meter or a readout can be wired without a
         second convention. The value is sent as the NORMALISED float for the same
-        reason route() reads one: both ends of this surface speak one scale.
+        reason route() reads one: both ends of this surface speak one scale. A
+        non-finite input returns an empty message rather than sending invalid OSC.
     */
     Message feedback (std::size_t slot, float normalised) const
     {
         Message message;
 
-        if (slot >= slots.size())
+        if (slot >= slots.size() || ! std::isfinite (normalised))
             return message;
 
         message.address = addressOf (slot);
@@ -147,10 +149,11 @@ public:
     }
 
     /** The slot's value in its own units - the number a client displays rather than
-        the one it sets. Kept beside feedback() so the two conversions are one file. */
+        the one it sets. Kept beside feedback() so the two conversions are one file.
+        Non-finite input returns 0.0f as a safe, documented fallback. */
     float engineeringValue (std::size_t slot, float normalised) const noexcept
     {
-        if (slot >= slots.size())
+        if (slot >= slots.size() || ! std::isfinite (normalised))
             return 0.0f;
 
         const auto& entry = slots[slot];

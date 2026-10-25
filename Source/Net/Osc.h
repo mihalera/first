@@ -100,9 +100,14 @@ std::vector<Message> decodePacket (std::string_view bytes, std::string* reason =
 // -----------------------------------------------------------------------------
 namespace detail {
 
-inline constexpr std::size_t paddedSize (std::size_t size) noexcept
+inline bool paddedSize (std::size_t size, std::size_t& result) noexcept
 {
-    return (size + (argumentAlignment - 1)) & ~(argumentAlignment - 1);
+    constexpr auto padding = argumentAlignment - 1;
+    if (size > static_cast<std::size_t> (-1) - padding)
+        return false;
+
+    result = (size + padding) & ~padding;
+    return true;
 }
 
 inline void appendUint32 (Packet& packet, std::uint32_t value)
@@ -141,6 +146,13 @@ inline bool readUint32 (std::string_view bytes, std::size_t& position, std::uint
 inline bool readString (std::string_view bytes, std::size_t& position, std::string& value,
                        std::string* reason)
 {
+    if (position > bytes.size())
+    {
+        if (reason != nullptr)
+            *reason = "a string starts past the end of the packet";
+        return false;
+    }
+
     const auto terminator = bytes.find ('\0', position);
 
     if (terminator == std::string_view::npos)
@@ -152,8 +164,9 @@ inline bool readString (std::string_view bytes, std::size_t& position, std::stri
 
     // The chunk the terminator falls in, padded - so a string that ends at byte 6
     // still occupies 8 and the next field starts there.
-    const auto chunk = paddedSize (terminator - position + 1);
-    if (position + chunk > bytes.size())
+    std::size_t chunk = 0;
+    if (! paddedSize (terminator - position + 1, chunk)
+        || chunk > bytes.size() - position)
     {
         if (reason != nullptr)
             *reason = "a string's padding runs past the end of the packet";

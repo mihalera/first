@@ -299,6 +299,16 @@ void testRateConversion()
 
     check (! j37dsp::resamplePrint (j37dsp::NoisePrint {}, 48000.0, same),
            "an empty print cannot be converted, and says so");
+
+    // Failed conversion leaves the existing target untouched, so a caller can
+    // retain the previously valid print rather than accidentally publishing a
+    // stale-rate or partially constructed replacement.
+    j37dsp::NoisePrint preserved = atFileRate;
+    const auto preservedFirst = preserved.sample (0, 0);
+    const auto failedConversion = j37dsp::resamplePrint (j37dsp::NoisePrint {}, 96000.0, preserved);
+    check (! failedConversion && preserved.sampleRate == atFileRate.sampleRate
+               && preserved.sample (0, 0) == preservedFirst,
+           "failed rate conversion leaves the prior valid print unchanged");
 }
 
 //==============================================================================

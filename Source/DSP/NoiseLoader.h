@@ -99,7 +99,17 @@ public:
         prepared = true;
 
         if (sourcePrint != nullptr)
-            rebuildAtEngineRate();
+        {
+            if (! rebuildAtEngineRate())
+            {
+                lastErrorMessage = "the print could not be converted to the engine rate";
+                publish (nullptr);
+            }
+            else
+            {
+                lastErrorMessage = {};
+            }
+        }
     }
 
     //==========================================================================
@@ -111,14 +121,16 @@ public:
     {
         stopWorker();
 
+        std::uint64_t requestGeneration = 0;
         {
             const juce::ScopedLock lock (controlLock);
             pendingFile = file;
+            requestGeneration = ++generation;
             loadingFlag.store (true, std::memory_order_relaxed);
             lastErrorMessage = {};
         }
 
-        startWorker();
+        startWorker (requestGeneration);
     }
 
     /** Stop using the print. The loop stops on the next block, and the samples
@@ -128,6 +140,7 @@ public:
         stopWorker();
 
         const juce::ScopedLock lock (controlLock);
+        ++generation;
         pendingFile = juce::File();
         lastErrorMessage = {};
         loadingFlag.store (false, std::memory_order_relaxed);
@@ -189,8 +202,9 @@ private:
         writes over the newer one. */
     struct Worker final : public juce::Thread
     {
-        Worker (NoiseLoader& ownerIn, juce::File fileIn)
-            : juce::Thread ("J37 noise print"), owner (ownerIn), file (std::move (fileIn)) {}
+        Worker (NoiseLoader& ownerIn, juce::File fileIn, std::uint64_t generationIn)
+            : juce::Thread ("J37 noise print"), owner (ownerIn), file (std::move (fileIn)),
+              requestGeneration (generationIn) {}
 
         void run() override
         {
@@ -201,7 +215,7 @@ private:
 
             if (! file.existsAsFile() || ! file.loadFileAsData (bytes))
             {
-                owner.finishWithError ("the file could not be read");
+                owner.finishWithError ("the file could not be read", requestGeneration);
                 return;
             }
 
@@ -210,24 +224,25 @@ private:
 
             if (outcome.status != NoiseDecodeStatus::ok)
             {
-                owner.finishWithError (outcome.reason);
+                owner.finishWithError (outcome.reason, requestGeneration);
                 return;
             }
 
             if (threadShouldExit())
                 return;
 
-            owner.finishWithPrint (std::move (decoded), file);
+            owner.finishWithPrint (std::move (decoded), file, requestGeneration);
         }
 
         NoiseLoader& owner;
         juce::File file;
+        std::uint64_t requestGeneration = 0;
     };
 
     friend struct Worker;
 
     //==========================================================================
-    void startWorker()
+    void startWorker (std::uint64_t requestGeneration)
     {
         // The file copy is taken here rather than read later, so the worker
         // never touches `pendingFile` while the message thread may be writing it.
@@ -238,7 +253,7 @@ private:
             file = pendingFile;
         }
 
-        worker = std::make_unique<Worker> (*this, file);
+        worker = std::make_unique<Worker> (*this, file, requestGeneration);
         worker->startThread();
     }
 
@@ -260,12 +275,15 @@ private:
     }
 
     /** Worker thread. Publishes a decoded print, converted to the engine rate. */
-    void finishWithPrint (NoisePrint&& decoded, const juce::File& file)
+    void finishWithPrint (NoisePrint&& decoded, const juce::File& file,
+                          std::uint64_t requestGeneration)
     {
         auto preparedPrint = std::make_unique<NoisePrint>();
 
         {
             const juce::ScopedLock lock (controlLock);
+            if (requestGeneration != generation)
+                return;
 
             decoded.sourceRate = decoded.sampleRate;
 
@@ -297,9 +315,12 @@ private:
     }
 
     /** Worker thread. Records why nothing loaded and clears the busy flag. */
-    void finishWithError (const char* reason)
+    void finishWithError (const char* reason, std::uint64_t requestGeneration)
     {
         const juce::ScopedLock lock (controlLock);
+        if (requestGeneration != generation)
+            return;
+
         lastErrorMessage = reason != nullptr ? reason : "the file could not be decoded";
         loadingFlag.store (false, std::memory_order_relaxed);
     }
@@ -332,15 +353,16 @@ private:
 
     /** Message thread, with `controlLock` held. Rebuilds the engine-rate loop
         from the decoded one after a rate change. */
-    void rebuildAtEngineRate()
+    bool rebuildAtEngineRate()
     {
         auto converted = std::make_unique<NoisePrint>();
 
         if (! resamplePrint (*sourcePrint, engineRate, *converted))
-            return;
+            return false;
 
         converted->sourceRate = sourcePrint->sampleRate;
         publish (converted.release());
+        return true;
     }
 
     //==========================================================================
@@ -369,6 +391,7 @@ private:
 
     double engineRate = 0.0;
     bool prepared = false;
+    std::uint64_t generation = 0;
 
     std::unique_ptr<Worker> worker;
 
