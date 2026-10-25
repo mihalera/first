@@ -355,6 +355,24 @@ void check (bool condition, const std::string& what)
     std::fflush (stdout);
 }
 
+//==============================================================================
+//  Installs a fixture the way the ENGINE does, not just the message-thread half.
+//
+//  `buildFromNam` only PUBLISHES the model: the object is built on the control
+//  thread and handed over at a block boundary, so that the audio thread never
+//  destroys or allocates one. `adoptPendingModel` is that boundary - the shipping
+//  path calls it at the start of every block (Source/ProcessorSignalPath.cpp).
+//  It is also the call that makes `isActive()` true and gives `process()` a model
+//  to run: a harness that skipped it would report "built" and then measure the
+//  bit-exact pass-through, which is exactly what this file did when the deferred
+//  handover landed.
+bool buildAndAdopt (NeuralStage& stage, const nlohmann::json& nam)
+{
+    const auto built = stage.buildFromNam (nam);
+    stage.adoptPendingModel();
+    return built;
+}
+
 float worstDifference (const std::vector<float>& produced, const float* expected, int count)
 {
     auto worst = 0.0f;
@@ -494,7 +512,7 @@ int main (int argc, char** argv)
     else
     {
         NeuralStage stage;
-        const auto built = stage.buildFromNam (lstmFile);
+        const auto built = buildAndAdopt (stage, lstmFile);
         check (built, "the shipping stage BUILDS lstm_small.nam");
         check (stage.isActive(), "the shipping stage reports the LSTM model as active");
         stage.setSampleRates (fixtureSampleRate, fixtureSampleRate);
@@ -602,7 +620,7 @@ int main (int argc, char** argv)
         // at 48 kHz, and the panel's NEURAL control is at full wet. This is the
         // assertion that used to be "the shipping stage refuses WaveNet".
         NeuralStage stage;
-        const auto built = stage.buildFromNam (wavenetFile);
+        const auto built = buildAndAdopt (stage, wavenetFile);
         check (built, "the shipping stage BUILDS wavenet_small.nam through NAM Core");
         check (stage.isActive(), "the shipping stage reports the WaveNet model as active");
 
@@ -640,7 +658,7 @@ int main (int argc, char** argv)
         // still correct - but it is a configuration, not the WP3 gap, and it is
         // reported as such rather than as a failure.
         NeuralStage stage;
-        const auto built = stage.buildFromNam (wavenetFile);
+        const auto built = buildAndAdopt (stage, wavenetFile);
         std::printf ("  ..    WaveNet is %s in this build - J37_NAMCORE is off, so only the\n"
                      "        LSTM converter exists; configure -DJ37_NAMCORE=ON to load it\n",
                      built ? "ACCEPTED" : "refused");

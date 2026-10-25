@@ -1,10 +1,11 @@
 # ==============================================================================
 #
-#   J37 vendor vector libraries: Intel IPP and Apple vDSP.
+#   J37 vendor vector libraries: Intel IPP, Apple vDSP and Arm Performance
+#   Libraries.
 #
-#   Neither is a GitHub repository, so neither can be fetched through CPM, and
-#   neither needs to be: each is already present on a machine that has it, and
-#   each is integrated here the only way such a library can be.
+#   None of them is a GitHub repository, so none can be fetched through CPM, and
+#   none needs to be: each is already present on a machine that has it, and each
+#   is integrated here the only way such a library can be.
 #
 #    vDSP  - part of Apple's Accelerate framework, shipped with the OS on every
 #            Apple platform. There is nothing to download, so the whole
@@ -60,14 +61,28 @@
 #            FFT is pocketfft (Source/DSP/SpectrumAnalyser.h), so a build with
 #            IPP accelerates JUCE's FFT and not this repository's.
 #
-#   Both are therefore ADDITIVE: they accelerate kernels that are also compiled
-#   in portable form, so the engine keeps working identically on a platform that
-#   has neither - which is precisely what chowdsp::chowdsp_simd already does
+#    ARM   - Arm Performance Libraries, the AArch64 counterpart. Discovered the
+#            same way - installed, never vendored - and it is the one vendor
+#            library here with a caller in Source/: JUCE 9.0.4 has no ArmPL FFT
+#            engine at all (its engines are IPP, MKL and vDSP), so there is no
+#            juce_dsp switch to throw, and linking the library without a caller
+#            would be exactly the dead link-line entry the audit removed.
+#            Source/DSP/SpectrumAnalyser.h therefore runs its transform through
+#            ArmPL's FFTW3-compatible interface when this file finds it, and
+#            through pocketfft otherwise. J37_HAS_ARMPL=1 is defined by this
+#            file and by nothing else - a __has_include probe would accept a
+#            system FFTW that is not on the link line, and the stage would then
+#            compile and fail to link.
+#
+#   All three are therefore ADDITIVE: they accelerate kernels that are also
+#   compiled in portable form, so the engine keeps working identically on a
+#   platform that has none - which is precisely what chowdsp::chowdsp_simd does
 #   with its own accelerator backends, and what the portable FFTs (KISS FFT /
 #   PocketFFT / PFFFT) are here for.
 #
 #   This file does three things, in this order:
-#     1. discovers the libraries and sets J37_HAVE_VDSP / J37_HAVE_IPP;
+#     1. discovers the libraries and sets J37_HAVE_VDSP / J37_HAVE_IPP /
+#        J37_HAVE_ARMPL;
 #     2. decides J37_IPP_LINKING_MODEL - the switch JUCE reads - for a layout
 #        whose whole recipe is known, and says why in the configure log when it
 #        cannot;
@@ -341,6 +356,117 @@ if(J37_ENABLE_IPP)
 endif()
 
 # ------------------------------------------------------------------------------
+#  Arm Performance Libraries (ArmPL).
+#
+#  The ARM counterpart of IPP and additive in the same way: when the libraries
+#  are installed the spectrum analyser's transform is ArmPL's, and a machine
+#  without them keeps pocketfft's. There is no JUCE engine to switch here, which
+#  is why the caller lives in Source/ rather than in a compile definition JUCE
+#  reads.
+#
+#  Two switches, because the two questions are different:
+#
+#    J37_ENABLE_ARMPL    discover it at all. ON by default; a machine that has
+#                        the libraries but does not want them says OFF.
+#    J37_ARMPL_REQUIRED  the reverse: a build that must not silently fall back.
+#                        The ARM CI jobs configure with this ON, so a runner
+#                        whose install step broke fails at configure instead of
+#                        producing a green build with the portable FFT in it.
+#
+#  Where it looks: ARMPL_DIR (Arm's own variable, and the one the CI jobs set),
+#  ARMPL_ROOT, a version-suffixed child of either (the installers create
+#  armpl_<version>_<compiler>/ under the prefix they are given, which is why a
+#  bare ARMPL_DIR=/opt/arm is enough), and the stock install locations.
+# ------------------------------------------------------------------------------
+option(J37_ENABLE_ARMPL "Use Arm Performance Libraries when they are installed" ON)
+option(J37_ARMPL_REQUIRED "Fail the configure when ArmPL is requested and not found" OFF)
+
+set(J37_HAVE_ARMPL OFF)
+set(J37_ARMPL_HOW "")
+
+if(J37_ARMPL_REQUIRED AND NOT J37_ENABLE_ARMPL)
+    message(FATAL_ERROR "J37_ARMPL_REQUIRED=ON asks for ArmPL, but J37_ENABLE_ARMPL=OFF forbids it.")
+endif()
+
+if(J37_ENABLE_ARMPL)
+    set(j37_armpl_roots "")
+
+    foreach(j37_armpl_prefix "${ARMPL_DIR}" "$ENV{ARMPL_DIR}" "$ENV{ARMPL_ROOT}")
+        if(j37_armpl_prefix AND IS_DIRECTORY "${j37_armpl_prefix}")
+            list(APPEND j37_armpl_roots "${j37_armpl_prefix}")
+
+            # The installer's own layout: <prefix>/armpl_<version>_<compiler>/.
+            # Globbing one level down is what makes -DARMPL_DIR=/opt/arm work
+            # without the caller knowing which version was installed.
+            file(GLOB j37_armpl_children LIST_DIRECTORIES true "${j37_armpl_prefix}/*")
+            foreach(j37_armpl_child ${j37_armpl_children})
+                if(IS_DIRECTORY "${j37_armpl_child}"
+                   AND EXISTS "${j37_armpl_child}/include/fftw3.h")
+                    list(APPEND j37_armpl_roots "${j37_armpl_child}")
+                endif()
+            endforeach()
+        endif()
+    endforeach()
+
+    # Stock locations, globbed because the path carries the version on both
+    # platforms. Linux is Arm's documented default; Windows is the MSI's, whose
+    # Directory table puts "Arm Performance Libraries/armpl_<version>" straight
+    # under Program Files - there is no "Arm" level above it.
+    file(GLOB j37_armpl_defaults LIST_DIRECTORIES true
+        "/opt/arm/armpl_*"
+        "$ENV{ProgramFiles}/Arm Performance Libraries/armpl_*")
+
+    list(APPEND j37_armpl_roots ${j37_armpl_defaults})
+
+    # Cached from a previous configure that pointed somewhere else otherwise,
+    # exactly as the IPP probe above unsets its own.
+    unset(J37_ARMPL_INCLUDE_DIR CACHE)
+    unset(J37_ARMPL_LIBRARY CACHE)
+
+    # fftw3.h is the header the analyser includes, and it is the one the existence
+    # check below requires. armpl.h is listed as a second name so a prefix that
+    # spells its include directory differently is still found.
+    find_path(J37_ARMPL_INCLUDE_DIR
+        NAMES fftw3.h armpl.h
+        HINTS ${j37_armpl_roots}
+        PATH_SUFFIXES include)
+
+    # libarmpl_lp64 is the LP64 (32-bit integer) library. The Windows import
+    # library is named armpl_lp64.dll.lib, so `armpl_lp64.dll` is listed FIRST
+    # there: CMake appends .lib to a name it cannot find as written, and finding
+    # the static libarmpl_lp64.lib instead would drag in the Fortran runtimes
+    # ArmPL's static form needs and fail the link with undefined Fortran symbols.
+    # On Linux the same list resolves to libarmpl_lp64.so, which the loader then
+    # requires at run time - see the note in README's ARM64 section.
+    #
+    # The OpenMP variant is deliberately not used: the plugin already has its own
+    # thread model, and a library that spawns workers inside processBlock is not
+    # a decision this build should make silently.
+    find_library(J37_ARMPL_LIBRARY
+        NAMES armpl_lp64.dll libarmpl_lp64.dll armpl_lp64 libarmpl_lp64
+        HINTS ${j37_armpl_roots}
+        PATH_SUFFIXES lib lib64 Library/lib)
+
+    if(J37_ARMPL_INCLUDE_DIR AND J37_ARMPL_LIBRARY
+       AND EXISTS "${J37_ARMPL_INCLUDE_DIR}/fftw3.h")
+        add_library(ArmPL::armpl UNKNOWN IMPORTED)
+        set_target_properties(ArmPL::armpl PROPERTIES
+            IMPORTED_LOCATION "${J37_ARMPL_LIBRARY}"
+            INTERFACE_INCLUDE_DIRECTORIES "${J37_ARMPL_INCLUDE_DIR}")
+
+        set(J37_HAVE_ARMPL ON)
+        set(J37_ARMPL_HOW "${J37_ARMPL_LIBRARY}")
+    endif()
+
+    if(J37_ARMPL_REQUIRED AND NOT J37_HAVE_ARMPL)
+        message(FATAL_ERROR
+            "J37_ARMPL_REQUIRED=ON, but Arm Performance Libraries were not found.\n"
+            "Point ARMPL_DIR at the install - the directory holding include/fftw3.h,\n"
+            "for example /opt/arm/armpl_26.07_gcc - and re-run the configure.")
+    endif()
+endif()
+
+# ------------------------------------------------------------------------------
 #  Wiring what was found to the plugin target.
 #
 #  Both are PRIVATE: an accelerator's link line and compile definitions are none
@@ -400,5 +526,26 @@ function(j37_apply_vendor_libraries target)
         else()
             message(STATUS "Intel IPP: linked, but JUCE's IPP FFT engine is NOT wired - ${J37_IPP_UNWIRED}")
         endif()
+    endif()
+
+    if(J37_HAVE_ARMPL)
+        # The macro is defined HERE rather than probed in the header: the
+        # analyser must only take ArmPL's path in a build that actually links
+        # the library, and only this file knows that.
+        #
+        # PUBLIC, not PRIVATE, and for a reason the other two vendor libraries
+        # do not have: this macro adds a MEMBER to SpectrumAnalyser (the owned
+        # plan), and the class is embedded in FirstAudioProcessor. A wrapper
+        # target that compiled a TU including PluginProcessor.h without the
+        # macro would see a different struct layout - an ODR violation that no
+        # compiler diagnoses - so both the definition and the include directory
+        # have to reach anything that consumes this target.
+        target_link_libraries(${target} PUBLIC ArmPL::armpl)
+        target_compile_definitions(${target} PUBLIC J37_HAS_ARMPL=1)
+        message(STATUS "ArmPL: linked (${J37_ARMPL_HOW}); the spectrum analyser's FFT is ArmPL's")
+    elseif(J37_ENABLE_ARMPL)
+        message(STATUS "ArmPL: not installed - the spectrum analyser uses pocketfft")
+    else()
+        message(STATUS "ArmPL: disabled by J37_ENABLE_ARMPL=OFF")
     endif()
 endfunction()

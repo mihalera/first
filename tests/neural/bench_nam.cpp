@@ -285,7 +285,9 @@ int main (int argc, char** argv)
     //  1. The realistic models from nam_shapes.h.
     //
     //     Both are loaded exactly the way a build with J37_NAMCORE=ON loads a
-    //     file: buildFromNam on the message thread, then setSampleRates. The
+    //     file: buildFromNam on the message thread, adoptPendingModel at the
+    //     block boundary (the handover the audio thread performs), then
+    //     setSampleRates. The
     //     stage decides which engine gets which architecture, so the LSTM row
     //     below is RTNeural's and the WaveNet row is NAM Core's - that IS the
     //     shipping dispatch, not a benchmark-only arrangement.
@@ -301,7 +303,10 @@ int main (int argc, char** argv)
     {
         NeuralStage stage;
 
-        if (! stage.buildFromNam (waveNet) || ! stage.isActive())
+        const auto built = stage.buildFromNam (waveNet);
+        stage.adoptPendingModel();
+
+        if (! built || ! stage.isActive())
         {
             fail ("the shipping stage refused the generated 16-channel WaveNet");
             return 1;
@@ -350,7 +355,10 @@ int main (int argc, char** argv)
     {
         NeuralStage stage;
 
-        if (! stage.buildFromNam (lstm) || ! stage.isActive())
+        const auto built = stage.buildFromNam (lstm);
+        stage.adoptPendingModel();
+
+        if (! built || ! stage.isActive())
         {
             fail ("the shipping stage refused the generated LSTM");
             return 1;
@@ -435,7 +443,10 @@ int main (int argc, char** argv)
 
         NeuralStage stage;
 
-        if (! stage.buildFromNam (fixture) || ! stage.isActive())
+        const auto built = stage.buildFromNam (fixture);
+        stage.adoptPendingModel();
+
+        if (! built || ! stage.isActive())
         {
             fail ("the shipping stage refused the LSTM fixture");
             return 1;

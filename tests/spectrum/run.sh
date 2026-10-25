@@ -22,6 +22,16 @@
 #      full-scale tone reads the floor, the band ladder is still published, and a
 #      null or zero-length feed is ignored rather than dereferenced.
 #
+#   3. WITH the ArmPL branch. J37_HAS_ARMPL 1 and pocketfft also present, which
+#      is the state an ARM build is in: the stage prefers ArmPL's transform and
+#      keeps pocketfft as the fallback. ArmPL is a downloaded AArch64 library, so
+#      no x86 machine and neither Linux x64 CI job has a copy; the stand-in under
+#      tests/spectrum/fftw_stub is therefore a REAL unnormalised forward DFT with
+#      FFTW3's signatures, not a mock, and the same assertions run against it.
+#      That keeps the C++ half of the integration compiled and measured here; the
+#      real library is linked by the linux-arm64 and windows-arm64 jobs, which
+#      configure with -DJ37_ARMPL_REQUIRED=ON.
+#
 # The second pass exists because no other harness in this suite compiles the
 # absent-library branch of a source header. tests/neural does the same thing for
 # RTNeural by DEFINING J37_HAS_RTNEURAL and standing in for the library's API;
@@ -75,3 +85,13 @@ echo "== without pocketfft (J37_HAS_POCKETFFT=0) =="
     "${HERE}/spectrum_test.cpp" -o "${BUILD}/spectrum_without_library"
 
 "${BUILD}/spectrum_without_library"
+
+echo
+echo "== with the ArmPL branch (J37_HAS_ARMPL=1, stand-in FFTW) =="
+"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+    "${sanitize_flags[@]}" \
+    -I "${SOURCE}" -I "${POCKETFFT}" -I "${HERE}/fftw_stub" \
+    -DJ37_HAS_ARMPL=1 \
+    "${HERE}/spectrum_test.cpp" -o "${BUILD}/spectrum_with_armpl"
+
+"${BUILD}/spectrum_with_armpl"

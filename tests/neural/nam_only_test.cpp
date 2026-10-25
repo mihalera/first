@@ -113,6 +113,11 @@ void drive (const std::string& path, const char* architecture)
     NeuralStage stage;
     const auto built = stage.buildFromNam (file);
 
+    // `buildFromNam` publishes the model; the audio thread's block boundary is
+    // what adopts it, makes `isActive()` true and gives `process()` something to
+    // run. The shipping path calls this at the start of every block.
+    stage.adoptPendingModel();
+
     check (built, std::string ("the stage BUILDS the ") + architecture + " fixture");
     check (stage.isActive(), "and reports the model as active");
 

@@ -4,8 +4,8 @@
 
 | | |
 | --- | --- |
-| **Formats** | VST3, Audio Unit, AUv3, Standalone (Android) |
-| **Platforms** | Windows x64, macOS universal (arm64 + x86_64), Linux x64, Android arm64-v8a |
+| **Formats** | VST3, Audio Unit, AUv3, CLAP, Standalone (Android) |
+| **Platforms** | Windows x64 + arm64, macOS universal (arm64 + x86_64), Linux x64 + arm64, Android arm64-v8a |
 | **Framework** | JUCE `9.0.4`, pinned as a git submodule |
 | **Build** | CMake 3.22+, MSVC on Windows, Xcode on macOS |
 | **Parameters** | 109, in 23 groups, with 29 factory presets |
@@ -1303,15 +1303,23 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
 
 ## Project type
 
-- Audio plugin: **VST3**, **Audio Unit** and **AUv3**
+- Audio plugin: **VST3**, **Audio Unit**, **AUv3** and **CLAP**
 - Framework: JUCE 9.0.4 (pinned as a git submodule)
-- Target platforms: Windows (x64), macOS (universal: arm64 + x86_64), Linux (x64, VST3), Android (arm64-v8a, Standalone)
+- Target platforms: Windows (x64 and arm64), macOS (universal: arm64 + x86_64), Linux (x64 and arm64), Android (arm64-v8a, Standalone)
 - Build system: **CMake** (3.22+), driving MSVC on Windows and Xcode on macOS
 
 AU and AUv3 are macOS-only formats. JUCE compiles them to nothing on Windows, which is why
-the Windows build produces VST3 only - the format simply does not exist there. The single
-`FORMATS` list in `CMakeLists.txt` is shared by both platforms and JUCE selects what each
-one can build.
+the Windows build produces VST3 and CLAP only - those are the formats that exist there. The
+single `FORMATS` list in `CMakeLists.txt` is shared by both platforms and JUCE selects what
+each one can build.
+
+**CLAP is not in that list, and cannot be.** JUCE 9.0.4's plugin kinds are AAX, AU, LV2,
+Standalone, Unity and VST3; a `FORMATS CLAP` entry is silently intersected away, leaving a
+build one wrapper short with nothing in the log to say so. The build therefore wraps the
+plugin with `clap-juce-extensions`, which compiles CLAP's own entry point into a `first_CLAP`
+MODULE target linked against the same shared code as the VST3 and AU wrappers. It is
+produced on every desktop platform (not Android, where the build is Standalone-only); see
+the artefact table under [macOS](#macos), which is the same layout on every platform.
 
 ## Getting the source
 
@@ -1393,16 +1401,54 @@ generator the AUv3 format is silently dropped and a "build all" run produces VST
 only. If you are unsure, run `cmake --build build --target help | grep AUv3` and switch
 generators if the target is absent.
 
-Three formats are produced, one per format subfolder under `build/first_artefacts/Release/`:
+Four formats are produced, one per format subfolder under `build/first_artefacts/Release/`:
 
 | Artefact | Format | Hosts that load it |
 | --- | --- | --- |
 | `VST3/MiBoX.vst3` | VST3 | Reaper, Cubase, Studio One, Bitwig |
 | `AU/MiBoX.component` | Audio Unit | Logic Pro, GarageBand, Final Cut |
 | `AUv3/MiBoX.appex` | AUv3 | Logic Pro, GarageBand, iOS hosts |
+| `CLAP/MiBoX.clap` | CLAP | Bitwig Studio, Reaper, FL Studio |
 
 AU and AUv3 matter for Mac users because **Logic and GarageBand cannot load VST3 at all**.
 Shipping only VST3 means the plugin does not exist for them.
+
+CLAP is a single file (`MiBoX.clap`) on Windows and Linux and a bundle with the same name on
+macOS, which is each platform's own convention for a loadable module. Its identity to a host
+is `com.mcsmes.mibox` (`CLAP_ID` in `CMakeLists.txt`): that is the key a host saves session
+state under, so it must never change once shipped. It is deliberately not the CMake target's
+name, because `first` is a build artefact and `MiBoX` is the product a host lists.
+
+### ARM64 builds
+
+The build is natively AArch64-capable on both desktop platforms; nothing about the DSP or
+the GUI is x86-specific. On Windows the architecture is the generator's, so a native ARM64
+build asks MSVC for it:
+
+```sh
+cmake -S . -B build -A ARM64 -DCMAKE_BUILD_TYPE=Release
+cmake --build build --config Release --parallel
+```
+
+On an AArch64 Linux machine the default toolchain is already the right one; on an x64
+machine an AArch64 cross toolchain is needed, which is what `ubuntu-24.04-arm` runners
+give without setting anything up.
+
+Both ARM64 CI jobs also install **[Arm Performance Libraries](https://developer.arm.com/Tools%20and%20Software/Arm%20Performance%20Libraries)**, the
+AArch64 counterpart of Intel IPP, and configure with `-DJ37_ARMPL_REQUIRED=ON`. That
+switch is the point of the jobs: with it, a runner whose ArmPL install broke fails at
+configure instead of producing a green build with the portable FFT in it. On a machine
+with ArmPL, `Source/DSP/SpectrumAnalyser.h` runs its transform through ArmPL's
+FFTW3-compatible interface; without it, the same stage runs pocketfft, and the readings
+are the same because both compute the same unnormalised forward DFT. `ARMPL_DIR` is the
+variable both the CMake discovery and Arm's own installer use.
+
+> **An ARM64 build made this way needs ArmPL at load time.** CMake finds the shared
+> `libarmpl_lp64` / `armpl_lp64.dll.lib`, so the module carries a dependency on it; the
+> CI artifacts are build proofs and are not configured for redistribution. A release
+> build either ships ArmPL's runtime alongside the plugin under Arm's EULA, or selects
+> the static library (and the Fortran runtimes it needs) deliberately - the same choice
+> the IPP path already makes by accepting only the static single-threaded layout.
 
 ### Installing locally
 
@@ -1472,8 +1518,9 @@ VST3 там і не має працювати; використовуйте `.co
 
 JUCE's CMake layer reduces to the **Standalone** format on Android: the plugin
 kinds VST3 / AU / AUv3 are desktop-host formats and are excluded there
-(`_juce_get_platform_plugin_kinds`), and there is no Gradle exporter in the CMake
-layer. So "Android support" here means the plugin's whole engine - DSP, editor
+(`_juce_get_platform_plugin_kinds`); CLAP is excluded by the guard around
+`clap_juce_extensions_plugin`, which has no Android host to be loaded by; and there is no
+Gradle exporter in the CMake layer. So "Android support" here means the plugin's whole engine - DSP, editor
 and every third-party library in the build - compiling for the Android NDK as
 the Standalone wrapper, a shared library a Gradle project loads.
 

@@ -41,14 +41,22 @@
 //       that keeps a faded copy of the last thing played is a curve that lies
 //       about a stopped transport.
 //
-//  THE TWO BUILDS. This file is compiled twice by run.sh: once with
-//  ThirdParty/pocketfft on the include path (J37_HAS_POCKETFFT 1, the real
-//  transform) and once with it off (0, the branch a build without the library
-//  compiles). The second build is the only thing in this suite that ever compiles
-//  the absent-library half of a Source/DSP/ header at all, so it asserts what that
-//  half promises: it compiles, it prepares, it accepts samples and it reports the
-//  floor - and `compiledIn` is false, which is what a caller checks before drawing
-//  anything. Without this pass, the fallback would be written and never built.
+//  THE THREE BUILDS. This file is compiled three times by run.sh:
+//
+//    * with ThirdParty/pocketfft on the include path (J37_HAS_POCKETFFT 1, the
+//      real transform);
+//    * with it off (0, the branch a build without the library compiles). The
+//      second build is the only thing in this suite that ever compiles the
+//      absent-library half of a Source/DSP/ header at all, so it asserts what that
+//      half promises: it compiles, it prepares, it accepts samples and it reports
+//      the floor - and `compiledIn` is false, which is what a caller checks before
+//      drawing anything. Without this pass, the fallback would be written and
+//      never built;
+//    * with -DJ37_HAS_ARMPL=1, which is the ARM builds' shape. ArmPL is a
+//      downloaded AArch64 library, so the header it includes is replaced by
+//      tests/spectrum/fftw_stub - a real unnormalised forward DFT rather than a
+//      mock - and the SAME assertions run against the ArmPL branch. The real
+//      library is linked by the ARM CI jobs, not here.
 //
 //  No shim and no JUCE: the header is JUCE-free by design (see its own comment for
 //  why that was the deciding argument for pocketfft over juce::dsp::FFT), so this
@@ -363,9 +371,9 @@ void runAbsentLibraryBuild()
 
 int main()
 {
-    std::printf ("SpectrumAnalyser harness - %s build (J37_HAS_POCKETFFT=%d, %d-point transform)\n\n",
+    std::printf ("SpectrumAnalyser harness - %s build (pocketfft=%d, ArmPL=%d, %d-point transform)\n\n",
                  SpectrumAnalyser::compiledIn ? "LIBRARY" : "ABSENT-LIBRARY",
-                 J37_HAS_POCKETFFT, kFftSize);
+                 J37_HAS_POCKETFFT, J37_HAS_ARMPL, kFftSize);
 
     if (SpectrumAnalyser::compiledIn)
         runLibraryBuild();
