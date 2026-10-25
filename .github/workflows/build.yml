@@ -1648,7 +1648,12 @@ jobs:
           tar xf "$RUNNER_TEMP/armpl.tar" -C "$RUNNER_TEMP"
           installer=$(find "$RUNNER_TEMP" -maxdepth 2 -name "arm-performance-libraries_*_deb.sh" -print -quit)
           test -n "$installer" || { echo "the ArmPL tarball held no installer"; exit 1; }
-          sh "$installer" -a -i "$HOME/armpl"
+
+          # bash, not sh. The installer's third line is `set -o pipefail`, which
+          # dash rejects outright ("Illegal option -o pipefail") - the first run
+          # of this job failed there, on line 8 of the installer, before a single
+          # file was written.
+          bash "$installer" -a -i "$HOME/armpl"
 
           header=$(find "$HOME/armpl" -name fftw3.h -path '*/include/*' -print -quit)
           test -n "$header" || { echo "no fftw3.h under $HOME/armpl after the install"; exit 1; }
