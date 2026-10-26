@@ -311,7 +311,7 @@ inline NoiseDecodeOutcome decodeWavMemory (const void* data, std::size_t size,
         // Check every channel in the frames actually returned, including extra
         // channels the stage will not use, so truncation padding is not mistaken
         // for decoded samples and damaged source data is not silently ignored.
-        if (! std::isfinite (value))
+        if (! std::isfinite (interleaved[i]))
             return { NoiseDecodeStatus::nonFinite,
                      "the file contains samples that are not finite (NaN or infinity)", 0, fileChannels };
     }
