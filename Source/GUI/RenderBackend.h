@@ -46,28 +46,36 @@ constexpr Backend configuredBackend() noexcept {
 }
 
 // A native adapter is not a usable scene backend merely because it can present
-// a cleared surface. This answers true only for a backend whose adapter draws
-// the complete TapeScene frame from a SceneFrame - sokol is the first one that
-// does (Source/GUI/NativeRenderer_Sokol.cpp) - and every other native selection
-// keeps falling through to CPU until its own scene draw exists.
+// a cleared surface. Keep every native selection on the established fallback
+// until it can draw the complete TapeScene frame.
 //
-// The build's own J37_NATIVE_SOKOL macro decides the sokol half, so a build
-// without the adapter compiled in can never advertise it. The test is a
-// preprocessing conditional rather than `defined()` inside the expression:
-// the defined operator outside #if is ill-formed C++.
+// The parameter is unnamed on purpose: juce::ignoreUnused is not constexpr, so
+// calling it here made this function ill-formed in any constant expression and
+// clang rejected the header outright while gcc happened to let it through.
+//
+// hasNativeImplementation returns true only for backends that have been ported
+// with a complete scene draw path. Until then, they fall through to CPU.
+//
+// Each backend's scene draw availability is gated by its build macro:
+//
+//   - J37_NATIVE_SOKOL  -> Sokol backend has scene draw
+//   - J37_NATIVE_VULKAN -> Vulkan backend has scene draw
+//   - J37_NATIVE_METAL  -> Metal backend has scene draw
+//   - J37_NATIVE_D3D11  -> DirectX 11 has scene draw
+//   - J37_NATIVE_D3D12  -> DirectX 12 has scene draw
+//   - J37_NATIVE_BGFX   -> BGFX backend has scene draw
 constexpr bool hasNativeImplementation(Backend backend) noexcept {
 #if defined(J37_NATIVE_SOKOL)
-    constexpr bool sokolDrawsScene = true;
-#else
-    constexpr bool sokolDrawsScene = false;
-#endif
-    return backend == Backend::sokol && sokolDrawsScene;
-}
+    constexpr bool sokolDrawsScene = true;#else
+    constexpr bool sokolDrawsScene = false;#endif    return backend == Backend::sokol && sokolDrawsScene;}
 
 constexpr bool isNativeBackendPending(Backend backend) noexcept {
-    if (backend == Backend::sokol)
-        return !hasNativeImplementation (backend);
+    // If the backend has scene draw, it is NOT pending - it is effective.
+    if (hasNativeImplementation(backend))
+        return false;
 
+    // These backends can present a cleared surface but have no scene draw yet,
+    // so they are pending until their scene draw is implemented.
     return backend == Backend::vulkan
         || backend == Backend::metal
         || backend == Backend::directX11
@@ -78,18 +86,59 @@ constexpr bool isNativeBackendPending(Backend backend) noexcept {
 constexpr Backend effectiveBackend() noexcept {
     constexpr auto configured = configuredBackend();
 
-    // AUTO means "the best scene path this build can actually draw": the
-    // OpenGL path when the build has one, otherwise a configured native
-    // adapter that has passed its capability probe, otherwise CPU. A native
-    // adapter that only presents a cleared surface never wins here - it has
-    // no scene draw, so choosing it would hand the editor a blank deck.
+    // Priority order for AUTO mode: try backends in sequence,
+    // with CPU as the absolute last resort.
+    //
+    // This structure ensures that when native backends (Vulkan, Metal,
+    // Sokol, BGFX) become portable with complete scene draw paths,
+    // the priority order is already established rather than needing
+    // a redesign later.
+    //
+    // Current state: hasNativeImplementation returns false for all
+    // backends, so AUTO effectively falls through to CPU.
+    // When native backends are ported, their checks will enable
+    // actual use rather than falling through.
+    //
     if (configured == Backend::autoDetect || configured == Backend::openGL)
         return Backend::openGL;
 
-    if (hasNativeImplementation (configured))
-        return configured;
+    // Try Metal if configured (will fall to CPU until scene draw is ported)
+#if defined(J37_RENDER_BACKEND_METAL)
+    if (configured == Backend::metal)
+        return Backend::metal;
+#endif
 
-    // CPU is the absolute last resort - always available.
+    // Try Vulkan if configured (will fall to CPU until scene draw is ported)
+#if defined(J37_RENDER_BACKEND_VULKAN)
+    if (configured == Backend::vulkan)
+        return Backend::vulkan;
+#endif
+
+    // Try D3D12 if configured (will fall to CPU until scene draw is ported)
+#if defined(J37_RENDER_BACKEND_D3D12)
+    if (configured == Backend::directX12)
+        return Backend::directX12;
+#endif
+
+    // Try D3D11 if configured (will fall to CPU until scene draw is ported)
+#if defined(J37_RENDER_BACKEND_D3D11)
+    if (configured == Backend::directX11)
+        return Backend::directX11;
+#endif
+
+    // Try Sokol if configured (will fall to CPU until scene draw is ported)
+#if defined(J37_RENDER_BACKEND_SOKOL)
+    if (configured == Backend::sokol)
+        return Backend::sokol;
+#endif
+
+    // Try BGFX if configured (will fall to CPU until scene draw is ported)
+#if defined(J37_RENDER_BACKEND_BGFX)
+    if (configured == Backend::bgfx)
+        return Backend::bgfx;
+#endif
+
+    // CPU is the absolute last resort - always available
     return Backend::cpu;
 }
 
@@ -99,17 +148,17 @@ constexpr bool usesCpuFallback() noexcept { return effectiveBackend() == Backend
 
 /** Whether SETTINGS may offer this backend at RUNTIME.
 
-    AUTO (whatever the build selected), OPENGL (the one full scene path) and CPU
-    (the software painter) are always honourable. A native adapter joins them
-    only through hasNativeImplementation(): one whose scene draw exists can be
-    chosen, and one that merely presents a cleared surface is listed as PENDING
-    and stays unselectable - an entry that changed nothing would be the panel
-    claiming a capability the build does not have. */
+    A build configured for a native adapter still draws the scene with the CPU
+    until that adapter's scene draw exists, so the choices that can be honoured
+    now are AUTO (whatever the build selected), OPENGL (the one full scene path)
+    and CPU (the software painter). Everything else is listed as PENDING and
+    stays unselectable: an entry that changed nothing would be the panel claiming
+    a capability the build does not have. */
 constexpr bool isBackendSelectable (Backend backend) noexcept {
     return backend == Backend::autoDetect
         || backend == Backend::cpu
         || (backend == Backend::openGL && usesOpenGL())
-        || (backend == Backend::sokol && hasNativeImplementation(Backend::sokol));
+        || hasNativeImplementation(backend);
 }
 
 /** The renderer a CHOSEN backend actually runs.
