@@ -364,6 +364,11 @@ int main()
 {
     std::printf ("the room: Dattorro's plate against ThirdParty/dattorro-verb\n");
 
+    DattorroRoom nullFrameRoom;
+    nullFrameRoom.prepare (48000.0);
+    nullFrameRoom.processFrame (nullptr, 2, 0.5f, 1.0f);
+    check (nullFrameRoom.isPrepared(), "a null frame is safely ignored by the prepared room");
+
     testBypassIsBitExact();
     testTheConversionIsAbsentAtTheTanksRate();
     testSizeSetsTheTailAndTheRateDoesNot();

@@ -278,6 +278,25 @@ void testTheStageIsUnchangedAtMatchingRates()
     }
 
     check (cleared, "and the pass-through is bit-for-bit, with no model and no conversion");
+
+    install (stage, kModelRate, kEngineRate);
+    stage.process (sineSample (0), 1.0f);
+    stage.clear();
+    stage.adoptPendingModel();
+    install (stage, kModelRate, kEngineRate);
+    stage.process (sineSample (1), 1.0f);
+    stage.clear();
+    stage.adoptPendingModel();
+    check (! stage.isActive(), "repeated model replacement and clear remain reclaimable");
+
+    install (stage, kModelRate, kModelRate);
+    for (int i = 0; i < 128; ++i)
+        stage.process (sineSample (i), 1.0f);
+    install (stage, kModelRate, kEngineRate);
+    check (stage.isActive(), "replacing a model after inference leaves the new model active");
+    stage.clear();
+    stage.adoptPendingModel();
+    check (! stage.isActive(), "the replacement model can be cleared and retired after inference");
 }
 
 int run()

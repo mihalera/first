@@ -311,22 +311,28 @@ struct CorrectorStage
                     float* outputChannels[1] { outputRings[index].data() };
                     engine.process (inputChannels, blockFrames,
                                     outputChannels, blockFrames);
+
+                    // A completed mono interval invalidates every buffered sample
+                    // for the absent channel; do not replay its prior stereo block.
+                    if (channel >= frameChannels)
+                        outputRings[index].fill (0.0f);
                 }
 
                 blockPosition = 0;
                 blockReady = true;
             }
 
-            for (int channel = 0; channel < frameChannels; ++channel)
+            for (int channel = 0; channel < activeChannels; ++channel)
             {
                 const auto index = static_cast<std::size_t> (channel);
-                frame[index] = blockReady
-                                   ? outputRings[index][static_cast<std::size_t> (blockPosition)]
-                                   : 0.0f;
+                if (channel < frameChannels)
+                    frame[index] = blockReady
+                                        ? outputRings[index][static_cast<std::size_t> (blockPosition)]
+                                        : 0.0f;
             }
 
             if (blockReady)
-                ++blockPosition;
+                blockPosition = (blockPosition + 1) % blockFrames;
         }
        #endif
     }
@@ -351,9 +357,16 @@ struct CorrectorStage
             return;
 
         const auto frameChannels = std::max (0, std::min (std::min (activeChannels, maxChannels), channels));
-        for (int channel = 0; channel < frameChannels; ++channel)
-            inputRings[static_cast<std::size_t> (channel)][static_cast<std::size_t> (framesHeld)]
-                = frame[static_cast<std::size_t> (channel)];
+        jassert (framesHeld >= 0 && framesHeld < blockFrames);
+        if (framesHeld < 0 || framesHeld >= blockFrames)
+            return;
+
+        const auto inputIndex = static_cast<std::size_t> (framesHeld);
+        for (int channel = 0; channel < activeChannels; ++channel)
+        {
+            const auto index = static_cast<std::size_t> (channel);
+            inputRings[index][inputIndex] = channel < frameChannels ? frame[index] : 0.0f;
+        }
 
         if (++framesHeld >= blockFrames)
         {
@@ -369,8 +382,9 @@ struct CorrectorStage
             blockPosition = 0;
         }
 
-        for (int channel = frameChannels; channel < activeChannels; ++channel)
-            outputRings[static_cast<std::size_t> (channel)][static_cast<std::size_t> (blockPosition)] = 0.0f;
+        if (blockReady)
+            for (int channel = frameChannels; channel < activeChannels; ++channel)
+                outputRings[static_cast<std::size_t> (channel)][static_cast<std::size_t> (blockPosition)] = 0.0f;
 
         for (int channel = 0; channel < frameChannels; ++channel)
             frame[static_cast<std::size_t> (channel)]
@@ -378,7 +392,7 @@ struct CorrectorStage
                              : 0.0f;
 
         if (blockReady)
-            ++blockPosition;
+            blockPosition = (blockPosition + 1) % blockFrames;
     }
 
 private:

@@ -43,6 +43,7 @@
 #endif
 
 #include <atomic>
+#include <exception>
 #include <limits>
 #include <memory>
 #include <mutex>
@@ -702,6 +703,16 @@ struct NeuralStage
             return x;
 
         audioQuiescent.store (false, std::memory_order_release);
+        struct QuiescentGuard
+        {
+            std::atomic<bool>& state;
+            int exceptionsOnEntry = std::uncaught_exceptions();
+            ~QuiescentGuard()
+            {
+                if (std::uncaught_exceptions() > exceptionsOnEntry)
+                    state.store (true, std::memory_order_release);
+            }
+        } quiescentGuard { audioQuiescent };
 
         // The rates, latched here rather than written into the bridge by the
         // thread that knows them: see `setSampleRates`. Checked per sample because
@@ -734,6 +745,7 @@ struct NeuralStage
         const auto output = converted.dry
                           + (converted.wet - converted.dry) * juce::jlimit (0.0f, 1.0f, amount);
         audioQuiescent.store (true, std::memory_order_release);
+        quiescentGuard.exceptionsOnEntry = std::uncaught_exceptions();
         return output;
 #else
         juce::ignoreUnused (amount);

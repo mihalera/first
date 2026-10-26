@@ -190,7 +190,7 @@ struct DattorroRoom
     */
     void processFrame (float* frame, int channels, float size, float mix) noexcept
     {
-        if (tank == nullptr || channels <= 0 || mix <= 1.0e-5f)
+        if (tank == nullptr || frame == nullptr || channels <= 0 || mix <= 1.0e-5f)
             return;
 
         applySize (size);

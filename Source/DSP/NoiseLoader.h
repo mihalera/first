@@ -308,9 +308,8 @@ private:
             loadedFileNameText = file.getFileName();
             lastErrorMessage = {};
             loadingFlag.store (false, std::memory_order_relaxed);
+            publish (preparedPrint.release());
         }
-
-        publish (preparedPrint.release());
     }
 
     /** Worker thread. Records why nothing loaded and clears the busy flag. */

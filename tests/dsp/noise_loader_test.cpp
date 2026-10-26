@@ -47,6 +47,7 @@
 #include <cstdint>
 #include <cstdio>
 #include <cstring>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -315,6 +316,20 @@ void testRateConversion()
                && recovered.sampleRate == 48000.0
                && recovered.sourceRate == preserved.sourceRate,
            "a valid rate conversion recovers the retained source print");
+
+    check (! j37dsp::resamplePrint (atFileRate,
+                                    std::numeric_limits<double>::infinity(), recovered),
+           "an infinite target rate is refused before output sizing");
+    check (! j37dsp::resamplePrint (atFileRate, 1.0e300, recovered),
+           "an unsupported target rate is refused before output sizing");
+
+    auto oversizedSameRate = atFileRate;
+    oversizedSameRate.sampleRate = 1.0;
+    oversizedSameRate.length = static_cast<std::size_t> (j37dsp::maxNoisePrintSeconds + 1.0);
+    oversizedSameRate.left.resize (oversizedSameRate.length, 0.0f);
+    oversizedSameRate.right.resize (oversizedSameRate.length, 0.0f);
+    check (! j37dsp::resamplePrint (oversizedSameRate, oversizedSameRate.sampleRate, recovered),
+           "an oversized same-rate print is rejected before copying its buffers");
 }
 
 //==============================================================================

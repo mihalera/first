@@ -29,6 +29,7 @@
 #include <cstddef>
 #include <cstdint>
 #include <cstring>
+#include <limits>
 #include <vector>
 
 #if J37_HAS_DRWAV
@@ -166,7 +167,7 @@ inline bool riffChunksFitInBuffer (const std::uint8_t* bytes, std::size_t size)
         return value;
     };
 
-    for (auto position = std::size_t (12); position + 8 <= size; )
+    for (auto position = std::size_t (12); position <= size && size - position >= 8; )
     {
         const auto declared = sizeFieldAt (position + 4);
 
@@ -181,8 +182,12 @@ inline bool riffChunksFitInBuffer (const std::uint8_t* bytes, std::size_t size)
         if (declared > size - position)
             return false;
 
-        // Chunks are word aligned, exactly as dr_wav pads them.
-        position += declared + (declared & 1u);
+        // Chunks are word aligned, exactly as dr_wav pads them. Check the pad
+        // byte as well before advancing, without overflowing the size arithmetic.
+        const auto paddedDeclared = static_cast<std::size_t> (declared) + (declared & 1u);
+        if (paddedDeclared > size - position)
+            return false;
+        position += paddedDeclared;
     }
 
     return true;
@@ -254,21 +259,37 @@ inline NoiseDecodeOutcome decodeWavMemory (const void* data, std::size_t size,
     const auto sourceRate = wav.sampleRate > 0 ? static_cast<double> (wav.sampleRate) : 0.0;
     const auto rate = targetRate > 0.0 ? targetRate : sourceRate;
 
-    if (rate <= 0.0)
-        return { NoiseDecodeStatus::unreadable, "the WAV file declares no sample rate", 0, fileChannels };
+    constexpr double maxSupportedSampleRate = 768000.0;
+    if (! std::isfinite (sourceRate) || ! std::isfinite (rate)
+        || sourceRate <= 0.0 || rate <= 0.0
+        || sourceRate > maxSupportedSampleRate || rate > maxSupportedSampleRate)
+        return { NoiseDecodeStatus::unreadable, "the WAV sample rate is invalid or unsupported", 0, fileChannels };
 
-    // The cap is checked BEFORE the allocation, and on the number of frames that
-    // would be played rather than the number in the file, so a decimated file
-    // cannot arrive under the limit and then be stretched past it.
-    const auto playedFrames = static_cast<std::size_t> (
-        std::llround (static_cast<double> (sourceFrames) * rate / sourceRate));
+    // Cap both source and played duration before allocation. A slow source-rate
+    // file must not bypass the memory limit merely because a higher target rate
+    // produces a smaller converted loop.
+    if (static_cast<double> (sourceFrames) > maxNoisePrintSeconds * sourceRate)
+        return { NoiseDecodeStatus::tooLong,
+                 "the print is longer than a minute - a noise loop is seconds, not a track", 0, fileChannels };
+
+    const auto playedFrameEstimate = static_cast<double> (sourceFrames) * rate / sourceRate;
+    if (! std::isfinite (playedFrameEstimate)
+        || playedFrameEstimate > maxNoisePrintSeconds * rate
+        || playedFrameEstimate > static_cast<double> (std::numeric_limits<long long>::max()))
+        return { NoiseDecodeStatus::tooLong,
+                 "the print is longer than a minute - a noise loop is seconds, not a track", 0, fileChannels };
+
+    const auto playedFrames = static_cast<std::size_t> (std::llround (playedFrameEstimate));
 
     if (static_cast<double> (playedFrames) > maxNoisePrintSeconds * rate)
         return { NoiseDecodeStatus::tooLong,
                  "the print is longer than a minute - a noise loop is seconds, not a track", 0, fileChannels };
 
     const auto usedChannels = std::min (2, fileChannels);
-    std::vector<float> interleaved (sourceFrames * static_cast<std::size_t> (fileChannels), 0.0f);
+    const auto channelCount = static_cast<std::size_t> (fileChannels);
+    if (sourceFrames > std::numeric_limits<std::size_t>::max() / channelCount)
+        return { NoiseDecodeStatus::tooLong, "the WAV sample buffer is too large", 0, fileChannels };
+    std::vector<float> interleaved (sourceFrames * channelCount, 0.0f);
 
     const auto framesRead = drwav_read_pcm_frames_f32 (&wav, sourceFrames, interleaved.data());
 
@@ -342,19 +363,32 @@ inline NoiseDecodeOutcome decodeWavMemory (const void* data, std::size_t size,
 */
 inline bool resamplePrint (const NoisePrint& in, double targetRate, NoisePrint& out)
 {
-    if (in.empty() || targetRate <= 0.0 || in.sampleRate <= 0.0)
+    constexpr double maxSupportedSampleRate = 768000.0;
+    if (in.empty() || ! std::isfinite (targetRate) || ! std::isfinite (in.sampleRate)
+        || targetRate <= 0.0 || in.sampleRate <= 0.0
+        || targetRate > maxSupportedSampleRate || in.sampleRate > maxSupportedSampleRate)
         return false;
 
     if (std::abs (in.sampleRate - targetRate) <= 1.0e-6)
     {
+        if (static_cast<double> (in.length) > maxNoisePrintSeconds * targetRate)
+            return false;
+
         out = in;
         out.sampleRate = targetRate;
         return true;
     }
 
     const auto ratio = in.sampleRate / targetRate;   // source samples per output sample
+    const auto outputLengthEstimate = static_cast<double> (in.length) / ratio;
+    if (! std::isfinite (ratio) || ratio <= 0.0
+        || ! std::isfinite (outputLengthEstimate)
+        || outputLengthEstimate > maxNoisePrintSeconds * targetRate
+        || outputLengthEstimate > static_cast<double> (std::numeric_limits<long long>::max()))
+        return false;
+
     const auto outLength = static_cast<std::size_t> (
-        std::max<long long> (1, std::llround (static_cast<double> (in.length) / ratio)));
+        std::max<long long> (1, std::llround (outputLengthEstimate)));
 
     NoisePrint converted;
     converted.sampleRate = targetRate;

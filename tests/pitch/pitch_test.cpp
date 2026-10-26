@@ -602,7 +602,56 @@ void testCorrectorUsesBlockAlignedRatio()
         frame = { 0.0f, 456.0f };
         stage.processFrame (frame.data(), transitionRatios, transitionHints, 1);
     }
-    check (true, "mono frames after stereo input fill absent channel slots with silence");
+    const auto& transitionCaptured = stage.capturedRatiosForTest();
+    check (transitionCaptured[1] > 0.999f && transitionCaptured[1] < 1.001f,
+           "mono frames after stereo input fill absent channel slots with silence and neutral ratios");
+
+    stage.reset();
+    std::array<float, 2> transitionRatios { 1.0f, 1.0f };
+    std::array<int, 2> transitionHints { 0, 0 };
+    for (int n = 0; n < CorrectorStage::blockFrames; ++n)
+    {
+        frame = { 0.25f, -0.5f };
+        stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 2);
+    }
+    for (int n = 0; n < CorrectorStage::blockFrames; ++n)
+    {
+        frame = { 0.0f, 777.0f };
+        stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 1);
+    }
+    for (int n = 0; n < CorrectorStage::blockFrames; ++n)
+    {
+        frame = { 0.0f, 0.0f };
+        stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 2);
+        check (std::abs (frame[1]) < 1.0e-6f,
+               "stereo channel stays silent after a mono interval rather than replaying stale output");
+    }
+
+    stage.reset();
+    std::vector<float> stereoInput (static_cast<std::size_t> (CorrectorStage::blockFrames));
+    for (int n = 0; n < CorrectorStage::blockFrames; ++n)
+    {
+        stereoInput[static_cast<std::size_t> (n)] = n < CorrectorStage::blockFrames / 2 ? 0.25f : 0.75f;
+        frame = { stereoInput[static_cast<std::size_t> (n)],
+                  n < CorrectorStage::blockFrames / 2 ? -0.5f : 0.5f };
+        stage.delayFrame (frame.data(), 2);
+    }
+    stage.reset();
+    std::vector<float> monoExpected (static_cast<std::size_t> (CorrectorStage::blockFrames * 3));
+    for (int n = 0; n < CorrectorStage::blockFrames; ++n)
+        monoExpected[static_cast<std::size_t> (n)] = stereoInput[static_cast<std::size_t> (n)];
+    std::fill (monoExpected.begin() + CorrectorStage::blockFrames, monoExpected.end(), 0.25f);
+    for (int n = 0; n < CorrectorStage::blockFrames * 3; ++n)
+    {
+        frame = { 0.25f, 987.0f };
+        stage.delayFrame (frame.data(), 1);
+        if (n >= CorrectorStage::blockFrames)
+        {
+            const auto expected = monoExpected[static_cast<std::size_t> (n - CorrectorStage::blockFrames)];
+            check (std::abs (frame[0] - expected) < 1.0e-6f,
+                   "mono delay output stays aligned and channel-safe after block wraps");
+        }
+    }
 #endif
 }
 
