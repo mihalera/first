@@ -186,8 +186,30 @@ function(j37_apply_windows_settings target)
         #  copy no longer included, HotPathMath's <xsimd/xsimd.hpp> resolves to
         #  the vendored 14.3.0, which does understand MSVC ARM64, so the
         #  J37_USE_SIMD_TANH batch kernel still compiles and runs.
+        #
+        #  THE ARCHITECTURE HAS TO BE ASKED OF THE GENERATOR, NOT OF
+        #  CMAKE_SYSTEM_PROCESSOR. The CI job configures with `-A ARM64`, which
+        #  is the Visual Studio generator's platform selector: it does not touch
+        #  CMAKE_SYSTEM_PROCESSOR, so that variable still names the HOST (AMD64 on
+        #  the ARM64 runner's x64 CMake) and this guard never fired - which is why
+        #  the first attempt at this fix left the arm64 job failing exactly as it
+        #  had before. CMAKE_CXX_COMPILER_ARCHITECTURE_ID is what MSVC reports for
+        #  the toolset it was handed (`ARM64`), CMAKE_GENERATOR_PLATFORM is the
+        #  `-A` argument, and the processor test stays for the generators that do
+        #  set it. Any one of the three is enough; all three are checked because
+        #  which of them is populated depends on the CMake version and generator.
         # ------------------------------------------------------------------
-        if(CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64|aarch64)$")
+        set(j37_msvc_arm64 FALSE)
+        if(CMAKE_CXX_COMPILER_ARCHITECTURE_ID MATCHES "^(ARM64|arm64)$"
+           OR CMAKE_GENERATOR_PLATFORM MATCHES "^(ARM64|arm64)$"
+           OR CMAKE_SYSTEM_PROCESSOR MATCHES "^(ARM64|arm64|aarch64)$")
+            set(j37_msvc_arm64 TRUE)
+        endif()
+
+        if(j37_msvc_arm64)
+            message(STATUS "J37: MSVC ARM64 - chowdsp's bundled xsimd is disabled "
+                           "(CHOWDSP_NO_XSIMD=1); the plugin's own SIMD path uses the "
+                           "vendored xsimd instead")
             target_compile_definitions(${target} PRIVATE CHOWDSP_NO_XSIMD=1)
         endif()
     endif()

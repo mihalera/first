@@ -111,18 +111,16 @@ const std::array<glm::vec3, ribbonAnchorPositions.size()> ribbonAnchors = [] {
 //==========================================================================
 //  Vertex layout, shared by every mesh: four floats of position - the
 //  fourth being the payload the vertex shader branches on - and three of
-//  normal. Twenty-eight bytes, which is what drawMesh() strides with.
+//  normal, twenty-eight bytes in all.
+//
+//  The stride and the normal's offset are spelled where they are used, as
+//  sizeof() and offsetof() on SceneVertex itself (see uploadMesh below). They
+//  used to be named constants here as well, next to a second copy of the eight
+//  mesh indices; nothing in this file read either set, because the draw calls
+//  that use the indices live in TapeSceneFrame.cpp, which has its own. Clang's
+//  -Wunused-const-variable is what noticed, and deleting them is the fix - a
+//  value written twice is a value that can disagree with itself.
 //==========================================================================
-constexpr GLsizei vertexStride = static_cast<GLsizei>(sizeof(j37::render::SceneVertex));
-constexpr GLsizei normalOffset = static_cast<GLsizei>(offsetof(j37::render::SceneVertex, normal));
-constexpr std::uint32_t reelMeshIndex = 0;
-constexpr std::uint32_t tapePackMeshIndex = 1;
-constexpr std::uint32_t ribbonMeshIndex = 2;
-constexpr std::uint32_t headMeshIndex = 3;
-constexpr std::uint32_t bankBodyMeshIndex = 4;
-constexpr std::uint32_t bankKnobMeshIndex = 5;
-constexpr std::uint32_t bankKeyMeshIndex = 6;
-constexpr std::uint32_t bankGlowMeshIndex = 7;
 
 // A draw's material IS the shader's uMode: SceneMaterial numbers the same
 // seven materials the GLSL branches on, and the fragment shader's ranges are
@@ -671,7 +669,7 @@ int TapeScene::controlIndexAt(juce::Point<int> position) const {
     auto best = -1;
     auto bestDistance = std::numeric_limits<float>::max();
 
-    for (int i = 0; i < controlBankCount; ++i) {
+    for (std::size_t i = 0; i < controlPlacements.size(); ++i) {
         const auto &placement = controlPlacements[i];
         const auto halfWidth = placement.isKey ? bankKeyHalfX : bankKnobRadius;
         const auto halfHeight = placement.isKey ? bankKeyHalfY : bankKnobRadius;
@@ -688,7 +686,7 @@ int TapeScene::controlIndexAt(juce::Point<int> position) const {
 
         if (squared < bestDistance) {
             bestDistance = squared;
-            best = i;
+            best = static_cast<int> (i);
         }
     }
 
@@ -817,9 +815,16 @@ TapeScene::Geometry TapeScene::buildRibbon() {
     const auto sample = [&](float t) -> glm::vec3 {
         const auto scaled = t * static_cast<float>(anchorCount - 1);
         const auto index = juce::jlimit(0, anchorCount - 2, static_cast<int>(scaled));
-        return catmullRom(ribbonAnchors[index], ribbonAnchors[index + 1],
-                          ribbonAnchors[juce::jmin(index + 2, anchorCount - 1)],
-                          ribbonAnchors[juce::jmin(index + 3, anchorCount - 1)],
+        // Indexed through size_t: ribbonAnchors is a std::array, whose operator[]
+        // takes the array's own size_type, and `index` is an int computed from a
+        // float. The three casts are the whole of the -Wsign-conversion warning
+        // these lines used to raise on both Clang and GCC.
+        const auto first = static_cast<std::size_t>(index);
+        const auto second = static_cast<std::size_t>(juce::jmin(index + 1, anchorCount - 1));
+        const auto third = static_cast<std::size_t>(juce::jmin(index + 2, anchorCount - 1));
+        const auto fourth = static_cast<std::size_t>(juce::jmin(index + 3, anchorCount - 1));
+        return catmullRom(ribbonAnchors[first], ribbonAnchors[second],
+                          ribbonAnchors[third], ribbonAnchors[fourth],
                           scaled - static_cast<float>(index));
     };
 

@@ -355,7 +355,12 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
         && samples <= postFxScratch.getNumSamples())
     {
         for (int c = 0; c < channels; ++c)
-            postFxScratch.copyFrom (c, 0, block.getChannelPointer (c), samples);
+            // AudioBlock::getChannelPointer takes the channel as a size_t; the
+            // loops count channels as int because everything around them (frame
+            // widths, the stage APIs) does. The five casts in this function are
+            // that boundary and nothing else - -Wsign-conversion on both compilers.
+            postFxScratch.copyFrom (c, 0, block.getChannelPointer (static_cast<std::size_t> (c)),
+                                    samples);
         irStage.process (postFxScratch, channels, true);
         irActive = true;
     }
@@ -392,7 +397,7 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
     {
         for (int c = 0; c < frameWidth; ++c)
         {
-            auto* data = block.getChannelPointer (c);
+            auto* data = block.getChannelPointer (static_cast<std::size_t> (c));
             auto value = data[i];
             if (irActive) value += (postFxScratch.getSample (c, i) - value) * irMix;
             frame[c] = value;
@@ -403,7 +408,7 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
 
         for (int c = 0; c < frameWidth; ++c)
         {
-            auto* data = block.getChannelPointer (c);
+            auto* data = block.getChannelPointer (static_cast<std::size_t> (c));
             auto value = frame[c];
             if (vinylMix > 1.0e-5f)
             {
@@ -431,12 +436,13 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
     {
         float peak = 0.0f;
         for (int c = 0; c < frameWidth; ++c)
-            peak = juce::jmax (peak, std::abs (block.getChannelPointer (c)[i]));
+            peak = juce::jmax (peak,
+                               std::abs (block.getChannelPointer (static_cast<std::size_t> (c))[i]));
 
         const auto gain = postFxLimiter.process (peak);
         for (int c = 0; c < frameWidth; ++c)
         {
-            auto* data = block.getChannelPointer (c);
+            auto* data = block.getChannelPointer (static_cast<std::size_t> (c));
             // `softClip` is Source/DSP/HotPathMath.h's, and that header is
             // deliberately namespace-free - it was lifted out of this file's
             // anonymous namespace and its comment says the move removed the

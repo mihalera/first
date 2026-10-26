@@ -346,7 +346,11 @@ struct TransportRig
     /** Once per sample frame: advance the capstan and the run-down. */
     void advanceFrame() noexcept
     {
-        if (rampStep != 0.0f)
+        // "The capstan is moving", spelled as the two exact comparisons that mean
+        // it rather than as `!= 0.0f`: the step is a sentinel here (zero is the
+        // stopped state the transport sets itself), so the test has to stay
+        // exact, and -Wfloat-equal objects to the spelling, not to the intent.
+        if (rampStep > 0.0f || rampStep < 0.0f)
         {
             ramp += rampStep;
 

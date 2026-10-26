@@ -815,6 +815,26 @@ CPMAddPackage(
         "BUILD_EXAMPLES OFF")
 endif ()
 
+# ------------------------------------------------------------------------------
+#  RTNeural's alignment, stated instead of guessed.
+#
+#  ThirdParty/RTNeural/RTNeural/config.h does not merely default
+#  RTNEURAL_DEFAULT_ALIGNMENT to 16 when the build has not set it - it emits
+#  `#warning "RTNEURAL_DEFAULT_ALIGNMENT was not defined! Using default
+#  alignment = 16."` (or #pragma message on MSVC) EVERY time the header is
+#  parsed, which in this plugin is twenty-six times per build, on every
+#  platform. On AppleClang a #warning also fails a -Werror build.
+#
+#  The value is the one the header would have chosen, so nothing about the
+#  compiled code changes: what changes is that the build now says what it means
+#  instead of letting a library pick its own defaults silently. INTERFACE, not
+#  PRIVATE, because the header is included by the plugin's own translation units
+#  rather than compiled into the library.
+# ------------------------------------------------------------------------------
+if(TARGET RTNeural)
+    target_compile_definitions(RTNeural INTERFACE RTNEURAL_DEFAULT_ALIGNMENT=16)
+endif()
+
 # ==============================================================================
 #  dr_libs - mackron/dr_libs, the single-header decoders dr_wav / dr_mp3 /
 #  dr_flac (used by miniaudio, SoLoud and half the audio-tooling world).

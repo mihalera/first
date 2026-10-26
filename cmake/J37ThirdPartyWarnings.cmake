@@ -28,8 +28,14 @@ function(j37_apply_thirdparty_warnings target)
         return()
     endif()
 
+    #  No -Wno-missing-prototypes in this list any more. GCC accepts the flag
+    #  only for C and Objective-C, and warns about exactly that when it is handed
+    #  to C++ ("command-line option '-Wno-missing-prototypes' is valid for C/ObjC
+    #  but not for C++") - so the suppression itself was one of the warnings in
+    #  the Linux log. Nothing in the foleys module needs it: its .cpp files are
+    #  C++, where the diagnostic does not exist.
     set(j37_thirdparty_warnings -Wno-unused-variable -Wno-unused-but-set-variable
-                               -Wno-unused-function -Wno-missing-prototypes -Wno-shadow)
+                               -Wno-unused-function -Wno-shadow)
 
     if(CMAKE_CXX_COMPILER_ID MATCHES "Clang")
         # -Wshorten-64-to-32 and -Wimplicit-const-int-float-conversion are
