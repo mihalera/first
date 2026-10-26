@@ -863,12 +863,14 @@ void FirstAudioProcessorEditor::setUpTopSwitches() {
     userThemeButton.setColour(juce::TextButton::buttonOnColourId,
                               paletteFor(false).raised.darker(0.15f));
     setTip(userThemeButton,
-           "USER THEME - opens the colour window: one row for every colour the "
-           "panel is painted from. Change one and the panel switches to USER on "
-           "the same frame, with the swatch you are dragging already showing the "
-           "result. USER also sits in the THEME key's cycle, so a palette you like "
-           "is one press away afterwards; RESET in the window restores the seed "
-           "palette (DARK METAL) and CLOSE hides the window without losing it.");
+           "USER THEME - opens the colour window: a band of starting points at the "
+           "top, then one row for every colour the panel is painted from. Press a "
+           "starting point to take that whole palette, then change individual "
+           "colours - and the panel switches to USER on the same frame, with the "
+           "swatch you are dragging already showing the result. USER also sits in "
+           "the THEME key's cycle, so a palette you like is one press away "
+           "afterwards; RESET in the window restores the seed palette (DARK METAL) "
+           "and CLOSE hides the window without losing it.");
     userThemeButton.onClick = [this] { openUserThemeWindow(); };
     styleLabel(userThemeLabel, "USER THEME", 9.0f, paletteFor(false).secondary, true,
                juce::Justification::left);

@@ -548,6 +548,11 @@ namespace j37panel
                    "electronic path; the transformer adds its iron colour, "
                    "a gentle low cut and the slight phase smear a real direct "
                    "box gives. Default 0 percent - off.";
+        if (id == "di_pad")
+            return "DI PAD - a fixed attenuator in front of the DI stage, for a "
+                   "hot instrument or a loud pickup that would otherwise clip "
+                   "the input before the machine ever sees it. Default 0 percent "
+                   "- no pad.";
         if (id == "st_link")
             return "ST LINK - gangs the stereo pair's shared controls so one "
                    "knob sets both channels. Off splits the machine into two "
@@ -589,6 +594,208 @@ namespace j37panel
                    "Everything above it is removed AFTER the machine, on the "
                    "finished sound, where nothing downstream responds to it. "
                    "20 kHz is effectively out of the way.";
+
+        // The switches, the selectors and the engine settings. These are not
+        // knobs on the grid, which is why they were missing while every knob had
+        // a sentence - and they are exactly the rows the PARAMETERS sheet lists
+        // with nothing but a name (BYPASS, DI XFMR, TRACKS). Same shape, same
+        // table, so the sheet, the tooltip and the translation agree.
+        if (id == "bypass")
+            return "BYPASS - hard bypass: the tape engine and both glue "
+                   "compressors are switched out of the path. The switch is "
+                   "ramped, so toggling it never clicks.";
+        if (id == "delta")
+            return "DELTA - listen to the difference: the output becomes the "
+                   "finished signal minus the machine's own dry signal, so you "
+                   "hear only what the machine adds - harmonics, glue, transport "
+                   "wander. Turn it off before you print.";
+        if (id == "polarity")
+            return "POLARITY - inverts the output polarity (a 180-degree phase "
+                   "flip), after the protection chain and the meters' magnitude "
+                   "path. Use it to correct an inverted source or to align two "
+                   "machines feeding one bus.";
+        if (id == "auto_gain")
+            return "AUTO GAIN - lets the slow programme compensator restore the "
+                   "level the INPUT trim dialled in. Off keeps the output "
+                   "exactly at the level the chain produced.";
+        if (id == "in_hp_on")
+            return "IN HP ON - switches the input equaliser's high-pass in or "
+                   "out without moving its corner: off passes everything below "
+                   "it, and the frequency stays where you set it for next time.";
+        if (id == "in_lp_on")
+            return "IN LP ON - switches the input equaliser's low-pass in or "
+                   "out without moving its corner. Off lets the full top end "
+                   "reach the machine.";
+        if (id == "out_hp_on")
+            return "OUT HP ON - switches the output equaliser's high-pass in or "
+                   "out without moving its corner. Off lets the machine's own "
+                   "low end out untouched.";
+        if (id == "out_lp_on")
+            return "OUT LP ON - switches the output equaliser's low-pass in or "
+                   "out without moving its corner. Off lets everything above "
+                   "the corner through to the host.";
+        if (id == "in_eq_order")
+            return "IN EQ ORDER - the slope of the input equaliser's corners, "
+                   "from 6 dB/oct (a soft shoulder) to 48 dB/oct (a hard fence). "
+                   "The bell keeps the same shape at every order.";
+        if (id == "out_eq_order")
+            return "OUT EQ ORDER - the slope of the output equaliser's corners, "
+                   "from 6 dB/oct (a soft shoulder) to 48 dB/oct (a hard fence). "
+                   "Applied after the machine, so it fences off the result.";
+        if (id == "anti_phase_guard")
+            return "ANTI-PHASE GUARD - watches the stereo pair for content that "
+                   "will cancel when the host folds the mix to mono, and corrects "
+                   "it before the output. Off, the panel only reports the risk in "
+                   "the ANTI-PHASE readout.";
+        if (id == "tape_type")
+            return "TAPE TYPE - the formula the machine's saturation is built "
+                   "from: how hard the tape bends, how much top end survives and "
+                   "how the glue compressors time. J37 is soft and classic, "
+                   "Ampex and Studer are hotter, Chrome and Type 111 are cleaner, "
+                   "GP9 and 499 are dense modern formulas.";
+        if (id == "speed")
+            return "SPEED - the transport speed: 7.5 ips is dark and loose, "
+                   "15 ips is the classic studio speed, 30 ips keeps the most top "
+                   "end and the tightest glue. It also shapes the glue timing and "
+                   "how long the deck's own gestures take.";
+        if (id == "instrument")
+            return "INSTRUMENT - re-voices the whole machine for what is being "
+                   "recorded: how hard the tape bends, how much top end survives, "
+                   "how loud the noise floor sits and how steady the transport "
+                   "runs. Master Bus is the neutral calibration, Drums the slam.";
+        if (id == "oversampling")
+            return "OVERSAMPLING - the engine's internal rate: 2x and 4x reduce "
+                   "the aliasing of the magnetic shaper. The added filter delay is "
+                   "reported to the host, so the DAW's delay compensation covers "
+                   "it. Off runs at the session rate.";
+        if (id == "tracks")
+            return "TRACKS - how many tape tracks the deck is modelled as: two, "
+                   "the 2+3 pair, or three. It sets how many heads' worth of "
+                   "wander and gap loss the transport has, and the default is "
+                   "two.";
+        if (id == "transport")
+            return "TRANSPORT - the deck's state: STOP parks the capstan, PLAY is "
+                   "normal running and START is the engagement gesture that "
+                   "settles into PLAY. It is written by the transport keys and by "
+                   "the host's own transport.";
+        if (id == "spindown")
+            return "SPINDOWN - the momentary platter hold: while it is on, the "
+                   "machine winds down as if the power were cut, and it comes back "
+                   "up when it is released.";
+        if (id == "ui_sounds")
+            return "UI SOUNDS - the panel's own clicks and ticks. They play "
+                   "through a separate audio device, so they can never reach the "
+                   "plugin's output, be recorded or be bounced. Off is silent.";
+        if (id == "tuning_tonic")
+            return "TONIC - the root the pitch correction quantises to. With "
+                   "AUTO TUNE engaged, the corrected pitch is snapped to the "
+                   "scale that starts on this note.";
+        if (id == "tuning_mode")
+            return "MODE - the scale the pitch correction quantises to: major or "
+                   "minor on the TONIC, or chromatic, which snaps to semitones "
+                   "only. It has no effect while AUTO TUNE is off.";
+        if (id == "autotune")
+            return "AUTO TUNE - switches the realtime pitch correction in. It "
+                   "tracks the fundamental and moves it to the nearest note of "
+                   "the chosen scale; AUTO TUNE AMOUNT sets how much of the "
+                   "corrected pitch is heard. Default off.";
+        if (id == "autotune_amount")
+            return "AUTO TUNE AMOUNT - how much of the corrected pitch reaches "
+                   "the output: 0 is the untouched signal, 100 is fully "
+                   "corrected. In between the two are crossfaded, so the effect "
+                   "can be dialled in rather than switched.";
+        if (id == "comp_threshold")
+            return "COMP THRESHOLD - the level above which the conventional "
+                   "compressor starts working. Lower thresholds compress more of "
+                   "the signal; it is independent of both glue stages.";
+        if (id == "comp_ratio")
+            return "COMP RATIO - how hard the compressor holds what crosses the "
+                   "threshold: 4:1 is a firm general-purpose setting, higher "
+                   "ratios approach limiting.";
+        if (id == "comp_attack")
+            return "COMP ATTACK - how quickly the compressor clamps down once the "
+                   "signal crosses the threshold. Fast keeps transients in check, "
+                   "slow lets the first hit through before it reacts.";
+        if (id == "comp_release")
+            return "COMP RELEASE - how long the compressor takes to let go after "
+                   "the signal falls back under the threshold. Short is lively, "
+                   "long is smooth and hides the gain movement.";
+        if (id == "comp_makeup")
+            return "COMP MAKEUP - the gain added back after compression, so the "
+                   "level can be restored without changing the compression.";
+        if (id == "comp_mix")
+            return "COMP MIX - the compressor's dry/wet crossfade. At 0 the "
+                   "compressor is absent, at 100 the signal is fully compressed; "
+                   "in between it is blended, so parallel compression is one "
+                   "control.";
+        if (id == "language")
+            return "LANGUAGE - the interface language of the panel and its "
+                   "sheet. It is an editor setting, saved with the session so a "
+                   "collaborator opens what the sender saw; it never changes the "
+                   "sound.";
+        if (id == "delay_type")
+            return "DELAY TYPE - which machine the second head behaves as: a "
+                   "tape echo with its own wander, a clean digital repeat, or the "
+                   "short slap a deck's second head gives. It is a choice of "
+                   "machines, not a continuous control.";
+        if (id == "delay_sync")
+            return "DELAY SYNC - locks the delay time to the host tempo instead "
+                   "of to milliseconds, so the repeats stay in time when the "
+                   "session's tempo changes. DELAY RATE picks the note value it "
+                   "syncs to.";
+        if (id == "delay_rate")
+            return "DELAY RATE - the note value the delay syncs to when DELAY "
+                   "SYNC is on, from a sixteenth to a whole bar. It has no effect "
+                   "with sync off, where DELAY sets the time in milliseconds.";
+        if (id == "modern_mode")
+            return "MODERN - the modern-voicing switch: opens the top end and "
+                   "tightens the glue, the way a freshly aligned deck with new "
+                   "tape does. Off is the older, rounder calibration.";
+        if (id == "lofi_mode")
+            return "LO-FI - the deliberately compromised voicing: narrower "
+                   "bandwidth, more noise and a looser transport, the sound of a "
+                   "well-used machine rather than a serviced one.";
+        if (id == "vinyl_generation")
+            return "GENERATION - which pressing the record is: an original "
+                   "pressing, a reissue or a later, worn copy. Each generation "
+                   "carries its own surface noise and its own amount of wear.";
+        if (id == "vinyl_turntable")
+            return "TURNTABLE - the deck the record is played on. It sets the "
+                   "mechanical character: rumble, platter stability and how much "
+                   "the arm picks up from the motor.";
+        if (id == "vinyl_cartridge")
+            return "CARTRIDGE - the pickup fitted to the arm: how much surface "
+                   "and how much of the groove's own body it hands to the "
+                   "preamp.";
+        if (id == "valve_type")
+            return "VALVE TYPE - the voice of the VALVE principle. Only audible "
+                   "in proportion to how much VALVE is in the BLEND: a 12AX7 "
+                   "runs cold and tight, an EL34 or 6L6 is fatter and more "
+                   "compressed, a 300B is the softest and most even, a KT88 has "
+                   "the widest drift.";
+        if (id == "amp_type")
+            return "AMP TYPE - the voice of the AMP principle. Only audible in "
+                   "proportion to how much AMP is in the BLEND: the Blackface is "
+                   "clean and firm, the Plexi bites, the AC30 chimes, the Recto "
+                   "slams hardest in the second stage.";
+        if (id == "transformer_type")
+            return "TRANSFORMER TYPE - the voice of the TRANSFORMER principle. "
+                   "Only audible in proportion to how much TRANSFORMER is in the "
+                   "BLEND: the types set how fast the core tracks and how early it "
+                   "starts to saturate - a nickel core bends earlier, steel later "
+                   "and harder.";
+        if (id == "digital_type")
+            return "DIGITAL TYPE - the voice of the DIGITAL principle. Only "
+                   "audible in proportion to how much DIGITAL is in the BLEND: "
+                   "the types shorten the word length and deepen the "
+                   "sample-and-hold, from a 16-bit ceiling to full bit-crush.";
+        if (id == "vinyl_type")
+            return "VINYL TYPE - the record itself, not the machine: how it was "
+                   "pressed and how worn it is. Audible whenever VINYL is up, "
+                   "and independent of the BLEND. Shellac 78 plays with loud "
+                   "surface between every note, a dubplate is a fresh loud "
+                   "lacquer, a half-speed master is nearly silent between the "
+                   "grooves. The speed of the motor is VINYL SPEED.";
         return {};
     }
 }

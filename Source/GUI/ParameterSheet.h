@@ -16,6 +16,20 @@
 //  stylesheet is the module's default, with the panel's palette laid over it,
 //  so the sheet follows the theme without owning any geometry.
 //
+//  WHAT EACH ROW SAYS. Two things, and the sheet needed both:
+//
+//    * The CAPTION is the parameter's host name passed through xlat(), so a
+//      Ukrainian panel lists Ukrainian names rather than the host's English
+//      automation strings. The names are keyed sentences in the same tables the
+//      tooltips use ("Input" -> "Вхід"), which is why they need no second list
+//      here: the table that translates the panel translates the sheet.
+//    * The EXPLANATION is the panel's own tooltip text for that parameter
+//      (parameterTooltipText, PanelText.h), shown when the pointer rests on a
+//      row. A sheet of bare names is a list of labels - "In EQ Order" and "DI
+//      XFMR" are not self-explanatory - and the descriptions already existed
+//      for the knobs, so the sheet reads the same table instead of inventing a
+//      second vocabulary for the same controls.
+//
 //  The #if is not decoration: tests/editor/check_editor_juce.sh compiles every
 //  header under Source/GUI against JUCE WITHOUT the CPM dependency trees on its
 //  include path, exactly as it compiles the plugin without NAM Core. The sheet
@@ -26,6 +40,8 @@
 #pragma once
 
 #include "GUI/PanelPaint.h"
+#include "GUI/PanelText.h"
+#include "GUI/PanelTranslations.h"
 
 #if __has_include(<foleys_gui_magic/foleys_gui_magic.h>)
     #include <foleys_gui_magic/foleys_gui_magic.h>
@@ -56,14 +72,25 @@ class ParameterSheet final : public juce::Component
 
   private:
     /** The scrolling surface itself: the foleys state, the builder and the
-        canvas the builder lays its components out on. */
-    class Sheet final : public juce::Component
+        canvas the builder lays its components out on.
+
+        It is also the sheet's TooltipClient. The rows are foleys' own components
+        (a SliderItem, a ComboBoxItem), so there is nowhere per-row to hang a
+        tooltip without subclassing three of foleys' factories; answering as the
+        PARENT is the same mechanism juce::TooltipWindow already uses, and it
+        keeps the lookup in one place: the component under the pointer, its
+        GuiItem, that item's parameter id, and the panel's description of it. */
+    class Sheet final : public juce::Component, public juce::TooltipClient
     {
       public:
         Sheet (juce::AudioProcessor& processorToUse, const UiPalette& paletteToUse);
 
         void paint (juce::Graphics&) override;
         void resized() override;
+
+        /** The description of the parameter under the pointer, translated, or an
+            empty string over the sheet's own furniture. */
+        juce::String getTooltip() override;
 
       private:
         juce::ValueTree buildTree (juce::AudioProcessor& processorToUse);
@@ -104,12 +131,16 @@ inline ParameterSheet::ParameterSheet (juce::AudioProcessor& processorToUse,
     setInterceptsMouseClicks (true, true);
     setWantsKeyboardFocus (true);
 
-    titleLabel.setText ("PARAMETERS", juce::dontSendNotification);
+    // The sheet is part of the panel, so its own three words follow the interface
+    // language through the same table: these are keyed entries, because a title
+    // has no English sentence to key on (see the note above xlat).
+    titleLabel.setText (xlat ("PARAMETERS").toUpperCase(), juce::dontSendNotification);
     titleLabel.setFont (juce::Font (juce::FontOptions (17.0f, juce::Font::bold)));
     titleLabel.setColour (juce::Label::textColourId, palette.accent);
     addAndMakeVisible (titleLabel);
 
-    subtitleLabel.setText ("every control the plugin exposes, grouped as the processor declares it",
+    subtitleLabel.setText (xlat ("every control the plugin exposes, grouped as the processor "
+                                "declares it - rest the pointer on a row for what it does"),
                            juce::dontSendNotification);
     subtitleLabel.setFont (juce::Font (juce::FontOptions (11.0f)));
     subtitleLabel.setColour (juce::Label::textColourId, palette.secondary);
@@ -118,6 +149,7 @@ inline ParameterSheet::ParameterSheet (juce::AudioProcessor& processorToUse,
     closeButton.setColour (juce::TextButton::buttonColourId, palette.raised);
     closeButton.setColour (juce::TextButton::textColourOffId, palette.text);
     closeButton.setColour (juce::TextButton::buttonOnColourId, palette.raised.darker (0.15f));
+    closeButton.setButtonText (xlat ("CLOSE"));
     closeButton.onClick = [this] { close(); };
     addAndMakeVisible (closeButton);
 
@@ -198,6 +230,32 @@ inline ParameterSheet::Sheet::Sheet (juce::AudioProcessor& processorToUse,
     viewport.setScrollBarsShown (true, false);
     viewport.setScrollBarThickness (10);
     addAndMakeVisible (viewport);
+}
+
+inline juce::String ParameterSheet::Sheet::getTooltip()
+{
+    // The component under the pointer, then its nearest GuiItem ancestor. Using
+    // the desktop's own answer rather than arithmetic on getMouseXYRelative()
+    // keeps this correct for a row that is half scrolled out of the viewport.
+    auto* under = juce::Desktop::getInstance().getMainMouseSource().getComponentUnderMouse();
+
+    while (under != nullptr && under != this && dynamic_cast<foleys::GuiItem*> (under) == nullptr)
+        under = under->getParentComponent();
+
+    // Not over the sheet at all, or over the sheet's own empty background: no tip
+    // rather than the last row's, which is what a cached answer would show.
+    if (under == nullptr || under == this || ! isParentOf (under))
+        return {};
+
+    auto* item = dynamic_cast<foleys::GuiItem*> (under);
+    if (item == nullptr)
+        return {};
+
+    const auto id = item->getControlledParameterID ({});
+    if (id.isEmpty())
+        return {};
+
+    return xlat (parameterTooltipText (id));
 }
 
 inline void ParameterSheet::Sheet::paint (juce::Graphics& g)
@@ -332,7 +390,11 @@ inline void ParameterSheet::Sheet::appendParameter (juce::ValueTree& parent,
                               ? foleys::IDs::toggleButton
                               : foleys::IDs::slider);
 
-    item.setProperty (foleys::IDs::caption, parameter.getName (64), nullptr);
+    // Through xlat(): the caption is a row of the sheet, not the host's
+    // automation list, so it follows the interface language. A table without an
+    // entry for the name returns the name, which is the same English the host
+    // shows - the honest fallback, not a raw key.
+    item.setProperty (foleys::IDs::caption, xlat (parameter.getName (64)), nullptr);
     item.setProperty (foleys::IDs::parameter, withID->paramID, nullptr);
 
     parent.appendChild (item, nullptr);

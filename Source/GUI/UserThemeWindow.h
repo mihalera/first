@@ -15,6 +15,14 @@
 //  own comment (PanelPaint.h) already asks for the literal to be appended in the
 //  same order, which is what keeps the two lists in step.
 //
+//  WHERE YOU START. Fifteen colours and no suggestion is a blank sheet, and most
+//  people pick a palette broadly before they pick it precisely. The window
+//  therefore opens on a band of STARTING POINTS - the four front-panel themes and
+//  four rooms of their own (see userThemePresets in PanelPaint.h) - and a press on
+//  one loads that whole palette through the same callback an edit uses. It is a
+//  starting point, not a mode: the rows below still edit every colour, and RESET
+//  still returns to the seed.
+//
 //  WHAT IT DOES NOT DO. It does not own the palettes and it does not select the
 //  theme. It holds the palette it was handed and calls onPaletteChanged() after
 //  every edit; the editor decides what that means - it copies the palette into
@@ -80,6 +88,26 @@ inline constexpr int userThemeRowHeight = 24;
 inline constexpr int userThemeFooterHeight = 42;
 inline constexpr int userThemeWidth = 360;
 
+// The preset band: two rows of four keys between the header and the first
+// colour row. Four columns because the window is 360 px wide and a preset's
+// name plus its three-colour chip needs about eighty of them; two rows because
+// eight starting points is the list, and eight keys in one row would name
+// nothing.
+inline constexpr int userThemePresetColumns = 4;
+inline constexpr int userThemePresetRowHeight = 20;
+inline constexpr int userThemePresetGap = 4;
+inline constexpr int userThemePresetRows =
+    (userThemePresetCount + userThemePresetColumns - 1) / userThemePresetColumns;
+inline constexpr int userThemePresetBandHeight =
+    userThemePresetRows * (userThemePresetRowHeight + userThemePresetGap) + 6;
+
+/** Where the first colour row starts: below the header and the preset band. */
+inline constexpr int userThemeRowsTop = userThemeHeaderHeight + userThemePresetBandHeight;
+
+/** The window's content height, grown from those numbers rather than measured. */
+inline constexpr int userThemePaneHeight =
+    userThemeRowsTop + themeColourFieldCount * userThemeRowHeight + userThemeFooterHeight;
+
 //==============================================================================
 /**
     The window's content: a colour per row, and a selector per row.
@@ -125,6 +153,19 @@ class UserThemePane final : public juce::Component {
         notify();
     }
 
+    /** A STARTING POINT key: adopts that whole palette, then reports it exactly the
+        way an edit does, so the panel switches to USER and repaints on the same
+        frame. The seed is deliberately not moved: RESET means "the seed", not
+        "whatever preset I touched last". */
+    void applyPreset(int index) {
+        if (index < 0 || index >= userThemePresetCount)
+            return;
+
+        palette = *userThemePresets[index].palette;
+        repaint();
+        notify();
+    }
+
     void paint(juce::Graphics &g) override {
         // The window's own chassis is the user's `background`, so the editor is
         // framed in the colour being edited - a background that swallows the panel
@@ -141,9 +182,11 @@ class UserThemePane final : public juce::Component {
 
         g.setColour(palette.secondary);
         g.setFont(juce::Font(juce::FontOptions(10.0f)));
-        g.drawText("click a colour to edit it - the panel follows on that frame",
+        g.drawText("start from a preset, then click any colour to edit it",
                    header.reduced(14, 0).withTrimmedTop(20), juce::Justification::centredLeft,
                    false);
+
+        paintPresets(g);
 
         for (int row = 0; row < themeColourFieldCount; ++row) {
             const auto bounds = rowBounds(row);
@@ -171,8 +214,14 @@ class UserThemePane final : public juce::Component {
 
             g.setColour(palette.text);
             g.setFont(juce::Font(juce::FontOptions(10.0f)));
-            g.drawText(colour.toDisplayString(false), swatch.getRight() + 10, bounds.getY(),
-                       bounds.getRight() - static_cast<int>(swatch.getRight()) - 12,
+            // One rounded reading of the swatch's edge, used by both the x and
+            // the width: the swatch is a rectangle<float>, so writing its right
+            // edge into drawText's int parameters truncated it silently in two
+            // places - which Clang reports as -Wfloat-conversion and which left
+            // the hex row a pixel adrift of its chip.
+            const auto swatchRight = juce::roundToInt(swatch.getRight());
+            g.drawText(colour.toDisplayString(false), swatchRight + 10, bounds.getY(),
+                       bounds.getRight() - swatchRight - 12,
                        bounds.getHeight(), juce::Justification::centredLeft, false);
         }
 
@@ -181,15 +230,18 @@ class UserThemePane final : public juce::Component {
 
     void mouseMove(const juce::MouseEvent &event) override {
         const auto row = rowAt(event.y);
-        if (row != hoveredRow) {
+        const auto preset = presetAt(event.getPosition());
+        if (row != hoveredRow || preset != hoveredPreset) {
             hoveredRow = row;
+            hoveredPreset = preset;
             repaint();
         }
     }
 
     void mouseExit(const juce::MouseEvent &) override {
-        if (hoveredRow >= 0) {
+        if (hoveredRow >= 0 || hoveredPreset >= 0) {
             hoveredRow = -1;
+            hoveredPreset = -1;
             repaint();
         }
     }
@@ -206,6 +258,12 @@ class UserThemePane final : public juce::Component {
             return;
         }
 
+        const auto preset = presetAt(event.getPosition());
+        if (preset >= 0) {
+            applyPreset(preset);
+            return;
+        }
+
         const auto row = rowAt(event.y);
         if (row >= 0)
             openSelector(row);
@@ -216,8 +274,35 @@ class UserThemePane final : public juce::Component {
     static constexpr int keyWidth = 92;
 
     juce::Rectangle<int> rowBounds(int row) const {
-        return { 8, userThemeHeaderHeight + row * userThemeRowHeight, getWidth() - 16,
+        return { 8, userThemeRowsTop + row * userThemeRowHeight, getWidth() - 16,
                  userThemeRowHeight };
+    }
+
+    /** The band's keys, in the table's order: rows of four, left to right. */
+    juce::Rectangle<int> presetBounds(int index) const {
+        const auto row = index / userThemePresetColumns;
+        const auto column = index % userThemePresetColumns;
+        const auto bandLeft = 8;
+        const auto bandWidth = getWidth() - 16;
+        // presetKeyWidth, not keyWidth: the footer's RESET/CLOSE keys already own
+        // that name as a member, and a local of the same name is a -Wshadow
+        // warning in a class that has no business hiding its own constants.
+        const auto presetKeyWidth =
+            (bandWidth - (userThemePresetColumns - 1) * userThemePresetGap)
+            / userThemePresetColumns;
+
+        return { bandLeft + column * (presetKeyWidth + userThemePresetGap),
+                 userThemeHeaderHeight + row * (userThemePresetRowHeight + userThemePresetGap),
+                 presetKeyWidth, userThemePresetRowHeight };
+    }
+
+    /** Which preset, if any, the point is on. -1 when it is on none of them. */
+    int presetAt(juce::Point<int> point) const {
+        for (int index = 0; index < userThemePresetCount; ++index)
+            if (presetBounds(index).contains(point))
+                return index;
+
+        return -1;
     }
 
     juce::Rectangle<int> swatchBounds(int row) const {
@@ -239,11 +324,49 @@ class UserThemePane final : public juce::Component {
     }
 
     int rowAt(int y) const {
-        if (y < userThemeHeaderHeight)
+        if (y < userThemeRowsTop)
             return -1;
 
-        const auto row = (y - userThemeHeaderHeight) / userThemeRowHeight;
+        const auto row = (y - userThemeRowsTop) / userThemeRowHeight;
         return row < themeColourFieldCount ? row : -1;
+    }
+
+    /** The starting-point band: one key per preset, each painted in the palette it
+        would load, so the choice is a picture rather than a name. The three-colour
+        chip is the preset's own chassis, plate and accent - the same three colours
+        the eye reads first when it looks at the panel. */
+    void paintPresets(juce::Graphics &g) const {
+        for (int index = 0; index < userThemePresetCount; ++index) {
+            const auto bounds = presetBounds(index);
+            const auto &preset = userThemePresets[index];
+            const auto &face = *preset.palette;
+
+            if (index == hoveredPreset) {
+                g.setColour(palette.raised.brighter(0.10f));
+                g.fillRoundedRectangle(bounds.toFloat(), 3.0f);
+            }
+
+            // The chip: chassis, plate, accent, each a vertical bar. It is drawn
+            // against the key's own left edge, and the NAME follows it in the
+            // preset's own ink, so the key is legible on any palette.
+            const auto chip = bounds.withWidth(18).reduced(0, 4);
+            const auto barWidth = chip.getWidth() / 3;
+
+            g.setColour(face.background);
+            g.fillRect(chip.withWidth(barWidth));
+            g.setColour(face.panel);
+            g.fillRect(chip.withTrimmedLeft(barWidth).withWidth(barWidth));
+            g.setColour(face.accent);
+            g.fillRect(chip.withTrimmedLeft(2 * barWidth));
+
+            g.setColour(face.text);
+            g.setFont(juce::Font(juce::FontOptions(8.5f, juce::Font::bold)));
+            g.drawText(preset.name, bounds.withTrimmedLeft(22).reduced(2, 0),
+                       juce::Justification::centredLeft, false);
+
+            g.setColour(index == hoveredPreset ? palette.accent : palette.border);
+            g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 1.0f);
+        }
     }
 
     void notify() {
@@ -328,6 +451,7 @@ class UserThemePane final : public juce::Component {
 
     UiPalette palette;
     int hoveredRow = -1;
+    int hoveredPreset = -1;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UserThemePane)
 };
@@ -368,9 +492,7 @@ class UserThemeWindow final : public juce::DocumentWindow {
         };
         pane->onClose = [this] { setVisible(false); };
 
-        pane->setSize(userThemeWidth,
-                      userThemeHeaderHeight + themeColourFieldCount * userThemeRowHeight
-                          + userThemeFooterHeight);
+        pane->setSize(userThemeWidth, userThemePaneHeight);
 
         setUsingNativeTitleBar(true);
         setContentOwned(content.release(), true);
