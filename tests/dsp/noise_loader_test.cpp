@@ -358,6 +358,17 @@ void testRefusals()
     check (cut.frames <= 1 && print.length <= 1,
            "a truncated file yields only the frames that are really there, never a padded loop");
 
+    auto oversizedHeader = WaveWriter::make (1, 8000, 16, false, { 0.0 });
+    const auto oversizedSamples = static_cast<std::uint32_t> (
+        61.0 * 8000.0 * 2.0);
+    for (int i = 0; i < 4; ++i)
+        oversizedHeader[40 + static_cast<std::size_t> (i)]
+            = static_cast<std::uint8_t> ((oversizedSamples >> (8 * i)) & 0xffu);
+    const auto oversized = j37dsp::decodeWavMemory (
+        oversizedHeader.data(), oversizedHeader.size(), print);
+    check (oversized.status == j37dsp::NoiseDecodeStatus::tooLong,
+           "a truncated WAV declaring over a minute is rejected before oversized allocation");
+
     const std::vector<double> withNaN { 0.0, std::nan (""), 0.25, 0.5 };
     const auto nan = WaveWriter::make (2, 48000, 32, true, withNaN);
     const auto notFinite = j37dsp::decodeWavMemory (nan.data(), nan.size(), print);

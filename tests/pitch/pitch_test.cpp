@@ -614,6 +614,11 @@ void testCorrectorUsesBlockAlignedRatio()
         frame = { 0.25f, -0.5f };
         stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 2);
     }
+    for (int n = 0; n < CorrectorStage::blockFrames / 2; ++n)
+    {
+        frame = { 0.0f, 777.0f };
+        stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 1);
+    }
     for (int n = 0; n < CorrectorStage::blockFrames; ++n)
     {
         frame = { 0.0f, 777.0f };
@@ -625,6 +630,30 @@ void testCorrectorUsesBlockAlignedRatio()
         stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 2);
         check (std::abs (frame[1]) < 1.0e-6f,
                "stereo channel stays silent after a mono interval rather than replaying stale output");
+    }
+
+    // Enter mono while the initial stereo output block is only half consumed:
+    // the transition must discard that remainder rather than resume mid-block.
+    stage.reset();
+    for (int n = 0; n < CorrectorStage::blockFrames; ++n)
+    {
+        frame = { 0.2f, -0.4f };
+        stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 2);
+    }
+    for (int n = 0; n < CorrectorStage::blockFrames / 2; ++n)
+    {
+        frame = { 0.0f, 0.0f };
+        stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 2);
+    }
+    frame = { 0.0f, 123.0f };
+    stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 1);
+    check (frame[1] == 123.0f, "mono transition does not write beyond the supplied channels");
+    for (int n = 0; n < CorrectorStage::blockFrames; ++n)
+    {
+        frame = { 0.0f, 0.0f };
+        stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 2);
+        check (std::abs (frame[1]) < 1.0e-6f,
+               "mid-block mono transition discards stale stereo output");
     }
 
     stage.reset();

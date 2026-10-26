@@ -287,20 +287,30 @@ inline NoiseDecodeOutcome decodeWavMemory (const void* data, std::size_t size,
 
     const auto usedChannels = std::min (2, fileChannels);
     const auto channelCount = static_cast<std::size_t> (fileChannels);
-    if (sourceFrames > std::numeric_limits<std::size_t>::max() / channelCount)
+    const auto supportedSourceFrames = static_cast<std::size_t> (
+        std::floor (maxNoisePrintSeconds * sourceRate));
+    const auto framesToRead = std::min (sourceFrames, supportedSourceFrames);
+    if (framesToRead == 0
+        || framesToRead > std::numeric_limits<std::size_t>::max() / channelCount)
         return { NoiseDecodeStatus::tooLong, "the WAV sample buffer is too large", 0, fileChannels };
-    std::vector<float> interleaved (sourceFrames * channelCount, 0.0f);
+    std::vector<float> interleaved (framesToRead * channelCount, 0.0f);
 
-    const auto framesRead = drwav_read_pcm_frames_f32 (&wav, sourceFrames, interleaved.data());
+    const auto framesRead = drwav_read_pcm_frames_f32 (&wav, framesToRead, interleaved.data());
 
     if (framesRead == 0)
         return { NoiseDecodeStatus::noFrames, "the WAV file has a header but no samples", 0, fileChannels };
 
-    for (const auto value : interleaved)
+    const auto readFrames = static_cast<std::size_t> (framesRead);
+    if (readFrames > framesToRead
+        || readFrames > std::numeric_limits<std::size_t>::max() / channelCount)
+        return { NoiseDecodeStatus::unreadable, "the WAV reader returned an invalid frame count", 0, fileChannels };
+    const auto readSamples = readFrames * channelCount;
+
+    for (std::size_t i = 0; i < readSamples; ++i)
     {
-        // Checked on the whole buffer, not just the frames that are kept: a NaN
-        // in the third channel of a five-channel file still means the file is
-        // not a noise print, and silently dropping it would hide a damaged one.
+        // Check every channel in the frames actually returned, including extra
+        // channels the stage will not use, so truncation padding is not mistaken
+        // for decoded samples and damaged source data is not silently ignored.
         if (! std::isfinite (value))
             return { NoiseDecodeStatus::nonFinite,
                      "the file contains samples that are not finite (NaN or infinity)", 0, fileChannels };

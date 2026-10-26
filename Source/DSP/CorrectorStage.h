@@ -225,6 +225,7 @@ struct CorrectorStage
        #endif
 
         framesHeld = 0;
+        lastFrameChannels = -1;
         blockReady = false;
         blockPosition = 0;
     }
@@ -256,6 +257,17 @@ struct CorrectorStage
             return;
 
         const auto frameChannels = std::max (0, std::min (std::min (activeChannels, maxChannels), channels));
+        if (frameChannels != lastFrameChannels)
+        {
+            // Discard a partially served block when the bus layout changes, so
+            // its output position cannot be mistaken for the next layout's input.
+            framesHeld = 0;
+            blockPosition = 0;
+            blockReady = false;
+            for (auto& ring : outputRings)
+                ring.fill (0.0f);
+            lastFrameChannels = frameChannels;
+        }
 
        #if J37_HAS_SIGNALSMITH
         if (engines[0] != nullptr)
@@ -271,6 +283,8 @@ struct CorrectorStage
                 inputRings[index][frameIndex] = present ? frame[index] : 0.0f;
                 ratioRings[index][frameIndex] = present ? juce::jlimit (0.5f, 2.0f, ratios[index]) : 1.0f;
                 periodRings[index][frameIndex] = present ? periodHints[index] : 0;
+                if (! present)
+                    outputRings[index].fill (0.0f);
             }
         }
        #endif
@@ -312,10 +326,8 @@ struct CorrectorStage
                     engine.process (inputChannels, blockFrames,
                                     outputChannels, blockFrames);
 
-                    // A completed mono interval invalidates every buffered sample
-                    // for the absent channel; do not replay its prior stereo block.
-                    if (channel >= frameChannels)
-                        outputRings[index].fill (0.0f);
+                    // Absent-channel output was cleared when each mono frame was
+                    // captured, so this block cannot replay stale stereo material.
                 }
 
                 blockPosition = 0;
@@ -357,6 +369,15 @@ struct CorrectorStage
             return;
 
         const auto frameChannels = std::max (0, std::min (std::min (activeChannels, maxChannels), channels));
+        if (frameChannels != lastFrameChannels)
+        {
+            framesHeld = 0;
+            blockPosition = 0;
+            blockReady = false;
+            for (auto& ring : outputRings)
+                ring.fill (0.0f);
+            lastFrameChannels = frameChannels;
+        }
         jassert (framesHeld >= 0 && framesHeld < blockFrames);
         if (framesHeld < 0 || framesHeld >= blockFrames)
             return;
@@ -401,6 +422,7 @@ private:
     int activeChannels = 2;
     int libraryLatency = 0;
     int framesHeld = 0;
+    int lastFrameChannels = -1;
     bool blockReady = false;
     int blockPosition = 0;
 
