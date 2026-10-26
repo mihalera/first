@@ -13,14 +13,21 @@ def require(condition: bool, message: str) -> None:
     if not condition:
         errors.append(message)
 
-# Native adapters currently only clear/present; they do not draw TapeScene's
-# meshes, so they must not be reported as effective scene backends.
-require("constexpr bool hasNativeImplementation(Backend) noexcept {\n    return false;" in backend,
-        "native backends must remain disabled until scene rendering is implemented")
+# Native adapters may be advertised ONLY behind their real scene draw. sokol
+# crossed that line (Source/GUI/NativeRenderer_Sokol.cpp records the frame's
+# meshes, uniforms and draws, and the editor attaches it only behind the
+# capability probe), so the gate is now the build macro rather than a flat
+# false - and every other native selection still falls through to CPU.
+require("return backend == Backend::sokol && sokolDrawsScene;" in backend and
+        "#if defined(J37_NATIVE_SOKOL)" in backend,
+        "the native scene gate must be the sokol adapter's build macro, not an open door")
 require("constexpr bool usesNativeCommandRenderer() noexcept\n{\n    return false;" in backend,
         "native command renderer must not be advertised as active")
 require("if (!j37::render::usesOpenGL())" in setup,
         "editor must retain the CPU paint path when OpenGL is not selected")
+require("hasNativeImplementation" in setup and "setUpNativeScene" in setup
+        and "shutDownNativeScene" in setup,
+        "the editor must attach a native scene adapter only behind the capability probe")
 
 # The two GPU abstraction layers are build OPTIONS, not additions: each owns the
 # device and the surface, so a build selects one and the other is not compiled.
@@ -81,6 +88,33 @@ require("bool drawScene(const SceneFrame& frame) override" in metal,
         "Metal must implement the scene draw its backend claims")
 require("ensureMeshes(frame)" in metal,
         "Metal must upload the frame's own immutable topology, not rebuild the scene")
+
+# sokol is the native backend that is ADVERTISED now, so its evidence has to be
+# as concrete as Metal's: the frame's own meshes, the uniforms the deck's
+# material branches read, and the draws themselves - recorded where JUCE's
+# context is current, never by reaching for the host's peer.
+sokol = (root / "Source/GUI/NativeRenderer_Sokol.cpp").read_text()
+require("bool drawScene (const SceneFrame& frame) override" in sokol,
+        "sokol must implement the scene draw its backend claims")
+require("ensureMeshes" in sokol,
+        "sokol must upload the frame's own immutable topology, not rebuild the scene")
+require("sg_apply_uniforms" in sokol and "sg_draw" in sokol,
+        "sokol must apply the deck's uniforms and record the frame's draws")
+require("attachTo (component)" in sokol and "getPeer()" not in sokol,
+        "sokol must attach to the component it is given, never reach for the host peer")
+require("#version 410" in sokol,
+        "sokol's GLCORE backend needs the ported shader's own #version line")
+
+# The frame crossing into a native adapter comes from ONE builder, whether the
+# OpenGL callback or the editor's timer asks for it - two builders would be two
+# scenes that can drift apart.
+tape_scene = (root / "Source/GUI/TapeScene.cpp").read_text()
+require("advanceAndBuildFrame" in tape_scene
+        and "drawSceneFrameOpenGL(sceneFrame)" in tape_scene,
+        "the OpenGL path must draw the same builder's frame a native adapter receives")
+editor_setup = setup
+require("tapeScene.advanceAndBuildFrame" in editor_setup,
+        "the native path must submit the one frame builder, not its own copy")
 
 if errors:
     print("render backend checks failed:", file=sys.stderr)

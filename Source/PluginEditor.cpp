@@ -778,6 +778,11 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
 {
     stopTimer();
+
+    // The native scene adapter holds an OpenGLContext attached to tapeScene;
+    // release it before anything it points at is torn down.
+    shutDownNativeScene();
+
     openGLContext.detach();
 
     // A FileChooser owns its asynchronous operation. Releasing it here cancels
@@ -1023,6 +1028,12 @@ void FirstAudioProcessorEditor::resized()
     // design).
     if (parameterSheet != nullptr)
         parameterSheet->setBounds (getLocalBounds());
+
+    // The native scene adapter sizes its swapchain from the same numbers its
+    // setup used; without this the surface and the frame would disagree about
+    // the viewport the moment the window is dragged.
+    if (nativeRenderer != nullptr)
+        nativeRenderer->resize (nativeSceneConfig());
 
     verifyPanelHasNoOverlaps();
 }
