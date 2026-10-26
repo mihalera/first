@@ -55,16 +55,31 @@ constexpr Backend configuredBackend() noexcept {
 //
 // hasNativeImplementation returns true only for backends that have been ported
 // with a complete scene draw path. Until then, they fall through to CPU.
+//
+// Each backend's scene draw availability is gated by its build macro:
+//
+//   - J37_NATIVE_SOKOL  -> Sokol backend has scene draw
+//   - J37_NATIVE_VULKAN -> Vulkan backend has scene draw
+//   - J37_NATIVE_METAL  -> Metal backend has scene draw
+//   - J37_NATIVE_D3D11  -> DirectX 11 has scene draw
+//   - J37_NATIVE_D3D12  -> DirectX 12 has scene draw
+//   - J37_NATIVE_BGFX   -> BGFX backend has scene draw
 constexpr bool hasNativeImplementation(Backend backend) noexcept {
-    return backend == Backend::sokol && defined(J37_NATIVE_SOKOL);
-}
+#if defined(J37_NATIVE_SOKOL)
+    constexpr bool sokolDrawsScene = true;#else
+    constexpr bool sokolDrawsScene = false;#endif    return backend == Backend::sokol && sokolDrawsScene;}
 
 constexpr bool isNativeBackendPending(Backend backend) noexcept {
+    // If the backend has scene draw, it is NOT pending - it is effective.
+    if (hasNativeImplementation(backend))
+        return false;
+
+    // These backends can present a cleared surface but have no scene draw yet,
+    // so they are pending until their scene draw is implemented.
     return backend == Backend::vulkan
         || backend == Backend::metal
         || backend == Backend::directX11
         || backend == Backend::directX12
-        || backend == Backend::sokol
         || backend == Backend::bgfx;
 }
 
@@ -143,7 +158,7 @@ constexpr bool isBackendSelectable (Backend backend) noexcept {
     return backend == Backend::autoDetect
         || backend == Backend::cpu
         || (backend == Backend::openGL && usesOpenGL())
-        || (backend == Backend::sokol && hasNativeImplementation(Backend::sokol));
+        || hasNativeImplementation(backend);
 }
 
 /** The renderer a CHOSEN backend actually runs.

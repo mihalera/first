@@ -14,9 +14,11 @@ def require(condition: bool, message: str) -> None:
         errors.append(message)
 
 # Native adapters currently only clear/present; they do not draw TapeScene's
-# meshes, so they must not be reported as effective scene backends.
-require("constexpr bool hasNativeImplementation(Backend) noexcept {\n    return false;" in backend,
-        "native backends must remain disabled until scene rendering is implemented")
+# meshes, so they must not be reported as effective scene backends until their
+# scene draw path is complete. hasNativeImplementation now checks each backend's
+# build macro to determine if scene draw is available.
+require("constexpr bool hasNativeImplementation(Backend backend) noexcept {" in backend,
+        "hasNativeImplementation must check build macros per backend")
 require("constexpr bool usesNativeCommandRenderer() noexcept\n{\n    return false;" in backend,
         "native command renderer must not be advertised as active")
 require("if (!j37::render::usesOpenGL())" in setup,

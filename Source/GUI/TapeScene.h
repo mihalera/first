@@ -136,6 +136,17 @@ public:
         the message thread, so the GL thread's half of the answer is an atomic. */
     [[nodiscard]] bool isSceneLive() const noexcept;
 
+    /** Advances the deck's display state one frame and returns the complete
+        scene snapshot both backends draw from.
+
+        The OpenGL path calls this from renderOpenGL() on the GL thread; a
+        native adapter's submission path calls it on the message thread while
+        this scene's own context is detached - so exactly one thread ever runs
+        the time integration below, never both. The caller supplies the current
+        width and height, and the returned frame is what NativeFrameSubmission
+        hands to a native renderer. */
+    j37::render::SceneFrame advanceAndBuildFrame (int width, int height);
+
     /** CPU fallback rendered when the OpenGL context or shader is unavailable. */
     void paint (juce::Graphics&) override;
     void resized() override;
