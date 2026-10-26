@@ -30,6 +30,7 @@
 // The renderer boundary: SETTINGS offers the backends this build can actually
 // switch to, and the header's caption reads the one that is running.
 #include "GUI/RenderBackend.h"
+#include "GUI/NativeRenderer.h"
 
 // The parameter sheet: every parameter in one scrollable list, laid out by
 // foleys_gui_magic from the processor's own tree. Built lazily on first open,
@@ -627,6 +628,27 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void addDeckControlsToPanel();
     void setUpSceneAndMeters();
     void setUpOpenGlRendering();
+
+    /** Brings up the native scene adapter the build can honour (sokol today),
+        attached to the deck component, or does nothing when the selected
+        backend has no scene-capable adapter - in which case the CPU painter
+        stays the deck's renderer, exactly as before. Called on the paths that
+        used to early-return for every non-OpenGL backend. */
+    void setUpNativeScene();
+
+    /** Releases the native scene adapter, if one is up: the deck's surface
+        returns to JUCE's software paint, which has been under it the whole
+        time. Safe to call when there is none. */
+    void shutDownNativeScene();
+
+    /** Builds the deck's SceneFrame on the message thread and hands it to the
+        native adapter. No-op when no adapter is presentable. */
+    void submitNativeSceneFrame();
+
+    /** The adapter's configuration for the deck's CURRENT bounds - shared by
+        setup and resize so the swapchain size cannot drift from the component. */
+    j37::render::NativeRenderer::Config nativeSceneConfig() const;
+
     void finishConstruction();
 
     /** Applies a renderer chosen on SETTINGS: the OpenGL scene and the panel's own
@@ -1277,6 +1299,11 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::SpinLock renderOrbsLock;
     juce::OpenGLContext openGLContext;
     int openGLAttachAttemptsLeft = 0;
+
+    // The native scene renderer (sokol today), attached to tapeScene and fed
+    // one SceneFrame per timer tick. Null on every build without a scene-capable
+    // adapter, which is every build today except -DJ37_RENDER_BACKEND=SOKOL.
+    std::unique_ptr<j37::render::NativeRenderer> nativeRenderer;
 
 
 

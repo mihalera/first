@@ -283,6 +283,12 @@ void FirstAudioProcessorEditor::timerCallback() {
     if (openGLContext.isAttached())
         tapeScene.serviceContextAttachment();
 
+    // The native scene path: while a scene-capable adapter owns the deck's
+    // surface, every tick builds the frame the OpenGL callback would have built
+    // and hands it over - the adapter records it on its own GL thread.
+    if (nativeRenderer != nullptr)
+        submitNativeSceneFrame();
+
     // Four meters: the two level meters each show the full four-way loudness reading
     // (peak dB, RMS, LUFS, VU and their equal-weighted combination), and each glue
     // compressor stage gets its own reduction meter fed from its own telemetry, so the

@@ -29,6 +29,7 @@
 // through PluginEditor.cpp's include of it, which stopped being enough the day
 // this phase moved here: a translation unit includes what its own text names.
 #include "GUI/RenderBackend.h"
+#include "GUI/NativeFrameSubmission.h"
 
 // The machine-wide preferences file the renderer selector remembers its choice
 // in - the same file the two file pickers remember their folders in.
@@ -1940,6 +1941,14 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
     // component's own paint drawing the transport, so the strip is never empty.
     tapeScene.setSceneEnabled(runsOnGpu);
 
+    // The native adapter gets the same treatment as that second context: it is
+    // released for every choice that does not run through it (so switching to
+    // CPU or OpenGL can never leave a second surface on the deck), and brought
+    // up for the one that does.
+    shutDownNativeScene();
+    if (!runsOnGpu)
+        setUpNativeScene();
+
     // Both paths need the strip redrawn: the GPU path draws the scene, the CPU
     // path the flat transport underneath it.
     tapeScene.repaint();
@@ -1947,13 +1956,16 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
 }
 
 void FirstAudioProcessorEditor::setUpOpenGlRendering() {
-    // Native command renderers currently implement presentation only. Do not
-    // attach them to a host-owned child surface until TapeScene's scene geometry
-    // and clipping are implemented for that API; keep JUCE's CPU painting active.
-    // This is intentionally a no-op for native backends: selecting Vulkan,
-    // Metal, or DirectX must not create a second surface that covers the host UI.
-    if (!j37::render::usesOpenGL())
+    // A native command renderer takes the deck's surface ONLY when its adapter
+    // draws the full scene (hasNativeImplementation) - sokol does, so a SOKOL
+    // build attaches it to tapeScene here. The others still implement
+    // presentation only: attaching one would create a second surface over the
+    // host UI and show nothing on it, so for those this stays a no-op and JUCE's
+    // CPU painting keeps drawing the transport.
+    if (!j37::render::usesOpenGL()) {
+        setUpNativeScene();
         return;
+    }
 
     // The user's remembered choice has the last word over the build's default: a
     // machine set to CPU in SETTINGS must open on the software path rather than
@@ -1969,6 +1981,76 @@ void FirstAudioProcessorEditor::setUpOpenGlRendering() {
     openGLContext.setSwapInterval(1);
     openGLContext.attachTo(*this);
     openGLAttachAttemptsLeft = openGLContext.isAttached() ? 0 : 90;
+}
+
+//==============================================================================
+//  The native scene path
+//
+//  The adapter is attached to tapeScene rather than the editor: the deck's
+//  bounds are the only region it draws, the rest of the panel keeps its normal
+//  software paint, and a component with its own attached context is exactly the
+//  arrangement TapeScene's own OpenGLContext already uses beside the editor's
+//  panel context. The software transport stays UNDER it throughout - if the
+//  adapter fails to come up, or its device is not ready, the flat deck is what
+//  the user sees, with no blank rectangle.
+//==============================================================================
+j37::render::NativeRenderer::Config
+FirstAudioProcessorEditor::nativeSceneConfig() const {
+    j37::render::NativeRenderer::Config config;
+    config.width = juce::jmax(1, tapeScene.getWidth());
+    config.height = juce::jmax(1, tapeScene.getHeight());
+    // Peer-local placement for the adapters that create a child surface; the
+    // sokol adapter ignores it and attaches to tapeScene itself.
+    config.positionX = tapeScene.getX();
+    config.positionY = tapeScene.getY();
+    config.vsyncInterval = 1;
+    return config;
+}
+
+void FirstAudioProcessorEditor::setUpNativeScene() {
+    const auto running = j37::render::runningBackend(renderBackendChoice);
+
+    // The capability probe is the whole gate. A backend whose adapter only
+    // presents a cleared surface never reaches the deck's component, which is
+    // what keeps PENDING entries harmless even when they are compiled in.
+    if (!j37::render::hasNativeImplementation(running))
+        return;
+
+    shutDownNativeScene();
+
+    nativeRenderer = j37::render::createNativeRenderer(running);
+    if (nativeRenderer == nullptr)
+        return;
+
+    if (!nativeRenderer->initialise(tapeScene, nativeSceneConfig())) {
+        // The adapter left its reason in status(). Drop it and keep the
+        // software transport - the same fallback the CPU backend draws.
+        nativeRenderer.reset();
+    }
+}
+
+void FirstAudioProcessorEditor::shutDownNativeScene() {
+    if (nativeRenderer != nullptr) {
+        nativeRenderer->shutdown();
+        nativeRenderer.reset();
+    }
+}
+
+void FirstAudioProcessorEditor::submitNativeSceneFrame() {
+    if (nativeRenderer == nullptr || !nativeRenderer->isPresentable())
+        return;
+
+    const auto width = tapeScene.getWidth();
+    const auto height = tapeScene.getHeight();
+
+    if (width <= 0 || height <= 0)
+        return;
+
+    // One call advances the deck's reels and lagged readouts and returns the
+    // frame every backend draws from; submitSceneFrame validates it, hands the
+    // adapter the copy and asks for the repaint that records it.
+    const auto frame = tapeScene.advanceAndBuildFrame(width, height);
+    j37::render::submitSceneFrame(*nativeRenderer, frame);
 }
 
 void FirstAudioProcessorEditor::finishConstruction() {
