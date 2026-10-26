@@ -187,7 +187,11 @@ namespace FactoryPresets
         return static_cast<int> (value) == static_cast<int> (notANumber);
     }
 
-    const std::vector<Preset>& all()
+    // `static` because this is a definition with no earlier declaration in the
+    // translation unit, and Clang's -Wmissing-prototypes counts that as a missing
+    // prototype even inside an anonymous namespace - the linkage is already
+    // internal, so this only states what the namespace already meant.
+    static const std::vector<Preset>& all()
     {
         static const std::vector<Preset> parsed = []
         {

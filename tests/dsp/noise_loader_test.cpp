@@ -358,6 +358,14 @@ void testRefusals()
     check (cut.frames <= 1 && print.length <= 1,
            "a truncated file yields only the frames that are really there, never a padded loop");
 
+    // The same file, with its "data" size field claiming 61 seconds of samples.
+    // dr_wav reduces a data chunk to the bytes the file really holds before it
+    // derives the frame count (dr_wav.h: "dataChunkSize + dataChunkDataPos >
+    // fileSize"), which is the rule riffChunksFitInBuffer deliberately leaves to
+    // it for "data" - see the comment on this walk. So the claim is CLAMPED, not
+    // believed: what must be asserted is that the one frame really present is
+    // what comes back, and that the 61 seconds the header promises never become
+    // frames read, allocations made, or a loop played.
     auto oversizedHeader = WaveWriter::make (1, 8000, 16, false, { 0.0 });
     const auto oversizedSamples = static_cast<std::uint32_t> (
         61.0 * 8000.0 * 2.0);
@@ -366,8 +374,9 @@ void testRefusals()
             = static_cast<std::uint8_t> ((oversizedSamples >> (8 * i)) & 0xffu);
     const auto oversized = j37dsp::decodeWavMemory (
         oversizedHeader.data(), oversizedHeader.size(), print);
-    check (oversized.status == j37dsp::NoiseDecodeStatus::tooLong,
-           "a truncated WAV declaring over a minute is rejected before oversized allocation");
+    check (oversized.status == j37dsp::NoiseDecodeStatus::ok
+             && oversized.frames <= 1 && print.length <= 1,
+           "a data chunk declaring over a minute is clamped to the frames present, not allocated for");
 
     const std::vector<double> withNaN { 0.0, std::nan (""), 0.25, 0.5 };
     const auto nan = WaveWriter::make (2, 48000, 32, true, withNaN);

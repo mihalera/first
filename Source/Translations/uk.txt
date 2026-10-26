@@ -81,7 +81,7 @@
 
 // -- Header: theme and the four engine switches -------------------------------
 "Cycle the front panel: IVORY, CHARCOAL, METAL, DARK METAL, then USER. The button names the panel you are on; pressing it moves to the next one. USER is the palette you edit yourself, in the colour window SETTINGS opens." = "Змінюйте передню панель по колу: IVORY, CHARCOAL, METAL, DARK METAL, потім USER. Кнопка показує назву поточної панелі; натисніть її, щоб перейти до наступної. USER — це палітра, яку ви редагуєте самі, у віконці кольорів, що відкривається на SETTINGS.";
-"USER THEME - opens the colour window: one row for every colour the panel is painted from. Change one and the panel switches to USER on the same frame, with the swatch you are dragging already showing the result. USER also sits in the THEME key's cycle, so a palette you like is one press away afterwards; RESET in the window restores the seed palette (DARK METAL) and CLOSE hides the window without losing it." = "USER THEME — відкриває віконце кольорів: один рядок на кожен колір, яким малюється панель. Змініть будь-який — і панель перемкнеться на USER того ж кадру, а зразок, який ви тягнете, уже показує результат. USER також є в переліку клавіші THEME, тож уподобана палітра потім завжди за одне натискання; RESET у віконці повертає початкову палітру (DARK METAL), а CLOSE ховає віконце, не втрачаючи її.";
+"USER THEME - opens the colour window: a band of starting points at the top, then one row for every colour the panel is painted from. Press a starting point to take that whole palette, then change individual colours - and the panel switches to USER on the same frame, with the swatch you are dragging already showing the result. USER also sits in the THEME key's cycle, so a palette you like is one press away afterwards; RESET in the window restores the seed palette (DARK METAL) and CLOSE hides the window without losing it." = "USER THEME — відкриває віконце кольорів: угорі смуга стартових палітр, нижче по рядку на кожен колір, яким малюється панель. Натисніть стартову палітру, щоб взяти її всю, потім змінюйте окремі кольори — і панель перемкнеться на USER того ж кадру, а зразок, який ви тягнете, уже показує результат. USER також є в переліку клавіші THEME, тож уподобана палітра потім завжди за одне натискання; RESET у віконці повертає початкову палітру (DARK METAL), а CLOSE ховає віконце, не втрачаючи її.";
 "Hard bypass: the tape engine and both glue compressors are switched out. The switch is ramped, so toggling it never clicks." = "Жорсткий байпас: рушій стрічки й обидва клейові компресори вимикаються з тракту. Перемикач згладжений, тож переключення ніколи не клацає.";
 "DELTA listen: the output becomes the finished signal minus the machine's own dry signal, so you hear ONLY what the machine adds - harmonics, glue, transport wander. MIX keeps its meaning; digital silence means the machine is being transparent. The switch is ramped, and BYPASS fades the difference out rather than snapping back to the dry signal. Turn it off before you print." = "Прослуховування DELTA: на виході — готовий сигнал мінус власний сухий сигнал машини, тож чути ЛИШЕ те, що машина додає — гармоніки, клей, блукання транспорту. MIX зберігає значення; цифрова тиша означає, що машина прозора. Перемикач згладжений, а BYPASS виводить різницю поступово, а не стрибком назад до сухого сигналу. Вимкніть перед печаттям.";
 "Inverts the output polarity (180-degree phase flip). Use it to correct an inverted source or to align two machines feeding the same bus." = "Перевертає полярність виходу (зсув фази на 180 градусів). Використовуйте, щоб виправити інвертоване джерело або узгодити дві машини, що живлять одну шину.";
@@ -211,6 +211,9 @@
 "IN EQ" = "IN EQ";
 "OUT EQ" = "OUT EQ";
 "SETTINGS" = "SETTINGS";
+"PARAMETERS" = "ПАРАМЕТРИ";
+"CLOSE" = "ЗАКРИТИ";
+"every control the plugin exposes, grouped as the processor declares it - rest the pointer on a row for what it does" = "кожен параметр, який відкриває плагін, згрупований так, як їх оголошує процесор — затримайте вказівник на рядку, щоб побачити пояснення";
 "MODELS" = "MODELS";
 "AUTOTUNE" = "AUTOTUNE";
 
@@ -235,3 +238,182 @@
 "idle - no note tracked" = "простій — нота не відстежується";
 "BYPASSED / DRY" = "БАЙПАС / СУХИЙ";
 "STEREO / REAL TIME" = "СТЕРЕО / РЕАЛЬНИЙ ЧАС";
+
+// -----------------------------------------------------------------------------
+//  The PARAMETERS sheet: the caption of every row.
+//
+//  The sheet lists the HOST's parameter names ("Input", "In EQ Order", "DI
+//  XFMR"), which are English by construction - they are the automation strings
+//  the DAW shows. The sheet passes each one through xlat(), so these are the
+//  rows a Ukrainian panel reads: the same names, in the words a person who does
+//  not speak the console's abbreviations needs.
+//
+//  Short by necessity rather than by taste: foleys paints a caption on one line
+//  beside its control, so "Вхід EQ: порядок фільтрів" is a row that has to fit
+//  in a column, not a sentence to explain itself. The explanation is the hover
+//  text below, one entry per parameter.
+// -----------------------------------------------------------------------------
+"Input" = "Вхід";
+"Output" = "Вихід";
+"Bypass" = "Байпас";
+"Delta Listen" = "Дельта: різниця";
+"Polarity Invert" = "Інверсія полярності";
+"Auto Gain" = "Автогейн";
+"In EQ Low" = "Вхід EQ: низькі";
+"In EQ Mid" = "Вхід EQ: середні";
+"In EQ High" = "Вхід EQ: високі";
+"Out EQ Low" = "Вихід EQ: низькі";
+"Out EQ Mid" = "Вихід EQ: середні";
+"Out EQ High" = "Вихід EQ: високі";
+"In EQ HP Freq" = "Вхід EQ: частота ФВЧ";
+"In EQ LP Freq" = "Вхід EQ: частота ФНЧ";
+"In EQ HP On" = "Вхід EQ: ФВЧ";
+"In EQ LP On" = "Вхід EQ: ФНЧ";
+"In EQ Order" = "Вхід EQ: порядок";
+"In EQ Q" = "Вхід EQ: добротність";
+"Out EQ HP Freq" = "Вихід EQ: частота ФВЧ";
+"Out EQ LP Freq" = "Вихід EQ: частота ФНЧ";
+"Out EQ HP On" = "Вихід EQ: ФВЧ";
+"Out EQ LP On" = "Вихід EQ: ФНЧ";
+"Out EQ Order" = "Вихід EQ: порядок";
+"Out EQ Q" = "Вихід EQ: добротність";
+"Sub-Fundamental" = "Субгармоніка";
+"Stereo Width" = "Стереоширина";
+"Anti-Phase Guard" = "Захист від протифази";
+"Tape Type" = "Тип стрічки";
+"Speed" = "Швидкість";
+"Instrument" = "Інструмент";
+"Drive" = "Драйв";
+"Bias" = "Підмагнічування";
+"Oversampling" = "Оверсемплінг";
+"Brightness" = "Яскравість";
+"Wow" = "Вов";
+"Flutter" = "Флаттер";
+"Mix" = "Мікс";
+"Modeled Tracks" = "Кількість доріжок";
+"Tone" = "Тон";
+"Delay" = "Затримка";
+"Delay Level" = "Рівень повторів";
+"Ping-Pong" = "Пінг-понг";
+"ST Offset" = "Стереозсув";
+"Noise Mix" = "Мікс шуму";
+"Noise Level" = "Рівень шуму";
+"Transport" = "Транспорт";
+"Spindown" = "Вибег платівки";
+"UI Sounds" = "Звуки інтерфейсу";
+"Tonic" = "Тоніка";
+"Mode" = "Лад";
+"Auto Tune" = "Автотюн";
+"Auto Tune Amount" = "Глибина автотюну";
+"Compressor Threshold" = "Поріг компресора";
+"Compressor Ratio" = "Ступінь стиснення";
+"Compressor Attack" = "Атака компресора";
+"Compressor Release" = "Відновлення компресора";
+"Compressor Makeup" = "Компенсація підсилення";
+"Compressor Mix" = "Мікс компресора";
+"Language" = "Мова";
+"Tape" = "Стрічка";
+"Vinyl" = "Платівка";
+"Cassette" = "Касета";
+"Digital" = "Цифра";
+"Amp" = "Підсилювач";
+"Valve" = "Лампа";
+"Transformer" = "Трансформатор";
+"Sag" = "Просадка";
+"Presence" = "Присънс";
+"Cabinet" = "Кабінет";
+"Amp Bias" = "Зсув підсилювача";
+"Preamp" = "Преамп";
+"DI" = "DI";
+"DI Load" = "Опір DI";
+"DI XFMR" = "Трансформатор DI";
+"DI Pad" = "Атенюатор DI";
+"Flux" = "Потік";
+"Wear" = "Знос";
+"Mechanics" = "Механіка";
+"Reverb" = "Реверберація";
+"Reverb Size" = "Розмір реверберації";
+"Delay Type" = "Тип затримки";
+"Distortion" = "Дисторшн";
+"Modern" = "Модерн";
+"Lo-Fi" = "Лоу-фай";
+"Crackle" = "Тріск";
+"Rumble" = "Рокіт";
+"Vinyl Speed" = "Швидкість платівки";
+"Dust" = "Пил";
+"Scratch" = "Подряпини";
+"Warp" = "Жолоблення";
+"Electrical" = "Електрика";
+"Clicks" = "Клаци";
+"Generation" = "Покоління";
+"Turntable" = "Програвач";
+"Cartridge" = "Звукознімач";
+"Valve Type" = "Тип лампи";
+"Amp Type" = "Тип підсилювача";
+"Transformer Type" = "Тип трансформатора";
+"Digital Type" = "Тип цифри";
+"Vinyl Type" = "Тип платівки";
+"ST Link" = "Стереозв'язка";
+"Delay Sync" = "Синхронізація затримки";
+"Delay Rate" = "Тривалість затримки";
+"Transient Attack" = "Атака транзієнтів";
+"Transient Sustain" = "Сустейн транзієнтів";
+"Transient Mix" = "Мікс транзієнтів";
+"Neural Mix" = "Мікс нейромоделі";
+"IR Mix" = "Мікс IR";
+
+// -----------------------------------------------------------------------------
+//  The PARAMETERS sheet: what each row means.
+//
+//  The sheet shows the panel's own description of a parameter when the pointer
+//  rests on it - parameterTooltipText() in Source/GUI/PanelText.h - so these are
+//  the sentences a Ukrainian user was reading in English until now. The keys are
+//  those sentences byte for byte, the same rule every other entry in this file
+//  follows.
+// -----------------------------------------------------------------------------
+"TAPE - how much of the mix is the magnetic tape machine: hysteresis with memory, gentle and warm, the principle this plugin was calibrated as. Default 100 percent." = "TAPE — скільки в міксі дає магнітна стрічка: гістерезис із пам’яттю, м’який і теплий, той принцип, під який цей плагін калібрували. Типове 100 відсотків.";
+"VALVE - how much of the mix is the thermionic stage: soft asymmetric compression, even-harmonic warmth. Shares the mix with the other sources - the shares are normalised, so the character changes without the level moving. Default 0 percent." = "VALVE — скільки в міксі дає термоелектронний каскад: м’яке асиметричне стиснення, тепло парних гармонік. Частка ділиться з іншими джерелами, і частки нормалізуються, тож характер змінюється, а рівень ні. Типове 0 відсотків.";
+"CASSETTE - how much of the mix is the compact cassette: a hard early knee on narrow tape, small and loud. Default 0 percent." = "CASSETTE — скільки в міксі дає компакт-касета: ранній твердий злам на вузькій стрічці, дрібно й гучно. Типове 0 відсотків.";
+"VINYL - how much of the mix is the cutting lathe: the gentlest tracing distortion of the seven, a soft level-dependent knee like the groove rounding under the stylus. Default 0 percent." = "VINYL — скільки в міксі дає різальний верстат: найлагідніше з семи спотворення відстеження, м’який злам, що залежить від рівня, як канавка округлюється під голкою. Типове 0 відсотків.";
+"AMP - how much of the mix is the guitar amplifier's input stage: hard, odd-harmonic, the one that bites. Default 0 percent." = "AMP — скільки в міксі дає вхідний каскад гітарного підсилювача: твердий, непарні гармоніки, той, що кусає. Типове 0 відсотків.";
+"TRANSFORMER - how much of the mix is the passive input transformer: pure analogue but no machine, the only principle that bends the low end first. Default 0 percent." = "TRANSFORMER — скільки в міксі дає пасивний вхідний трансформатор: чиста аналогова ланка без машини, єдиний принцип, що першим гне низ. Типове 0 відсотків.";
+"DIGITAL - how much of the mix is the converter: a hard ceiling with a held code, where the machines stop and the conversion begins. Default 0 percent." = "DIGITAL — скільки в міксі дає перетворювач: тверда стеля з утриманим кодом, там, де машини закінчуються і починається перетворення. Типове 0 відсотків.";
+"BYPASS - hard bypass: the tape engine and both glue compressors are switched out of the path. The switch is ramped, so toggling it never clicks." = "BYPASS — жорсткий байпас: рушій стрічки й обидва клейові компресори виводяться з тракту. Перемикач згладжений, тож переключення ніколи не клацає.";
+"DELTA - listen to the difference: the output becomes the finished signal minus the machine's own dry signal, so you hear only what the machine adds - harmonics, glue, transport wander. Turn it off before you print." = "DELTA — слухати різницю: на виході готовий сигнал мінус власний сухий сигнал машини, тож чути лише те, що машина додає — гармоніки, клей, блукання транспорту. Вимкніть перед печаттю.";
+"POLARITY - inverts the output polarity (a 180-degree phase flip), after the protection chain and the meters' magnitude path. Use it to correct an inverted source or to align two machines feeding one bus." = "POLARITY — перевертає полярність виходу (зсув фази на 180 градусів), після ланцюга захисту й амплітудного тракту індикаторів. Використовуйте, щоб виправити інвертоване джерело або узгодити дві машини на одній шині.";
+"AUTO GAIN - lets the slow programme compensator restore the level the INPUT trim dialled in. Off keeps the output exactly at the level the chain produced." = "AUTO GAIN — дозволяє повільному програмному компенсатору повернути рівень, який виставив трим INPUT. Вимкнено — вихід лишається точно на рівні, який дала обробка.";
+"IN HP ON - switches the input equaliser's high-pass in or out without moving its corner: off passes everything below it, and the frequency stays where you set it for next time." = "IN HP ON — вмикає або вимикає ФВЧ вхідного еквалайзера, не рухаючи його частоту: вимкнено — усе нижче проходить, а частота лишається там, де ви її поставили, на наступний раз.";
+"IN LP ON - switches the input equaliser's low-pass in or out without moving its corner. Off lets the full top end reach the machine." = "IN LP ON — вмикає або вимикає ФНЧ вхідного еквалайзера, не рухаючи його частоту. Вимкнено — увесь верх доходить до машини.";
+"OUT HP ON - switches the output equaliser's high-pass in or out without moving its corner. Off lets the machine's own low end out untouched." = "OUT HP ON — вмикає або вимикає ФВЧ вихідного еквалайзера, не рухаючи його частоту. Вимкнено — власний низ машини виходить недоторканим.";
+"OUT LP ON - switches the output equaliser's low-pass in or out without moving its corner. Off lets everything above the corner through to the host." = "OUT LP ON — вмикає або вимикає ФНЧ вихідного еквалайзера, не рухаючи його частоту. Вимкнено — усе вище частоти проходить до хоста.";
+"IN EQ ORDER - the slope of the input equaliser's corners, from 6 dB/oct (a soft shoulder) to 48 dB/oct (a hard fence). The bell keeps the same shape at every order." = "IN EQ ORDER — крутість зрізів вхідного еквалайзера: від 6 дБ/окт (м’яке плече) до 48 дБ/окт (твердий паркан). Дзвін зберігає форму за будь-якого порядку.";
+"OUT EQ ORDER - the slope of the output equaliser's corners, from 6 dB/oct (a soft shoulder) to 48 dB/oct (a hard fence). Applied after the machine, so it fences off the result." = "OUT EQ ORDER — крутість зрізів вихідного еквалайзера: від 6 дБ/окт (м’яке плече) до 48 дБ/окт (твердий паркан). Діє після машини, тож відгороджує вже результат.";
+"ANTI-PHASE GUARD - watches the stereo pair for content that will cancel when the host folds the mix to mono, and corrects it before the output. Off, the panel only reports the risk in the ANTI-PHASE readout." = "ANTI-PHASE GUARD — стежить за стереопарою на вміст, який скасується, коли хост зведе мікс у моно, і виправляє його до виходу. Вимкнено — панель лише показує ризик в індикаторі ANTI-PHASE.";
+"TAPE TYPE - the formula the machine's saturation is built from: how hard the tape bends, how much top end survives and how the glue compressors time. J37 is soft and classic, Ampex and Studer are hotter, Chrome and Type 111 are cleaner, GP9 and 499 are dense modern formulas." = "TAPE TYPE — формула, з якої побудована сатурація машини: наскільки гнеться стрічка, скільки верху виживає і як таймляться клейові компресори. J37 м’яка й класична, Ampex і Studer гарячіші, Chrome і Type 111 чистіші, GP9 і 499 — щільні сучасні формули.";
+"SPEED - the transport speed: 7.5 ips is dark and loose, 15 ips is the classic studio speed, 30 ips keeps the most top end and the tightest glue. It also shapes the glue timing and how long the deck's own gestures take." = "SPEED — швидкість транспорту: 7,5 ips темно й розхлаблено, 15 ips — класична студійна швидкість, 30 ips бере найбільше верху й найщільніший клей. Вона також формує таймінг клею і те, скільки тривають власні жести деки.";
+"INSTRUMENT - re-voices the whole machine for what is being recorded: how hard the tape bends, how much top end survives, how loud the noise floor sits and how steady the transport runs. Master Bus is the neutral calibration, Drums the slam." = "INSTRUMENT — переналаштовує всю машину під те, що записується: наскільки сильно гнеться стрічка, скільки верху виживає, наскільки гучна шумова підлога і наскільки стабільний транспорт. Master Bus — нейтральне калібрування, Drums — удар.";
+"OVERSAMPLING - the engine's internal rate: 2x and 4x reduce the aliasing of the magnetic shaper. The added filter delay is reported to the host, so the DAW's delay compensation covers it. Off runs at the session rate." = "OVERSAMPLING — внутрішня частота рушія: 2x і 4x зменшують аліазинг магнітного шейпера. Додаткова затримка фільтрів повідомляється хосту, тож компенсація затримки DAW її покриває. Off — на частоті сесії.";
+"TRACKS - how many tape tracks the deck is modelled as: two, the 2+3 pair, or three. It sets how many heads' worth of wander and gap loss the transport has, and the default is two." = "TRACKS — на скільки доріжок змодельована дека: дві, пара 2+3 або три. Це задає, скільки голівок блукання й втрат на зазорі має транспорт; типово дві.";
+"TRANSPORT - the deck's state: STOP parks the capstan, PLAY is normal running and START is the engagement gesture that settles into PLAY. It is written by the transport keys and by the host's own transport." = "TRANSPORT — стан деки: STOP ставить капстан на стоянку, PLAY — нормальний хід, START — жест увімкнення, що осідає на PLAY. Його пишуть клавіші транспорту й транспорт хоста.";
+"SPINDOWN - the momentary platter hold: while it is on, the machine winds down as if the power were cut, and it comes back up when it is released." = "SPINDOWN — мить утримання платівки: поки ввімкнено, машина докочується, ніби зникло живлення, і повертається нагору, коли відпустити.";
+"UI SOUNDS - the panel's own clicks and ticks. They play through a separate audio device, so they can never reach the plugin's output, be recorded or be bounced. Off is silent." = "UI SOUNDS — власні клацання й цокання панелі. Вони грають через окремий аудіопристрій, тож ніколи не потрапляють на вихід плагіна, не записуються і не вивантажуються. Вимкнено — тиша.";
+"TONIC - the root the pitch correction quantises to. With AUTO TUNE engaged, the corrected pitch is snapped to the scale that starts on this note." = "TONIC — тоніка, до якої квантує виправлення висоти. Із увімкненим AUTO TUNE виправлена висота притягується до ладу, що починається з цієї ноти.";
+"MODE - the scale the pitch correction quantises to: major or minor on the TONIC, or chromatic, which snaps to semitones only. It has no effect while AUTO TUNE is off." = "MODE — лад, до якого квантує виправлення висоти: мажор або мінор на TONIC, чи хроматика, що притягує лише до півтонів. Не діє, поки AUTO TUNE вимкнений.";
+"AUTO TUNE - switches the realtime pitch correction in. It tracks the fundamental and moves it to the nearest note of the chosen scale; AUTO TUNE AMOUNT sets how much of the corrected pitch is heard. Default off." = "AUTO TUNE — вмикає виправлення висоти в реальному часі. Воно стежить за фундаментальною і рухає її до найближчої ноти обраного ладу; AUTO TUNE AMOUNT задає, скільки виправленої висоти чути. Типово вимкнено.";
+"AUTO TUNE AMOUNT - how much of the corrected pitch reaches the output: 0 is the untouched signal, 100 is fully corrected. In between the two are crossfaded, so the effect can be dialled in rather than switched." = "AUTO TUNE AMOUNT — скільки виправленої висоти доходить до виходу: 0 — недоторканий сигнал, 100 — повністю виправлений. Між ними обидва кросфейдяться, тож ефект можна виставити, а не вмикати.";
+"COMP THRESHOLD - the level above which the conventional compressor starts working. Lower thresholds compress more of the signal; it is independent of both glue stages." = "COMP THRESHOLD — рівень, вище якого звичайний компресор починає працювати. Нижчий поріг стискає більше сигналу; він не залежить від обох клейових стадій.";
+"COMP RATIO - how hard the compressor holds what crosses the threshold: 4:1 is a firm general-purpose setting, higher ratios approach limiting." = "COMP RATIO — наскільки твердо компресор тримає те, що перейшло поріг: 4:1 — впевнене універсальне значення, вищі наближаються до лімітування.";
+"COMP ATTACK - how quickly the compressor clamps down once the signal crosses the threshold. Fast keeps transients in check, slow lets the first hit through before it reacts." = "COMP ATTACK — як швидко компресор притискає, щойно сигнал перейшов поріг. Швидка тримає транзієнти під контролем, повільна дає першому удару пройти.";
+"COMP RELEASE - how long the compressor takes to let go after the signal falls back under the threshold. Short is lively, long is smooth and hides the gain movement." = "COMP RELEASE — як довго компресор відпускає після того, як сигнал упав під поріг. Коротке — жваво, довге — гладко й ховає рух підсилення.";
+"COMP MAKEUP - the gain added back after compression, so the level can be restored without changing the compression." = "COMP MAKEUP — підсилення, додане назад після стиснення, щоб відновити рівень, не змінюючи стиснення.";
+"COMP MIX - the compressor's dry/wet crossfade. At 0 the compressor is absent, at 100 the signal is fully compressed; in between it is blended, so parallel compression is one control." = "COMP MIX — кросфейд сухого й обробленого в компресорі. На 0 компресора немає, на 100 сигнал повністю стиснутий; між ними він змішаний, тож паралельна компресія — це одна крутилка.";
+"LANGUAGE - the interface language of the panel and its sheet. It is an editor setting, saved with the session so a collaborator opens what the sender saw; it never changes the sound." = "LANGUAGE — мова інтерфейсу панелі та її списку. Це налаштування редактора, що зберігається із сесією, щоб співавтор відкрив те, що бачив відправник; звук воно не змінює.";
+"DELAY TYPE - which machine the second head behaves as: a tape echo with its own wander, a clean digital repeat, or the short slap a deck's second head gives. It is a choice of machines, not a continuous control." = "DELAY TYPE — якою машиною поводиться друга головка: стрічкове ехо з власним блуканням, чистий цифровий повтор або короткий ляпанець другої головки деки. Це вибір машини, а не безперервна крутилка.";
+"DELAY SYNC - locks the delay time to the host tempo instead of to milliseconds, so the repeats stay in time when the session's tempo changes. DELAY RATE picks the note value it syncs to." = "DELAY SYNC — прив’язує час затримки до темпу хоста, а не до мілісекунд, тож повтори лишаються в часі, коли темп сесії змінюється. DELAY RATE обирає нотну тривалість, до якої вона синхронізується.";
+"DELAY RATE - the note value the delay syncs to when DELAY SYNC is on, from a sixteenth to a whole bar. It has no effect with sync off, where DELAY sets the time in milliseconds." = "DELAY RATE — нотна тривалість, до якої синхронізується затримка при увімкненому DELAY SYNC: від шістнадцятої до цілого такту. Не діє з вимкненою синхронізацією, де DELAY задає час у мілісекундах.";
+"MODERN - the modern-voicing switch: opens the top end and tightens the glue, the way a freshly aligned deck with new tape does. Off is the older, rounder calibration." = "MODERN — перемикач сучасного голосу: відкриває верх і підтягує клей, як щойно виставлена дека з новою стрічкою. Вимкнено — старіше, кругліше калібрування.";
+"LO-FI - the deliberately compromised voicing: narrower bandwidth, more noise and a looser transport, the sound of a well-used machine rather than a serviced one." = "LO-FI — навмисно скомпрометований голос: вужча смуга, більше шуму й вільніший транспорт — звук добре вживаної машини, а не обслуженої.";
+"GENERATION - which pressing the record is: an original pressing, a reissue or a later, worn copy. Each generation carries its own surface noise and its own amount of wear." = "GENERATION — який це тиск платівки: оригінальний, перевидання чи пізніша, зношена копія. Кожне покоління несе власний шум поверхні й власний знос.";
+"TURNTABLE - the deck the record is played on. It sets the mechanical character: rumble, platter stability and how much the arm picks up from the motor." = "TURNTABLE — програвач, на якому грає платівка. Він задає механічний характер: рокіт, стабільність диска й те, скільки тонарм ловить від мотора.";
+"CARTRIDGE - the pickup fitted to the arm: how much surface and how much of the groove's own body it hands to the preamp." = "CARTRIDGE — звукознімач на тонармі: скільки поверхні й скільки власного тіла канавки він віддає преампу.";
+"DI PAD - a fixed attenuator in front of the DI stage, for a hot instrument or a loud pickup that would otherwise clip the input before the machine ever sees it. Default 0 percent - no pad." = "DI PAD — фіксований атенюатор перед каскадом DI, для гарячого інструмента чи гучного звукознімача, який інакше перевантажив би вхід ще до машини. Типове 0 відсотків — без атенюатора.";

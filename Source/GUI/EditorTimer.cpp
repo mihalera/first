@@ -635,7 +635,7 @@ void FirstAudioProcessorEditor::timerCallback() {
     {
         juce::String hoveredControl;
         const auto mouse = getMouseXYRelative();
-        for (int i = 0; i < static_cast<int>(controlCount); ++i)
+        for (std::size_t i = 0; i < controlCount; ++i)
             if (controls[i].isVisible() && controls[i].getBounds().contains(mouse)) {
                 hoveredControl = controls[i].getName();
                 break;
@@ -648,14 +648,31 @@ void FirstAudioProcessorEditor::timerCallback() {
         }
     }
 
+    // Is a list or a menu on screen? A combo's popup and a popup menu are
+    // components of their own, and JUCE tears one down the moment the tree it was
+    // built from is rewritten - so the two polls below, which DO rewrite combo
+    // items, must not run while one is open. That was the "the list needs two
+    // clicks" behaviour: the click opened the list, the next tick cleared and
+    // re-added the items underneath it, and the list closed itself before the
+    // pointer could land. The checks are asked of the two preset boxes by name
+    // and of the component tree in general, because a popup menu (the theme, the
+    // oversampling list, a right-click) is modal in JUCE rather than a ComboBox's
+    // child.
+    const auto popupIsOpen = presetBox.isPopupActive() || userPresetBox.isPopupActive()
+                             || juce::Component::getCurrentlyModalComponent() != nullptr;
+
     // Workflow state is cheap to poll at 30 Hz and makes the panel self-healing:
     // if the host, a session load or a preset change moves anything, the buttons,
     // badge and preset display catch up on the next frame instead of lying.
-    const auto canUndoNow = audioProcessor.getUndoManager().canUndo();
-    const auto canRedoNow = audioProcessor.getUndoManager().canRedo();
-    const auto slotNow = audioProcessor.getActiveCompareSlot();
-    const auto dirtyNow = audioProcessor.isCompareDirty();
-    const auto presetNow = audioProcessor.getLastPresetIndex();
+    // Skipped while a popup is open, so nothing the poll touches can pull the
+    // menu out from under the pointer; the closed-menu tick does the work.
+    const auto canUndoNow = popupIsOpen ? lastShownCanUndo
+                                       : audioProcessor.getUndoManager().canUndo();
+    const auto canRedoNow = popupIsOpen ? lastShownCanRedo
+                                       : audioProcessor.getUndoManager().canRedo();
+    const auto slotNow = popupIsOpen ? lastShownSlot : audioProcessor.getActiveCompareSlot();
+    const auto dirtyNow = popupIsOpen ? lastShownDirty : audioProcessor.isCompareDirty();
+    const auto presetNow = popupIsOpen ? lastShownPreset : audioProcessor.getLastPresetIndex();
     if (slotNow != lastShownSlot || dirtyNow != lastShownDirty || canUndoNow != lastShownCanUndo ||
         canRedoNow != lastShownCanRedo) {
         lastShownSlot = slotNow;
@@ -675,8 +692,10 @@ void FirstAudioProcessorEditor::timerCallback() {
     // loaded-and-then-edited keeps its entry while the machine drifts; that is
     // correct (the badge says EDITED) and needs no per-frame re-selection here.
 
-    const auto userPresetNow = audioProcessor.getCurrentPresetName();
-    const auto presetDirtyNow = audioProcessor.isPresetDirty();
+    const auto userPresetNow = popupIsOpen ? lastShownUserPreset
+                                          : audioProcessor.getCurrentPresetName();
+    const auto presetDirtyNow = popupIsOpen ? lastShownPresetDirty
+                                           : audioProcessor.isPresetDirty();
     if (userPresetNow != lastShownUserPreset || presetDirtyNow != lastShownPresetDirty) {
         lastShownUserPreset = userPresetNow;
         lastShownPresetDirty = presetDirtyNow;
@@ -770,7 +789,12 @@ void FirstAudioProcessorEditor::timerCallback() {
     //  combos, sliders and popups the old whole-panel repaint used to stamp over.
     //  See repaintAnimatedSurfaces().
     // ------------------------------------------------------------------
-    if (++animationPaintTick >= 2) {
+    // ...and never while a menu is up. An invalidation on the frame the menu is
+    // open is an invalidation of the panel BEHIND it, which the popup's own
+    // window then has to repaint over; that is the same class of problem as the
+    // whole-panel repaint noted above, one rectangle at a time. The frame after
+    // the menu closes catches the animation up, which at 30 Hz is invisible.
+    if (!popupIsOpen && ++animationPaintTick >= 2) {
         animationPaintTick = 0;
         repaintAnimatedSurfaces();
     }

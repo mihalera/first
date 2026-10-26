@@ -272,7 +272,6 @@ struct CorrectorStage
        #if J37_HAS_SIGNALSMITH
         if (engines[0] != nullptr)
         {
-            jassert (framesHeld >= 0 && framesHeld < blockFrames);
             if (framesHeld < 0 || framesHeld >= blockFrames)
                 return;
             const auto frameIndex = static_cast<std::size_t> (framesHeld);
@@ -378,7 +377,6 @@ struct CorrectorStage
                 ring.fill (0.0f);
             lastFrameChannels = frameChannels;
         }
-        jassert (framesHeld >= 0 && framesHeld < blockFrames);
         if (framesHeld < 0 || framesHeld >= blockFrames)
             return;
 

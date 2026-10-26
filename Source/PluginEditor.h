@@ -628,6 +628,11 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void addDeckControlsToPanel();
     void setUpSceneAndMeters();
     void setUpOpenGlRendering();
+    /** The last phase: the interface sounds are attached once every control they
+        watch exists and every existing handler is installed, and the timer that
+        polls them starts here. Called after setUpOpenGlRendering() rather than
+        beside the other setup helpers below, because it closes the build. */
+    void finishConstruction();
 
     /** Brings up the native scene adapter the build can honour (sokol today),
         attached to the deck component, or does nothing when the selected
@@ -648,8 +653,6 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     /** The adapter's configuration for the deck's CURRENT bounds - shared by
         setup and resize so the swapchain size cannot drift from the component. */
     j37::render::NativeRenderer::Config nativeSceneConfig() const;
-
-    void finishConstruction();
 
     /** Applies a renderer chosen on SETTINGS: the OpenGL scene and the panel's own
         context come up, or both are released and the software painter draws the

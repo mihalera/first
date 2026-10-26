@@ -158,7 +158,7 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
                           &copyAButton, &copyBButton, &compareButton,
                           &undoButton, &redoButton } };
     for (auto* button : stateButtons)
-        button->onStateChange = [this, button, playClick, previous = button->onStateChange]
+        button->onStateChange = [playClick, previous = button->onStateChange]
         {
             playClick();
             if (previous != nullptr)
@@ -226,7 +226,7 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
         if (box != nullptr)
         {
             const auto previous = box->onChange;
-            box->onChange = [this, playClick, previous]
+            box->onChange = [playClick, previous]
             {
                 if (previous != nullptr)
                     previous();
@@ -400,6 +400,15 @@ void FirstAudioProcessorEditor::applyLanguage (int languageIndex)
     // new table as well. It used to be styled once in the constructor and keep
     // the previous language until the editor was rebuilt.
     languageLabel.setText (xlat ("LANGUAGE_CAPTION").toUpperCase(), juce::dontSendNotification);
+
+    // The PARAMETERS key is a keyed string as well, and its sheet's captions
+    // were translated with the table that was installed when it was BUILT. The
+    // sheet is created once and kept (109 attachments are not rebuilt on every
+    // press), so the honest way to re-language it is to release it: the next
+    // press builds a sheet in the language the user just chose. Re-setting 109
+    // captions in place would be the same work with a second code path.
+    parameterSheetButton.setButtonText (xlat ("PARAMETERS"));
+    parameterSheet.reset();
 
     updateTooltips();
 }
@@ -1250,7 +1259,8 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         for (int i = 1; i < bandCount; ++i)
             deckBands[i].top = deckBands[i - 1].top + deckBands[i - 1].height
                              + juce::jmax (minimumBandGap,
-                                           juce::roundToInt (gap[i - 1] * gapScale));
+                                           juce::roundToInt (static_cast<float> (gap[i - 1])
+                                                             * gapScale));
     }
 
     // [&] and not [&layout]: the band table is a local array, and a lambda that
@@ -1589,14 +1599,19 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     const auto presetRowHeight = 32;
     constexpr int presetRowGap = 5;
 
-    const auto placeForward = [presetRowY, presetRowHeight, presetRowGap]
+    // presetRowHeight and presetRowGap are not captured: a const int with a
+    // constant initialiser (and a constexpr one) needs no capture to be read, and
+    // Clang's -Wunused-lambda-capture is right to say so. Capturing them was
+    // habit, and the three captures read as if the lambdas could see a change
+    // that the code above makes impossible.
+    const auto placeForward = [presetRowY]
                                   (int& edge, juce::Component& component, int width)
     {
         component.setBounds (edge, presetRowY, width, presetRowHeight);
         edge += width + presetRowGap;
     };
 
-    const auto placeBackward = [presetRowY, presetRowHeight, presetRowGap]
+    const auto placeBackward = [presetRowY]
                                    (int& edge, juce::Component& component, int width)
     {
         component.setBounds (edge - width, presetRowY, width, presetRowHeight);
@@ -2481,22 +2496,29 @@ void FirstAudioProcessorEditor::placeDeckSwitch (const ControlGeometry& geometry
                                                  int column, int columnsWide,
                                                  const juce::String& caption)
 {
-    const auto placeDeckSwitch = [&] (juce::Label& label, juce::Component& box,
-                                      int column, int columnsWide,
-                                      const juce::String& caption)
+    // The body is a lambda called once, at the bottom, and that shape is what
+    // tests/layout asserts on: it checks that this member INVOKES its
+    // bounds-setting helper rather than only defining one, which is a mistake this
+    // function has made before. The lambda keeps the function's name for the same
+    // reason - it IS the lambda this member function was extracted from - and its
+    // parameters are named apart from the member's own on purpose: taking the same
+    // five names is five -Wshadow warnings, on Clang and GCC alike, for a call
+    // that passes each one straight through.
+    const auto placeDeckSwitch = [&] (juce::Label& targetLabel, juce::Component& targetBox,
+                                      int columnIndex, int columns, const juce::String& text)
     {
-        auto cell = juce::Rectangle<int> (geometry.grid.getX() + column * geometry.cellWidth,
+        auto cell = juce::Rectangle<int> (geometry.grid.getX() + columnIndex * geometry.cellWidth,
                                           geometry.memberRowY,
-                                          columnsWide == tabColumns
-                                              ? geometry.grid.getRight() - (geometry.grid.getX() + column * geometry.cellWidth)
-                                              : columnsWide * geometry.cellWidth
-                                                  + (columnsWide - 1) * (geometry.cellWidth / columnsWide),
+                                          columns == tabColumns
+                                              ? geometry.grid.getRight() - (geometry.grid.getX() + columnIndex * geometry.cellWidth)
+                                              : columns * geometry.cellWidth
+                                                  + (columns - 1) * (geometry.cellWidth / columns),
                                           geometry.grid.getBottom() - geometry.memberRowY);
         // This setText() every layout is also why the GL label's constructor
         // emptiness is safe: the caption is re-written here every time its tab is
         // live, so a resize between tab switches can never leave a stale one.
-        label.setText (caption, juce::dontSendNotification);
-        label.setBounds (cell.getX() + 5, cell.getY() + 1, cell.getWidth() - 10, 17);
+        targetLabel.setText (text, juce::dontSendNotification);
+        targetLabel.setBounds (cell.getX() + 5, cell.getY() + 1, cell.getWidth() - 10, 17);
         // The control band used to be pinned to the cell's TOP (y + 20) at full
         // remaining height, so on tabs whose member band is taller than 30 px
         // (DRIVE's member row inherits three knob rows' worth of height) the
@@ -2516,8 +2538,8 @@ void FirstAudioProcessorEditor::placeDeckSwitch (const ControlGeometry& geometry
         const auto centringBand = juce::jmin (cell.getHeight(), 50);
         const auto bandY = cell.getY() + 20
                            + juce::jmax (0, (centringBand - 22 - bandHeight) / 2);
-        box.setBounds (cell.getX() + 12, bandY,
-                       cell.getWidth() - 24, bandHeight);
+        targetBox.setBounds (cell.getX() + 12, bandY,
+                             cell.getWidth() - 24, bandHeight);
     };
 
     placeDeckSwitch (label, box, column, columnsWide, caption);

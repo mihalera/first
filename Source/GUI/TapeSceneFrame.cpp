@@ -1,4 +1,4 @@
-﻿#include "TapeScene.h"
+#include "TapeScene.h"
 #include "SceneLayout.h"
 
 #include <glm/gtc/matrix_transform.hpp>
@@ -74,13 +74,13 @@ void TapeScene::appendDraw(j37::render::SceneFrame &frame,
                            const glm::mat4 &model,
                            const juce::Colour &baseColour,
                            std::array<float, 3> parameters,
-                           const juce::Colour &highlightColour) const {
+                           const juce::Colour &highlight) const {
     j37::render::SceneDraw draw;
     draw.model = matrix4(model);
     const auto normal = glm::transpose(glm::inverse(model));
     draw.normalMatrix = matrix4(normal);
     draw.baseColour = colour4(baseColour);
-    draw.highlightColour = colour3(highlightColour);
+    draw.highlightColour = colour3(highlight);
     draw.parameters = parameters;
     draw.meshIndex = meshIndex;
     draw.material = material;

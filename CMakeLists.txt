@@ -290,6 +290,16 @@ endif()
 # that the Info.plist and the PRODUCT_BUNDLE_IDENTIFIER build setting disagree.
 set(J37_BUNDLE_ID "com.MCsmes.first")
 
+# The CLAP identity, in a variable for the same reason and for one more: it is
+# written into the wrapper's Info.plist by clap-juce-extensions and into an Xcode
+# build setting by the CLAP block below, and those two are exactly what Xcode
+# compares when it reports "User-supplied CFBundleIdentifier value
+# 'com.mcsmes.mibox' ... must be the same as the PRODUCT_BUNDLE_IDENTIFIER build
+# setting value ''". It is deliberately NOT J37_BUNDLE_ID: a CLAP host keys the
+# session state it saves on CLAP_ID, and com.mcsmes.mibox is the id this product
+# has carried since the wrapper was added, so it must not change either.
+set(J37_CLAP_ID "com.mcsmes.mibox")
+
 # The format list is platform-conditional for one reason: JUCE's platform kind
 # list reduces to Standalone alone on Android, and a FORMATS entry JUCE cannot
 # produce there is simply intersected away - leaving an empty active-format set
@@ -375,8 +385,16 @@ j37_apply_thirdparty_warnings(first)
 # ------------------------------------------------------------------------------
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
     clap_juce_extensions_plugin(TARGET first
-        CLAP_ID         "com.mcsmes.mibox"
+        CLAP_ID         "${J37_CLAP_ID}"
         CLAP_FEATURES   audio-effect distortion stereo)
+
+    # The plist and the build setting have to agree; see J37_CLAP_ID above. Only
+    # the Xcode generator has the setting at all, and the wrapper target exists on
+    # every desktop platform, hence both halves of the guard.
+    if(APPLE AND TARGET first_CLAP)
+        set_target_properties(first_CLAP PROPERTIES
+            XCODE_ATTRIBUTE_PRODUCT_BUNDLE_IDENTIFIER "${J37_CLAP_ID}")
+    endif()
 endif()
 
 # ------------------------------------------------------------------------------

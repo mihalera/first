@@ -193,6 +193,118 @@ inline const UiPalette darkMetalPalette{
 };
 
 // ------------------------------------------------------------------
+//  Four more starting points for the USER palette.
+//
+//  These are not front-panel themes and they are not in the THEME key's cycle:
+//  they exist so that the colour window opens on a choice rather than on a
+//  blank sheet. A user who wants "something like that" can take one of these
+//  in one press and then move individual colours, which is the way people
+//  actually pick a palette - broadly first, then by detail.
+//
+//  Each is a complete fifteen-colour palette built around one idea, and each
+//  is a genuinely different room rather than the same grey at four
+//  brightnesses: OXBLOOD is a deep oxblood console with bone lettering,
+//  BRASS is a warm brown-and-gold machine, TEAL is a cold dark instrument
+//  with a mint lamp, SEPIA is paper and ink for people who want the panel to
+//  look like a manual page.
+// ------------------------------------------------------------------
+inline const UiPalette oxbloodPalette{
+    juce::Colour::fromRGB(26, 14, 16),    // background - oxblood black
+    juce::Colour::fromRGB(58, 24, 27),    // panel - pressed wine
+    juce::Colour::fromRGB(88, 38, 42),    // raised
+    juce::Colour::fromRGB(152, 74, 72),   // border
+    juce::Colour::fromRGB(226, 138, 96),  // accent - ember orange against the wine
+    juce::Colour::fromRGB(246, 229, 219), // text - bone
+    juce::Colour::fromRGB(196, 156, 148), // secondary
+    juce::Colour::fromRGB(74, 32, 36),    // knobFace
+    juce::Colour::fromRGB(122, 60, 62),   // knobHighlight
+    juce::Colour::fromRGB(226, 178, 160), // knobEdge
+    juce::Colour::fromRGB(15, 8, 9),      // readout
+    juce::Colour::fromRGB(232, 214, 202), // gaugeFace
+    juce::Colour::fromRGB(52, 22, 24),    // gaugeInk
+    juce::Colour::fromRGB(255, 166, 112), // needle
+    juce::Colour::fromRGB(150, 214, 168)  // status
+};
+
+inline const UiPalette brassPalette{
+    juce::Colour::fromRGB(31, 26, 18),    // background - dark walnut
+    juce::Colour::fromRGB(66, 55, 36),    // panel - old brass plate
+    juce::Colour::fromRGB(96, 80, 52),    // raised
+    juce::Colour::fromRGB(158, 129, 78),  // border
+    juce::Colour::fromRGB(240, 196, 106), // accent - polished brass
+    juce::Colour::fromRGB(247, 236, 210), // text
+    juce::Colour::fromRGB(203, 184, 143), // secondary
+    juce::Colour::fromRGB(80, 66, 44),    // knobFace
+    juce::Colour::fromRGB(134, 112, 74),  // knobHighlight
+    juce::Colour::fromRGB(228, 198, 138), // knobEdge
+    juce::Colour::fromRGB(22, 18, 12),    // readout
+    juce::Colour::fromRGB(238, 226, 197), // gaugeFace
+    juce::Colour::fromRGB(52, 43, 28),    // gaugeInk
+    juce::Colour::fromRGB(198, 74, 58),   // needle - a red the brass cannot swallow
+    juce::Colour::fromRGB(126, 186, 132)  // status
+};
+
+inline const UiPalette tealPalette{
+    juce::Colour::fromRGB(9, 24, 26),     // background - deep instrument teal
+    juce::Colour::fromRGB(19, 47, 50),    // panel
+    juce::Colour::fromRGB(31, 68, 71),    // raised
+    juce::Colour::fromRGB(78, 132, 133),  // border
+    juce::Colour::fromRGB(120, 236, 206), // accent - phosphor mint
+    juce::Colour::fromRGB(226, 246, 243), // text
+    juce::Colour::fromRGB(151, 190, 187), // secondary
+    juce::Colour::fromRGB(26, 58, 61),    // knobFace
+    juce::Colour::fromRGB(70, 116, 118),  // knobHighlight
+    juce::Colour::fromRGB(168, 214, 208), // knobEdge
+    juce::Colour::fromRGB(4, 13, 14),     // readout
+    juce::Colour::fromRGB(198, 236, 231), // gaugeFace
+    juce::Colour::fromRGB(16, 40, 42),    // gaugeInk
+    juce::Colour::fromRGB(255, 138, 122), // needle - warm, so it reads against the mint
+    juce::Colour::fromRGB(120, 236, 206)  // status
+};
+
+inline const UiPalette sepiaPalette{
+    juce::Colour::fromRGB(206, 188, 152), // background - aged paper
+    juce::Colour::fromRGB(226, 210, 176), // panel
+    juce::Colour::fromRGB(238, 224, 194), // raised
+    juce::Colour::fromRGB(122, 100, 68),  // border
+    juce::Colour::fromRGB(146, 74, 40),   // accent - ox-gall ink stamp
+    juce::Colour::fromRGB(46, 35, 22),    // text
+    juce::Colour::fromRGB(112, 92, 64),   // secondary
+    juce::Colour::fromRGB(196, 176, 138), // knobFace
+    juce::Colour::fromRGB(230, 216, 186), // knobHighlight
+    juce::Colour::fromRGB(104, 84, 56),   // knobEdge
+    juce::Colour::fromRGB(248, 240, 222), // readout
+    juce::Colour::fromRGB(240, 230, 204), // gaugeFace
+    juce::Colour::fromRGB(52, 40, 26),    // gaugeInk
+    juce::Colour::fromRGB(138, 44, 30),   // needle
+    juce::Colour::fromRGB(74, 116, 78)    // status
+};
+
+/** One named starting point for the USER palette. */
+struct UiPalettePreset
+{
+    const char *name;
+    const UiPalette *palette;
+};
+
+// The order is the order the keys are drawn in: the four front-panel themes
+// first, because a user who likes the panel they are on wants its palette, then
+// the four rooms of their own.
+inline constexpr UiPalettePreset userThemePresets[] = {
+    { "DARK METAL", &darkMetalPalette },
+    { "METAL",      &metalPalette },
+    { "CHARCOAL",   &charcoalPalette },
+    { "IVORY",      &ivoryPalette },
+    { "OXBLOOD",    &oxbloodPalette },
+    { "BRASS",      &brassPalette },
+    { "TEAL",       &tealPalette },
+    { "SEPIA",      &sepiaPalette },
+};
+
+inline constexpr int userThemePresetCount =
+    static_cast<int> (sizeof (userThemePresets) / sizeof (userThemePresets[0]));
+
+// ------------------------------------------------------------------
 //  The USER palette: the one palette that is DATA rather than a constant.
 //
 //  `userThemeSeed` is what RESET restores and what the first session of the

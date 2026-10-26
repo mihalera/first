@@ -236,7 +236,11 @@ struct VinylStage
         not branch on it. */
     float nextPrintSample (int channel, float printGain) noexcept
     {
-        if (noisePrint == nullptr || noisePrint->empty() || printGain == 0.0f)
+        // `printGain <= 0.0f` rather than `== 0.0f`: the gain is a share of the
+        // print (0..1, taken from NOISE and VINYL MIX), so nothing below zero is
+        // a real case, and the test is exact either way - -Wfloat-equal is right
+        // to object to an equality on floating point, not to this.
+        if (noisePrint == nullptr || noisePrint->empty() || printGain <= 0.0f)
             return 0.0f;
 
         const auto value = noisePrint->sample (channel, noisePrintIndex);

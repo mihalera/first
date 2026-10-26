@@ -798,6 +798,14 @@ built by `foleys_gui_magic` from a ValueTree, follows the current theme's palett
 is created on first open, because 109 attachments are not something an editor that never
 shows the sheet should pay for.
 
+Every caption is the parameter's host name passed through the panel's translation table,
+so a Ukrainian panel lists **Вхід**, **Вхід EQ: порядок** and **Атенюатор DI** rather than
+`Input`, `In EQ Order` and `DI Pad` - and resting the pointer on a row shows the panel's
+own description of that parameter, in the same language, because the sheet reads
+`parameterTooltipText()` instead of keeping a second vocabulary for the same controls.
+Switching the language releases the sheet, so the next press rebuilds it in the language
+that was chosen.
+
 ### Analogue nonlinearity
 
 This is a saturation model, so the transfer functions are deliberately nonlinear - that
