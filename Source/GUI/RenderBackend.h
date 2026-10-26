@@ -66,8 +66,12 @@ constexpr Backend configuredBackend() noexcept {
 //   - J37_NATIVE_BGFX   -> BGFX backend has scene draw
 constexpr bool hasNativeImplementation(Backend backend) noexcept {
 #if defined(J37_NATIVE_SOKOL)
-    constexpr bool sokolDrawsScene = true;#else
-    constexpr bool sokolDrawsScene = false;#endif    return backend == Backend::sokol && sokolDrawsScene;}
+    constexpr bool sokolDrawsScene = true;
+#else
+    constexpr bool sokolDrawsScene = false;
+#endif
+    return backend == Backend::sokol && sokolDrawsScene;
+}
 
 constexpr bool isNativeBackendPending(Backend backend) noexcept {
     // If the backend has scene draw, it is NOT pending - it is effective.
