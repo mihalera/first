@@ -607,27 +607,25 @@ void testCorrectorUsesBlockAlignedRatio()
            "mono frames after stereo input fill absent channel slots with silence and neutral ratios");
 
     stage.reset();
-    std::array<float, 2> transitionRatios { 1.0f, 1.0f };
-    std::array<int, 2> transitionHints { 0, 0 };
     for (int n = 0; n < CorrectorStage::blockFrames; ++n)
     {
         frame = { 0.25f, -0.5f };
-        stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 2);
+        stage.processFrame (frame.data(), transitionRatios, transitionHints, 2);
     }
     for (int n = 0; n < CorrectorStage::blockFrames / 2; ++n)
     {
         frame = { 0.0f, 777.0f };
-        stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 1);
+        stage.processFrame (frame.data(), transitionRatios, transitionHints, 1);
     }
     for (int n = 0; n < CorrectorStage::blockFrames; ++n)
     {
         frame = { 0.0f, 777.0f };
-        stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 1);
+        stage.processFrame (frame.data(), transitionRatios, transitionHints, 1);
     }
     for (int n = 0; n < CorrectorStage::blockFrames; ++n)
     {
         frame = { 0.0f, 0.0f };
-        stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 2);
+        stage.processFrame (frame.data(), transitionRatios, transitionHints, 2);
         check (std::abs (frame[1]) < 1.0e-6f,
                "stereo channel stays silent after a mono interval rather than replaying stale output");
     }
@@ -638,49 +636,63 @@ void testCorrectorUsesBlockAlignedRatio()
     for (int n = 0; n < CorrectorStage::blockFrames; ++n)
     {
         frame = { 0.2f, -0.4f };
-        stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 2);
+        stage.processFrame (frame.data(), transitionRatios, transitionHints, 2);
     }
     for (int n = 0; n < CorrectorStage::blockFrames / 2; ++n)
     {
         frame = { 0.0f, 0.0f };
-        stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 2);
+        stage.processFrame (frame.data(), transitionRatios, transitionHints, 2);
     }
     frame = { 0.0f, 123.0f };
-    stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 1);
+    stage.processFrame (frame.data(), transitionRatios, transitionHints, 1);
     check (frame[1] == 123.0f, "mono transition does not write beyond the supplied channels");
     for (int n = 0; n < CorrectorStage::blockFrames; ++n)
     {
         frame = { 0.0f, 0.0f };
-        stage.processFrame (frame.data(), transitionRatios.data(), transitionHints.data(), 2);
+        stage.processFrame (frame.data(), transitionRatios, transitionHints, 2);
         check (std::abs (frame[1]) < 1.0e-6f,
                "mid-block mono transition discards stale stereo output");
     }
 
-    stage.reset();
-    std::vector<float> stereoInput (static_cast<std::size_t> (CorrectorStage::blockFrames));
-    for (int n = 0; n < CorrectorStage::blockFrames; ++n)
+    // The bypassed path's delay: one block of lookahead, and the channels a caller
+    // does NOT supply stay the caller's. A stage of its own, because the one above
+    // runs a single active channel and can show neither half of that claim.
+    CorrectorStage delayStage;
+    delayStage.prepare (48000.0, 2);
+
+    std::vector<float> fed (static_cast<std::size_t> (CorrectorStage::blockFrames * 3));
+    for (std::size_t n = 0; n < fed.size(); ++n)
+        fed[n] = 0.001f * static_cast<float> (n + 1);
+
+    // A block is handed over on the call that completes it, and that same call
+    // serves its first frame - so what comes out is the input blockFrames - 1
+    // frames behind, wholesale, across every wrap of the ring.
+    const auto lag = static_cast<std::size_t> (CorrectorStage::blockFrames - 1);
+    auto worstDelayError = 0.0f;
+
+    for (std::size_t n = 0; n < fed.size(); ++n)
     {
-        stereoInput[static_cast<std::size_t> (n)] = n < CorrectorStage::blockFrames / 2 ? 0.25f : 0.75f;
-        frame = { stereoInput[static_cast<std::size_t> (n)],
-                  n < CorrectorStage::blockFrames / 2 ? -0.5f : 0.5f };
-        stage.delayFrame (frame.data(), 2);
+        frame = { fed[n], -fed[n] };
+        delayStage.delayFrame (frame.data(), 2);
+
+        const auto expected = n < lag ? 0.0f : fed[n - lag];
+        worstDelayError = std::max (worstDelayError, std::abs (frame[0] - expected));
     }
-    stage.reset();
-    std::vector<float> monoExpected (static_cast<std::size_t> (CorrectorStage::blockFrames * 3));
-    for (int n = 0; n < CorrectorStage::blockFrames; ++n)
-        monoExpected[static_cast<std::size_t> (n)] = stereoInput[static_cast<std::size_t> (n)];
-    std::fill (monoExpected.begin() + CorrectorStage::blockFrames, monoExpected.end(), 0.25f);
-    for (int n = 0; n < CorrectorStage::blockFrames * 3; ++n)
-    {
-        frame = { 0.25f, 987.0f };
-        stage.delayFrame (frame.data(), 1);
-        if (n >= CorrectorStage::blockFrames)
-        {
-            const auto expected = monoExpected[static_cast<std::size_t> (n - CorrectorStage::blockFrames)];
-            check (std::abs (frame[0] - expected) < 1.0e-6f,
-                   "mono delay output stays aligned and channel-safe after block wraps");
-        }
-    }
+
+    check (worstDelayError < 1.0e-6f,
+           "the delay's output is its input one block behind, aligned across every wrap");
+
+    // One channel in: the second sample of the caller's own frame is not the
+    // stage's to write, and the stereo channel that was absent does not come back
+    // as the block it held before the layout changed.
+    frame = { 0.5f, 987.0f };
+    delayStage.delayFrame (frame.data(), 1);
+    check (frame[1] == 987.0f, "a mono call leaves the caller's second sample untouched");
+
+    frame = { 0.5f, -123.0f };
+    delayStage.delayFrame (frame.data(), 2);
+    check (frame[1] == 0.0f,
+           "the channel that was absent returns as silence, not as its stale block");
 #endif
 }
 
