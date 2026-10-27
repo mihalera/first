@@ -42,6 +42,18 @@ IMPL = REPO / "Source" / "PluginProcessor.cpp"
 IMPL_SOURCES = [IMPL, REPO / "Source" / "ProcessorSignalPath.cpp"]
 IMPL_NAMES = " + ".join(path.name for path in IMPL_SOURCES)
 
+# The gate's exponent is written by makeTapeCouplings() in this header since the
+# tape split, so the value is read there rather than from a literal in the engine.
+COUPLINGS = REPO / "Source" / "DSP" / "TapeCouplings.h"
+
+
+def couplings_source() -> str:
+    """The couplings header, where makeTapeCouplings() gives the gate its exponent."""
+    if not COUPLINGS.exists():
+        raise SystemExit(f"extract.py: {COUPLINGS.relative_to(REPO)} is missing; the gate's "
+                         f"exponent is read where makeTapeCouplings() writes it.")
+    return COUPLINGS.read_text()
+
 
 def processor_impl() -> str:
     """The processor's source as one text, each file under a marker naming it."""
@@ -204,13 +216,17 @@ def check_engine_gate() -> list[str]:
         if exponent_name in exponents:
             continue
 
-        # The exponent is a named value, and it is read where it is GIVEN its value: a
-        # `constexpr` in the engine before the split, a field of the block's state now
-        # (`state.platterGateExponent = 0.62f;`), whose name and type are on the struct.
-        # Either way it is one named number with one value, which is what makes the shape
-        # auditable - a bare `std::pow (platterSpeed, 0.62f)` would not be.
-        exponent = re.search(rf"(?:constexpr float {exponent_name}|state\.{exponent_name})"
-                             rf" = ([0-9.]+)f;", impl)
+        # The exponent is a named value, and it is read where it is GIVEN its value. It
+        # was a `constexpr` in the engine before the split, then a field of the block's
+        # state (`state.platterGateExponent = 0.62f;`), and since the tape couplings moved
+        # out it is a field makeTapeCouplings() fills in TapeCouplings.h
+        # (`couplings.platterGateExponent = 2.5f;`). Either way it is one named number
+        # with one value, which is what makes the shape auditable - a bare
+        # `std::pow (platterSpeed, 0.62f)` would not be.
+        exponent = re.search(rf"(?:constexpr float {exponent_name}"
+                             rf"|state\.{exponent_name}"
+                             rf"|couplings\.{exponent_name})"
+                             rf" = ([0-9.]+)f;", impl + "\n" + couplings_source())
 
         if exponent is None:
             problems.append(f"`{exponent_name}` shapes the output gate but is not a named"
