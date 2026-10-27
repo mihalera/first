@@ -100,6 +100,19 @@ SOURCE_HEADERS = [
     # numbers. It names `juce::jlimit` and `juce::MathConstants`, which the shim
     # declares for the builder above it already.
     "DSP/TapeModulation.h",
+    # The three further stages out of processTapeEngine(): the tape formula and
+    # instrument voicing (a pure function of the TONE macro, the formula and the
+    # instrument choice), the two glue stages' operating points (a pure function of
+    # the two trims, the formula and the SPEED scale), and the delay head's time (a
+    # pure function of the free control, the sync switch, the note choice and the
+    # host tempo). Each carries an OFF index or a note table whose relationships the
+    # harness checks, so they are measured rather than only compiled.
+    "DSP/TapeVoicing.h",
+    # The device couplings: the pure function of the two slow sources, the drive, TONE
+    # and the two wander curves that makes one control change what another one MEANS.
+    "DSP/TapeCouplings.h",
+    "DSP/GlueOperatingPoints.h",
+    "DSP/DelayTime.h",
     "DSP/SaturationCore.h",
     "DSP/VinylStage.h",
     "DSP/SubharmonicGenerator.h",

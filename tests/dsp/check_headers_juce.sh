@@ -364,6 +364,30 @@ TU="${BUILD}/header_check.cpp"
        + modulation.flutterCurve + modulation.speedScale
        + modulation.wowFreq + modulation.flutterFreq;
 
+    // The three further stages out of processTapeEngine(), each a pure function the
+    // DSP harness drives on its own. What this pass adds is that their names, their
+    // OFF index and their note table are real under REAL JUCE - the two scalar helpers
+    // the shim has been answering (juce::jlimit, and juce::jmax for the delay) do exist
+    // there, and the glue points' Coefficients really are GlueCompressor's own.
+    const auto voicing = j37voice::makeTapeVoicing (0.5f, 0, 0);
+    x += voicing.tapeCurve + voicing.tapeAsymmetry + voicing.tapeHiss
+       + voicing.headDampingHz + voicing.hysteresis + voicing.instrumentTransportScale
+       + static_cast<float> (j37voice::tapeModelOffIndex);
+
+    const auto couplings = j37coupling::makeTapeCouplings (0.2f, 0.1f, 0.5f, 0.5f, 0.3f, 0.3f);
+    x += couplings.wearWowCoupling + couplings.driveHissCoupling + couplings.headGapModulationMask
+       + couplings.platterPitchExponent + couplings.platterGateExponent
+       + couplings.loadInducedSpeedError + couplings.transportActivityGate;
+
+    const auto gluePoints = j37glueop::makeGlueOperatingPoints (0.0f, 0.0f, 0, 1.0f, 48000.0f);
+    x += gluePoints.inputThresholdDb + gluePoints.inputKneeDb + gluePoints.inputCompressorRatio
+       + gluePoints.inputReductionLimitDb + gluePoints.outputThresholdDb + gluePoints.outputKneeDb
+       + gluePoints.outputCompressorRatio + gluePoints.outputReductionLimitDb
+       + gluePoints.inputMakeupFraction + gluePoints.outputMakeupFraction
+       + gluePoints.inputCoefficients.slow + gluePoints.outputCoefficients.release;
+
+    x += j37delay::effectiveDelayMs (100.0f, true, 2, 120.0);
+
     return x + j37math::exp (1.0f) + j37math::log10 (2.0f) + j37math::sqrt (3.0f);
 }
 

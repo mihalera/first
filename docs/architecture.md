@@ -34,7 +34,7 @@ editor; the editor reads published numbers.
 | `Source/GUI/*.cpp` | the editor split by concern - setup, theme, paint, timer, meters, look-and-feels, interface sounds, the deck scene, the native renderers |
 
 `Source/ProcessorSignalPath.cpp` is where a change to the sound is made. It is
-3,900 lines and one of its functions, `processTapeEngine`, spans lines 576-2229.
+3,675 lines and one of its functions, `processTapeEngine`, spans lines 830-2039.
 
 ## The signal path
 

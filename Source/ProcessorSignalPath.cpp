@@ -40,20 +40,26 @@
 //  The machine is two pieces, and where the line between them is drawn is the whole point:
 //  what one block is SET UP AS is a type (TapeBlockState, declared in PluginProcessor.h)
 //  and what happens to one sample is a function of its own (processOneSample below). The
-//  ~1,570 lines of coefficients between them are still inside processTapeEngine() - one
-//  group of them leaves at a time, the way the block-rate coefficients and the wander
-//  already did. See SPLITTING-BIG-FILES.md, section F.
+//  coefficients between them keep leaving processTapeEngine() a group at a time, as pure
+//  stages under Source/DSP/ that the DSP harness measures rather than only compiles: the
+//  block-rate coefficients, the wander, the tape voicing, the couplings, the glue
+//  operating points and the delay head's time are headers of their own now. See
+//  SPLITTING-BIG-FILES.md, section F.
 // =============================================================================
 #include "PluginProcessor.h"
 
 #include "DSP/AutoGainCompensator.h"
 #include "DSP/BlockRateCoefficients.h"
+#include "DSP/DelayTime.h"
+#include "DSP/GlueOperatingPoints.h"
 #include "DSP/HotPathMath.h"
 #include "DSP/MixCrossfader.h"
 #include "DSP/MultibandPhaseGuard.h"
 #include "DSP/PitchCorrectionRule.h"
 #include "DSP/SafetyLimiter.h"
+#include "DSP/TapeCouplings.h"
 #include "DSP/TapeModulation.h"
+#include "DSP/TapeVoicing.h"
 #include "HotPathProbe.h"
 
 
@@ -1061,28 +1067,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto delayRateIndex = delayRateParam != nullptr
                                     ? static_cast<int> (delayRateParam->load()) : 2;
 
-    float effectiveDelayMs = delayMs;
-
-    if (delaySyncOn)
-    {
-        // The note value as a fraction of a whole note. A quarter is 1/4, a
-        // dotted quarter is 1/4 * 1.5, a triplet quarter is 1/4 * 2/3.
-        //
-        //  1/1 = 1.0      1/2 = 0.5      1/4 = 0.25     1/8 = 0.125   1/16 = 0.0625
-        //  1/4 T (triplet) = 0.25 * 2/3  1/8 T = 0.125 * 2/3
-        //  1/4 D (dotted)  = 0.25 * 1.5
-        static constexpr float noteRatios[] { 1.0f, 0.5f, 0.25f, 0.125f, 0.0625f,
-                                              0.25f * 2.0f / 3.0f,
-                                              0.125f * 2.0f / 3.0f,
-                                              0.25f * 1.5f };
-        constexpr int numNoteRatios = static_cast<int> (std::size (noteRatios));
-
-        const auto ratio = noteRatios[juce::jlimit (0, numNoteRatios - 1, delayRateIndex)];
-
-        // A whole note is four beats, so a whole note lasts 4 * 60000/tempo ms.
-        const auto wholeNoteMs = 4.0 * 60000.0 / juce::jmax (1.0, hostTempoBpm);
-        effectiveDelayMs = static_cast<float> (wholeNoteMs * static_cast<double> (ratio));
-    }
+    // The delay head's time: the DELAY control when free-running, or the host tempo
+    // scaled by the RATE note choice when synced. The note table, its clamp and the
+    // tempo conversion are a pure function of four numbers, so they are
+    // Source/DSP/DelayTime.h - a header the DSP harness calls directly.
+    const float effectiveDelayMs = j37delay::effectiveDelayMs (delayMs, delaySyncOn,
+                                                               delayRateIndex, hostTempoBpm);
 
     delaySamplesSmoothed.setTargetValue (
         juce::jlimit (0.0f, static_cast<float> (juce::jmax (0, delayBufferLength - 1)),
@@ -1628,252 +1618,38 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // extra curve on it would only make the blend disagree with its own readout.
     state.twoPi = juce::MathConstants<float>::twoPi;
 
-    // The TONE macro's blend curve, computed once per block. Declared BEFORE the tape
-    // character section because the machine-state crossfade below is built from it:
-    // 0 % reads as the classic slow stock, 100 % as the hot fast stock.
-    const auto characterCurve = std::pow (
-        juce::jlimit (0.0f, 1.0f, character), 1.20f);
-
-    // Per-model tape character: saturation curve, bias asymmetry, tape noise floor,
-    // head-gap damping and the magnetic hysteresis thickness. The damping is a real
-    // corner FREQUENCY in Hz (the previous ms values landed at 4-9 Hz through the
-    // time-constant filter - the same 2*pi unit error that hid the whole wet path).
+    // The tape formula and the instrument selector's voicing, as one stage: the TONE
+    // macro's crossfade between the slow and fast machine states, the TAPE TYPE
+    // switch's own bias on top of it, the INSTRUMENT selector's, and the clamps that
+    // bound the pair. It is a pure function of character, the formula and the
+    // instrument choice, so it is Source/DSP/TapeVoicing.h - a header the DSP harness
+    // calls directly, which is what makes its prose (the crossfade, the off state, the
+    // hotter formulas' harder bend, the clamps) checkable rather than only readable.
     //
-    // TONE (the character macro) is a crossfade BETWEEN MACHINE STATES, and the tape
-    // formula is part of that state: at 0 % the machine behaves like the classic slow
-    // stock (gentle curve, strong asymmetry, warm hiss, dark damping, thick hysteresis
-    // blend) and at 100 % like the fast/hot stock (harder curve, less asymmetry, less
-    // hiss, more open damping, leaner hysteresis). The selected TAPE TYPE shifts the
-    // centre of that fade, so the knob still has its own meaning on top of the macro.
-    // The slow-machine end is represented by the J37 numbers and the fast end by a
-    // hotter generic stock, blended by the TONE curve.
-    const float slowMachineCurve = 1.18f;      // J37 - soft magnetic bend
-    const float slowMachineAsymmetry = 0.16f;  // strong even-harmonic warmth
-    const float slowMachineHiss = 0.10f;       // quiet oxide floor (below audibility)
-    const float slowMachineDampingHz = 12000.0f;
-    const float slowMachineHysteresis = 0.30f;
-
-    const float fastMachineCurve = 1.44f;      // hot-stud style dense saturation
-    const float fastMachineAsymmetry = 0.10f;  // leaner, more symmetric bend
-    const float fastMachineHiss = 0.06f;       // quieter still, faster stock
-    const float fastMachineDampingHz = 20000.0f;
-    const float fastMachineHysteresis = 0.44f;
-
-    const auto machineBlend = juce::jlimit (0.0f, 1.0f, characterCurve);
-    const auto blend = [machineBlend] (float slow, float fast)
-    {
-        return slow + (fast - slow) * machineBlend;
-    };
-
-    state.tapeCurve = blend (slowMachineCurve, fastMachineCurve);
-    float tapeAsymmetry = blend (slowMachineAsymmetry, fastMachineAsymmetry);
-    state.tapeHiss = blend (slowMachineHiss, fastMachineHiss);
-    float headDampingHz = blend (slowMachineDampingHz, fastMachineDampingHz);
-    float hysteresis = blend (slowMachineHysteresis, fastMachineHysteresis);
-
-    // The TAPE TYPE switch keeps its own voice on top of the TONE macro: it biases the
-    // blended state toward that formula's character (hotter formulas bend harder and
-    // hiss less, the classic J37 stays soft) rather than replacing it.
-    //
-    // This switch is the third copy of the stock list and the only one the compiler
-    // cannot check: C++ has no way to count case labels, so nothing here ties the
-    // cases to tapeStockNames. Without an assert, a stock added to the table and
-    // forgotten here would fall through to default and sound exactly like stock 0 -
-    // a wrong tape rather than an error, which is the worst kind. tapeStockCount is
-    // the same constant the parameter and the panel read, so this fires in a debug
-    // build on the first block whenever the three stop agreeing.
+    // The OFF index the header carries is the tape table's own; this is the pin that
+    // keeps them from drifting, since a Source/DSP/ header cannot include
+    // PluginProcessor.h to read it. The range assert below is the table's other half:
+    // a choice parameter is clamped to tapeStockCount on the way in.
+    static_assert (j37voice::tapeModelOffIndex == modelOffIndex,
+                   "Source/DSP/TapeVoicing.h's OFF index must be the tape table's modelOffIndex");
     jassert (tapeType >= 0 && tapeType < tapeStockCount);
 
-    // -------------------------------------------------------------------------
-    //  TAPE TYPE = OFF: the magnetic medium is removed.
-    //
-    //  What is left is a solid-state amplifier: no hysteresis, no oxide floor,
-    //  no head damping, no bias asymmetry - the machine's own electronics with
-    //  no tape in it. It is the reference state for hearing what the MEDIUM
-    //  contributes, because everything else in the chain is untouched by it.
-    //
-    //  It is implemented by (a) telling the saturation core that the tape
-    //  principle is absent, so the blend redistributes its share among the
-    //  principles still present, and (b) skipping the stock voicing switch
-    //  entirely, which is what the early flag below does. BOTH are needed:
-    //  the core alone would still have the stock's hiss and head damping riding
-    //  on top of a tape-less blend.
-    // -------------------------------------------------------------------------
+    const auto voicing = j37voice::makeTapeVoicing (character, tapeType, instrument);
+    state.tapeCurve = voicing.tapeCurve;
+    float tapeAsymmetry = voicing.tapeAsymmetry;
+    state.tapeHiss = voicing.tapeHiss;
+    float headDampingHz = voicing.headDampingHz;
+    float hysteresis = voicing.hysteresis;
+    const float instrumentTransportScale = voicing.instrumentTransportScale;
+
+    // TAPE TYPE = OFF is the one part of the voicing that is not the stage's answer:
+    // it also tells the saturation core that the tape principle is absent, so the
+    // blend redistributes its share among the principles still present. The cores are
+    // the processor's own state, which is why that one line stays here (see
+    // Source/DSP/TapeVoicing.h).
     const bool tapeModelOff = (tapeType == modelOffIndex);
     saturationL.tapeOff = tapeModelOff;
     saturationR.tapeOff = tapeModelOff;
-
-    if (tapeModelOff)
-    {
-        // A solid-state machine: no medium, so no medium noise and no head-gap
-        // damping. The transport still runs - the electronics are still moving
-        // the tape past a head - so wow and flutter stay, which is exactly the
-        // distinction that makes this a useful reference rather than a bypass.
-        state.tapeHiss = 0.0f;
-        headDampingHz = 26000.0f;
-        hysteresis = 0.10f;
-        tapeAsymmetry = 0.0f;
-    }
-    else
-    switch (tapeType)
-    {
-        case 0: // J37 - the classic EMI reference sound
-            break;
-        case 1: // Ampex 456 - hotter, more low-order colour
-            state.tapeCurve += 0.08f;
-            tapeAsymmetry += 0.05f;
-            state.tapeHiss += 0.03f;
-            headDampingHz += 2500.0f;
-            hysteresis += 0.06f;
-            break;
-        case 2: // Studer A800 - darkest, densest saturation
-            state.tapeCurve += 0.16f;
-            tapeAsymmetry += 0.08f;
-            state.tapeHiss += 0.06f;
-            headDampingHz += 5000.0f;
-            hysteresis += 0.12f;
-            break;
-        case 3: // Chrome - clean and bright, low noise
-            state.tapeCurve += 0.02f;
-            tapeAsymmetry -= 0.03f;
-            state.tapeHiss -= 0.02f;
-            headDampingHz -= 2500.0f;
-            hysteresis -= 0.04f;
-            break;
-        case 4: // Type 111 - gentle low-noise mastering stock, very quiet, soft top
-            state.tapeCurve -= 0.05f;
-            tapeAsymmetry -= 0.02f;
-            state.tapeHiss -= 0.045f;
-            headDampingHz -= 4000.0f;
-            hysteresis -= 0.05f;
-            break;
-        case 5: // GP9 - hot modern mastering formula: dense low end, higher floor
-            state.tapeCurve += 0.14f;
-            tapeAsymmetry += 0.07f;
-            state.tapeHiss += 0.075f;
-            headDampingHz += 6000.0f;
-            hysteresis += 0.11f;
-            break;
-        case 6: // Quantegy 499 - high-output studio workhorse: open top, firm glue
-            state.tapeCurve += 0.10f;
-            tapeAsymmetry += 0.04f;
-            state.tapeHiss += 0.045f;
-            headDampingHz += 8000.0f;
-            hysteresis += 0.08f;
-            break;
-        case 7: // RTM SM911 - broadcast reference: balanced, smooth, low noise
-            state.tapeCurve += 0.05f;
-            tapeAsymmetry += 0.02f;
-            state.tapeHiss -= 0.01f;
-            headDampingHz += 3500.0f;
-            hysteresis += 0.03f;
-            break;
-        case 8: // SM 468 - high-output low-noise studio stock. A firm bend with a
-                // notably quiet floor and an open head, so it reads as clean density
-                // rather than as colour.
-            state.tapeCurve += 0.09f;
-            tapeAsymmetry += 0.03f;
-            state.tapeHiss -= 0.055f;
-            headDampingHz += 7000.0f;
-            hysteresis += 0.04f;
-            break;
-        case 9: // 888 - the hot, thick vintage stock. Strong bias asymmetry and the
-                // thickest magnetic memory here, so it bends early and blooms hard:
-                // the formula to reach for when the saturation IS the effect.
-            state.tapeCurve += 0.19f;
-            tapeAsymmetry += 0.10f;
-            state.tapeHiss += 0.05f;
-            headDampingHz -= 1500.0f;
-            hysteresis += 0.14f;
-            break;
-        case 10: // 815 - dark, dense and quiet at the top. A soft head and a heavy
-                 // low-mid bias make it the warmest of the new stocks without the
-                 // extra hiss 888 brings: it thickens rather than drives.
-            state.tapeCurve += 0.13f;
-            tapeAsymmetry += 0.08f;
-            state.tapeHiss -= 0.02f;
-            headDampingHz -= 4500.0f;
-            hysteresis += 0.12f;
-            break;
-        case 11: // 811 - the clean, open, low-noise mastering stock. The gentlest bend
-                 // of the set with the most open head, so it stays transparent under
-                 // level and keeps the top octave: a bus stock, not a colour.
-            state.tapeCurve -= 0.02f;
-            tapeAsymmetry += 0.01f;
-            state.tapeHiss -= 0.05f;
-            headDampingHz += 9000.0f;
-            hysteresis -= 0.03f;
-            break;
-        default:
-            // Unreachable while the assert above holds: the choice parameter is
-            // clamped to tapeStockCount, and the switch covers every index below it.
-            // Present so the switch is exhaustive and a future entry cannot silently
-            // do nothing.
-            jassertfalse;
-            break;
-    }
-
-    // The INSTRUMENT selector's voicing rides on top of the TAPE TYPE bias, and the
-    // clamps below bound every figure, so any combination of the two selectors stays
-    // inside the machine's designed operating range.
-    float instrumentTransportScale = 1.0f;   // how loose the transport runs
-
-    switch (instrument)
-    {
-        case 1: // Vocal: gentler bend, more even warmth, quiet floor, steady transport
-            state.tapeCurve -= 0.10f;
-            tapeAsymmetry += 0.04f;
-            state.tapeHiss -= 0.03f;
-            headDampingHz -= 1000.0f;
-            hysteresis += 0.05f;
-            instrumentTransportScale = 0.80f;
-            break;
-        case 2: // Bass: the thickest bend and memory, the darkest head, the steadiest
-                // transport - pitch wobble under a bass note is heard at once
-            state.tapeCurve += 0.12f;
-            tapeAsymmetry += 0.06f;
-            state.tapeHiss += 0.02f;
-            headDampingHz -= 2500.0f;
-            hysteresis += 0.10f;
-            instrumentTransportScale = 0.65f;
-            break;
-        case 3: // Guitar: cleaner bend, more bite, a slightly loose vintage transport
-            state.tapeCurve -= 0.06f;
-            tapeAsymmetry -= 0.02f;
-            state.tapeHiss -= 0.01f;
-            headDampingHz += 1500.0f;
-            hysteresis -= 0.04f;
-            instrumentTransportScale = 1.15f;
-            break;
-        case 4: // Piano: the cleanest bend so transients and decay stay honest, the
-                // quietest floor, top just nudged open
-            state.tapeCurve -= 0.12f;
-            tapeAsymmetry += 0.02f;
-            state.tapeHiss -= 0.04f;
-            headDampingHz += 500.0f;
-            hysteresis -= 0.06f;
-            instrumentTransportScale = 0.85f;
-            break;
-        case 5: // Drums: the slam calibration - a harder bend and an open head for
-                // the crack, tight magnetic memory so transients do not smear, and
-                // a steady transport (wow under a kick drum reads as a fault)
-            state.tapeCurve += 0.10f;
-            tapeAsymmetry -= 0.04f;
-            state.tapeHiss += 0.01f;
-            headDampingHz += 3000.0f;
-            hysteresis -= 0.08f;
-            instrumentTransportScale = 0.90f;
-            break;
-        case 0: // Master Bus: the machine exactly as calibrated
-        default:
-            break;
-    }
-
-    state.tapeCurve = juce::jlimit (1.0f, 1.8f, state.tapeCurve);
-    tapeAsymmetry = juce::jlimit (0.0f, 0.4f, tapeAsymmetry);
-    state.tapeHiss = juce::jlimit (0.0f, 0.6f, state.tapeHiss);
-    headDampingHz = juce::jlimit (4000.0f, 26000.0f, headDampingHz);
-    hysteresis = juce::jlimit (0.1f, 0.7f, hysteresis);
 
     // -------------------------------------------------------------------------
     //  Tape-type change.
@@ -1935,87 +1711,21 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                * instrumentTransportScale;
     state.speedBias = 0.84f + speedScale * 0.30f;
 
-    // -------------------------------------------------------------------------
-    //  Device couplings: where one control changes what another one MEANS.
-    //
-    //  A machine is not a list of independent knobs. A worn capstan makes the wow
-    //  deeper at the same WOW setting; a harder-driven head makes its own hiss
-    //  louder; a dark head gap hides modulation; a spent platter loses speed before
-    //  it loses signal. These are the interactions that make a tape model feel like
-    //  one object instead of a chain of processors, and every one of them is a
-    //  plain product of two already-computed signals - no extra oscillator, no
-    //  extra state, nothing to keep in sync.
-    //
-    //  Each coupling is deliberately ASYMMETRIC and bounded: the couplings can only
-    //  add, never invert, so a control at zero always means zero and the machine
-    //  cannot be talked into a state its design does not have.
-    // -------------------------------------------------------------------------
-    const auto mechanismWear = juce::jlimit (0.0f, 1.0f,
-                                             mechanicsSmoothed.getCurrentValue()
-                                                 + wearSmoothed.getCurrentValue());
-
-    // WEAR and MECHANICS deepen the transport's own wander. Both are already folded
-    // into the per-sample modulation; this is the part they own on their own, so a
-    // worn machine wanders even with WOW and FLUTTER closed - which is the one case
-    // where the transport gate below is wrong to silence it, and is why this term is
-    // added AFTER the gate is taken.
-    state.wearWowCoupling = mechanismWear * 0.006f;
-
-    // A hot record head is a noisier head: the hiss floor rises with the drive that
-    // is actually reaching the tape, not with the DRIVE control alone, so it follows
-    // the compressor-coupled driveAmount computed above.
-    const float driveHissCoupling = juce::jlimit (0.0f, 1.0f, driveAmount * 0.35f);
-
-    // A dark head gap hides the fine modulation before it hides anything else, so
-    // the top of the TONE travel rolls the grain and the flutter off together. It
-    // reads the TONE control directly rather than the cached toneLpAc coefficient:
-    // that coefficient is only recomputed when tone or character actually move, so
-    // on the first block it can still be 0 and would dampen the modulation before
-    // the knob had been touched. The 0.55 floor means TONE can never silence the
-    // transport's own movement, only soften it - which is what a biased head does
-    // to pitch shimmer.
-    const float toneNorm = juce::jlimit (0.0f, 1.0f, tone);
-    state.headGapModulationMask = juce::jlimit (0.55f, 1.0f, 0.55f + toneNorm * 0.45f);
-
-    // A plunger that is slowing loses speed before it loses signal. The whole point
-    // of SPINDOWN is that the pitch goes first, so the platter speed is mapped
-    // through a curve that stays near 1 until the platter is well below speed and
-    // then falls away quickly: an exponent above 1 does that, and an exponent below
-    // it would do the opposite - it would spend the modulation at the very start of
-    // the run-down, where a machine is still moving and nothing should be happening
-    // to it yet. The value is applied in the per-sample loop, where the platter
-    // speed actually lives.
-    state.platterPitchExponent = 1.35f;
-
-    // The machine's OUTPUT gate, and a different shape from the modulation term
-    // above on purpose. A tape that is still moving is still being read: its level
-    // holds until the travel is nearly gone and then collapses, which is what makes
-    // a stop read as the machine going away rather than as someone pulling a fader
-    // down. The first version of this gate was linear (the platter speed straight),
-    // which is 6 dB down halfway through a coast and exactly the sound that was
-    // reported as "STOP just makes it quieter". At this exponent the level is 0.77
-    // at nine tenths of speed, 0.18 at half speed and -35 dB at a fifth of it, so
-    // the audible part of a coast is its last third. The trade the shape makes is on
-    // the way back up: a spin-up brings the machine's sound in concentrated in its
-    // last third instead of fading it in early, which is the honest reading of a
-    // machine engaging - and it is only a trade in LEVEL now, because the repitch
-    // stage underneath it glides the pitch back up through the whole ramp rather
-    // than letting it snap.
-    state.platterGateExponent = 2.5f;
-
-    // A hard-driven machine also runs its transport more loosely: pushing a deck
-    // that hard is a physical load, and the speed error is the same term the ramp
-    // uses, read here as a small extra wander.
-    state.loadInducedSpeedError = driveAmount * 0.004f;
-
-    // The transport activity gate: 0 when both Wow and Flutter are closed, 1 from
-    // roughly 50 % on either. The machine only makes a sound of any kind while its
-    // transport moves, so EVERYTHING the transport does is gated by this one factor:
-    // the tape-surface grain in the loop below (which used to run unconditionally
-    // and read as a mystery noise generator whenever both controls were closed),
-    // and - since the "hiss while paused" report - the noise floor as well, whose
-    // gain is multiplied by it further down. Nothing in the engine is always-on.
-    state.transportActivityGate = juce::jlimit (0.0f, 1.0f, (wowCurve + flutterCurve) * 2.0f);
+    // The device couplings, as one stage: where one control changes what another one
+    // MEANS - a worn capstan deepens the wow, a hot head hisses louder, a dark gap
+    // hides modulation, a loaded platter loses speed before signal. It is a pure
+    // function of the signals it couples, so it is Source/DSP/TapeCouplings.h - a
+    // header the DSP harness calls directly.
+    const auto couplings = j37coupling::makeTapeCouplings (mechanicsSmoothed.getCurrentValue(),
+                                                           wearSmoothed.getCurrentValue(),
+                                                           driveAmount, tone, wowCurve, flutterCurve);
+    state.wearWowCoupling = couplings.wearWowCoupling;
+    const float driveHissCoupling = couplings.driveHissCoupling;
+    state.headGapModulationMask = couplings.headGapModulationMask;
+    state.platterPitchExponent = couplings.platterPitchExponent;
+    state.platterGateExponent = couplings.platterGateExponent;
+    state.loadInducedSpeedError = couplings.loadInducedSpeedError;
+    state.transportActivityGate = couplings.transportActivityGate;
 
     // Tone tilt: 0 = warm/soft, 1 = open/bright. The coefficients are cached by
     // updateToneCoefficients, which also derives the TONE-macro machine-state scalars
@@ -2238,75 +1948,24 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // 300 ms, stated as a duration rather than as a reciprocal.
     state.vuBallisticCoefficient = onePoleCoefficient (300.0f, state.engineSampleRate);
 
-    // -------------------------------------------------------------------------
-    //  Glue compressor operating points.
-    //
-    //  The two stages are independent processors, but each one is calibrated from
-    //  the trim control that feeds it. Turning INPUT up pushes this scaled signal
-    //  into the input stage, so that stage clamps down sooner and more firmly;
-    //  OUTPUT works the same way on the output stage, which then spends the trimmed
-    //  level on the output trim. A negative trim backs a stage off completely and a
-    //  positive one leans on it hard, which is what makes the two controls feel
-    //  like real gain staging rather than plain volume.
-    // -------------------------------------------------------------------------
-    const float inputDriveLoad = juce::jlimit (0.0f, 1.0f, (inputDb + 24.0f) / 48.0f);
-    const float outputDriveLoad = juce::jlimit (0.0f, 1.0f, (outputDb + 24.0f) / 48.0f);
-
-    state.inputThresholdDb = -17.0f + inputDriveLoad * 14.0f;    // -17 .. -3 dB
-    state.inputKneeDb = 10.0f - inputDriveLoad * 3.0f;           // 10 .. 7 dB
-    state.inputCompressorRatio = 1.15f + inputDriveLoad * 0.25f; // 1.15 .. 1.40 : 1
-    state.inputReductionLimitDb = -(2.0f + inputDriveLoad * 5.0f);
-
-    state.outputThresholdDb = -18.0f + outputDriveLoad * 15.0f;  // -18 .. -3 dB
-    state.outputKneeDb = 7.0f - outputDriveLoad * 2.0f;          // 7 .. 5 dB
-    state.outputCompressorRatio = 1.16f + outputDriveLoad * 0.18f;
-    state.outputReductionLimitDb = -(2.5f + outputDriveLoad * 5.0f);
-
-    // -----------------------------------------------------------------------
-    //  Tape-stock and transport coupling into the glue time constants.
-    //
-    //  The compressors are part of the machine, so the FORMULA loaded on it and
-    //  the SPEED it runs at change how the glue stages move - not just how the
-    //  tape saturates:
-    //
-    //    Tape formula (0 = J37 ... 3 = Chrome). Oxide thickness and bias current
-    //    set how quickly the detector can follow the programme: the soft, low-
-    //    output formulas get slower constants (more head bump, more relaxed
-    //    glue), the hot and chrome formulas get faster, tighter ones.
-    //
-    //    Transport speed. A slow 7.5 ips pass has more print-through and a
-    //    lazier flux build-up, so the glue is stretched; 30 ips is tight and
-    //    immediate, so the constants shorten. This rides the same speedScale
-    //    used for the head damping, so SPEED keeps one coherent meaning across
-    //    the whole machine.
-    //
-    //  Attack multipliers land roughly in 0.72..1.33, release in 0.72..1.40.
-    //  Both stages share the multipliers, so the two stages still feel like one
-    //  machine while remaining independent processors.
-    // -----------------------------------------------------------------------
-    // Eight formulas now index this scale: type 0 (J37, softest glue) through
-    // type 7 (RTM SM911), linearly between. The jlimit keeps the ends exact.
-    const float stockAttackScale = juce::jlimit (0.95f, 1.34f,
-                                                 1.34f - 0.047f * static_cast<float> (tapeType));
-    const float stockReleaseScale = juce::jlimit (0.95f, 1.40f,
-                                                  1.40f - 0.064f * static_cast<float> (tapeType));
-    const float transportAttackScale = 1.32f - 0.22f * speedScale;                  // 1.14 -> 1.03
-    const float transportReleaseScale = 1.38f - 0.30f * speedScale;                 // 1.15 -> 0.98
-
-    const float inputAttackSeconds = 0.16f * stockAttackScale * transportAttackScale;
-    const float inputReleaseSeconds = 0.85f * stockReleaseScale * transportReleaseScale;
-    const float outputAttackSeconds = 0.20f * stockAttackScale * transportAttackScale;
-    const float outputReleaseSeconds = 1.00f * stockReleaseScale * transportReleaseScale;
-
-    // The two glue detectors' block-rate coefficients. Everything they depend on -
-    // the engine rate, the four base constants above and the trim-driven load - is
-    // fixed for the whole block, so they are built once here rather than recomputed
-    // per sample. Before this the detector cost two std::exp calls per sample per
-    // channel for values that cannot change inside the block.
-    state.inputCompressorCoefficients = GlueCompressor::makeCoefficients (
-        state.engineSampleRate, inputAttackSeconds, inputReleaseSeconds, inputDriveLoad);
-    state.outputCompressorCoefficients = GlueCompressor::makeCoefficients (
-        state.engineSampleRate, outputAttackSeconds, outputReleaseSeconds, outputDriveLoad);
+    // The two glue stages' calibration, as one stage: the thresholds, knees, ratios
+    // and reduction limits both trims dial in, the attack and release the tape formula
+    // and SPEED stretch them to, the detectors' coefficients and the makeup each stage
+    // pays its reduction back with. It is a pure function of the two trims, the
+    // formula and the speed scale, so it is Source/DSP/GlueOperatingPoints.h - a header
+    // the DSP harness calls directly.
+    const auto gluePoints = j37glueop::makeGlueOperatingPoints (inputDb, outputDb, tapeType,
+                                                                speedScale, state.engineSampleRate);
+    state.inputThresholdDb = gluePoints.inputThresholdDb;
+    state.inputKneeDb = gluePoints.inputKneeDb;
+    state.inputCompressorRatio = gluePoints.inputCompressorRatio;
+    state.inputReductionLimitDb = gluePoints.inputReductionLimitDb;
+    state.outputThresholdDb = gluePoints.outputThresholdDb;
+    state.outputKneeDb = gluePoints.outputKneeDb;
+    state.outputCompressorRatio = gluePoints.outputCompressorRatio;
+    state.outputReductionLimitDb = gluePoints.outputReductionLimitDb;
+    state.inputCompressorCoefficients = gluePoints.inputCoefficients;
+    state.outputCompressorCoefficients = gluePoints.outputCoefficients;
 
     // The K-weighted meters' 400 ms window coefficients, same reasoning: a function
     // of the rate alone, so two std::exp calls per frame per meter become two per
@@ -2314,13 +1973,10 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     state.outputLoudnessCoefficient = LoudnessMeter::makeWindowCoefficient (state.engineSampleRate);
     state.inputLoudnessCoefficient = LoudnessMeter::makeWindowCoefficient (state.engineSampleRate);
 
-    // Makeup is part of each stage, and it is driven by the same trim control: a
-    // boosted trim pays its reduction back and a trimmed-down one simply backs off,
-    // so neither stage can quietly undo the balance the user dialled in.
-    const float inputDegree = juce::jlimit (0.0f, 1.0f, (inputDb + 16.0f) / 32.0f);
-    const float outputDegree = juce::jlimit (0.0f, 1.0f, (outputDb + 16.0f) / 32.0f);
-    state.inputMakeupFraction = 0.30f + inputDegree * 0.35f;
-    state.outputMakeupFraction = 0.35f + outputDegree * 0.35f;
+    // Makeup rides with the same trim control and is computed beside the rest of the
+    // stage's calibration (see Source/DSP/GlueOperatingPoints.h).
+    state.inputMakeupFraction = gluePoints.inputMakeupFraction;
+    state.outputMakeupFraction = gluePoints.outputMakeupFraction;
 
 
 
