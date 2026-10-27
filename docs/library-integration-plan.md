@@ -20,7 +20,10 @@ Read alongside:
   stage is written and how a stage is measured;
 - [library-candidates.md](library-candidates.md) - the survey this file's plan came out
   of: what is in the binary, what is fetched and unused, and which outside libraries
-  would help this plugin (and which would not).
+  would help this plugin (and which would not);
+- [external-libraries-report.md](external-libraries-report.md) - the per-library audit of
+  how each dependency is integrated today, and whether vendoring it or coupling it more
+  closely would help (or hurt).
 
 ## The answer, up front
 
