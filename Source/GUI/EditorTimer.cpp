@@ -298,100 +298,9 @@ void FirstAudioProcessorEditor::timerCallback() {
     submitTimerSceneAndRepaint(telemetry);
 }
 
-void FirstAudioProcessorEditor::refreshTelemetryReadouts(
-    const FirstAudioProcessor::TelemetryFrame& telemetry)
-{
-    refreshNeuralStatus();
-    refreshIrStatus();
-    refreshNoiseStatus();
 
-    inputMeter.setLoudness(telemetry.inputPeakDb, telemetry.inputRmsDb, telemetry.inputLufs,
-                           telemetry.inputVuDb, telemetry.inputCombinedDb, telemetry.inputClipping);
-    outputMeter.setLoudness(telemetry.outputPeakDb, telemetry.outputRmsDb, telemetry.outputLufs,
-                            telemetry.outputVuDb, telemetry.outputCombinedDb,
-                            telemetry.outputClipping);
 
-    compressorMeterIn.setReduction(telemetry.inputGainReductionDb,
-                                   telemetry.inputCompressorActivity);
-    compressorMeterOut.setReduction(telemetry.outputGainReductionDb,
-                                    telemetry.outputCompressorActivity);
 
-    // The MIX page's bar. Read from the seven SOURCE parameters and normalised
-    // exactly the way SaturationCore::setWeights normalises them - including its
-    // all-zero fallback, so a bar that shows pure tape really is pure tape. It is
-    // read only while the page that shows it is on screen: seven parameter reads
-    // and a divide per frame is nothing, but nothing is cheaper than nothing.
-    if (mixBar.isVisible()) {
-        std::array<float, principleCount> shares{};
-        float shareSum = 0.0f;
-
-        for (int p = 0; p < principleCount; ++p) {
-            if (const auto *parameter = audioProcessor.parameters.getParameter(
-                    juce::String(principleParameterIds[static_cast<std::size_t>(p)])))
-                shares[static_cast<std::size_t>(p)] =
-                    juce::jlimit(0.0f, 1.0f, static_cast<float>(parameter->getValue()));
-
-            shareSum += shares[static_cast<std::size_t>(p)];
-        }
-
-        if (shareSum > 1.0e-6f)
-            for (auto &share : shares)
-                share /= shareSum;
-        else {
-            // The same answer the core gives an empty mix: pure tape, the machine
-            // the plugin is calibrated as. Painting anything else here would put
-            // the bar and the sound in front of different stories.
-            shares = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-        }
-
-        mixBar.setShares(shares, juce::jlimit(0.0f, 1.0f, shareSum));
-    }
-}
-
-void FirstAudioProcessorEditor::refreshTelemetryReadouts (
-    const FirstAudioProcessor::TelemetryFrame& telemetry)
-{
-    refreshNeuralStatus();
-    refreshIrStatus();
-    refreshNoiseStatus();
-
-    inputMeter.setLoudness(telemetry.inputPeakDb, telemetry.inputRmsDb, telemetry.inputLufs,
-                           telemetry.inputVuDb, telemetry.inputCombinedDb, telemetry.inputClipping);
-    outputMeter.setLoudness(telemetry.outputPeakDb, telemetry.outputRmsDb, telemetry.outputLufs,
-                            telemetry.outputVuDb, telemetry.outputCombinedDb,
-                            telemetry.outputClipping);
-
-    compressorMeterIn.setReduction(telemetry.inputGainReductionDb,
-                                   telemetry.inputCompressorActivity);
-    compressorMeterOut.setReduction(telemetry.outputGainReductionDb,
-                                    telemetry.outputCompressorActivity);
-
-    // The MIX page's bar. Read from the seven SOURCE parameters and normalised
-    // exactly the way SaturationCore::setWeights normalises them - including its
-    // all-zero fallback, so a bar that shows pure tape really is pure tape.
-    if (mixBar.isVisible()) {
-        std::array<float, principleCount> shares{};
-        float shareSum = 0.0f;
-
-        for (int p = 0; p < principleCount; ++p) {
-            if (const auto *parameter = audioProcessor.parameters.getParameter(
-                    juce::String(principleParameterIds[static_cast<std::size_t>(p)])))
-                shares[static_cast<std::size_t>(p)] =
-                    juce::jlimit(0.0f, 1.0f, static_cast<float>(parameter->getValue()));
-
-            shareSum += shares[static_cast<std::size_t>(p)];
-        }
-
-        if (shareSum > 1.0e-6f)
-            for (auto &share : shares)
-                share /= shareSum;
-        else
-            shares = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
-
-        mixBar.setShares(shares, juce::jlimit(0.0f, 1.0f, shareSum));
-    }
-
-}
 
 void FirstAudioProcessorEditor::advanceTimerAnimations (
     const FirstAudioProcessor::TelemetryFrame& telemetry)
@@ -462,6 +371,9 @@ void FirstAudioProcessorEditor::advanceTimerAnimations (
 void FirstAudioProcessorEditor::advanceTimerAnimations (
     const FirstAudioProcessor::TelemetryFrame& telemetry)
 {
+    const auto reduction = telemetry.inputGainReductionDb + telemetry.outputGainReductionDb;
+    const auto activity = telemetry.compressorActivity;
+
     // Report the harmonic balance the tape stage is producing. Even and odd are shown
     // side by side because the ratio between them is the character: even-dominant reads as
     // warm and full, odd-dominant as hard and edgy, and real tape has both.
