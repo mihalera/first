@@ -286,10 +286,17 @@ Each step is independently revertable and ends with the same checks green.
    `Source/DSP/BlockRateCoefficients.h` and `Source/DSP/TapeModulation.h`, both checked by
    the DSP harness rather than only compiled by it; and the map's parts 1-3 are one TYPE
    and one FUNCTION now - `TapeBlockState` holds the 68 names the sample loop read by
-   capture, and that loop is `processOneSample (TapeBlockState&, int)`. What is left of F
-   is the map's part 2: cutting the ~1,570 lines of derivations into named stages of
-   their own, which is the move the two stages above already made and can now be done one
-   group at a time.
+   capture, and that loop is `processOneSample (TapeBlockState&, int)`.
+
+   **Four more stages of part 2 are in** (section 7, the latest pass): the tape formula and
+   the instrument selector's voicing, the device couplings, the two glue stages' operating
+   points and the delay head's time left the function for `Source/DSP/TapeVoicing.h`,
+   `Source/DSP/TapeCouplings.h`, `Source/DSP/GlueOperatingPoints.h` and
+   `Source/DSP/DelayTime.h` - each a pure function of a handful of numbers, each called by
+   the DSP harness directly rather than only compiled, and each carrying the prose its
+   comments used to hold. What is left of F is the rest of part 2: the smoother-feeding
+   runs, the vinyl/EQ/reverb setup lambdas, the head poles and the noise floor, and the
+   parameter snapshot itself - still the same move, one group at a time.
 
    **F's map, measured off the function rather than guessed** - so the next pass starts
    from the numbers instead of from reading 3,307 lines. The map was taken before either
@@ -321,6 +328,12 @@ Each step is independently revertable and ends with the same checks green.
    `TapeBlockState`'s 68 fields instead of into locals. Part 4 - the block loop and the
    measurement/telemetry tail - is unchanged.
 
+   **Re-measured again after the four further stages**, which is the state this document is
+   in now. `processTapeEngine()` was 1,547 lines when that pass began and is 1,210 now (its
+   first line is 830), and `Source/ProcessorSignalPath.cpp` went from 4,021 to 3,675. What
+   left, approximately: the tape voicing (the TONE crossfade and both switches, ~250
+   lines), the couplings (~75), the glue operating points (~60) and the delay time (~35).
+
 After every step: `bash tests/dsp/run.sh`, `bash tests/layout/run.sh`,
 `bash tests/state/run.sh`, `python3 tests/presets/check_presets.py`, and the three
 harnesses once with `J37_SANITIZE=address,undefined`.
@@ -329,7 +342,7 @@ harnesses once with `J37_SANITIZE=address,undefined`.
 
 ## 7. Progress
 
-Sixteen headers are out, and what matters is the recipe rather than the pieces,
+Twenty headers are out, and what matters is the recipe rather than the pieces,
 because the recipe is what the rest of them follow:
 
 - `Source/DSP/J37Math.h` - the scalar math bridge every stage calls, and the file that
@@ -430,6 +443,16 @@ because the recipe is what the rest of them follow:
   the check is now the script's own module includes. No harness renders this stage, so
   the check is its only automated look, and the glob is what made the requirement show
   up as a compile error rather than as a surprise in a platform build.
+- `Source/DSP/TapeVoicing.h`, `Source/DSP/TapeCouplings.h`,
+  `Source/DSP/GlueOperatingPoints.h` and `Source/DSP/DelayTime.h` - the four stages of part
+  2 that have left so far, and the first moves on this list that no extractor cuts at all:
+  they are called by `processTapeEngine()`, which no harness compiles, so the DSP harness
+  reaches them by calling the shipping header directly (sections 11-14 of
+  `tests/dsp/subfund_test.cpp`) and only `check_editor_juce.sh` compiles the .cpp that
+  calls them. Two carry a number that has to agree with a table this directory cannot
+  include - `TapeVoicing.h`'s OFF index - and the agreement is a `static_assert` at the
+  call site, which fires at compile time the way the switch's old `jassertfalse` never
+  could. See the "what is left of F" note below for the list of groups still inside.
 
 `PluginProcessor.h` went from 7,605 lines to 6,932 in the first pass (`RateBridge`,
 194 lines, closed it), to 5,951 with `SaturationCore`, to 4,835 with `VinylStage` and
@@ -888,15 +911,30 @@ split is undone. And the block that check reads is found by COUNTING braces: its
 to be the gate's own indentation, which was eight spaces inside the lambda and is four
 inside a function, so the old `\n    }\n` would have cut the block short.
 
-**What is left of F is part 2, and it is a move now rather than a rewrite.** The ~1,570
-lines of derivations ("read once per block": tape geometry, tempo, delay time, mix and
-voicing, transient/neural, preamp/condition/reverb/vinyl, both equalisers' coefficients,
-MODERN mode, the guard, the transfer curves, the couplings and the glue's operating points)
-are still inside `processTapeEngine()`, still in the order the single body had them - but
-they are a function of the parameter snapshot and the rate, they write into
-`TapeBlockState`, and each group of them can leave the function the way the two stages above
-did, one at a time, with the DSP harness checking what it produces. That, and nothing else
-in this document, is the remaining work.
+**What is left of F is the rest of part 2, and it is a move now rather than a rewrite.**
+Four more groups have left since the paragraph above was written. The tape formula and the
+instrument selector's voicing (the TONE crossfade, the TAPE TYPE switch, the INSTRUMENT
+switch and the clamps) is `Source/DSP/TapeVoicing.h`, a pure function of the TONE macro, the
+formula and the instrument choice, with its OFF index pinned to the tape table's by a
+`static_assert` at the call site - a new stock cannot be added without the header being
+changed, which is a stronger guard than the `jassertfalse` the switch used to carry. The
+device couplings are `Source/DSP/TapeCouplings.h`. The two glue stages' thresholds, knees,
+ratios, limits, attack/release couplings and detector coefficients are
+`Source/DSP/GlueOperatingPoints.h`. The delay head's note table and tempo conversion are
+`Source/DSP/DelayTime.h`. Each is measured, not just compiled: sections 11-14 of
+`tests/dsp/subfund_test.cpp` call the shipping headers and assert the relationships their own
+comments state, and `tests/dsp/check_headers_juce.sh` now USES all four (it compiles the
+whole directory either way, but a header no probe names is only parsed).
+
+What remains inside `processTapeEngine()` is still in the order the single body had them -
+the smoother-feeding runs (mix and voicing, transient/neural, preamp/condition/reverb/vinyl),
+the vinyl and EQ setup lambdas, the tape-type change detection, the head poles and the hiss
+floor, the DC blocker and the output staging, the parameter snapshot itself, and the block
+loop and its telemetry tail. Each is still a function of the snapshot and the rate, still
+writes into `TapeBlockState`, and can leave the way the six stages before it did, one at a
+time, with the DSP harness checking what it produces (or, for a group that is genuinely
+parameter plumbing rather than a transform, with the editor check compiling it). That, and
+nothing else in this document, is the remaining work.
 
 The moves this section adds were made the same way as the three before them, by scripts that
 asserted every anchor matched exactly once - and one of those refusals carried a rule rather

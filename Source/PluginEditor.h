@@ -525,6 +525,16 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void createDecorativePhysics();
     void applyTheme();
 
+    /** Writes the panel's remembered appearance - the theme choice and the USER
+        palette - to the machine-wide preferences file (Source/GUI/EditorPreferences.h).
+
+        Called when the theme key is pressed, so a choice survives even without a
+        teardown, and again from the destructor, which is the editor's last chance to
+        catch a USER palette that was edited but never re-selected. Not in applyTheme():
+        that runs on every colour drag, and a drag would then write the file per
+        mouse-move. */
+    void rememberPanelAppearance();
+
     /** Opens the USER THEME window, building it on first use (Source/GUI/UserThemeWindow.h).
 
         Not one of the constructor's phases: nothing in the panel is built from it, and

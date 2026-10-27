@@ -17,8 +17,8 @@
 //
 //  WHERE YOU START. Fifteen colours and no suggestion is a blank sheet, and most
 //  people pick a palette broadly before they pick it precisely. The window
-//  therefore opens on a band of STARTING POINTS - the four front-panel themes and
-//  four rooms of their own (see userThemePresets in PanelPaint.h) - and a press on
+//  therefore opens on a band of STARTING POINTS - the five front-panel themes and
+//  seven rooms of their own (see userThemePresets in PanelPaint.h) - and a press on
 //  one loads that whole palette through the same callback an edit uses. It is a
 //  starting point, not a mode: the rows below still edit every colour, and RESET
 //  still returns to the seed.
@@ -81,6 +81,36 @@ inline constexpr PaletteField themeColourFields[] = {
 inline constexpr int themeColourFieldCount =
     static_cast<int>(sizeof(themeColourFields) / sizeof(themeColourFields[0]));
 
+/** The palette written as ONE preference string, a colour per field in the table's
+    own order. juce::Colour::toString() writes eight hex digits (AARRGGBB) and
+    juce::Colour::fromString() reads them back, so a remembered palette is exact and
+    still readable in the settings file. The table is the one place the fields are
+    named, so a colour added to UiPalette is stored and restored without a second
+    list to keep in step - which is why the string is built by walking it rather than
+    by naming fifteen members here. */
+inline juce::String serializeUserPalette(const UiPalette &palette) {
+    juce::StringArray parts;
+    for (const auto &field : themeColourFields)
+        parts.add((palette.*(field.member)).toString());
+
+    return parts.joinIntoString(",");
+}
+
+/** The inverse of serializeUserPalette(). A string carrying fewer colours than the
+    palette has fields - one written by an older build, before a field was added -
+    leaves the missing ones at `fallback` rather than at transparent black, so an old
+    settings file still opens on a whole palette. */
+inline UiPalette deserializeUserPalette(const juce::String &text, const UiPalette &fallback) {
+    auto palette = fallback;
+    const auto parts = juce::StringArray::fromTokens(text, ",", "");
+
+    for (int i = 0; i < themeColourFieldCount && i < parts.size(); ++i)
+        if (parts[i].isNotEmpty())
+            palette.*(themeColourFields[i].member) = juce::Colour::fromString(parts[i]);
+
+    return palette;
+}
+
 /** The window's fixed geometry, in one place: the pane paints against these and the
     window sizes itself from them, so a row height change moves both. */
 inline constexpr int userThemeHeaderHeight = 46;
@@ -88,11 +118,12 @@ inline constexpr int userThemeRowHeight = 24;
 inline constexpr int userThemeFooterHeight = 42;
 inline constexpr int userThemeWidth = 360;
 
-// The preset band: two rows of four keys between the header and the first
+// The preset band: three rows of four keys between the header and the first
 // colour row. Four columns because the window is 360 px wide and a preset's
-// name plus its three-colour chip needs about eighty of them; two rows because
-// eight starting points is the list, and eight keys in one row would name
-// nothing.
+// name plus its three-colour chip needs about eighty of them; three rows because
+// twelve starting points is the list, and twelve keys in one row would name
+// nothing. The row count is derived from the table below, so adding a preset
+// lengthens the window rather than overflowing the band.
 inline constexpr int userThemePresetColumns = 4;
 inline constexpr int userThemePresetRowHeight = 20;
 inline constexpr int userThemePresetGap = 4;

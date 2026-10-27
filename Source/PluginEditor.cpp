@@ -717,6 +717,16 @@ void FirstAudioProcessorEditor::loadNoisePrintFromFile()
 FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p)
 {
+    // The panel the desk was left on, read BEFORE the build phases and before the
+    // applyTheme() at the end of them, so the first frame is already on it. A host
+    // destroys and re-creates an editor every time its window is closed, which is why
+    // the themeChoice member's own default (IVORY) was what a USER panel came back on.
+    // The choice and the USER palette are machine-wide preferences, the same file the
+    // renderer uses (Source/GUI/EditorPreferences.h) - they must outlive the editor and
+    // must not travel in a session.
+    themeChoice = j37panel::rememberedThemeChoice();
+    j37panel::userPalette = j37panel::rememberedUserPalette();
+
     // One call per phase, in the order the panel has always been built in. The
     // window and its size come first because setSize() runs resized(), which is why
     // the tab build below can rely on the editor already having a size; the
@@ -798,6 +808,12 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 
 FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
 {
+    // The editor is the last thing to go when a host closes a plugin window, so this
+    // is the last chance to remember a USER palette edited but never re-selected. The
+    // theme choice itself is written when the key is pressed; this catches the colours.
+    // See rememberPanelAppearance() in Source/GUI/EditorTheme.cpp.
+    rememberPanelAppearance();
+
     stopTimer();
 
     // The native scene adapter holds an OpenGLContext attached to tapeScene;

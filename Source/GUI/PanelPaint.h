@@ -1,5 +1,5 @@
 // =============================================================================
-//  The panel's paint kit: four palettes, the drawing helpers that shape the
+//  The panel's paint kit: five palettes, the drawing helpers that shape the
 //  vintage furniture, and the two formatters the meters read.
 //
 //  Moved out of PluginEditor.cpp whole, prose and all, by matching its exact text
@@ -61,14 +61,19 @@ inline constexpr int principleCount = 7;
 namespace j37panel {
 /** The front-panel choices, moved here from J37LookAndFeel.
 
-    `user` is the fifth and it is a different kind of entry from the other four: they
+    `user` is the sixth and it is a different kind of entry from the other five: they
     select a palette that is a constant in this file, and it selects `userPalette`
     below, which the USER THEME window edits while the panel is open. It sits in the
     same enum, in the same cycle and behind the same paletteForTheme() lookup on
     purpose - a user palette that needed a second code path through the theme would
-    be a fourth theme wearing a fifth name.
+    be a fifth theme wearing a sixth name.
+
+    `whiteMonster` is the light panel that balances the set, and it sits BEFORE `user`
+    because `user` is the last stop in the cycle by design: the four stock themes are
+    the machine's own paints and USER is the one the user owns, so the cycle has to
+    finish on the palette they edit rather than on a stock one after it.
 */
-enum class ThemeChoice { ivory = 0, charcoal = 1, metal = 2, darkMetal = 3, user = 4 };
+enum class ThemeChoice { ivory = 0, charcoal = 1, metal = 2, darkMetal = 3, whiteMonster = 4, user = 5 };
 
 // Symmetric decibel range shared by the input and output trims, matching the
 // processor's parameter layout exactly.
@@ -193,7 +198,45 @@ inline const UiPalette darkMetalPalette{
 };
 
 // ------------------------------------------------------------------
-//  Four more starting points for the USER palette.
+//  The WHITE MONSTER theme: the light panel that balances the set.
+//
+//  A stock theme, not a starting point - it IS in the THEME key's cycle and in
+//  the front-panel group of the USER window's starting points. It exists because
+//  the four themes before it are three darks and one light, and a light theme is
+//  the one thing a person at a desk in a bright room reaches for; IVORY is warm
+//  cream and vintage, so what was missing was a COOL, bright modern panel rather
+//  than a second warm one.
+//
+//  Built the way its name reads: a near-white brushed chassis with machined grey
+//  edges, and ONE saturated voice - an acid green indicator - the way the METAL
+//  panel has its signal green. Every other colour is desaturated so that green is
+//  the only thing that reads as a pigment, and the ink is near-black rather than
+//  grey, because a light panel is judged on whether its lettering is READABLE.
+//
+//  It answers "light" to the dark-or-light question (its panel colour is 240 on
+//  the perceived-brightness scale), so it draws with the ivory panel's texture
+//  doses and meter ink - see the derivation in EditorTheme.cpp.
+// ------------------------------------------------------------------
+inline const UiPalette whiteMonsterPalette{
+    juce::Colour::fromRGB(205, 209, 214), // background - the desk under the panel
+    juce::Colour::fromRGB(238, 240, 243), // panel - white chassis
+    juce::Colour::fromRGB(252, 253, 255), // raised - the bright white plate
+    juce::Colour::fromRGB(128, 136, 145), // border - machined grey edge
+    juce::Colour::fromRGB(40, 178, 72),   // accent - the one saturated voice, acid green
+    juce::Colour::fromRGB(28, 32, 37),    // text - near-black lettering
+    juce::Colour::fromRGB(100, 108, 116), // secondary
+    juce::Colour::fromRGB(224, 228, 233), // knobFace
+    juce::Colour::fromRGB(253, 254, 255), // knobHighlight - the white sheen
+    juce::Colour::fromRGB(148, 156, 165), // knobEdge - machined ring
+    juce::Colour::fromRGB(246, 248, 251), // readout - the pale window
+    juce::Colour::fromRGB(252, 253, 255), // gaugeFace
+    juce::Colour::fromRGB(38, 42, 47),    // gaugeInk
+    juce::Colour::fromRGB(198, 44, 38),   // needle - a red the pale face cannot swallow
+    juce::Colour::fromRGB(40, 158, 74)    // status - the green family, dimmer
+};
+
+// ------------------------------------------------------------------
+//  Seven more starting points for the USER palette.
 //
 //  These are not front-panel themes and they are not in the THEME key's cycle:
 //  they exist so that the colour window opens on a choice rather than on a
@@ -202,11 +245,14 @@ inline const UiPalette darkMetalPalette{
 //  actually pick a palette - broadly first, then by detail.
 //
 //  Each is a complete fifteen-colour palette built around one idea, and each
-//  is a genuinely different room rather than the same grey at four
+//  is a genuinely different room rather than the same grey at seven
 //  brightnesses: OXBLOOD is a deep oxblood console with bone lettering,
 //  BRASS is a warm brown-and-gold machine, TEAL is a cold dark instrument
 //  with a mint lamp, SEPIA is paper and ink for people who want the panel to
-//  look like a manual page.
+//  look like a manual page, COBALT is a deep-blue console with an ice lamp,
+//  PLUM is a purple machine with a magenta voice, and FOREST is a dark green
+//  panel with a lime indicator. Twelve in all, so the band is three clean rows
+//  of four.
 // ------------------------------------------------------------------
 inline const UiPalette oxbloodPalette{
     juce::Colour::fromRGB(26, 14, 16),    // background - oxblood black
@@ -280,6 +326,60 @@ inline const UiPalette sepiaPalette{
     juce::Colour::fromRGB(74, 116, 78)    // status
 };
 
+inline const UiPalette cobaltPalette{
+    juce::Colour::fromRGB(8, 16, 34),     // background - deep navy
+    juce::Colour::fromRGB(18, 34, 62),    // panel - blue console
+    juce::Colour::fromRGB(30, 52, 88),    // raised
+    juce::Colour::fromRGB(66, 98, 146),   // border
+    juce::Colour::fromRGB(106, 178, 255), // accent - ice blue
+    juce::Colour::fromRGB(226, 236, 250), // text
+    juce::Colour::fromRGB(150, 172, 204), // secondary
+    juce::Colour::fromRGB(26, 46, 78),    // knobFace
+    juce::Colour::fromRGB(62, 96, 146),   // knobHighlight
+    juce::Colour::fromRGB(156, 186, 224), // knobEdge
+    juce::Colour::fromRGB(5, 10, 22),     // readout
+    juce::Colour::fromRGB(206, 222, 244), // gaugeFace
+    juce::Colour::fromRGB(16, 30, 54),    // gaugeInk
+    juce::Colour::fromRGB(255, 138, 96),  // needle - warm, to read against the blue
+    juce::Colour::fromRGB(120, 220, 170)  // status
+};
+
+inline const UiPalette plumPalette{
+    juce::Colour::fromRGB(22, 12, 26),    // background - deep aubergine
+    juce::Colour::fromRGB(42, 24, 50),    // panel - purple console
+    juce::Colour::fromRGB(64, 38, 74),    // raised
+    juce::Colour::fromRGB(108, 70, 120),  // border
+    juce::Colour::fromRGB(226, 120, 255), // accent - magenta
+    juce::Colour::fromRGB(244, 232, 250), // text
+    juce::Colour::fromRGB(190, 164, 206), // secondary
+    juce::Colour::fromRGB(54, 32, 64),    // knobFace
+    juce::Colour::fromRGB(96, 62, 110),   // knobHighlight
+    juce::Colour::fromRGB(200, 168, 214), // knobEdge
+    juce::Colour::fromRGB(12, 6, 15),     // readout
+    juce::Colour::fromRGB(226, 212, 234), // gaugeFace
+    juce::Colour::fromRGB(38, 22, 46),    // gaugeInk
+    juce::Colour::fromRGB(255, 150, 110), // needle
+    juce::Colour::fromRGB(150, 220, 180)  // status
+};
+
+inline const UiPalette forestPalette{
+    juce::Colour::fromRGB(12, 22, 16),    // background - deep green
+    juce::Colour::fromRGB(24, 44, 32),    // panel - forest console
+    juce::Colour::fromRGB(38, 66, 48),    // raised
+    juce::Colour::fromRGB(78, 110, 84),   // border
+    juce::Colour::fromRGB(150, 224, 96),  // accent - lime
+    juce::Colour::fromRGB(232, 244, 232), // text
+    juce::Colour::fromRGB(164, 192, 166), // secondary
+    juce::Colour::fromRGB(32, 56, 40),    // knobFace
+    juce::Colour::fromRGB(66, 102, 74),   // knobHighlight
+    juce::Colour::fromRGB(170, 204, 172), // knobEdge
+    juce::Colour::fromRGB(6, 12, 9),      // readout
+    juce::Colour::fromRGB(214, 234, 214), // gaugeFace
+    juce::Colour::fromRGB(22, 40, 28),    // gaugeInk
+    juce::Colour::fromRGB(236, 110, 84),  // needle
+    juce::Colour::fromRGB(150, 224, 96)   // status
+};
+
 /** One named starting point for the USER palette. */
 struct UiPalettePreset
 {
@@ -287,18 +387,22 @@ struct UiPalettePreset
     const UiPalette *palette;
 };
 
-// The order is the order the keys are drawn in: the four front-panel themes
+// The order is the order the keys are drawn in: the five front-panel themes
 // first, because a user who likes the panel they are on wants its palette, then
-// the four rooms of their own.
+// the seven rooms of their own. Twelve keys, so the band is three rows of four.
 inline constexpr UiPalettePreset userThemePresets[] = {
-    { "DARK METAL", &darkMetalPalette },
-    { "METAL",      &metalPalette },
-    { "CHARCOAL",   &charcoalPalette },
-    { "IVORY",      &ivoryPalette },
-    { "OXBLOOD",    &oxbloodPalette },
-    { "BRASS",      &brassPalette },
-    { "TEAL",       &tealPalette },
-    { "SEPIA",      &sepiaPalette },
+    { "DARK METAL",   &darkMetalPalette },
+    { "METAL",        &metalPalette },
+    { "CHARCOAL",     &charcoalPalette },
+    { "IVORY",        &ivoryPalette },
+    { "WHITE MONSTER", &whiteMonsterPalette },
+    { "OXBLOOD",      &oxbloodPalette },
+    { "BRASS",        &brassPalette },
+    { "TEAL",         &tealPalette },
+    { "SEPIA",        &sepiaPalette },
+    { "COBALT",       &cobaltPalette },
+    { "PLUM",         &plumPalette },
+    { "FOREST",       &forestPalette },
 };
 
 inline constexpr int userThemePresetCount =
@@ -318,10 +422,14 @@ inline constexpr int userThemePresetCount =
 //  audio thread reads either - the panel is painted on the message thread, and
 //  the editor's own copy is what the window edits.
 //
-//  It is not saved to the session, a preset or a state file. A front-panel colour
-//  is a property of the person at the desk, not of the take, so it lives as long
-//  as the editor that owns it - the same lifetime the theme button's choice has
-//  always had.
+//  It is not saved to the session, a preset or a state file: a front-panel colour
+//  is a property of the person at the desk, not of the take, so a session must not
+//  carry it to another machine and a preset must not be able to change it. It IS
+//  remembered, though - for the person, in the machine-wide preferences file the
+//  renderer and the folders live in (Source/GUI/EditorPreferences.h) - because a
+//  host destroys and re-creates an editor whenever its window closes, and a desk
+//  left on USER has to come back on USER and on the colours it was left on rather
+//  than on the seed. The theme button's own choice is remembered the same way.
 // ------------------------------------------------------------------
 inline const UiPalette userThemeSeed = darkMetalPalette;
 inline UiPalette userPalette = userThemeSeed;
@@ -330,7 +438,7 @@ inline UiPalette userPalette = userThemeSeed;
 // in the anonymous namespace beside the palettes so both lookups share it.
 inline j37panel::ThemeChoice liveThemeChoice = j37panel::ThemeChoice::ivory;
 
-//  The four-theme lookup. `paletteFor(bool)` below is kept for existing
+//  The five-theme lookup. `paletteFor(bool)` below is kept for existing
 //  paint calls; this is the one place each theme selects its palette.
 // The parameter is j37panel::ThemeChoice itself: a second, local enum
 // with the same enumerators compiled on its own and then could not accept
@@ -346,6 +454,8 @@ inline const UiPalette &paletteForTheme(j37panel::ThemeChoice theme) {
     switch (theme) {
     case j37panel::ThemeChoice::user:
         return userPalette;
+    case j37panel::ThemeChoice::whiteMonster:
+        return whiteMonsterPalette;
     case j37panel::ThemeChoice::darkMetal:
         return darkMetalPalette;
     case j37panel::ThemeChoice::metal:

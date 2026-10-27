@@ -1217,6 +1217,214 @@ void testTapeModulation()
 }
 
 // -----------------------------------------------------------------------------
+// 11. The tape formula and the instrument selector's voicing
+// -----------------------------------------------------------------------------
+
+void testTapeVoicing()
+{
+    std::printf ("\n11. The tape formula and instrument selector's voicing\n");
+
+    // A pure function of the TONE macro, the formula and the instrument choice, so
+    // the harness calls the SHIPPING stage (Source/DSP/TapeVoicing.h). Every sentence
+    // asserted below is one of the comments beside that code.
+    constexpr float kToneCentre = 0.5f;
+
+    const auto j37 = j37voice::makeTapeVoicing (kToneCentre, 0, 0);
+    check (j37.tapeCurve > 1.18f && j37.tapeCurve < 1.44f,
+           "J37 at the TONE centre bends between the slow and fast stocks, not at either end");
+    check (j37.tapeAsymmetry > 0.10f && j37.tapeAsymmetry < 0.16f
+           && j37.tapeHiss > 0.06f && j37.tapeHiss < 0.10f
+           && j37.headDampingHz > 12000.0f && j37.headDampingHz < 20000.0f
+           && j37.hysteresis > 0.30f && j37.hysteresis < 0.44f,
+           "every figure is the TONE crossfade's own blend of the slow and fast values");
+    check (std::fabs (j37.instrumentTransportScale - 1.0f) < 1.0e-6f,
+           "MASTER BUS leaves the transport exactly as calibrated");
+
+    // The TONE macro moves the machine state: 0 % is the classic slow stock, 100 %
+    // the hot fast one.
+    const auto slowTone = j37voice::makeTapeVoicing (0.0f, 0, 0);
+    const auto fastTone = j37voice::makeTapeVoicing (1.0f, 0, 0);
+    check (slowTone.tapeCurve < fastTone.tapeCurve
+           && slowTone.headDampingHz < fastTone.headDampingHz
+           && slowTone.hysteresis < fastTone.hysteresis
+           && slowTone.tapeAsymmetry > fastTone.tapeAsymmetry,
+           "TONE 0 is the soft slow stock and TONE 100 the hard fast one: curve and damping up, asymmetry down");
+
+    // TAPE TYPE = OFF removes the medium: no hiss, no head damping, no asymmetry.
+    const auto off = j37voice::makeTapeVoicing (kToneCentre, j37voice::tapeModelOffIndex, 0);
+    check (off.tapeHiss == 0.0f && off.tapeAsymmetry == 0.0f
+           && std::fabs (off.headDampingHz - 26000.0f) < 1.0e-4f
+           && std::fabs (off.hysteresis - 0.10f) < 1.0e-6f,
+           "OFF removes the medium: no oxide floor, no asymmetry, an open head and lean memory");
+
+    // The list's own two ends: the hottest vintage stock bends harder than the
+    // reference J37, and the clean mastering stock hisses less.
+    const auto hot = j37voice::makeTapeVoicing (kToneCentre, 9, 0);   // 888
+    const auto clean = j37voice::makeTapeVoicing (kToneCentre, 3, 0); // Chrome
+    check (hot.tapeCurve > j37.tapeCurve && hot.hysteresis > j37.hysteresis,
+           "a hot stock (888) bends harder and keeps thicker magnetic memory than J37");
+    check (clean.tapeHiss < j37.tapeHiss,
+           "a clean stock (Chrome) hisses less than J37");
+
+    // The INSTRUMENT selector's scale on the transport, and its own bend.
+    const auto bass = j37voice::makeTapeVoicing (kToneCentre, 0, 2);
+    const auto guitar = j37voice::makeTapeVoicing (kToneCentre, 0, 3);
+    check (bass.instrumentTransportScale < 1.0f && guitar.instrumentTransportScale > 1.0f,
+           "BASS steadies the transport and GUITAR loosens it, either side of the calibrated 1.0");
+    check (bass.tapeCurve > j37.tapeCurve && guitar.tapeCurve < j37.tapeCurve,
+           "BASS bends the hardest and GUITAR the cleanest, on top of the formula's own bias");
+
+    // The clamps bound every combination, which is what keeps the two selectors from
+    // reaching a state the machine does not have.
+    bool everyCombinationInRange = true;
+    for (int type = 0; type <= j37voice::tapeModelOffIndex; ++type)
+        for (int instrument = 0; instrument <= 5; ++instrument)
+            for (float tone : { 0.0f, 0.5f, 1.0f })
+            {
+                const auto v = j37voice::makeTapeVoicing (tone, type, instrument);
+                everyCombinationInRange = everyCombinationInRange
+                    && v.tapeCurve >= 1.0f && v.tapeCurve <= 1.8f
+                    && v.tapeAsymmetry >= 0.0f && v.tapeAsymmetry <= 0.4f
+                    && v.tapeHiss >= 0.0f && v.tapeHiss <= 0.6f
+                    && v.headDampingHz >= 4000.0f && v.headDampingHz <= 26000.0f
+                    && v.hysteresis >= 0.1f && v.hysteresis <= 0.7f;
+            }
+
+    check (everyCombinationInRange,
+           "every formula, instrument and TONE combination lands inside the machine's designed range");
+}
+
+// -----------------------------------------------------------------------------
+// 12. The glue compressors' operating points
+// -----------------------------------------------------------------------------
+
+void testGlueOperatingPoints()
+{
+    std::printf ("\n12. The glue compressors' operating points\n");
+
+    constexpr float kRate = static_cast<float> (kSampleRate);
+
+    const auto neutral = j37glueop::makeGlueOperatingPoints (0.0f, 0.0f, 0, 1.0f, kRate);
+    check (std::fabs (neutral.inputThresholdDb - (-10.0f)) < 1.0e-4f
+           && std::fabs (neutral.outputThresholdDb - (-10.5f)) < 1.0e-4f,
+           "a 0 dB trim puts each stage's threshold at the middle of its travel");
+
+    const auto hotInput = j37glueop::makeGlueOperatingPoints (24.0f, 0.0f, 0, 1.0f, kRate);
+    const auto softInput = j37glueop::makeGlueOperatingPoints (-24.0f, 0.0f, 0, 1.0f, kRate);
+    check (hotInput.inputThresholdDb > neutral.inputThresholdDb
+           && neutral.inputThresholdDb > softInput.inputThresholdDb
+           && hotInput.inputCompressorRatio > softInput.inputCompressorRatio,
+           "turning INPUT up raises the input stage's threshold and ratio, and turning it down lowers both");
+    check (softInput.inputThresholdDb == -17.0f && hotInput.inputThresholdDb == -3.0f,
+           "the input threshold's end stops are the -17 .. -3 dB its own comment names");
+
+    check (hotInput.inputMakeupFraction > neutral.inputMakeupFraction,
+           "a boosted trim pays more of its reduction back, so makeup grows with the control that feeds it");
+
+    // A hotter formula tightens the glue: the attack TIME shortens (the coefficient
+    // is a base in seconds, so a smaller number is the faster stage).
+    const auto j37Glue = j37glueop::makeGlueOperatingPoints (0.0f, 0.0f, 0, 1.0f, kRate);
+    const auto hotStockGlue = j37glueop::makeGlueOperatingPoints (0.0f, 0.0f, 7, 1.0f, kRate);
+    check (hotStockGlue.inputCoefficients.attack < j37Glue.inputCoefficients.attack,
+           "a hotter stock (RTM SM911) has a shorter attack time than J37, which is what 'tighter glue' means");
+
+    // A faster transport shortens it too - the SPEED scale rides one meaning across
+    // the whole machine.
+    const auto slowDeck = j37glueop::makeGlueOperatingPoints (0.0f, 0.0f, 0, 0.76f, kRate);
+    const auto fastDeck = j37glueop::makeGlueOperatingPoints (0.0f, 0.0f, 0, 1.34f, kRate);
+    check (fastDeck.inputCoefficients.attack < slowDeck.inputCoefficients.attack,
+           "a faster SPEED shortens the glue's attack as well: the tighter constant rides the scale");
+
+    // The follower is a function of the rate, so a lower rate moves it - the same
+    // unit-error guard the block-rate stage carries. It is exp(-1/(rate*tau)), so at
+    // half the rate it is exactly the full-rate value squared.
+    const auto halfRateGlue = j37glueop::makeGlueOperatingPoints (0.0f, 0.0f, 0, 1.0f, kRate * 0.5f);
+    check (halfRateGlue.inputCoefficients.slow < j37Glue.inputCoefficients.slow
+           && std::fabs (halfRateGlue.inputCoefficients.slow
+                         - j37Glue.inputCoefficients.slow * j37Glue.inputCoefficients.slow) < 1.0e-5f,
+           "the detector's slow follower is a function of the rate: at half the rate it is the full-rate value squared");
+}
+
+// -----------------------------------------------------------------------------
+// 13. The delay head's time, free-running or tempo-locked
+// -----------------------------------------------------------------------------
+
+void testDelayTime()
+{
+    std::printf ("\n13. The delay head's time, free-running or tempo-locked\n");
+
+    check (std::fabs (j37delay::effectiveDelayMs (137.0f, false, 2, 120.0) - 137.0f) < 1.0e-4f,
+           "with sync off the time IS the DELAY control, untouched");
+
+    check (std::fabs (j37delay::effectiveDelayMs (0.0f, true, 2, 120.0) - 500.0f) < 1.0e-3f,
+           "a quarter note at 120 BPM syncs to exactly 500 ms");
+    check (std::fabs (j37delay::effectiveDelayMs (0.0f, true, 7, 120.0) - 750.0f) < 1.0e-3f,
+           "a dotted quarter is half again as long: 750 ms");
+    check (std::fabs (j37delay::effectiveDelayMs (0.0f, true, 5, 120.0) - (1000.0f / 3.0f)) < 1.0e-3f,
+           "a quarter triplet is two thirds as long: a third of a second");
+    check (std::fabs (j37delay::effectiveDelayMs (0.0f, true, 0, 120.0) - 2000.0f) < 1.0e-3f,
+           "a whole note is four beats: 2000 ms at 120 BPM");
+
+    check (std::fabs (j37delay::effectiveDelayMs (0.0f, true, 2, 240.0) - 250.0f) < 1.0e-3f,
+           "the time follows the host tempo: double the BPM is half the delay");
+
+    // The choice is clamped rather than indexing off the table.
+    check (std::fabs (j37delay::effectiveDelayMs (0.0f, true, -5, 120.0)
+                      - j37delay::effectiveDelayMs (0.0f, true, 0, 120.0)) < 1.0e-4f
+           && std::fabs (j37delay::effectiveDelayMs (0.0f, true, 99, 120.0)
+                         - j37delay::effectiveDelayMs (0.0f, true, 7, 120.0)) < 1.0e-4f,
+           "an out-of-range note choice clamps to the table's ends instead of reading past it");
+
+    // A host reporting nonsense cannot stop the sync dead: the tempo is floored at 1.
+    check (j37delay::effectiveDelayMs (0.0f, true, 2, 0.0)
+           == j37delay::effectiveDelayMs (0.0f, true, 2, 1.0),
+           "a zero tempo is floored, so a bad host report cannot divide the sync by nothing");
+}
+
+// -----------------------------------------------------------------------------
+// 14. The device couplings
+// -----------------------------------------------------------------------------
+
+void testTapeCouplings()
+{
+    std::printf ("\n14. The device couplings\n");
+
+    // A pure function of the signals it couples, so the harness calls the SHIPPING
+    // stage (Source/DSP/TapeCouplings.h). Each sentence is one of its comments.
+    const auto idle = j37coupling::makeTapeCouplings (0.0f, 0.0f, 0.0f, 0.5f, 0.0f, 0.0f);
+    check (idle.wearWowCoupling == 0.0f && idle.driveHissCoupling == 0.0f
+           && idle.loadInducedSpeedError == 0.0f && idle.transportActivityGate == 0.0f,
+           "every control at zero means zero: the couplings can only add, never invent movement");
+
+    // A worn machine wanders even with WOW and FLUTTER closed - the one term the
+    // transport gate is wrong to silence.
+    const auto worn = j37coupling::makeTapeCouplings (0.4f, 0.4f, 0.0f, 0.5f, 0.0f, 0.0f);
+    check (worn.wearWowCoupling > 0.0f,
+           "a worn machine (WEAR + MECHANICS) wanders even with WOW and FLUTTER closed");
+
+    // A hot head is a noisier head, and a hard-driven machine runs looser.
+    const auto hot = j37coupling::makeTapeCouplings (0.0f, 0.0f, 10.0f, 0.5f, 0.0f, 0.0f);
+    check (hot.driveHissCoupling > 0.0f && hot.loadInducedSpeedError > 0.0f
+           && hot.driveHissCoupling == 1.0f,
+           "harder drive lifts the hiss floor and loosens the transport, and the hiss coupling is bounded at 1");
+
+    // TONE can never silence the transport's own movement, only soften it.
+    const auto dark = j37coupling::makeTapeCouplings (0.0f, 0.0f, 0.0f, 0.0f, 0.5f, 0.5f);
+    const auto bright = j37coupling::makeTapeCouplings (0.0f, 0.0f, 0.0f, 1.0f, 0.5f, 0.5f);
+    check (dark.headGapModulationMask >= 0.55f
+           && dark.headGapModulationMask < bright.headGapModulationMask,
+           "a dark head gap softens the modulation but never below the 0.55 floor");
+
+    check (dark.transportActivityGate == 1.0f,
+           "WOW and FLUTTER at their centres open the transport gate fully");
+
+    // The two platter exponents shape a coast: pitch falls before level, so the
+    // pitch curve has to be the shallower one.
+    check (idle.platterPitchExponent < idle.platterGateExponent,
+           "a coast loses pitch before level: the pitch exponent is the shallower of the two");
+}
+
+// -----------------------------------------------------------------------------
 //  Reference: what the old arrangement did, printed but not asserted
 // -----------------------------------------------------------------------------
 
@@ -1280,6 +1488,10 @@ int main()
     testNeuralStageIsTransparentWithoutAModel();
     testBlockRateCoefficients();
     testTapeModulation();
+    testTapeVoicing();
+    testTapeCouplings();
+    testGlueOperatingPoints();
+    testDelayTime();
     showOldArrangement();
     printChainSpectrum();
 

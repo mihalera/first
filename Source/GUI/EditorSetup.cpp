@@ -818,7 +818,8 @@ void FirstAudioProcessorEditor::setUpTopSwitches() {
     addAndMakeVisible(deltaButton);
 
     themeButton.setLookAndFeel(&customLookAndFeel);
-    setTip(themeButton, "Cycle the front panel: IVORY, CHARCOAL, METAL, DARK METAL, then USER. "
+    setTip(themeButton, "Cycle the front panel: IVORY, CHARCOAL, METAL, DARK METAL, "
+                        "WHITE MONSTER, then USER. "
                         "The button names the panel you are on; pressing it moves "
                         "to the next one. USER is the palette you edit yourself, in "
                         "the colour window SETTINGS opens.");
@@ -834,6 +835,9 @@ void FirstAudioProcessorEditor::setUpTopSwitches() {
             themeChoice = j37panel::ThemeChoice::darkMetal;
             break;
         case j37panel::ThemeChoice::darkMetal:
+            themeChoice = j37panel::ThemeChoice::whiteMonster;
+            break;
+        case j37panel::ThemeChoice::whiteMonster:
             themeChoice = j37panel::ThemeChoice::user;
             break;
         case j37panel::ThemeChoice::user:
@@ -842,12 +846,16 @@ void FirstAudioProcessorEditor::setUpTopSwitches() {
             break;
         }
         applyTheme();
+        // The choice is written the moment it is made, so a panel left on USER - or
+        // any other - comes back on that panel the next time the host builds an editor
+        // rather than on the editor's own default of IVORY.
+        rememberPanelAppearance();
     };
 
     // ---------------------------------------------------------------
     //  USER THEME - the colour window's only entry point.
     //
-    //  The header's THEME key above CYCLES the five panels, USER included; this key
+    //  The header's THEME key above CYCLES the six panels, USER included; this key
     //  opens the editor for the one of them that is data. Both routes matter: cycling
     //  onto USER is how a palette chosen in a previous visit is reselected, and this
     //  key is how it is changed.
