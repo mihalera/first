@@ -21,6 +21,11 @@
 // it - the paint kit, the page table and the knob table.
 #include "GUI/PanelPaint.h"
 
+// The machine-wide preferences: rememberPanelAppearance() below writes the theme
+// choice and the USER palette there, which is what makes the panel a host closed
+// and re-created come back on the one it was left on.
+#include "GUI/EditorPreferences.h"
+
 // Only the names this file's own text uses: a header member that is not
 // reachable from here should not look reachable.
 using j37panel::liveThemeChoice;
@@ -365,6 +370,9 @@ void FirstAudioProcessorEditor::applyTheme() {
     case j37panel::ThemeChoice::metal:
         themeButton.setButtonText("METAL");
         break;
+    case j37panel::ThemeChoice::whiteMonster:
+        themeButton.setButtonText("WHITE MONSTER");
+        break;
     case j37panel::ThemeChoice::user:
         // The caption is the theme's NAME, not its state: USER is a palette the user
         // owns, and a caption that changed with every edit ("USER (3 EDITS)") would
@@ -393,6 +401,17 @@ void FirstAudioProcessorEditor::applyTheme() {
     }
 
     repaint();
+}
+
+void FirstAudioProcessorEditor::rememberPanelAppearance() {
+    // Both halves of "which panel the desk is wearing" go out together: the theme the
+    // user chose and the colours USER actually holds. Kept here rather than in
+    // applyTheme() because a palette drag calls that one per mouse-move, and writing
+    // the settings file on every move of a colour slider would be a disk write per
+    // frame. The callers are the theme key (a discrete choice) and the destructor (the
+    // last moment before a host's closed window takes the editor with it).
+    j37panel::rememberThemeChoice(themeChoice);
+    j37panel::rememberUserPalette(j37panel::userPalette);
 }
 
 //==============================================================================
