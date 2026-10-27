@@ -14,6 +14,8 @@
 // The editor's own header: the class, the members and the palette type.
 #include "PluginEditor.h"
 
+#include <cmath>
+
 // The panel vocabulary this file reads through, from the headers that hold
 // it - the paint kit, the page table and the knob table.
 #include "GUI/PanelPaint.h"
@@ -258,13 +260,12 @@ void FirstAudioProcessorEditor::repaintAnimatedSurfaces() {
 
 //==============================================================================
 void FirstAudioProcessorEditor::timerCallback() {
-    audioProcessor.flushPendingTransportHostSync();
-
-    // Hosts can keep an editor alive while its window is hidden. Do not poll
-    // telemetry, advance physics, or issue repaint work in that state; the next
-    // visible timer tick reconstructs all display-only state from the processor.
+    // Hosts can keep an editor alive while its window is hidden. Skip all UI and
+    // host-sync polling until it is visible; the next visible tick catches up.
     if (!isShowing())
         return;
+
+    audioProcessor.flushPendingTransportHostSync();
 
     // Retry context creation while the host is still creating its peer. The
     // budget is bounded so an unavailable driver is not polled forever.
@@ -289,32 +290,19 @@ void FirstAudioProcessorEditor::timerCallback() {
     if (nativeRenderer != nullptr)
         submitNativeSceneFrame();
 
-    // Four meters: the two level meters each show the full four-way loudness reading
-    // (peak dB, RMS, LUFS, VU and their equal-weighted combination), and each glue
-    // compressor stage gets its own reduction meter fed from its own telemetry, so the
-    // panel shows both what the signal level is doing and where the work is being done.
-    //
-    // The whole frame comes from ONE call. With readerwriterqueue compiled in, that
-    // call drains the lock-free queue and hands back the newest COMPLETE frame the
-    // audio thread published, so every number on the panel belongs to the same block
-    // of audio - a new output peak can no longer be drawn beside the previous block's
-    // RMS. Without the library the call assembles the same struct from the atomics,
-    // so this code is identical either way.
+    // One coherent telemetry snapshot drives the meters and readouts.
     const auto telemetry = audioProcessor.getTelemetry();
+    refreshTelemetryReadouts(telemetry);
+    advanceTimerAnimations(telemetry);
+    refreshTimerWorkflow();
+    submitTimerSceneAndRepaint(telemetry);
+}
 
-    // The neural model readout is cheap to refresh and cheap to check: the
-    // status only changes when a model is loaded or cleared, so the label is
-    // only rewritten when its text would actually differ. That keeps a 30 Hz
-    // timer from re-laying out a label sixty times a second for no reason.
+void FirstAudioProcessorEditor::refreshTelemetryReadouts(
+    const FirstAudioProcessor::TelemetryFrame& telemetry)
+{
     refreshNeuralStatus();
-    // The IR readout follows the same rule - and it is the one place a load
-    // that finished on the convolution's background thread still gets drawn,
-    // since the load hands its result to the stage asynchronously.
     refreshIrStatus();
-    // The noise-print readout is the same rule again, and here the polling is
-    // the ONLY way the readout can ever leave LOADING: the decode has no
-    // callback into the panel, it simply publishes the print and clears its own
-    // busy flag when it is done (Source/DSP/NoiseLoader.h).
     refreshNoiseStatus();
 
     inputMeter.setLoudness(telemetry.inputPeakDb, telemetry.inputRmsDb, telemetry.inputLufs,
@@ -358,10 +346,122 @@ void FirstAudioProcessorEditor::timerCallback() {
 
         mixBar.setShares(shares, juce::jlimit(0.0f, 1.0f, shareSum));
     }
+}
 
+void FirstAudioProcessorEditor::refreshTelemetryReadouts (
+    const FirstAudioProcessor::TelemetryFrame& telemetry)
+{
+    refreshNeuralStatus();
+    refreshIrStatus();
+    refreshNoiseStatus();
+
+    inputMeter.setLoudness(telemetry.inputPeakDb, telemetry.inputRmsDb, telemetry.inputLufs,
+                           telemetry.inputVuDb, telemetry.inputCombinedDb, telemetry.inputClipping);
+    outputMeter.setLoudness(telemetry.outputPeakDb, telemetry.outputRmsDb, telemetry.outputLufs,
+                            telemetry.outputVuDb, telemetry.outputCombinedDb,
+                            telemetry.outputClipping);
+
+    compressorMeterIn.setReduction(telemetry.inputGainReductionDb,
+                                   telemetry.inputCompressorActivity);
+    compressorMeterOut.setReduction(telemetry.outputGainReductionDb,
+                                    telemetry.outputCompressorActivity);
+
+    // The MIX page's bar. Read from the seven SOURCE parameters and normalised
+    // exactly the way SaturationCore::setWeights normalises them - including its
+    // all-zero fallback, so a bar that shows pure tape really is pure tape.
+    if (mixBar.isVisible()) {
+        std::array<float, principleCount> shares{};
+        float shareSum = 0.0f;
+
+        for (int p = 0; p < principleCount; ++p) {
+            if (const auto *parameter = audioProcessor.parameters.getParameter(
+                    juce::String(principleParameterIds[static_cast<std::size_t>(p)])))
+                shares[static_cast<std::size_t>(p)] =
+                    juce::jlimit(0.0f, 1.0f, static_cast<float>(parameter->getValue()));
+
+            shareSum += shares[static_cast<std::size_t>(p)];
+        }
+
+        if (shareSum > 1.0e-6f)
+            for (auto &share : shares)
+                share /= shareSum;
+        else
+            shares = {1.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f, 0.0f};
+
+        mixBar.setShares(shares, juce::jlimit(0.0f, 1.0f, shareSum));
+    }
+
+}
+
+void FirstAudioProcessorEditor::advanceTimerAnimations (
+    const FirstAudioProcessor::TelemetryFrame& telemetry)
+{
     const auto reduction = telemetry.inputGainReductionDb + telemetry.outputGainReductionDb;
     const auto activity = telemetry.compressorActivity;
 
+    spectrumBandsDb = telemetry.spectrumBandsDb;
+    const auto evenRatio = telemetry.evenHarmonicRatio;
+    const auto oddRatio = telemetry.oddHarmonicRatio;
+    harmonicsReadout.setText("E " + juce::String(evenRatio * 100.0f, 1) + " %" + "   O " +
+                                 juce::String(oddRatio * 100.0f, 1) + " %",
+                             juce::dontSendNotification);
+
+    const auto harmonicPalette = paletteFor(darkTheme);
+    const auto totalHarmonics = evenRatio + oddRatio;
+    const auto readoutBreath = 1.0f - 0.2f * (0.5f + 0.5f * std::sin(customLookAndFeel.phase()));
+    const auto breathe = [&](juce::Colour c) { return c.withMultipliedBrightness(readoutBreath); };
+    harmonicsReadout.setColour(juce::Label::textColourId,
+                               breathe(totalHarmonics < 0.001f ? harmonicPalette.secondary
+                                       : evenRatio >= oddRatio ? harmonicPalette.status
+                                                               : harmonicPalette.needle));
+
+    const auto hostBpm = audioProcessor.getDeckTempoBpm();
+    const auto deckBpmValid = audioProcessor.getDeckTempoValid() && std::isfinite(hostBpm);
+    const auto deckBpm = deckBpmValid ? hostBpm : 120.0;
+    bpmReadout.setText(deckBpmValid ? juce::String(deckBpm, 1) + " + xlat("BPM")
+                                    : juce::String(juce::roundToInt(deckBpm)) + " + xlat("BPM") +
+                                          " (" + xlat("default") + ")",
+                       juce::dontSendNotification);
+    bpmReadout.setColour(juce::Label::textColourId,
+                         breathe(deckBpmValid ? paletteFor(darkTheme).status
+                                              : paletteFor(darkTheme).secondary));
+
+    const auto trackedHz = telemetry.subfundTrackedHz;
+    const auto confidence = telemetry.subfundConfidence;
+    if (confidence < 0.05f || trackedHz <= 0.0f) {
+        subfundReadout.setText(xlat("idle - no note tracked"), juce::dontSendNotification);
+        subfundReadout.setColour(juce::Label::textColourId, harmonicPalette.secondary);
+    } else {
+        subfundReadout.setText(juce::String(trackedHz, 1) + " Hz   " +
+                                   juce::String(juce::roundToInt(confidence * 100.0f)) + " %",
+                               juce::dontSendNotification);
+        subfundReadout.setColour(
+            juce::Label::textColourId,
+            breathe(confidence > 0.75f ? harmonicPalette.status : harmonicPalette.needle));
+    }
+
+    const auto antiPhaseNow = telemetry.antiPhaseAmount;
+    const auto *antiPhaseGuardSetting =
+        audioProcessor.parameters.getRawParameterValue("anti_phase_guard");
+    const auto antiPhaseGuardOn =
+        antiPhaseGuardSetting == nullptr || antiPhaseGuardSetting->load() >= 0.5f;
+    const auto antiPhaseText =
+        !antiPhaseGuardOn ? xlat("off")
+        : antiPhaseNow < 0.01f ? xlat("clean")
+                               : juce::String(juce::roundToInt(antiPhaseNow * 100.0f)) + " " + xlat("% corrected");
+    if (antiPhaseText != lastShownAntiPhase) {
+        lastShownAntiPhase = antiPhaseText;
+        antiPhaseReadout.setText(antiPhaseText, juce::dontSendNotification);
+        antiPhaseReadout.setColour(juce::Label::textColourId,
+                                   breathe(!antiPhaseGuardOn ? harmonicPalette.secondary
+                                           : antiPhaseNow < 0.01f ? harmonicPalette.status
+                                                                  : harmonicPalette.needle));
+    }
+}
+
+void FirstAudioProcessorEditor::advanceTimerAnimations (
+    const FirstAudioProcessor::TelemetryFrame& telemetry)
+{
     // Report the harmonic balance the tape stage is producing. Even and odd are shown
     // side by side because the ratio between them is the character: even-dominant reads as
     // warm and full, odd-dominant as hard and edgy, and real tape has both.
@@ -404,8 +504,9 @@ void FirstAudioProcessorEditor::timerCallback() {
     // (an offline render, a bare player) leaves the readout at the machine's
     // default and says so, because a number that looks measured but is only a
     // fallback is worse than an honest dash.
-    const auto deckBpm = audioProcessor.getDeckTempoBpm();
-    const auto deckBpmValid = audioProcessor.getDeckTempoValid();
+    const auto hostBpm = audioProcessor.getDeckTempoBpm();
+    const auto deckBpmValid = audioProcessor.getDeckTempoValid() && std::isfinite (hostBpm);
+    const auto deckBpm = deckBpmValid ? hostBpm : 120.0;
     bpmReadout.setText(deckBpmValid ? juce::String(deckBpm, 1) + " " + xlat("BPM")
                                     : juce::String(juce::roundToInt(deckBpm)) + " " + xlat("BPM") +
                                           " (" + xlat("default") + ")",
@@ -651,8 +752,8 @@ void FirstAudioProcessorEditor::timerCallback() {
     // Is a list or a menu on screen? A combo's popup and a popup menu are
     // components of their own, and JUCE tears one down the moment the tree it was
     // built from is rewritten - so the two polls below, which DO rewrite combo
-    // items, must not run while one is open. That was the "the list needs two
-    // clicks" behaviour: the click opened the list, the next tick cleared and
+    // items, must not run while one is open. That was the the list needs two
+    // clicks behaviour: the click opened the list, the next tick cleared and
     // re-added the items underneath it, and the list closed itself before the
     // pointer could land. The checks are asked of the two preset boxes by name
     // and of the component tree in general, because a popup menu (the theme, the

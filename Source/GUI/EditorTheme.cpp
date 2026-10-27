@@ -589,12 +589,11 @@ void FirstAudioProcessorEditor::openUserThemeWindow() {
         // a DocumentWindow is already on the desktop the moment it exists (it is
         // constructed with addToDesktop) - so "was it on the desktop a moment ago" is
         // not a question that can tell a first open from a fifth.
-        userThemeWindow->show();
-
         const auto editor = getScreenBounds();
         userThemeWindow->setTopLeftPosition(
             editor.getX() + juce::jmax(0, (editor.getWidth() - userThemeWindow->getWidth()) / 2),
             editor.getY() + 48);
+        userThemeWindow->show();
 
         return;
     }

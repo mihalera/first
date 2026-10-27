@@ -747,6 +747,8 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void refreshPresetList();
     void refreshUserPresetList();
     void updateWorkflowButtons();
+    void refreshTelemetryReadouts(const FirstAudioProcessor::TelemetryFrame& telemetry);
+    void advanceTimerAnimations(const FirstAudioProcessor::TelemetryFrame& telemetry);
     bool keyPressed(const juce::KeyPress &) override;
 
     /** Opens or closes the parameter sheet, building it on first use. Not one of
