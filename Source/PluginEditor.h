@@ -327,11 +327,27 @@ class J37InlineLookAndFeel final : public juce::LookAndFeel_V4 {
     /** Ink-only value Label paint, matching the deck style's (no fill card). */
     void drawLabel(juce::Graphics &, juce::Label &) override;
 
-    /** The small pill switch used for the tab's on/off controls. */
-    void drawToggleButton(juce::Graphics &,
-                          juce::ToggleButton &,
-                          bool shouldDrawButtonAsHighlighted,
-                          bool shouldDrawButtonAsDown) override;
+    /** The tab's on/off control, drawn on the SAME plate as its lists and keys.
+
+        It used to be a small pill floating in a cell whose neighbours were a
+        30 px recessed list and a 30 px key, so a page with three kinds of control
+        showed three different sizes on one row - and the pill's own 16 px track
+        read as the smallest thing on the page. One plate, one inset, three kinds
+        of content: that is what makes a tab read as one instrument.
+    */
+    void drawToggleButton(juce::Graphics &, juce::ToggleButton &, bool, bool) override;
+
+    /** The tab's keys (LOAD MODEL, PARAMETERS, USER THEME) on the same plate as
+        its lists and switches. Without these two overrides a juce::TextButton
+        inside a tab was drawn by LookAndFeel_V4's default - a flat blue-grey
+        slab, at a different inset and a different corner radius from the field
+        beside it. */
+    void drawButtonBackground(juce::Graphics &,
+                              juce::Button &,
+                              const juce::Colour &backgroundColour,
+                              bool shouldDrawButtonAsHighlighted,
+                              bool shouldDrawButtonAsDown) override;
+    void drawButtonText(juce::Graphics &, juce::TextButton &, bool, bool) override;
 
   private:
     j37panel::ThemeChoice theme = j37panel::ThemeChoice::ivory;
@@ -747,8 +763,6 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void refreshPresetList();
     void refreshUserPresetList();
     void updateWorkflowButtons();
-    void refreshTelemetryReadouts(const FirstAudioProcessor::TelemetryFrame& telemetry);
-    void advanceTimerAnimations(const FirstAudioProcessor::TelemetryFrame& telemetry);
     bool keyPressed(const juce::KeyPress &) override;
 
     /** Opens or closes the parameter sheet, building it on first use. Not one of
@@ -849,8 +863,12 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::ComboBox backendBox;
     j37::render::Backend renderBackendChoice = j37::render::Backend::autoDetect;
 
-    // The UI-sounds switch, on the SETTINGS tab beside GL.
-    juce::ToggleButton uiSoundsButton{"UI SOUNDS"};
+    // The UI-sounds switch, on the SETTINGS tab beside the guard. The switch
+    // carries no text of its own: the SETTINGS sheet is a grid of captioned
+    // cells, so the name lives in `uiSoundsLabel` above it and the plate shows
+    // the state, exactly like the guard beside it.
+    juce::ToggleButton uiSoundsButton;
+    juce::Label uiSoundsLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> uiSoundsAttachment;
 
     // The anti-phase guard's switch, on the SETTINGS tab with the other
@@ -858,7 +876,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // the transport it belongs to; the SWITCH lives here because it is a
     // protection setting rather than a control that shapes the sound, and the
     // readout says so when it is off (see the deck readout in timerCallback).
-    juce::ToggleButton antiPhaseGuardButton{"GUARD"};
+    juce::ToggleButton antiPhaseGuardButton;
     juce::Label antiPhaseGuardLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> antiPhaseGuardAttachment;
 
@@ -868,7 +886,8 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // paints them. It is an interface preference like the other three, so it
     // lives on this page; the sheet itself is a full-editor overlay and closes
     // on Escape, on its own CLOSE key, or on the button again.
-    juce::TextButton parameterSheetButton{"PARAMETERS"};
+    juce::TextButton parameterSheetButton{"OPEN"};
+    juce::Label parameterSheetLabel;
     std::unique_ptr<j37panel::ParameterSheet> parameterSheet;
 
     // -----------------------------------------------------------------------

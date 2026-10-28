@@ -212,6 +212,7 @@
 "OUT EQ" = "OUT EQ";
 "SETTINGS" = "SETTINGS";
 "PARAMETERS" = "ПАРАМЕТРИ";
+"OPEN" = "ВІДКРИТИ";
 "CLOSE" = "ЗАКРИТИ";
 "every control the plugin exposes, grouped as the processor declares it - rest the pointer on a row for what it does" = "кожен параметр, який відкриває плагін, згрупований так, як їх оголошує процесор — затримайте вказівник на рядку, щоб побачити пояснення";
 "MODELS" = "MODELS";

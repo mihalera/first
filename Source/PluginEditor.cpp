@@ -33,6 +33,9 @@
 #include "GUI/PanelTabs.h"
 #include "GUI/PanelPaint.h"
 #include "GUI/PanelText.h"
+// The deck's vertical rhythm: the band solve placeDeck reads instead of a table
+// of fixed offsets, and the one header tests/layout can compile without JUCE.
+#include "GUI/DeckBands.h"
 #include "GUI/PanelTranslations.h"
 #include "GUI/RenderBackend.h"
 // The one machine-wide preferences file: the pickers' folders and the renderer
@@ -407,7 +410,8 @@ void FirstAudioProcessorEditor::applyLanguage (int languageIndex)
     // press), so the honest way to re-language it is to release it: the next
     // press builds a sheet in the language the user just chose. Re-setting 109
     // captions in place would be the same work with a second code path.
-    parameterSheetButton.setButtonText (xlat ("PARAMETERS"));
+    parameterSheetButton.setButtonText (xlat ("OPEN"));
+    parameterSheetLabel.setText (xlat ("PARAMETERS").toUpperCase(), juce::dontSendNotification);
     parameterSheet.reset();
 
     updateTooltips();
@@ -1127,8 +1131,11 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     // (The width itself lives on the class now: see headerColumnWidth.)
     const auto headerRowOneY = header.getY() + 10;
     const auto headerRowTwoY = header.getY() + 36;
-    const auto statusRowY = header.getY() + 62;
-    constexpr int headerStatusHeight = 18;
+    // 60 rather than 62, and 16 rather than 18: the third row has to end at or
+    // above the header's bottom edge once the pill around it is taken into
+    // account (see the note at the label below).
+    const auto statusRowY = header.getY() + 60;
+    constexpr int headerStatusHeight = 16;
     const auto headerGridLeft = headerRight
                               - (headerColumns * headerColumnWidth
                                  + (headerColumns - 1) * headerGap);
@@ -1167,35 +1174,41 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
                              header.getY() + 8, rendererCaptionWidth, 12);
     rendererLabel.setJustificationType (juce::Justification::centredRight);
 
-    // The status readout gets its own full-width band below the switches.
+    // The status readout gets its own full-width band below the switches - and it
+    // ends INSIDE the header's own rectangle. The band used to be drawn on a pill
+    // that was expanded six pixels past the label, which put its bottom edge two
+    // pixels below the header panel at every size: the STEREO / REAL TIME badge
+    // hung off the frame it belongs to. The pill is now the label's own rectangle
+    // plus two pixels, and the hairline under the header is drawn before it (see
+    // paint()), so nothing cuts through it either.
     statusLabel.setBounds (headerGridLeft, statusRowY,
                            headerColumns * headerColumnWidth
                                + (headerColumns - 1) * headerGap - 18,
                            headerStatusHeight);
     statusLabel.setJustificationType (juce::Justification::centredLeft);
-    statusLabel.setFont (statusLabel.getFont().withHeight (9.0f));
+    statusLabel.setFont (statusLabel.getFont().withHeight (8.5f));
     statusLabel.setBorderSize (juce::BorderSize<int> (0, 26, 0, 0));
 }
 
 //==============================================================================
-//  The deck: six bands whose gaps compress but whose heights never do (see the band
-//  table below), the seven lines inside them, and the window the 3D transport is
-//  framed in - which shares reelCorridor with the rows, and is why it is here rather
-//  than in the controls panel's own function.
+//  The deck: seven bands solved from the height it was given (see DeckBands.h), the
+//  rows inside them, and the window the 3D transport is framed in - which shares
+//  reelCorridor with the rows, and is why it is here rather than in the controls
+//  panel's own function.
 //==============================================================================
 void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
 {
     // ------------------------------------------------------------------
     //  The deck.
     //
-    //  Six bands, none of them shared with another:
-    //   y +   6  the DECK heading and the build id
-    //   y +  30  MODEL     tape type | speed | BPM
-    //   y + 74  SWITCHES  oversampling | instrument | HARMONICS | SUBFUND | ANTI-PHASE
-    //   y + 116  the six type switches, their captions above their boxes
-    //   y + 183  TRANSPORT keys, the machine state, the mode switch
-    //   y + 217  the preset workflow chain
-    //   y + 253  the preset badge band          (the deck is 278 px)
+    //  Seven bands, none of them shared with another:
+    //   the DECK heading and the build id
+    //   MODEL     tape type | speed | BPM
+    //   SWITCHES  instrument | HARMONICS | SUBFUND | ANTI-PHASE
+    //   the six type switches, their captions above their boxes
+    //   TRANSPORT keys, the machine state, the mode switch
+    //   the preset workflow chain
+    //   the preset badge band          (the deck is 278 px at its preferred size)
     //
     //  BYPASS / DELTA / POLARITY / AUTO GAIN are not here: they moved to the
     //  header (see above), and the delay trio is a tab member of SPACE.
@@ -1212,87 +1225,43 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     // ------------------------------------------------------------------
     //  The deck's vertical rhythm.
     //
-    //  Six bands at hardcoded offsets inside a rectangle of exactly 278 px is
-    //  why the deck could not be made shorter: the deck is now elastic (see
-    //  getEditorLayout), and these offsets are what has to follow it. They are
-    //  written as a TABLE of bands - each one's own height - and only the GAPS
-    //  between them compress. A band's height is never touched, so a control
-    //  cannot be squeezed by a shorter window; a gap is what gives way, and it
-    //  is floored, so two bands can never end up touching however short the
-    //  deck gets.
+    //  Seven bands, solved from the height the deck was actually given (see
+    //  Source/GUI/DeckBands.h). The table this replaced wrote a height per
+    //  band and then placed a 15 px caption plus a 30 px control inside a 32 px
+    //  one, so every row overhung its own band by thirteen pixels: at the
+    //  preferred 278 px deck that was a one-pixel kiss into the caption band
+    //  below, and at the 236 px floor - where the gaps compress to their
+    //  minimum - it was eleven pixels of combo box painted over the next row's
+    //  captions. That is exactly the user's "the lists are on top of the labels"
+    //  (BPM, ANTI-PHASE, SUBFUND).
     //
-    //  At the reference height the scale is exactly 1 and every offset below is
-    //  the number that is written in the table - so this is a refactor with no
-    //  visual effect at the size the window opens at, which is the only way to
-    //  be sure of a change made without being able to look at it.
+    //  The solve owns all of it now: a row IS its caption plus its control, and
+    //  when the deck is short the two shrink together (30 -> 24 px of control)
+    //  before a gap gives way. Nothing below writes a height that is not one of
+    //  these numbers, so no row can reach into the one under it again.
     // ------------------------------------------------------------------
-    struct DeckBand
+    const auto bands = j37panel::DeckBands::solve (deck.getHeight());
+    const auto captionHeight = bands.captionHeight;
+    const auto controlHeight = bands.controlHeight;
+
+    const auto deckTop = [&] (int band)
     {
-        int top;
-        int height;
+        return deck.getY() + bands.top[static_cast<std::size_t> (band)];
+    };
+    const auto deckBandHeight = [&] (int band)
+    {
+        return bands.height[static_cast<std::size_t> (band)];
     };
 
-    constexpr DeckBand referenceBands[] = {
-        {   6, 16 },   // the heading strip: "Deck" and the build id
-        {  30, 32 },   // MODEL
-        {  74, 32 },   // SWITCHES
-        { 116, 45 },   // the six type selectors, caption over box
-        { 170, 45 },   // TRANSPORT: caption band, then the keys
-        { 217, 32 },   // the preset chain
-        { 253, 14 }    // the badge line
-    };
-
-    constexpr int deckReferenceHeight = 278;
-    constexpr int minimumBandGap = 2;
-    constexpr auto bandCount = static_cast<int> (juce::numElementsInArray (referenceBands));
-
-    // The working copy is what the compression below rewrites; the table above
-    // stays the written-down reference for the size the panel was drawn at.
-    DeckBand deckBands[bandCount];
-
-    for (int i = 0; i < bandCount; ++i)
-        deckBands[i] = referenceBands[i];
-
-    {
-        // The gaps between the bands as the table states them, and then the gaps
-        // they are allowed once the deck is as short as it can get.
-        int gap[bandCount - 1] {};
-        int gapTotal = 0;
-
-        for (int i = 1; i < bandCount; ++i)
-        {
-            gap[i - 1] = referenceBands[i].top
-                       - (referenceBands[i - 1].top + referenceBands[i - 1].height);
-            gapTotal += gap[i - 1];
-        }
-
-        const auto shrink = juce::jmax (0, deckReferenceHeight - deck.getHeight());
-        const auto wantedGapTotal = juce::jmax ((bandCount - 1) * minimumBandGap, gapTotal - shrink);
-        const auto gapScale = gapTotal > 0 ? static_cast<float> (wantedGapTotal)
-                                           / static_cast<float> (gapTotal)
-                                           : 0.0f;
-
-        for (int i = 1; i < bandCount; ++i)
-            deckBands[i].top = deckBands[i - 1].top + deckBands[i - 1].height
-                             + juce::jmax (minimumBandGap,
-                                           juce::roundToInt (static_cast<float> (gap[i - 1])
-                                                             * gapScale));
-    }
-
-    // [&] and not [&layout]: the band table is a local array, and a lambda that
-    // names one thing in its capture list captures nothing else - so a narrow
-    // capture silently leaves deckBands uncaptured.
-    const auto deckTop = [&] (int band) { return deck.getY() + deckBands[band].top; };
-
-    deckHeadingLabel.setBounds (deck.getX() + 18, deckTop (0), 150, 16);
+    deckHeadingLabel.setBounds (deck.getX() + 18, deckTop (j37panel::DeckBands::heading), 150,
+                                deckBandHeight (j37panel::DeckBands::heading));
 
     // The build id rides the deck's heading strip, right-aligned and stopping short of
     // the reel (whose left edge is deck.right - 56). This strip is the only full-width
     // band near the top of the panel that is guaranteed empty at the 780 px minimum:
-    // the header's equivalent gap shrinks to about 58 px there, and the switches row
-    // is reserved for the drifting particles.
-    buildLabel.setBounds (deck.getX() + 190, deckTop (0),
-                          deck.getWidth() - 280, 16);
+    // the header's equivalent gap shrinks to about 58 px there.
+    buildLabel.setBounds (deck.getX() + 190, deckTop (j37panel::DeckBands::heading),
+                          deck.getWidth() - 280, deckBandHeight (j37panel::DeckBands::heading));
 
     // ------------------------------------------------------------------
     //  Spreading a row across the deck.
@@ -1330,9 +1299,11 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     //      and a rule that redistributed slack between the two would be a way
     //      of walking back into it.
     //
-    //  The row returns the widest gap it left, so the drifting particles are
-    //  told where the free space actually is instead of being told a pair of
-    //  coordinates that was only ever right at one width.
+    //  The row still returns the widest gap it left. Nothing reads it now: the
+    //  drifting dust moved to the deck's foot (see the badge band below), which
+    //  is the only wide free strip this deck has. The return is kept because it
+    //  is the row's own report of its slack, and the next thing that needs to
+    //  know where the air is should not have to recompute it.
     // ------------------------------------------------------------------
     struct DeckRowItem
     {
@@ -1471,17 +1442,20 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     //  The empty columns to the right are deliberate: the type row below has
     //  six columns and the rows should breathe together, not stretch to fill.
     {
+        //  Every height in the table is the band's own: the caption band, the
+        //  control band, and the two pixels a readout gives back under it. A
+        //  literal here is what put the boxes thirteen pixels into the row below.
         const std::vector<DeckRowItem> row {
-            { &speedLabel,       108, -1,  0, 15, false },
-            { &speedBox,           0, -1, 15, 30, true  },
-            { &vinylSpeedLabel,  108, -1,  0, 15, false },
-            { &vinylSpeedBox,      0, -1, 15, 30, true  },
-            { &bpmLabel,         108, -1,  0, 15, false },
-            { &bpmReadout,         0, -1, 15, 13, true  }
+            { &speedLabel,       108, -1,  0, captionHeight, false },
+            { &speedBox,           0, -1, captionHeight, controlHeight, true  },
+            { &vinylSpeedLabel,  108, -1,  0, captionHeight, false },
+            { &vinylSpeedBox,      0, -1, captionHeight, controlHeight, true  },
+            { &bpmLabel,         108, -1,  0, captionHeight, false },
+            { &bpmReadout,         0, -1, captionHeight, captionHeight - 2, true  }
         };
 
         placeDeckRow (row, deck.getX() + 18, deck.getRight() - reelCorridor,
-                      deckTop (1), 14);
+                      deckTop (j37panel::DeckBands::model), 14);
     }
 
     // ---- row 2: SWITCHES ----------------------------------------------------
@@ -1493,20 +1467,20 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     //  standing exactly above the type row's columns.
     {
         const std::vector<DeckRowItem> row {
-            { &instrumentLabel,  108, -1,  0, 15, false },
-            { &instrumentBox,      0, -1, 15, 30, true  },
+            { &instrumentLabel,  108, -1,  0, captionHeight, false },
+            { &instrumentBox,      0, -1, captionHeight, controlHeight, true  },
 
-            { &harmonicsLabel,   108, -1,  0, 15, false },
-            { &harmonicsReadout,   0, -1, 15, 13, true  },
-            { &subfundLabel,     108, -1,  0, 15, false },
-            { &subfundReadout,     0, -1, 15, 13, true  },
-            { &antiPhaseLabel,   108, -1,  0, 15, false },
-            { &antiPhaseReadout,   0, -1, 15, 13, true  }
+            { &harmonicsLabel,   108, -1,  0, captionHeight, false },
+            { &harmonicsReadout,   0, -1, captionHeight, captionHeight - 2, true  },
+            { &subfundLabel,     108, -1,  0, captionHeight, false },
+            { &subfundReadout,     0, -1, captionHeight, captionHeight - 2, true  },
+            { &antiPhaseLabel,   108, -1,  0, captionHeight, false },
+            { &antiPhaseReadout,   0, -1, captionHeight, captionHeight - 2, true  }
         };
 
-        const auto freeGap = placeDeckRow (row, deck.getX() + 18,
-                                           deck.getRight() - deckRightInset,
-                                           deckTop (2), 12);
+        placeDeckRow (row, deck.getX() + 18,
+                      deck.getRight() - deckRightInset,
+                      deckTop (j37panel::DeckBands::switches), 12);
 
         // The readouts are the only deck text whose width now depends on the
         // panel, so they are the only ones that can run out of room - and they
@@ -1521,13 +1495,13 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
                              &antiPhaseLabel, &antiPhaseReadout })
             label->setMinimumHorizontalScale (0.55f);
 
-        // Where the particles may drift: the gap this row actually left. Under
-        // twenty pixels there is nowhere free to put them, and drawing them
-        // anyway would put decoration on top of a control - the one thing this
-        // whole pass exists to stop. paint() skips them when this is empty.
-        deckParticleCorridorX = freeGap.getLength() >= 20 ? freeGap
-                                                          : juce::Range<int> (0, 0);
-        deckParticleCorridorY = juce::Range<int> (deckTop (2) + 2, deckTop (2) + 30);
+        // The particles are NOT placed here any more. This row's leftover gap
+        // was where they drifted, and at every real width it was a single 50-70
+        // px slot between two readouts: six orbs bouncing inside it read as a
+        // handful of dots stuck in one corner of the deck rather than as dust
+        // moving through the machine. They get the deck's foot instead - see the
+        // badge band below - where the strip is a thousand pixels wide and only
+        // the badge's text sits in it.
     }
 
     // ---- row 3: the six type selectors --------------------------------------
@@ -1544,36 +1518,38 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         // the 780 px minimum ((720 - 5 x 14 gaps) / 6 = 108), and above that width
         // the row's elastic gap shrinks before any column does.
         const std::vector<DeckRowItem> row {
-            { &tapeTypeLabel,        108, -1,  0, 15, false },
-            { &tapeTypeBox,            0, -1, 15, 30, true  },
-            { &vinylTypeLabel,       108, -1,  0, 15, false },
-            { &vinylTypeBox,           0, -1, 15, 30, true  },
-            { &valveTypeLabel,       108, -1,  0, 15, false },
-            { &valveTypeBox,           0, -1, 15, 30, true  },
-            { &ampTypeLabel,         108, -1,  0, 15, false },
-            { &ampTypeBox,             0, -1, 15, 30, true  },
-            { &transformerTypeLabel, 108, -1,  0, 15, false },
-            { &transformerTypeBox,     0, -1, 15, 30, true  },
-            { &digitalTypeLabel,     108, -1,  0, 15, false },
-            { &digitalTypeBox,         0, -1, 15, 30, true  }
+            { &tapeTypeLabel,        108, -1,  0, captionHeight, false },
+            { &tapeTypeBox,            0, -1, captionHeight, controlHeight, true  },
+            { &vinylTypeLabel,       108, -1,  0, captionHeight, false },
+            { &vinylTypeBox,           0, -1, captionHeight, controlHeight, true  },
+            { &valveTypeLabel,       108, -1,  0, captionHeight, false },
+            { &valveTypeBox,           0, -1, captionHeight, controlHeight, true  },
+            { &ampTypeLabel,         108, -1,  0, captionHeight, false },
+            { &ampTypeBox,             0, -1, captionHeight, controlHeight, true  },
+            { &transformerTypeLabel, 108, -1,  0, captionHeight, false },
+            { &transformerTypeBox,     0, -1, captionHeight, controlHeight, true  },
+            { &digitalTypeLabel,     108, -1,  0, captionHeight, false },
+            { &digitalTypeBox,         0, -1, captionHeight, controlHeight, true  }
         };
 
         placeDeckRow (row, deck.getX() + 18, deck.getRight() - deckRightInset,
-                      deckTop (3), 14);
+                      deckTop (j37panel::DeckBands::types), 14);
     }
 
     // ---- row 4: TRANSPORT ---------------------------------------------------
     {
         const std::vector<DeckRowItem> row {
-            { &transportStopButton,   62,  4,  0, 28, false },
-            { &transportPlayButton,   62,  4,  0, 28, false },
-            { &transportStartButton,  62,  4,  0, 28, false },
-            { &spindownButton,        74, -1,  0, 28, false },
-            { &deckHintLabel,        190, -1,  2, 24, false },
-            { &modeCycleButton,      150, -1,  0, 32, false }
+            { &transportStopButton,   62,  4,  0, controlHeight, false },
+            { &transportPlayButton,   62,  4,  0, controlHeight, false },
+            { &transportStartButton,  62,  4,  0, controlHeight, false },
+            { &spindownButton,        74, -1,  0, controlHeight, false },
+            { &deckHintLabel,        190, -1,  2, controlHeight - 4, false },
+            { &modeCycleButton,      150, -1,  0, controlHeight, false }
         };
 
-        const auto transportRowY = deckTop (4) + 13;
+        // The keys start where every other row's control starts: under the
+        // caption band the solve just gave this row.
+        const auto transportRowY = deckTop (j37panel::DeckBands::transport) + captionHeight;
 
         placeDeckRow (row, deck.getX() + 18, deck.getRight() - deckRightInset,
                       transportRowY, 14);
@@ -1584,10 +1560,11 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         // back is what keeps them correct at every width: written as
         // `keyWidth * 3 + gap * 2` they would name a span three keys wider than
         // the bank actually is once the row starts growing them.
-        transportLabel.setBounds (transportStopButton.getX(), transportRowY - 13,
-                                  transportStartButton.getRight() - transportStopButton.getX(), 12);
-        spindownLabel.setBounds (spindownButton.getX(), transportRowY - 13,
-                                 spindownButton.getWidth(), 12);
+        transportLabel.setBounds (transportStopButton.getX(), transportRowY - captionHeight,
+                                  transportStartButton.getRight() - transportStopButton.getX(),
+                                  captionHeight - 2);
+        spindownLabel.setBounds (spindownButton.getX(), transportRowY - captionHeight,
+                                 spindownButton.getWidth(), captionHeight - 2);
 
         transportLabel.setFont (shrinkingFont (transportLabel.getText(), 7.0f,
                                               juce::Font::plain,
@@ -1611,30 +1588,28 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     // not spread like the rows above because it already spans the full width at
     // the minimum: there is no slack to share, and a gap that grew with the
     // window would only pull its two halves further apart.
-    const auto presetRowY = deckTop (5);
-    const auto presetRowHeight = 32;
+    const auto presetRowY = deckTop (j37panel::DeckBands::preset);
+    const auto presetRowHeight = deckBandHeight (j37panel::DeckBands::preset);
     constexpr int presetRowGap = 5;
 
-    // presetRowHeight and presetRowGap are not captured: a const int with a
-    // constant initialiser (and a constexpr one) needs no capture to be read, and
-    // Clang's -Wunused-lambda-capture is right to say so. Capturing them was
-    // habit, and the three captures read as if the lambdas could see a change
-    // that the code above makes impossible.
-    const auto placeForward = [presetRowY]
+    // presetRowHeight IS captured now. It used to be a literal 32 with a constant
+    // initialiser, which a lambda can read without capturing; it is the solved
+    // band height, so the lambdas have to hold it like any other local.
+    const auto placeForward = [presetRowY, presetRowHeight]
                                   (int& edge, juce::Component& component, int width)
     {
         component.setBounds (edge, presetRowY, width, presetRowHeight);
         edge += width + presetRowGap;
     };
 
-    const auto placeBackward = [presetRowY]
+    const auto placeBackward = [presetRowY, presetRowHeight]
                                    (int& edge, juce::Component& component, int width)
     {
         component.setBounds (edge - width, presetRowY, width, presetRowHeight);
         edge -= width + presetRowGap;
     };
 
-    presetHeadingLabel.setBounds (deck.getX() + 18, deckTop (5) + 9, 46, 16);
+    presetHeadingLabel.setBounds (deck.getX() + 18, presetRowY + 9, 46, 16);
 
     {
         // Head, from the left: the factory list, the user list, save, delete.
@@ -1697,8 +1672,9 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     // The state readout is back in the header on its drawn pill (see the header
     // grid above), so the badge line is the preset badge's alone again - full
     // band width, the pill painted UNDER this line in paint() needs no cell.
-    presetBadgeLabel.setBounds (deck.getX() + 22, deckTop (6),
-                                deck.getWidth() - 44, 14);
+    presetBadgeLabel.setBounds (deck.getX() + 22, deckTop (j37panel::DeckBands::badge),
+                                deck.getWidth() - 44,
+                                deckBandHeight (j37panel::DeckBands::badge));
     presetBadgeLabel.setFont (shrinkingFont (presetBadgeLabel.getText(), 8.0f,
                                              juce::Font::plain,
                                              static_cast<float> (presetBadgeLabel.getWidth()) - 4.0f));
@@ -1708,10 +1684,34 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     // the same size at every panel size - which is what lets the scene be laid out
     // in its own units and framed by the camera rather than by a pixel count.
     // It stops 8 px short of the switches row below it, so the two never touch.
+    // Its height is capped by the switches band above it, so the eight pixels of
+    // clearance the comment above promises hold at the deck's 236 px floor too -
+    // where the solved bands start higher and a fixed 58 px block would have met
+    // the row instead of stopping short of it.
+    const auto sceneTop = deck.getY() + 6;
+    const auto sceneBottom = deckTop (j37panel::DeckBands::switches) - 8;
     tapeScene.setBounds (deck.getRight() - reelCorridor,
-                         deck.getY() + 6,
+                         sceneTop,
                          reelCorridor - 6,
-                         58);
+                         juce::jmax (24, juce::jmin (58, sceneBottom - sceneTop)));
+
+    // ------------------------------------------------------------------
+    //  Where the drifting dust lives.
+    //
+    //  It used to be the switches row's leftover gap: a single slot fifty-odd
+    //  pixels wide between two readouts, which is where six orbs bouncing off
+    //  each other read as "a few dots stuck in a corner". The deck has no wide
+    //  free air to give them - every band is full - except its foot: the badge
+    //  line is a thousand pixels of near-empty metal with one centred caption
+    //  on it, and a 14 px strip is cheap to repaint every tick. So the motes
+    //  drift along the machine's bottom edge, behind the badge text, which is
+    //  the one place on the panel where motion can be seen without being drawn
+    //  over a control.
+    // ------------------------------------------------------------------
+    deckParticleCorridorX = { deck.getX() + 24, deck.getRight() - 24 };
+    deckParticleCorridorY = { deckTop (j37panel::DeckBands::badge) + 1,
+                              deckTop (j37panel::DeckBands::badge)
+                                  + deckBandHeight (j37panel::DeckBands::badge) - 1 };
 }
 
 //==============================================================================
@@ -2207,9 +2207,11 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     }
     // The UI-sounds switch shares SETTINGS with OVERSAMPLING as an engine-level preference.
     uiSoundsButton.setVisible (geometry.settingsTab);
+    uiSoundsLabel.setVisible (geometry.settingsTab);
     antiPhaseGuardLabel.setVisible (geometry.settingsTab);
     antiPhaseGuardButton.setVisible (geometry.settingsTab);
     parameterSheetButton.setVisible (geometry.settingsTab);
+    parameterSheetLabel.setVisible (geometry.settingsTab);
     // The USER theme's colour key rides SETTINGS's first band, beside OVERSAMPLING -
     // both are interface preferences rather than controls of the machine.
     userThemeButton.setVisible (geometry.settingsTab);
@@ -2323,39 +2325,61 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
     }
     else if (geometry.settingsTab)
     {
-        // SETTINGS: the engine-level oversampling selector and interface
-        // preferences.
-        placeDeckSwitch (geometry, oversamplingLabel, oversamplingBox, 0, 1, "OVER");
+        // ---- SETTINGS: a preference sheet, not a clump at the top ---------
+        //
+        // This page holds no knobs, so its grid IS the page - and until now its
+        // seven preferences were placed in the first ~106 px of it: three through
+        // placeDeckSwitch and three hand-written at +56 / +76, with the rest of
+        // the page left as empty metal. That is the user's report exactly: "many
+        // switches and one list, the switches are small, and there is a lot of
+        // free space on the tab".
+        //
+        // Two rows now share the whole page - four cells on the first, three
+        // centred on the second - and the control height is solved from the row
+        // it is given: 30 px at the tightest window, up to 46 px when there is
+        // room. Every one of the seven goes through ONE placement, so a list,
+        // a key and a switch are the same rectangle by construction; what
+        // differs is only what is drawn on the plate.
+        constexpr int settingsRowGap = 12;
+        const auto rowHeight = juce::jmax (54, (geometry.grid.getHeight() - settingsRowGap) / 2);
+        const auto controlHeight = juce::jlimit (30, 46, rowHeight - 30);
 
-        // The USER theme's colour window, in the next cell of the same band. It is
-        // placed with placeDeckSwitch so its caption, its 30 px band and its centring
-        // are the same arithmetic as every other switch on the page - a button placed
-        // at its own coordinates is how this page grew one control that sat 168 px
-        // below its caption (see the note inside placeDeckSwitch).
-        placeDeckSwitch (geometry, userThemeLabel, userThemeButton, 1, 1, "USER THEME");
+        const auto placeSetting = [&] (juce::Label& targetLabel, juce::Component& targetBox,
+                                       int column, int row, int rowLeft)
+        {
+            const auto rowTop = geometry.grid.getY()
+                                + row * (rowHeight + settingsRowGap);
+            // The caption-over-control pair is centred in its row, so a tall page
+            // gets air above and below the pair rather than a growing hole under
+            // the page's last line.
+            const auto blockTop = rowTop
+                                  + juce::jmax (0, (rowHeight - (17 + controlHeight)) / 2);
+            const auto cellLeft = rowLeft + column * geometry.cellWidth + 12;
 
-        // The renderer selector takes the next cell of the same band. The choice
-        // is an interface preference, so it belongs beside OVERSAMPLING and the
-        // colour window rather than on any page that shapes the sound.
-        placeDeckSwitch (geometry, backendLabel, backendBox, 2, 1, "BACKEND");
+            targetLabel.setBounds (cellLeft, blockTop, geometry.cellWidth - 24, 17);
+            targetBox.setBounds (cellLeft, blockTop + 17, geometry.cellWidth - 24,
+                                 controlHeight);
+        };
 
-        // LANGUAGE keeps the first cell of the second band; UI SOUNDS takes the
-        // second; the guard takes the third.
-        languageLabel.setBounds (geometry.grid.getX() + 5, geometry.memberRowY + 56, geometry.cellWidth - 10, 17);
-        languageBox.setBounds (geometry.grid.getX() + 12, geometry.memberRowY + 76, geometry.cellWidth - 24, 30);
-        uiSoundsButton.setBounds (geometry.grid.getX() + geometry.cellWidth + 12, geometry.memberRowY + 76,
-                                  geometry.cellWidth - 24, 30);
-        antiPhaseGuardLabel.setBounds (geometry.grid.getX() + 2 * geometry.cellWidth + 5, geometry.memberRowY + 56,
-                                       geometry.cellWidth - 10, 17);
-        antiPhaseGuardButton.setBounds (geometry.grid.getX() + 2 * geometry.cellWidth + 12,
-                                        geometry.memberRowY + 76,
-                                        geometry.cellWidth - 24, 30);
-        // The fourth cell of the same row: the parameter sheet's key. It shares
-        // the row with the three interface preferences because that is what it
-        // is - the other way to see the machine, not another control of it.
-        parameterSheetButton.setBounds (geometry.grid.getX() + 3 * geometry.cellWidth + 12,
-                                        geometry.memberRowY + 76,
-                                        geometry.cellWidth - 24, 30);
+        const auto fullRow = geometry.grid.getX();
+        // A three-item row is centred under the four-item one - the same rule the
+        // knob strip uses for its short last row, so a page whose contents do not
+        // divide evenly still reads as one grid.
+        const auto shortRow = geometry.grid.getX()
+                              + (geometry.grid.getWidth() - 3 * geometry.cellWidth) / 2;
+
+        // Row one: the two choices, the colour window and the second view of the
+        // machine - the four things that say what the panel IS.
+        placeSetting (oversamplingLabel,    oversamplingBox,     0, 0, fullRow);
+        placeSetting (backendLabel,         backendBox,          1, 0, fullRow);
+        placeSetting (userThemeLabel,       userThemeButton,     2, 0, fullRow);
+        placeSetting (parameterSheetLabel,  parameterSheetButton, 3, 0, fullRow);
+
+        // Row two: the language, the interface sounds and the guard - the three
+        // things that describe how it behaves while you use it.
+        placeSetting (languageLabel,         languageBox,          0, 1, shortRow);
+        placeSetting (uiSoundsLabel,         uiSoundsButton,       1, 1, shortRow);
+        placeSetting (antiPhaseGuardLabel,   antiPhaseGuardButton, 2, 1, shortRow);
 
         // The caption is put back to the left, where every other caption on the
         // page sits: the header grid also places this one Label - right-aligned,
@@ -2370,15 +2394,20 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
         // tune-amount knob occupies the strip above; the member band holds TONIC,
         // MODE and the AUTO TUNE switch in its four columns.
         placeDeckSwitch (geometry, tuningTonicLabel, tuningTonicBox, 0, 1, "TONIC");
+        // ONE band for the page: the MODE list, the AUTO TUNE switch and the TONIC
+        // list beside them are the same plate, so a short window shrinks all three
+        // together - the combo used to be pinned at 30 px while its neighbour gave
+        // way, which is the "two sizes on one row" report in miniature.
+        const auto bandHeight = juce::jmin (30, geometry.grid.getBottom() - geometry.memberRowY - 22);
+        const auto controlY = geometry.memberRowY + 20;
         tuningModeLabel.setBounds (geometry.grid.getX() + geometry.cellWidth + 5,
                                    geometry.memberRowY + 1,
                                    2 * geometry.cellWidth - 10, 17);
         tuningModeBox.setBounds (geometry.grid.getX() + geometry.cellWidth + 12,
-                                 geometry.memberRowY + 20,
-                                 2 * geometry.cellWidth - 24, 30);
-        const auto bandHeight = juce::jmin (30, geometry.grid.getBottom() - geometry.memberRowY - 22);
+                                 controlY,
+                                 2 * geometry.cellWidth - 24, bandHeight);
         autoTuneButton.setBounds (geometry.grid.getX() + 3 * geometry.cellWidth + 12,
-                                  geometry.memberRowY + 20,
+                                  controlY,
                                   geometry.cellWidth - 24, bandHeight);
     }
     // The COMP page has no branch here, and that is the point: its six knobs are
@@ -2731,9 +2760,11 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "tuningTonicBox", &tuningTonicBox },
             { "tuningModeLbl",  &tuningModeLabel },
             { "tuningModeBox",  &tuningModeBox },
+            { "uiSoundsLbl",    &uiSoundsLabel },
             { "uiSounds",       &uiSoundsButton },
             { "guardLabel",     &antiPhaseGuardLabel },
             { "guardBtn",       &antiPhaseGuardButton },
+            { "paramSheetLbl",  &parameterSheetLabel },
             { "paramSheet",     &parameterSheetButton },
             // The USER theme's caption and colour key, in SETTINGS's first band.
             // They are here because this list is the one place a hand-placed switch

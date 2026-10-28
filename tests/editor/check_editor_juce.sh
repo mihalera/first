@@ -117,6 +117,10 @@ if not presets or not translations:
 binary = ["#pragma once", "namespace BinaryData", "{"]
 for name in presets + translations:
     binary.append(f"    extern const char* {symbol(name)}; extern const int {symbol(name)}Size;")
+# The optional panel art looks its file up by name at run time rather than by a
+# generated symbol (see Source/GUI/PanelAssets.h), so the stub needs the lookup
+# declared even when Assets/ is empty. This harness only compiles, never links.
+binary.append("    const char* getNamedResource (const char* resourceNameUTF8, int& dataSizeInBytes);")
 binary += ["}", ""]
 (stubs / "BinaryData.h").write_text("\n".join(binary))
 

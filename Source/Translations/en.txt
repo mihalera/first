@@ -21,6 +21,7 @@
 "LANGUAGE_UKRAINIAN" = "Українська";
 "LANGUAGE_CAPTION" = "Language";
 "PARAMETERS" = "PARAMETERS";
+"OPEN" = "OPEN";
 "CLOSE" = "CLOSE";
 "LANGUAGE" = "Language";
 "Cycle the front panel: IVORY, CHARCOAL, METAL, DARK METAL, WHITE MONSTER, then USER. The button names the panel you are on; pressing it moves to the next one. USER is the palette you edit yourself, in the colour window SETTINGS opens." = "Cycle the front panel: IVORY, CHARCOAL, METAL, DARK METAL, WHITE MONSTER, then USER. The button names the panel you are on; pressing it moves to the next one. USER is the palette you edit yourself, in the colour window SETTINGS opens.";

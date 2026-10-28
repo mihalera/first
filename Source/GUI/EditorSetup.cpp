@@ -1270,6 +1270,11 @@ void FirstAudioProcessorEditor::setUpSettingsSwitches() {
     uiSoundsAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         audioProcessor.parameters, "ui_sounds", uiSoundsButton);
     addAndMakeVisible(uiSoundsButton);
+    // The caption lives above the plate, like every other cell on SETTINGS: the
+    // switch itself shows its state, so a caption drawn twice was the old shape.
+    styleLabel(uiSoundsLabel, "UI SOUNDS", 9.0f, paletteFor(false).secondary, true,
+               juce::Justification::left);
+    addAndMakeVisible(uiSoundsLabel);
 
     // ---------------------------------------------------------------
     //  The anti-phase guard's switch.
@@ -1320,6 +1325,16 @@ void FirstAudioProcessorEditor::setUpSettingsSwitches() {
     //  one dead key, and the tooltip says which build this is.
     // ---------------------------------------------------------------
     parameterSheetButton.setLookAndFeel(&inlineLookAndFeel);
+    // Keyed, because the caption is the string the key used to carry: it has to
+    // follow the language table like the key's own text does (see the language
+    // refresh in PluginEditor.cpp).
+    styleLabel(parameterSheetLabel, xlat("PARAMETERS"), 9.0f, paletteFor(false).secondary, true,
+               juce::Justification::left);
+    addAndMakeVisible(parameterSheetLabel);
+    // The key says what it DOES, the caption above it says what it opens: the
+    // plate used to repeat the caption, which on a grid of captioned cells read
+    // as one cell labelled twice.
+    parameterSheetButton.setButtonText(xlat("OPEN"));
     parameterSheetButton.setColour(juce::TextButton::buttonColourId, paletteFor(false).raised);
     parameterSheetButton.setColour(juce::TextButton::textColourOffId, paletteFor(false).text);
     parameterSheetButton.setColour(juce::TextButton::buttonOnColourId,
@@ -2097,6 +2112,14 @@ void FirstAudioProcessorEditor::createDecorativePhysics() {
     addWall(0.0f, 0.6f, 0.02f, 0.6f);
     addWall(1.5f, 0.6f, 0.02f, 0.6f);
 
+    // The motes drift along the deck's foot now (see placeDeck): a strip about a
+    // thousand pixels wide and a dozen tall, which is a very different world
+    // from the fifty-pixel row gap they used to be confined to. Their speed is
+    // in WORLD units per second, so 0.34 - the old value - would cross the whole
+    // band in four seconds and read as a scrolling ticker. 0.045 crosses in
+    // about half a minute, which is dust settling on a machine rather than a
+    // list scrolling past. The vertical component is deliberately tiny: the
+    // band is twelve pixels tall, so any real vertical motion is a flicker.
     for (std::size_t i = 0; i < decorativeOrbCount; ++i) {
         const auto index = static_cast<int>(i);
         const auto radius = 0.045f + static_cast<float>(index % 2) * 0.012f;
@@ -2106,9 +2129,14 @@ void FirstAudioProcessorEditor::createDecorativePhysics() {
         b2BodyDef bodyDefinition;
         bodyDefinition.type = b2_dynamicBody;
         bodyDefinition.position = position;
-        bodyDefinition.linearVelocity.Set((index % 2 == 0 ? 1.0f : -1.0f) * 0.34f,
-                                          (index % 3 == 0 ? 0.5f : -0.35f) * 0.42f);
-        bodyDefinition.linearDamping = 0.04f;
+        bodyDefinition.linearVelocity.Set((index % 2 == 0 ? 1.0f : -1.0f) * 0.045f,
+                                          (index % 3 == 0 ? 0.5f : -0.35f) * 0.006f);
+        // No damping. The motes are a slow drift, not a thrown object: linear
+        // damping is exponential, so the old 0.04 left them at nine percent of
+        // their speed after a minute - which is the "the dots barely move" half
+        // of the report. The timer re-normalises the speed as well, so a bounce
+        // can never quietly stop one either.
+        bodyDefinition.linearDamping = 0.0f;
         auto *body = physicsWorld->CreateBody(&bodyDefinition);
 
         b2CircleShape circleShape;

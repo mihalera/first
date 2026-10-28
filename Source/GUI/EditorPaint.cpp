@@ -12,6 +12,8 @@
 
 // The panel vocabulary this file reads through, from the headers that hold
 // it - the paint kit, the page table and the knob table.
+#include "GUI/PanelAssetSlots.h"
+#include "GUI/PanelAssets.h"
 #include "GUI/PanelPaint.h"
 #include "GUI/PanelTabs.h"
 
@@ -84,6 +86,18 @@ void FirstAudioProcessorEditor::rebuildPanelTextureLayers() {
 
     const auto w = juce::jmax(1, bounds.getWidth() / 2);
     const auto h = juce::jmax(1, bounds.getHeight() / 2);
+
+    // A hand-drawn surface, when this build carries one, replaces the generated
+    // grain and wear outright - it is the same layer, at the same dose, so a
+    // texture pack changes the material and nothing else. The generated layers
+    // below stay the fallback, which is what keeps a build with an empty Assets/
+    // directory identical to the panel that shipped.
+    if (const auto &surface = j37panel::assets::cachedImage("panel_texture_png");
+        surface.isValid()) {
+        panelTextureImage = surface.rescaled(w, h, juce::Graphics::mediumResamplingQuality);
+        return;
+    }
+
     auto image = juce::Image(juce::Image::ARGB, w, h, true);
 
     const auto hashOf = [](float x) {
@@ -305,6 +319,16 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     g.drawHorizontalLine(layout.deck.getBottom() - 1, static_cast<float>(layout.deck.getX() + 16),
                          static_cast<float>(layout.deck.getRight() - 16));
 
+    // A hairline rule under the header strip separates the title block from the
+    // controls. It is drawn BEFORE the status pill below, so the rule cannot cut
+    // through the badge's rounded bottom edge - the two are four pixels apart, and
+    // a one-pixel line drawn last across a rounded corner is exactly the kind of
+    // near-miss this panel keeps having to write down.
+    g.setColour(palette.border.withAlpha(0.5f));
+    g.drawHorizontalLine(layout.header.getBottom() - 4,
+                         static_cast<float>(layout.header.getX() + 18),
+                         static_cast<float>(layout.header.getRight() - 18));
+
     // The machine-state badge wraps the statusLabel in the header's final row.
     // statusPillBounds() is shared with the timer's invalidation region so the
     // animated lamp and its background are redrawn together.
@@ -420,13 +444,8 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
         }
     }
 
-    // A hairline rule under the header strip separates the title block from the
-    // controls; it runs the full width again - the badge it used to dodge lives
-    // on the grid's third row now.
-    g.setColour(palette.border.withAlpha(0.5f));
-    g.drawHorizontalLine(layout.header.getBottom() - 4,
-                         static_cast<float>(layout.header.getX() + 18),
-                         static_cast<float>(layout.header.getRight() - 18));
+    // (The hairline under the header was drawn above, before this badge, so it
+    // cannot be painted across the pill's rounded bottom.)
 
     // getX()/getRight() return int, so the 9.0f insets are added *after* the cast.
     // `getX() + 9.0f` promotes the int to float implicitly, which is exactly what
@@ -514,11 +533,11 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
         orbsToDraw = renderOrbs;
     }
 
-    // The corridor the switches row left free, which resized() measured rather
-    // than assumed - see deckParticleCorridorX. An empty range means the row had
-    // no gap wide enough to be worth drawing into (a very narrow window), and
-    // the right answer then is no particles at all: they are decoration, and
-    // decoration on top of a control is the failure this whole pass is about.
+    // The strip along the deck's foot, which placeDeck() sets to the badge band -
+    // see deckParticleCorridorX. An empty or narrow range means the deck did not
+    // report one worth drawing into, and the right answer then is no particles at
+    // all: they are decoration, and decoration on top of a control is the failure
+    // this whole pass is about.
     if (deckParticleCorridorX.getLength() < 20)
         return;
 

@@ -562,10 +562,29 @@ foreach(translation_file IN LISTS TRANSLATION_FILES)
     endif()
 endforeach()
 
+# ==============================================================================
+#  Optional panel art.
+#
+#  The panel is drawn from code - palettes, arithmetic, no bitmaps - and the files
+#  below are the additive layer: a surface texture, a brand mark, a window icon,
+#  named by Source/GUI/PanelAssetSlots.h and loaded through
+#  Source/GUI/PanelAssets.h. Nothing here is required: when the glob is empty the
+#  plugin builds and behaves exactly as before, and every draw site falls back to
+#  its own drawn panel. Drop a file in Assets/ and reconfigure; that is the whole
+#  install step, because the bytes are embedded in the plugin rather than shipped
+#  beside it.
+# ==============================================================================
+set(PANEL_ASSET_DIR "${CMAKE_CURRENT_SOURCE_DIR}/Assets")
+file(GLOB PANEL_ASSET_FILES CONFIGURE_DEPENDS
+    "${PANEL_ASSET_DIR}/*.png"
+    "${PANEL_ASSET_DIR}/*.jpg"
+    "${PANEL_ASSET_DIR}/*.jpeg")
+list(SORT PANEL_ASSET_FILES)
+
 juce_add_binary_data(PluginResources
     HEADER_NAME BinaryData.h
     NAMESPACE BinaryData
-    SOURCES ${FACTORY_PRESET_FILES} ${TRANSLATION_FILES})
+    SOURCES ${FACTORY_PRESET_FILES} ${TRANSLATION_FILES} ${PANEL_ASSET_FILES})
 
 # The index header: the preset list, in order, as data. Written from the same
 # CMake variable that feeds juce_add_binary_data, so the two cannot drift.

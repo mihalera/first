@@ -40,6 +40,7 @@
 // =============================================================================
 #pragma once
 
+#include "GUI/PanelAssets.h"
 #include "GUI/PanelPaint.h"
 
 #include <functional>
@@ -164,7 +165,13 @@ class UserThemePane final : public juce::Component {
         itself; the pane only knows a key was pressed. */
     std::function<void()> onClose;
 
-    explicit UserThemePane(UiPalette initial) : palette(initial) {}
+    explicit UserThemePane(UiPalette initial) : palette(initial) {
+        // The pane paints its whole face from the palette (see paint()), so it is
+        // opaque - which is what stops the window's own background colour from
+        // showing through as a flat card before the first paint, or wherever a
+        // row's bounds fall short of the edge.
+        setOpaque(true);
+    }
 
     /** Adopts a palette from outside. The editor hands over the live one each time
         the window opens, so a window kept from an earlier session cannot show the
@@ -216,6 +223,16 @@ class UserThemePane final : public juce::Component {
         g.drawText("start from a preset, then click any colour to edit it",
                    header.reduced(14, 0).withTrimmedTop(20), juce::Justification::centredLeft,
                    false);
+
+        // The optional brand mark, right-aligned in the header. It is the one
+        // place on this window with room for a signature, and a build without the
+        // asset simply has the empty end of the band - the window never draws a
+        // placeholder box, which is what a missing image looks like.
+        if (const auto &mark = j37panel::assets::cachedImage("brand_mark_png"); mark.isValid()) {
+            const auto side = juce::jmin(userThemeHeaderHeight - 12, 34);
+            g.drawImageWithin(mark, getWidth() - 14 - side, 6, side, side,
+                              juce::RectanglePlacement::centred, false);
+        }
 
         paintPresets(g);
 
@@ -489,6 +506,40 @@ class UserThemePane final : public juce::Component {
 
 //==============================================================================
 /**
+    The window's icon, drawn when this build carries no brand mark.
+
+    A DocumentWindow with no icon hands the title bar and the taskbar whatever the
+    peer supplies, which on a bare JUCE peer is a blank square - the "white icon"
+    this window used to open with. Drawing one costs a 32 px image and means the
+    window has a face in every build, art pack or not; Assets/window_icon.png
+    replaces it when it exists.
+*/
+inline juce::Image defaultWindowIcon (const UiPalette &palette, int side = 32)
+{
+    juce::Image icon (juce::Image::ARGB, side, side, true);
+    juce::Graphics g (icon);
+
+    const auto area = juce::Rectangle<float> (0.0f, 0.0f, static_cast<float> (side),
+                                              static_cast<float> (side)).reduced (1.0f);
+
+    g.setColour (palette.panel);
+    g.fillRoundedRectangle (area, static_cast<float> (side) * 0.18f);
+    g.setColour (palette.border.withAlpha (0.9f));
+    g.drawRoundedRectangle (area, static_cast<float> (side) * 0.18f, 1.0f);
+
+    // The reel: an accent ring, a hub, and the three spokes that make it read as a
+    // reel at 16 px rather than as a letter O.
+    const auto circle = area.reduced (static_cast<float> (side) * 0.18f);
+    g.setColour (palette.accent);
+    g.drawEllipse (circle, juce::jmax (1.2f, static_cast<float> (side) * 0.07f));
+    g.fillEllipse (circle.getCentreX() - side * 0.06f, circle.getCentreY() - side * 0.06f,
+                   static_cast<float> (side) * 0.12f, static_cast<float> (side) * 0.12f);
+
+    return icon;
+}
+
+//==============================================================================
+/**
     The window itself: a title bar, the pane, and nothing else.
 
     A desktop window rather than a child of the editor, because a plugin editor is
@@ -526,8 +577,22 @@ class UserThemeWindow final : public juce::DocumentWindow {
         pane->setSize(userThemeWidth, userThemePaneHeight);
 
         setUsingNativeTitleBar(true);
-        setContentOwned(content.release(), true);
-        setResizable(false, false);
+
+        // The window is sized EXPLICITLY from the pane, and not left to the
+        // resize-to-fit path: a DocumentWindow exists on the desktop from the
+        // moment it is constructed, and if the fit ever fails to run the user is
+        // looking at the peer's empty content area - a small blank window with a
+        // close button. That is the "it opens as a white icon" report. A window
+        // that says its own size cannot be left blank by an ordering detail.
+        setContentOwned(content.release(), false);
+        setContentComponentSize(userThemeWidth, userThemePaneHeight);
+        setResizable(false, false);        // The title-bar / taskbar icon: the art pack's when this build carries one,
+        // otherwise the drawn reel above. Either way the window never opens with
+        // the peer's blank square in the corner.
+        if (const auto &art = j37panel::assets::cachedImage ("window_icon_png"); art.isValid())
+            setIcon (art);
+        else
+            setIcon (defaultWindowIcon (start));
     }
 
     ~UserThemeWindow() override { pane = nullptr; }
