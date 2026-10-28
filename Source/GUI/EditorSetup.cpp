@@ -1485,6 +1485,7 @@ void FirstAudioProcessorEditor::setUpModelButtons() {
         // A refusal belongs to the file that was refused, so clearing the stage
         // clears the reason with it: "NO MODEL" is the truth again afterwards.
         neuralStatusReason = {};
+        neuralStatusDetail = {};
         refreshNeuralStatus();
     };
     addAndMakeVisible(loadNeuralButton);
@@ -1527,6 +1528,7 @@ void FirstAudioProcessorEditor::setUpModelButtons() {
         audioProcessor.clearIr();
         loadedIrName = {};
         irStatusReason = {};
+        irStatusDetail = {};
         refreshIrStatus();
     };
     addAndMakeVisible(loadIrButton);

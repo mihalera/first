@@ -1194,6 +1194,7 @@ bool FirstAudioProcessor::loadNeuralModel (const juce::String& modelJson)
     // The new model is staged for adoption at the next audio block, so loading
     // never replaces the instance currently in inference.
     lastLoadErrorMessage = {};
+    lastLoadDetailMessage = {};
 
     if (modelJson.isEmpty())
     {
@@ -1210,7 +1211,12 @@ bool FirstAudioProcessor::loadNeuralModel (const juce::String& modelJson)
     }
 
     if (! (loadedLeft && loadedRight))
+    {
         lastLoadErrorMessage = "NOT A MODEL FILE";
+        lastLoadDetailMessage = "The file parsed as JSON but not as an RTNeural "
+                                "network: the layer stack it describes is not one "
+                                "this build can build.";
+    }
 
     // RTNeural's own JSON carries no rate - the model's topology is all it
     // describes - so this model has no rate to be run at and keeps the engine's,
@@ -1233,6 +1239,7 @@ bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
     // different networks on the two sides of the image.
 #if J37_HAS_RTNEURAL || J37_HAS_NAMCORE
     lastLoadErrorMessage = {};
+    lastLoadDetailMessage = {};
 
     if (namJson.isEmpty())
     {
@@ -1245,7 +1252,16 @@ bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
 
     try
     {
-        const auto parsed = nlohmann::json::parse (namJson.toStdString());
+        //  A .nam file written on Windows sometimes carries a UTF-8 byte-order
+        //  mark. nlohmann's parser refuses it - correctly, it is not JSON - and
+        //  the rejection reads as "NOT JSON" for a file that is exactly JSON.
+        //  JUCE's loadFileAsString() drops the mark for us; this guard keeps the
+        //  processor honest for any other caller that hands it raw bytes.
+        auto text = namJson;
+        if (text.startsWithChar (static_cast<juce::juce_wchar> (0xfeff)))
+            text = text.substring (1);
+
+        const auto parsed = nlohmann::json::parse (text.toStdString());
 
         // The architecture is checked HERE only when this build has NO engine for
         // the other ones, so the panel can say which kind of file arrived. WaveNet
@@ -1289,6 +1305,17 @@ bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
         if (loadedLeft && loadedRight)
             neuralModelRate.store (modelRate, std::memory_order_relaxed);
     }
+    catch (const std::exception& error)
+    {
+        lastLoadErrorMessage = "NOT JSON";
+        // The parser's own "[json.exception.parse_error.101] ..." is too long
+        // for the readout and just right for its tooltip - cut to one line's
+        // worth, because the parser quotes the document it choked on and a .nam
+        // document is mostly a weights array.
+        lastLoadDetailMessage = juce::String (error.what()).trim().substring (0, 240);
+        loadedLeft = false;
+        loadedRight = false;
+    }
     catch (...)
     {
         lastLoadErrorMessage = "NOT JSON";
@@ -1303,7 +1330,31 @@ bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
     }
 
     if (! (loadedLeft && loadedRight) && lastLoadErrorMessage.isEmpty())
+    {
         lastLoadErrorMessage = "BAD SHAPE";
+
+        //  Neither engine produced a model. NAM Core's own sentence is the one
+        //  thing that can tell a user whether the file is corrupt, from an
+        //  unsupported version, or simply an architecture this build lacks.
+        const auto engineSaid = juce::String (neuralL.lastBuildErrorText()).trim().substring (0, 240);
+        if (engineSaid.isNotEmpty())
+        {
+            lastLoadDetailMessage = engineSaid;
+
+            //  A version refusal is the one failure with a one-line answer, so
+            //  it keeps its own short label rather than "BAD SHAPE".
+            if (engineSaid.containsIgnoreCase ("unsupported version"))
+                lastLoadErrorMessage = "NAM VERSION";
+            else if (engineSaid.containsIgnoreCase ("missing required key"))
+                lastLoadErrorMessage = "NOT A NAM FILE";
+        }
+        else
+        {
+            lastLoadDetailMessage = "The file was read as a .nam document, but "
+                                    "neither the LSTM converter nor NAM Core could "
+                                    "build a model from it.";
+        }
+    }
 
     // The model's own rate reaches the stages here, after the load rather than
     // before it: the stages latch the pair on their next inference, so the bridge
@@ -1313,7 +1364,14 @@ bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
 
     return loadedLeft && loadedRight;
 #else
+    //  A pruned build has neither engine. Said out loud rather than returned as
+    //  a bare false: a silent refusal is what made "NAM does not load" look like
+    //  a button that does nothing, because the readout never left "NO MODEL".
     juce::ignoreUnused (namJson);
+    lastLoadErrorMessage = "NO NAM ENGINE";
+    lastLoadDetailMessage = "This build has neither RTNeural nor NAM Core, so no "
+                            ".nam file can be played - rebuild with the vendored "
+                            "libraries, or with -DJ37_NAMCORE=ON.";
     return false;
 #endif
 }
@@ -1321,6 +1379,7 @@ bool FirstAudioProcessor::loadNamModel (const juce::String& namJson)
 bool FirstAudioProcessor::loadIrFile (const juce::File& irFile)
 {
     lastLoadErrorMessage = {};
+    lastLoadDetailMessage = {};
 
     if (! irFile.existsAsFile())
     {
@@ -1335,6 +1394,9 @@ bool FirstAudioProcessor::loadIrFile (const juce::File& irFile)
     // unsupported codec, or a file that is not audio at all). The reason is
     // about THIS file, not about the stage.
     lastLoadErrorMessage = "NOT AUDIO";
+    lastLoadDetailMessage = "JUCE's basic formats read this file and found no "
+                            "audio frames: it is not a WAV or AIFF this build can "
+                            "decode, or it is empty.";
     return false;
 }
 

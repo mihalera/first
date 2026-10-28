@@ -854,6 +854,13 @@ public:
         and nothing here is visible to the audio thread. */
     const juce::String& lastLoadError() const noexcept { return lastLoadErrorMessage; }
 
+    /** The full sentence behind lastLoadError(): what the engine itself said was
+        wrong with the file. Shown as the readout's tooltip rather than in the
+        label, because it is a sentence - "Model config is an unsupported version
+        0.4.0." - and the band above the buttons is 17 px tall. Empty when there
+        is nothing more to say than the short reason. */
+    const juce::String& lastLoadDetail() const noexcept { return lastLoadDetailMessage; }
+
     //==============================================================================
     //  Audio -> UI telemetry.
     //
@@ -2007,6 +2014,9 @@ private:
     //  wrong with the file instead of only that something was. Message thread
     //  only; see the accessor above for why no guard is needed.
     juce::String lastLoadErrorMessage;
+
+    //  The engine's own explanation of that reason, for the readout's tooltip.
+    juce::String lastLoadDetailMessage;
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessor)

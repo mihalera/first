@@ -936,6 +936,10 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // label from the stage's own state, and without this hold a refused file
     // would read as a plain "NO MODEL" one frame after the picker said why.
     juce::String neuralStatusReason;
+    // The engine's own sentence about that refusal (lastLoadDetail()), held for
+    // the readout's tooltip. A reason the band can say in three words and the
+    // explanation it should still be able to give somewhere are two strings.
+    juce::String neuralStatusDetail;
 
     // The IR cabinet's picker: LOAD IR reads a WAV/AIFF impulse response into
     // the processor's convolvers, CLEAR IR releases it, and the status label
@@ -948,6 +952,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void refreshIrStatus();
     juce::String lastShownIrStatus;
     juce::String irStatusReason; // see neuralStatusReason above
+    juce::String irStatusDetail;  // see neuralStatusDetail above
 
     // The VINYL stage's noise-print picker, on the page whose knob is VINYL MIX: a
     // WAV recording of a real surface, which REPLACES the surface the stage

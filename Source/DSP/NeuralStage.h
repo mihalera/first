@@ -198,7 +198,25 @@ struct NeuralStage
     std::atomic<double> wantedModelRate { 0.0 };
     std::atomic<double> wantedEngineRate { 0.0 };
     std::atomic<bool> ratesPending { false };
+
+    //  Why the last buildFromNam() produced nothing, in the engine's own words.
+    //  Message thread only - the picker reads it straight after a refused load,
+    //  on the same call, so it needs no guard and no lifetime of its own. Empty
+    //  after a successful build and before the first attempt.
+    std::string lastBuildError;
 #endif
+
+    /** The detail behind a refused .nam build - the engine's own sentence, or
+        empty when the refusal came from somewhere that had nothing to add. */
+    const std::string& lastBuildErrorText() const noexcept
+    {
+#if J37_HAS_RTNEURAL || J37_HAS_NAMCORE
+        return lastBuildError;
+#else
+        static const std::string none;
+        return none;
+#endif
+    }
 
     /** True when a model is installed and ready to run. */
     bool isActive() const noexcept
@@ -315,10 +333,16 @@ struct NeuralStage
     bool buildFromNam (const nlohmann::json& namJson)
     {
         std::unique_ptr<InferenceModel> built;
+        lastBuildError.clear();
 
     #if J37_HAS_RTNEURAL
         if (isLstm (namJson))
+        {
             built = convertLstm (namJson);
+
+            if (built == nullptr)
+                lastBuildError = "the LSTM weights are not in a shape the converter reads";
+        }
     #endif
 
     #if J37_HAS_NAMCORE
@@ -329,6 +353,7 @@ struct NeuralStage
         if (built == nullptr)
             return false;
 
+        lastBuildError.clear();
         publish (std::move (built));
         return true;
     }
@@ -575,7 +600,16 @@ struct NeuralStage
         auto built = std::make_unique<NamCoreModel>();
 
         if (! built->backend.load (namJson))
+        {
+            //  NAM Core says exactly what was wrong with the document - an
+            //  unsupported version, a missing key, a weights array of the wrong
+            //  length - and its sentence is the only thing on this path that can
+            //  tell a user WHICH download to look for. It used to be dropped on
+            //  the floor here, which is why every refusal reached the panel as
+            //  the same "BAD SHAPE".
+            lastBuildError = built->backend.lastError();
             return nullptr;
+        }
 
         built->backend.prepare (built->backend.modelSampleRate());
 
@@ -584,7 +618,10 @@ struct NeuralStage
         // Refusing the load is the honest outcome: the panel says the file did not
         // load rather than playing dry while NEURAL reads as engaged.
         if (! built->backend.isPrepared())
+        {
+            lastBuildError = "the model would not start at its own sample rate";
             return nullptr;
+        }
 
         return built;
     }

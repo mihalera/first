@@ -591,6 +591,16 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
         if (! file.existsAsFile())
             return;
 
+        //  The folder is remembered the moment a file is CHOSEN, not when it
+        //  loads. A picker that only remembered a folder after a successful
+        //  load reopened on Documents after every refused file - and a refused
+        //  model is exactly when a user goes looking for another one, in the
+        //  same folder. The name is set at the same point so the readout names
+        //  the file that was just picked even if the stage refuses it.
+        const auto previousName = editor.loadedNeuralName;
+        editor.loadedNeuralName = file.getFileNameWithoutExtension();
+        rememberFolder ("lastModelFolder", file);
+
         // A .nam file goes through its own converter; every other extension
         // keeps the RTNeural JSON path. Both load the same kind of network -
         // the wire format is the only thing that differs.
@@ -605,15 +615,16 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
             // readout says WHY this one was refused - a .nam that needs the LSTM
             // architecture is a different download, not a corrupt file, and the
             // reason is the one thing the user can act on.
+            editor.loadedNeuralName = previousName;
             editor.neuralStatusReason = editor.audioProcessor.lastLoadError();
+            editor.neuralStatusDetail = editor.audioProcessor.lastLoadDetail();
             editor.lastShownNeuralStatus = {};   // force the next refresh to repaint the label
             editor.refreshNeuralStatus();
             return;
         }
 
-        editor.loadedNeuralName = file.getFileNameWithoutExtension();
         editor.neuralStatusReason = {};
-        rememberFolder ("lastModelFolder", file);
+        editor.neuralStatusDetail = {};
         editor.lastShownNeuralStatus = {};   // force the next refresh to repaint the label
         editor.openStageMix ("neural_mix");
         editor.refreshNeuralStatus();
@@ -625,13 +636,20 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
 void FirstAudioProcessorEditor::loadIrFromFile()
 {
     // Same asynchronous-chooser shape as the model picker: the chooser is kept
-    // alive by its own shared_ptr for the length of the callback. The filter
-    // names the two formats a DAW user actually meets; "*" keeps any other
-    // file JUCE's registered decoders can open selectable.
+    // alive by its own shared_ptr for the length of the callback, and the
+    // editor's handle makes a second click while one dialog is open a no-op for
+    // the same reason it is one on LOAD MODEL. It used to launch a chooser and
+    // never record it, so `irFileChooser` was a member nothing ever set - and a
+    // host closing the editor could not cancel a dialog it was still holding.
+    if (irFileChooser.active)
+        return;
+
     auto chooser = std::make_shared<juce::FileChooser> (
         "Load an impulse response",
         rememberedFolder ("lastIrFolder"),
-        "*.wav;*.aif*;*");
+        "*.wav;*.aif;*.aiff;*");
+    irFileChooser.chooser = chooser;
+    irFileChooser.active = true;
 
     const auto browserFlags = juce::FileBrowserComponent::openMode
                             | juce::FileBrowserComponent::canSelectFiles;
@@ -644,23 +662,34 @@ void FirstAudioProcessorEditor::loadIrFromFile()
             return;
 
         auto& editor = *safeThis;
+        if (editor.irFileChooser.chooser != chooser)
+            return;
+        editor.irFileChooser = {};
+
         const auto file = fc.getResult();
         if (! file.existsAsFile())
             return;
+
+        //  Remembered on CHOICE, like the model picker beside it: an IR that
+        //  fails to decode still tells the user where their IRs live.
+        const auto previousName = editor.loadedIrName;
+        editor.loadedIrName = file.getFileNameWithoutExtension();
+        rememberFolder ("lastIrFolder", file);
 
         if (! editor.audioProcessor.loadIrFile (file))
         {
             // A file that would not decode leaves the previous IR in place and
             // says WHICH failure it was, in the same shape the model picker uses.
+            editor.loadedIrName = previousName;
             editor.irStatusReason = editor.audioProcessor.lastLoadError();
+            editor.irStatusDetail = editor.audioProcessor.lastLoadDetail();
             editor.lastShownIrStatus = {};      // force the next refresh to repaint
             editor.refreshIrStatus();
             return;
         }
 
-        editor.loadedIrName = file.getFileNameWithoutExtension();
         editor.irStatusReason = {};
-        rememberFolder ("lastIrFolder", file);
+        editor.irStatusDetail = {};
         editor.lastShownIrStatus = {};      // force the next refresh to repaint
         editor.openStageMix ("ir_mix");
         editor.refreshIrStatus();
@@ -675,10 +704,15 @@ void FirstAudioProcessorEditor::loadNoisePrintFromFile()
     // else selectable, so a user who picks an AIFF is told by the readout what
     // it was rather than left wondering why the file is not in the dialogue at
     // all.
+    if (noiseFileChooser.active)
+        return;
+
     auto chooser = std::make_shared<juce::FileChooser> (
         "Load a surface-noise print",
         rememberedFolder ("lastNoiseFolder"),
         "*.wav;*");
+    noiseFileChooser.chooser = chooser;
+    noiseFileChooser.active = true;
 
     const auto browserFlags = juce::FileBrowserComponent::openMode
                             | juce::FileBrowserComponent::canSelectFiles;
@@ -691,9 +725,17 @@ void FirstAudioProcessorEditor::loadNoisePrintFromFile()
             return;
 
         auto& editor = *safeThis;
+        if (editor.noiseFileChooser.chooser != chooser)
+            return;
+        editor.noiseFileChooser = {};
+
         const auto file = fc.getResult();
         if (! file.existsAsFile())
             return;
+
+        // Choice, not success: the print's decode finishes later and can fail,
+        // but the folder is where the user's prints are either way.
+        rememberFolder ("lastNoiseFolder", file);
 
         // Whatever this returns, the answer is NOT known here: a print is read
         // and decoded on the loader's own thread, so the processor only refuses
@@ -703,7 +745,6 @@ void FirstAudioProcessorEditor::loadNoisePrintFromFile()
         editor.audioProcessor.loadNoiseFile (file);
 
         editor.noiseStatusReason = {};
-        rememberFolder ("lastNoiseFolder", file);
         editor.lastShownNoiseStatus = {};    // force the next refresh to repaint
         editor.refreshNoiseStatus();
     });
@@ -1129,8 +1170,15 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     // they are already sharing that height three ways; the WIDTH was the one
     // dimension with slack in it.
     // (The width itself lives on the class now: see headerColumnWidth.)
-    const auto headerRowOneY = header.getY() + 10;
-    const auto headerRowTwoY = header.getY() + 36;
+    //  Six and thirty-two rather than ten and thirty-six. Both rows moved up
+    //  together by four pixels so the METAL key stops touching the status pill:
+    //  row two used to end at the header's +58 and the pill starts at +58 as
+    //  well (the label sits at +60 and the pill is two pixels larger), which the
+    //  user saw as the theme key sitting on the STEREO / REAL TIME badge. There
+    //  are now four clear pixels between the key and the pill, and the same
+    //  four between the two rows of switches.
+    const auto headerRowOneY = header.getY() + 6;
+    const auto headerRowTwoY = header.getY() + 32;
     // 60 rather than 62, and 16 rather than 18: the third row has to end at or
     // above the header's bottom edge once the pill around it is taken into
     // account (see the note at the label below).
@@ -1765,6 +1813,12 @@ void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& control
     // FAMILIES on top (the three large buttons), the active family's PAGES under
     // them. The divider (controlsDividerOffset) sits below both, so the knob grid
     // itself never pays a row for either strip.
+    //  The family row and the page row are the SAME height, and the same 22 px
+    //  the header's engine switches use. They were 22 and 24: two rows of keys
+    //  one above the other, drawn half a millimetre differently, which is the
+    //  kind of difference that reads as a mistake long before anyone can name
+    //  it - and exactly what "the toggles on one tab are stretched differently"
+    //  was pointing at.
     constexpr int familyRowHeight = 22;
     const auto familyRow = juce::Rectangle<int> (controlsPanel.getX() + 14,
                                                  controlsPanel.getY() + 34,
@@ -1781,7 +1835,7 @@ void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& control
                                     familyRow.getHeight());
 
     const auto tabBarTop = controlsPanel.getY() + 60;
-    const auto tabBarHeight = 24;
+    constexpr int tabBarHeight = 22;
 
     // Pages of the CURRENT family only: the bar re-flows to the family's page
     // count, so TAPE's five buttons get a fifth more width than the old ten-in-a-
@@ -2342,7 +2396,12 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
         // differs is only what is drawn on the plate.
         constexpr int settingsRowGap = 12;
         const auto rowHeight = juce::jmax (54, (geometry.grid.getHeight() - settingsRowGap) / 2);
-        const auto controlHeight = juce::jlimit (30, 46, rowHeight - 30);
+        //  56 rather than 46. A SETTINGS row is half the page - around 144 px at
+        //  the preferred window - and a 46 px control left a hundred pixels of
+        //  empty metal around every switch on the one page with no knobs to use
+        //  it. The plate grows into its row now; 56 is still a key and not a
+        //  slab, and it is the same cap the roomier rows have always solved to.
+        const auto controlHeight = juce::jlimit (30, 56, rowHeight - 30);
 
         const auto placeSetting = [&] (juce::Label& targetLabel, juce::Component& targetBox,
                                        int column, int row, int rowLeft)
@@ -2436,35 +2495,43 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
     }
     else if (geometry.shapersTab)
     {
-        // MODELS: the two file-fed stages on one page, each with its loader
+        //  MODELS: the two file-fed stages on one page, each with its loader
         // under its own knob. The NEURAL picker takes the band's FIRST column
-        // - LOAD MODEL on the control line, CLEAR beneath it, the model-status
+        // - LOAD MODEL and CLEAR across the control line, the model-status
         // readout in the caption line above them - and the IR loader takes the
-        // second and third: the status readout as the second column's caption
-        // (the same label-above-control convention the knobs use), the two
-        // buttons on the control line. paint() draws the picker's card behind
-        // this band's first column - the two geometries share the arithmetic
-        // (grid / 4 columns, 50 px band), so they cannot disagree.
+        // second: the same pair of half-cell keys, the same caption line. The
+        // IR READOUT then spans that column AND the third, because a file name
+        // is the one string on the page whose length is not known in advance.
+        //
+        //  The four keys are the SAME size, which they were not before: LOAD
+        //  MODEL and CLEAR shared one cell between them while LOAD IR and CLEAR
+        //  IR each took a whole one, so on one tab two keys were half the width
+        //  of the two beside them. That is the user's "the toggles on one tab are
+        //  stretched differently", and it was a property of this placement
+        //  rather than of the drawing.
+        //
+        //  LOAD and CLEAR share the band's ONE control line, side by side. CLEAR
+        //  used to sit UNDER LOAD (buttonY + buttonH + 6), which is exactly six
+        //  pixels past the band's bottom edge on every panel size - the user's
+        //  "Clear falls out of the window".
         const auto buttonY = geometry.memberRowY + 20;
-        const auto buttonH = juce::jmin (30, geometry.grid.getBottom() - geometry.memberRowY - 22);
-        // LOAD and CLEAR share the band's ONE control line, side by side. CLEAR
-        // used to sit UNDER LOAD (buttonY + buttonH + 6), which is exactly six
-        // pixels past the band's bottom edge on every panel size - the user's
-        // "Clear falls out of the window". Two buttons across the cell fit with
-        // room to spare: the cell is ~170 px wide, the pair needs ~160.
+        const auto buttonH = juce::jmin(30, geometry.grid.getBottom() - geometry.memberRowY - 22);
         const auto halfButtonWidth = (geometry.cellWidth - 30) / 2;
-        loadNeuralButton.setBounds (geometry.grid.getX() + 12, buttonY,
-                                    halfButtonWidth, buttonH);
-        clearNeuralButton.setBounds (geometry.grid.getX() + 18 + halfButtonWidth, buttonY,
-                                     halfButtonWidth, buttonH);
+        const auto placeLoaderPair = [&] (juce::TextButton& load, juce::TextButton& clear,
+                                          int column)
+        {
+            const auto cellLeft = geometry.grid.getX() + column * geometry.cellWidth;
+            load.setBounds (cellLeft + 12, buttonY, halfButtonWidth, buttonH);
+            clear.setBounds (cellLeft + 18 + halfButtonWidth, buttonY, halfButtonWidth, buttonH);
+        };
+
+        placeLoaderPair (loadNeuralButton, clearNeuralButton, 0);
+        placeLoaderPair (loadIrButton, clearIrButton, 1);
+
         neuralStatusLabel.setBounds (geometry.grid.getX() + 6, geometry.memberRowY - 1,
                                      geometry.cellWidth - 12, 17);
-        irStatusLabel.setBounds (geometry.grid.getX() + geometry.cellWidth + 5, geometry.memberRowY - 1,
-                                 geometry.cellWidth - 10, 17);
-        loadIrButton.setBounds (geometry.grid.getX() + geometry.cellWidth + 12,
-                                buttonY, geometry.cellWidth - 24, buttonH);
-        clearIrButton.setBounds (geometry.grid.getX() + 2 * geometry.cellWidth + 12,
-                                 buttonY, geometry.cellWidth - 24, buttonH);
+        irStatusLabel.setBounds (geometry.grid.getX() + geometry.cellWidth + 6,
+                                 geometry.memberRowY - 1, 2 * geometry.cellWidth - 12, 17);
     }
     else if (geometry.vinylTab)
     {

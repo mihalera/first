@@ -48,16 +48,25 @@ void FirstAudioProcessorEditor::refreshNeuralStatus() {
                              ? juce::String(" @ ") + juce::String(modelKilo) + "K"
                              : juce::String();
 
+    //  A loaded model is named with the word MODEL in front of it. The plain
+    //  file name alone read as a caption rather than as a status, and beside
+    //  "NO IR" it was not obvious which of the two stages the line belonged to -
+    //  the user asked why the IR stage never says whether anything is loaded.
     const auto status = neuralStatusReason.isNotEmpty()
                             ? xlat("INVALID MODEL") + " (" + neuralStatusReason + ")"
                         : audioProcessor.hasNeuralModel() && loadedNeuralName.isNotEmpty()
-                            ? loadedNeuralName + rateTag
+                            ? juce::String ("MODEL: ") + loadedNeuralName + rateTag
                             : xlat("NO MODEL");
 
     if (status == lastShownNeuralStatus)
         return;
 
     lastShownNeuralStatus = status;
+    //  The engine's own sentence about a refused file, where there is one: the
+    //  band above the keys holds a dozen characters, and "unsupported version"
+    //  is the difference between a corrupt download and a different one.
+    neuralStatusLabel.setTooltip (neuralStatusDetail.isNotEmpty() ? neuralStatusDetail
+                                                                : neuralStatusReason);
     // The file's name and the reason are DATA, not sentences, so they are not
     // looked up: the two state words around them are (see the note above xlat).
     neuralStatusLabel.setText(status, juce::dontSendNotification);
@@ -70,15 +79,21 @@ void FirstAudioProcessorEditor::refreshIrStatus() {
     // The processor is the source of truth, exactly as with the model status:
     // the stage can be cleared from either button, so the readout follows
     // whatever the convolvers actually hold.
+    //  Named, and LABELLED: "IR: cabinet" is the same three-state readout the
+    //  model picker has (name, reason, nothing), in the same words. It used to
+    //  show the bare file name, which is why the user could load an IR and still
+    //  not be able to tell whether the stage had taken it.
     const auto status = irStatusReason.isNotEmpty()
                             ? xlat("INVALID IR") + " (" + irStatusReason + ")"
-                        : audioProcessor.hasIr() && loadedIrName.isNotEmpty() ? loadedIrName
-                                                                              : xlat("NO IR");
+                        : audioProcessor.hasIr() && loadedIrName.isNotEmpty()
+                            ? juce::String ("IR: ") + loadedIrName
+                            : xlat("NO IR");
 
     if (status == lastShownIrStatus)
         return;
 
     lastShownIrStatus = status;
+    irStatusLabel.setTooltip (irStatusDetail.isNotEmpty() ? irStatusDetail : irStatusReason);
     irStatusLabel.setText(status, juce::dontSendNotification);
     irStatusLabel.setColour(juce::Label::textColourId, audioProcessor.hasIr()
                                                            ? paletteFor(false).accent
