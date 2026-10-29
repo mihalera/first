@@ -959,9 +959,10 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::String irStatusReason; // see neuralStatusReason above
     juce::String irStatusDetail;  // see neuralStatusDetail above
 
-    // The VINYL stage's noise-print picker, on the page whose knob is VINYL MIX: a
-    // WAV recording of a real surface, which REPLACES the surface the stage
-    // synthesises (see Source/DSP/VinylStage.h and Source/DSP/NoiseLoader.h). A
+    // The VINYL stage's noise-print picker, on the page whose CURVE knob puts the
+    // stage in the path: a WAV recording of a real surface, which REPLACES the
+    // surface the stage synthesises (see Source/DSP/VinylStage.h and
+    // Source/DSP/NoiseLoader.h). A
     // print is DATA like a model or an IR - no parameter, no attachment, nothing
     // a session or a preset carries - and its decode happens on the loader's own
     // thread, so even the load is asynchronous twice over: the chooser returns

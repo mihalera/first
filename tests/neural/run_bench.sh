@@ -98,6 +98,7 @@ wait_for_wave
     -isystem "${RTNEURAL_ROOT}" \
     -isystem "${NLOHMANN_ROOT}" \
     -isystem "${NAM_ROOT}" -isystem "${EIGEN_ROOT}" -isystem "${NAM_JSON_INCLUDE}" \
-    "${HERE}/bench_nam.cpp" "${nam_objects[@]}" -o "${BUILD}/bench_nam"
+    "${HERE}/bench_nam.cpp" "${SOURCE}/DSP/NamCoreRegistration.cpp" \
+    "${nam_objects[@]}" -o "${BUILD}/bench_nam"
 
 "${BUILD}/bench_nam" "${HERE}/fixtures"

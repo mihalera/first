@@ -148,11 +148,13 @@ namespace j37panel
         //  NOISE: they are the record's CHARACTER, while the faults are its
         //  noise - listing them on both pages would put the same knob on two
         //  tabs, and the grid can only place one of them.
-        { "VINYL", "The record-playing stage: VINYL MIX is how much of it is in "
-                   "the output, CRACKLE the surface's granular texture and RUMBLE "
-                   "the platter's own low thump. GENERATION / TURNTABLE / "
-                   "CARTRIDGE re-voice it all from CHARACTER; the FAULTS are on "
-                   "RECORD.",
+        { "VINYL", "The record-playing stage: CURVE is how much of its RIAA "
+                   "playback curve is applied, CRACKLE the surface's "
+                   "granular texture and RUMBLE the platter's own low thump. Its "
+                   "noise is the NOISE section's - NOISE MIX and NOISE LVL set how "
+                   "much of it is heard and how loud it runs. GENERATION / "
+                   "TURNTABLE / CARTRIDGE re-voice the colour from CHARACTER; the "
+                   "FAULTS are on RECORD.",
                      3, 0, { 33, 34, 35 } },
         //  The seven SOURCE knobs alone: the saturation mix IS the page, so the
         //  user dialling TAPE up against VALVE is looking at the whole mix and
@@ -254,7 +256,7 @@ namespace j37panel
         "the head's drive and the machine's two voicing controls",
         "the machine's own departures from a clean signal",
         "the record's five faults, one page each of its own",
-        "the record-playing stage: how much, how rough, how low",
+        "the record's playback curve, its surface texture and its low thump",
         "seven machines, seven shares, one character",
         "the curve-benders: bias, supply sag, and the octave below",
         "the second head: time, repeats, offset and where they land",

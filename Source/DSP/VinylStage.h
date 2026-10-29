@@ -237,9 +237,10 @@ struct VinylStage
     float nextPrintSample (int channel, float printGain) noexcept
     {
         // `printGain <= 0.0f` rather than `== 0.0f`: the gain is a share of the
-        // print (0..1, taken from NOISE and VINYL MIX), so nothing below zero is
-        // a real case, and the test is exact either way - -Wfloat-equal is right
-        // to object to an equality on floating point, not to this.
+        // print (0..1, taken from the NOISE section's MIX and LVL), so nothing
+        // below zero is a real case, and the test is exact either way -
+        // -Wfloat-equal is right to object to an equality on floating point,
+        // not to this.
         if (noisePrint == nullptr || noisePrint->empty() || printGain <= 0.0f)
             return 0.0f;
 
@@ -559,7 +560,7 @@ struct VinylStage
         // running off speed does not merely hiss - the whole groove's output rises
         // and falls with the stylus's tracking error, which is what this term is.
         // It is folded onto the stage's output rather than onto the dry path so
-        // that at VINYL 0 none of it exists.
+        // that at CURVE 0 none of it exists.
         float speedWander = 0.0f;
         if (speedModulation > 0.0f)
         {
