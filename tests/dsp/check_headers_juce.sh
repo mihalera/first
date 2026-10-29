@@ -146,7 +146,7 @@ TU="${BUILD}/header_check.cpp"
     spec.numChannels = 2;
     ir.prepare (spec);
     juce::AudioBuffer<float> irBuffer (2, 512);
-    ir.process (irBuffer, 2, true);
+    ir.process (irBuffer, 2, irBuffer.getNumSamples(), true);
     x += ir.hasIr ? 1.0f : 0.0f;
     x += ir.loadFromFile (juce::File()) ? 1.0f : 0.0f;
     ir.clear();

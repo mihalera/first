@@ -52,21 +52,34 @@ void FirstAudioProcessorEditor::refreshNeuralStatus() {
     //  file name alone read as a caption rather than as a status, and beside
     //  "NO IR" it was not obvious which of the two stages the line belonged to -
     //  the user asked why the IR stage never says whether anything is loaded.
+    //  The NAME comes from the processor, not from this editor. A model is
+    //  installed in the stage, so it outlives the window that loaded it: reading
+    //  an editor member here made a reopened editor report "NO MODEL" over a
+    //  model that was playing, and a second editor on the same instance could not
+    //  know the first one's load at all.
+    const auto& modelName = audioProcessor.getLoadedNeuralName();
     const auto status = neuralStatusReason.isNotEmpty()
                             ? xlat("INVALID MODEL") + " (" + neuralStatusReason + ")"
-                        : audioProcessor.hasNeuralModel() && loadedNeuralName.isNotEmpty()
-                            ? juce::String ("MODEL: ") + loadedNeuralName + rateTag
+                        : audioProcessor.hasNeuralModel() && modelName.isNotEmpty()
+                            ? juce::String ("MODEL: ") + modelName + rateTag
                             : xlat("NO MODEL");
 
-    if (status == lastShownNeuralStatus)
+    //  The tooltip is part of what changed, not just the label: two different
+    //  refusals can share the one short reason ("BAD SHAPE") and differ in the
+    //  engine's own sentence, and a comparison that looked only at the label left
+    //  the second file's explanation invisible behind the first's. The two are
+    //  compared together and the label is given the short one.
+    const auto neuralTooltip = neuralStatusDetail.isNotEmpty() ? neuralStatusDetail
+                                                              : neuralStatusReason;
+    if (status == lastShownNeuralStatus && neuralTooltip == lastShownNeuralTooltip)
         return;
 
     lastShownNeuralStatus = status;
+    lastShownNeuralTooltip = neuralTooltip;
     //  The engine's own sentence about a refused file, where there is one: the
     //  band above the keys holds a dozen characters, and "unsupported version"
     //  is the difference between a corrupt download and a different one.
-    neuralStatusLabel.setTooltip (neuralStatusDetail.isNotEmpty() ? neuralStatusDetail
-                                                                : neuralStatusReason);
+    neuralStatusLabel.setTooltip (neuralTooltip);
     // The file's name and the reason are DATA, not sentences, so they are not
     // looked up: the two state words around them are (see the note above xlat).
     neuralStatusLabel.setText(status, juce::dontSendNotification);
@@ -83,17 +96,20 @@ void FirstAudioProcessorEditor::refreshIrStatus() {
     //  model picker has (name, reason, nothing), in the same words. It used to
     //  show the bare file name, which is why the user could load an IR and still
     //  not be able to tell whether the stage had taken it.
+    const auto& irName = audioProcessor.getLoadedIrName();
     const auto status = irStatusReason.isNotEmpty()
                             ? xlat("INVALID IR") + " (" + irStatusReason + ")"
-                        : audioProcessor.hasIr() && loadedIrName.isNotEmpty()
-                            ? juce::String ("IR: ") + loadedIrName
+                        : audioProcessor.hasIr() && irName.isNotEmpty()
+                            ? juce::String ("IR: ") + irName
                             : xlat("NO IR");
 
-    if (status == lastShownIrStatus)
+    const auto irTooltip = irStatusDetail.isNotEmpty() ? irStatusDetail : irStatusReason;
+    if (status == lastShownIrStatus && irTooltip == lastShownIrTooltip)
         return;
 
     lastShownIrStatus = status;
-    irStatusLabel.setTooltip (irStatusDetail.isNotEmpty() ? irStatusDetail : irStatusReason);
+    lastShownIrTooltip = irTooltip;
+    irStatusLabel.setTooltip (irTooltip);
     irStatusLabel.setText(status, juce::dontSendNotification);
     irStatusLabel.setColour(juce::Label::textColourId, audioProcessor.hasIr()
                                                            ? paletteFor(false).accent

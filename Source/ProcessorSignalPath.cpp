@@ -367,7 +367,15 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
             // that boundary and nothing else - -Wsign-conversion on both compilers.
             postFxScratch.copyFrom (c, 0, block.getChannelPointer (static_cast<std::size_t> (c)),
                                     samples);
-        irStage.process (postFxScratch, channels, true);
+        //  `samples`, not the scratch buffer's capacity: the buffer is allocated
+        //  for the longest block the engine can ever see (eight times the session
+        //  block), and the frames past this block's end are last callback's.
+        //  Passing the whole buffer asked the convolver to process eight times the
+        //  audio in hand - and the block after an IR load is the one where JUCE's
+        //  convolution mixer is crossfading, whose buffers are sized for the
+        //  prepared maximum. That is the write that crashed, and it crashed on the
+        //  load because openStageMix had just opened IR MIX.
+        irStage.process (postFxScratch, channels, samples, true);
         irActive = true;
     }
 

@@ -667,14 +667,24 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // otherwise a rate switch would leave wow/flutter at a stale phase and click.
     resetSampleRateDependentState();
 
-    irStage.prepare ({ sampleRate,
-                       static_cast<juce::uint32> (juce::jmax (1, samplesPerBlock)),
-                       2 });
+    //  The IR convolvers are NOT prepared here: they run inside the oversampled
+    //  engine, and setOversamplingFactor above has already handed them that rate
+    //  and block. Preparing them again from the session's numbers here was the
+    //  defect - see the call site for the whole of it.
+    //
+    //  What is left for this method is the part of a prepare that is not about
+    //  sizing: the convolution's own tail. The old prepare used to clear it as a
+    //  side effect of rebuilding the engine, and the stage's prepare now returns
+    //  early on an unchanged spec (it is reached from a parameter change too), so
+    //  the clear has to be asked for. A new session must not start with the
+    //  previous one's reverb in the buffer.
 
     // The noise print, if one is loaded, is converted to this rate HERE - a
     // prepare may allocate, an audio callback may not - and the print stays in
     // its decoded form so a later rate switch costs arithmetic rather than
     // another read of the file.
+    irStage.reset();
+
     noiseLoader.prepare (sampleRate);
     postFxScratch.setSize (2, juce::jmax (1, samplesPerBlock * 8), false, true, true);
     postFxScratch.clear();
@@ -1012,6 +1022,19 @@ void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int 
         // alternative is an engineering change on the audio thread.
         const auto engineRate = static_cast<double> (juce::jmax (1.0f, sampleRate * oversamplingRateFactor));
         corrector.prepare (engineRate, 2);
+
+        //  The IR convolvers run inside the engine too - Source/ProcessorSignalPath.cpp
+        //  hands them the block the upsampler produced, at the rate it produced it.
+        //  They were prepared from prepareToPlay's SESSION rate and block, so the
+        //  stage was prepared for a rate and a maximum block it never saw: the file
+        //  was resampled for the wrong rate, and at 2x and above every block it
+        //  received was longer than the maximum it had been prepared for. Both
+        //  numbers are the engine's here, beside the corrector's, and the stage
+        //  ignores a spec that has not moved.
+        irStage.prepare ({ engineRate,
+                           static_cast<juce::uint32> (juce::jmax (1, lastBlockSize)
+                                                      * juce::jmax (1, static_cast<int> (oversamplingRateFactor))),
+                           2 });
 
         // The tracker rides the same rate, for the same reason and with the same
         // absence of allocation: its decimation is what makes a lag mean the same
@@ -1403,6 +1426,7 @@ bool FirstAudioProcessor::loadIrFile (const juce::File& irFile)
 void FirstAudioProcessor::clearIr()
 {
     irStage.clear();
+    loadedIrName = {};
 }
 
 bool FirstAudioProcessor::loadNoiseFile (const juce::File& noiseFile)
@@ -1429,6 +1453,7 @@ void FirstAudioProcessor::clearNeuralModel()
 {
     neuralL.clear();
     neuralR.clear();
+    loadedNeuralName = {};
 }
 
 //==============================================================================

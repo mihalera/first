@@ -931,6 +931,10 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void loadNeuralModelFromFile();
     void refreshNeuralStatus();
     juce::String lastShownNeuralStatus;
+    // The tooltip that went with that text. Compared alongside it so a second
+    // refused file with the same short reason still refreshes the sentence
+    // behind it - see refreshNeuralStatus().
+    juce::String lastShownNeuralTooltip;
     // Non-empty while the last load was REFUSED: the reason the processor gave,
     // held here so the readout keeps showing it. The 30 Hz refresh repaints the
     // label from the stage's own state, and without this hold a refused file
@@ -951,6 +955,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void loadIrFromFile();
     void refreshIrStatus();
     juce::String lastShownIrStatus;
+    juce::String lastShownIrTooltip;   // see lastShownNeuralTooltip above
     juce::String irStatusReason; // see neuralStatusReason above
     juce::String irStatusDetail;  // see neuralStatusDetail above
 
@@ -974,10 +979,11 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // Opens a file-fed stage's MIX to full after a load that succeeded, but only
     // while the blend is still fully closed; see the note on the definition.
     void openStageMix(const juce::String &parameterId);
-    // The loaded model's filename, kept so the readout can name it after a
-    // reload or a refresh. Empty when the stage holds no model.
-    juce::String loadedNeuralName;
-    juce::String loadedIrName;
+    //  The loaded model's and IR's filenames are NOT stored here: they describe
+    //  the stages, so the processor owns them (setLoadedNeuralName /
+    //  getLoadedNeuralName and the IR pair). An editor member was wrong twice -
+    //  a reopened window lost the name while the model kept playing, and a
+    //  second editor on the same instance never saw the first one's load.
 
     // The remaining choice parameters: the DI pad, the machine's track layout,
     // and the two EQ orders. Each is a list rather than a knob because its

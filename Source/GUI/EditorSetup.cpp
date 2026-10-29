@@ -1467,21 +1467,25 @@ void FirstAudioProcessorEditor::setUpModelButtons() {
     setTip(loadNeuralButton, "LOAD MODEL - reads a neural model and installs it as "
                              "the plugin's optional learned nonlinearity. Both wire "
                              "formats are read: RTNeural's own JSON and the .nam files "
-                             "NeuralAmpModeler writes, of which the LSTM models are "
-                             "played and the WaveNet and Feather ones are refused by "
-                             "name. The network runs per channel, after the tape "
-                             "stage. NEURAL sets how much of its output reaches the "
-                             "signal, and a load that succeeds opens NEURAL to full "
-                             "while it is still closed, so the new model is heard at "
-                             "once. The picker reopens in the folder the last model "
-                             "came from. Loading a model does not change any other "
-                             "parameter and is not saved with the session.");
+                             "NeuralAmpModeler writes - the LSTM, WaveNet, ConvNet, "
+                             "Linear and Sequential architectures through the two "
+                             "engines behind the stage. The network runs per channel, "
+                             "after the tape stage. NEURAL sets how much of its "
+                             "output reaches the signal, and a load that succeeds "
+                             "opens NEURAL to full while it is still closed, so the "
+                             "new model is heard at once. A file the stage refuses "
+                             "leaves the previous model in place and says why on the "
+                             "readout above these keys - hover it for the engine's "
+                             "own sentence. The picker reopens in the folder the last "
+                             "model came from. Loading a model does not change any "
+                             "other parameter and is not saved with the session.");
     setTip(clearNeuralButton, "CLEAR - releases the loaded model, returning the NEURAL "
                               "stage to its transparent pass-through.");
     loadNeuralButton.onClick = [this] { loadNeuralModelFromFile(); };
     clearNeuralButton.onClick = [this] {
+        // The processor clears its own model NAME with the model (see
+        // clearNeuralModel), so the readout cannot name a stage that is empty.
         audioProcessor.clearNeuralModel();
-        loadedNeuralName = {};
         // A refusal belongs to the file that was refused, so clearing the stage
         // clears the reason with it: "NO MODEL" is the truth again afterwards.
         neuralStatusReason = {};
@@ -1493,6 +1497,12 @@ void FirstAudioProcessorEditor::setUpModelButtons() {
 
     styleLabel(neuralStatusLabel, "NO MODEL", 8.5f, paletteFor(false).secondary, false,
                juce::Justification::centred);
+    //  The readout keeps its mouse events: it is a TooltipClient, and the
+    //  engine's own sentence about a refused file is shown as its tooltip. What
+    //  keeps it from ever eating a click on the key below is the layout - the
+    //  caption line and the key line are separate rectangles in
+    //  placeTabMembers(), five pixels apart - not a disabled hit test, which
+    //  would also disable the tip.
     addAndMakeVisible(neuralStatusLabel);
 
     // ---------------------------------------------------------------
@@ -1525,8 +1535,7 @@ void FirstAudioProcessorEditor::setUpModelButtons() {
                           "pass-through.");
     loadIrButton.onClick = [this] { loadIrFromFile(); };
     clearIrButton.onClick = [this] {
-        audioProcessor.clearIr();
-        loadedIrName = {};
+        audioProcessor.clearIr();   // clears the processor's IR name with the stage
         irStatusReason = {};
         irStatusDetail = {};
         refreshIrStatus();
@@ -1536,7 +1545,7 @@ void FirstAudioProcessorEditor::setUpModelButtons() {
 
     styleLabel(irStatusLabel, "NO IR", 8.5f, paletteFor(false).secondary, false,
                juce::Justification::centred);
-    addAndMakeVisible(irStatusLabel);
+    addAndMakeVisible(irStatusLabel);   // keeps its tooltip; see the note on the model readout
 
     // ---------------------------------------------------------------
     //  The VINYL page's noise-print picker, in the band under its three knobs.
@@ -1588,7 +1597,7 @@ void FirstAudioProcessorEditor::setUpModelButtons() {
 
     styleLabel(noiseStatusLabel, "NO PRINT", 8.5f, paletteFor(false).secondary, false,
                juce::Justification::centred);
-    addAndMakeVisible(noiseStatusLabel);
+    addAndMakeVisible(noiseStatusLabel);   // see the note on the model readout
 }
 
 void FirstAudioProcessorEditor::setUpInlineLists() {

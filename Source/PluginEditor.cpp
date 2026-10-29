@@ -597,8 +597,8 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
         //  model is exactly when a user goes looking for another one, in the
         //  same folder. The name is set at the same point so the readout names
         //  the file that was just picked even if the stage refuses it.
-        const auto previousName = editor.loadedNeuralName;
-        editor.loadedNeuralName = file.getFileNameWithoutExtension();
+        const auto previousName = editor.audioProcessor.getLoadedNeuralName();
+        editor.audioProcessor.setLoadedNeuralName (file.getFileNameWithoutExtension());
         rememberFolder ("lastModelFolder", file);
 
         // A .nam file goes through its own converter; every other extension
@@ -615,7 +615,7 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
             // readout says WHY this one was refused - a .nam that needs the LSTM
             // architecture is a different download, not a corrupt file, and the
             // reason is the one thing the user can act on.
-            editor.loadedNeuralName = previousName;
+            editor.audioProcessor.setLoadedNeuralName (previousName);
             editor.neuralStatusReason = editor.audioProcessor.lastLoadError();
             editor.neuralStatusDetail = editor.audioProcessor.lastLoadDetail();
             editor.lastShownNeuralStatus = {};   // force the next refresh to repaint the label
@@ -672,15 +672,15 @@ void FirstAudioProcessorEditor::loadIrFromFile()
 
         //  Remembered on CHOICE, like the model picker beside it: an IR that
         //  fails to decode still tells the user where their IRs live.
-        const auto previousName = editor.loadedIrName;
-        editor.loadedIrName = file.getFileNameWithoutExtension();
+        const auto previousName = editor.audioProcessor.getLoadedIrName();
+        editor.audioProcessor.setLoadedIrName (file.getFileNameWithoutExtension());
         rememberFolder ("lastIrFolder", file);
 
         if (! editor.audioProcessor.loadIrFile (file))
         {
             // A file that would not decode leaves the previous IR in place and
             // says WHICH failure it was, in the same shape the model picker uses.
-            editor.loadedIrName = previousName;
+            editor.audioProcessor.setLoadedIrName (previousName);
             editor.irStatusReason = editor.audioProcessor.lastLoadError();
             editor.irStatusDetail = editor.audioProcessor.lastLoadDetail();
             editor.lastShownIrStatus = {};      // force the next refresh to repaint
@@ -2324,11 +2324,11 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
 //  Where the MODELS page's spectrum is drawn.
 //
 //  The arithmetic MIRRORS paint()'s, deliberately and in the same words it uses for
-//  the neural card: the member band is a fixed 50 px strip at the grid's bottom, the
-//  grid is the controls band reduced by 14 and cut by the divider offset, and the
-//  band is four columns wide. The card takes the first column, the two IR loaders
-//  the second and third, and this takes the FOURTH - the one cell on the page no
-//  control claims.
+//  the two loader cards: the member band is a fixed 50 px strip at the grid's bottom,
+//  the grid is the controls band reduced by 14 and cut by the divider offset, and the
+//  band is four columns wide. The NEURAL card takes the first column and the IR card
+//  the second; this takes the TWO that are left, so the curve is a wide readout
+//  instead of one narrow column with a caption that has to shrink to fit.
 //
 //  It exists as a function rather than as a second copy inside the timer because
 //  paint() and the timer MUST agree: one draws the curve, the other decides which
@@ -2339,18 +2339,20 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
 juce::Rectangle<int> FirstAudioProcessorEditor::shapersSpectrumBounds() const
 {
     constexpr int memberBandHeight = 50;
-    constexpr int spectrumColumn = 3;
+    constexpr int spectrumColumn = 2;
 
     auto grid = getEditorLayout().controls.reduced (14);
     grid.removeFromTop (controlsDividerOffset - 14 + 8);
     grid.removeFromBottom (8);
 
     const auto cellWidth = grid.getWidth() / tabColumns;
+    const auto left = grid.getX() + spectrumColumn * cellWidth;
 
-    return { grid.getX() + spectrumColumn * cellWidth,
-             grid.getBottom() - memberBandHeight,
-             cellWidth,
-             memberBandHeight };
+    //  The width is measured to the grid's own right edge rather than written as
+    //  two cell widths: the grid's width is not always divisible by four, and the
+    //  three leftover pixels belong to the last column of the band, not to nothing.
+    return { left, grid.getBottom() - memberBandHeight,
+             grid.getRight() - left, memberBandHeight };
 }
 
 void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry)
@@ -2374,8 +2376,29 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
     else if (geometry.machineTab)
     {
         // MACHINE: the machine's TRACKS selector rides the band at the page's
-        // foot, under its seven knobs.
-        placeDeckSwitch (geometry, tracksLabel, tracksBox, 0, 1, "TRACKS");
+        // foot, under its seven knobs - and CENTRED in it.
+        //
+        // Pinned to the first cell it left three cells of empty metal beside it,
+        // which is the user's "there is still a lot of free space, to the right
+        // of TRACKS": the page has exactly one member, so the member band is the
+        // control's whole world and a page of one should not be laid out as if
+        // three more were coming. Two cells wide, centred under the knob row,
+        // gives the list room for a name and keeps the air either side equal.
+        //  The cell is written from the grid's two EDGES rather than as two cell
+        //  widths: the grid's width is not always divisible by four, and the
+        //  leftover pixels belong to the band's outer margins, not to one side.
+        const auto tracksLeft = geometry.grid.getX() + geometry.cellWidth;
+        const auto tracksRight = geometry.grid.getRight() - geometry.cellWidth;
+        const auto tracksCell = juce::Rectangle<int> (tracksLeft, geometry.memberRowY,
+                                                      juce::jmax (1, tracksRight - tracksLeft),
+                                                      geometry.grid.getBottom() - geometry.memberRowY);
+        tracksLabel.setText ("TRACKS", juce::dontSendNotification);
+        tracksLabel.setJustificationType (juce::Justification::centred);
+        tracksLabel.setBounds (tracksCell.getX() + 5, tracksCell.getY() + 1,
+                               tracksCell.getWidth() - 10, 17);
+        tracksBox.setBounds (tracksCell.getX() + 12, tracksCell.getY() + 20,
+                             tracksCell.getWidth() - 24,
+                             juce::jmin (30, tracksCell.getHeight() - 22));
     }
     else if (geometry.settingsTab)
     {
@@ -2496,42 +2519,51 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
     else if (geometry.shapersTab)
     {
         //  MODELS: the two file-fed stages on one page, each with its loader
-        // under its own knob. The NEURAL picker takes the band's FIRST column
-        // - LOAD MODEL and CLEAR across the control line, the model-status
-        // readout in the caption line above them - and the IR loader takes the
-        // second: the same pair of half-cell keys, the same caption line. The
-        // IR READOUT then spans that column AND the third, because a file name
-        // is the one string on the page whose length is not known in advance.
+        //  under its own knob, and each drawn as the SAME CARD.
         //
-        //  The four keys are the SAME size, which they were not before: LOAD
-        //  MODEL and CLEAR shared one cell between them while LOAD IR and CLEAR
-        //  IR each took a whole one, so on one tab two keys were half the width
-        //  of the two beside them. That is the user's "the toggles on one tab are
-        //  stretched differently", and it was a property of this placement
-        //  rather than of the drawing.
+        //  The card is the unit of the page, not the keys: the NEURAL pair and
+        //  the IR pair are the same two-control device with the same readout
+        //  line over it, so they get the same cell, the same inset, the same
+        //  readout height and the same key width - by construction, through one
+        //  placement routine called twice. That is what the user was asking for
+        //  when they said the two stages "look different": before this, the
+        //  neural pair sat on the painted card in paint() and the IR pair sat on
+        //  bare metal, and the IR readout - two cells wide and centred - landed
+        //  over the spectrum's own caption while the neural one sat over its
+        //  keys.
         //
-        //  LOAD and CLEAR share the band's ONE control line, side by side. CLEAR
-        //  used to sit UNDER LOAD (buttonY + buttonH + 6), which is exactly six
-        //  pixels past the band's bottom edge on every panel size - the user's
-        //  "Clear falls out of the window".
-        const auto buttonY = geometry.memberRowY + 20;
-        const auto buttonH = juce::jmin(30, geometry.grid.getBottom() - geometry.memberRowY - 22);
-        const auto halfButtonWidth = (geometry.cellWidth - 30) / 2;
-        const auto placeLoaderPair = [&] (juce::TextButton& load, juce::TextButton& clear,
-                                          int column)
+        //  The band is four cells wide: two cards, then the tape spectrum across
+        //  the remaining two. Every number below is a literal shared by both
+        //  cards, and paint() draws each card from the same cell arithmetic.
+        const auto bandHeight = geometry.grid.getBottom() - geometry.memberRowY;
+        constexpr int cardInset = 8;
+        constexpr int keyGap = 6;
+        constexpr int readoutHeight = 14;
+        constexpr int keyTop = 22;          // under the readout line, inside the card
+        const auto keyH = juce::jlimit (16, 26, bandHeight - keyTop - 4);
+        const auto keyWidth = juce::jmax (24, (geometry.cellWidth - 2 * cardInset - keyGap) / 2);
+
+        const auto placeLoaderCard = [&] (juce::Label& readout, juce::TextButton& load,
+                                          juce::TextButton& clear, int column)
         {
             const auto cellLeft = geometry.grid.getX() + column * geometry.cellWidth;
-            load.setBounds (cellLeft + 12, buttonY, halfButtonWidth, buttonH);
-            clear.setBounds (cellLeft + 18 + halfButtonWidth, buttonY, halfButtonWidth, buttonH);
+            const auto cardWidth = geometry.cellWidth - 2 * cardInset;
+
+            //  The readout is the card's caption line - it belongs INSIDE the
+            //  card, three pixels below its top edge. The previous placement put
+            //  it at memberRowY - 1, straddling the border it should sit inside.
+            readout.setBounds (cellLeft + cardInset, geometry.memberRowY + 3,
+                               cardWidth, readoutHeight);
+            readout.setJustificationType (juce::Justification::centred);
+
+            load.setBounds (cellLeft + cardInset, geometry.memberRowY + keyTop,
+                            keyWidth, keyH);
+            clear.setBounds (cellLeft + cardInset + keyWidth + keyGap,
+                             geometry.memberRowY + keyTop, keyWidth, keyH);
         };
 
-        placeLoaderPair (loadNeuralButton, clearNeuralButton, 0);
-        placeLoaderPair (loadIrButton, clearIrButton, 1);
-
-        neuralStatusLabel.setBounds (geometry.grid.getX() + 6, geometry.memberRowY - 1,
-                                     geometry.cellWidth - 12, 17);
-        irStatusLabel.setBounds (geometry.grid.getX() + geometry.cellWidth + 6,
-                                 geometry.memberRowY - 1, 2 * geometry.cellWidth - 12, 17);
+        placeLoaderCard (neuralStatusLabel, loadNeuralButton, clearNeuralButton, 0);
+        placeLoaderCard (irStatusLabel, loadIrButton, clearIrButton, 1);
     }
     else if (geometry.vinylTab)
     {

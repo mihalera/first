@@ -156,12 +156,12 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     g.fillAll(palette.background);
 
     const auto layout = getEditorLayout();
-    // The neural card sits behind the MODELS page's picker cell, and its
+    // The two loader cards sit behind the MODELS page's picker cells, and their
     // geometry MIRRORS resized()'s: the grid is the controls band reduced by
     // 14, cut 78 from the top (controlsDividerOffset 92 - 14 + 8) and 8 from
     // the bottom; the member band is a fixed 50 px strip at the grid's bottom.
-    // The picker rides the member band's FIRST column - its cell x is grid.x,
-    // width cellWidth (cellWidth = gridW / 4).
+    // One card per file-fed stage, each on the band's first or second column -
+    // its x is grid.x + column * cellWidth (cellWidth = gridW / 4).
     auto gridNow = layout.controls.reduced(14);
     constexpr int memberBandHeightNow = 50;
     constexpr int tabColumnsNow = 4;
@@ -346,27 +346,38 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     g.setColour(palette.status);
     g.fillEllipse(lampCentre.x - 3.5f, lampCentre.y - 3.5f, 7.0f, 7.0f);
 
-    // The neural model picker's card: the moved picker reads as a device with a
-    // face, not as three unstyled widgets on the page - "it's black" was the
-    // unstyled defaults speaking. The card is drawn behind the picker's member
-    // cell only when MODELS is the visible tab - the page whose NEURAL knob it
-    // belongs to.
+    //  The MODELS page's band: TWO IDENTICAL CARDS, then the tape spectrum across
+    //  the two columns that are left.
+    //
+    //  One card per file-fed stage, drawn from one loop - the NEURAL picker and
+    //  the IR picker read as the same device in two instances, which is what the
+    //  user was asking for when they said the two "look different". It used to be
+    //  one card under the neural pair only, and the IR pair out on bare metal with
+    //  a readout that spanned two cells and landed over the spectrum's caption.
+    //  The card's bounds and the placement in placeTabMembers() are the same
+    //  arithmetic: band, cell, inset.
     if (activeTabIsShapers) {
-        const auto card = juce::Rectangle<float>(
-            static_cast<float>(gridNow.getX()), static_cast<float>(memberBandY),
-            static_cast<float>(cellWidthNow), static_cast<float>(memberBandHeightNow));
-        g.setColour(palette.raised.brighter(0.06f));
-        g.fillRoundedRectangle(card, 4.0f);
-        g.setColour(palette.border.withAlpha(0.55f));
-        g.drawRoundedRectangle(card, 4.0f, 1.0f);
+        constexpr float cardInset = 8.0f;
+        const auto bandY = static_cast<float>(memberBandY);
+        const auto bandH = static_cast<float>(memberBandHeightNow);
+
+        for (int column = 0; column < 2; ++column) {
+            const auto card = juce::Rectangle<float>(
+                static_cast<float>(gridNow.getX() + column * cellWidthNow) + cardInset,
+                bandY, static_cast<float>(cellWidthNow) - 2.0f * cardInset, bandH);
+            g.setColour(palette.raised.brighter(0.06f));
+            g.fillRoundedRectangle(card, 4.0f);
+            g.setColour(palette.border.withAlpha(0.55f));
+            g.drawRoundedRectangle(card, 4.0f, 1.0f);
+        }
 
         // ---- the shaper's spectrum ----------------------------------------
-        //  The band's FOURTH column, drawn the way the card above it is: same
-        //  strip, same cell width, no widget. It is painted rather than built as
-        //  a component because the geometry it needs already exists here and in
-        //  resized() (see shapersSpectrumBounds(), which the timer invalidates
-        //  from), and because a twenty-four-point curve has nothing a JUCE
-        //  component would give it: no value, no text, no keyboard focus.
+        //  The band's last TWO columns, drawn the way the cards beside it are:
+        //  same strip, no widget. It is painted rather than built as a component
+        //  because the geometry it needs already exists here and in resized()
+        //  (see shapersSpectrumBounds(), which the timer invalidates from), and
+        //  because a twenty-four-point curve has nothing a JUCE component would
+        //  give it: no value, no text, no keyboard focus.
         //
         //  What it reports is the SHAPER's own output, measured per sample and
         //  transformed every 512 frames - the curve is the machine's harmonics, not
@@ -377,11 +388,10 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
         //  rather than auto-ranged: a curve that rescales itself is a curve whose
         //  height means nothing, and this one is read against the same DRIVE the
         //  user is turning. See Source/GUI/SpectrumMetrics.h.
-        const auto spectrumCell =
-            juce::Rectangle<float>(static_cast<float>(gridNow.getX() + 3 * cellWidthNow),
-                                   static_cast<float>(memberBandY),
-                                   static_cast<float>(cellWidthNow),
-                                   static_cast<float>(memberBandHeightNow))
+        const auto spectrumLeft = static_cast<float>(gridNow.getX() + 2 * cellWidthNow);
+        const auto spectrumCell = juce::Rectangle<float>(
+            spectrumLeft, bandY,
+            static_cast<float>(gridNow.getRight()) - spectrumLeft, bandH)
                 .reduced(3.0f);
 
         if (spectrumCell.getWidth() > 8.0f && spectrumCell.getHeight() > 8.0f) {

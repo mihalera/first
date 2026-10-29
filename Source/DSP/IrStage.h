@@ -76,6 +76,7 @@ struct IrStage
         internal buffers are per-rate state. */
     double preparedSampleRate = 0.0;
     int preparedMaxBlock = 0;
+    int preparedChannels = 0;
 
     void clear() noexcept { hasIr = false; }
 
@@ -119,13 +120,35 @@ struct IrStage
     }
 
     /** Prepares both convolvers for a rate/block change. Safe before any IR
-        exists: the convolver treats a pre-prepare load as the initial state. */
+        exists: the convolver treats a pre-prepare load as the initial state.
+
+        The SPEC IS THE ENGINE'S, not the session's. Everything this stage
+        convolves runs at the oversampled rate on the oversampled block (it is
+        called from the machine's own block, after the upsampler and before the
+        downsampler), so preparing from prepareToPlay's session rate sized both
+        the FFT plans and the segment buffers for a rate and a block this stage
+        never sees - and an impulse response resampled for the wrong rate plays
+        at the wrong length. The rate half of that mistake is silent; the block
+        half is the crash, and it is stated at process() below.
+
+        An identical spec is a no-op: this is reached from a parameter change as
+        well as from prepareToPlay, and re-preparing rebuilds every plan for a
+        rate that has not moved. */
     void prepare (const juce::dsp::ProcessSpec& spec)
     {
+        const auto blockSize = static_cast<int> (spec.maximumBlockSize);
+        const auto channels = static_cast<int> (spec.numChannels);
+
+        if (spec.sampleRate == preparedSampleRate
+            && blockSize == preparedMaxBlock
+            && channels == preparedChannels)
+            return;
+
         convolverL.prepare (spec);
         convolverR.prepare (spec);
         preparedSampleRate = spec.sampleRate;
-        preparedMaxBlock = static_cast<int> (spec.maximumBlockSize);
+        preparedMaxBlock = blockSize;
+        preparedChannels = channels;
     }
 
     void reset() noexcept
@@ -134,36 +157,74 @@ struct IrStage
         convolverR.reset();
     }
 
-    /** Convolves one in-place block of `numChannels` channels. Dry/wet is the
-        CALLER's business (the IR MIX control crossfades against the un-IR'd
-        signal, which the stage does not hold), so this is all-or-nothing and
-        the pass-through case is decided before any processing is paid for. */
-    void process (juce::AudioBuffer<float>& buffer, int numChannels, bool wet)
+    /** Convolves `numSamples` frames of `buffer`, in place, on `numChannels`
+        channels. Dry/wet is the CALLER's business (the IR MIX control crossfades
+        against the un-IR'd signal, which the stage does not hold), so this is
+        all-or-nothing and the pass-through case is decided before any
+        processing is paid for.
+
+        `numSamples` is the LIVE frame count of the block, which is not the
+        buffer's capacity. The engine's scratch buffer is allocated for the
+        longest block it can ever see (eight times the session block, at 8x
+        oversampling), and passing it whole was TWO defects at once: the stale
+        tail beyond the current block was convolved too, and - the one a user met
+        as a crash on the first block after an IR load - it ran JUCE's convolution
+        mixer past the end of its own buffers. See the note in the body. */
+    void process (juce::AudioBuffer<float>& buffer, int numChannels, int numSamples, bool wet)
     {
-        if (! hasIr || ! wet || numChannels <= 0)
+        if (! hasIr || ! wet || numChannels <= 0 || preparedMaxBlock <= 0)
             return;
 
-        juce::dsp::AudioBlock<float> block (buffer);
-        auto left = block.getSingleChannelBlock (0);
+        //  One block at a time, in slices no longer than the maximum the
+        //  convolvers were prepared for. A host may hand the engine a longer
+        //  block than prepareToPlay announced (some do while frozen, some on the
+        //  first block after a rate change), and JUCE's engine is sized in
+        //  segments of exactly that maximum - but the reason this is not optional
+        //  is the mixer, not the FFT engine: Convolution's Pimpl keeps a
+        //  CrossoverMixer whose smootherBuffer and mixBuffer are set to
+        //  spec.maximumBlockSize in prepare(), and the block after a load is the
+        //  one where its smoother is running (beginTransition is called when the
+        //  new engine is installed). That branch writes one smoother value per
+        //  input sample into smootherBuffer and multiplies mixBuffer over the same
+        //  count, so a block of the wrong length is a write past the end of both.
+        //  Slicing keeps the stage inside the contract it was prepared under at
+        //  every host block size and every oversampling factor.
+        //  The channel count is capped by the BUFFER's as well as the caller's:
+        //  the stereo-IR branch below asks for a two-channel block, and a buffer
+        //  without a second channel would make that an out-of-range subset.
+        const auto channels = juce::jmin (2, numChannels, buffer.getNumChannels());
+        const auto totalSamples = juce::jlimit (0, buffer.getNumSamples(), numSamples);
+        juce::dsp::AudioBlock<float> whole (buffer);
 
-        if (numChannels == 1 || ! lastLoadWasStereo)
+        for (int offset = 0; offset < totalSamples; offset += preparedMaxBlock)
         {
-            // Mono IR: each channel convolves against the SAME response, which
-            // is one cabinet heard by two microphones rather than two
-            // different rooms.
-            convolverL.process (juce::dsp::ProcessContextReplacing<float> (left));
-            if (numChannels == 2)
+            const auto length = juce::jmin (preparedMaxBlock, totalSamples - offset);
+            auto slice = whole.getSubBlock (static_cast<std::size_t> (offset),
+                                            static_cast<std::size_t> (length));
+
+            if (channels == 1 || ! lastLoadWasStereo)
             {
-                auto right = block.getSingleChannelBlock (1);
-                convolverR.process (juce::dsp::ProcessContextReplacing<float> (right));
+                // Mono IR: each channel convolves against the SAME response, which
+                // is one cabinet heard by two microphones rather than two
+                // different rooms. The blocks are named rather than passed as
+                // temporaries: ProcessContextReplacing holds a reference to the one
+                // it is given.
+                auto left = slice.getSingleChannelBlock (0);
+                convolverL.process (juce::dsp::ProcessContextReplacing<float> (left));
+
+                if (channels == 2)
+                {
+                    auto right = slice.getSingleChannelBlock (1);
+                    convolverR.process (juce::dsp::ProcessContextReplacing<float> (right));
+                }
             }
-        }
-        else
-        {
-            // Stereo IR: the file's own two sides belong to the two channels,
-            // so they are processed as the stereo pair they were captured as.
-            auto pair = block.getSubsetChannelBlock (0, 2);
-            convolverL.process (juce::dsp::ProcessContextReplacing<float> (pair));
+            else
+            {
+                // Stereo IR: the file's own two sides belong to the two channels,
+                // so they are processed as the stereo pair they were captured as.
+                auto pair = slice.getSubsetChannelBlock (0, 2);
+                convolverL.process (juce::dsp::ProcessContextReplacing<float> (pair));
+            }
         }
     }
 };

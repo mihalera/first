@@ -183,6 +183,11 @@ struct NeuralStage
     std::atomic<bool> audioQuiescent { true };
     std::atomic<bool> resetRequested { false };
 
+    //  True from the moment a built model has been PUBLISHED - which happens on
+    //  the message thread, before the audio thread's next block adopts it. See
+    //  hasModel() below for why the distinction matters to the panel.
+    std::atomic<bool> modelInstalled { false };
+
     // The conversion, for a model whose own rate is not the engine's (see
     // RateBridge). With the two rates equal the bridge is a single branch and
     // the stage is exactly what it was before it existed.
@@ -223,6 +228,27 @@ struct NeuralStage
     {
 #if J37_HAS_RTNEURAL || J37_HAS_NAMCORE
         return activeModel.load (std::memory_order_acquire) != nullptr
+            && ! clearRequested.load (std::memory_order_acquire);
+#else
+        return false;
+#endif
+    }
+
+    /** True from the moment a model has been INSTALLED, including the window
+        between the message thread's load and the audio thread's handoff at the
+        next block boundary.
+
+        The panel needs this rather than isActive(). A host with nothing playing
+        may not run a block for as long as the transport is stopped, and a picker
+        that reported "NO MODEL" until audio moved read as a load that had failed
+        - the user's own "NAM does not load", said about a model that was built
+        and sitting in pendingModel. isActive() stays the audio thread's answer
+        ("a model is in inference now"); this is the control thread's ("a model
+        is installed"). */
+    bool hasModel() const noexcept
+    {
+#if J37_HAS_RTNEURAL || J37_HAS_NAMCORE
+        return modelInstalled.load (std::memory_order_acquire)
             && ! clearRequested.load (std::memory_order_acquire);
 #else
         return false;
@@ -306,6 +332,7 @@ struct NeuralStage
             clearRequested.store (true, std::memory_order_release);
             activeModel.store (nullptr, std::memory_order_release);
         }
+        modelInstalled.store (false, std::memory_order_release);
         discard.reset();
         reclaimRetiredModel();
 #endif
@@ -636,6 +663,7 @@ struct NeuralStage
             std::lock_guard<std::mutex> lock (controlMutex);
             displaced = std::move (pendingModel);
             pendingModel = std::move (built);
+            modelInstalled.store (pendingModel != nullptr, std::memory_order_release);
             clearRequested.store (false, std::memory_order_release);
             resetRequested.store (false, std::memory_order_relaxed);
         }
