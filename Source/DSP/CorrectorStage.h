@@ -211,8 +211,6 @@ struct CorrectorStage
 
         for (auto& ring : ratioRings)
             ring.fill (1.0f);
-        for (auto& ring : periodRings)
-            ring.fill (0);
         lastBlockRatios.fill (1.0f);
 
         for (auto& shifter : fallbackShifters)
@@ -257,6 +255,18 @@ struct CorrectorStage
             return;
 
         const auto frameChannels = std::max (0, std::min (std::min (activeChannels, maxChannels), channels));
+        std::array<float, maxChannels> safeRatios { 1.0f, 1.0f };
+        std::array<int, maxChannels> safePeriodHints {};
+
+        for (int channel = 0; channel < frameChannels; ++channel)
+        {
+            const auto index = static_cast<std::size_t> (channel);
+            safeRatios[index] = std::isfinite (ratios[index])
+                                    ? juce::jlimit (0.5f, 2.0f, ratios[index])
+                                    : 1.0f;
+            safePeriodHints[index] = std::max (0, periodHints[index]);
+        }
+
         if (frameChannels != lastFrameChannels)
         {
             // Discard a partially served block when the bus layout changes, so
@@ -280,8 +290,7 @@ struct CorrectorStage
                 const auto index = static_cast<std::size_t> (channel);
                 const auto present = channel < frameChannels;
                 inputRings[index][frameIndex] = present ? frame[index] : 0.0f;
-                ratioRings[index][frameIndex] = present ? juce::jlimit (0.5f, 2.0f, ratios[index]) : 1.0f;
-                periodRings[index][frameIndex] = present ? periodHints[index] : 0;
+                ratioRings[index][frameIndex] = present ? safeRatios[index] : 1.0f;
                 if (! present)
                     outputRings[index].fill (0.0f);
             }
@@ -290,8 +299,8 @@ struct CorrectorStage
         for (int channel = 0; channel < frameChannels; ++channel)
         {
             const auto index = static_cast<std::size_t> (channel);
-            const auto ratio = juce::jlimit (0.5f, 2.0f, ratios[index]);
-            const auto hint = periodHints[index];
+            const auto ratio = safeRatios[index];
+            const auto hint = safePeriodHints[index];
 
            #if J37_HAS_SIGNALSMITH
             if (engines[index] != nullptr)
@@ -433,7 +442,6 @@ private:
     // a block therefore uses the correction that belonged to those samples, not
     // the detector's reading at the block's final frame.
     std::array<std::array<float, blockFrames>, maxChannels> ratioRings {};
-    std::array<std::array<int, blockFrames>, maxChannels> periodRings {};
     std::array<float, maxChannels> lastBlockRatios { 1.0f, 1.0f };
 
 

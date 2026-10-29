@@ -103,7 +103,7 @@ struct Noise
 double toneAmplitude (const std::vector<float>& signal, std::size_t start,
                       std::size_t length, double frequency, double sampleRate)
 {
-    if (length < 4 || start + length > signal.size())
+    if (length < 4 || start > signal.size() || length > signal.size() - start)
         return 0.0;
 
     double real = 0.0, imaginary = 0.0, windowSum = 0.0;
@@ -335,6 +335,31 @@ void testTrackerRejectsNoise()
 
     check (silent.confidence() < 1.0e-3f,
            "silence reports no confidence at all (" + std::to_string (silent.confidence()) + ")");
+    check (silent.frequency() == 0.0f && silent.periodFrames() == 0.0f,
+           "silence clears the frequency and period reading");
+
+    PitchTracker resetTracker;
+    resetTracker.prepare (48000.0);
+    for (int n = 0; n < 48000; ++n)
+        resetTracker.push (static_cast<float> (0.5 * std::sin (kTwoPi * 220.0 * n / 48000.0)));
+    check (resetTracker.frequency() > 0.0f && resetTracker.periodFrames() > 0.0f,
+           "a pitched signal produces a reading before reset");
+    resetTracker.reset();
+    check (resetTracker.frequency() == 0.0f && resetTracker.periodFrames() == 0.0f
+           && resetTracker.confidence() == 0.0f,
+           "reset clears the frequency, period, and confidence");
+
+    PitchTracker recoversFromInvalidSamples;
+    recoversFromInvalidSamples.prepare (48000.0);
+    for (int n = 0; n < 2048; ++n)
+        recoversFromInvalidSamples.push (n % 2 == 0
+                                             ? std::numeric_limits<float>::quiet_NaN()
+                                             : std::numeric_limits<float>::infinity());
+    for (int n = 0; n < 48000; ++n)
+        recoversFromInvalidSamples.push (static_cast<float> (0.5 * std::sin (kTwoPi * 220.0 * n / 48000.0)));
+    check (std::isfinite (recoversFromInvalidSamples.frequency())
+           && std::abs (cents (recoversFromInvalidSamples.frequency(), 220.0)) < 20.0,
+           "invalid samples do not prevent tracking a later clean tone");
 
     // Half a second of noise in, half a second of a note after it: the detector
     // has to have said nothing during the noise and to find the note after it.
@@ -886,6 +911,20 @@ void testCorrectionDeadZone()
         const auto detected = atCents (cents);
         check (PitchCorrectionRule::ratio (detected, target, 1.0f) == 1.0f,
                "  " + std::to_string (cents) + " cents is left alone (ratio exactly 1)");
+    }
+
+    constexpr double boundarySlack = 1.0e-3;
+    for (const auto sign : { -1.0, 1.0 })
+    {
+        const auto withinSlack = atCents (sign * (10.0 + boundarySlack * 0.5));
+        const auto beyondSlack = atCents (sign * (10.0 + boundarySlack * 2.0));
+
+        check (PitchCorrectionRule::inDeadZone (withinSlack, target)
+               && PitchCorrectionRule::ratio (withinSlack, target, 1.0f) == 1.0f,
+               "a reading within tolerance stays in the dead zone on both sides");
+        check (! PitchCorrectionRule::inDeadZone (beyondSlack, target)
+               && PitchCorrectionRule::ratio (beyondSlack, target, 1.0f) != 1.0f,
+               "a reading beyond tolerance is corrected on both sides");
     }
 
     check (PitchCorrectionRule::inDeadZone (atCents (10.0), target)

@@ -62,7 +62,12 @@ struct PitchTracker
         the frames it is pushed arrive at. */
     void prepare (double sampleRateIn)
     {
-        const auto sampleRate = sampleRateIn > 1.0 ? sampleRateIn : 48000.0;
+        constexpr double defaultRate = 48000.0;
+        constexpr double maxSupportedRate = 768000.0;
+        const auto sampleRate = std::isfinite (sampleRateIn)
+                                  && sampleRateIn > 1.0
+                                  && sampleRateIn <= maxSupportedRate
+                                  ? sampleRateIn : defaultRate;
         decimation = juce::jmax (1, juce::roundToInt (sampleRate / analysisTargetRate));
         analysisRate = static_cast<float> (sampleRate) / static_cast<float> (decimation);
         reset();
@@ -90,8 +95,9 @@ struct PitchTracker
     {
         // The decimation is a box average: a cheap low-pass whose passband
         // covers everything the analysis cares about and whose stopband is what
-        // keeps the lag search from confusing the top octave.
-        decimationSum += sample;
+        // keeps the lag search from confusing the top octave. Invalid samples
+        // contribute silence rather than contaminating later analysis windows.
+        decimationSum += std::isfinite (sample) ? sample : 0.0f;
 
         if (++decimationCounter < decimation)
             return;
@@ -128,6 +134,15 @@ struct PitchTracker
     float analysisRateHz() const noexcept { return analysisRate; }
 
 private:
+    void clearReading() noexcept
+    {
+        frequencyValue = 0.0f;
+        periodValue = 0.0f;
+        confidenceValue = 0.0f;
+        lastFrequency = 0.0f;
+        lastConfidence = 0.0f;
+    }
+
     void analyse() noexcept
     {
         // A reading needs a full window behind it: until that many decimated
@@ -136,7 +151,7 @@ private:
         // pitch at the length of the gap.
         if (framesSinceReset < analysisSize)
         {
-            confidenceValue = 0.0f;
+            clearReading();
             return;
         }
 
@@ -154,7 +169,7 @@ private:
 
         if (std::sqrt (energy / static_cast<float> (differenceSize)) < silentRms)
         {
-            confidenceValue = 0.0f;          // silence has no pitch; hold the last
+            clearReading();
             return;
         }
 
@@ -223,7 +238,7 @@ private:
 
         if (tau < 0)
         {
-            confidenceValue = 0.0f;
+            clearReading();
             return;
         }
 
@@ -246,7 +261,21 @@ private:
                 refined += (after - before) / denominator;
         }
 
+        if (! std::isfinite (refined) || refined <= 0.0f)
+        {
+            clearReading();
+            return;
+        }
+
+        refined = juce::jlimit (static_cast<float> (minTau),
+                                static_cast<float> (maxTau), refined);
         auto hz = analysisRate / refined;
+
+        if (! std::isfinite (hz) || hz <= 0.0f)
+        {
+            clearReading();
+            return;
+        }
 
         // The octave guard. A period detector's one characteristic failure is a
         // strong second harmonic reading an octave high, and it is recognisable:
@@ -261,12 +290,18 @@ private:
 
             for (const auto candidate : { hz * 0.5f, hz * 2.0f })
             {
+                if (! std::isfinite (candidate) || candidate <= 0.0f
+                    || candidate < analysisRate / static_cast<float> (maxTau)
+                    || candidate > analysisRate / static_cast<float> (minTau))
+                    continue;
+
                 const auto error = std::abs (std::log2 (candidate / lastFrequency));
 
                 // Only an octave move is a candidate, and only if it actually
                 // lands closer to what was last heard - so a genuine leap to a
                 // fifth is left alone, and a wrong octave is not.
-                if (std::abs (error - 1.0f) < octaveGuardLog2 && error < bestError)
+                if (std::isfinite (error)
+                    && std::abs (error - 1.0f) < octaveGuardLog2 && error < bestError)
                 {
                     best = candidate;
                     bestError = error;
@@ -274,6 +309,13 @@ private:
             }
 
             hz = best;
+        }
+
+        if (! std::isfinite (hz) || hz <= 0.0f
+            || ! std::isfinite (analysisRate / hz))
+        {
+            clearReading();
+            return;
         }
 
         frequencyValue = hz;
