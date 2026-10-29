@@ -605,6 +605,13 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
                          int columnsWide,
                          const juce::String &caption);
 
+    /** The band's ONE member, centred in its middle two columns - MACHINE's TRACKS
+        and FRONT END's DI PAD, the two pages that hold nothing else there. */
+    void placeBandFieldCentred(const ControlGeometry &geometry,
+                               juce::Label &label,
+                               juce::Component &box,
+                               const juce::String &caption);
+
     void placeMeters(const EditorLayout &layout);
     void verifyPanelHasNoOverlaps() const;
 

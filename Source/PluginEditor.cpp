@@ -2371,7 +2371,14 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
         // knob grid's second row; the strip is one full row now, so the band is
         // the only place on the page a combo can be, and it is where the DI's
         // own input switch belongs anyway.
-        placeDeckSwitch (geometry, diPadLabel, diPadBox, 0, 1, "DI PAD");
+        //
+        //  CENTRED, like MACHINE's TRACKS below, because this is the other page
+        //  with exactly one member: pinned to the band's first cell it stood in
+        //  the left quarter of a strip that is as wide as the five knobs above
+        //  it, with three quarters of empty metal to its right - the same "free
+        //  space beside the list" the MACHINE page was reported for. One
+        //  placement for both is what keeps them from drifting apart again.
+        placeBandFieldCentred (geometry, diPadLabel, diPadBox, "DI PAD");
     }
     else if (geometry.machineTab)
     {
@@ -2384,21 +2391,9 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
         // control's whole world and a page of one should not be laid out as if
         // three more were coming. Two cells wide, centred under the knob row,
         // gives the list room for a name and keeps the air either side equal.
-        //  The cell is written from the grid's two EDGES rather than as two cell
-        //  widths: the grid's width is not always divisible by four, and the
-        //  leftover pixels belong to the band's outer margins, not to one side.
-        const auto tracksLeft = geometry.grid.getX() + geometry.cellWidth;
-        const auto tracksRight = geometry.grid.getRight() - geometry.cellWidth;
-        const auto tracksCell = juce::Rectangle<int> (tracksLeft, geometry.memberRowY,
-                                                      juce::jmax (1, tracksRight - tracksLeft),
-                                                      geometry.grid.getBottom() - geometry.memberRowY);
-        tracksLabel.setText ("TRACKS", juce::dontSendNotification);
-        tracksLabel.setJustificationType (juce::Justification::centred);
-        tracksLabel.setBounds (tracksCell.getX() + 5, tracksCell.getY() + 1,
-                               tracksCell.getWidth() - 10, 17);
-        tracksBox.setBounds (tracksCell.getX() + 12, tracksCell.getY() + 20,
-                             tracksCell.getWidth() - 24,
-                             juce::jmin (30, tracksCell.getHeight() - 22));
+        //  The arithmetic lives in placeBandFieldCentred, shared with FRONT
+        //  END's DI PAD: both pages hold one member and have to look the same.
+        placeBandFieldCentred (geometry, tracksLabel, tracksBox, "TRACKS");
     }
     else if (geometry.settingsTab)
     {
@@ -2622,6 +2617,40 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
             placeEqCorner (outputEqLpButton, 2);
         }
     }
+}
+
+//==============================================================================
+//  A page's ONE band member, centred in the band's middle two columns.
+//
+//  MACHINE's TRACKS and FRONT END's DI PAD are the only two pages with a single
+//  member, and a lone list pushed to the band's left edge leaves the rest of a
+//  strip that is as wide as the knob row above it as empty metal - the report both
+//  pages drew. Two cells is wide enough for the longest value either list holds
+//  while keeping the air on both sides equal, so the control reads as belonging to
+//  the page rather than to its first cell.
+//
+//  The cell is written from the grid's two EDGES rather than as two cell widths:
+//  the grid's width is not always divisible by four, and the leftover pixels belong
+//  to the band's outer margins, not to one side. The caption is centred over the
+//  field for the same reason the field is centred under the knobs.
+//==============================================================================
+void FirstAudioProcessorEditor::placeBandFieldCentred (const ControlGeometry& geometry,
+                                                       juce::Label& label,
+                                                       juce::Component& box,
+                                                       const juce::String& caption)
+{
+    const auto fieldLeft = geometry.grid.getX() + geometry.cellWidth;
+    const auto fieldRight = geometry.grid.getRight() - geometry.cellWidth;
+    const auto field = juce::Rectangle<int> (fieldLeft, geometry.memberRowY,
+                                             juce::jmax (1, fieldRight - fieldLeft),
+                                             geometry.grid.getBottom() - geometry.memberRowY);
+
+    label.setText (caption, juce::dontSendNotification);
+    label.setJustificationType (juce::Justification::centred);
+    label.setBounds (field.getX() + 5, field.getY() + 1, field.getWidth() - 10, 17);
+    box.setBounds (field.getX() + 12, field.getY() + 20,
+                   field.getWidth() - 24,
+                   juce::jmin (30, field.getHeight() - 22));
 }
 
 //==============================================================================
