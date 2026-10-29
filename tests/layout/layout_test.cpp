@@ -87,6 +87,11 @@ namespace juce
 // DSP headers have, stated in Source/DSP/J37Math.h.
 #include "GUI/KnobMetrics.h"
 
+// The deck's vertical rhythm. JUCE-free on purpose: this is the arithmetic that
+// used to put a 30 px combo box inside a 32 px band and over the captions of the
+// row below it, and it is the only part of that fix a harness can see.
+#include "GUI/DeckBands.h"
+
 // The spectrum curve's arithmetic, which is checked here for the reason the knob
 // metrics are: what it can get wrong is not a crash, it is a curve that draws
 // smoothly, plausibly and upside down. No JUCE is involved - the header is plain
@@ -367,8 +372,84 @@ float oldCompressorDisc (const juce::Rectangle<int>& grid, int W, int H, int kno
     return disc;
 }
 
+// ---- the deck's seven bands -------------------------------------------------
+//
+// The deck is elastic between 236 and 278 px (see getEditorLayout), and the rows
+// inside it are captions over controls. The band table it replaced placed a 15 +
+// 30 px row inside a 32 px band, so at the floor every control overhung its band
+// by eleven pixels and printed over the next row's captions - the user's "the
+// lists are on top of the labels". So every height in that range is walked here:
+// the bands have to stay ordered and inside the deck, and each one has to be at
+// least as tall as the row the deck's placement gives it.
+void checkDeckBands()
+{
+    using j37panel::DeckBands;
+
+    auto inside = true, ordered = true, rowsFit = true, referenceExact = true;
+    auto smallest = 1.0e9f, largest = 0.0f;
+
+    for (int height = DeckBands::minimumHeight; height <= DeckBands::referenceHeight; ++height)
+    {
+        const auto bands = DeckBands::solve (height);
+
+        if (bands.bottom() > height)
+            inside = false;
+
+        for (int band = 0; band < DeckBands::bandCount; ++band)
+        {
+            const auto top = bands.top[static_cast<std::size_t> (band)];
+            const auto tall = bands.height[static_cast<std::size_t> (band)];
+
+            if (top < 0 || top + tall > height)
+                inside = false;
+
+            if (band > 0)
+            {
+                const auto previousBottom =
+                    bands.top[static_cast<std::size_t> (band - 1)]
+                    + bands.height[static_cast<std::size_t> (band - 1)];
+                if (top <= previousBottom)
+                    ordered = false;
+            }
+
+            // The four control rows hold a caption and a control; the others hold
+            // what their own constant says. A row taller than its band is the bug.
+            if (band == DeckBands::model || band == DeckBands::switches
+                || band == DeckBands::types || band == DeckBands::transport)
+                if (tall < bands.captionHeight + bands.controlHeight)
+                    rowsFit = false;
+        }
+
+        smallest = std::min (smallest, static_cast<float> (bands.controlHeight));
+        largest = std::max (largest, static_cast<float> (bands.controlHeight));
+    }
+
+    // At the height the panel was designed at, the solve must give back the
+    // numbers that were drawn by hand: a 30 px control under a 15 px caption.
+    const auto atReference = DeckBands::solve (DeckBands::referenceHeight);
+    if (atReference.controlHeight != 30 || atReference.captionHeight != 15)
+        referenceExact = false;
+
+    // And at the floor it must not have gone below the smallest readable row.
+    const auto atFloor = DeckBands::solve (DeckBands::minimumHeight);
+    const auto floorHolds = atFloor.controlHeight >= 24 && atFloor.bottom() <= DeckBands::minimumHeight;
+
+    std::printf ("\ndeck bands: controls %.0f..%.0f px, floor bottom %d of %d\n",
+                 smallest, largest, atFloor.bottom(), DeckBands::minimumHeight);
+
+    check (inside, "the bands stay inside the deck at every height it can take", "DECK", 0, 0);
+    check (ordered, "no band overlaps the one above it", "DECK", 0, 0);
+    check (rowsFit, "every control row's band is tall enough for its caption and control",
+           "DECK", 0, 0);
+    check (referenceExact, "the reference deck still draws the 30 px control under a 15 px caption",
+           "DECK", 0, 0);
+    check (floorHolds, "the deck's floor keeps a 24 px control and still fits", "DECK", 0, 0);
+}
+
 int main()
 {
+    checkDeckBands();
+
     // The editor's own resize limits, and two sizes inside them a session is
     // likely to sit at - wide, tall, and the two extremes of the floor.
     const int sizes[][2] = { { 780, 664 }, { 1060, 916 }, { 1200, 823 }, { 1500, 1180 } };

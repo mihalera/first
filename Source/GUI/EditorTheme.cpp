@@ -142,6 +142,10 @@ void FirstAudioProcessorEditor::applyTheme() {
     vinylCartridgeLabel.setColour(juce::Label::textColourId, palette.secondary);
     delaySyncLabel.setColour(juce::Label::textColourId, palette.secondary);
     antiPhaseGuardLabel.setColour(juce::Label::textColourId, palette.secondary);
+    // The two captions the SETTINGS sheet gained when its controls became one
+    // captioned grid: without this they keep the ivory ink on every other theme.
+    uiSoundsLabel.setColour(juce::Label::textColourId, palette.secondary);
+    parameterSheetLabel.setColour(juce::Label::textColourId, palette.secondary);
     // The renderer selector's caption is a settings row's caption like LANGUAGE's -
     // unstyled it would keep the ivory ink on the charcoal and metal panels.
     backendLabel.setColour(juce::Label::textColourId, palette.secondary);
@@ -585,14 +589,16 @@ void FirstAudioProcessorEditor::openUserThemeWindow() {
 
         // Placed over the editor ONCE, at construction, and left where it is dragged
         // afterwards: a window that re-centred on every press would jump out from under
-        // the pointer that pressed the key. It is placed before the first show, because
-        // a DocumentWindow is already on the desktop the moment it exists (it is
-        // constructed with addToDesktop) - so "was it on the desktop a moment ago" is
-        // not a question that can tell a first open from a fifth.
+        // the pointer that pressed the key. The POSITION comes before the first show,
+        // and the order is the whole point: a DocumentWindow is already on the desktop
+        // the moment it exists (it is constructed with addToDesktop), so showing it
+        // first puts a frame at the desktop origin for as long as it takes to move it
+        // - which is the blank square that flashed before the pane appeared.
         const auto editor = getScreenBounds();
         userThemeWindow->setTopLeftPosition(
             editor.getX() + juce::jmax(0, (editor.getWidth() - userThemeWindow->getWidth()) / 2),
             editor.getY() + 48);
+
         userThemeWindow->show();
 
         return;

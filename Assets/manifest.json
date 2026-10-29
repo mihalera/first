@@ -1,0 +1,36 @@
+{
+  "about": "Optional art for the MiBoX panel. Every slot is OPTIONAL: a missing file means the panel draws that surface itself. See Assets/README.md for the sizes, the licence rule and the exact workflow.",
+  "licence_policy": "CC0-1.0 or another public-domain dedication. Do not commit a file whose licence is missing, non-commercial, or unclear. Fill in licence, source and author when a file is added.",
+  "slots": [
+    {
+      "name": "panel_texture",
+      "file": "panel_texture.png",
+      "width": 1024,
+      "height": 512,
+      "used_by": "Source/GUI/EditorPaint.cpp (rebuildPanelTextureLayers)",
+      "licence": null,
+      "source": null,
+      "author": null
+    },
+    {
+      "name": "brand_mark",
+      "file": "brand_mark.png",
+      "width": 256,
+      "height": 256,
+      "used_by": "Source/GUI/UserThemeWindow.h (the header band)",
+      "licence": null,
+      "source": null,
+      "author": null
+    },
+    {
+      "name": "window_icon",
+      "file": "window_icon.png",
+      "width": 64,
+      "height": 64,
+      "used_by": "Source/GUI/UserThemeWindow.h (DocumentWindow::setIcon)",
+      "licence": null,
+      "source": null,
+      "author": null
+    }
+  ]
+}

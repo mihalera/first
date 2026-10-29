@@ -844,8 +844,28 @@ public:
         return neuralEngineRate.load (std::memory_order_relaxed);
     }
 
-    /** True when a model is installed and the stage can run it. */
-    bool hasNeuralModel() const noexcept { return neuralL.isActive(); }
+    /** The name of the model the NEURAL stage holds, for the panel's readout.
+
+        Stored on the PROCESSOR rather than in the editor because it describes the
+        stage, not the window: a second editor on the same instance, or a window
+        closed and reopened, must read the same answer. It lives and dies with the
+        load - clearNeuralModel() empties it - so it can never name a model the
+        stage does not hold. Message thread only, like the loaders. */
+    void setLoadedNeuralName (const juce::String& name) { loadedNeuralName = name; }
+    const juce::String& getLoadedNeuralName() const noexcept { return loadedNeuralName; }
+
+    /** The same for the IR stage. */
+    void setLoadedIrName (const juce::String& name) { loadedIrName = name; }
+    const juce::String& getLoadedIrName() const noexcept { return loadedIrName; }
+
+    /** True when a model is INSTALLED and the stage can run it.
+
+        Deliberately not isActive(): a host with the transport stopped may not run
+        a block for a while, and the model a picker has just built is in the
+        stage's pending slot until the next block adopts it. Reporting the audio
+        thread's own answer here made a successful .nam load look like a refusal
+        on the panel - "NO MODEL" while the model was already in hand. */
+    bool hasNeuralModel() const noexcept { return neuralL.hasModel(); }
 
     /** Why the last load FAILED, in the few words the panel's readout can put
         after "INVALID". Empty after a successful load and before the first
@@ -853,6 +873,13 @@ public:
         is the only caller of the three loaders - so a plain String is enough
         and nothing here is visible to the audio thread. */
     const juce::String& lastLoadError() const noexcept { return lastLoadErrorMessage; }
+
+    /** The full sentence behind lastLoadError(): what the engine itself said was
+        wrong with the file. Shown as the readout's tooltip rather than in the
+        label, because it is a sentence - "Model config is an unsupported version
+        0.4.0." - and the band above the buttons is 17 px tall. Empty when there
+        is nothing more to say than the short reason. */
+    const juce::String& lastLoadDetail() const noexcept { return lastLoadDetailMessage; }
 
     //==============================================================================
     //  Audio -> UI telemetry.
@@ -2007,6 +2034,14 @@ private:
     //  wrong with the file instead of only that something was. Message thread
     //  only; see the accessor above for why no guard is needed.
     juce::String lastLoadErrorMessage;
+
+    //  The engine's own explanation of that reason, for the readout's tooltip.
+    juce::String lastLoadDetailMessage;
+
+    //  The names the readouts print, owned here rather than by the editor - see
+    //  the accessors above.
+    juce::String loadedNeuralName;
+    juce::String loadedIrName;
 
     //==============================================================================
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (FirstAudioProcessor)

@@ -1127,87 +1127,157 @@ juce::Font J37InlineLookAndFeel::getPopupMenuFont()
     return juce::Font (juce::FontOptions (12.0f));
 }
 
+//==============================================================================
+//  The in-tab plate.
+//
+//  A list, a key and an on/off switch in a tab are all ONE control: a 30 px (or
+//  taller, on a page with room) recessed plate in a cell, with the same 0.5 px
+//  inset and the same three-pixel corners as the field beside it. What differs is
+//  only the content - a value and a caret, a centred caption, a caption and a lamp.
+//
+//  Before this, the three were drawn by three different routines: the list by the
+//  flat field below, the key by LookAndFeel_V4's default slab (a different inset
+//  and a blue-grey face), and the switch by a small pill that floated in the
+//  middle of a cell otherwise full of 30 px controls. On SETTINGS - the one page
+//  with all three in two rows - that read as three sizes and three materials on
+//  one page, which is exactly what the user reported as "the toggles are different
+//  sizes" and as the panel looking cheap.
+//==============================================================================
+void J37InlineLookAndFeel::drawButtonBackground (juce::Graphics& g, juce::Button& button,
+                                                 const juce::Colour&, bool shouldDrawButtonAsHighlighted,
+                                                 bool shouldDrawButtonAsDown)
+{
+    const auto& palette = paletteForTheme (theme);
+    // The same half-pixel inset the lists use, so a key and a list in the same
+    // row are the same size down to the pixel.
+    const auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
+
+    // A greyed key (CLEAR with nothing loaded, LOAD MODEL while a file is already
+    // being read) has to LOOK greyed: the plate below is one material, so the only
+    // thing that can say "not now" is the colour, and the old default draw - which
+    // this override replaced - did say it.
+    const auto enabled = button.isEnabled();
+
+    auto face = button.getToggleState()
+                    ? palette.readout.interpolatedWith (palette.accent, 0.22f)
+                    : palette.readout;
+
+    if (! enabled)
+        face = face.interpolatedWith (palette.panel, 0.55f);
+    else if (shouldDrawButtonAsDown)
+        face = face.darker (0.18f);
+    else if (shouldDrawButtonAsHighlighted)
+        face = face.brighter (0.06f);
+
+    g.setColour (face);
+    g.fillRoundedRectangle (bounds, 3.0f);
+
+    const auto borderInk = palette.border.withAlpha (button.hasKeyboardFocus (false) ? 0.95f : 0.85f);
+    g.setColour (enabled ? borderInk : borderInk.withMultipliedAlpha (0.55f));
+    g.drawRoundedRectangle (bounds, 3.0f, 1.0f);
+
+    // The same one-hairline recess the lists draw along their top edge: the keys
+    // and the lists are the same material, or the page reads as two kits.
+    g.setColour (palette.panel.darker (0.35f).withAlpha (0.5f));
+    g.drawLine (bounds.getX() + 3.0f, bounds.getY() + 1.0f,
+                bounds.getRight() - 3.0f, bounds.getY() + 1.0f, 0.8f);
+}
+
+void J37InlineLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button,
+                                           bool shouldDrawButtonAsHighlighted,
+                                           bool shouldDrawButtonAsDown)
+{
+    const auto& palette = paletteForTheme (theme);
+    const auto bounds = button.getLocalBounds().toFloat().reduced (8.0f, 1.0f);
+    const auto text = button.getButtonText();
+
+    auto ink = button.getToggleState() ? palette.text : palette.secondary;
+    if (! button.isEnabled())
+        ink = ink.withMultipliedAlpha (0.45f);
+    if (shouldDrawButtonAsDown)
+        ink = ink.brighter (0.18f);
+    else if (shouldDrawButtonAsHighlighted)
+        ink = ink.brighter (0.10f);
+
+    g.setColour (ink);
+    g.setFont (shrinkingFont (text, 11.0f, juce::Font::bold, bounds.getWidth()));
+    g.drawText (text, bounds, juce::Justification::centred, false);
+}
+
 void J37InlineLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button,
                                              bool shouldDrawButtonAsHighlighted,
                                              bool shouldDrawButtonAsDown)
 {
     const auto& palette = paletteForTheme (theme);
-    const auto bounds = button.getLocalBounds().toFloat().reduced (2.0f, 3.0f);
+    // The SAME rectangle a list or a key in the neighbouring cell uses.
+    const auto bounds = button.getLocalBounds().toFloat().reduced (0.5f);
     const auto isOn = button.getToggleState();
+    const auto enabled = button.isEnabled();
 
-    // The in-tab switch is a small PILL with a sliding dot and an ON/OFF word -
-    // the shape every settings panel uses, and deliberately NOT the deck's
-    // rocker. The pill is a share of the control's own height so it scales with
-    // the cell, and it never grows taller than a comfortable touch target.
-    // Smaller than it was (12..18 px tall at 72 % of the cell). A pill's end is a
-    // HALF CIRCLE and the dot at the end of it is a circle of its own: at the old
-    // proportions the dot was four pixels smaller than the pill was tall and rode
-    // the end cap, so the two curves crossed on every one of these switches. The
-    // pill is 11..16 px now and the dot below is sized against the STRAIGHT
-    // section, so it never reaches the cap.
-    const auto pillHeight = juce::jlimit (11.0f, 16.0f, bounds.getHeight() * 0.62f);
-    const auto pillWidth = juce::jlimit (pillHeight * 1.8f, bounds.getWidth() * 0.44f,
-                                          pillHeight * 2.4f);
-    const auto pill = juce::Rectangle<float> (bounds.getRight() - pillWidth,
-                                              bounds.getCentreY() - pillHeight * 0.5f,
-                                              pillWidth, pillHeight);
+    auto face = isOn ? palette.readout.interpolatedWith (palette.accent, 0.22f)
+                     : palette.readout;
 
-    // The track is a cylinder too (same shading helper), with the accent as
-    // its face when on: the two-colour fill keeps the state readable at a
-    // glance, and the curvature is what makes it read as hardware rather
-    // than as a settings-app pill.
-    fillCylinderBarrel (g, pill,
-                        isOn ? palette.accent.withAlpha (0.85f)
-                             : palette.readout.darker (0.35f),
-                        isOn ? palette.accent.darker (0.35f)
-                             : palette.readout.darker (0.55f));
-    g.setColour (palette.border.withAlpha (0.85f));
-    g.drawRoundedRectangle (pill, pillHeight * 0.5f, 1.0f);
+    if (! enabled)
+        face = face.interpolatedWith (palette.panel, 0.55f);
+    else if (shouldDrawButtonAsDown)
+        face = face.darker (0.18f);
+    else if (shouldDrawButtonAsHighlighted)
+        face = face.brighter (0.06f);
 
-    // The dot. It rides the track's two ends; when on it is the readout colour
-    // on the accent, and when off it is the panel colour on the recess. It sits
-    // INSIDE the end radius (half the pill's height) plus a pixel, which is what
-    // keeps a round dot off the pill's own rounded end - the two were crossing
-    // at both ends before.
-    const auto dotDiameter = juce::jmax (5.0f, pillHeight - 7.0f);
-    const auto dotEndInset = pillHeight * 0.5f + 1.0f;
-    const auto dotX = isOn ? pill.getRight() - dotEndInset - dotDiameter
-                           : pill.getX() + dotEndInset;
-    const auto dotY = pill.getCentreY() - dotDiameter * 0.5f + (shouldDrawButtonAsDown ? 0.7f : 0.0f);
-    g.setColour (isOn ? palette.readout : palette.knobFace);
-    g.fillEllipse (dotX, dotY, dotDiameter, dotDiameter);
-    g.setColour (palette.knobEdge.withAlpha (0.7f));
-    g.drawEllipse (dotX, dotY, dotDiameter, dotDiameter, 0.8f);
+    g.setColour (face);
+    g.fillRoundedRectangle (bounds, 3.0f);
 
-    // The caption sits LEFT of the pill and is fitted to the space that is
-    // actually left, so a long name shrinks rather than running under the pill.
-    const auto captionArea = bounds.withRight (pill.getX() - 4.0f);
-    if (captionArea.getWidth() > 4.0f)
+    const auto borderInk = palette.border.withAlpha (button.hasKeyboardFocus (false) ? 0.95f : 0.85f);
+    g.setColour (enabled ? borderInk : borderInk.withMultipliedAlpha (0.55f));
+    g.drawRoundedRectangle (bounds, 3.0f, 1.0f);
+
+    g.setColour (palette.panel.darker (0.35f).withAlpha (0.5f));
+    g.drawLine (bounds.getX() + 3.0f, bounds.getY() + 1.0f,
+                bounds.getRight() - 3.0f, bounds.getY() + 1.0f, 0.8f);
+
+    // The lamp: one explicit circular footprint at the plate's right end, lit by
+    // the accent when the switch is on and sunk into the recess when it is off.
+    // It is the only thing that changes size with the plate, so a tall SETTINGS
+    // key and a compact EQ corner switch still show the same lamp-to-plate ratio.
+    const auto lampDiameter = juce::jlimit (7.0f, 11.0f, bounds.getHeight() * 0.30f);
+    const auto lampCentre = juce::Point<float> (bounds.getRight() - 12.0f - lampDiameter * 0.5f,
+                                                bounds.getCentreY());
+
+    if (isOn)
     {
-        const auto caption = button.getButtonText().toUpperCase();
-        g.setColour (palette.secondary);
-        g.setFont (shrinkingFont (caption,
-                                   juce::jlimit (8.0f, 11.0f, bounds.getHeight() * 0.42f),
-                                   juce::Font::bold, captionArea.getWidth()));
-        g.drawText (caption, captionArea, juce::Justification::centredLeft, true);
+        g.setColour (palette.accent.withAlpha (0.16f));
+        g.fillEllipse (lampCentre.x - lampDiameter * 1.25f,
+                       lampCentre.y - lampDiameter * 1.25f,
+                       lampDiameter * 2.5f, lampDiameter * 2.5f);
     }
 
-    // The state word, on the track itself, so the control is unambiguous even
-    // for a user who cannot tell the two track colours apart.
-    g.setColour (isOn ? palette.readout : palette.secondary);
-    g.setFont (juce::Font (juce::FontOptions (juce::jmax (6.5f, pillHeight * 0.42f),
-                                               juce::Font::bold)));
-    // The state word takes what is left once the dot's end (its inset, its own
-    // diameter and the two pixels of air around it) is removed from the side the
-    // dot is on.
-    const auto dotFootprint = dotEndInset + dotDiameter + 2.0f;
-    const auto wordArea = pill.withTrimmedLeft (isOn ? dotEndInset : dotFootprint)
-                              .withTrimmedRight (isOn ? dotFootprint : dotEndInset);
-    g.drawText (isOn ? "ON" : "OFF", wordArea, juce::Justification::centred, false);
+    g.setColour (isOn ? palette.accent : palette.readout.darker (0.45f));
+    g.fillEllipse (lampCentre.x - lampDiameter * 0.5f, lampCentre.y - lampDiameter * 0.5f,
+                   lampDiameter, lampDiameter);
+    g.setColour (palette.knobEdge.withAlpha (isOn ? 0.9f : 0.55f));
+    g.drawEllipse (lampCentre.x - lampDiameter * 0.5f, lampCentre.y - lampDiameter * 0.5f,
+                   lampDiameter, lampDiameter, 0.8f);
 
-    if (shouldDrawButtonAsHighlighted || button.hasKeyboardFocus (false))
+    // The caption takes the plate's left side, up to the lamp's halo. Fitted to
+    // the space that is actually left, so GUARD and UI SOUNDS read at the same
+    // size on the same row.
+    const auto captionArea = bounds.withTrimmedLeft (10.0f)
+                                   .withRight (lampCentre.x - lampDiameter * 1.3f);
+
+    if (captionArea.getWidth() > 6.0f)
     {
-        g.setColour (palette.accent.withAlpha (0.45f));
-        g.drawRoundedRectangle (bounds.expanded (1.0f), 4.0f, 1.0f);
+        // A switch with no caption of its own (the SETTINGS pairs, whose names
+        // are the labels above their cells) says its STATE here instead, so the
+        // plate is never a lamp in an empty box. A switch that carries a name -
+        // the EQ corners' HP / LP, AUTOTUNE's, SPACE's SYNC - keeps it, because
+        // there is no label above those to carry it for them.
+        const auto named = button.getButtonText().toUpperCase();
+        const auto caption = named.isNotEmpty() ? named : juce::String (isOn ? "ON" : "OFF");
+
+        g.setColour (isOn ? palette.text : palette.secondary);
+        g.setFont (shrinkingFont (caption,
+                                   juce::jlimit (8.0f, 11.5f, bounds.getHeight() * 0.40f),
+                                   juce::Font::bold, captionArea.getWidth()));
+        g.drawText (caption, captionArea, juce::Justification::centredLeft, false);
     }
 }

@@ -368,6 +368,15 @@ jobs:
       - name: Check the compile definitions
         run: python3 tests/definitions/check_definitions.py
 
+      # The optional panel art. Empty today, and that is a PASS: the point of the
+      # step is the day somebody adds a file to Assets/ and the manifest, the slot
+      # table the code reads, and the file itself have to agree - including the
+      # licence, because a texture is not worth a licence question in a binary
+      # release. It also checks the binary-data symbol, since a wrong one builds
+      # and then draws nothing at run time.
+      - name: Check the optional panel art
+        run: python3 tests/assets/check_assets.py
+
       # The link line, against the includes under Source/. A library on it is a
       # statement that the binary carries it; eighteen entries made that statement
       # while no file of the plugin's own code named them - four alternative FFTs

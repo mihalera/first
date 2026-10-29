@@ -327,11 +327,27 @@ class J37InlineLookAndFeel final : public juce::LookAndFeel_V4 {
     /** Ink-only value Label paint, matching the deck style's (no fill card). */
     void drawLabel(juce::Graphics &, juce::Label &) override;
 
-    /** The small pill switch used for the tab's on/off controls. */
-    void drawToggleButton(juce::Graphics &,
-                          juce::ToggleButton &,
-                          bool shouldDrawButtonAsHighlighted,
-                          bool shouldDrawButtonAsDown) override;
+    /** The tab's on/off control, drawn on the SAME plate as its lists and keys.
+
+        It used to be a small pill floating in a cell whose neighbours were a
+        30 px recessed list and a 30 px key, so a page with three kinds of control
+        showed three different sizes on one row - and the pill's own 16 px track
+        read as the smallest thing on the page. One plate, one inset, three kinds
+        of content: that is what makes a tab read as one instrument.
+    */
+    void drawToggleButton(juce::Graphics &, juce::ToggleButton &, bool, bool) override;
+
+    /** The tab's keys (LOAD MODEL, PARAMETERS, USER THEME) on the same plate as
+        its lists and switches. Without these two overrides a juce::TextButton
+        inside a tab was drawn by LookAndFeel_V4's default - a flat blue-grey
+        slab, at a different inset and a different corner radius from the field
+        beside it. */
+    void drawButtonBackground(juce::Graphics &,
+                              juce::Button &,
+                              const juce::Colour &backgroundColour,
+                              bool shouldDrawButtonAsHighlighted,
+                              bool shouldDrawButtonAsDown) override;
+    void drawButtonText(juce::Graphics &, juce::TextButton &, bool, bool) override;
 
   private:
     j37panel::ThemeChoice theme = j37panel::ThemeChoice::ivory;
@@ -747,8 +763,6 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void refreshPresetList();
     void refreshUserPresetList();
     void updateWorkflowButtons();
-    void refreshTelemetryReadouts(const FirstAudioProcessor::TelemetryFrame& telemetry);
-    void advanceTimerAnimations(const FirstAudioProcessor::TelemetryFrame& telemetry);
     bool keyPressed(const juce::KeyPress &) override;
 
     /** Opens or closes the parameter sheet, building it on first use. Not one of
@@ -849,8 +863,12 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::ComboBox backendBox;
     j37::render::Backend renderBackendChoice = j37::render::Backend::autoDetect;
 
-    // The UI-sounds switch, on the SETTINGS tab beside GL.
-    juce::ToggleButton uiSoundsButton{"UI SOUNDS"};
+    // The UI-sounds switch, on the SETTINGS tab beside the guard. The switch
+    // carries no text of its own: the SETTINGS sheet is a grid of captioned
+    // cells, so the name lives in `uiSoundsLabel` above it and the plate shows
+    // the state, exactly like the guard beside it.
+    juce::ToggleButton uiSoundsButton;
+    juce::Label uiSoundsLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> uiSoundsAttachment;
 
     // The anti-phase guard's switch, on the SETTINGS tab with the other
@@ -858,7 +876,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // the transport it belongs to; the SWITCH lives here because it is a
     // protection setting rather than a control that shapes the sound, and the
     // readout says so when it is off (see the deck readout in timerCallback).
-    juce::ToggleButton antiPhaseGuardButton{"GUARD"};
+    juce::ToggleButton antiPhaseGuardButton;
     juce::Label antiPhaseGuardLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> antiPhaseGuardAttachment;
 
@@ -868,7 +886,8 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // paints them. It is an interface preference like the other three, so it
     // lives on this page; the sheet itself is a full-editor overlay and closes
     // on Escape, on its own CLOSE key, or on the button again.
-    juce::TextButton parameterSheetButton{"PARAMETERS"};
+    juce::TextButton parameterSheetButton{"OPEN"};
+    juce::Label parameterSheetLabel;
     std::unique_ptr<j37panel::ParameterSheet> parameterSheet;
 
     // -----------------------------------------------------------------------
@@ -912,11 +931,19 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void loadNeuralModelFromFile();
     void refreshNeuralStatus();
     juce::String lastShownNeuralStatus;
+    // The tooltip that went with that text. Compared alongside it so a second
+    // refused file with the same short reason still refreshes the sentence
+    // behind it - see refreshNeuralStatus().
+    juce::String lastShownNeuralTooltip;
     // Non-empty while the last load was REFUSED: the reason the processor gave,
     // held here so the readout keeps showing it. The 30 Hz refresh repaints the
     // label from the stage's own state, and without this hold a refused file
     // would read as a plain "NO MODEL" one frame after the picker said why.
     juce::String neuralStatusReason;
+    // The engine's own sentence about that refusal (lastLoadDetail()), held for
+    // the readout's tooltip. A reason the band can say in three words and the
+    // explanation it should still be able to give somewhere are two strings.
+    juce::String neuralStatusDetail;
 
     // The IR cabinet's picker: LOAD IR reads a WAV/AIFF impulse response into
     // the processor's convolvers, CLEAR IR releases it, and the status label
@@ -928,7 +955,9 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void loadIrFromFile();
     void refreshIrStatus();
     juce::String lastShownIrStatus;
+    juce::String lastShownIrTooltip;   // see lastShownNeuralTooltip above
     juce::String irStatusReason; // see neuralStatusReason above
+    juce::String irStatusDetail;  // see neuralStatusDetail above
 
     // The VINYL stage's noise-print picker, on the page whose knob is VINYL MIX: a
     // WAV recording of a real surface, which REPLACES the surface the stage
@@ -950,10 +979,11 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // Opens a file-fed stage's MIX to full after a load that succeeded, but only
     // while the blend is still fully closed; see the note on the definition.
     void openStageMix(const juce::String &parameterId);
-    // The loaded model's filename, kept so the readout can name it after a
-    // reload or a refresh. Empty when the stage holds no model.
-    juce::String loadedNeuralName;
-    juce::String loadedIrName;
+    //  The loaded model's and IR's filenames are NOT stored here: they describe
+    //  the stages, so the processor owns them (setLoadedNeuralName /
+    //  getLoadedNeuralName and the IR pair). An editor member was wrong twice -
+    //  a reopened window lost the name while the model kept playing, and a
+    //  second editor on the same instance never saw the first one's load.
 
     // The remaining choice parameters: the DI pad, the machine's track layout,
     // and the two EQ orders. Each is a list rather than a knob because its

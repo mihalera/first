@@ -512,8 +512,21 @@ int main (int argc, char** argv)
     else
     {
         NeuralStage stage;
-        const auto built = buildAndAdopt (stage, lstmFile);
+        const auto built = stage.buildFromNam (lstmFile);
         check (built, "the shipping stage BUILDS lstm_small.nam");
+
+        //  The window between the publish and the handover is the PANEL's window,
+        //  and it is the one the readout has to answer for: a host with the
+        //  transport stopped may not run a block for a while, so a picker that
+        //  asked `isActive()` printed "NO MODEL" over a model that was built and
+        //  waiting. `hasModel()` is the control thread's answer, and it is true
+        //  from the publish; `isActive()` stays the audio thread's, and it is
+        //  false until this block boundary.
+        check (built && stage.hasModel() && ! stage.isActive(),
+               "a BUILT model is installed before the audio thread adopts it");
+
+        stage.adoptPendingModel();
+        check (stage.hasModel(), "the installed model survives the handover");
         check (stage.isActive(), "the shipping stage reports the LSTM model as active");
         stage.setSampleRates (fixtureSampleRate, fixtureSampleRate);
 
@@ -532,6 +545,7 @@ int main (int argc, char** argv)
             check (! stage.isActive()
                        && stage.process (inputSample (3), 1.0f) == inputSample (3),
                    "clearing the stage returns it to the bit-exact pass-through");
+            check (! stage.hasModel(), "and the stage no longer reports an installed model");
         }
     }
 
