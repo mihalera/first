@@ -206,7 +206,8 @@ wait_for_wave
     -isystem "${RTNEURAL_ROOT}" \
     -isystem "${NLOHMANN_ROOT}" \
     -isystem "${NAM_ROOT}" -isystem "${EIGEN_ROOT}" -isystem "${NAM_JSON_INCLUDE}" \
-    "${HERE}/fixture_test.cpp" "${nam_objects[@]}" -o "${BUILD}/fixture_test"
+    "${HERE}/fixture_test.cpp" "${SOURCE}/DSP/NamCoreRegistration.cpp" \
+    "${nam_objects[@]}" -o "${BUILD}/fixture_test"
 
 "${BUILD}/fixture_test" "${HERE}/fixtures"
 
@@ -233,6 +234,7 @@ wait_for_wave
     -I "${HERE}/../dsp" -I "${SOURCE}" -I "${SOURCE}/DSP" \
     -isystem "${NLOHMANN_ROOT}" \
     -isystem "${NAM_ROOT}" -isystem "${EIGEN_ROOT}" -isystem "${NAM_JSON_INCLUDE}" \
-    "${HERE}/nam_only_test.cpp" "${nam_objects[@]}" -o "${BUILD}/nam_only_test"
+    "${HERE}/nam_only_test.cpp" "${SOURCE}/DSP/NamCoreRegistration.cpp" \
+    "${nam_objects[@]}" -o "${BUILD}/nam_only_test"
 
 "${BUILD}/nam_only_test" "${HERE}/fixtures"

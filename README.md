@@ -332,6 +332,12 @@ does, and they are what "vinyl" means as a sound:
   complementary to the cutting curve leaves the characteristic low-end lift and
   top-end softness. It is a filter, not a colour.
 
+The **VINYL** page's **CURVE** knob sets how much of that RIAA curve is applied; at 0 the
+whole record-playing stage is bypassed. It does **not** set the record's
+noise: the crackle, the rumble, the five faults and a loaded print are part of the
+**NOISE** section, so **NOISE MIX** says how much of them is heard and **NOISE LVL** how
+loud they run.
+
 Each channel has its own noise generator, so the crackle and the rumble are
 uncorrelated between the sides - sharing one would put every tick in the centre of the
 image instead of on the surface.
@@ -341,9 +347,9 @@ three knobs, reads a WAV recording of an actual record's surface and makes it th
 surface; **CLEAR PRINT** releases it. A loaded print **replaces** the synthesised hiss
 rather than sitting on top of it, and the faults stay: CRACKLE, DUST, CLICKS, SCRATCH,
 WARP and ELECTRICAL are the damage and the deck, and they keep working over the print.
-The file's own level is kept, so NOISE and VINYL MIX are what set how much of it
-reaches the output - two recordings of the same pressing at different levels stay
-recognisably themselves. The decode runs on a background thread and is handed to the
+The file's own level is kept, so with the record stage up, NOISE MIX and NOISE LVL are
+what set how much of it reaches the output - two recordings of the same pressing at
+different levels stay recognisably themselves. The decode runs on a background thread and is handed to the
 audio thread by one pointer swap, so the panel never waits and neither does audio; the
 readout names the file, says `LOADING PRINT` while it is being read, and
 `INVALID PRINT (reason)` when the file is refused - wrong format, no frames, a NaN
@@ -773,7 +779,7 @@ rest stays silent.
 | Clear | - | Releases the loaded model, returning the NEURAL stage to its pass-through |
 | Load IR | file | Reads an impulse response (a WAV or AIFF capture of a cabinet, a room or any other space) and crossfades it into the finished signal, ahead of the reverb and the vinyl stage. A load that succeeds opens IR MIX while it is still closed; the picker reopens in the folder the last one came from. Not saved with the session |
 | Clear IR | - | Releases the loaded impulse response, returning the IR stage to its pass-through |
-| Load Print | file (WAV) | Reads a surface-noise print - a WAV recording of a real record's surface - and plays it as the VINYL stage's own surface, replacing the synthesised groove hiss. CRACKLE, DUST, CLICKS, SCRATCH, WARP and ELECTRICAL keep working over it; the file's own level is kept, so NOISE and VINYL MIX set how much of it is heard. The decode runs on a background thread, the readout says `LOADING PRINT` while it does, and a refusal is reported as `INVALID PRINT (reason)`. The picker reopens in the folder the last print came from. Not saved with the session |
+| Load Print | file (WAV) | Reads a surface-noise print - a WAV recording of a real record's surface - and plays it as the VINYL stage's own surface, replacing the synthesised groove hiss. CRACKLE, DUST, CLICKS, SCRATCH, WARP and ELECTRICAL keep working over it; the file's own level is kept, so with the record stage up, NOISE MIX and NOISE LVL set how much of it is heard. The decode runs on a background thread, the readout says `LOADING PRINT` while it does, and a refusal is reported as `INVALID PRINT (reason)`. The picker reopens in the folder the last print came from. Not saved with the session |
 | Clear Print | - | Releases the loaded print, and the VINYL stage goes back to synthesising its own surface |
 | Presets | 29 factory | Loaded from the preset box; each application is one undoable step |
 | User presets | unlimited | SAVE stores the whole machine state as a `.miboxpreset` file in the user's application-data directory; DEL removes the selected file; recall is one undoable step |

@@ -1951,7 +1951,7 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     // knobs fill their row has no free cell to put it in (it used to take the
     // fourth cell of a second row that had three knobs in it). VINYL counts for
     // the same reason the two picker pages do: the surface the record plays is a
-    // FILE the user loads, and the band under VINYL MIX is where that loader now
+    // FILE the user loads, and the band under CURVE is where that loader now
     // lives - the page carried nothing but three knobs before, so a print had no
     // way to be reached from the page whose stage plays it. DYN does NOT: its
     // knobs moved to CHARACTER and nothing ever rode the band it reserved, so the
@@ -2290,10 +2290,10 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     clearIrButton.setVisible (geometry.shapersTab);
     irStatusLabel.setVisible (geometry.shapersTab);
 
-    // The noise-print picker follows VINYL, the page whose VINYL MIX knob its
-    // print feeds: a file-fed stage keeps its loader on the page its own knob
-    // lives on, exactly like the pair above. It used to be reachable only
-    // through the processor's public API - see the WP2 note in
+    // The noise-print picker follows VINYL, the page whose CURVE knob engages
+    // the stage its print feeds: a file-fed stage keeps its loader on the page
+    // its own knob lives on, exactly like the pair above. It used to be
+    // reachable only through the processor's public API - see the WP2 note in
     // docs/library-integration-plan.md - because this band did not exist.
     loadNoiseButton.setVisible (geometry.vinylTab);
     clearNoiseButton.setVisible (geometry.vinylTab);
@@ -2575,7 +2575,7 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
         // the control line under it: LOAD PRINT under the readout's left half,
         // CLEAR PRINT under its right. Centred rather than pinned left because
         // the three knobs above span the whole row - a pair at the left edge
-        // would read as belonging to the first knob, which is VINYL MIX.
+        // would read as belonging to the first knob, which is CURVE.
         const auto buttonY = geometry.memberRowY + 20;
         const auto buttonH = juce::jmin (30, geometry.grid.getBottom() - geometry.memberRowY - 22);
         const auto leftEdge = geometry.grid.getX() + geometry.cellWidth;

@@ -128,7 +128,7 @@ namespace j37panel
         { "mechanics",       "MECHANICS",  0.0,   "NOISE"    },
         { "reverb",          "REVERB",     0.0,   "REVERB"    },
         { "reverb_size",     "RVB SIZE",   0.40,  "REVERB"    },
-        { "vinyl",           "VINYL",      0.0,   "VINYL"     },
+        { "vinyl",           "CURVE",      0.0,   "VINYL"     },
         { "vinyl_crackle",   "CRACKLE",    0.50,  "VINYL"     },
         { "vinyl_rumble",    "RUMBLE",     0.35,  "VINYL"     },
         { "noise_lvl",       "NOISE LVL",  1.0,   "NOISE"    },
@@ -385,11 +385,16 @@ namespace j37panel
                    "separate decisions on a real reverb, which is why this is not "
                    "folded into REVERB. Default 40 percent.";
         if (id == "vinyl")
-            return "VINYL - the record-playing end of the chain. A "
-                   "turntable adds three things nothing else here does: surface "
-                   "crackle, bearing rumble and the RIAA playback curve's low-end "
-                   "lift and top-end softness. This is the overall amount; at 0 "
-                   "the whole stage is bypassed. Default 0 percent.";
+            return "CURVE - how much of the record's RIAA playback curve is "
+                   "applied: the low-end lift and top-end softness a turntable's "
+                   "playback stage leaves when it is not perfectly complementary "
+                   "to the cutting curve. GENERATION, TURNTABLE and CARTRIDGE on "
+                   "CHARACTER re-voice the colour around it. At 0 the whole "
+                   "record-playing stage is bypassed. This is NOT the record's "
+                   "noise level: CRACKLE, RUMBLE, the five FAULTS and a loaded "
+                   "print belong to the NOISE section, so NOISE MIX sets how much "
+                   "of them is in the output and NOISE LVL how loud they run. "
+                   "Default 0 percent.";
         if (id == "vinyl_crackle")
             return "CRACKLE - surface noise, and specifically "
                    "IMPULSES rather than hiss. A record surface is ticks, caused "
@@ -791,7 +796,7 @@ namespace j37panel
                    "sample-and-hold, from a 16-bit ceiling to full bit-crush.";
         if (id == "vinyl_type")
             return "VINYL TYPE - the record itself, not the machine: how it was "
-                   "pressed and how worn it is. Audible whenever VINYL is up, "
+                   "pressed and how worn it is. Audible whenever CURVE is up, "
                    "and independent of the BLEND. Shellac 78 plays with loud "
                    "surface between every note, a dubplate is a fresh loud "
                    "lacquer, a half-speed master is nearly silent between the "

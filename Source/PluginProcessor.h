@@ -1952,7 +1952,7 @@ private:
     float modernHysteresisScale = 1.0f;
 
     // A second, independent noise generator for the vinyl stage. It is separate
-    // from `noiseState` so that turning VINYL on cannot change the tape hiss
+    // from `noiseState` so that turning CURVE up cannot change the tape hiss
     // stream - the two are different sources and must stay uncorrelated.
     std::uint32_t vinylNoiseState = 0x9e3779b9u;
 

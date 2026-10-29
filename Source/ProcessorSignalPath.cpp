@@ -302,7 +302,7 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
     const auto channels = context.channels;
     const auto samples = context.samples;
     const auto reverbMix = reverbMixSmoothed.getCurrentValue();
-    const auto vinylMix = vinylSmoothed.getCurrentValue();
+    const auto vinylCurve = vinylSmoothed.getCurrentValue();
     const auto irMix = irMixSmoothed.getCurrentValue();
     if (channels <= 0 || samples <= 0) return;
 
@@ -379,7 +379,7 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
         irActive = true;
     }
 
-    if (reverbMix <= 1.0e-5f && vinylMix <= 1.0e-5f && ! irActive) return;
+    if (reverbMix <= 1.0e-5f && vinylCurve <= 1.0e-5f && ! irActive) return;
     const auto reverbSize = reverbSizeSmoothed.getCurrentValue();
     j37dsp::SafetyLimiter postFxLimiter;
     postFxLimiter.prepare (limiter.getCoefficients());
@@ -424,19 +424,27 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
         {
             auto* data = block.getChannelPointer (static_cast<std::size_t> (c));
             auto value = frame[c];
-            if (vinylMix > 1.0e-5f)
+            if (vinylCurve > 1.0e-5f)
             {
                 auto& stage = c == 0 ? vinylL : vinylR;
                 const auto noiseLevel = noiseLvlSmoothed.getCurrentValue() * noiseTrimSmoothed.getCurrentValue();
 
-                // The print's gain is the file's own level scaled by NOISE and by
-                // the vinyl mix, and nothing else: a print is a RECORDING of a
+                // The record's NOISE is the NOISE section's: NOISE MIX and NOISE
+                // LVL set how much of the surface is heard and how loud it runs.
+                // This knob is the record's CURVE - the RIAA playback tilt - and
+                // the switch that puts the stage in the path, and nothing else.
+                // Multiplying the noise by it as well is what made VINYL a second,
+                // competing master for the same crackle and rumble that NOISE MIX
+                // and NOISE LVL already govern.
+                //
+                // The print's gain is therefore the file's own level scaled by the
+                // NOISE section, and nothing else: a print is a RECORDING of a
                 // surface, so attenuating or normalising it here would make two
                 // prints of the same surface at different levels sound identical.
-                value = stage.process (value, c, vinylCrackleSmoothed.getCurrentValue() * vinylMix * noiseLevel,
-                                       vinylRumbleSmoothed.getCurrentValue() * vinylMix * noiseLevel, vinylMix,
+                value = stage.process (value, c, vinylCrackleSmoothed.getCurrentValue() * noiseLevel,
+                                       vinylRumbleSmoothed.getCurrentValue() * noiseLevel, vinylCurve,
                                        vinylRumbleCoefficient, vinylWarmthCoefficient, vinylNoiseState,
-                                       noiseLevel * vinylMix);
+                                       noiseLevel);
             }
             data[i] = value;
         }

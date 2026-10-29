@@ -764,6 +764,17 @@ j37_apply_vendor_libraries(first)
 if(J37_NAMCORE)
     target_link_libraries(first PRIVATE namcore)
     target_compile_definitions(first PRIVATE J37_NAMCORE=1)
+
+    #  The one source that has to exist because of HOW the plugin is linked, not
+    #  because of what it does. `first` is a STATIC library (libMiBoX_SharedCode.a)
+    #  and the VST3/CLAP/AU wrappers scan that archive, so every NAM Core object
+    #  that only carries a file-scope registration - no symbol anyone names - is
+    #  pruned before its initialiser can run. This translation unit takes the
+    #  address of each architecture's config parser, which gives the linker a
+    #  reference to resolve and keeps the registry populated. See the file's own
+    #  header comment and keepNamCoreArchitecturesLinked() in Source/DSP/
+    #  NamBackend.h; without it every valid .nam loads as INVALID MODEL.
+    target_sources(first PRIVATE Source/DSP/NamCoreRegistration.cpp)
 endif()
 
 # ------------------------------------------------------------------------------

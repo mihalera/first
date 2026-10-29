@@ -511,16 +511,24 @@ if(J37_NAMCORE)
              "${J37_NAMCORE_ROOT}/NAM/*.cpp"
              "${J37_NAMCORE_ROOT}/NAM/*/*.cpp")
 
-        # OBJECT, not STATIC, and that is not a style choice. NAM Core registers
-        # each architecture with a file-scope `static ConfigParserHelper` in its
-        # own .cpp, and `get_dsp()` reaches them only through the registry - it
-        # names no symbol any architecture object defines. A static archive is
-        # therefore pruned: `lstm.o` and the WaveNet objects are never pulled in,
-        # their initialisers never run, and every model fails with "No config
-        # parser registered for architecture: LSTM" at runtime while linking
-        # perfectly. Objects on the link line cannot be pruned that way, which is
-        # what upstream does too (its tools compile the sources into each
-        # executable directly).
+        # OBJECT, not STATIC, because a STATIC namcore would be pruned as a
+        # whole by anything that only calls get_dsp(): NAM Core registers each
+        # architecture with a file-scope `static ConfigParserHelper` in its own
+        # .cpp, and `get_dsp()` names no symbol any architecture object defines.
+        # An OBJECT library at least hands the objects to whatever consumes it
+        # directly.
+        #
+        # OBJECT does not make the problem disappear, and this comment used to
+        # claim it did. The plugin's own target IS a static library
+        # (libMiBoX_SharedCode.a) - juce_add_plugin makes it one - so the objects
+        # below are archived into it and the VST3/CLAP/AU wrapper scans that
+        # archive at the end. The registration-only objects are then pruned
+        # there: the plugin links, and every valid model is refused at run time
+        # with "No config parser registered for architecture: WaveNet". That is
+        # the bug Source/DSP/NamCoreRegistration.cpp exists to fix, by taking the
+        # address of every architecture's parser so the linker has a reference to
+        # resolve. The harnesses under tests/ never saw it because they put these
+        # objects on the command line, where nothing is pruned.
         add_library(namcore OBJECT EXCLUDE_FROM_ALL ${J37_NAMCORE_SOURCES})
 
         # PIC, explicitly, and this is the one property an OBJECT library does not

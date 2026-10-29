@@ -1004,12 +1004,17 @@ namespace
         //              impulse noise (ticks), not hiss; the rumble is a low-frequency
         //              thump from the bearing and the motor.
         //    RUMBLE  - how much of that low-frequency noise there is.
-        //    WARMTH  - the RIAA playback curve's low-end lift and top-end roll-off,
+        //    CURVE   - the RIAA playback curve's low-end lift and top-end roll-off,
         //              which is what makes vinyl read as warm rather than merely noisy.
         //
-        //  SURFACE is the overall amount; at 0 the whole vinyl stage is bypassed.
+        //  CURVE is how much of the record's RIAA playback curve is applied, and at
+        //  0 it bypasses the stage with it. It is deliberately NOT the stage's
+        //  noise amount: the surface noise belongs to the NOISE section, whose MIX
+        //  and LVL are the two controls that set how much of it is heard and how
+        //  loud it runs. When this knob scaled the noise as well, VINYL was a
+        //  second, competing master for the same crackle and rumble.
         // =========================================================================
-        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vinyl", 1 }, "Vinyl",
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vinyl", 1 }, "Vinyl Curve",
                                                                 percentageRange (0.45f), 0.0f,
                                                                 juce::AudioParameterFloatAttributes().withLabel ("%")));
         layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vinyl_crackle", 1 }, "Crackle",
@@ -1029,10 +1034,10 @@ namespace
         // -------------------------------------------------------------------------
         //  The four physical faults of a record and a turntable.
         //
-        //  VINYL is the overall amount of the record-playing end; CRACKLE and RUMBLE
-        //  are its two classic noise sources. These four are the REST of what goes
-        //  wrong, and each is a genuinely different mechanism rather than another
-        //  amount of noise:
+        //  CURVE puts the record-playing end in the path and sets how much of its
+        //  RIAA curve is applied; CRACKLE and RUMBLE are its two classic noise
+        //  sources. These four are the REST of what goes wrong, and each is a
+        //  genuinely different mechanism rather than another amount of noise:
         //
         //    DUST       fine particulate in the groove - a continuous granular
         //               texture that follows the programme, so a loud passage
@@ -1046,7 +1051,7 @@ namespace
         //
         //  All four default to 0: they are faults, not calibrations, and a fresh
         //  instance must play the record clean until the user asks for the damage.
-        //  They live under the VINYL stage, so VINYL 0 bypasses them with it.
+        //  They live under the VINYL stage, so CURVE 0 bypasses them with it.
         // -------------------------------------------------------------------------
         layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "vinyl_dust", 1 }, "Dust",
                                                                 percentageRange (0.45f), 0.0f,
@@ -1165,7 +1170,7 @@ namespace
         //  VALVE / AMP / TRANSFORMER / DIGITAL re-voice their core's existing curve,
         //  so they only mean anything when their principle is actually in the BLEND.
         //  VINYL re-voices the VinylStage at the end of the chain, so it is audible
-        //  whenever VINYL is up, and says nothing about the blend at all.
+        //  whenever CURVE is up, and says nothing about the blend at all.
         // -------------------------------------------------------------------------
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "valve_type", 1 }, "Valve Type",
                                                                 valveTypeNameList(),
@@ -1271,7 +1276,7 @@ namespace
         //  existing session - which has neither control - loads unchanged.
         //
         //  TRANSIENT MIX is how much of the shaped signal is in the output, exactly
-        //  like VINYL MIX or MIX itself: it crossfades to the unshaped signal, so the
+        //  like MIX itself: it crossfades to the unshaped signal, so the
         //  stage can be A/B'd and blended rather than switched.
         // =========================================================================
         layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "transient_attack", 1 },
