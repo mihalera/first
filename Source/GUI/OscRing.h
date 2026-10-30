@@ -49,7 +49,8 @@ public:
         but the call itself. */
     void tick (double seconds)
     {
-        const auto step = static_cast<float> (juce::jmax (0.0, juce::jmin (0.25, seconds)));
+        const auto safeSeconds = std::isfinite (seconds) ? seconds : 0.0;
+        const auto step = static_cast<float> (juce::jmax (0.0, juce::jmin (0.25, safeSeconds)));
 
         if (! running)
         {
@@ -92,7 +93,7 @@ public:
     /** Whether the module runs (the header's OSC switch). Turning it on starts
         the next hop from wherever the ball is; turning it off settles it on the
         sector it is over and stops the announcements. */
-    void setRunning (bool shouldRun) noexcept
+    void setRunning (bool shouldRun)
     {
         if (running == shouldRun)
             return;
@@ -221,7 +222,7 @@ public:
         if (hopping)
             land();
 
-        restLeft = 0.0f;
+        beginHop();
         repaint();
     }
 
@@ -251,7 +252,7 @@ private:
         return names[juce::jlimit (0, sectorCount - 1, index)];
     }
 
-    void beginHop () noexcept
+    void beginHop ()
     {
         // Between one and four sectors forward, never zero and never backwards:
         // the ball walks the ring the way a ball is bounced around a rim, and a
@@ -262,14 +263,26 @@ private:
         hopping = true;
     }
 
-    void land () noexcept
+    void land ()
     {
         currentSector = (hopFrom + hopSteps) % sectorCount;
         hopping = false;
         hopElapsed = 0.0f;
 
         if (running && onLanded)
-            onLanded (currentSector);
+        {
+            try
+            {
+                onLanded (currentSector);
+            }
+            catch (...)
+            {
+                // A client callback must not interrupt the component's landing
+                // transition or its repaint; UI state is already committed above.
+            }
+        }
+
+        repaint();
     }
 
     bool running = false;

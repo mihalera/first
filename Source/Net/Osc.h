@@ -360,9 +360,13 @@ inline bool decode (std::string_view bytes, Message& out, std::string* reason)
         }
     }
 
-    // Trailing bytes are tolerated rather than refused: OSC 1.1 grew a couple of
-    // optional per-message fields, and a receiver that rejects them would be right
-    // about the version and wrong about every client that sends them.
+    if (position != bytes.size())
+    {
+        if (reason != nullptr)
+            *reason = "a message has trailing bytes after its arguments";
+        return false;
+    }
+
     return true;
 }
 

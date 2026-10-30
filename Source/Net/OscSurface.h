@@ -35,6 +35,7 @@
 
 #include <cmath>
 #include <optional>
+#include <stdexcept>
 #include <string>
 #include <vector>
 
@@ -72,6 +73,31 @@ public:
     Surface (std::vector<ParameterSlot> parameterSlots, std::string addressRoot = "/mibox")
         : slots (std::move (parameterSlots)), root (std::move (addressRoot))
     {
+        if (! addressesAreValid (root))
+            throw std::invalid_argument ("the OSC surface root is not a valid address");
+
+        for (std::size_t index = 0; index < slots.size(); ++index)
+        {
+            const auto& slot = slots[index];
+            const auto& path = slot.path;
+            if (path.empty() || path.front() == '/' || ! addressesAreValid (root + "/" + path))
+                throw std::invalid_argument ("an OSC surface slot path is invalid");
+
+            if (! std::isfinite (slot.minimum) || ! std::isfinite (slot.maximum)
+                || slot.maximum < slot.minimum)
+                throw std::invalid_argument ("an OSC surface slot range must be finite and ordered");
+
+            if (slot.id.empty())
+                throw std::invalid_argument ("an OSC surface slot ID cannot be empty");
+
+            for (std::size_t previous = 0; previous < index; ++previous)
+            {
+                if (slots[previous].path == path)
+                    throw std::invalid_argument ("OSC surface slot paths must be unique");
+                if (slots[previous].id == slot.id)
+                    throw std::invalid_argument ("OSC surface slot IDs must be unique");
+            }
+        }
     }
 
     /** The whole map, in the order it was given. What a client asks for. */
@@ -157,7 +183,10 @@ public:
             return 0.0f;
 
         const auto& entry = slots[slot];
-        return entry.minimum + (entry.maximum - entry.minimum) * normalised;
+        const auto bounded = normalised < 0.0f ? 0.0f
+                           : normalised > 1.0f ? 1.0f
+                                               : normalised;
+        return entry.minimum + (entry.maximum - entry.minimum) * bounded;
     }
 
 private:

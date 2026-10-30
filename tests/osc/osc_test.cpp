@@ -186,6 +186,16 @@ void checkRefusals()
           "a type tag that promises an argument the packet does not hold is refused");
     check(reason.find("promises") != std::string::npos, "and the reason says so");
 
+    auto trailing = j37::osc::encode (Message { "/a", {} });
+    trailing.push_back (0);
+    trailing.push_back (0);
+    trailing.push_back (0);
+    trailing.push_back (0);
+    check (! j37::osc::decode (asString (trailing), message, &reason),
+           "trailing bytes after a complete message are refused");
+    check (reason.find ("trailing") != std::string::npos,
+           "and the reason identifies trailing bytes");
+
     // The type tag is missing entirely: an address chunk, then four NULs.
     check(! j37::osc::decode(std::string("/a\0\0\0\0\0\0\0", 8), message, &reason),
           "a message with no type tag string is refused");
@@ -235,6 +245,21 @@ void checkBundles()
     const auto refused = j37::osc::decodePacket(asString(broken), &reason);
     check(refused.empty(), "a bundle element longer than the packet is refused");
     check(reason.find("longer") != std::string::npos, "and the reason says the length is wrong");
+
+    const auto emptyElement = bundleOf ({ {} });
+    reason.clear();
+    check (j37::osc::decodePacket (asString (emptyElement), &reason).empty ()
+           && reason.find ("empty") != std::string::npos,
+           "an empty bundle element is refused with a clear reason");
+
+    Packet shortElement;
+    j37::osc::detail::appendUint32 (shortElement, 1);
+    shortElement.push_back ('x');
+    const auto misalignedElement = bundleOf ({ shortElement });
+    reason.clear();
+    check (j37::osc::decodePacket (asString (misalignedElement), &reason).empty ()
+           && reason.find ("aligned") != std::string::npos,
+           "a non-four-byte-aligned bundle element is refused");
 }
 
 void checkSurface()
@@ -246,6 +271,26 @@ void checkSurface()
 
     const auto surface = Surface({ ParameterSlot{ "tape_drive", "tape/drive", 0.0f, 1.0f },
                                    ParameterSlot{ "input", "input", -32.0f, 32.0f } });
+
+    const auto rejectsInvalid = [] (std::vector<ParameterSlot> slots)
+    {
+        try
+        {
+            const Surface invalid (std::move (slots));
+            return false;
+        }
+        catch (const std::invalid_argument&)
+        {
+            return true;
+        }
+    };
+    check (rejectsInvalid ({ ParameterSlot { "range", "range", 1.0f, 0.0f } }),
+           "a reversed parameter range is rejected");
+    check (rejectsInvalid ({ ParameterSlot { "", "empty-id", 0.0f, 1.0f } }),
+           "an empty parameter ID is rejected");
+    check (rejectsInvalid ({ ParameterSlot { "same", "first", 0.0f, 1.0f },
+                             ParameterSlot { "same", "second", 0.0f, 1.0f } }),
+           "duplicate parameter IDs are rejected");
 
     Message message;
     message.address = "/mibox/tape/drive";
@@ -299,6 +344,9 @@ void checkSurface()
 
     check(std::abs(surface.engineeringValue(1, 0.75f) - 16.0f) < 1.0e-4f,
           "the engineering value maps the parameter's own range (-32..32 at 0.75 is 16)");
+    check(surface.engineeringValue(1, -0.5f) == -32.0f
+          && surface.engineeringValue(1, 1.5f) == 32.0f,
+          "engineering values clamp inputs to the parameter range");
     check(surface.addressOf(7).empty(), "an address of a slot that does not exist is empty");
 }
 
