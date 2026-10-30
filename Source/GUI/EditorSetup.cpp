@@ -709,6 +709,37 @@ void FirstAudioProcessorEditor::setUpTabButtons() {
 }
 
 void FirstAudioProcessorEditor::setUpDeckSelectors() {
+    // ---------------------------------------------------------------------
+    //  OSC, the ring at the right of the type row.
+    //
+    //  It is a DECK control like the selectors it stands beside, so it is built
+    //  here rather than in a phase of its own: the constructor's phases are
+    //  checked against the header's list by tests/layout, and a widget that
+    //  needs one is a widget that belongs beside an existing one.
+    //
+    //  The callback is the whole module in three lines - the landing becomes the
+    //  engine's note (a relaxed store, realtime-safe) and a packet on the wire
+    //  built by the codec in Source/Net. It publishes rather than being asked to:
+    //  the landing is the event, and the panel is the only thing that knows it
+    //  happened.
+    // ---------------------------------------------------------------------
+    addAndMakeVisible(oscRing);
+    oscRing.onLanded = [this](int note) {
+        audioProcessor.setOscNote(note, true);
+        audioProcessor.publishOscState(true);
+    };
+    // Seed the engine from the ring's own starting sector rather than from an
+    // assumption that both default to zero - a day the widget starts somewhere
+    // else is a day the panel would show one note and the engine play another.
+    audioProcessor.setOscNote(oscRing.sector(), false);
+    setTip(oscRing, "OSC's note ring: the ball hops clockwise around twelve "
+                    "sectors - C through B, one octave from C4 - and where it "
+                    "lands is the note the module plays. Press the ring to throw "
+                    "it into its next hop. The note is generated into the INPUT, "
+                    "so the machine you have dialled is what you hear it through; "
+                    "the OSC switch in the header mutes the generator and parks "
+                    "the ball.");
+
     // The same tapeStockNameList() the choice parameter is built from, so the panel
     // cannot offer a stock the parameter would refuse to select. It did once: the
     // panel drew twelve and the parameter accepted eight, so the last four were
@@ -914,6 +945,31 @@ void FirstAudioProcessorEditor::setUpTopSwitches() {
     autoGainAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         audioProcessor.parameters, "auto_gain", autoGainButton);
     addAndMakeVisible(autoGainButton);
+
+    // ---------------------------------------------------------------------
+    //  OSC - the fifth cell of the header's switch row, and the module's switch.
+    //
+    //  It sits with BYPASS / DELTA / POLARITY / AUTO GAIN because it is the same
+    //  KIND of thing: a switch that changes what the whole machine is doing
+    //  rather than a knob on one stage of it. What it switches is the note
+    //  generator on the deck - the ring at the right of the type row - and, with
+    //  it, the publishing of every landing as an OSC message.
+    //
+    //  It is NOT the ring's power in the panel sense: with the switch off the
+    //  ring is still there and still visible. It mutes what the engine generates,
+    //  which is what keeps a generator out of a session that never asked for one.
+    // ---------------------------------------------------------------------
+    oscButton.setClickingTogglesState(true);
+    setTip(oscButton, "OSC - the deck's note generator. ON, the ring on the type "
+                      "row hops, and every note it lands on is generated into the "
+                      "machine's INPUT and published as /mibox/osc/note over OSC "
+                      "to 127.0.0.1:9000. OFF, the ball parks on the last note and "
+                      "nothing is generated. The note enters the chain, so INPUT, "
+                      "the machine and OUTPUT all shape it like any other source.");
+    oscButton.setLookAndFeel(&customLookAndFeel);
+    oscAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
+        audioProcessor.parameters, "osc_on", oscButton);
+    addAndMakeVisible(oscButton);
 }
 
 void FirstAudioProcessorEditor::setUpOversamplingAndInstrument() {

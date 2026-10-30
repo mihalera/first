@@ -137,6 +137,28 @@ namespace
         nothing is.
     */
 
+    // -------------------------------------------------------------------------
+    //  OSC, the note generator on the deck: where its packets go, and which of
+    //  the map's slots says what.
+    //
+    //  LOOPBACK, and that is a decision rather than a default. The module
+    //  PUBLISHES; it does not listen, so nothing here ever binds a port, opens a
+    //  thread or takes a socket another piece of software could hold - the day
+    //  the panel is driven from outside is the day Source/Net's receive half
+    //  lands, and that is when a port number becomes a setting the user owns.
+    //  Until then 127.0.0.1:9000 is the address an OSC client is pointed at by
+    //  convention, and a machine with nothing listening sees no difference at
+    //  all: UDP to a closed port fails quietly and costs one small write.
+    //
+    //  The slots are named because the publish path is written in terms of them:
+    //  the map has two entries, built once in the constructor, and an index that
+    //  had to be remembered as "the second one" is exactly the kind of thing that
+    //  silently swaps a note for a switch one refactor later.
+    // -------------------------------------------------------------------------
+    constexpr int oscSendPort = 9000;
+    constexpr std::size_t oscSlotOn = 0;
+    constexpr std::size_t oscSlotNote = 1;
+
 }
 
 
@@ -173,6 +195,22 @@ FirstAudioProcessor::FirstAudioProcessor()
     oversamplingParam = parameters.getRawParameterValue ("oversampling");
     polarityParam  = parameters.getRawParameterValue ("polarity");
     autoGainParam  = parameters.getRawParameterValue ("auto_gain");
+    // OSC, the note generator on the deck: the header's own switch, read by the
+    // engine once per block (to gate the oscillator) and by the panel every frame.
+    oscOnParam     = parameters.getRawParameterValue ("osc_on");
+
+    // The module's address map, built once here from the two things it publishes.
+    // It is a Surface rather than two string literals because the address is the
+    // part of OSC that has to be right: the map is what a client would be told to
+    // send to, and building it here means the on-wire address and the documented
+    // one are the same expression. The full parameter map arrives with the receive
+    // half - see the banner at the top of this file for what that still needs.
+    oscSurface = std::make_unique<j37::osc::Surface> (
+        std::vector<j37::osc::ParameterSlot> {
+            { "osc_on",   "osc/on",   0.0f, 1.0f },
+            { "osc_note", "osc/note", 0.0f, 1.0f },
+        },
+        "/mibox");
     // SUBFUND's depth parameter. Without this the pointer stayed null and the engine
     // read depth 0 through the nullptr guard - the generator was built, fed and
     // scaled correctly but multiplied by zero forever, so no subharmonic ever left it
@@ -415,7 +453,12 @@ FirstAudioProcessor::FirstAudioProcessor()
             "bypass", "delta", "ui_sounds", "language", "anti_phase_guard",
             "transport", "spindown",
             "transient_attack", "transient_sustain", "transient_mix", "neural_mix",
-            "ir_mix"
+            "ir_mix",
+            // OSC is the same KIND of entry as bypass and delta: a listening state
+            // rather than a property of a sound. A factory preset that switched the
+            // note generator on would surprise every load, and no preset should have
+            // to be rewritten to say "the oscillator stays off".
+            "osc_on"
         };
 
         for (const auto& id : registered)
@@ -489,6 +532,65 @@ FirstAudioProcessor::~FirstAudioProcessor()
     cancelPendingUpdate();
     for (const auto* parameterID : parametersTrackedForDirtyBadge())
         parameters.removeParameterListener (parameterID, this);
+}
+
+//==============================================================================
+//  OSC: the ring's note, and what goes on the wire with it.
+//
+//  Both are MESSAGE-thread calls - the editor's timer is the only caller - and
+//  neither can touch the audio thread with anything but an atomic. That is the
+//  whole reason these two are here rather than in the editor: the note is the
+//  engine's state and the packet is the module's, so both belong with the object
+//  that outlives the window that asked for them.
+//==============================================================================
+void FirstAudioProcessor::setOscNote (int noteIndex, bool retrigger) noexcept
+{
+    oscNoteIndex.store (juce::jlimit (0, 11, noteIndex), std::memory_order_relaxed);
+
+    // A counter, not a flag: the audio thread compares it with what it saw at the
+    // last block, so two landings inside one block both count and neither can be
+    // lost to a read that happens between the write and the flag's reset.
+    if (retrigger)
+        oscPulse.fetch_add (1, std::memory_order_relaxed);
+}
+
+void FirstAudioProcessor::publishOscState (bool noteChanged)
+{
+    if (oscSurface == nullptr || oscOnParam == nullptr)
+        return;
+
+    const auto on = oscOnParam->load() >= 0.5f;
+
+    // A landing only matters while the module is running - with the switch off the
+    // ring parks and nothing is generated, so publishing a note would be a message
+    // about a sound nobody is making. The switch itself is the exception in the
+    // other direction: the OFF packet is the one a client most needs to receive, so
+    // it is sent whatever the state is.
+    if (noteChanged && ! on)
+        return;
+
+    const auto slot = noteChanged ? oscSlotNote : oscSlotOn;
+    const auto normalised = noteChanged
+                              ? static_cast<float> (oscNoteIndex.load (std::memory_order_relaxed)) / 11.0f
+                              : (on ? 1.0f : 0.0f);
+
+    const auto message = oscSurface->feedback (slot, normalised);
+
+    // feedback() returns an empty message for a slot it does not hold or a value
+    // it cannot state. Sending nothing is the right answer to both, and an empty
+    // address here would encode as a packet no client could route.
+    if (message.address.empty())
+        return;
+
+    const auto packet = j37::osc::encode (message);
+
+    if (packet.empty())
+        return;
+
+    // Fire-and-forget, from a socket that was never bound: write() caches the
+    // address lookup after the first call, so the steady state is one sendto().
+    juce::ignoreUnused (oscSocket.write ("127.0.0.1", oscSendPort,
+                                         packet.data(), static_cast<int> (packet.size())));
 }
 
 

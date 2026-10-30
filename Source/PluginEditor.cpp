@@ -155,7 +155,7 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
     // juce::Button* named explicitly: the members mix ToggleButton and
     // TextButton, and an initializer_list cannot be deduced from a
     // heterogeneous braced list - the common base is what the loop wants.
-    const std::array<juce::Button*, 14> stateButtons { { &bypassButton, &deltaButton, &polarityButton, &autoGainButton,
+    const std::array<juce::Button*, 15> stateButtons { { &bypassButton, &deltaButton, &polarityButton, &autoGainButton, &oscButton,
                           &modeCycleButton, &delaySyncButton,
                           &themeButton, &savePresetButton, &deletePresetButton,
                           &copyAButton, &copyBButton, &compareButton,
@@ -902,6 +902,7 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     redoButton.setLookAndFeel (nullptr);
     polarityButton.setLookAndFeel (nullptr);
     autoGainButton.setLookAndFeel (nullptr);
+    oscButton.setLookAndFeel (nullptr);
     oversamplingBox.setLookAndFeel (nullptr);
     instrumentBox.setLookAndFeel (nullptr);
     vinylGenerationBox.setLookAndFeel (nullptr);
@@ -1148,13 +1149,17 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
     // individual line is correct and only the SUM is wrong. With the cursor the
     // gap is the only number, and a row cannot overlap itself.
     //
-    //  THE GRID. Four switches occupy two rows of equal-width cells, so their
-    //  columns line up and no pair overlaps at any editor size.
+    //  THE GRID. Five switches share the first row of equal-width cells and the
+    //  second row puts THEME and the language pair under them, so their columns
+    //  line up and no pair overlaps at any editor size.
     //
+    //  OSC took the fifth cell when the note generator arrived. It fits because
+    //  the cells are sized by the widest caption in the row (POLARITY, AUTO GAIN)
+    //  and a third short caption costs the row a cell rather than a wider one.
     //
-    //  Clearance at the 780 px minimum: the grid is 314 px wide (4 x 74 + 3 x 6)
-    //  and starts at header.right - 314 = x + 438 on a 780 panel, clearing the
-    //  title block (ends x + 346) by 92 px at the tightest size and more above it.
+    //  Clearance at the 780 px minimum: the grid is 394 px wide (5 x 74 + 4 x 6)
+    //  and starts at header.right - 394 = x + 358 on a 780 panel, clearing the
+    //  title block (ends x + 346) by 12 px at the tightest size and more above it.
     // ------------------------------------------------------------------------------
     const auto headerRight = header.getRight();
     // The grid dimensions are declared on the class so these cells stay aligned.
@@ -1198,20 +1203,25 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
                              rowY, headerColumnWidth, height);
     };
 
-    // Row one: the four engine switches, equal cells, one grid.
+    // Row one: the five engine switches, equal cells, one grid.
     headerCell (deltaButton,     0, headerRowOneY, headerSwitchHeight);
     headerCell (bypassButton,    1, headerRowOneY, headerSwitchHeight);
     headerCell (polarityButton,  2, headerRowOneY, headerSwitchHeight);
     headerCell (autoGainButton,  3, headerRowOneY, headerSwitchHeight);
+    headerCell (oscButton,       4, headerRowOneY, headerSwitchHeight);
 
     // Row two: THEME, then the language pair - caption cell + a box that spans
-    // the last two cells.
+    // whatever the grid has left of it. Written as a count of cells rather than
+    // as a literal 154 px so a sixth column would widen the box instead of
+    // leaving a hole at the end of the row.
     headerCell (themeButton,     0, headerRowTwoY, headerSwitchHeight);
     headerCell (languageLabel,   1, headerRowTwoY, headerSwitchHeight);
     languageLabel.setJustificationType (juce::Justification::centredRight);
+    constexpr int languageColumns = headerColumns - 2;
     languageBox.setBounds (headerGridLeft + 2 * (headerColumnWidth + headerGap),
                            headerRowTwoY,
-                           2 * headerColumnWidth + headerGap,
+                           languageColumns * headerColumnWidth
+                               + (languageColumns - 1) * headerGap,
                            headerSwitchHeight);
 
     // The renderer caption sits on the brand row's right end, ending one gap
@@ -1253,7 +1263,8 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     //   the DECK heading and the build id
     //   MODEL     tape type | speed | BPM
     //   SWITCHES  instrument | HARMONICS | SUBFUND | ANTI-PHASE
-    //   the six type switches, their captions above their boxes
+    //   the six type switches, their captions above their boxes, and the OSC
+    //   ring at the right of that row
     //   TRANSPORT keys, the machine state, the mode switch
     //   the preset workflow chain
     //   the preset badge band          (the deck is 278 px at its preferred size)
@@ -1552,36 +1563,54 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         // the badge's text sits in it.
     }
 
-    // ---- row 3: the six type selectors --------------------------------------
+    // ---- row 3: the six type selectors, and the OSC ring --------------------
     {
         // The model selector (renamed TAPE, its old caption read MODEL) joined
         // the row of type selectors - the user read MODEL | SPEED | BPM as
         // three unrelated things on one line, when the selector is a TYPE like
-        // VINYL or VALVE and belongs with them. Six columns as before, so the
-        // row arithmetic and the 108 px column are unchanged.
+        // VINYL or VALVE and belongs with them.
         //
-        // 108 per column, not 100: the longest stock values ("Fender Blackface",
-        // "Jensen JT-11P") ellipsised in the deck's own combo drawing at the old
-        // width on every panel under ~1400 px. 108 is the largest the row holds at
-        // the 780 px minimum ((720 - 5 x 14 gaps) / 6 = 108), and above that width
-        // the row's elastic gap shrinks before any column does.
+        //  THE OSC RING takes the row's right end, where the user asked for it:
+        //  to the right of the TYPE boxes. It is a square as tall as the whole
+        //  band (the caption strip is part of the band, so the ring is not
+        //  squeezed into the control strip alone), which makes it the same size
+        //  as a knob and leaves the row one number to solve instead of two.
+        //
+        //  THE COLUMNS ARE SOLVED, NOT WRITTEN DOWN. 108 was the width the six
+        //  selectors wanted and the largest the row held at the old 780 px
+        //  minimum; with the ring standing in the row that number is no longer
+        //  true, and a literal here would have run the boxes straight under the
+        //  ring on the narrowest window. So 108 is a CEILING and what is left
+        //  after the ring and the minimum gaps is the column - the longest
+        //  stock values ellipsise a little sooner on a minimum-width panel and
+        //  every window above it is the row it always was.
+        const auto typesRight = deck.getRight() - deckRightInset;
+        const auto typesTop = deckTop (j37panel::DeckBands::types);
+        const auto ringSize = deckBandHeight (j37panel::DeckBands::types);
+
+        constexpr int ringGap = 10;
+        oscRing.setBounds (typesRight - ringSize, typesTop, ringSize, ringSize);
+
+        const auto rowLeft = deck.getX() + 18;
+        const auto rowRight = typesRight - ringSize - ringGap;
+        const auto typeColumnWidth = juce::jmax (60, juce::jmin (108, (rowRight - rowLeft - 5 * 14) / 6));
+
         const std::vector<DeckRowItem> row {
-            { &tapeTypeLabel,        108, -1,  0, captionHeight, false },
+            { &tapeTypeLabel,        typeColumnWidth, -1,  0, captionHeight, false },
             { &tapeTypeBox,            0, -1, captionHeight, controlHeight, true  },
-            { &vinylTypeLabel,       108, -1,  0, captionHeight, false },
+            { &vinylTypeLabel,        typeColumnWidth, -1,  0, captionHeight, false },
             { &vinylTypeBox,           0, -1, captionHeight, controlHeight, true  },
-            { &valveTypeLabel,       108, -1,  0, captionHeight, false },
+            { &valveTypeLabel,        typeColumnWidth, -1,  0, captionHeight, false },
             { &valveTypeBox,           0, -1, captionHeight, controlHeight, true  },
-            { &ampTypeLabel,         108, -1,  0, captionHeight, false },
+            { &ampTypeLabel,          typeColumnWidth, -1,  0, captionHeight, false },
             { &ampTypeBox,             0, -1, captionHeight, controlHeight, true  },
-            { &transformerTypeLabel, 108, -1,  0, captionHeight, false },
+            { &transformerTypeLabel, typeColumnWidth, -1,  0, captionHeight, false },
             { &transformerTypeBox,     0, -1, captionHeight, controlHeight, true  },
-            { &digitalTypeLabel,     108, -1,  0, captionHeight, false },
+            { &digitalTypeLabel,      typeColumnWidth, -1,  0, captionHeight, false },
             { &digitalTypeBox,         0, -1, captionHeight, controlHeight, true  }
         };
 
-        placeDeckRow (row, deck.getX() + 18, deck.getRight() - deckRightInset,
-                      deckTop (j37panel::DeckBands::types), 14);
+        placeDeckRow (row, rowLeft, rowRight, typesTop, 14);
     }
 
     // ---- row 4: TRANSPORT ---------------------------------------------------
@@ -2792,6 +2821,7 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "delta",         &deltaButton },
             { "polarity",      &polarityButton },
             { "autoGain",      &autoGainButton },
+            { "osc",           &oscButton },
             { "theme",         &themeButton },
 
             // The deck, line by line, in the order resized() places them.
@@ -2825,6 +2855,7 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "transformerBox",     &transformerTypeBox },
             { "digitalTypeLabel",   &digitalTypeLabel },
             { "digitalTypeBox",     &digitalTypeBox },
+            { "oscRing",            &oscRing },
             { "transportLabel",     &transportLabel },
             { "spindownLabel",      &spindownLabel },
             { "stop",               &transportStopButton },

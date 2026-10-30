@@ -837,6 +837,103 @@ void FirstAudioProcessor::configureBlockRateCoefficients (float engineSampleRate
     antiPhaseCoefficient = blockRate.antiPhase;
 }
 
+//==============================================================================
+//  OSC: the note the deck's ring landed on, generated into the machine's INPUT.
+//
+//  Where it goes is the whole design. The tone is summed into the block before
+//  any stage runs, so INPUT trims it, the machine colours it, MIX blends it and
+//  the output stage finishes it - the panel's own generator sounds like this
+//  machine rather than like a sine that was pasted over the top of one. The
+//  alternative (summing at the end) was refused for exactly that reason: it
+//  would have been a tone the user's settings could not reach.
+//
+//  Three things keep it from sounding like a defect:
+//
+//    - a GATE that is a one-pole toward the switch's state, so pressing OSC
+//      fades the tone in and out over about fifteen milliseconds instead of
+//      starting or stopping it mid-cycle with a click;
+//    - an ENVELOPE that each landing restarts, so the ball arriving on a sector
+//      is heard as a note being played rather than as the previous note bending
+//      to a new pitch;
+//    - a phase accumulator that never resets, so a retune is a continuous wave
+//      and the only discontinuity in the signal is the one the envelope is
+//      there to hide.
+//
+//  Everything it reads is an atomic written by the message thread and
+//  everything else is three floats owned here, so the audio thread takes no lock
+//  and allocates nothing. With the switch off the function returns before the
+//  loop once the gate has faded, which is what makes it free when the module is
+//  not in use.
+//==============================================================================
+void FirstAudioProcessor::mixOscillatorIntoInput (juce::dsp::AudioBlock<float>& block,
+                                                  float engineSampleRate, int channels)
+{
+    const bool running = oscOnParam != nullptr && oscOnParam->load() >= 0.5f;
+
+    // A landing since the last block restarts the envelope. It is a counter read
+    // rather than a flag: two landings inside one block collapse into one note,
+    // which is correct - the note the ball rests on is the one that sounds.
+    const auto pulse = oscPulse.load (std::memory_order_relaxed);
+    if (pulse != oscSeenPulse)
+    {
+        oscSeenPulse = pulse;
+        oscEnvelope = 1.0f;
+    }
+
+    const auto rate = juce::jmax (1.0f, engineSampleRate);
+
+    // Nothing to render and nothing left to fade: stop cheaply. The phase is kept
+    // (not zeroed) so the next switch-on starts from wherever the wave was rather
+    // than from a discontinuity the gate has not reached yet.
+    if (! running && oscGate < 1.0e-5f)
+    {
+        oscGate = 0.0f;
+        return;
+    }
+
+    // C4 for sector 0 up to B4 for sector 11: the twelve sectors are the twelve
+    // semitones of one octave, stated as equal temperament because that is what
+    // the panel's note readout names them by and what an OSC client counting
+    // 0..11 will expect to receive.
+    const auto note = juce::jlimit (0, 11, oscNoteIndex.load (std::memory_order_relaxed));
+    const auto frequency = 440.0f * std::pow (2.0f, static_cast<float> (note - 9) / 12.0f);
+    const auto phaseIncrement = frequency / rate;
+
+    // The gate's and the envelope's time constants, as a per-sample fraction. Both
+    // are computed once per block; neither is a smoother that steps a control, so
+    // nothing here is measured against the control ramp the rest of the engine uses.
+    const auto gateStep = 1.0f - std::exp (-1.0f / (0.015f * rate));
+    const auto envelopeStep = std::exp (-1.0f / (0.35f * rate));
+    constexpr float sustain = 0.55f;
+
+    // -18 dBFS into the input: audible through a neutral chain, and still thirty
+    // dB below the point where it would be the loudest thing in the block for
+    // anyone who has simply left OSC on while working on something else.
+    constexpr float level = 0.125f;
+
+    const auto numSamples = static_cast<int> (block.getNumSamples());
+    const auto activeChannels = juce::jmax (0, juce::jmin (2, channels));
+
+    for (int sample = 0; sample < numSamples; ++sample)
+    {
+        oscGate += ((running ? 1.0f : 0.0f) - oscGate) * gateStep;
+        oscEnvelope = sustain + (oscEnvelope - sustain) * envelopeStep;
+
+        oscPhase += phaseIncrement;
+        if (oscPhase >= 1.0f)
+            oscPhase -= 1.0f;
+
+        const auto value = std::sin (oscPhase * juce::MathConstants<float>::twoPi)
+                         * level * oscGate * oscEnvelope;
+
+        // Identical on every channel: this is one mono source entering a stereo
+        // machine, not a stereo image of its own. Output-only channels (a
+        // mono-in/stereo-out host) were cleared above and are left alone here.
+        for (int channel = 0; channel < activeChannels; ++channel)
+            block.setSample (channel, sample, block.getSample (channel, sample) + value);
+    }
+}
+
 void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                              juce::MidiBuffer& midiMessages)
 {
@@ -883,6 +980,13 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         return;
 
     bypassActive.store (false, std::memory_order_relaxed);
+
+    // The OSC module's note goes in HERE - at the input, before any stage, so the
+    // whole machine processes it. It is deliberately after the bypass early-out
+    // above: a machine switched out generates nothing, which is the difference
+    // between a tone the plugin makes and a tone the plugin passes through.
+    mixOscillatorIntoInput (block, state.engineSampleRate, activeInputChannels);
+
     neuralL.adoptPendingModel();
     neuralR.adoptPendingModel();
 
