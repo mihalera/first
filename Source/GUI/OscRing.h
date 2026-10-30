@@ -30,6 +30,8 @@
 // =============================================================================
 #pragma once
 
+#include "GUI/PanelPaint.h"
+
 #include <cmath>
 #include <functional>
 
