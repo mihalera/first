@@ -1,0 +1,6 @@
+// The Android Gradle Plugin version JUCE 9.0.4 ships with in its Android
+// template. Pinned rather than ranged: an APK built here must be reproducible
+// from the same source tree a year from now.
+plugins {
+    id 'com.android.application' version '8.13.2' apply false
+}

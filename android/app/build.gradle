@@ -1,0 +1,79 @@
+plugins {
+    id 'com.android.application'
+}
+
+// ============================================================================
+//  The native half
+//
+//  This module packages the plugin's Standalone wrapper; it does not compile
+//  it. `../CMakeLists.txt` cross-compiles that wrapper with the Android NDK
+//  (see the README's Android section), and the library it writes is renamed
+//  `libjuce_jni.so` there because that is the name JUCE's Java side loads:
+//  `System.loadLibrary ("juce_jni")` in
+//  JUCE/modules/juce_core/native/javacore/init/com/rmsl/juce/Java.java.
+//
+//  The default path is the Release artefact the CI job builds. Override it for
+//  a local build of a different configuration with
+//      gradle -Pj37AndroidLib=/path/to/libjuce_jni.so :app:assembleRelease
+// ============================================================================
+def nativeLib = providers.gradleProperty('j37AndroidLib')
+        .map { file(it) }
+        .getOrElse(file("${rootProject.projectDir}/../build-android/first_artefacts/Release/Standalone/libjuce_jni.so"))
+
+def jniLibsDir = layout.buildDirectory.dir('j37JniLibs').get().asFile
+
+def stageNativeLib = tasks.register('stageNativeLib', Copy) {
+    from(nativeLib)
+    into(new File(jniLibsDir, 'arm64-v8a'))
+}
+
+android {
+    namespace 'com.mcsmes.mibox'
+    compileSdk 35
+    buildToolsVersion '35.0.0'
+
+    defaultConfig {
+        applicationId 'com.mcsmes.mibox'
+        // 29, not 24: the CMake build compiles against the same API (it is what
+        // chowdsp_core's std::aligned_alloc needs), and an APK declared for an
+        // older platform would be installable on systems the .so cannot run on.
+        minSdk 29
+        targetSdk 35
+        versionCode 1
+        versionName '1.0.0'
+
+        ndk {
+            abiFilters 'arm64-v8a'
+        }
+    }
+
+    // Signing the release APK with the debug key is deliberate: this is a test
+    // build, not a store release. It installs with `adb install` and does not
+    // need a keystore or a secret in CI. A store build would replace this block
+    // with the project's own signing config.
+    buildTypes {
+        release {
+            minifyEnabled false
+            signingConfig signingConfigs.debug
+        }
+    }
+
+    sourceSets {
+        main {
+            // Filled by `stageNativeLib`; AGP packages it as lib/arm64-v8a/.
+            jniLibs.srcDir jniLibsDir
+
+            // JUCE's own Java classes, straight from the submodule. There is no
+            // copy to drift: a JUCE bump changes these in the same checkout.
+            java.srcDirs += [
+                '../../JUCE/modules/juce_core/native/javacore/init',
+                '../../JUCE/modules/juce_core/native/javacore/app',
+                '../../JUCE/modules/juce_gui_basics/native/javaopt/app',
+            ]
+        }
+    }
+}
+
+tasks.named('preBuild').configure {
+    dependsOn(stageNativeLib)
+}

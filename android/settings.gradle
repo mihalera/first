@@ -1,0 +1,23 @@
+// The Android project that turns the plugin's Standalone shared library into an
+// installable APK. It is deliberately a plain `:app` module: the native code is
+// NOT built here. `../CMakeLists.txt` already cross-compiles the wrapper for the
+// NDK in CI (and by hand, see the README), and this project packages that
+// artefact.
+pluginManagement {
+    repositories {
+        google()
+        mavenCentral()
+        gradlePluginPortal()
+    }
+}
+
+dependencyResolutionManagement {
+    repositoriesMode.set(RepositoriesMode.FAIL_ON_PROJECT_REPOS)
+    repositories {
+        google()
+        mavenCentral()
+    }
+}
+
+rootProject.name = 'MiBoX'
+include ':app'

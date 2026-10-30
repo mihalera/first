@@ -1526,17 +1526,18 @@ VST3 там і не має працювати; використовуйте `.co
 
 JUCE's CMake layer reduces to the **Standalone** format on Android: the plugin
 kinds VST3 / AU / AUv3 are desktop-host formats and are excluded there
-(`_juce_get_platform_plugin_kinds`); CLAP is excluded by the guard around
-`clap_juce_extensions_plugin`, which has no Android host to be loaded by; and there is no
-Gradle exporter in the CMake layer. So "Android support" here means the plugin's whole engine - DSP, editor
-and every third-party library in the build - compiling for the Android NDK as
-the Standalone wrapper, a shared library a Gradle project loads.
+(`_juce_get_platform_plugin_kinds`), and CLAP is excluded by the guard around
+`clap_juce_extensions_plugin`, which has no Android host to be loaded by. The
+plugin's whole engine - DSP, editor and every third-party library in the build -
+cross-compiles for the Android NDK as the Standalone wrapper, a shared library
+the Gradle project in `android/` packages into an APK.
 
 ### Building for Android
 
-The CI job `build-android` proves the cross-build on every push (arm64-v8a,
-min API 28, NDK from the runner). To build by hand you need the Android NDK
-(r23+) - via Android Studio's SDK Manager or `commandlinetools` - and then:
+The CI job `build-android` cross-compiles on every push (arm64-v8a, min API 29,
+NDK from the runner) and then assembles the APK, uploaded as the
+`MiBoX-Android` artefact. To build by hand you need the Android NDK (r23+) and
+SDK - via Android Studio's SDK Manager or `commandlinetools` - and then:
 
 ```sh
 cmake -S . -B build-android \
@@ -1548,32 +1549,35 @@ cmake -S . -B build-android \
 cmake --build build-android --parallel
 ```
 
-The output is the Standalone wrapper `.so` plus the static libraries it links.
+The output is the Standalone wrapper at
+`build-android/first_artefacts/Release/Standalone/libjuce_jni.so` plus the static
+libraries it links. The name is the loader's, not CMake's: JUCE's Java classes
+call `System.loadLibrary ("juce_jni")`, and `CMakeLists.txt` sets the Android
+Standalone target's `OUTPUT_NAME` to it so packaging never has to rename the
+file (see the comment above that setting).
 
-### Turning the .so into an app
+### Packaging the APK
 
-CMake cannot host an Android app - the APK, its manifest, the activity classes,
-the resources and the signing all belong to a Gradle project. The skeleton:
+The Gradle project lives in `android/`. It does not compile C++: its
+`stageNativeLib` task copies the `.so` above into `jniLibs`, and the module
+takes JUCE's Java sources (`JuceApp`, `JuceActivity`) straight from the
+submodule. After the CMake build above:
 
-```gradle
-// app/build.gradle.kts
-android {
-    namespace = "com.MCsmes.first"
-    compileSdk = 34
-    defaultConfig { minSdk = 28 }
-    externalNativeBuild { cmake {
-        path = file("../../CMakeLists.txt")   // this repository's build
-        version = "3.22.1"
-    } }
-}
+```sh
+cd android
+gradle :app:assembleRelease
 ```
 
-The CMake configure must then receive the same Android variables as above
-(Gradle sets `CMAKE_SYSTEM_NAME`, the API level and the ABI itself; the STL
-defaults to `c++_static`, which is what this project's single-`.so` Standalone
-wants). Point the manifest's activity at a JUCE standalone activity subclass or
-at a thin launcher that opens the plugin window - that part is app code, and
-this repository deliberately does not ship an app shell.
+The result is `android/app/build/outputs/apk/release/app-release.apk`, an
+arm64-v8a APK signed with the debug key, so `adb install -r` accepts it on any
+test device. That signing is deliberate for a test build; a store release would
+replace the `signingConfig` in `android/app/build.gradle` with the project's own
+keystore. To package a `.so` from a different configuration, pass its path to
+`stageNativeLib`:
+
+```sh
+gradle -Pj37AndroidLib=/path/to/libjuce_jni.so :app:assembleRelease
+```
 
 ## Build system notes
 
