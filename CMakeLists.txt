@@ -346,6 +346,51 @@ juce_add_plugin(first
     AU_MAIN_TYPE                kAudioUnitType_Effect)
 
 # ------------------------------------------------------------------------------
+#  The Android library's name is part of the APK's contract.
+#
+#  On Android the Standalone wrapper is not an executable: it is a shared
+#  library that JUCE's Java classes load with a fixed name,
+#  `System.loadLibrary ("juce_jni")` (juce_core/native/javacore/init/.../Java.java).
+#  CMake's JUCE layer deliberately leaves the file named after the target on
+#  Android (`_juce_set_output_name` is a no-op there), so a Gradle project would
+#  have to rename the artefact before packaging it - a step that is easy to miss
+#  and invisible when wrong, because the APK still builds and then dies on
+#  launch with UnsatisfiedLinkError. Setting the output name here makes the
+#  build produce the one name the loader asks for.
+#
+#  Desktop builds are untouched: a Standalone wrapper there is an executable and
+#  keeps its product name.
+# ------------------------------------------------------------------------------
+if(CMAKE_SYSTEM_NAME STREQUAL "Android" AND TARGET first_Standalone)
+    set_target_properties(first_Standalone PROPERTIES
+        OUTPUT_NAME "juce_jni"
+
+        #  The Android launcher does not link against the app: JuceApp loads
+        #  this library, then juce_juceEventsAndroidStartApp() resolves
+        #  `juce_CreateApplication` with dlsym (juce_Messaging_android.cpp).
+        #  JUCE builds every plugin wrapper with -fvisibility=hidden, which is
+        #  right for a plugin whose entry points are called through its host,
+        #  but a hidden symbol is absent from the dynamic symbol table and
+        #  dlsym cannot see it - the APK would install, launch, and find no
+        #  application object. The Android artefact is an application, so its
+        #  entry point is exported. Desktop wrappers keep the hidden default.
+        C_VISIBILITY_PRESET default
+        CXX_VISIBILITY_PRESET default
+        VISIBILITY_INLINES_HIDDEN FALSE)
+
+    #  Both names are entry points to the Android loader, not to code the
+    #  linker can see calling them: the factory is defined but never called
+    #  inside the image, and JNI_OnLoad sits in a libfirst.a member that no
+    #  other object needs. `--gc-sections` would therefore be free to drop
+    #  either - and the APK would install and then fail at System.loadLibrary
+    #  or at the first Java call. Naming them undefined keeps them, and turns a
+    #  future JUCE rename into a link error rather than a launch-time one.
+    target_link_options(first_Standalone PRIVATE
+        "-Wl,--undefined=juce_CreateApplication"
+        "-Wl,--undefined=JNI_OnLoad")
+endif()
+
+# ------------------------------------------------------------------------------
 #  Third-party warning suppression. See cmake/J37ThirdPartyWarnings.cmake.
 # ------------------------------------------------------------------------------
 include(J37ThirdPartyWarnings)

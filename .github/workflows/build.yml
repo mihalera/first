@@ -1767,11 +1767,15 @@ jobs:
   #  Android - Standalone (the only format JUCE's CMake layer produces there)
   #
   #  JUCE's CMake plugin-kind list reduces to Standalone when CMAKE_SYSTEM_NAME
-  #  is Android, and there is no Gradle exporter in the CMake layer - so this
-  #  job proves the whole codebase (plugin DSP, editor, and the six recently
-  #  added third-party libraries) compiles for the NDK. The APK packaging is a
-  #  separate step for a machine with the full SDK; see README, the Android
-  #  section.
+  #  is Android. This job cross-compiles the whole codebase (plugin DSP, editor,
+  #  and the third-party libraries) with the NDK, then hands the resulting
+  #  `libjuce_jni.so` to the Gradle project under `android/`, which packages it
+  #  with JUCE's Java classes into an installable `MiBoX-Android` APK.
+  #
+  #  The two halves are separate on purpose: the CMake build is the same one the
+  #  desktop jobs run and owns the native code; the Gradle project only owns the
+  #  app shell (manifest, activity, signing). Neither one re-implements the
+  #  other's format.
   # ============================================================================
   build-android:
     name: build-android (Standalone, arm64-v8a)
@@ -1912,79 +1916,75 @@ jobs:
             exit 1
           }
 
-      # APKs can only be assembled by a build machine with the Android SDK,
-      # so this is a dedicated packaging step. The CI Android job intentionally
-      # produces the JUCE Standalone .so only; the full APK (manifest, activity,
-      # resources, signing) belongs to the Gradle project that consumes the
-      # generated native libraries. This step wires Gradle up to the workflow so
-      # Android ships a downloadable APK artifact whenever that Gradle project
-      # is present; until then it reports and skips cleanly.
-      - name: Package Android APK artifact
-        id: apk
+      # The APK is assembled here rather than by CMake: CMake has no Gradle
+      # exporter, and the Gradle project in `android/` owns the app shell while
+      # the CMake step above owns the native code it packages. The two are
+      # joined by `stageNativeLib` in android/app/build.gradle.
+      - name: Set up JDK for Gradle
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '21'
+
+      - name: Set up Gradle
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          # The version JUCE 9.0.4's Android template pins. AGP 8.13.2 is the
+          # plugin version in android/build.gradle.
+          gradle-version: '8.14.5'
+
+      - name: Build the Android APK
         run: |
           set -euo pipefail
 
-          # The APK needs a Gradle project (manifest, activity, resources,
-          # signing) that consumes the Standalone .so built above; this
-          # repository does not carry one, so packaging is skipped until it
-          # does, and the job still verifies the .so below.
-          if [ ! -f settings.gradle ] && [ ! -f settings.gradle.kts ] && [ ! -d app ]; then
-            echo "No Android Gradle project found (settings.gradle[.kts] / app/) -"
-            echo "skipping APK packaging; the Standalone .so is still verified below."
-            echo "apk_ready=false" >> "$GITHUB_OUTPUT"
-            exit 0
-          fi
-          echo "apk_ready=true" >> "$GITHUB_OUTPUT"
+          # The ubuntu runner already has an SDK; use it rather than downloading
+          # a second one. The platform and build-tools are the ones
+          # android/app/build.gradle names.
+          sdk_root="${ANDROID_SDK_ROOT:-${ANDROID_HOME:-/usr/local/lib/android/sdk}}"
+          export ANDROID_SDK_ROOT="$sdk_root"
+          export ANDROID_HOME="$sdk_root"
 
-          # Gradle is expected under $HOME/android-sdk/cmdline-tools/latest/bin.
-          # Install commandlinetools into the same location as the SDK and run
-          # the project's assembleRelease task here, exactly as a contributor
-          # would on a machine with the full SDK.
-          export ANDROID_SDK_ROOT="$HOME/android-sdk"
-          export PATH="$ANDROID_SDK_ROOT/cmdline-tools/latest/bin:$PATH"
-
-          if [ ! -x "$ANDROID_SDK_ROOT/cmdline-tools/latest/bin/sdkmanager" ]; then
-            echo "Installing Android SDK commandlinetools..."
-            rm -rf "$ANDROID_SDK_ROOT/cmdline-tools" "$RUNNER_TEMP/android-cmdline-tools"
-            curl -fsSL --retry 3 --retry-delay 2 --retry-connrefused -o "$RUNNER_TEMP/cmdline-tools.zip" https://dl.google.com/android/repository/commandlinetools-linux-13114758_latest.zip
-            # The zip unpacks to its own cmdline-tools/ directory, but the SDK
-            # layout wants it under cmdline-tools/latest/. Unpack into a
-            # staging directory first: mv would otherwise move the directory
-            # inside itself, which it refuses even when the target name does
-            # not exist yet.
-            unzip -q "$RUNNER_TEMP/cmdline-tools.zip" -d "$RUNNER_TEMP/android-cmdline-tools"
-            mkdir -p "$ANDROID_SDK_ROOT/cmdline-tools"
-            mv "$RUNNER_TEMP/android-cmdline-tools/cmdline-tools" "$ANDROID_SDK_ROOT/cmdline-tools/latest"
-            rm -rf "$RUNNER_TEMP/android-cmdline-tools" "$RUNNER_TEMP/cmdline-tools.zip"
+          sdkmanager_bin="$sdk_root/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$sdkmanager_bin" ]; then
+            sdkmanager_bin="$(command -v sdkmanager)"
           fi
 
-          sdkmanager --licenses < /dev/null
-          sdkmanager "platform-tools" "platforms;android-34" "build-tools;34.0.0"
+          # `yes` is SIGPIPE'd when sdkmanager stops asking, so the pipe itself
+          # fails under pipefail even though the licences were accepted.
+          yes | "$sdkmanager_bin" --sdk_root="$sdk_root" --licenses > /dev/null || true
+          "$sdkmanager_bin" --sdk_root="$sdk_root" \
+            "platforms;android-35" "build-tools;35.0.0"
 
-          # Bootstrap the Gradle wrapper so a fresh runner without a checked-in
-          # wrapper can execute assembleRelease.
-          if [ ! -f gradlew ]; then
-            wget -q https://services.gradle.org/distributions/gradle-9.8.2-bin.zip
-            unzip -q gradle-9.8.2-bin.zip
-            ./gradle-9.8.2/bin/gradle wrapper --gradle-version 9.8.2
-            rm -rf gradle-9.8.2 gradle-9.8.2-bin.zip
+          # Gradle packages the .so the CMake step above produced. Its
+          # `stageNativeLib` task copies that file into the module's jniLibs;
+          # nothing here renames or copies it by hand.
+          gradle -p android :app:assembleRelease --no-daemon --stacktrace
+
+          apk=android/app/build/outputs/apk/release/app-release.apk
+          if [ ! -f "$apk" ]; then
+            echo "MISSING: $apk"
+            find android/app/build/outputs -maxdepth 4 -type f | head -40
+            exit 1
           fi
 
-          ./gradlew :app:assembleRelease --no-daemon
-
-          if [ ! -f app/build/outputs/apk/release/app-release.apk ]; then
-            echo "MISSING: app/build/outputs/apk/release/app-release.apk"
-            find app/build/outputs -maxdepth 3 -type f | head -40
+          # An APK without the native library launches and immediately dies
+          # with UnsatisfiedLinkError, so packaging is not proof by itself.
+          # The listing goes to a file first: under `pipefail`, grepping a
+          # stream it stops reading makes unzip die of SIGPIPE and the whole
+          # check fail on success.
+          unzip -l "$apk" > "$RUNNER_TEMP/apk-contents.txt"
+          if ! grep -q "lib/arm64-v8a/libjuce_jni.so" "$RUNNER_TEMP/apk-contents.txt"; then
+            echo "The APK does not contain lib/arm64-v8a/libjuce_jni.so"
+            head -40 "$RUNNER_TEMP/apk-contents.txt"
             exit 1
           fi
 
           ART="$RUNNER_TEMP/android-artifacts"
           mkdir -p "$ART"
-          cp app/build/outputs/apk/release/app-release.apk "$ART/"
+          cp "$apk" "$ART/MiBoX-Android-arm64-v8a.apk"
           ls -la "$ART"
 
       - name: Upload Android APK Artifact
-        if: steps.apk.outputs.apk_ready == 'true'
         uses: actions/upload-artifact@v7
         with:
           name: MiBoX-Android
@@ -1994,10 +1994,13 @@ jobs:
       - name: Verify the Android Standalone library was produced
         run: |
           set -euo pipefail
-          so=$(find build-android -name "*.so" -print -quit)
+          # The name is load-bearing: JUCE's Java side calls
+          # System.loadLibrary ("juce_jni"), and CMakeLists.txt sets this
+          # target's OUTPUT_NAME so the file can be packaged as-is.
+          so=$(find build-android -name "libjuce_jni.so" -print -quit)
           if [ -z "$so" ]; then
-            echo "MISSING: no .so produced - the Standalone target did not build"
-            find build-android -maxdepth 4 -type f | head -40
+            echo "MISSING: no libjuce_jni.so produced - the Standalone target did not build"
+            find build-android -maxdepth 5 -type f | head -40
             exit 1
           fi
           echo "OK: $so"

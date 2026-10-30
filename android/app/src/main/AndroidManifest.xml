@@ -1,0 +1,39 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!--
+  JUCE's Android entry points are the classes in the framework's own Java
+  sources, not this repository's: `JuceApp` initialises the engine and
+  `JuceActivity` hosts the surface the editor draws into. The activity is the
+  launcher because this APK is the plugin's Standalone wrapper, which has no
+  host application to be loaded by.
+
+  RECORD_AUDIO is requested because the Standalone wrapper asks for it before it
+  opens an audio device with an input. The media permissions are the ones a file
+  chooser needs on the API levels before the Storage Access Framework applies;
+  IR and .nam files are still picked through SAF, so none of them are required
+  for the plugin to run.
+-->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android">
+
+  <uses-permission android:name="android.permission.RECORD_AUDIO"/>
+  <uses-permission android:name="android.permission.INTERNET"/>
+  <uses-permission android:name="android.permission.READ_MEDIA_AUDIO"/>
+  <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE" android:maxSdkVersion="32"/>
+
+  <application
+      android:name="com.rmsl.juce.JuceApp"
+      android:label="@string/app_name"
+      android:hardwareAccelerated="false">
+
+    <activity
+        android:name="com.rmsl.juce.JuceActivity"
+        android:configChanges="keyboard|keyboardHidden|orientation|screenSize|navigation|smallestScreenSize|screenLayout|uiMode"
+        android:launchMode="singleTask"
+        android:hardwareAccelerated="true"
+        android:exported="true">
+      <intent-filter>
+        <action android:name="android.intent.action.MAIN"/>
+        <category android:name="android.intent.category.LAUNCHER"/>
+      </intent-filter>
+    </activity>
+  </application>
+</manifest>
