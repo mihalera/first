@@ -33,7 +33,7 @@ The machine and its sound: [Overview](#overview) · [Saturation: six principles,
 
 The transport and the pitch: [Transport: start, play, stop](#transport-start-play-stop) · [Repitch](#repitch-the-platters-own-pitch-bend) · [Autotune](#autotune-the-corrector) · [Tape delay](#tape-delay) · [Stereo tape offset](#stereo-tape-offset)
 
-Controls and metering: [Controls](#controls) · [Analogue nonlinearity](#analogue-nonlinearity) · [Tape formulas](#tape-formulas) · [Metering](#metering) · [Oversampling](#oversampling) · [Presets, A/B compare and undo](#presets-ab-compare-and-undo) · [Output-stage switches](#output-stage-switches) · [Output protection](#output-protection) · [Noise floor](#noise-floor)
+Controls and metering: [Controls](#controls) · [OSC: the note ring](#osc-the-note-ring) · [Analogue nonlinearity](#analogue-nonlinearity) · [Tape formulas](#tape-formulas) · [Metering](#metering) · [Oversampling](#oversampling) · [Presets, A/B compare and undo](#presets-ab-compare-and-undo) · [Output-stage switches](#output-stage-switches) · [Output protection](#output-protection) · [Noise floor](#noise-floor)
 
 Rendering and platform: [Rendering backends](#rendering-backends) · [Platform notes](#platform-notes)
 
@@ -1007,6 +1007,32 @@ edits continuously), the A/B button swaps the sides live, and an A/B EDITED badg
 while the two stored sides differ. Undo history covers factory and user preset loads and
 A/B recalls as full-state transactions, so one step moves the whole machine, never half of
 it.
+
+## OSC: the note ring
+
+A note generator that lives on the deck: a ring of twelve sectors - C through B, one
+octave from C4 - with a ball that hops around it clockwise, and where it lands is the
+note that sounds. It stands at the right of the type row, beside the TYPE selectors,
+and the switch that owns it (**OSC**) is the fifth cell of the header's switch row,
+next to BYPASS / DELTA / POLARITY / AUTO GAIN. Press the ring to throw the ball into
+its next hop.
+
+**The tone enters at the INPUT, not at the output.** The oscillator is summed into the
+block before any stage runs, so INPUT trims it, the machine colours it, MIX blends it
+and the output stage finishes it - the generator sounds like the machine it is standing
+in rather than like a sine pasted over the top of one. Each landing restarts the note's
+envelope, so a hop is heard as a new note rather than as a bend from the previous one;
+the switch fades the tone over about fifteen milliseconds, so pressing it never clicks.
+OFF parks the ball on the last note and generates nothing.
+
+**The module speaks OSC.** Every landing is published as `/mibox/osc/note` (normalised
+0..11 over the ring's twelve sectors) and the switch state as `/mibox/osc/on`, encoded
+by the codec in `Source/Net/` and sent over UDP to `127.0.0.1:9000`. It is a publisher
+only: no socket is ever bound, no thread is started, and a machine with nothing
+listening hears no difference. The address map is `j37::osc::Surface` from
+`Source/Net/OscSurface.h`, so the addresses a client is told about and the addresses the
+plugin sends are the same table - the receiving half is the piece that would make the
+port a setting, and it is stated as such in `Source/PluginProcessor.cpp`.
 
 ## Output-stage switches
 

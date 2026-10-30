@@ -27,6 +27,10 @@
 // kit is the one file the editor's own header has to include.
 #include "GUI/PanelPaint.h"
 
+// The deck's OSC ring - a j37panel component like the parameter sheet below, so
+// it comes after the paint kit it reads its palette through.
+#include "GUI/OscRing.h"
+
 // The renderer boundary: SETTINGS offers the backends this build can actually
 // switch to, and the header's caption reads the one that is running.
 #include "GUI/RenderBackend.h"
@@ -529,7 +533,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     static constexpr std::size_t decorativeOrbCount = 6;
 
     // Header grid dimensions for the two engine-switch rows and language selector.
-    static constexpr int headerColumnCount = 4;
+    static constexpr int headerColumnCount = 5;
     static constexpr int headerColumnWidth = 74;
     static constexpr int headerColumnGap = 6;
     /** The renderer caption on the brand row, wide enough for the longest form the
@@ -1102,6 +1106,19 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::TextButton redoButton{"REDO"};
     juce::ToggleButton polarityButton{"POLARITY"};
     juce::ToggleButton autoGainButton{"AUTO GAIN"};
+    // OSC - the note generator on the deck - takes the header's fifth switch cell:
+    // it is a whole-machine switch like the four beside it, and the row's cells are
+    // sized by the widest caption in it (POLARITY, AUTO GAIN), so a third short
+    // caption costs the row nothing but the cell.
+    juce::ToggleButton oscButton{"OSC"};
+    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> oscAttachment;
+
+    // The ring the OSC switch belongs to, on the deck's type row - see placeDeck().
+    j37panel::OscRing oscRing;
+
+    // The module's state as the panel last saw it, so the timer publishes a change
+    // to OSC exactly once rather than on every tick while it is on.
+    bool oscPublishedOn = false;
     juce::ComboBox oversamplingBox;
     juce::Label oversamplingLabel;
 

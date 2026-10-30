@@ -31,6 +31,14 @@
 #include "DSP/SafetyLimiter.h"
 #include "DSP/OptionalLibraries.h"
 
+// The OSC codec and its address map (Source/Net). They are JUCE-free headers, so
+// including them here costs nothing to a harness and buys the processor one thing:
+// the module's outgoing messages are built by the SAME Surface the receiving half
+// will one day route with, so the addresses the panel publishes are not a second
+// copy of the map. See the banner in PluginProcessor.cpp for what is still missing
+// before the surface is switched on as a listener.
+#include "Net/OscSurface.h"
+
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -329,6 +337,17 @@ public:
     // float-only plugin, but hiding it is still a real interface change.
     using juce::AudioProcessor::processBlock;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
+
+    /** The OSC module's oscillator: the note the deck's ring landed on, mixed into
+        the machine's INPUT before any stage touches it - never onto the output, so
+        it is the tape, the mix and the output trim the user dialled that shape it.
+
+        Called from processTapeEngine after the BYPASS early-out, so a machine that
+        is switched out generates nothing. All of its state is the three floats and
+        the counter declared beside `oscOnParam`, and all of them belong to the
+        audio thread. */
+    void mixOscillatorIntoInput (juce::dsp::AudioBlock<float>& block,
+                                 float engineSampleRate, int channels);
 
     /** The tape engine proper; processBlock routes into this, oversampled or not. */
     void processTapeEngine (juce::dsp::AudioBlock<float>, juce::MidiBuffer&);
@@ -760,6 +779,42 @@ public:
     }
 
     //==============================================================================
+    //  OSC, from the editor.
+    //
+    //  The deck's ring picks a note by where its ball lands. These are the two
+    //  entry points that landing uses, and both run on the MESSAGE thread: one
+    //  hands the note to the audio thread, the other puts it on the wire.
+    //==============================================================================
+
+    /** Publishes a new note for the oscillator: `noteIndex` is 0..11, the twelve
+        chromatic steps C..B, which is what the ring's twelve sectors are. The
+        audio thread reads it as an atomic; `retrigger` is true when the ball has
+        just LANDED, which restarts the note's envelope so each landing is heard
+        as its own note rather than as a pitch bend on the previous one.
+
+        Realtime-safe: two relaxed stores, no lock and no allocation. It is called
+        from the ring's landing callback, which runs on the message thread, and
+        never from the audio thread. */
+    void setOscNote (int noteIndex, bool retrigger) noexcept;
+
+    /** True while the OSC module is switched on. The panel reads this every frame
+        to decide whether the ring is hopping, and the engine reads the parameter
+        itself - this is the panel's view, not the machine's. */
+    bool getOscEnabled() const noexcept
+    {
+        return oscOnParam != nullptr && oscOnParam->load() >= 0.5f;
+    }
+
+    /** Sends the current OSC module state as one OSC 1.0 packet - `/mibox/osc/on`
+        or `/mibox/osc/note`, whichever changed - through the codec in Source/Net
+        and out over UDP to the loopback address the processor names beside the
+        socket. Fire-and-forget: nothing is
+        listening here, no socket is ever bound, and a machine with no receiver
+        sees no difference. Message thread only, like every other non-realtime
+        entry point on this class. */
+    void publishOscState (bool noteChanged);
+
+    //==============================================================================
     //  Neural stage, from the editor.
     //
     //  A model is DATA, not a parameter: it is a file the user picks, and the
@@ -1041,6 +1096,33 @@ private:
     std::atomic<float>* instrumentParam = nullptr;
     std::atomic<float>* polarityParam = nullptr;
     std::atomic<float>* autoGainParam = nullptr;
+
+    // -----------------------------------------------------------------------
+    //  OSC, the note generator on the deck.
+    //
+    //  The three fields below are the module's whole state and they live in two
+    //  threads with a deliberate split: the two atomics are written by the editor's
+    //  timer (the message thread) and read once per block or once per landing by
+    //  the audio thread; the three floats are owned by the audio thread alone and
+    //  are never touched from outside it. `oscPulse` is a COUNTER rather than a
+    //  bool on purpose - a bool can be missed if a landing arrives while the last
+    //  one is still being read, and a counter only has to be compared with what
+    //  was seen before.
+    // -----------------------------------------------------------------------
+    std::atomic<float>* oscOnParam = nullptr;
+    std::atomic<int> oscNoteIndex { 0 };   // 0..11, C..B, the ring's sectors
+    std::atomic<int> oscPulse { 0 };       // bumped on every landing
+    float oscPhase = 0.0f;                 // 0..1, the oscillator's own phase
+    float oscEnvelope = 0.0f;              // per-landing decay, audio thread only
+    float oscGate = 0.0f;                  // click-free fade to the switch's state
+    int oscSeenPulse = 0;                  // the last landing this block acted on
+
+    // The module's own wire: a datagram socket that is never bound (so it can never
+    // be a listener and never takes a port from anyone) and is written to only from
+    // the message thread, plus the address map those writes are built from. See
+    // Source/Net/OscSurface.h for what the map is for and why it is float-only.
+    juce::DatagramSocket oscSocket { false };
+    std::unique_ptr<j37::osc::Surface> oscSurface;
     std::atomic<float>* subFundamentalParam = nullptr;
     std::atomic<float>* delayTimeParam = nullptr;
     // The delay's LEVEL and its feedback are the same parameter by design, so

@@ -616,6 +616,29 @@ namespace
         // -------------------------------------------------------------------------
         layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "ui_sounds", 1 },
                                                                 "UI Sounds", false));
+
+        // -------------------------------------------------------------------------
+        //  OSC - the note generator on the deck, and the module's own switch.
+        //
+        //  The panel's ring picks a note by where the ball lands; while this switch
+        //  is ON the engine synthesises that note and feeds it into the machine's
+        //  INPUT - not onto the output - so the tape, the mix and the output stage
+        //  the user has dialled are what shape it. With the switch off the ring is
+        //  still on the panel but parks on the note it last played, and nothing is
+        //  generated.
+        //
+        //  ON is also what publishes the module over OSC: every landing is sent as
+        //  /mibox/osc/note, encoded by the codec in Source/Net and addressed through
+        //  its Surface, so the address the panel publishes is the map's own. Like
+        //  BYPASS and DELTA it is a listening state rather than a property of a
+        //  sound, so no factory preset states it (see intentionallyNotPresettable).
+        //
+        //  The switch sits in the header's switch row, beside BYPASS / DELTA /
+        //  POLARITY / AUTO GAIN, because that is where the machine's whole-state
+        //  switches live on this panel.
+        // -------------------------------------------------------------------------
+        layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "osc_on", 1 },
+                                                                "OSC", false));
     }
 
     /** The musical reference and the optional pitch correction that quantises

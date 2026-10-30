@@ -57,6 +57,10 @@ void FirstAudioProcessorEditor::applyTheme() {
     inlineLookAndFeel.setTheme(themeChoice);
     inputMeter.setDarkTheme(darkTheme);
     outputMeter.setDarkTheme(darkTheme);
+    // The deck's OSC ring takes the same flag and reads its palette live, so a
+    // theme switch recolours it on the next frame like everything else.
+    oscRing.setDarkTheme(darkTheme);
+    oscRing.repaint();
 
     // The 3D transport reads the same active palette as the panel.
     tapeScene.setPalette(palette.readout, palette.raised, palette.accent,
