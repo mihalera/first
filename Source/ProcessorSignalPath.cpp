@@ -346,9 +346,15 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
                 tuneFrame[static_cast<std::size_t> (c)]
                     = block.getChannelPointer (static_cast<std::size_t> (c))[i];
 
+            //  ONE pass per frame. processAutoTuneSample() is the whole stage -
+            //  it measures the note AND hands the frame to the corrector - so
+            //  calling processFrame() again here ran the shifter twice on every
+            //  sample. That is what the stage sounded like: the first pass made
+            //  the corrected note, the second shifted it a second time, and the
+            //  two grains did not cancel, they chorused. The corrector is
+            //  in place, so the frame written back below is the once-corrected
+            //  one and nothing original is left underneath it.
             processAutoTuneSample (tuneFrame.data(), frameChannels, context.sampleRate);
-            corrector.processFrame (tuneFrame.data(), autoTuneRatiosForFrame.data(),
-                                    autoTunePeriodHintsFor.data(), frameChannels);
 
             for (int c = 0; c < frameChannels; ++c)
                 block.getChannelPointer (static_cast<std::size_t> (c))[i]

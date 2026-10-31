@@ -139,7 +139,10 @@ struct IrStage
         const auto blockSize = static_cast<int> (spec.maximumBlockSize);
         const auto channels = static_cast<int> (spec.numChannels);
 
-        if (spec.sampleRate == preparedSampleRate
+        //  exactlyEqual rather than ==: this is a question about the spec the
+        //  caller handed in, not about two measured levels, and it is the same
+        //  value the stage stored on the previous prepare.
+        if (juce::exactlyEqual (spec.sampleRate, preparedSampleRate)
             && blockSize == preparedMaxBlock
             && channels == preparedChannels)
             return;

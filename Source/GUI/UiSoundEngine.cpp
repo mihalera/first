@@ -41,13 +41,16 @@
 //  lowest body, a key coming up is a touch above it. The panel therefore sounds
 //  like one panel rather than like four different gadgets.
 //
-//  ...AND NEVER QUITE THE SAME TWICE. Every hit draws a small random offset for
-//  pitch (about a semitone either way at most), body length, transient length,
-//  level and stereo placement. The result is the psychoacoustic trick a real
-//  mechanical keyboard plays: the ear hears one sound, but a repeated press does
-//  not become a machine-gun tone, because no two hits are identical. The offsets
-//  are deliberately narrow - a wide randomisation would read as a broken control
-//  rather than as a hand on one.
+//  ...AND NEVER QUITE THE SAME TWICE. Every hit draws a random offset for pitch,
+//  body length, transient length and level, how far the ping sits above the body,
+//  how much of the transient is grit, and where the hit lands across the pair.
+//  That is six dimensions of variation rather than the five small nudges it
+//  started with, and the pitch spread is now wide enough to be heard as a played
+//  sound rather than as one sample retriggered: about a tone and a half either
+//  way, with the body and the ping moving together so it never turns into a
+//  different instrument. The result is the psychoacoustic trick a real mechanical
+//  keyboard plays - the ear hears one sound, but a repeated press never settles
+//  into a machine-gun tone, because no two hits are identical.
 //==============================================================================
 FirstAudioProcessorEditor::UiSoundEngine::UiSoundEngine()
 {
@@ -116,38 +119,48 @@ void FirstAudioProcessorEditor::UiSoundEngine::trigger (Voice voice) noexcept
     float noise = 0.35f;
     float amplitude = 0.105f;
 
+    // The ping's height over the body is the one part of the timbre that changes
+    // with the voice rather than only with the hit: the switch is bright and
+    // glassy, the knob is rounder, a key going down is woodiest of the four.
+    float pingRatio = 4.55f;
+
     switch (voice)
     {
         case Voice::click:
             bodyHz = 310.0f;  tailMs = 12.0f; click = 0.55f; clickTailMs = 2.6f;
-            noise = 0.35f;    amplitude = 0.105f;
+            noise = 0.35f;    amplitude = 0.105f; pingRatio = 4.70f;
             break;
 
         case Voice::detent:
             bodyHz = 245.0f;  tailMs = 16.0f; click = 0.40f; clickTailMs = 2.2f;
-            noise = 0.28f;    amplitude = 0.078f;
+            noise = 0.28f;    amplitude = 0.078f; pingRatio = 4.20f;
             break;
 
         case Voice::press:
             bodyHz = 165.0f;  tailMs = 20.0f; click = 0.30f; clickTailMs = 1.9f;
-            noise = 0.22f;    amplitude = 0.095f;
+            noise = 0.22f;    amplitude = 0.095f; pingRatio = 3.70f;
             break;
 
         case Voice::release:
             bodyHz = 195.0f;  tailMs = 18.0f; click = 0.34f; clickTailMs = 1.7f;
-            noise = 0.22f;    amplitude = 0.080f;
+            noise = 0.22f;    amplitude = 0.080f; pingRatio = 3.95f;
             break;
     }
 
-    // The per-hit variation. Pitch moves by up to about a semitone, the tails by
-    // a sixth, the level by half a decibel, and the hit lands slightly off centre
-    // in the pair - enough that a rapid series of presses sounds played rather
-    // than sequenced, small enough that the voice never changes identity.
-    bodyHz *= 0.955f + random.nextFloat() * 0.09f;
-    tailMs *= 0.90f + random.nextFloat() * 0.20f;
-    clickTailMs *= 0.86f + random.nextFloat() * 0.28f;
-    amplitude *= 0.945f + random.nextFloat() * 0.11f;
-    noise = juce::jlimit (0.0f, 1.0f, noise + (random.nextFloat() - 0.5f) * 0.08f);
+    // The per-hit variation, and this is where the palette's range comes from.
+    // Pitch moves by roughly a tone and a half either way and the ping rides the
+    // same ratio, so the two partials stay one instrument; the tails move by about
+    // a fifth, the transient level by a quarter, the grit share by a fifth, and
+    // the hit lands well off centre in the pair. Still bounded: every draw keeps
+    // the voice recognisable, the spread only stops a run of presses from becoming
+    // one repeated sample.
+    bodyHz *= 0.92f + random.nextFloat() * 0.16f;
+    tailMs *= 0.82f + random.nextFloat() * 0.44f;
+    clickTailMs *= 0.78f + random.nextFloat() * 0.46f;
+    click *= 0.84f + random.nextFloat() * 0.34f;
+    amplitude *= 0.87f + random.nextFloat() * 0.28f;
+    pingRatio *= 0.88f + random.nextFloat() * 0.24f;
+    noise = juce::jlimit (0.0f, 1.0f, noise + (random.nextFloat() - 0.5f) * 0.22f);
 
     // A busy machine ticks a touch higher, which is what `brightness` is for: the
     // panel's own activity feeds it, and the tick follows the machine rather than
@@ -161,7 +174,8 @@ void FirstAudioProcessorEditor::UiSoundEngine::trigger (Voice voice) noexcept
     pendingClick.store (click, std::memory_order_relaxed);
     pendingClickDecay.store (clickTailMs, std::memory_order_relaxed);
     pendingNoise.store (noise, std::memory_order_relaxed);
-    pendingPan.store ((random.nextFloat() - 0.5f) * 0.22f, std::memory_order_relaxed);
+    pendingPingRatio.store (pingRatio, std::memory_order_relaxed);
+    pendingPan.store ((random.nextFloat() - 0.5f) * 0.44f, std::memory_order_relaxed);
 }
 
 void FirstAudioProcessorEditor::UiSoundEngine::audioDeviceIOCallbackWithContext (
@@ -191,7 +205,7 @@ void FirstAudioProcessorEditor::UiSoundEngine::audioDeviceIOCallbackWithContext 
         // here rather than in trigger() because it needs the DEVICE's rate, which
         // the message thread does not know.
         bodyIncrement = twoPi * pendingPitch.load (std::memory_order_relaxed) / rate;
-        pingIncrement = bodyIncrement * 4.3f;
+        pingIncrement = bodyIncrement * pendingPingRatio.load (std::memory_order_relaxed);
 
         const auto decayMs = juce::jmax (0.5f, pendingDecay.load (std::memory_order_relaxed));
         const auto clickMs = juce::jmax (0.3f, pendingClickDecay.load (std::memory_order_relaxed));

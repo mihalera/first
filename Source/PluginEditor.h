@@ -1476,13 +1476,15 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         // The current hit, handed over from the message thread a field at a time.
         // Everything here is a parameter of the ONE tick: a body pitch and its
         // tail, a transient level and its (much shorter) tail, how much of the
-        // transient is noise, and where the hit sits across the pair.
+        // transient is noise, how far the ping sits above the body, and where
+        // the hit lands across the pair.
         std::atomic<float> pendingAmplitude{0.0f};
         std::atomic<float> pendingPitch{300.0f};
         std::atomic<float> pendingDecay{12.0f};
         std::atomic<float> pendingClick{0.5f};
         std::atomic<float> pendingClickDecay{2.5f};
         std::atomic<float> pendingNoise{0.35f};
+        std::atomic<float> pendingPingRatio{4.3f};
         std::atomic<float> pendingPan{0.0f};
 
         // The render. Two phase accumulators (body and ping), two envelopes, the
@@ -1504,6 +1506,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         float attackStep = 0.0f;
         float clickLevel = 0.5f;
         float noiseShare = 0.35f;
+        float pingRatio = 4.3f;
         float pan = 0.0f;
         double deviceRate = 44100.0;
 
