@@ -1928,7 +1928,7 @@ jobs:
       # the CMake step above owns the native code it packages. The two are
       # joined by `stageNativeLib` in android/app/build.gradle.
       - name: Set up JDK for Gradle
-        uses: actions/setup-java@v5
+        uses: actions/setup-java@v6
         with:
           distribution: temurin
           java-version: '21'
