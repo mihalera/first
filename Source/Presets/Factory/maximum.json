@@ -100,5 +100,6 @@
   "comp_attack": 10.0,
   "comp_release": 120.0,
   "comp_makeup": 0.0,
-  "comp_mix": 0.0
+  "comp_mix": 0.0,
+  "ir_mix": 0.0
 }

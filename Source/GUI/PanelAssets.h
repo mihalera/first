@@ -7,7 +7,7 @@
     linked behaves exactly like the panel before this file existed. That is what
     makes the art additive rather than a new dependency.
 
-    WHERE THE BYTES COME FROM. CMake globs Assets/* into the same
+    WHERE THE BYTES COME FROM. CMake globs every file in Assets/ into the same
     juce_add_binary_data target as the presets and the translation tables, so the
     files are inside the plugin - no install step, no search path, nothing for a
     user to lose. BinaryData::getNamedResource takes the generated SYMBOL name

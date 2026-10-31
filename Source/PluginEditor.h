@@ -1438,13 +1438,16 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         UiSoundEngine();
         ~UiSoundEngine() override;
 
-        /** One of the four interface sounds. Each is a different synthesis
-            rather than the same beep at a different pitch. */
+        /** The four places in ONE interface sound. Every voice is the same soft
+            wooden tick - a damped body, a short ping and a filtered noise
+            transient - and they differ only in pitch, length and how much of the
+            transient is heard, which is why the panel sounds like one panel
+            rather than like four different gadgets. */
         enum class Voice {
-            click,  ///< a switch: a short, dry, bright tick
-            detent, ///< a knob crossing a step: a softer, lower tick
-            press,  ///< a momentary key going down: a low thump
-            release ///< ...and coming back up: a slightly higher thump
+            click,  ///< a switch: the brightest of the four, still short and dry
+            detent, ///< a knob crossing a step: quieter and lower
+            press,  ///< a momentary key going down: the lowest body
+            release ///< ...and coming back up: a touch above press
         };
 
         void setEnabled(bool shouldBeEnabled) noexcept { enabled = shouldBeEnabled; }
@@ -1470,23 +1473,48 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         void audioDeviceAboutToStart(juce::AudioIODevice *device) override;
         void audioDeviceStopped() override;
 
-        // The current voice's state. The render is a simple two-stage envelope
-        // over a sine and a noise burst, which is enough for a tick and cheap
-        // enough to be plainly not worth a fancier synthesiser.
+        // The current hit, handed over from the message thread a field at a time.
+        // Everything here is a parameter of the ONE tick: a body pitch and its
+        // tail, a transient level and its (much shorter) tail, how much of the
+        // transient is noise, how far the ping sits above the body, and where
+        // the hit lands across the pair.
         std::atomic<float> pendingAmplitude{0.0f};
-        std::atomic<float> pendingPitch{440.0f};
-        std::atomic<float> pendingDecay{0.9995f};
-        std::atomic<float> pendingNoiseMix{0.5f};
+        std::atomic<float> pendingPitch{300.0f};
+        std::atomic<float> pendingDecay{12.0f};
+        std::atomic<float> pendingClick{0.5f};
+        std::atomic<float> pendingClickDecay{2.5f};
+        std::atomic<float> pendingNoise{0.35f};
+        std::atomic<float> pendingPingRatio{4.3f};
+        std::atomic<float> pendingPan{0.0f};
 
-        float phase = 0.0f;
-        float envelope = 0.0f;
+        // The render. Two phase accumulators (body and ping), two envelopes, the
+        // attack ramp that keeps the onset from being a step, and the filtered
+        // noise state - all owned by the device thread.
+        float bodyPhase = 0.0f;
+        float pingPhase = 0.0f;
+        float bodyEnvelope = 0.0f;
+        float clickEnvelope = 0.0f;
+        float attack = 0.0f;
+        float noiseLow = 0.0f;
         float noiseState = 0.0f;
-        float decay = 0.9995f;
-        float noiseMix = 0.5f;
+
+        float bodyIncrement = 0.0f;
+        float pingIncrement = 0.0f;
+        float bodyDecayPerSample = 0.0f;
+        float clickDecayPerSample = 0.0f;
+        float noiseCoefficient = 0.0f;
+        float attackStep = 0.0f;
+        float clickLevel = 0.5f;
+        float noiseShare = 0.35f;
+        float pingRatio = 4.3f;
+        float pan = 0.0f;
         double deviceRate = 44100.0;
 
         std::atomic<bool> enabled{false};
         std::atomic<float> brightness{0.5f};
+
+        // The per-hit humanisation. Written and read on the message thread only.
+        juce::Random random;
 
         juce::AudioDeviceManager deviceManager;
         bool deviceOpen = false;

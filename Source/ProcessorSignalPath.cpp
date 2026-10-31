@@ -61,6 +61,7 @@
 #include "DSP/TapeModulation.h"
 #include "DSP/TapeVoicing.h"
 #include "HotPathProbe.h"
+#include "ScaleDegrees.h"
 
 
 namespace
@@ -345,9 +346,15 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
                 tuneFrame[static_cast<std::size_t> (c)]
                     = block.getChannelPointer (static_cast<std::size_t> (c))[i];
 
+            //  ONE pass per frame. processAutoTuneSample() is the whole stage -
+            //  it measures the note AND hands the frame to the corrector - so
+            //  calling processFrame() again here ran the shifter twice on every
+            //  sample. That is what the stage sounded like: the first pass made
+            //  the corrected note, the second shifted it a second time, and the
+            //  two grains did not cancel, they chorused. The corrector is
+            //  in place, so the frame written back below is the once-corrected
+            //  one and nothing original is left underneath it.
             processAutoTuneSample (tuneFrame.data(), frameChannels, context.sampleRate);
-            corrector.processFrame (tuneFrame.data(), autoTuneRatiosForFrame.data(),
-                                    autoTunePeriodHintsFor.data(), frameChannels);
 
             for (int c = 0; c < frameChannels; ++c)
                 block.getChannelPointer (static_cast<std::size_t> (c))[i]
@@ -469,15 +476,11 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
 
 const std::array<int, 12>& FirstAudioProcessor::scaleOffsetsForMode (int modeIndex) noexcept
 {
-    static constexpr std::array<std::array<int, 12>, 6> scales {{
-        {{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 }},
-        {{ 0, 2, 4, 5, 7, 9, 11, -1, -1, -1, -1, -1 }},
-        {{ 0, 2, 3, 5, 7, 8, 10, -1, -1, -1, -1, -1 }},
-        {{ 0, 2, 3, 5, 7, 9, 10, -1, -1, -1, -1, -1 }},
-        {{ 0, 2, 4, 7, 9, -1, -1, -1, -1, -1, -1, -1 }},
-        {{ 0, 3, 5, 7, 10, -1, -1, -1, -1, -1, -1, -1 }}
-    }};
-    return scales[static_cast<std::size_t> (juce::jlimit (0, 5, modeIndex))];
+    // The table itself is Source/ScaleDegrees.h, shared with the OSC ring: the
+    // corrector snaps to these degrees and the ring lays them out as the notes it
+    // can land on, so one key has one table rather than two copies that agree
+    // until one of them is edited.
+    return j37::scale::offsets (modeIndex);
 }
 
 /**
@@ -869,7 +872,12 @@ void FirstAudioProcessor::configureBlockRateCoefficients (float engineSampleRate
 void FirstAudioProcessor::mixOscillatorIntoInput (juce::dsp::AudioBlock<float>& block,
                                                   float engineSampleRate, int channels)
 {
-    const bool running = oscOnParam != nullptr && oscOnParam->load() >= 0.5f;
+    // The switch AND the panel: `oscPanelOpen` is the editor saying it is on
+    // screen. A closed window stops the clock that lands the ball, so a module
+    // left switched on would hold one note forever - the gate fades it out with
+    // the panel and the ball's parked note comes back when the window does.
+    const bool running = oscOnParam != nullptr && oscOnParam->load() >= 0.5f
+                      && oscPanelOpen.load (std::memory_order_relaxed);
 
     // A landing since the last block restarts the envelope. It is a counter read
     // rather than a flag: two landings inside one block collapse into one note,
@@ -892,12 +900,13 @@ void FirstAudioProcessor::mixOscillatorIntoInput (juce::dsp::AudioBlock<float>& 
         return;
     }
 
-    // C4 for sector 0 up to B4 for sector 11: the twelve sectors are the twelve
-    // semitones of one octave, stated as equal temperament because that is what
-    // the panel's note readout names them by and what an OSC client counting
-    // 0..11 will expect to receive.
-    const auto note = juce::jlimit (0, 11, oscNoteIndex.load (std::memory_order_relaxed));
-    const auto frequency = 440.0f * std::pow (2.0f, static_cast<float> (note - 9) / 12.0f);
+    // The ring hands over an absolute MIDI note (60 = C4), because its notes are
+    // the degrees of the selected key across three octaves rather than twelve
+    // semitones of one. Equal temperament, stated once here: A4 is 440 Hz and a
+    // semitone is a twelfth of an octave, so no part of the panel needs its own
+    // frequency table.
+    const auto note = juce::jlimit (0, 127, oscNoteMidi.load (std::memory_order_relaxed));
+    const auto frequency = 440.0f * std::pow (2.0f, static_cast<float> (note - 69) / 12.0f);
     const auto phaseIncrement = frequency / rate;
 
     // The gate's and the envelope's time constants, as a per-sample fraction. Both
@@ -1446,6 +1455,16 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         // VINYL SPEED selects one of the three platter-rate setups.
         static constexpr float wanderRate[3] = { 0.62f, 1.10f, 3.30f };   // Hz
         static constexpr float wanderDepth[3] = { 0.010f, 0.016f, 0.028f };
+
+        // The noise department's single gain: NOISE (the mix, whose own parameter
+        // is 0..1 and whose 0.5 is unity) times NOISE LVL (the level of the
+        // sources). Both are smoothed members, and both are READ here rather than
+        // passed down because the five faults below are set on the stage as plain
+        // amounts, not as call arguments like the crackle and the rumble are.
+        const auto recordNoiseLevel = juce::jlimit (
+            0.0f, 2.0f,
+            noiseLvlSmoothed.getCurrentValue() * noiseTrimSmoothed.getCurrentValue());
+
         for (auto* stage : vinylStages)
         {
             stage->vinylWowIncrement = wanderRate[vinylSpeedIndex] / rate;
@@ -1487,15 +1506,25 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
             // are squared inside the stage, so the control's travel is gentle at the
             // bottom (a little dust is a little dust) and the top end is where the
             // damage actually sounds like damage.
-            stage->dustAmount = values.dust;
-            stage->scratchAmount = values.scratch;
-            stage->warpAmount = values.warp;
-            stage->electricalAmount = values.electrical;
+            //
+            // NOISE and NOISE LVL scale them too. The pointer used to stop at the
+            // crackle and the rumble (those arrive at process() already multiplied),
+            // which left the five RECORD-page faults audible with NOISE at zero - a
+            // record that ticks, hisses and hums while the panel says there is no
+            // noise. The noise department is one department: the mix sets how much
+            // of it reaches the output and the level sets how loud its sources are,
+            // and every source it owns - the tape floor, the disc's surface and the
+            // record's five faults - answers to both.
+            stage->dustAmount = values.dust * recordNoiseLevel;
+            stage->scratchAmount = values.scratch * recordNoiseLevel;
+            stage->warpAmount = values.warp * recordNoiseLevel;
+            stage->electricalAmount = values.electrical * recordNoiseLevel;
 
             // CLICKS rides the same platter-locked rate as the scratch and the
             // warp, because the periodic half of it IS a once-per-revolution
-            // event: a pressing fault crossed by the stylus every turn.
-            stage->clickAmount = values.clicks;
+            // event: a pressing fault crossed by the stylus every turn. It answers
+            // to NOISE and NOISE LVL for the same reason the four above do.
+            stage->clickAmount = values.clicks * recordNoiseLevel;
             stage->clickIncrement = revolutionHz / rate;
 
             // The split the GENERATION and CARTRIDGE tilts both act around: a

@@ -407,6 +407,24 @@ inline std::vector<Message> decodePacket (std::string_view bytes, std::string* r
             return {};
         }
 
+        // An element is a whole OSC packet padded to a four-byte boundary, so a
+        // zero length and a length that is not a multiple of four cannot be one:
+        // they are a peer's arithmetic that has gone wrong, and decoding either
+        // as a truncated packet would report the wrong fault.
+        if (length == 0)
+        {
+            if (reason != nullptr)
+                *reason = "a bundle element is empty";
+            return {};
+        }
+
+        if (length % 4 != 0)
+        {
+            if (reason != nullptr)
+                *reason = "a bundle element is not four-byte aligned";
+            return {};
+        }
+
         Message element;
         if (! decode (bytes.substr (position, length), element, reason))
         {

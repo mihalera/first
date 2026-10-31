@@ -19,8 +19,8 @@
          every call site falls back to the drawn panel when the image is invalid.
 
     WHY PNG AND NOT SVG HERE: these are surfaces (grain, wear, a mark), not icons
-    that must stay crisp at any size. Vector art belongs in `Assets/*.svg` with
-    juce::Drawable, which is a different loader and a different row type; the
+    that must stay crisp at any size. Vector art belongs in Assets/ as .svg
+    files, loaded with juce::Drawable, which is a different loader and row type; the
     pipeline for it is described in Assets/README.md rather than half-built here.
   ============================================================================ */
 #pragma once

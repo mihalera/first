@@ -121,9 +121,19 @@ using j37panel::computeKnobMetrics;
 //  it, so the panel sounds like hardware rather than like a generic UI:
 //
 //    switches and toggles   a CLICK, because that is what a rocker does
-//    the momentary keys     PRESS and RELEASE, because they are two events
+//    the momentary keys     PRESS, because that is a key being pushed down
 //    every knob             a DETENT, but ONLY on the value change - not on
 //                           every mouse move, which would be a machine-gun
+//
+//  WHY onClick AND NOT onStateChange. A juce::TextButton that does not toggle
+//  never changes its toggle state, so Button::onStateChange never fires for it -
+//  which is why the tab bar, the three transport keys, SPINDOWN, PARAMETERS and
+//  the six LOAD/CLEAR keys were all silent: they were wired through a callback
+//  their kind of button does not send. onClick fires for every user click of
+//  every Button subclass, so one helper now carries the whole panel, and a
+//  toggle still gets exactly one sound because a click is still one click. The
+//  button's own handler is left in place and called after the sound, so a
+//  control that opens a dialog or rebuilds the page is not rewritten here.
 //
 //  The knobs are the interesting case. A real detented pot ticks as it passes
 //  each step, so the sound is driven by the VALUE crossing a boundary rather
@@ -135,21 +145,21 @@ using j37panel::computeKnobMetrics;
 //==============================================================================
 void FirstAudioProcessorEditor::attachInterfaceSounds()
 {
-    // A switch or a momentary key: on click. juce::Button::onClick covers both
-    // the TextButtons and the ToggleButtons, so one lambda wires the whole panel.
-    const auto attachClick = [this] (juce::Button& button, UiSoundEngine::Voice voice)
+    // The one wrapper. It chains onto whatever the button already does rather
+    // than replacing it: the click is played first, so a handler that opens a
+    // dialog cannot swallow it, and the existing handler runs immediately after.
+    const auto attachVoice = [this] (juce::Button& button, UiSoundEngine::Voice voice)
     {
-        // The button's own onClick is left alone: this listener rides ALONGSIDE
-        // whatever the button already does, so a control whose click changes the
-        // machine still sounds right without its handler being rewritten.
-        button.addMouseListener (this, false);
-        juce::ignoreUnused (voice);
-    };
-    juce::ignoreUnused (attachClick);
+        const auto previous = button.onClick;
+        button.onClick = [this, voice, previous]
+        {
+            uiSounds.trigger (voice);
 
-    // The switches and keys, wired through onClick wrappers. Each lambda calls
-    // the existing handler only if one is already set - capturing nothing but
-    // `this`, so there is no ownership question and nothing to disconnect.
+            if (previous != nullptr)
+                previous();
+        };
+    };
+
     const auto playClick = [this] { uiSounds.trigger (UiSoundEngine::Voice::click); };
 
     // juce::Button* named explicitly: the members mix ToggleButton and
@@ -161,30 +171,36 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
                           &copyAButton, &copyBButton, &compareButton,
                           &undoButton, &redoButton } };
     for (auto* button : stateButtons)
-        button->onStateChange = [playClick, previous = button->onStateChange]
-        {
-            playClick();
-            if (previous != nullptr)
-                previous();
-        };
+        attachVoice (*button, UiSoundEngine::Voice::click);
 
-    // The transport keys are TextButtons with an onClick rather than a toggle
-    // state, so they take the press/release pair instead of the click - which is
-    // exactly how a transport key on a deck behaves.
-    transportStopButton.onStateChange = [this] { uiSounds.trigger (UiSoundEngine::Voice::press); };
-    transportPlayButton.onStateChange = [this] { uiSounds.trigger (UiSoundEngine::Voice::press); };
-    transportStartButton.onStateChange = [this] { uiSounds.trigger (UiSoundEngine::Voice::press); };
+    // The transport keys and SPINDOWN: momentary keys, so they take the press
+    // voice rather than the switch's click - which is how a deck's own keys
+    // sound. SpindownButton is a TextButton subclass and converts to Button&.
+    const std::array<juce::Button*, 4> transportKeys { { &transportStopButton, &transportPlayButton,
+                          &transportStartButton, &spindownButton } };
+    for (auto* button : transportKeys)
+        attachVoice (*button, UiSoundEngine::Voice::press);
 
-    // The tab buttons and the spindown key: the tab bar is a row of switches and
-    // the spindown is a momentary hold, so each takes its own voice.
+    // The tab bar: a row of switches, each with its own voice.
     for (auto& tab : tabButtons)
-        tab.onStateChange = [this, previous = &tab] (void)
-        {
-            juce::ignoreUnused (previous);
-            uiSounds.trigger (UiSoundEngine::Voice::click);
-        };
+        attachVoice (tab, UiSoundEngine::Voice::click);
 
-    spindownButton.onStateChange = [this] { uiSounds.trigger (UiSoundEngine::Voice::press); };
+    for (auto* button : { &tabFamilyTapeButton, &tabFamilyFxButton, &tabFamilySetupButton })
+        attachVoice (*button, UiSoundEngine::Voice::click);
+
+    // The rest of the panel's keys: the SETTINGS preferences, the four EQ corner
+    // switches and the three LOAD/CLEAR pairs. They were the group the old
+    // onStateChange wiring could not reach - the toggles sent no click because
+    // nothing listened, and the TextButtons sent no state change at all.
+    const std::array<juce::Button*, 15> utilityButtons { { &autoTuneButton, &uiSoundsButton, &antiPhaseGuardButton,
+                          &parameterSheetButton, &userThemeButton,
+                          &inputEqHpButton, &inputEqLpButton,
+                          &outputEqHpButton, &outputEqLpButton,
+                          &loadNeuralButton, &clearNeuralButton,
+                          &loadIrButton, &clearIrButton,
+                          &loadNoiseButton, &clearNoiseButton } };
+    for (auto* button : utilityButtons)
+        attachVoice (*button, UiSoundEngine::Voice::click);
 
     // Every knob: a detent per value change, rate-limited so a fast drag ticks
     // rather than buzzes. The counter is a member rather than a lambda capture
@@ -772,6 +788,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     themeChoice = j37panel::rememberedThemeChoice();
     j37panel::userPalette = j37panel::rememberedUserPalette();
 
+    // The OSC generator exists only while the panel does: its hops are this
+    // editor's timer, so with no window there is no clock and the last note would
+    // sit there droning. Announced here rather than in a setup phase because it is
+    // about the window's LIFETIME, not about any control - and undone first thing
+    // in the destructor, for the same reason.
+    audioProcessor.setOscPanelOpen (true);
+
     // One call per phase, in the order the panel has always been built in. The
     // window and its size come first because setSize() runs resized(), which is why
     // the tab build below can rely on the editor already having a size; the
@@ -858,6 +881,10 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     // theme choice itself is written when the key is pressed; this catches the colours.
     // See rememberPanelAppearance() in Source/GUI/EditorTheme.cpp.
     rememberPanelAppearance();
+
+    // The window is going away, so the ball stops hopping: silence the generator
+    // before the clock that lands it is stopped.
+    audioProcessor.setOscPanelOpen (false);
 
     stopTimer();
 

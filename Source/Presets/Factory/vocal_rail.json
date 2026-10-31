@@ -18,7 +18,7 @@
   "delay_time": 0.0,
   "delay_feedback": 0.0,
   "st_offset": 0.0,
-  "noise": 0.0,
+  "noise": 0.12,
   "tape_type": 0,
   "speed": 1,
   "instrument": 1,
@@ -83,7 +83,7 @@
   "transient_mix": 0.6,
   "neural_mix": 0.0,
   "polarity": 0,
-  "auto_gain": 0,
+  "auto_gain": 1,
   "tape_source": 1.0,
   "vinyl_source": 0.0,
   "cassette_source": 0.0,
@@ -100,5 +100,6 @@
   "comp_attack": 10.0,
   "comp_release": 120.0,
   "comp_makeup": 0.0,
-  "comp_mix": 0.0
+  "comp_mix": 0.0,
+  "ir_mix": 0.0
 }
