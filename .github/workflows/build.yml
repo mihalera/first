@@ -1934,7 +1934,7 @@ jobs:
           java-version: '21'
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v5
+        uses: gradle/actions/setup-gradle@v6
         with:
           # The version JUCE 9.0.4's Android template pins. AGP 8.13.2 is the
           # plugin version in android/build.gradle.
