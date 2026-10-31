@@ -786,16 +786,21 @@ public:
     //  hands the note to the audio thread, the other puts it on the wire.
     //==============================================================================
 
-    /** Publishes a new note for the oscillator: `noteIndex` is 0..11, the twelve
-        chromatic steps C..B, which is what the ring's twelve sectors are. The
-        audio thread reads it as an atomic; `retrigger` is true when the ball has
-        just LANDED, which restarts the note's envelope so each landing is heard
-        as its own note rather than as a pitch bend on the previous one.
+    /** Publishes a new note for the oscillator: `midiNote` is an absolute MIDI
+        note number, 0..127 (60 is C4). The ring no longer counts semitones inside
+        one octave - it lays out the degrees of the selected TONIC and MODE across
+        three octaves (see Source/GUI/OscRing.h), so the note it hands over is the
+        note itself rather than a position in a twelve-slot wheel that would stop
+        meaning anything above the first octave.
+
+        The audio thread reads it as an atomic; `retrigger` is true when the ball
+        has just LANDED, which restarts the note's envelope so each landing is
+        heard as its own note rather than as a pitch bend on the previous one.
 
         Realtime-safe: two relaxed stores, no lock and no allocation. It is called
         from the ring's landing callback, which runs on the message thread, and
         never from the audio thread. */
-    void setOscNote (int noteIndex, bool retrigger) noexcept;
+    void setOscNote (int midiNote, bool retrigger) noexcept;
 
     /** Tells the module whether the panel that draws the ring is on screen.
 
@@ -817,6 +822,21 @@ public:
     bool getOscEnabled() const noexcept
     {
         return oscOnParam != nullptr && oscOnParam->load() >= 0.5f;
+    }
+
+    /** The key the OSC ring lays its notes out in, 0..11 (C..B). The panel reads
+        both this and the mode every frame so the ring follows the AUTOTUNE tab's
+        TONIC and MODE selectors without a listener of its own. */
+    int getTuningTonic() const noexcept
+    {
+        return tuningTonicParam != nullptr ? static_cast<int> (tuningTonicParam->load()) : 0;
+    }
+
+    /** The scale the OSC ring and the corrector share, 0..5: chromatic, major,
+        minor, dorian, pentatonic major, pentatonic minor. */
+    int getTuningMode() const noexcept
+    {
+        return tuningModeParam != nullptr ? static_cast<int> (tuningModeParam->load()) : 0;
     }
 
     /** Sends the current OSC module state as one OSC 1.0 packet - `/mibox/osc/on`
@@ -1124,7 +1144,7 @@ private:
     //  was seen before.
     // -----------------------------------------------------------------------
     std::atomic<float>* oscOnParam = nullptr;
-    std::atomic<int> oscNoteIndex { 0 };   // 0..11, C..B, the ring's sectors
+    std::atomic<int> oscNoteMidi { 60 };   // absolute MIDI note, 60 = C4
     std::atomic<int> oscPulse { 0 };       // bumped on every landing
     // True while an editor is on screen. The ring's hops are the editor's timer,
     // so without a window there is nothing to land and the last note would sit

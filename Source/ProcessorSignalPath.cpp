@@ -61,6 +61,7 @@
 #include "DSP/TapeModulation.h"
 #include "DSP/TapeVoicing.h"
 #include "HotPathProbe.h"
+#include "ScaleDegrees.h"
 
 
 namespace
@@ -469,15 +470,11 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
 
 const std::array<int, 12>& FirstAudioProcessor::scaleOffsetsForMode (int modeIndex) noexcept
 {
-    static constexpr std::array<std::array<int, 12>, 6> scales {{
-        {{ 0, 1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11 }},
-        {{ 0, 2, 4, 5, 7, 9, 11, -1, -1, -1, -1, -1 }},
-        {{ 0, 2, 3, 5, 7, 8, 10, -1, -1, -1, -1, -1 }},
-        {{ 0, 2, 3, 5, 7, 9, 10, -1, -1, -1, -1, -1 }},
-        {{ 0, 2, 4, 7, 9, -1, -1, -1, -1, -1, -1, -1 }},
-        {{ 0, 3, 5, 7, 10, -1, -1, -1, -1, -1, -1, -1 }}
-    }};
-    return scales[static_cast<std::size_t> (juce::jlimit (0, 5, modeIndex))];
+    // The table itself is Source/ScaleDegrees.h, shared with the OSC ring: the
+    // corrector snaps to these degrees and the ring lays them out as the notes it
+    // can land on, so one key has one table rather than two copies that agree
+    // until one of them is edited.
+    return j37::scale::offsets (modeIndex);
 }
 
 /**
@@ -897,12 +894,13 @@ void FirstAudioProcessor::mixOscillatorIntoInput (juce::dsp::AudioBlock<float>& 
         return;
     }
 
-    // C4 for sector 0 up to B4 for sector 11: the twelve sectors are the twelve
-    // semitones of one octave, stated as equal temperament because that is what
-    // the panel's note readout names them by and what an OSC client counting
-    // 0..11 will expect to receive.
-    const auto note = juce::jlimit (0, 11, oscNoteIndex.load (std::memory_order_relaxed));
-    const auto frequency = 440.0f * std::pow (2.0f, static_cast<float> (note - 9) / 12.0f);
+    // The ring hands over an absolute MIDI note (60 = C4), because its notes are
+    // the degrees of the selected key across three octaves rather than twelve
+    // semitones of one. Equal temperament, stated once here: A4 is 440 Hz and a
+    // semitone is a twelfth of an octave, so no part of the panel needs its own
+    // frequency table.
+    const auto note = juce::jlimit (0, 127, oscNoteMidi.load (std::memory_order_relaxed));
+    const auto frequency = 440.0f * std::pow (2.0f, static_cast<float> (note - 69) / 12.0f);
     const auto phaseIncrement = frequency / rate;
 
     // The gate's and the envelope's time constants, as a per-sample fraction. Both

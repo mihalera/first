@@ -1010,12 +1010,18 @@ it.
 
 ## OSC: the note ring
 
-A note generator that lives on the deck: a ring of twelve sectors - C through B, one
-octave from C4 - with a ball that hops around it clockwise, and where it lands is the
-note that sounds. It stands at the right of the type row, beside the TYPE selectors,
-and the switch that owns it (**OSC**) is the fifth cell of the header's switch row,
-next to BYPASS / DELTA / POLARITY / AUTO GAIN. Press the ring to throw the ball into
-its next hop.
+A note generator that lives on the deck: a ring of the selected key's notes - the
+degrees of the AUTOTUNE tab's **TONIC** and **MODE** across three octaves, C3 to B5 -
+with a ball that hops around the inside of the disc, and where it lands is the note that
+sounds. The ring therefore follows the key: seven places per octave in MAJOR, five in a
+pentatonic, twelve in CHROMATIC, and changing TONIC or MODE re-derives them and retunes
+the note the ball is resting on. It stands at the right of the type row, beside the
+TYPE selectors, and the switch that owns it (**OSC**) is the fifth cell of the header's
+switch row, next to BYPASS / DELTA / POLARITY / AUTO GAIN. Press the ring to throw the
+ball into its next hop.
+
+Both the corrector and the ring read one table (`Source/ScaleDegrees.h`), so the scale
+the pitch correction snaps to and the scale the generator plays cannot drift apart.
 
 **The tone enters at the INPUT, not at the output.** The oscillator is summed into the
 block before any stage runs, so INPUT trims it, the machine colours it, MIX blends it
@@ -1023,11 +1029,16 @@ and the output stage finishes it - the generator sounds like the machine it is s
 in rather than like a sine pasted over the top of one. Each landing restarts the note's
 envelope, so a hop is heard as a new note rather than as a bend from the previous one;
 the switch fades the tone over about fifteen milliseconds, so pressing it never clicks.
-OFF parks the ball on the last note and generates nothing.
+OFF parks the ball on the last note and generates nothing. Switching it back on hands that
+note to the engine before the first hop, so the tone starts on the dot the ball is resting
+on - including after TONIC or MODE was changed while the module was off, when that dot is
+no longer the note the engine was holding.
 
-**The module speaks OSC.** Every landing is published as `/mibox/osc/note` (normalised
-0..11 over the ring's twelve sectors) and the switch state as `/mibox/osc/on`, encoded
-by the codec in `Source/Net/` and sent over UDP to `127.0.0.1:9000`. It is a publisher
+**The module speaks OSC.** Every landing is published as `/mibox/osc/note` - the ABSOLUTE
+MIDI note number, sent as the normalised float over the slot's 0..127 range, so a client
+multiplies by 127 and reads the pitch directly instead of counting semitones above C4 -
+and the switch state as `/mibox/osc/on`, encoded by the codec in `Source/Net/` and sent
+over UDP to `127.0.0.1:9000`. It is a publisher
 only: no socket is ever bound, no thread is started, and a machine with nothing
 listening hears no difference. The address map is `j37::osc::Surface` from
 `Source/Net/OscSurface.h`, so the addresses a client is told about and the addresses the

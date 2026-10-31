@@ -208,7 +208,11 @@ FirstAudioProcessor::FirstAudioProcessor()
     oscSurface = std::make_unique<j37::osc::Surface> (
         std::vector<j37::osc::ParameterSlot> {
             { "osc_on",   "osc/on",   0.0f, 1.0f },
-            { "osc_note", "osc/note", 0.0f, 1.0f },
+            // The note slot is in MIDI numbers, not in "0..1 over one octave":
+            // the ring spans three octaves of the selected scale now, so a
+            // client that wants the pitch reads the slot's own range (0..127)
+            // and multiplies the normalised float by it.
+            { "osc_note", "osc/note", 0.0f, 127.0f },
         },
         "/mibox");
     // SUBFUND's depth parameter. Without this the pointer stayed null and the engine
@@ -543,9 +547,9 @@ FirstAudioProcessor::~FirstAudioProcessor()
 //  engine's state and the packet is the module's, so both belong with the object
 //  that outlives the window that asked for them.
 //==============================================================================
-void FirstAudioProcessor::setOscNote (int noteIndex, bool retrigger) noexcept
+void FirstAudioProcessor::setOscNote (int midiNote, bool retrigger) noexcept
 {
-    oscNoteIndex.store (juce::jlimit (0, 11, noteIndex), std::memory_order_relaxed);
+    oscNoteMidi.store (juce::jlimit (0, 127, midiNote), std::memory_order_relaxed);
 
     // A counter, not a flag: the audio thread compares it with what it saw at the
     // last block, so two landings inside one block both count and neither can be
@@ -571,7 +575,7 @@ void FirstAudioProcessor::publishOscState (bool noteChanged)
 
     const auto slot = noteChanged ? oscSlotNote : oscSlotOn;
     const auto normalised = noteChanged
-                              ? static_cast<float> (oscNoteIndex.load (std::memory_order_relaxed)) / 11.0f
+                              ? static_cast<float> (oscNoteMidi.load (std::memory_order_relaxed)) / 127.0f
                               : (on ? 1.0f : 0.0f);
 
     const auto message = oscSurface->feedback (slot, normalised);

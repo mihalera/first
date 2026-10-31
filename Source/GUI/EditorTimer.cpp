@@ -639,9 +639,19 @@ void FirstAudioProcessorEditor::timerCallback() {
     const auto oscOn = audioProcessor.getOscEnabled();
     if (oscOn != oscPublishedOn) {
         oscPublishedOn = oscOn;
-        oscRing.setRunning(oscOn);
+        // The ON packet goes out before the ring starts, because starting it
+        // announces the parked note: a client that arms itself on /mibox/osc/on
+        // would otherwise receive the note it is meant to play before the state
+        // that tells it the module is running.
         audioProcessor.publishOscState(false);
+        oscRing.setRunning(oscOn);
     }
+
+    // The ring's notes are the KEY's notes, so its key follows the two selectors
+    // on the AUTOTUNE tab. Pushed every frame rather than listened to: setKey()
+    // compares and returns, so the steady state is one comparison per frame, and
+    // the ring has no listener to unregister when the editor closes.
+    oscRing.setKey(audioProcessor.getTuningTonic(), audioProcessor.getTuningMode());
 
     oscRing.tick(animationDelta);
 
