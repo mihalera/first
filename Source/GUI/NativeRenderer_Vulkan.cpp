@@ -111,6 +111,8 @@ public:
         initialised = false;
         frameIndex = 0;
         activeSlot = invalidIndex;
+        imageAcquired = false;
+        acquiredSemaphorePending = false;
     }
 
     bool beginFrame() override
@@ -119,18 +121,26 @@ public:
             return false;
 
         const auto slot = frameIndex;
-        if (vkWaitForFences (device, 1, &frameFences[slot], VK_TRUE, frameWaitNs) != VK_SUCCESS)
+        if (frameFences[slot] == VK_NULL_HANDLE
+            || vkWaitForFences (device, 1, &frameFences[slot], VK_TRUE, frameWaitNs) != VK_SUCCESS)
             return false;
-        vkResetFences (device, 1, &frameFences[slot]);
-        vkResetCommandBuffer (commandBuffers[slot], 0);
+        if (vkResetCommandBuffer (commandBuffers[slot], 0) != VK_SUCCESS)
+        {
+            failure = "Vulkan: command buffer reset failed";
+            return false;
+        }
 
         VkCommandBufferBeginInfo beginInfo { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
         beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
         if (vkBeginCommandBuffer (commandBuffers[slot], &beginInfo) != VK_SUCCESS)
+        {
+            failure = "Vulkan: command buffer begin failed";
             return false;
+        }
 
         activeSlot = slot;
         activeImage = 0;
+        imageAcquired = false;
 
         if (isPresentable())
         {
@@ -143,6 +153,9 @@ public:
                 activeSlot = invalidIndex;
                 return false;
             }
+
+            imageAcquired = true;
+            acquiredSemaphorePending = true;
         }
 
         return true;
@@ -171,6 +184,9 @@ public:
                               VK_PIPELINE_STAGE_TRANSFER_BIT, 0, 0, nullptr, 0, nullptr,
                               1, &toTransfer);
 
+        if (! imageAcquired || activeImage >= swapchainImages.size())
+            return;
+
         VkClearColorValue clearValue {};
         clearValue.float32[0] = colour.getFloatRed();
         clearValue.float32[1] = colour.getFloatGreen();
@@ -198,6 +214,7 @@ public:
         const auto slot = activeSlot;
         if (vkEndCommandBuffer (commandBuffers[slot]) != VK_SUCCESS)
         {
+            recreateSwapchainAfterAcquireFailure (slot);
             activeSlot = invalidIndex;
             return;
         }
@@ -218,12 +235,31 @@ public:
         submit.waitSemaphoreCount = isPresentable() ? 1u : 0u;
         submit.signalSemaphoreCount = isPresentable() ? 1u : 0u;
 
-        if (vkQueueSubmit (queue, 1, &submit, frameFences[slot]) != VK_SUCCESS)
+        if (vkResetFences (device, 1, &frameFences[slot]) != VK_SUCCESS)
         {
+            if (! restoreSignaledFence (slot))
+                return;
+            recreateSwapchainAfterAcquireFailure (slot);
+            activeSlot = invalidIndex;
+            failure = "Vulkan: frame fence reset failed";
+            return;
+        }
+
+        const auto submitted = vkQueueSubmit (queue, 1, &submit, frameFences[slot]);
+        if (submitted != VK_SUCCESS)
+        {
+            // A failed submit will not signal the reset fence. Replace it with a
+            // signaled fence before this frame slot can be attempted again.
+            if (! restoreSignaledFence (slot))
+                return;
+            recreateSwapchainAfterAcquireFailure (slot);
             activeSlot = invalidIndex;
             failure = "Vulkan: queue submission failed";
             return;
         }
+
+        acquiredSemaphorePending = false;
+        imageAcquired = false;
 
         if (isPresentable())
         {
@@ -262,6 +298,149 @@ private:
         failure = std::move (reason);
         shutdown();
         return false;
+    }
+
+    bool restoreSignaledFence (std::size_t slot) noexcept
+    {
+        if (slot >= frameFences.size())
+            return false;
+
+        if (frameFences[slot] != VK_NULL_HANDLE)
+            vkDestroyFence (device, frameFences[slot], nullptr);
+
+        VkFenceCreateInfo fenceInfo { VK_STRUCTURE_TYPE_FENCE_CREATE_INFO };
+        fenceInfo.flags = VK_FENCE_CREATE_SIGNALED_BIT;
+        frameFences[slot] = VK_NULL_HANDLE;
+        if (vkCreateFence (device, &fenceInfo, nullptr, &frameFences[slot]) == VK_SUCCESS)
+            return true;
+
+        failure = "Vulkan: frame fence recreation failed";
+        shutdown();
+        return false;
+    }
+
+    void recreateSwapchainAfterAcquireFailure (std::size_t slot) noexcept
+    {
+        if (! imageAcquired)
+            return;
+
+        if (device == VK_NULL_HANDLE || queue == VK_NULL_HANDLE
+            || slot >= imageAvailable.size() || slot >= renderFinished.size())
+        {
+            shutdown();
+            return;
+        }
+
+        // The acquire semaphore cannot be abandoned: submit an image transition
+        // and present the acquired image so both the semaphore and swapchain
+        // ownership are retired through Vulkan's normal presentation path.
+        if (acquiredSemaphorePending)
+        {
+            if (activeImage >= swapchainImages.size())
+            {
+                shutdown();
+                return;
+            }
+
+            VkCommandBuffer recoveryCommand = VK_NULL_HANDLE;
+            VkCommandBufferAllocateInfo allocation { VK_STRUCTURE_TYPE_COMMAND_BUFFER_ALLOCATE_INFO };
+            allocation.commandPool = commandPool;
+            allocation.level = VK_COMMAND_BUFFER_LEVEL_PRIMARY;
+            allocation.commandBufferCount = 1;
+            if (vkAllocateCommandBuffers (device, &allocation, &recoveryCommand) != VK_SUCCESS)
+            {
+                shutdown();
+                return;
+            }
+
+            VkCommandBufferBeginInfo beginInfo { VK_STRUCTURE_TYPE_COMMAND_BUFFER_BEGIN_INFO };
+            beginInfo.flags = VK_COMMAND_BUFFER_USAGE_ONE_TIME_SUBMIT_BIT;
+            if (vkBeginCommandBuffer (recoveryCommand, &beginInfo) != VK_SUCCESS)
+            {
+                vkFreeCommandBuffers (device, commandPool, 1, &recoveryCommand);
+                shutdown();
+                return;
+            }
+
+            VkImageMemoryBarrier toPresent { VK_STRUCTURE_TYPE_IMAGE_MEMORY_BARRIER };
+            toPresent.oldLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            toPresent.newLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+            toPresent.srcAccessMask = 0;
+            toPresent.dstAccessMask = 0;
+            toPresent.srcQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            toPresent.dstQueueFamilyIndex = VK_QUEUE_FAMILY_IGNORED;
+            toPresent.image = swapchainImages[activeImage];
+            toPresent.subresourceRange = { VK_IMAGE_ASPECT_COLOR_BIT, 0, 1, 0, 1 };
+            vkCmdPipelineBarrier (recoveryCommand, VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT,
+                                  VK_PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, 0,
+                                  0, nullptr, 0, nullptr, 1, &toPresent);
+
+            if (vkEndCommandBuffer (recoveryCommand) != VK_SUCCESS)
+            {
+                vkFreeCommandBuffers (device, commandPool, 1, &recoveryCommand);
+                shutdown();
+                return;
+            }
+
+            VkPipelineStageFlags waitStage = VK_PIPELINE_STAGE_TOP_OF_PIPE_BIT;
+            VkSubmitInfo consume { VK_STRUCTURE_TYPE_SUBMIT_INFO };
+            consume.waitSemaphoreCount = 1;
+            consume.pWaitSemaphores = &imageAvailable[slot];
+            consume.pWaitDstStageMask = &waitStage;
+            consume.commandBufferCount = 1;
+            consume.pCommandBuffers = &recoveryCommand;
+            if (vkQueueSubmit (queue, 1, &consume, VK_NULL_HANDLE) != VK_SUCCESS
+                || vkQueueWaitIdle (queue) != VK_SUCCESS)
+            {
+                vkFreeCommandBuffers (device, commandPool, 1, &recoveryCommand);
+                shutdown();
+                return;
+            }
+
+            vkFreeCommandBuffers (device, commandPool, 1, &recoveryCommand);
+            acquiredSemaphorePending = false;
+
+            VkPresentInfoKHR present { VK_STRUCTURE_TYPE_PRESENT_INFO_KHR };
+            present.swapchainCount = 1;
+            present.pSwapchains = &swapchain;
+            present.pImageIndices = &activeImage;
+            if (vkQueuePresentKHR (presentQueue, &present) != VK_SUCCESS)
+            {
+                shutdown();
+                return;
+            }
+
+            if (vkQueueWaitIdle (presentQueue) != VK_SUCCESS)
+            {
+                shutdown();
+                return;
+            }
+        }
+
+        vkDeviceWaitIdle (device);
+        if (imageAcquired && ! acquiredSemaphorePending
+            && slot < imageAvailable.size() && imageAvailable[slot] != VK_NULL_HANDLE)
+        {
+            vkDestroySemaphore (device, imageAvailable[slot], nullptr);
+            VkSemaphoreCreateInfo semaphoreInfo { VK_STRUCTURE_TYPE_SEMAPHORE_CREATE_INFO };
+            if (vkCreateSemaphore (device, &semaphoreInfo, nullptr, &imageAvailable[slot]) != VK_SUCCESS)
+            {
+                failure = "Vulkan: acquire semaphore recreation failed";
+                shutdown();
+                return;
+            }
+        }
+
+        destroySwapchain();
+        imageAcquired = false;
+        acquiredSemaphorePending = false;
+        if (! createSwapchain())
+        {
+            presentationNote = "Vulkan swapchain recovery failed; using CPU fallback";
+            return;
+        }
+
+        presentationNote.clear();
     }
 
     bool createInstance()
@@ -454,10 +633,15 @@ private:
         auto extent = VkExtent2D { static_cast<uint32_t> (width), static_cast<uint32_t> (height) };
         extent.width = std::clamp (extent.width, caps.minImageExtent.width, caps.maxImageExtent.width);
         extent.height = std::clamp (extent.height, caps.minImageExtent.height, caps.maxImageExtent.height);
-        auto imageCount = std::max (caps.minImageCount + 1,
-                                     static_cast<uint32_t> (frameCount));
-        if (caps.maxImageCount != 0)
-            imageCount = std::min (imageCount, caps.maxImageCount);
+        const auto minimumPlusOne = caps.minImageCount == UINT32_MAX
+                                        ? caps.minImageCount
+                                        : caps.minImageCount + 1;
+        const auto requiredImageCount = std::max (minimumPlusOne, static_cast<uint32_t> (frameCount));
+        if (caps.maxImageCount != 0 && caps.maxImageCount < requiredImageCount)
+            return false;
+        const auto imageCount = caps.maxImageCount == 0
+                                    ? requiredImageCount
+                                    : std::min (requiredImageCount, caps.maxImageCount);
 
         VkSwapchainCreateInfoKHR info { VK_STRUCTURE_TYPE_SWAPCHAIN_CREATE_INFO_KHR };
         info.surface = surface; info.minImageCount = imageCount;
@@ -472,10 +656,29 @@ private:
         if (vkCreateSwapchainKHR (device, &info, nullptr, &swapchain) != VK_SUCCESS)
             return false;
         uint32_t actualCount = 0;
-        vkGetSwapchainImagesKHR (device, swapchain, &actualCount, nullptr);
-        swapchainImages.resize (actualCount);
-        vkGetSwapchainImagesKHR (device, swapchain, &actualCount, swapchainImages.data());
-        return ! swapchainImages.empty();
+        auto result = vkGetSwapchainImagesKHR (device, swapchain, &actualCount, nullptr);
+        if (result != VK_SUCCESS || actualCount == 0)
+        {
+            destroySwapchain();
+            return false;
+        }
+
+        for (int attempt = 0; attempt < 3; ++attempt)
+        {
+            swapchainImages.resize (actualCount);
+            result = vkGetSwapchainImagesKHR (device, swapchain, &actualCount, swapchainImages.data());
+            if (result == VK_SUCCESS && actualCount > 0)
+            {
+                swapchainImages.resize (actualCount);
+                return true;
+            }
+
+            if (result != VK_INCOMPLETE || actualCount == 0)
+                break;
+        }
+
+        destroySwapchain();
+        return false;
     }
 
     void destroySwapchain() noexcept
@@ -502,6 +705,8 @@ private:
     std::size_t frameIndex = 0;
     std::size_t activeSlot = invalidIndex;
     uint32_t activeImage = 0;
+    bool imageAcquired = false;
+    bool acquiredSemaphorePending = false;
     uint32_t graphicsFamily = UINT32_MAX;
     uint32_t presentFamily = UINT32_MAX;
     int width = 1, height = 1, frameCount = 2;

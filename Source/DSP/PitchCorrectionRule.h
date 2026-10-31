@@ -53,7 +53,8 @@ struct PitchCorrectionRule
     /** How many cents `targetHz` is above `detectedHz` (negative = below). */
     static float cents (float detectedHz, float targetHz) noexcept
     {
-        if (detectedHz <= 0.0f || targetHz <= 0.0f)
+        if (! std::isfinite (detectedHz) || ! std::isfinite (targetHz)
+            || detectedHz <= 0.0f || targetHz <= 0.0f)
             return 0.0f;
 
         return 1200.0f * std::log2 (targetHz / detectedHz);
@@ -82,7 +83,8 @@ struct PitchCorrectionRule
     {
         const auto depth = juce::jlimit (0.0f, 1.0f, amount);
 
-        if (depth <= 0.0f || detectedHz <= 0.0f || targetHz <= 0.0f)
+        if (depth <= 0.0f || ! std::isfinite (detectedHz) || ! std::isfinite (targetHz)
+            || detectedHz <= 0.0f || targetHz <= 0.0f)
             return 1.0f;
 
         if (inDeadZone (detectedHz, targetHz))

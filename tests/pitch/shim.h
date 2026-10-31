@@ -23,4 +23,9 @@ inline int roundToInt (double value) noexcept
 {
     return static_cast<int> (std::lround (value));
 }
+
+inline int jmin (int left, int right) noexcept
+{
+    return left < right ? left : right;
+}
 } // namespace juce

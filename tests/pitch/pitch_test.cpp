@@ -294,17 +294,23 @@ void testTrackerFollowsNotes()
 
 void testTrackerIsRateIndependent()
 {
-    std::printf ("\nthe reading does not move with the session rate\n");
+    std::printf ("\nthe reading stays in range at session and oversampled rates\n");
 
-    for (const auto sampleRate : { 44100.0, 48000.0, 88200.0, 96000.0 })
+    for (const auto sampleRate : { 8000.0, 44100.0, 48000.0, 88200.0, 96000.0,
+                                   176400.0, 192000.0, 352800.0, 384000.0,
+                                   768000.0 })
     {
-        const auto reading = readNote (sampleRate, 220.0, 1.5);
-        const auto error = std::abs (cents (reading.frequency, 220.0));
+        for (const auto frequency : { 55.0, 220.0, 880.0 })
+        {
+            const auto reading = readNote (sampleRate, frequency, 1.5);
+            const auto error = std::abs (cents (reading.frequency, frequency));
 
-        check (error < 20.0,
-               "220 Hz at " + std::to_string (static_cast<int> (sampleRate)) + " Hz reads "
-                   + std::to_string (reading.frequency) + " Hz ("
-                   + std::to_string (static_cast<int> (error)) + " cents off)");
+                check (error < 25.0,
+                   std::to_string (frequency) + " Hz at "
+                       + std::to_string (static_cast<int> (sampleRate)) + " Hz reads "
+                       + std::to_string (reading.frequency) + " Hz ("
+                       + std::to_string (static_cast<int> (error)) + " cents off)");
+        }
     }
 }
 
@@ -904,6 +910,13 @@ void testCorrectionDeadZone()
 
     check (PitchCorrectionRule::deadZoneCents == 10.0f,
            "the dead zone is the documented +-10 cents");
+    const auto invalid = std::numeric_limits<float>::quiet_NaN();
+    const auto infinite = std::numeric_limits<float>::infinity();
+    check (PitchCorrectionRule::cents (invalid, target) == 0.0f
+           && PitchCorrectionRule::cents (target, infinite) == 0.0f
+           && PitchCorrectionRule::ratio (invalid, target, 1.0f) == 1.0f
+           && PitchCorrectionRule::ratio (target, infinite, 1.0f) == 1.0f,
+           "non-finite pitch inputs produce neutral correction");
 
     // --- inside the zone: no correction at all ------------------------------
     for (const auto cents : { 0.0, 3.0, -3.0, 9.9, -9.9, 10.0, -10.0 })

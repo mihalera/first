@@ -8,6 +8,7 @@
 #include <juce_gui_extra/embedding/juce_NSViewComponent.h>
 #include <algorithm>
 #include <array>
+#include <atomic>
 #include <cstddef>
 #include <cstring>
 #include <utility>
@@ -97,9 +98,14 @@ public:
         metalLayer.frame = CGRectMake(0.0, 0.0, width, height);
         metalLayer.drawableSize = CGSizeMake(width * metalLayer.contentsScale,
                                               height * metalLayer.contentsScale);
+        observerLifetime = std::make_shared<std::atomic<bool>> (true);
+        std::weak_ptr<std::atomic<bool>> weakObserverLifetime = observerLifetime;
         scaleObserver = [[NSNotificationCenter defaultCenter]
             addObserverForName:NSWindowDidChangeScreenNotification object:childView.window
                          queue:nil usingBlock:^(__unused NSNotification* notification) {
+                const auto lifetime = weakObserverLifetime.lock();
+                if (lifetime == nullptr || ! lifetime->load (std::memory_order_acquire))
+                    return;
                 if (metalLayer != nil && childView.window != nil) {
                     metalLayer.contentsScale = backingScaleFor(childView);
                     metalLayer.drawableSize = CGSizeMake(width * metalLayer.contentsScale,
@@ -151,12 +157,14 @@ public:
 
     void shutdown() noexcept override
     {
-        if (commandBuffer != nil)
-            [commandBuffer waitUntilCompleted];
+        observerLifetime->store (false, std::memory_order_release);
         if (scaleObserver != nil) {
             [[NSNotificationCenter defaultCenter] removeObserver:scaleObserver];
             scaleObserver = nil;
         }
+
+        if (commandBuffer != nil)
+            [commandBuffer waitUntilCompleted];
         if (metalLayer != nil)
         {
             [metalLayer removeFromSuperlayer];
@@ -371,13 +379,15 @@ private:
 
     bool uploadMeshes (const std::vector<SceneMesh>& meshes)
     {
-        gpuMeshes.resize(meshes.size());
-        for (std::size_t i = 0; i < meshes.size(); ++i)
+        std::vector<GpuMesh> uploaded;
+        uploaded.reserve (meshes.size());
+
+        for (const auto& source : meshes)
         {
-            const auto& source = meshes[i];
             if (source.vertices.empty() || source.indices.empty())
                 return false;
-            auto& gpu = gpuMeshes[i];
+
+            GpuMesh gpu;
             gpu.vertices = [metalDevice newBufferWithBytes:source.vertices.data()
                                                     length:source.vertices.size() * sizeof(SceneVertex)
                                                    options:MTLResourceStorageModeShared];
@@ -387,8 +397,11 @@ private:
             gpu.indexCount = source.indices.size();
             if (gpu.vertices == nil || gpu.indices == nil)
                 return false;
+
+            uploaded.push_back (gpu);
         }
 
+        gpuMeshes = std::move (uploaded);
         return true;
     }
 
@@ -407,11 +420,15 @@ private:
         if (meshes == uploadedMeshes && gpuMeshes.size() == meshes->size())
             return true;
 
+        if (! uploadMeshes (*meshes))
+            return false;
+
         uploadedMeshes = meshes;
-        return uploadMeshes (*uploadedMeshes);
+        return true;
     }
 
     std::unique_ptr<juce::NSViewComponent> sceneView;
+    std::shared_ptr<std::atomic<bool>> observerLifetime = std::make_shared<std::atomic<bool>> (true);
     std::shared_ptr<const std::vector<SceneMesh>> uploadedMeshes;
     id<MTLDevice> metalDevice = nil;
     id<MTLCommandQueue> commandQueue = nil;

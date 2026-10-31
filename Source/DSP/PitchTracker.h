@@ -35,10 +35,10 @@
     normalised difference there. A noise floor has no such lag and reports no
     confidence, and the caller reads that as leave this alone.
 
-    The analysis runs at a FIXED rate: the input is decimated by whatever integer
-    takes the session rate nearest to 12 kHz, so the lag range means the same
-    frequencies (47 Hz to 1.5 kHz) at every sample rate and the cost per second
-    is the same too. The estimate is refreshed every 256 analysis frames - about
+    The analysis runs at the nearest supported integer decimation to 12 kHz.
+    Rounding makes the actual rate vary slightly with the input rate, so the
+    effective pitch limits are tested over session and oversampled rates; the
+    tracker does not claim an identical analysis rate for every host rate. The estimate is refreshed every 256 analysis frames - about
     20 ms - which is fast enough to follow a note and slow enough that the
     difference function is a few percent of one core, and it is only ever paid
     while the stage is switched on.
@@ -63,11 +63,15 @@ struct PitchTracker
     void prepare (double sampleRateIn)
     {
         constexpr double defaultRate = 48000.0;
+        constexpr double minimumSupportedRate = 8000.0;
         constexpr double maxSupportedRate = 768000.0;
         const auto sampleRate = std::isfinite (sampleRateIn)
-                                  && sampleRateIn > 1.0
+                                  && sampleRateIn >= minimumSupportedRate
                                   && sampleRateIn <= maxSupportedRate
                                   ? sampleRateIn : defaultRate;
+        // Round to the nearest integer divider. The actual rate therefore stays
+        // close to target; the rate sweep pins the supported pitch range across
+        // session and oversampled rates.
         decimation = juce::jmax (1, juce::roundToInt (sampleRate / analysisTargetRate));
         analysisRate = static_cast<float> (sampleRate) / static_cast<float> (decimation);
         reset();

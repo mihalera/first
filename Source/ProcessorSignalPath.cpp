@@ -518,7 +518,8 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
     if (amount <= 1.0e-5f)
         return;
 
-    const auto tonic = tuningTonicParam != nullptr ? static_cast<int> (tuningTonicParam->load()) : 0;
+    const auto tonicValue = tuningTonicParam != nullptr ? static_cast<int> (tuningTonicParam->load()) : 0;
+    const auto tonic = ((tonicValue % 12) + 12) % 12;
     const auto mode = tuningModeParam != nullptr ? static_cast<int> (tuningModeParam->load()) : 0;
     const auto& offsets = scaleOffsetsForMode (mode);
     const auto stageRate = rate > 1.0f ? rate : 48000.0f;
@@ -563,7 +564,7 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
         // chosen key actually contains. CHROMATIC is every semitone, so the
         // second step is a no-op there and the first one is the whole of it.
         const auto midi = 69.0f + 12.0f * std::log2 (juce::jmax (1.0f, detected) / 440.0f);
-        const auto nearest = juce::roundToInt (midi);
+        const auto nearest = juce::jlimit (-128, 255, juce::roundToInt (midi));
         auto target = nearest;
 
         if (mode != 0)
