@@ -17,7 +17,7 @@ env:
   # "as many as the runner has cores": the editor is one file per concern now
   # (see the Sources block in CMakeLists.txt) and every one of those files pulls
   # in <JuceHeader.h>, so several of the heaviest units in the project can be in
-  # flight at the same moment. On ubuntu-latest an unbounded --parallel let their
+  # flight at the same moment. On the runner an unbounded --parallel let their
   # peak add up past what the runner has, and the OOM killer took the compiler
   # out mid-build: the Release job died with "Killed signal terminated program
   # cc1plus" while building Source/GUI/TapeScene.cpp, and the Debug job lost the
@@ -57,7 +57,14 @@ jobs:
   # ============================================================================
   dsp-tests:
     name: DSP regression harness
-    runs-on: ubuntu-latest
+    #  A PINNED image rather than ubuntu-latest. The label started moving to
+    #  Ubuntu 26 on 19 October 2026, and every job below draws its compilers and
+    #  its GUI packages from the image: a toolchain that changes under the build
+    #  with no commit is the one kind of CI breakage that looks like our bug. The
+    #  arm64 job has always been pinned for the same reason (ubuntu-24.04-arm),
+    #  and pinning also silences the runner-image migration annotation every job
+    #  was collecting. Move the pin deliberately, not by flag day.
+    runs-on: ubuntu-24.04
     # 20, not 10: tests/neural compiles NeuralAmpModelerCore's sixteen Eigen
     # translation units for its fixture binaries, and the sanitizer step below
     # pays that again with ASan + UBSan instrumentation. That is roughly a minute
@@ -453,7 +460,7 @@ jobs:
   # ============================================================================
   dsp-unit:
     name: DSP unit tests
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 20
 
     steps:
@@ -502,7 +509,7 @@ jobs:
   # ============================================================================
   dsp-bench:
     name: DSP micro-benchmarks (informational)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 15
     continue-on-error: true
 
@@ -579,7 +586,7 @@ jobs:
   # ============================================================================
   build-linux-debug:
     name: build-linux-debug (Melatonin inspector)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
     timeout-minutes: 25
 
     steps:
@@ -1399,7 +1406,7 @@ jobs:
   #  Linux - VST3
   # ============================================================================
   build-linux:
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
@@ -1779,7 +1786,7 @@ jobs:
   # ============================================================================
   build-android:
     name: build-android (Standalone, arm64-v8a)
-    runs-on: ubuntu-latest
+    runs-on: ubuntu-24.04
 
     steps:
       - name: Checkout repository
@@ -1921,13 +1928,13 @@ jobs:
       # the CMake step above owns the native code it packages. The two are
       # joined by `stageNativeLib` in android/app/build.gradle.
       - name: Set up JDK for Gradle
-        uses: actions/setup-java@v4
+        uses: actions/setup-java@v5
         with:
           distribution: temurin
           java-version: '21'
 
       - name: Set up Gradle
-        uses: gradle/actions/setup-gradle@v4
+        uses: gradle/actions/setup-gradle@v5
         with:
           # The version JUCE 9.0.4's Android template pins. AGP 8.13.2 is the
           # plugin version in android/build.gradle.
