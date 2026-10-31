@@ -797,6 +797,20 @@ public:
         never from the audio thread. */
     void setOscNote (int noteIndex, bool retrigger) noexcept;
 
+    /** Tells the module whether the panel that draws the ring is on screen.
+
+        The ring's clock is the editor's timer, so with the window closed nothing
+        lands and the note the ball was last on would keep sounding - one frozen
+        note, the report that came back from a session. The generator therefore
+        stops when the panel goes away (the gate fades it over the same 15 ms a
+        switch uses) and starts again, on the ball's parked note, when the window
+        comes back. Message thread only: the constructor and destructor of the
+        editor are the two callers. */
+    void setOscPanelOpen (bool isOpen) noexcept
+    {
+        oscPanelOpen.store (isOpen, std::memory_order_relaxed);
+    }
+
     /** True while the OSC module is switched on. The panel reads this every frame
         to decide whether the ring is hopping, and the engine reads the parameter
         itself - this is the panel's view, not the machine's. */
@@ -1112,6 +1126,10 @@ private:
     std::atomic<float>* oscOnParam = nullptr;
     std::atomic<int> oscNoteIndex { 0 };   // 0..11, C..B, the ring's sectors
     std::atomic<int> oscPulse { 0 };       // bumped on every landing
+    // True while an editor is on screen. The ring's hops are the editor's timer,
+    // so without a window there is nothing to land and the last note would sit
+    // there droning. The generator is gated on this as well as on the switch.
+    std::atomic<bool> oscPanelOpen { false };
     float oscPhase = 0.0f;                 // 0..1, the oscillator's own phase
     float oscEnvelope = 0.0f;              // per-landing decay, audio thread only
     float oscGate = 0.0f;                  // click-free fade to the switch's state

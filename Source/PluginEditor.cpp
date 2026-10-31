@@ -772,6 +772,13 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     themeChoice = j37panel::rememberedThemeChoice();
     j37panel::userPalette = j37panel::rememberedUserPalette();
 
+    // The OSC generator exists only while the panel does: its hops are this
+    // editor's timer, so with no window there is no clock and the last note would
+    // sit there droning. Announced here rather than in a setup phase because it is
+    // about the window's LIFETIME, not about any control - and undone first thing
+    // in the destructor, for the same reason.
+    audioProcessor.setOscPanelOpen (true);
+
     // One call per phase, in the order the panel has always been built in. The
     // window and its size come first because setSize() runs resized(), which is why
     // the tab build below can rely on the editor already having a size; the
@@ -858,6 +865,10 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     // theme choice itself is written when the key is pressed; this catches the colours.
     // See rememberPanelAppearance() in Source/GUI/EditorTheme.cpp.
     rememberPanelAppearance();
+
+    // The window is going away, so the ball stops hopping: silence the generator
+    // before the clock that lands it is stopped.
+    audioProcessor.setOscPanelOpen (false);
 
     stopTimer();
 

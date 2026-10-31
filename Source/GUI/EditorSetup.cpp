@@ -732,13 +732,13 @@ void FirstAudioProcessorEditor::setUpDeckSelectors() {
     // assumption that both default to zero - a day the widget starts somewhere
     // else is a day the panel would show one note and the engine play another.
     audioProcessor.setOscNote(oscRing.sector(), false);
-    setTip(oscRing, "OSC's note ring: the ball hops clockwise around twelve "
-                    "sectors - C through B, one octave from C4 - and where it "
-                    "lands is the note the module plays. Press the ring to throw "
-                    "it into its next hop. The note is generated into the INPUT, "
-                    "so the machine you have dialled is what you hear it through; "
-                    "the OSC switch in the header mutes the generator and parks "
-                    "the ball.");
+    setTip(oscRing, "OSC's note ring: the ball hops around the INSIDE of the "
+                    "disc, from one landing spot to another - C through B, one "
+                    "octave from C4 - and the angle it comes down at is the note "
+                    "the module plays. Press the ring to throw it into its next "
+                    "hop. The note is generated into the INPUT, so the machine you "
+                    "have dialled is what you hear it through; the OSC switch in "
+                    "the header mutes the generator and parks the ball.");
 
     // The same tapeStockNameList() the choice parameter is built from, so the panel
     // cannot offer a stock the parameter would refuse to select. It did once: the
@@ -960,12 +960,13 @@ void FirstAudioProcessorEditor::setUpTopSwitches() {
     //  which is what keeps a generator out of a session that never asked for one.
     // ---------------------------------------------------------------------
     oscButton.setClickingTogglesState(true);
-    setTip(oscButton, "OSC - the deck's note generator. ON, the ring on the type "
-                      "row hops, and every note it lands on is generated into the "
-                      "machine's INPUT and published as /mibox/osc/note over OSC "
-                      "to 127.0.0.1:9000. OFF, the ball parks on the last note and "
-                      "nothing is generated. The note enters the chain, so INPUT, "
-                      "the machine and OUTPUT all shape it like any other source.");
+    setTip(oscButton, "OSC - the deck's note generator. ON, the ball hops from "
+                      "spot to spot INSIDE the ring on the type row, and every "
+                      "note it lands on is generated into the machine's INPUT and "
+                      "published as /mibox/osc/note over OSC to 127.0.0.1:9000. "
+                      "OFF, the ball parks on the last note and nothing is "
+                      "generated. The note enters the chain, so INPUT, the machine "
+                      "and OUTPUT all shape it like any other source.");
     oscButton.setLookAndFeel(&customLookAndFeel);
     oscAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         audioProcessor.parameters, "osc_on", oscButton);
