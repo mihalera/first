@@ -68,15 +68,15 @@ inline bool contains (int modeIndex, int semitoneFromTonic) noexcept
 }
 
 // -----------------------------------------------------------------------------
-//  The OSC ring's register and its two timing constants.
+//  The OSC ring's register.
 //
-//  They live here, beside the table that decides WHICH notes the ring holds,
+//  It lives here, beside the table that decides WHICH notes the ring holds,
 //  because two clocks lay the ring out now: the editor's ball while the panel is
-//  on screen, and the engine's own hop when the window is closed (the sequence
-//  must not stop with the window - see setOscPanelOpen in PluginProcessor.h). If
-//  either side owned the range or the timings, the note the panel shows and the
-//  note the engine plays could disagree, which is the one thing a note selector
-//  may never do.
+//  on screen, and the engine's own step when the window is closed (the ball must
+//  not stop with the window - see setOscPanelOpen in PluginProcessor.h). If either
+//  side owned the range, the note the panel shows and the note the engine plays
+//  could disagree, which is the one thing a note selector may never do. The
+//  physics and its timings are in Source/OscBall.h, shared by the same two sides.
 //
 //  C3 to B5, fixed in absolute MIDI rather than "three octaves up from the
 //  tonic": a range that climbed with the key would put B major's top note near
@@ -86,9 +86,6 @@ inline bool contains (int modeIndex, int semitoneFromTonic) noexcept
 inline constexpr int ringLowestMidi = 48;                 // C3
 inline constexpr int ringHighestMidi = 83;                // B5
 inline constexpr int ringMaxNotes = ringHighestMidi - ringLowestMidi + 1;   // 36
-
-inline constexpr double ringHopSeconds = 0.30;            // one hop, spot to spot
-inline constexpr double ringRestSeconds = 0.55;           // the pause it lands into
 
 /** How many places the ring holds for a mode: 36 in CHROMATIC, 21 in each of the
     seven-note modes (MAJOR, MINOR, DORIAN), 15 in either pentatonic. The register

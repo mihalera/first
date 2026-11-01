@@ -21,9 +21,10 @@
 // rather than a file-local block in either - see its own banner.
 #include "DSP/HotPathMath.h"
 
-// The ring's register and hop timings, shared with the editor's widget: the note
-// the panel shows and the note the engine plays must come from one table, and
-// they do even while the window is closed and only the engine is left.
+// The ring's register, shared with the editor's widget: the note the panel shows
+// and the note the engine plays must come from one table, and they do even while
+// the window is closed and only the engine is left. The physics itself is
+// Source/OscBall.h, included by the processor header.
 #include "ScaleDegrees.h"
 
 // -----------------------------------------------------------------------------
@@ -552,26 +553,31 @@ FirstAudioProcessor::~FirstAudioProcessor()
 //  engine's state and the packet is the module's, so both belong with the object
 //  that outlives the window that asked for them.
 //
-//  The engine hops the ring itself when no editor exists (advanceOscSequence in
+//  The engine steps the same ball itself when no editor exists (advanceOscBall in
 //  ProcessorSignalPath.cpp), which is why the sector is kept here beside the
 //  note: it is the handoff between the two clocks, and it has to survive the
 //  window that wrote it.
 //==============================================================================
-void FirstAudioProcessor::setOscNote (int midiNote, bool retrigger) noexcept
+void FirstAudioProcessor::setOscNote (int midiNote, bool retrigger, float impactGain) noexcept
 {
     const auto note = juce::jlimit (0, 127, midiNote);
     oscNoteMidi.store (note, std::memory_order_relaxed);
 
+    // The wall hit's speed becomes the note's level here rather than in the audio
+    // callback: the mapping is OscBall's, so the editor and the engine cannot use
+    // two different curves for the same impact.
+    oscImpactGain.store (juce::jlimit (0.05f, 2.0f, impactGain), std::memory_order_relaxed);
+
     // Keep the ball's place with the note. While the panel is open this is how a
-    // landing becomes the engine's starting sector when the window closes; a
-    // note that is not in the current key's register leaves the sector alone.
+    // hit becomes the engine's starting sector when the window closes; a note that
+    // is not in the current key's register leaves the sector alone.
     if (const auto sector = j37::scale::ringSectorOfNote (getTuningTonic(), getTuningMode(), note);
         sector >= 0)
         oscSector.store (sector, std::memory_order_relaxed);
 
     // A counter, not a flag: the audio thread compares it with what it saw at the
-    // last block, so two landings inside one block both count and neither can be
-    // lost to a read that happens between the write and the flag's reset.
+    // last block, so two hits inside one block both count and neither can be lost
+    // to a read that happens between the write and the flag's reset.
     if (retrigger)
         oscPulse.fetch_add (1, std::memory_order_relaxed);
 }
@@ -583,8 +589,8 @@ void FirstAudioProcessor::publishOscState (bool noteChanged)
 
     const auto on = oscOnParam->load() >= 0.5f;
 
-    // A landing only matters while the module is running - with the switch off the
-    // ring parks and nothing is generated, so publishing a note would be a message
+    // A wall hit only matters while the module is running - with the switch off the
+    // ball freezes and nothing is generated, so publishing a note would be a message
     // about a sound nobody is making. The switch itself is the exception in the
     // other direction: the OFF packet is the one a client most needs to receive, so
     // it is sent whatever the state is.
@@ -681,6 +687,15 @@ void FirstAudioProcessor::changeProgramName (int, const juce::String&)
 void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerBlock)
 {
     sampleRate = static_cast<float> (sampleRateToUse);
+
+    // The OSC voice is tuned at the engine rate. Preparing it here also clears
+    // any tail from the previous session, so a host that changes rate does not
+    // carry a resonator tuned to the old one into the first block. The pulse
+    // counter is marked as seen: nothing that happened before this point is a
+    // strike the new session should sound.
+    oscVoice.prepare (sampleRateToUse);
+    oscGate = 0.0f;
+    oscSeenPulse = oscPulse.load (std::memory_order_relaxed);
 
     // The oversampling engines only depend on rate and block size, so they are
     // (re)built here. The parameter (if restored by a session) picks which one runs.

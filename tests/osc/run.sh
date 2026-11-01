@@ -8,9 +8,18 @@
 # plugin and constructed by nothing, so no build and no user can tell whether the
 # decoder pads a string correctly. That is what this runs - the codec against the
 # bytes the specification fixes, in both directions, plus the address surface's
-# refusals. No JUCE, no socket, no toolkit: Source/ is on the include path and the
-# headers are JUCE-free on purpose, so this is a few seconds of work on every pull
-# request rather than a manual instruction.
+# refusals. The ring's ball (Source/OscBall.h) is the other JUCE-free piece here:
+# its fixed step is what lets the editor and the engine agree, so the harness also
+# drives it for two minutes and pins the contact mapping and the gain curve.
+#
+# The modal voice (Source/DSP/ModalVoice.h) is the third JUCE-free piece. The
+# harness renders it at 48 and 32 kHz, checks the tail decays, that impact gain
+# scales it and that reset leaves nothing ringing - the properties a compile
+# cannot see and a listening test cannot localise.
+#
+# No JUCE, no socket, no toolkit: Source/ is on the include path and the headers
+# are JUCE-free on purpose, so this is a few seconds of work on every pull request
+# rather than a manual instruction.
 #
 # J37_SANITIZE=address,undefined rides along with the workflow's debug step, the same
 # way the other harnesses do - and here it earns its place in a different way from

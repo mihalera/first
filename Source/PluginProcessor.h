@@ -39,6 +39,16 @@
 // before the surface is switched on as a listener.
 #include "Net/OscSurface.h"
 
+// The OSC ring's ball, shared with the editor's widget. JUCE-free, fixed-step and
+// small enough for the audio thread: the engine and the panel step the same code,
+// so the note does not change character when the window does.
+#include "OscBall.h"
+
+// The OSC module's struck voice. A six-mode resonator bank rather than a sine:
+// JUCE-free and allocation-free, so the harness can render it and the audio
+// thread can run it without knowing about either.
+#include "DSP/ModalVoice.h"
+
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -343,26 +353,27 @@ public:
         it is the tape, the mix and the output trim the user dialled that shape it.
 
         Called from processTapeEngine after the BYPASS early-out, so a machine that
-        is switched out generates nothing. Its state is the three floats and the
-        counter declared beside `oscOnParam`, plus the hop-clock fields below them;
-        all of it belongs to the audio thread, except `oscSector`, which is the
-        handoff from the editor's clock. */
+        is switched out generates nothing. Its state is the atomics and the counter
+        declared beside `oscOnParam`, the modal voice and the ball physics below
+        them; all of it belongs to the audio thread, except the ball handoff and
+        `oscSector`, which are how the editor's clock passes the instrument over. */
     void mixOscillatorIntoInput (juce::dsp::AudioBlock<float>& block,
                                  float engineSampleRate, int channels);
 
-    /** The engine's own hop clock, for the time when no editor exists.
+    /** The engine's own physics clock, for the time when no editor exists.
 
         The ball's clock is normally the editor's timer, but the module must not
-        stop when the window closes: this advances the same rest/hop timings from
-        the last landed sector and publishes the note and the landing pulse the
-        oscillator renders. It reads TONIC and MODE itself so a key change while
-        the panel is closed retunes the sequence with it.
+        stop when the window closes: this steps the same fixed-step physics from
+        the state the editor handed over and publishes the note and the impact
+        pulse the oscillator renders. Gravity, the walls and the spin come from
+        Source/OscBall.h, which the editor includes too; a key change while the
+        panel is closed retunes the note under the sector the engine last hit.
 
         Audio thread only, stepped once per block with the block's duration in
         seconds. mixOscillatorIntoInput() calls it only while no editor is on
         screen - that editor's own timer is the clock then - and it never sends
         anything on the OSC wire, which is the message thread's business. */
-    void advanceOscSequence (double seconds) noexcept;
+    void advanceOscBall (double seconds) noexcept;
 
     /** The tape engine proper; processBlock routes into this, oversampled or not. */
     void processTapeEngine (juce::dsp::AudioBlock<float>, juce::MidiBuffer&);
@@ -797,7 +808,7 @@ public:
     //  OSC, from the editor.
     //
     //  The deck's ring picks a note by where its ball lands. These are the two
-    //  entry points that landing uses, and both run on the MESSAGE thread: one
+    //  entry points that hit uses, and both run on the MESSAGE thread: one
     //  hands the note to the audio thread, the other puts it on the wire.
     //==============================================================================
 
@@ -809,26 +820,29 @@ public:
         meaning anything above the first octave.
 
         The audio thread reads it as an atomic; `retrigger` is true when the ball
-        has just LANDED, which restarts the note's envelope so each landing is
+        has just HIT the wall, which starts a new modal strike so each impact is
         heard as its own note rather than as a pitch bend on the previous one.
+        `impactGain` is the impact speed mapped to a level multiplier by the same
+        header that ran the physics, so a hard wall hit is louder than a grazing
+        one and the editor does not have to agree with the engine about a curve.
 
-        Realtime-safe: two relaxed stores, no lock and no allocation. It is called
-        from the ring's landing callback, which runs on the message thread, and
+        Realtime-safe: four relaxed stores, no lock and no allocation. It is
+        called from the ring's callback, which runs on the message thread, and
         never from the audio thread. */
-    void setOscNote (int midiNote, bool retrigger) noexcept;
+    void setOscNote (int midiNote, bool retrigger, float impactGain) noexcept;
 
     /** Tells the module whether an editor is on screen and, with it, WHICH clock
-        is hopping the ball.
+        is stepping the ball.
 
-        While the panel is open its timer is the clock: the ring picks the next
-        sector when it lands and calls setOscNote(), and the engine only renders
-        the note it is handed. The window closing takes that clock away, but it
-        must not take the module with it - the generator is part of the machine,
-        not part of its window. So the engine takes over: advanceOscSequence()
-        runs the same rest/hop timings from the last sector and retunes itself
-        from TONIC and MODE. Opening a window again stops the engine's clock and
-        hands the sector to the new ring (getOscSector), so the panel shows the
-        note that is actually sounding rather than a ball parked elsewhere.
+        While the panel is open its timer is the clock: the ring steps the physics,
+        picks the sector at each contact and calls setOscNote(), and the engine only
+        renders the note it is handed. The window closing takes that clock away,
+        but it must not take the module with it - the generator is part of the
+        machine, not part of its window. So the engine takes over: it loads the
+        ball state the editor handed over (setOscBallState) and advanceOscBall()
+        keeps bouncing it, retuning from TONIC and MODE. Opening a window again
+        stops the engine's clock and hands both the ball state and the sector to
+        the new ring, so the panel shows what is actually sounding.
 
         Message thread only: the editor's constructor and destructor are the two
         callers. The flag is atomic because the audio thread reads it once per
@@ -838,16 +852,50 @@ public:
         oscPanelOpen.store (isOpen, std::memory_order_relaxed);
     }
 
-    /** The sector the ball last landed on, 0..noteCount()-1. The editor seats its
-        ball here when it is built, so a window opened after a spell with no panel
-        shows the note the engine has been playing. */
+    /** The sector the ball last hit, 0..noteCount()-1. The editor seeds its live
+        dot from this when it is built, so a window opened after a spell with no
+        panel shows the note the engine has been playing. */
     int getOscSector() const noexcept
     {
         return oscSector.load (std::memory_order_relaxed);
     }
 
+    /** The ball the engine is left with. The editor takes this when it opens and
+        writes it back with setOscBallState() when it closes, so the two clocks
+        continue one trajectory rather than each starting from its own idea of
+        where the ball was. */
+    j37::oscball::State getOscBallState() const noexcept
+    {
+        j37::oscball::State state;
+        state.x = oscBallX.load (std::memory_order_relaxed);
+        state.y = oscBallY.load (std::memory_order_relaxed);
+        state.vx = oscBallVX.load (std::memory_order_relaxed);
+        state.vy = oscBallVY.load (std::memory_order_relaxed);
+        state.angle = oscBallAngle.load (std::memory_order_relaxed);
+        state.angularVelocity = oscBallSpin.load (std::memory_order_relaxed);
+        state.accumulator = oscBallAccumulator.load (std::memory_order_relaxed);
+        state.randomState = oscBallRandom.load (std::memory_order_relaxed);
+        return state;
+    }
+
+    /** Hands the editor's ball back to the engine. The pending flag is the release
+        that tells the audio thread the eight relaxed values above it are complete;
+        it is consumed once, on the first block after the window closes. */
+    void setOscBallState (const j37::oscball::State& state) noexcept
+    {
+        oscBallX.store (state.x, std::memory_order_relaxed);
+        oscBallY.store (state.y, std::memory_order_relaxed);
+        oscBallVX.store (state.vx, std::memory_order_relaxed);
+        oscBallVY.store (state.vy, std::memory_order_relaxed);
+        oscBallAngle.store (state.angle, std::memory_order_relaxed);
+        oscBallSpin.store (state.angularVelocity, std::memory_order_relaxed);
+        oscBallAccumulator.store (state.accumulator, std::memory_order_relaxed);
+        oscBallRandom.store (state.randomState, std::memory_order_relaxed);
+        oscBallPending.store (true, std::memory_order_release);
+    }
+
     /** True while the OSC module is switched on. The panel reads this every frame
-        to decide whether the ring is hopping, and the engine reads the parameter
+        to decide whether the ring is bouncing, and the engine reads the parameter
         itself - this is the panel's view, not the machine's. */
     bool getOscEnabled() const noexcept
     {
@@ -1164,44 +1212,52 @@ private:
     // -----------------------------------------------------------------------
     //  OSC, the note generator on the deck.
     //
-    //  The three fields below are the module's whole state and they live in two
-    //  threads with a deliberate split: the two atomics are written by the editor's
-    //  timer (the message thread) and read once per block or once per landing by
-    //  the audio thread; the three floats are owned by the audio thread alone and
-    //  are never touched from outside it. `oscPulse` is a COUNTER rather than a
-    //  bool on purpose - a bool can be missed if a landing arrives while the last
-    //  one is still being read, and a counter only has to be compared with what
-    //  was seen before.
+    //  The atomics below are the module's message-to-audio surface: the editor's
+    //  timer writes them (the message thread) and the audio thread reads them once
+    //  per block or once per hit. The voice and gate fields further down are owned
+    //  by the audio thread alone and are never touched from outside it. `oscPulse`
+    //  is a COUNTER rather than a bool on purpose - a bool can be missed if a hit
+    //  arrives while the last one is still being read, and a counter only has to be
+    //  compared with what was seen before.
     // -----------------------------------------------------------------------
     std::atomic<float>* oscOnParam = nullptr;
     std::atomic<int> oscNoteMidi { 60 };   // absolute MIDI note, 60 = C4
-    std::atomic<int> oscPulse { 0 };       // bumped on every landing
-    // True while an editor is on screen, i.e. while ITS timer is hopping the
-    // ball. With no editor the engine's own clock runs the sequence instead (see
-    // advanceOscSequence), so this chooses the clock - it is never a mute.
+    std::atomic<int> oscPulse { 0 };       // bumped on every wall hit
+    std::atomic<float> oscImpactGain { 0.80f };   // wall speed mapped to a level
+    // True while an editor is on screen, i.e. while ITS timer is stepping the
+    // ball. With no editor the engine's own clock runs the physics instead (see
+    // advanceOscBall), so this chooses the clock - it is never a mute.
     std::atomic<bool> oscPanelOpen { false };
 
-    // The sector the ball last landed on. Written from both sides of the handoff:
-    // setOscNote() stores it as the editor's ball lands, the engine stores it as
-    // its own clock hops, and a new editor reads it to seat the ball on the note
-    // that is sounding.
+    // The sector the ball last hit. Written from both sides of the handoff:
+    // setOscNote() stores it as the editor's ball hits, the engine stores it as
+    // its own clock hits, and a new editor reads it for its live dot.
     std::atomic<int> oscSector { 0 };
 
-    // The engine's hop clock, audio thread only, in seconds and stepped once per
-    // block. It runs only while no editor exists; while one does these are kept
-    // parked at a full rest so the take-over starts with the note that is already
-    // sounding rather than in the middle of a hop.
-    double oscRestLeft = 0.0;
-    double oscHopLeft = 0.0;
-    bool oscSequencerHopping = false;
-    int oscSequencerTarget = 0;
+    // The ball handoff. The editor writes all eight and then raises the pending
+    // flag; the audio thread copies them into its own state once, so it never
+    // reads a half-written trajectory. While the engine is bouncing it writes
+    // the same eight back, which is what a new editor opens with.
+    std::atomic<float> oscBallX { 0.0f };
+    std::atomic<float> oscBallY { -0.62f };
+    std::atomic<float> oscBallVX { 0.85f };
+    std::atomic<float> oscBallVY { 0.0f };
+    std::atomic<float> oscBallAngle { 0.35f };
+    std::atomic<float> oscBallSpin { 2.20f };
+    std::atomic<float> oscBallAccumulator { 0.0f };
+    std::atomic<std::uint32_t> oscBallRandom { 0x9e3779b9u };
+    std::atomic<bool> oscBallPending { false };
+
+    // The engine's own ball, audio thread only. It runs only while no editor
+    // exists; while one does, the state sits at whatever the editor last handed
+    // over, so the take-over continues the same bounce rather than starting a new
+    // one.
+    j37::oscball::State oscBall;
     int oscSequencerTonic = -1;
     int oscSequencerMode = -1;
-    juce::Random oscSequencerRandom;
-    float oscPhase = 0.0f;                 // 0..1, the oscillator's own phase
-    float oscEnvelope = 0.0f;              // per-landing decay, audio thread only
+    j37dsp::ModalVoice oscVoice;            // the struck voice, audio thread only
     float oscGate = 0.0f;                  // click-free fade to the switch's state
-    int oscSeenPulse = 0;                  // the last landing this block acted on
+    int oscSeenPulse = 0;                  // the last wall hit this block acted on
 
     // The module's own wire: a datagram socket that is never bound (so it can never
     // be a listener and never takes a port from anyone) and is written to only from

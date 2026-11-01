@@ -717,43 +717,45 @@ void FirstAudioProcessorEditor::setUpDeckSelectors() {
     //  checked against the header's list by tests/layout, and a widget that
     //  needs one is a widget that belongs beside an existing one.
     //
-    //  The callback is the whole module in three lines - the landing becomes the
-    //  engine's note (a relaxed store, realtime-safe) and a packet on the wire
-    //  built by the codec in Source/Net. It publishes rather than being asked to:
-    //  the landing is the event, and the panel is the only thing that knows it
-    //  happened.
+    //  The callback is the whole module in three lines - the wall hit becomes the
+    //  engine's note and its level (relaxed stores, realtime-safe) and a packet
+    //  on the wire built by the codec in Source/Net. It publishes rather than
+    //  being asked to: the hit is the event, and the panel is the only thing that
+    //  knows it happened.
     // ---------------------------------------------------------------------
     addAndMakeVisible(oscRing);
     // The ring hands over the SECTOR, not the pitch: the sector is a position in
     // the key it is drawing, and the key can change without the ball moving. The
     // MIDI note is asked of the ring, which is the one object that knows both.
-    oscRing.onLanded = [this](int sector) {
-        audioProcessor.setOscNote(oscRing.noteAt(sector), true);
+    oscRing.onLanded = [this](int sector, float impactGain) {
+        audioProcessor.setOscNote(oscRing.noteAt(sector), true, impactGain);
         audioProcessor.publishOscState(true);
     };
     //  A press on the ring is a control being used, so it answers with the same
-    //  click as the switch beside it. Only a press that actually throws the ball
+    //  click as the switch beside it. Only a press that actually shoves the ball
     //  fires it (the widget does nothing while the module is off).
     oscRing.onPress = [this] { uiSounds.trigger (UiSoundEngine::Voice::click); };
-    // Seat the ring on the key it is drawing, then on the SECTOR the engine is
-    // sounding: while this editor did not exist the engine kept the sequence
-    // running on its own clock, so opening the window must not jump the ball back
+    // Seat the ring on the key it is drawing, then on the SECTOR and the BALL
+    // the engine is sounding: while this editor did not exist the engine kept
+    // bouncing on its own clock, so opening the window must not jump the ball back
     // to where the previous window left it. Then publish the ring's note back, so
     // a key change while no panel existed has already retuned the engine and the
     // two agree before the first frame.
     oscRing.setKey (audioProcessor.getTuningTonic(), audioProcessor.getTuningMode());
     oscRing.setSector (audioProcessor.getOscSector());
-    audioProcessor.setOscNote(oscRing.noteAt(oscRing.sector()), false);
-    setTip(oscRing, "OSC's note ring: the ball hops around the INSIDE of the "
-                    "disc, from one landing spot to another, and the angle it "
-                    "comes down at is the note the module plays. The ring holds "
-                    "the notes of the selected KEY - the AUTOTUNE tab's TONIC and "
-                    "MODE - across three octaves, C3 to B5, so every landing is "
-                    "in key and a run of hops has a register as well as a pitch. "
-                    "Press the ring to throw it into its next hop. The note is "
-                    "generated into the INPUT, so the machine you have dialled is "
-                    "what you hear it through; the OSC switch in the header mutes "
-                    "the generator and parks the ball.");
+    oscRing.setBallState (audioProcessor.getOscBallState());
+    audioProcessor.setOscNote(oscRing.noteAt(oscRing.sector()), false, 0.80f);
+    setTip(oscRing, "OSC's note ring: the ball falls under gravity and bounces "
+                    "around the INSIDE of the disc, and the angle it hits the "
+                    "edge at is the note the module plays - a harder hit is a "
+                    "louder note. The ring holds the notes of the selected KEY - "
+                    "the AUTOTUNE tab's TONIC and MODE - across three octaves, C3 "
+                    "to B5, so every contact is in key and a run of bounces has a "
+                    "register as well as a pitch. Press the ring to shove the ball "
+                    "back across the disc. The note is generated into the INPUT, "
+                    "so the machine you have dialled is what you hear it through; "
+                    "the OSC switch in the header mutes the generator and freezes "
+                    "the ball.");
 
     // The same tapeStockNameList() the choice parameter is built from, so the panel
     // cannot offer a stock the parameter would refuse to select. It did once: the
@@ -968,22 +970,22 @@ void FirstAudioProcessorEditor::setUpTopSwitches() {
     //  KIND of thing: a switch that changes what the whole machine is doing
     //  rather than a knob on one stage of it. What it switches is the note
     //  generator on the deck - the ring at the right of the type row - and, with
-    //  it, the publishing of every landing as an OSC message.
+    //  it, the publishing of every wall hit as an OSC message.
     //
     //  It is NOT the ring's power in the panel sense: with the switch off the
     //  ring is still there and still visible. It mutes what the engine generates,
     //  which is what keeps a generator out of a session that never asked for one.
     // ---------------------------------------------------------------------
     oscButton.setClickingTogglesState(true);
-    setTip(oscButton, "OSC - the deck's note generator. ON, the ball hops from "
-                      "spot to spot INSIDE the ring on the type row - the notes "
-                      "of the selected TONIC and MODE across three octaves - and "
-                      "every note it lands on is generated into the machine's "
-                      "INPUT and published as /mibox/osc/note over OSC to "
-                      "127.0.0.1:9000, as a MIDI note number. OFF, the ball parks "
-                      "on the last note and nothing is generated. The note enters "
-                      "the chain, so INPUT, the machine and OUTPUT all shape it "
-                      "like any other source.");
+    setTip(oscButton, "OSC - the deck's note generator. ON, the ball falls under "
+                      "gravity and bounces around INSIDE the ring on the type row - "
+                      "the notes of the selected TONIC and MODE across three "
+                      "octaves - and the edge it hits plays that note into the "
+                      "machine's INPUT and publishes it as /mibox/osc/note over "
+                      "OSC to 127.0.0.1:9000, as a MIDI note number. A harder hit "
+                      "is a louder note. OFF, the ball freezes and nothing is "
+                      "generated. The note enters the chain, so INPUT, the machine "
+                      "and OUTPUT all shape it like any other source.");
     oscButton.setLookAndFeel(&customLookAndFeel);
     oscAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         audioProcessor.parameters, "osc_on", oscButton);

@@ -628,15 +628,15 @@ void FirstAudioProcessorEditor::timerCallback() {
     //
     //  The ring is advanced on the SAME clock as the rest of the animated
     //  furniture - the delta the look and feel has just been given - so its
-    //  hops run at the panel's frame rate rather than at a second timer's.
+    //  steps run at the panel's frame rate rather than at a second timer's.
     //  This clock exists only while the editor does: when the window closes
-    //  the processor keeps hopping from the last sector on its own clock
-    //  (advanceOscSequence in ProcessorSignalPath.cpp).
+    //  the processor keeps stepping the same ball on its own clock
+    //  (advanceOscBall in ProcessorSignalPath.cpp).
     //
     //  The state is published on the CHANGE, not every frame: the switch is
     //  what a client listening on the other end of the wire needs to see, and
     //  thirty "still on" packets a second would be a socket that never rests
-    //  for a value that has not moved. The landing path publishes its own
+    //  for a value that has not moved. The impact path publishes its own
     //  packet from the widget's callback (see setUpDeckSelectors).
     // ------------------------------------------------------------------
     const auto oscOn = audioProcessor.getOscEnabled();

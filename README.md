@@ -1012,40 +1012,53 @@ it.
 
 A note generator that lives on the deck: a ring of the selected key's notes - the
 degrees of the AUTOTUNE tab's **TONIC** and **MODE** across three octaves, C3 to B5 -
-with a ball that hops around the inside of the disc, and where it lands is the note that
-sounds. The ring therefore follows the key: seven places per octave in MAJOR, five in a
+with a ball that falls under gravity and bounces off the inside of the disc. The angle
+of each contact is the note that sounds, and the harder the impact the louder it is
+played. The ring therefore follows the key: seven places per octave in MAJOR, five in a
 pentatonic, twelve in CHROMATIC, and changing TONIC or MODE re-derives them and retunes
-the note the ball is resting on. It stands at the right of the type row, beside the
-TYPE selectors, and the switch that owns it (**OSC**) is the fifth cell of the header's
-switch row, next to BYPASS / DELTA / POLARITY / AUTO GAIN. Press the ring to throw the
-ball into its next hop.
+the note under the sector the ball last hit. It stands at the right of the type row,
+beside the TYPE selectors, and the switch that owns it (**OSC**) is the fifth cell of
+the header's switch row, next to BYPASS / DELTA / POLARITY / AUTO GAIN. Press the ring
+to shove the ball back across the disc. A short fading trail follows the ball, an
+accent ring flashes at each contact, and the mark on the ball turns with the spin the
+collision gives it - the motion is drawn, not just implied by the lit sector.
 
 Both the corrector and the ring read one table (`Source/ScaleDegrees.h`), so the scale
-the pitch correction snaps to and the scale the generator plays cannot drift apart.
+the pitch correction snaps to and the scale the generator plays cannot drift apart. The
+physics is one shared header too (`Source/OscBall.h`): gravity, restitution, the fixed
+240 Hz step and the spin that keeps the ball off the floor are the same for the editor
+and the engine.
 
-**The sequence is part of the machine, not of the window.** While an editor is open its
-frame timer hops the ball and hands every landing to the processor. Closing the window
-takes that timer away, so the processor runs the same rest/hop timings itself
-(`advanceOscSequence()` in `Source/ProcessorSignalPath.cpp`): it keeps its own sector,
-reads TONIC and MODE so a key change with no panel still retunes the sequence, and
-reopening the window seats the ball on the sector that is sounding. Closing the panel
+**The bounce is part of the machine, not of the window.** While an editor is open its
+frame timer steps the ball and hands every wall hit to the processor. Closing the window
+takes that timer away, so the processor steps the same physics itself
+(`advanceOscBall()` in `Source/ProcessorSignalPath.cpp`) from the state the editor hands
+over - position, velocity, rotation, the unspent fraction of a step and the spin's
+generator. The ball is projected back inside the rim after every fixed step and its
+speed is clamped, so a hard hit cannot tunnel through the wall; the contact angle is
+still what chooses the note. It keeps its own sector, reads TONIC and MODE so a key
+change with no panel still retunes
+the note, and reopening the window continues the same bounce. Closing the panel
 therefore does not freeze or silence the module - only the editor stops drawing it.
 The OSC wire is the one piece that still needs the editor: packets are published from
 the message thread that draws the panel, so a closed window keeps playing but stops
 sending until a window is opened again.
 
-**The tone enters at the INPUT, not at the output.** The oscillator is summed into the
+**The tone enters at the INPUT, not at the output.** The generator is summed into the
 block before any stage runs, so INPUT trims it, the machine colours it, MIX blends it
 and the output stage finishes it - the generator sounds like the machine it is standing
-in rather than like a sine pasted over the top of one. Each landing restarts the note's
-envelope, so a hop is heard as a new note rather than as a bend from the previous one;
-the switch fades the tone over about fifteen milliseconds, so pressing it never clicks.
-OFF parks the ball on the last note and generates nothing. Switching it back on hands that
-note to the engine before the first hop, so the tone starts on the dot the ball is resting
-on - including after TONIC or MODE was changed while the module was off, when that dot is
-no longer the note the engine was holding.
+in rather than like a tone pasted over the top of one. The note itself is a six-mode
+struck-bar bank (`Source/DSP/ModalVoice.h`): the fundamental plus five inharmonic
+partials, higher modes decaying faster and opening further on a hard hit, so the ring
+sounds struck rather than tuned. Each wall hit starts a new modal strike, so a contact
+is heard as a new note rather than as a bend from the previous one; the switch fades
+the tone over about fifteen milliseconds, so pressing it never clicks. OFF freezes the
+ball and generates nothing. Switching it back on gives a resting ball a shove and hands
+over the note under it before the first new impact, so the tone starts on the sector the
+ball last hit - including after TONIC or MODE was changed while the module was off,
+when that sector is no longer the note the engine was holding.
 
-**The module speaks OSC.** Every landing is published as `/mibox/osc/note` - the ABSOLUTE
+**The module speaks OSC.** Every wall hit is published as `/mibox/osc/note` - the ABSOLUTE
 MIDI note number, sent as the normalised float over the slot's 0..127 range, so a client
 multiplies by 127 and reads the pitch directly instead of counting semitones above C4 -
 and the switch state as `/mibox/osc/on`, encoded by the codec in `Source/Net/` and sent
