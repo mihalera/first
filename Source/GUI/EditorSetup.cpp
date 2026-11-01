@@ -735,13 +735,14 @@ void FirstAudioProcessorEditor::setUpDeckSelectors() {
     //  click as the switch beside it. Only a press that actually throws the ball
     //  fires it (the widget does nothing while the module is off).
     oscRing.onPress = [this] { uiSounds.trigger (UiSoundEngine::Voice::click); };
-    // Seed the engine from the ring's own starting sector rather than from an
-    // assumption that both default to zero - a day the widget starts somewhere
-    // else is a day the panel would show one note and the engine play another.
-    // Seat the engine on the note the ring is showing, and seat the ring on the
-    // key it is showing: the parameters may have been saved on the AUTOTUNE tab
-    // long before this window opened, so the default C chromatic is not assumed.
+    // Seat the ring on the key it is drawing, then on the SECTOR the engine is
+    // sounding: while this editor did not exist the engine kept the sequence
+    // running on its own clock, so opening the window must not jump the ball back
+    // to where the previous window left it. Then publish the ring's note back, so
+    // a key change while no panel existed has already retuned the engine and the
+    // two agree before the first frame.
     oscRing.setKey (audioProcessor.getTuningTonic(), audioProcessor.getTuningMode());
+    oscRing.setSector (audioProcessor.getOscSector());
     audioProcessor.setOscNote(oscRing.noteAt(oscRing.sector()), false);
     setTip(oscRing, "OSC's note ring: the ball hops around the INSIDE of the "
                     "disc, from one landing spot to another, and the angle it "

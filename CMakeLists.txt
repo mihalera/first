@@ -336,13 +336,25 @@ juce_add_plugin(first
     PRODUCT_NAME                "MiBoX"
     DESCRIPTION                 "Nonlinear analog tape saturation and magnetic coloration"
     FORMATS                     ${J37_PLUGIN_FORMATS}
+
+    # An EFFECT first: the identity, the bus layout and every saved session are
+    # the effect's, and IS_SYNTH stays FALSE so a host keeps handing it audio
+    # input. The second category is the "also" the user asked for rather than a
+    # replacement: Fx|Instrument is Steinberg's own value for an effect a host may
+    # load as an instrument too (Vst::PlugType::kInstrument), so hosts that list
+    # VSTi entries offer MiBoX there as well as under FX. The second category is
+    # additive: FX stays the main one and no FX entry goes away. NEEDS_MIDI_INPUT
+    # is what an instrument instance needs to be offered at all.
+    #
+    # AU has ONE main type per plugin and no way to be both an effect and a music
+    # device, so it stays kAudioUnitType_Effect; VSTi is a VST3 category.
     IS_SYNTH                    FALSE
-    NEEDS_MIDI_INPUT            FALSE
+    NEEDS_MIDI_INPUT            TRUE
     NEEDS_MIDI_OUTPUT           FALSE
     IS_MIDI_EFFECT              FALSE
     EDITOR_WANTS_KEYBOARD_FOCUS FALSE
     COPY_PLUGIN_AFTER_BUILD     ${COPY_PLUGIN_AFTER_BUILD}
-    VST3_CATEGORIES             Fx
+    VST3_CATEGORIES             Fx Instrument
     AU_MAIN_TYPE                kAudioUnitType_Effect)
 
 # ------------------------------------------------------------------------------
@@ -425,8 +437,9 @@ j37_apply_thirdparty_warnings(first)
 #
 #  The features are CLAP's own vocabulary - audio-effect, distortion, stereo -
 #  and they are what a host filters and sorts by. `instrument` is notably NOT
-#  among them: this is an insert effect, and a host that offered it as a synth
-#  would be offering a channel with no note input.
+#  among them: CLAP has no "effect that is also an instrument" middle ground, and
+#  a host that offered this one as a synth would be offering a channel with no
+#  note input. The dual listing above is VST3's, where Steinberg defines it.
 # ------------------------------------------------------------------------------
 if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
     clap_juce_extensions_plugin(TARGET first

@@ -1023,6 +1023,17 @@ ball into its next hop.
 Both the corrector and the ring read one table (`Source/ScaleDegrees.h`), so the scale
 the pitch correction snaps to and the scale the generator plays cannot drift apart.
 
+**The sequence is part of the machine, not of the window.** While an editor is open its
+frame timer hops the ball and hands every landing to the processor. Closing the window
+takes that timer away, so the processor runs the same rest/hop timings itself
+(`advanceOscSequence()` in `Source/ProcessorSignalPath.cpp`): it keeps its own sector,
+reads TONIC and MODE so a key change with no panel still retunes the sequence, and
+reopening the window seats the ball on the sector that is sounding. Closing the panel
+therefore does not freeze or silence the module - only the editor stops drawing it.
+The OSC wire is the one piece that still needs the editor: packets are published from
+the message thread that draws the panel, so a closed window keeps playing but stops
+sending until a window is opened again.
+
 **The tone enters at the INPUT, not at the output.** The oscillator is summed into the
 block before any stage runs, so INPUT trims it, the machine colours it, MIX blends it
 and the output stage finishes it - the generator sounds like the machine it is standing
@@ -1357,6 +1368,16 @@ AU and AUv3 are macOS-only formats. JUCE compiles them to nothing on Windows, wh
 the Windows build produces VST3 and CLAP only - those are the formats that exist there. The
 single `FORMATS` list in `CMakeLists.txt` is shared by both platforms and JUCE selects what
 each one can build.
+
+On VST3 the plugin is categorised **`Fx|Instrument`**: it remains the audio effect it
+has always been (its identity, bus layout and saved sessions are the effect's, and
+`IS_SYNTH` stays `FALSE`), and hosts that keep a separate instrument list offer the same
+binary there as well. `NEEDS_MIDI_INPUT` is declared for those instrument instances. As
+with every VST3 category, `Fx|Instrument` means an **effect that can also be loaded as an
+instrument**, not a replacement for the FX entry. AU has one main type per plugin and
+stays `kAudioUnitType_Effect`; CLAP keeps its `audio-effect` feature, because CLAP has no
+equivalent "effect that is also an instrument" category and a host would otherwise offer
+it as a synth with no note input.
 
 **CLAP is not in that list, and cannot be.** JUCE 9.0.4's plugin kinds are AAX, AU, LV2,
 Standalone, Unity and VST3; a `FORMATS CLAP` entry is silently intersected away, leaving a

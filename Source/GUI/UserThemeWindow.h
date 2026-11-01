@@ -532,7 +532,9 @@ inline juce::Image defaultWindowIcon (const UiPalette &palette, int side = 32)
     const auto circle = area.reduced (static_cast<float> (side) * 0.18f);
     g.setColour (palette.accent);
     g.drawEllipse (circle, juce::jmax (1.2f, static_cast<float> (side) * 0.07f));
-    g.fillEllipse (circle.getCentreX() - side * 0.06f, circle.getCentreY() - side * 0.06f,
+    const auto hubOffset = static_cast<float> (side) * 0.06f;
+
+    g.fillEllipse (circle.getCentreX() - hubOffset, circle.getCentreY() - hubOffset,
                    static_cast<float> (side) * 0.12f, static_cast<float> (side) * 0.12f);
 
     return icon;

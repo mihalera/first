@@ -1506,7 +1506,6 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         float attackStep = 0.0f;
         float clickLevel = 0.5f;
         float noiseShare = 0.35f;
-        float pingRatio = 4.3f;
         float pan = 0.0f;
         double deviceRate = 44100.0;
 

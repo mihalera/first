@@ -46,6 +46,16 @@
 //  second clock to keep in step with the first, for an animation that does not
 //  deserve one.
 //
+//  WHAT HAPPENS WHEN THE WINDOW CLOSES. The ring's clock is the editor's timer,
+//  so it disappears with the window - but the module must not. The last sector
+//  the ball landed on has already been handed to the processor (setOscNote), and
+//  the processor keeps hopping from there on its own clock while no editor
+//  exists (advanceOscSequence in ProcessorSignalPath.cpp). A new editor asks for
+//  that sector (getOscSector) and seats the ball on it, so reopening the window
+//  shows the note that is actually sounding rather than a ball parked somewhere
+//  else. The widget therefore draws the editor's view; it is not the machine's
+//  only clock.
+//
 //  WHAT THE SWITCH DOES TO IT. OSC off parks the ball on the spot it is over and
 //  stops the announcements: the module is not generating, so a ball hopping to
 //  notes nobody hears would be a widget out of step with the machine. The ball
@@ -191,6 +201,21 @@ public:
             restLeft = 0.0f;   // the first hop comes straight away
         }
 
+        repaint();
+    }
+
+    /** Seats the ball on `sector` without announcing it or starting a hop. The
+        editor calls this with the processor's sector when it is built: while no
+        window was open the engine kept the sequence running, so the ball has to
+        come back to where the sound is, not to where this widget's own clock
+        happened to stop. */
+    void setSector (int sector) noexcept
+    {
+        currentSector = juce::jlimit (0, juce::jmax (0, noteTotal - 1), sector);
+        hopToSector = currentSector;
+        hopping = false;
+        hopElapsed = 0.0f;
+        ballAtRest = landingSpot (currentSector);
         repaint();
     }
 
@@ -351,35 +376,22 @@ public:
     }
 
 private:
-    // The ring's register: C3 to B5 inclusive. Fixed in absolute MIDI rather than
-    // "three octaves up from the tonic", because a range that climbed with the key
-    // would put B major's top note near 1.9 kHz and C major's near 1 kHz - the same
-    // control sounding like two different instruments depending on the key.
-    static constexpr int lowestMidi = 48;                                  // C3
-    static constexpr int highestMidi = 83;                                 // B5
-    static constexpr int maxNotes = highestMidi - lowestMidi + 1;          // 36
-
-    static constexpr double hopSeconds = 0.30;   // one hop, spot to spot
-    static constexpr double restSeconds = 0.55;  // the pause it lands into
+    // The register and the timings come from Source/ScaleDegrees.h, which the
+    // processor reads too: while the window is closed the engine hops the same
+    // ring on the same clock, and the two have to agree note for note.
+    static constexpr int maxNotes = j37::scale::ringMaxNotes;
+    static constexpr double hopSeconds = j37::scale::ringHopSeconds;
+    static constexpr double restSeconds = j37::scale::ringRestSeconds;
 
     /** Fills `notes` with every semitone in the register that the key contains:
         three octaves of the mode's degrees, ascending. CHROMATIC keeps all 36,
         MAJOR 21, a pentatonic 15 - the count IS the number of places on the ring. */
     void rebuildNotes() noexcept
     {
-        noteTotal = 0;
+        noteTotal = j37::scale::ringNoteCount (mode);
 
-        for (int midi = lowestMidi; midi <= highestMidi; ++midi)
-            if (j37::scale::contains (mode, midi - tonic))
-                notes[static_cast<std::size_t> (noteTotal++)] = midi;
-
-        // Every mode in the table has at least five degrees, so this cannot fire
-        // with three octaves of room; it is the guard for a table edited down.
-        if (noteTotal == 0)
-        {
-            notes[0] = lowestMidi;
-            noteTotal = 1;
-        }
+        for (int sector = 0; sector < noteTotal; ++sector)
+            notes[static_cast<std::size_t> (sector)] = j37::scale::ringNoteAt (tonic, mode, sector);
     }
 
     // Radians, sector 0 at the top, increasing clockwise - which is the direction
