@@ -788,11 +788,12 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     themeChoice = j37panel::rememberedThemeChoice();
     j37panel::userPalette = j37panel::rememberedUserPalette();
 
-    // The OSC generator exists only while the panel does: its hops are this
-    // editor's timer, so with no window there is no clock and the last note would
-    // sit there droning. Announced here rather than in a setup phase because it is
-    // about the window's LIFETIME, not about any control - and undone first thing
-    // in the destructor, for the same reason.
+    // This editor announces a CLOCK, not a lifetime: while the panel is on screen
+    // its timer hops the ring, and when it goes the engine keeps the same sequence
+    // running on its own clock (advanceOscSequence in ProcessorSignalPath.cpp).
+    // Announced here rather than in a setup phase because it is about the window's
+    // lifetime, not about any control - and undone first thing in the destructor,
+    // for the same reason.
     audioProcessor.setOscPanelOpen (true);
 
     // One call per phase, in the order the panel has always been built in. The
@@ -882,8 +883,9 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     // See rememberPanelAppearance() in Source/GUI/EditorTheme.cpp.
     rememberPanelAppearance();
 
-    // The window is going away, so the ball stops hopping: silence the generator
-    // before the clock that lands it is stopped.
+    // The window is going away, and with it the clock that hops the ball. Hand the
+    // sequence to the engine's clock rather than silencing it, before this timer is
+    // stopped - the module is part of the machine, not of its window.
     audioProcessor.setOscPanelOpen (false);
 
     stopTimer();

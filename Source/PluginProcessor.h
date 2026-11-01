@@ -343,11 +343,26 @@ public:
         it is the tape, the mix and the output trim the user dialled that shape it.
 
         Called from processTapeEngine after the BYPASS early-out, so a machine that
-        is switched out generates nothing. All of its state is the three floats and
-        the counter declared beside `oscOnParam`, and all of them belong to the
-        audio thread. */
+        is switched out generates nothing. Its state is the three floats and the
+        counter declared beside `oscOnParam`, plus the hop-clock fields below them;
+        all of it belongs to the audio thread, except `oscSector`, which is the
+        handoff from the editor's clock. */
     void mixOscillatorIntoInput (juce::dsp::AudioBlock<float>& block,
                                  float engineSampleRate, int channels);
+
+    /** The engine's own hop clock, for the time when no editor exists.
+
+        The ball's clock is normally the editor's timer, but the module must not
+        stop when the window closes: this advances the same rest/hop timings from
+        the last landed sector and publishes the note and the landing pulse the
+        oscillator renders. It reads TONIC and MODE itself so a key change while
+        the panel is closed retunes the sequence with it.
+
+        Audio thread only, stepped once per block with the block's duration in
+        seconds. mixOscillatorIntoInput() calls it only while no editor is on
+        screen - that editor's own timer is the clock then - and it never sends
+        anything on the OSC wire, which is the message thread's business. */
+    void advanceOscSequence (double seconds) noexcept;
 
     /** The tape engine proper; processBlock routes into this, oversampled or not. */
     void processTapeEngine (juce::dsp::AudioBlock<float>, juce::MidiBuffer&);
@@ -802,18 +817,33 @@ public:
         never from the audio thread. */
     void setOscNote (int midiNote, bool retrigger) noexcept;
 
-    /** Tells the module whether the panel that draws the ring is on screen.
+    /** Tells the module whether an editor is on screen and, with it, WHICH clock
+        is hopping the ball.
 
-        The ring's clock is the editor's timer, so with the window closed nothing
-        lands and the note the ball was last on would keep sounding - one frozen
-        note, the report that came back from a session. The generator therefore
-        stops when the panel goes away (the gate fades it over the same 15 ms a
-        switch uses) and starts again, on the ball's parked note, when the window
-        comes back. Message thread only: the constructor and destructor of the
-        editor are the two callers. */
+        While the panel is open its timer is the clock: the ring picks the next
+        sector when it lands and calls setOscNote(), and the engine only renders
+        the note it is handed. The window closing takes that clock away, but it
+        must not take the module with it - the generator is part of the machine,
+        not part of its window. So the engine takes over: advanceOscSequence()
+        runs the same rest/hop timings from the last sector and retunes itself
+        from TONIC and MODE. Opening a window again stops the engine's clock and
+        hands the sector to the new ring (getOscSector), so the panel shows the
+        note that is actually sounding rather than a ball parked elsewhere.
+
+        Message thread only: the editor's constructor and destructor are the two
+        callers. The flag is atomic because the audio thread reads it once per
+        block, not because it is shared state. */
     void setOscPanelOpen (bool isOpen) noexcept
     {
         oscPanelOpen.store (isOpen, std::memory_order_relaxed);
+    }
+
+    /** The sector the ball last landed on, 0..noteCount()-1. The editor seats its
+        ball here when it is built, so a window opened after a spell with no panel
+        shows the note the engine has been playing. */
+    int getOscSector() const noexcept
+    {
+        return oscSector.load (std::memory_order_relaxed);
     }
 
     /** True while the OSC module is switched on. The panel reads this every frame
@@ -1146,10 +1176,28 @@ private:
     std::atomic<float>* oscOnParam = nullptr;
     std::atomic<int> oscNoteMidi { 60 };   // absolute MIDI note, 60 = C4
     std::atomic<int> oscPulse { 0 };       // bumped on every landing
-    // True while an editor is on screen. The ring's hops are the editor's timer,
-    // so without a window there is nothing to land and the last note would sit
-    // there droning. The generator is gated on this as well as on the switch.
+    // True while an editor is on screen, i.e. while ITS timer is hopping the
+    // ball. With no editor the engine's own clock runs the sequence instead (see
+    // advanceOscSequence), so this chooses the clock - it is never a mute.
     std::atomic<bool> oscPanelOpen { false };
+
+    // The sector the ball last landed on. Written from both sides of the handoff:
+    // setOscNote() stores it as the editor's ball lands, the engine stores it as
+    // its own clock hops, and a new editor reads it to seat the ball on the note
+    // that is sounding.
+    std::atomic<int> oscSector { 0 };
+
+    // The engine's hop clock, audio thread only, in seconds and stepped once per
+    // block. It runs only while no editor exists; while one does these are kept
+    // parked at a full rest so the take-over starts with the note that is already
+    // sounding rather than in the middle of a hop.
+    double oscRestLeft = 0.0;
+    double oscHopLeft = 0.0;
+    bool oscSequencerHopping = false;
+    int oscSequencerTarget = 0;
+    int oscSequencerTonic = -1;
+    int oscSequencerMode = -1;
+    juce::Random oscSequencerRandom;
     float oscPhase = 0.0f;                 // 0..1, the oscillator's own phase
     float oscEnvelope = 0.0f;              // per-landing decay, audio thread only
     float oscGate = 0.0f;                  // click-free fade to the switch's state

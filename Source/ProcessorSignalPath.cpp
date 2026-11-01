@@ -863,21 +863,94 @@ void FirstAudioProcessor::configureBlockRateCoefficients (float engineSampleRate
 //      and the only discontinuity in the signal is the one the envelope is
 //      there to hide.
 //
-//  Everything it reads is an atomic written by the message thread and
-//  everything else is three floats owned here, so the audio thread takes no lock
-//  and allocates nothing. With the switch off the function returns before the
-//  loop once the gate has faded, which is what makes it free when the module is
-//  not in use.
+//  WHOSE CLOCK. With an editor on screen its timer lands the ball and calls
+//  setOscNote(); with no editor the engine hops the sequence itself, on the same
+//  rest/hop timings, in advanceOscSequence() above. Closing the window therefore
+//  changes the clock, never the sound.
+//
+//  Everything it reads is an atomic written by the message thread or by that
+//  clock and everything else is three floats owned here, so the audio thread
+//  takes no lock and allocates nothing. With the switch off the function returns
+//  before the loop once the gate has faded, which is what makes it free when the
+//  module is not in use.
 //==============================================================================
+void FirstAudioProcessor::advanceOscSequence (double seconds) noexcept
+{
+    const auto step = (seconds > 0.0 && std::isfinite (seconds)) ? seconds : 0.0;
+    const auto tonic = getTuningTonic();
+    const auto mode = juce::jlimit (0, j37::scale::modeCount - 1, getTuningMode());
+
+    // A key change while the window is closed retunes the note under the parked
+    // ball and starts the waiting period again: the hop in flight belonged to the
+    // old ring, and its target may not even exist in the new one.
+    if (tonic != oscSequencerTonic || mode != oscSequencerMode)
+    {
+        oscSequencerTonic = tonic;
+        oscSequencerMode = mode;
+        oscSequencerHopping = false;
+        oscRestLeft = j37::scale::ringRestSeconds;
+
+        const auto count = juce::jmax (1, j37::scale::ringNoteCount (mode));
+        const auto sector = juce::jlimit (0, count - 1, oscSector.load (std::memory_order_relaxed));
+        oscSector.store (sector, std::memory_order_relaxed);
+        oscNoteMidi.store (j37::scale::ringNoteAt (tonic, mode, sector), std::memory_order_relaxed);
+        oscPulse.fetch_add (1, std::memory_order_relaxed);
+    }
+
+    const auto count = juce::jmax (1, j37::scale::ringNoteCount (mode));
+
+    if (oscSequencerHopping)
+    {
+        oscHopLeft -= step;
+
+        if (oscHopLeft > 0.0)
+            return;
+
+        oscSequencerHopping = false;
+        oscSector.store (oscSequencerTarget, std::memory_order_relaxed);
+        oscNoteMidi.store (j37::scale::ringNoteAt (tonic, mode, oscSequencerTarget),
+                           std::memory_order_relaxed);
+        oscPulse.fetch_add (1, std::memory_order_relaxed);
+        oscRestLeft = j37::scale::ringRestSeconds;
+        return;
+    }
+
+    oscRestLeft -= step;
+
+    if (oscRestLeft > 0.0)
+        return;
+
+    // One to four sectors forward, never zero and never backwards - the same rule
+    // the editor's ball uses, so the sequence does not change character depending
+    // on whether a window happens to be open. Bounded by the ring's count, which
+    // the key change above has already clamped the sector against.
+    const auto steps = 1 + oscSequencerRandom.nextInt (4);
+    oscSequencerTarget = (oscSector.load (std::memory_order_relaxed) + steps) % count;
+    oscSequencerHopping = true;
+    oscHopLeft = j37::scale::ringHopSeconds;
+}
+
 void FirstAudioProcessor::mixOscillatorIntoInput (juce::dsp::AudioBlock<float>& block,
                                                   float engineSampleRate, int channels)
 {
-    // The switch AND the panel: `oscPanelOpen` is the editor saying it is on
-    // screen. A closed window stops the clock that lands the ball, so a module
-    // left switched on would hold one note forever - the gate fades it out with
-    // the panel and the ball's parked note comes back when the window does.
-    const bool running = oscOnParam != nullptr && oscOnParam->load() >= 0.5f
-                      && oscPanelOpen.load (std::memory_order_relaxed);
+    const bool running = oscOnParam != nullptr && oscOnParam->load() >= 0.5f;
+    const bool panelOpen = oscPanelOpen.load (std::memory_order_relaxed);
+
+    // With no editor the engine is the ring's clock - the module must keep
+    // playing when the window closes. While an editor is on screen its timer is
+    // the clock and this one is parked at a full rest, so switching over starts
+    // with the note already sounding rather than mid-hop.
+    if (running && ! panelOpen)
+    {
+        const auto blockSeconds = static_cast<double> (block.getNumSamples())
+                                / static_cast<double> (juce::jmax (1.0f, engineSampleRate));
+        advanceOscSequence (blockSeconds);
+    }
+    else
+    {
+        oscSequencerHopping = false;
+        oscRestLeft = j37::scale::ringRestSeconds;
+    }
 
     // A landing since the last block restarts the envelope. It is a counter read
     // rather than a flag: two landings inside one block collapse into one note,

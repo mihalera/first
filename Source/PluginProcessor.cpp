@@ -21,6 +21,11 @@
 // rather than a file-local block in either - see its own banner.
 #include "DSP/HotPathMath.h"
 
+// The ring's register and hop timings, shared with the editor's widget: the note
+// the panel shows and the note the engine plays must come from one table, and
+// they do even while the window is closed and only the engine is left.
+#include "ScaleDegrees.h"
+
 // -----------------------------------------------------------------------------
 //  OSC, STAGED: compiled here and STARTED NOWHERE.
 //
@@ -546,10 +551,23 @@ FirstAudioProcessor::~FirstAudioProcessor()
 //  whole reason these two are here rather than in the editor: the note is the
 //  engine's state and the packet is the module's, so both belong with the object
 //  that outlives the window that asked for them.
+//
+//  The engine hops the ring itself when no editor exists (advanceOscSequence in
+//  ProcessorSignalPath.cpp), which is why the sector is kept here beside the
+//  note: it is the handoff between the two clocks, and it has to survive the
+//  window that wrote it.
 //==============================================================================
 void FirstAudioProcessor::setOscNote (int midiNote, bool retrigger) noexcept
 {
-    oscNoteMidi.store (juce::jlimit (0, 127, midiNote), std::memory_order_relaxed);
+    const auto note = juce::jlimit (0, 127, midiNote);
+    oscNoteMidi.store (note, std::memory_order_relaxed);
+
+    // Keep the ball's place with the note. While the panel is open this is how a
+    // landing becomes the engine's starting sector when the window closes; a
+    // note that is not in the current key's register leaves the sector alone.
+    if (const auto sector = j37::scale::ringSectorOfNote (getTuningTonic(), getTuningMode(), note);
+        sector >= 0)
+        oscSector.store (sector, std::memory_order_relaxed);
 
     // A counter, not a flag: the audio thread compares it with what it saw at the
     // last block, so two landings inside one block both count and neither can be

@@ -122,28 +122,28 @@ void FirstAudioProcessorEditor::UiSoundEngine::trigger (Voice voice) noexcept
     // The ping's height over the body is the one part of the timbre that changes
     // with the voice rather than only with the hit: the switch is bright and
     // glassy, the knob is rounder, a key going down is woodiest of the four.
-    float pingRatio = 4.55f;
+    float pingHeight = 4.55f;
 
     switch (voice)
     {
         case Voice::click:
             bodyHz = 310.0f;  tailMs = 12.0f; click = 0.55f; clickTailMs = 2.6f;
-            noise = 0.35f;    amplitude = 0.105f; pingRatio = 4.70f;
+            noise = 0.35f;    amplitude = 0.105f; pingHeight = 4.70f;
             break;
 
         case Voice::detent:
             bodyHz = 245.0f;  tailMs = 16.0f; click = 0.40f; clickTailMs = 2.2f;
-            noise = 0.28f;    amplitude = 0.078f; pingRatio = 4.20f;
+            noise = 0.28f;    amplitude = 0.078f; pingHeight = 4.20f;
             break;
 
         case Voice::press:
             bodyHz = 165.0f;  tailMs = 20.0f; click = 0.30f; clickTailMs = 1.9f;
-            noise = 0.22f;    amplitude = 0.095f; pingRatio = 3.70f;
+            noise = 0.22f;    amplitude = 0.095f; pingHeight = 3.70f;
             break;
 
         case Voice::release:
             bodyHz = 195.0f;  tailMs = 18.0f; click = 0.34f; clickTailMs = 1.7f;
-            noise = 0.22f;    amplitude = 0.080f; pingRatio = 3.95f;
+            noise = 0.22f;    amplitude = 0.080f; pingHeight = 3.95f;
             break;
     }
 
@@ -159,7 +159,7 @@ void FirstAudioProcessorEditor::UiSoundEngine::trigger (Voice voice) noexcept
     clickTailMs *= 0.78f + random.nextFloat() * 0.46f;
     click *= 0.84f + random.nextFloat() * 0.34f;
     amplitude *= 0.87f + random.nextFloat() * 0.28f;
-    pingRatio *= 0.88f + random.nextFloat() * 0.24f;
+    pingHeight *= 0.88f + random.nextFloat() * 0.24f;
     noise = juce::jlimit (0.0f, 1.0f, noise + (random.nextFloat() - 0.5f) * 0.22f);
 
     // A busy machine ticks a touch higher, which is what `brightness` is for: the
@@ -174,7 +174,7 @@ void FirstAudioProcessorEditor::UiSoundEngine::trigger (Voice voice) noexcept
     pendingClick.store (click, std::memory_order_relaxed);
     pendingClickDecay.store (clickTailMs, std::memory_order_relaxed);
     pendingNoise.store (noise, std::memory_order_relaxed);
-    pendingPingRatio.store (pingRatio, std::memory_order_relaxed);
+    pendingPingRatio.store (pingHeight, std::memory_order_relaxed);
     pendingPan.store ((random.nextFloat() - 0.5f) * 0.44f, std::memory_order_relaxed);
 }
 

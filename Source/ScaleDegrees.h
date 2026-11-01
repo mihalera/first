@@ -67,5 +67,95 @@ inline bool contains (int modeIndex, int semitoneFromTonic) noexcept
     return false;
 }
 
+// -----------------------------------------------------------------------------
+//  The OSC ring's register and its two timing constants.
+//
+//  They live here, beside the table that decides WHICH notes the ring holds,
+//  because two clocks lay the ring out now: the editor's ball while the panel is
+//  on screen, and the engine's own hop when the window is closed (the sequence
+//  must not stop with the window - see setOscPanelOpen in PluginProcessor.h). If
+//  either side owned the range or the timings, the note the panel shows and the
+//  note the engine plays could disagree, which is the one thing a note selector
+//  may never do.
+//
+//  C3 to B5, fixed in absolute MIDI rather than "three octaves up from the
+//  tonic": a range that climbed with the key would put B major's top note near
+//  1.9 kHz and C major's near 1 kHz - the same control sounding like two
+//  different instruments depending on the key.
+// -----------------------------------------------------------------------------
+inline constexpr int ringLowestMidi = 48;                 // C3
+inline constexpr int ringHighestMidi = 83;                // B5
+inline constexpr int ringMaxNotes = ringHighestMidi - ringLowestMidi + 1;   // 36
+
+inline constexpr double ringHopSeconds = 0.30;            // one hop, spot to spot
+inline constexpr double ringRestSeconds = 0.55;           // the pause it lands into
+
+/** How many places the ring holds for a mode: 36 in CHROMATIC, 21 in each of the
+    seven-note modes (MAJOR, MINOR, DORIAN), 15 in either pentatonic. The register
+    is exactly three octaves, so every pitch class appears three times and the
+    count does not depend on the tonic. */
+inline int ringNoteCount (int modeIndex) noexcept
+{
+    const auto& degrees = offsets (modeIndex);
+    int degreesPerOctave = 0;
+
+    for (int slot = 0; slot < 12; ++slot)
+    {
+        if (degrees[static_cast<std::size_t> (slot)] < 0)
+            break;
+
+        ++degreesPerOctave;
+    }
+
+    return degreesPerOctave * 3;
+}
+
+/** The ring's `sector`-th note, ascending from C3: sector 0 is the lowest note
+    of the key in the register, not necessarily the tonic. Clamped, so a caller
+    holding a sector from before a key change still gets a note. */
+inline int ringNoteAt (int tonic, int modeIndex, int sector) noexcept
+{
+    const auto count = ringNoteCount (modeIndex);
+    const auto wanted = sector < 0 ? 0 : (sector >= count ? count - 1 : sector);
+    int index = 0;
+
+    for (int midi = ringLowestMidi; midi <= ringHighestMidi; ++midi)
+    {
+        if (! contains (modeIndex, midi - tonic))
+            continue;
+
+        if (index == wanted)
+            return midi;
+
+        ++index;
+    }
+
+    return ringLowestMidi;
+}
+
+/** The sector holding `midiNote`, or -1 when the note is not one of the ring's
+    notes for this key. Used to hand the ball's position from the editor to the
+    engine, and to recover it when a new editor opens. */
+inline int ringSectorOfNote (int tonic, int modeIndex, int midiNote) noexcept
+{
+    if (midiNote < ringLowestMidi || midiNote > ringHighestMidi)
+        return -1;
+
+    int index = 0;
+
+    for (int midi = ringLowestMidi; midi <= ringHighestMidi; ++midi)
+    {
+        if (! contains (modeIndex, midi - tonic))
+            continue;
+
+        if (midi == midiNote)
+            return index;
+
+        ++index;
+    }
+
+    return -1;
+}
+
 } // namespace scale
 } // namespace j37
