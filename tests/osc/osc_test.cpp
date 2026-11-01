@@ -11,14 +11,22 @@
 //  hand, byte by byte, is fed to the decoder, and a packet the encoder produced is
 //  compared against the bytes a client would have sent.
 //
+//  The ring's ball is here too. It is not part of the wire format, but it is the
+//  other JUCE-free piece the module depends on, and its fixed step is what lets
+//  the editor and the engine agree when the window closes. The checks drive it
+//  for two minutes, assert it stays inside the circle and visits the ring, and
+//  pin the contact-angle mapping and the impact-gain curve the note uses.
+//
 //  tests/osc/run.sh builds and runs this with no JUCE and no toolkit.
 // =============================================================================
 #include "Net/Osc.h"
 #include "Net/OscSurface.h"
+#include "OscBall.h"
 
 #include <cmath>
 #include <cstdint>
 #include <cstdio>
+#include <set>
 #include <string>
 #include <vector>
 
@@ -350,11 +358,83 @@ void checkSurface()
     check(surface.addressOf(7).empty(), "an address of a slot that does not exist is empty");
 }
 
+void checkBallPhysics()
+{
+    std::printf("\nring ball physics\n");
+
+    namespace ball = j37::oscball;
+
+    ball::State state;
+    check(ball::isFinite(state), "the launch state is finite");
+    check(std::sqrt(state.x * state.x + state.y * state.y) < 1.0f,
+          "the ball starts inside the ring");
+
+    int impacts = 0;
+    float slowest = 1.0e9f;
+    float fastest = 0.0f;
+    bool finite = true;
+    bool inside = true;
+    std::set<int> sectors;
+
+    for (int frame = 0; frame < 60 * 120; ++frame)
+    {
+        const auto result = ball::advance(state, 1.0f / 60.0f);
+        impacts += result.impactCount;
+        finite = finite && ball::isFinite(state);
+        inside = inside && std::sqrt(state.x * state.x + state.y * state.y) <= 1.0001f;
+
+        for (int i = 0; i < result.impactCount; ++i)
+        {
+            slowest = std::fmin(slowest, result.impacts[i].speed);
+            fastest = std::fmax(fastest, result.impacts[i].speed);
+            sectors.insert(ball::sectorForNormal(result.impacts[i].normalX,
+                                                 result.impacts[i].normalY, 21));
+        }
+    }
+
+    check(finite, "two minutes of 60 Hz steps stay finite");
+    check(inside, "the ball never escapes the unit circle");
+    check(impacts > 60, "it hits the wall often enough to be an instrument");
+    check(fastest > slowest + 0.20f, "impacts arrive at different speeds, so the ring has dynamics");
+    check(sectors.size() >= 18, "the bounce visits most of the ring's sectors");
+
+    check(ball::gainForImpactSpeed(0.0f) >= 0.349f
+          && ball::gainForImpactSpeed(10.0f) <= 1.251f,
+          "the impact gain is bounded at both ends");
+    check(ball::gainForImpactSpeed(0.5f) < ball::gainForImpactSpeed(2.5f),
+          "a harder hit is louder");
+
+    check(ball::sectorForNormal(0.0f, -1.0f, 36) == 0, "top normal is sector 0");
+    check(ball::sectorForNormal(1.0f, 0.0f, 36) == 9, "right normal is a quarter around");
+    check(ball::sectorForNormal(0.0f, 1.0f, 36) == 18, "bottom normal is half way");
+    check(ball::sectorForNormal(-1.0f, 0.0f, 36) == 27, "left normal is three quarters");
+    check(ball::sectorForNormal(0.0f, 1.0f, 21) == 11,
+          "an odd sector count still wraps without leaving the ring");
+
+    ball::State a;
+    ball::State b;
+
+    for (int frame = 0; frame < 120; ++frame)
+    {
+        ball::advance(a, 1.0f / 60.0f);
+        ball::advance(b, 1.0f / 60.0f);
+    }
+
+    check(a.x == b.x && a.y == b.y && a.vx == b.vx && a.vy == b.vy
+          && a.randomState == b.randomState,
+          "the same state and time produce the same ball");
+
+    ball::State broken;
+    broken.x = std::nanf("");
+    ball::sanitise(broken);
+    check(ball::isFinite(broken), "a NaN state is reset, not carried");
+}
+
 } // namespace
 
 int main()
 {
-    std::printf("OSC 1.0: the codec, the refusals and the address surface\n");
+    std::printf("OSC 1.0: the codec, the refusals, the address surface and the ring's ball\n");
 
     checkAddressGrammar();
     checkEncoding();
@@ -362,6 +442,7 @@ int main()
     checkRefusals();
     checkBundles();
     checkSurface();
+    checkBallPhysics();
 
     std::printf("\n%d check(s), %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

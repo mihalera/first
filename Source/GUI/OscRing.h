@@ -1,44 +1,45 @@
 // =============================================================================
-//  OSC on the deck: a circle of the key's notes and a ball that hops INSIDE it.
+//  OSC on the deck: a circle of the key's notes and a ball that BOUNCES inside it.
 //
 //  WHAT THE WIDGET IS. A disc divided into one place per note of the selected
 //  KEY - the degrees of TONIC and MODE (the AUTOTUNE tab's two selectors) across
-//  three octaves, C3 to B5 - with a ball bouncing from one landing spot to
-//  another across the middle of the disc. Where it lands IS the note: the angle
-//  of the landing point picks the place, and the dot for it lights up so the
-//  mapping is visible rather than implied.
+//  three octaves, C3 to B5 - with a ball that falls under gravity and rebounds
+//  off the edge. Where it HITS IS the note: the contact angle picks the place, and
+//  the dot for it lights up so the mapping is visible rather than implied. How
+//  hard it hits is how hard the note is played.
 //
 //  WHY THE NOTES FOLLOW THE KEY. The generator enters the machine at INPUT and is
 //  heard through whatever the deck is set to, so it is a musical source rather
 //  than a test tone: twelve chromatic sectors would put it in C whatever the user
-//  is playing in, and every landing on an out-of-key semitone would be the one
+//  is playing in, and every hit on an out-of-key semitone would be the one
 //  thing the rest of the panel spends a whole tab avoiding. The ring's notes are
 //  therefore the scale's own degrees - seven places per octave in MAJOR, five in
 //  a pentatonic, twelve in CHROMATIC - and a change of TONIC or MODE re-derives
-//  them and retunes the note the ball is resting on. Source/ScaleDegrees.h is the
+//  them and retunes the note under the ball's last contact. Source/ScaleDegrees.h is the
 //  table the pitch corrector uses too, so the corrector and the generator cannot
 //  end up in two different keys.
 //
 //  WHY THREE OCTAVES. One octave was a ring that could only say the same eleven
-//  intervals in a circle; the ball now travels from C3 to B5, so a run of hops is
-//  a phrase with a register as well as a pitch, and the same key sounds different
-//  depending on where in the range the ball happens to be.
+//  intervals in a circle; the ball now travels from C3 to B5, so a run of bounces
+//  is a phrase with a register as well as a pitch, and the same key sounds
+//  different depending on where in the range the ball happens to be.
 //
-//  WHY THE BALL MOVES THROUGH THE DISC RATHER THAN AROUND ITS RIM. A ball that
-//  walks a circle is a clock: the same eighteen millimetres, the same way, at
-//  the same speed, and the eye stops reading it after two hops. A ball that
-//  lands somewhere inside the disc and is thrown to another point inside it
-//  travels a different distance every time, crosses the middle, and reads as
-//  something being bounced - which is what the module is: a note picked by where
-//  the ball comes down, not a pointer being advanced. The landing RADIUS varies
-//  as well as the angle, so the hops are chords of different lengths rather than
-//  equal steps, and a hop from two o'clock to ten o'clock cuts straight through
-//  the middle of the disc.
+//  WHY A REAL BOUNCE. The old motion was a timed hop from one landing spot to the
+//  next: a different chord every time, but the same duration, and the note was
+//  chosen before the ball moved - a selector being advanced with an animation on
+//  top. A ball under gravity is not a scheduler. It crosses the disc, hits the rim
+//  where its own momentum takes it, and the note changes because the contact point
+//  changed. Gravity alone would settle at six o'clock and play one sector forever,
+//  so every impact gets a tangential kick (Source/OscBall.h): the ball walks the
+//  ring instead of piling up at the bottom. The note is still chosen by position,
+//  but the position is earned by the bounce.
 //
-//  The landing point is still chosen by SECTOR, though - one to four sectors
-//  clockwise from where the ball is, never backwards and never zero - because
-//  that is what keeps the notes in a walking order instead of a lottery. Only the
-//  point inside the sector's wedge is random.
+//  WHY THE PHYSICS IS A SHARED HEADER. The editor ticks at the panel's rate and the
+//  engine once per audio block, so neither can own the integration. Both call the
+//  same fixed-step code in Source/OscBall.h, and the state - position, velocity,
+//  the unspent fraction of a step and the spin's generator - is handed over with
+//  the clock. Closing the window therefore does not move the ball; it only changes
+//  who is asking it to fall.
 //
 //  WHY A CALL FROM THE EDITOR'S TIMER RATHER THAN A TIMER OF ITS OWN. The
 //  editor already ticks thirty times a second and repaints in a bounded way, so
@@ -47,21 +48,19 @@
 //  deserve one.
 //
 //  WHAT HAPPENS WHEN THE WINDOW CLOSES. The ring's clock is the editor's timer,
-//  so it disappears with the window - but the module must not. The last sector
-//  the ball landed on has already been handed to the processor (setOscNote), and
-//  the processor keeps hopping from there on its own clock while no editor
-//  exists (advanceOscSequence in ProcessorSignalPath.cpp). A new editor asks for
-//  that sector (getOscSector) and seats the ball on it, so reopening the window
-//  shows the note that is actually sounding rather than a ball parked somewhere
-//  else. The widget therefore draws the editor's view; it is not the machine's
-//  only clock.
+//  so it disappears with the window - but the module must not. The processor keeps
+//  stepping the same physics while no editor exists (advanceOscBall in
+//  ProcessorSignalPath.cpp), from the state the editor hands over. A new editor
+//  asks for that state (getOscBallState) and its sector (getOscSector), so
+//  reopening the window shows the ball where it actually is rather than where the
+//  previous window left it. The widget draws the editor's view; it is not the
+//  machine's only clock.
 //
-//  WHAT THE SWITCH DOES TO IT. OSC off parks the ball on the spot it is over and
-//  stops the announcements: the module is not generating, so a ball hopping to
-//  notes nobody hears would be a widget out of step with the machine. The ball
-//  is not hidden and the ring is not greyed out of existence - it rests on the
-//  note it last played, which is also the note the engine will start on the
-//  moment the switch goes back on.
+//  WHAT THE SWITCH DOES TO IT. OSC off freezes the ball where it is and stops the
+//  announcements: the module is not generating, so a ball bouncing to notes nobody
+//  hears would be a widget out of step with the machine. The ball is not hidden and
+//  the ring is not greyed out of existence - it rests on the note it last played,
+//  which is also the note the engine starts on the moment the switch goes back on.
 //
 //  NO PALETTE OF ITS OWN. The colours come from j37panel::paletteFor() at paint
 //  time, exactly as every other draw routine under Source/GUI does, so a theme
@@ -72,6 +71,7 @@
 #pragma once
 
 #include "GUI/PanelPaint.h"
+#include "OscBall.h"
 #include "ScaleDegrees.h"
 
 #include <array>
@@ -93,10 +93,11 @@ public:
         of TONIC or MODE on the AUTOTUNE tab reaches the ring without a listener.
 
         When either value actually moves, the notes are rebuilt (7 places per
-        octave in MAJOR, 5 in a pentatonic, 12 in CHROMATIC, over C3..B5), the
-        ball is re-seated on the sector it is holding, and a running module
-        retriggers that note - the key changed, so the pitch underneath the held
-        ball has to change with it. */
+        octave in MAJOR, 5 in a pentatonic, 12 in CHROMATIC, over C3..B5) and a
+        running module retriggers the note under the sector it last hit - the key
+        changed, so the pitch has to change with it. The ball itself is not moved
+        or thrown: a key change retunes the instrument, it does not interrupt the
+        bounce. The next contact plays the new key's note at that angle. */
     void setKey (int tonicSemitone, int modeIndex)
     {
         const auto newTonic = ((tonicSemitone % 12) + 12) % 12;
@@ -110,10 +111,6 @@ public:
         rebuildNotes();
 
         currentSector = juce::jlimit (0, noteTotal - 1, currentSector);
-        hopToSector = juce::jlimit (0, noteTotal - 1, hopToSector);
-        hopping = false;
-        hopElapsed = 0.0f;
-        ballAtRest = landingSpot (currentSector);
 
         if (running)
             announceLanded();
@@ -131,56 +128,35 @@ public:
     /** How many notes the ring currently holds. */
     int noteCount() const noexcept { return noteTotal; }
 
-    /** Advances the hop by `seconds` and fires onLanded() the moment the ball
-        arrives. A no-op while the module is off, so an idle ring costs nothing
-        but the call itself. */
+    /** Advances the ball by `seconds` and fires onLanded() at every wall hit. A
+        no-op while the module is off, so an idle ring costs nothing but the call
+        itself. The step is fixed inside OscBall, so a frame that arrives late
+        does not make the ball move further per second than a frame that is on
+        time. */
     void tick (double seconds)
     {
-        const auto safeSeconds = std::isfinite (seconds) ? seconds : 0.0;
-        const auto step = static_cast<float> (juce::jmax (0.0, juce::jmin (0.25, safeSeconds)));
-
         if (! running)
-        {
-            // Settle rather than freeze mid-air: a switch thrown during a hop
-            // lands the ball where it was heading, so the panel stops on a real
-            // sector instead of on a half-finished one.
-            if (hopping)
-                land();
-
             return;
-        }
 
-        if (hopping)
+        const auto step = (std::isfinite (seconds) && seconds > 0.0)
+                            ? static_cast<float> (seconds) : 0.0f;
+        const auto result = j37::oscball::advance (ball, step);
+
+        for (int impact = 0; impact < result.impactCount; ++impact)
         {
-            hopElapsed += step;
-
-            if (hopElapsed >= static_cast<float> (hopSeconds))
-            {
-                land();
-                restLeft = static_cast<float> (restSeconds);
-                repaint();
-            }
-            else
-            {
-                repaint();
-            }
-
-            return;
+            const auto& hit = result.impacts[impact];
+            currentSector = j37::oscball::sectorForNormal (hit.normalX, hit.normalY,
+                                                            juce::jmax (1, noteTotal));
+            currentGain = j37::oscball::gainForImpactSpeed (hit.speed);
+            announceLanded();
         }
 
-        restLeft -= step;
-
-        if (restLeft <= 0.0f)
-        {
-            beginHop();
-            repaint();
-        }
+        repaint();
     }
 
-    /** Whether the module runs (the header's OSC switch). Turning it on hands
-        over the note the ball is parked on and starts the next hop from there;
-        turning it off settles it on the sector it is over and stops the
-        announcements. */
+    /** Whether the module runs (the header's OSC switch). Turning it on gives a
+        resting ball a shove and hands over the note under it; turning it off
+        freezes the ball where it is and stops the announcements. */
     void setRunning (bool shouldRun)
     {
         if (running == shouldRun)
@@ -188,51 +164,60 @@ public:
 
         running = shouldRun;
 
-        if (! running && hopping)
-            land();
-
         if (running)
         {
             // The key can have moved while the module was off, in which case the
             // engine is still holding the previous note: the tone starts the
             // moment the switch is thrown, so the engine has to be told where the
-            // ball is parked before the first hop rather than after it.
+            // ball is before the first new impact rather than after it.
+            if (j37::oscball::speedOf (ball) < 0.05f)
+                ball = j37::oscball::State {};
+
+            currentGain = 0.80f;
             announceLanded();
-            restLeft = 0.0f;   // the first hop comes straight away
         }
 
         repaint();
     }
 
-    /** Seats the ball on `sector` without announcing it or starting a hop. The
-        editor calls this with the processor's sector when it is built: while no
-        window was open the engine kept the sequence running, so the ball has to
-        come back to where the sound is, not to where this widget's own clock
-        happened to stop. */
+    /** Selects the note the processor is holding without moving the ball. The
+        editor calls this with the processor's sector when it is built: the
+        engine's last impact is the note a client heard, even if the ball has
+        travelled since. The ball's own position comes from setBallState(). */
     void setSector (int sector) noexcept
     {
         currentSector = juce::jlimit (0, juce::jmax (0, noteTotal - 1), sector);
-        hopToSector = currentSector;
-        hopping = false;
-        hopElapsed = 0.0f;
-        ballAtRest = landingSpot (currentSector);
         repaint();
     }
+
+    /** Continues from the physics state the processor was left with. The editor
+        calls this before its first frame, so a window opened while the engine was
+        bouncing shows the ball where it is rather than at the previous window's
+        last position. */
+    void setBallState (const j37::oscball::State& state) noexcept
+    {
+        ball = state;
+        j37::oscball::sanitise (ball);
+        repaint();
+    }
+
+    /** The state to hand back to the processor when this editor goes away. */
+    const j37::oscball::State& ballState() const noexcept { return ball; }
 
     /** Dark-or-light, from the editor's derived flag - the same thing the meters
         take, so the ring's ink matches the panel it stands on. */
     void setDarkTheme (bool isDark) noexcept { darkTheme = isDark; }
 
-    /** The sector the ball last landed on, 0..noteCount()-1. The editor seeds the
+    /** The sector the ball last hit, 0..noteCount()-1. The editor seeds the
         processor with noteAt(sector()), so a reopened window and the engine agree. */
     int sector () const noexcept { return currentSector; }
 
-    /** Called with the sector on every landing while running, and on the two
-        events that move the note without a hop: the module being switched on
-        (the engine starts on the parked note) and the key changing (the parked
-        note is retuned). The editor's callback is what keeps the engine and the
-        OSC wire on the sector the ring is showing. */
-    std::function<void (int)> onLanded;
+    /** Called with the sector and the impact gain on every wall hit while
+        running, and on the two events that move the note without a hit: the
+        module being switched on (the engine starts on the note under the ball)
+        and the key changing (that note is retuned). The editor's callback is what
+        keeps the engine and the OSC wire on the note the ring is showing. */
+    std::function<void (int, float)> onLanded;
 
     /** Called when a press actually throws the ball. The editor hangs the
         interface click on it, so the ring sounds like the switch beside it
@@ -245,9 +230,9 @@ public:
         const auto bounds = getLocalBounds().toFloat();
         const auto centre = bounds.getCentre();
 
-        // Three pixels of air inside the component, so the ball at the top of its
-        // hop - which grows as it rises - still fits inside its own bounds rather
-        // than being clipped by the row next to it.
+        // Three pixels of air inside the component, so a ball sitting on the rim
+        // still fits inside its own bounds rather than being clipped by the row
+        // next to it.
         const auto radius = juce::jmin (bounds.getWidth(), bounds.getHeight()) * 0.5f - 3.0f;
 
         if (radius <= 4.0f)
@@ -292,43 +277,31 @@ public:
         }
 
         // The spoke: centre to the live dot. It is the one line that says WHY the
-        // ball is on that note - the landing point's angle is the sector, and the
-        // angle is drawn rather than left to be inferred.
+        // ball is on that note - the contact angle is the sector, and the angle is
+        // drawn rather than left to be inferred.
         if (running)
         {
             const auto liveAngle = sectorAngle (currentSector);
-            g.setColour (palette.accent.withAlpha (hopping ? 0.28f : 0.45f));
+            g.setColour (palette.accent.withAlpha (0.40f));
             g.drawLine (centre.x, centre.y,
                         centre.x + std::cos (liveAngle) * (radius - 2.0f),
                         centre.y + std::sin (liveAngle) * (radius - 2.0f),
                         1.0f);
         }
 
-        // The ball's position. While it hops it travels a straight chord between
-        // the two landing spots - through the middle of the disc, and by a
-        // different distance every time - and LIFTS, which is drawn as the ball
-        // growing with its shadow falling further away from it. That is what makes
-        // the motion read as a bounce rather than as a token being slid.
+        // The ball. Its position is in unit-disc coordinates and the physics keeps
+        // its CENTRE inside the circle; the multiplier leaves room for the drawn
+        // ball, so at the rim the ball's edge touches the ring rather than
+        // crossing it.
         const auto ballRadius = juce::jmax (2.6f, radius * 0.13f);
-        auto ballAt = hopping ? hopFrom : ballAtRest;
-        float lift = 0.0f;
+        const auto ballCentre = centre + juce::Point<float> (ball.x, ball.y)
+                                           * juce::jmax (0.0f, radius - ballRadius);
+        const auto drawnRadius = ballRadius;
 
-        if (hopping)
-        {
-            const auto t = juce::jlimit (0.0f, 1.0f,
-                                         hopElapsed / static_cast<float> (hopSeconds));
-            const auto eased = t * t * (3.0f - 2.0f * t);   // smoothstep: no jolt at either end
-            ballAt = hopFrom + (hopTo - hopFrom) * eased;
-            lift = std::sin (t * juce::MathConstants<float>::pi);
-        }
-
-        const auto ballCentre = centre + ballAt * radius;
-        const auto drawnRadius = ballRadius * (1.0f + 0.45f * lift);
-
-        // The note the ball is resting on, so the ring can be read as a pitch and
-        // not only as a pattern of dots. Dimmed while the module is off: the ball
-        // is parked on the note it last played, and that note is what the engine
-        // starts on when the switch goes back on.
+        // The note the ball last hit, so the ring can be read as a pitch and not
+        // only as a pattern of dots. Dimmed while the module is off: that contact is
+        // the note it last played, and the note the engine starts on when the switch
+        // goes back on.
         // Drawn before the ball so the ball always wins the overlap.
         g.setFont (juce::Font (juce::FontOptions (
             juce::Font::getDefaultMonospacedFontName(),
@@ -340,10 +313,11 @@ public:
                         .withCentre (centre),
                     juce::Justification::centred, false);
 
-        // The shadow, offset further down the higher the ball is.
-        g.setColour (palette.knobEdge.withAlpha (0.35f - 0.18f * lift));
+        // The shadow: a fixed offset, because the ball is drawn at the disc's own
+        // scale rather than lifted towards the viewer.
+        g.setColour (palette.knobEdge.withAlpha (0.32f));
         g.fillEllipse (ballCentre.x - drawnRadius + 1.0f,
-                       ballCentre.y - drawnRadius + 1.5f + 3.0f * lift,
+                       ballCentre.y - drawnRadius + 1.5f,
                        drawnRadius * 2.0f, drawnRadius * 2.0f);
 
         g.setColour (running ? palette.accent : palette.secondary.withAlpha (0.7f));
@@ -355,9 +329,10 @@ public:
                        drawnRadius * 0.6f, drawnRadius * 0.6f);
     }
 
-    /** Pressing the ring throws the ball straight into its next hop, so the
-        control is not a display the user can only watch. A press while the
-        module is off does nothing - there is no note to choose. */
+    /** Pressing the ring shoves the ball back towards the middle, so the control
+        is not a display the user can only watch. The note sounds at the next wall
+        hit, which is what the bounce is for. A press while the module is off does
+        nothing - there is no note to choose. */
     void mouseDown (const juce::MouseEvent& event) override
     {
         juce::ignoreUnused (event);
@@ -368,20 +343,32 @@ public:
         if (onPress)
             onPress();
 
-        if (hopping)
-            land();
+        // Inward rather than upward: at the rim an upward shove would just be
+        // another collision, while an inward one gives the ball a new chord across
+        // the disc. A little tangent makes two presses from the same spot differ.
+        const auto distance = std::sqrt (ball.x * ball.x + ball.y * ball.y);
 
-        beginHop();
+        if (distance > 0.05f)
+        {
+            ball.vx += (-ball.x / distance) * 1.25f;
+            ball.vy += (-ball.y / distance) * 1.25f;
+        }
+        else
+        {
+            ball.vy -= 1.05f;
+        }
+
+        ball.vx += (random.nextFloat() - 0.5f) * 0.60f;
+        j37::oscball::sanitise (ball);
         repaint();
     }
 
 private:
-    // The register and the timings come from Source/ScaleDegrees.h, which the
-    // processor reads too: while the window is closed the engine hops the same
-    // ring on the same clock, and the two have to agree note for note.
+    // The register comes from Source/ScaleDegrees.h, which the processor reads
+    // too: while the window is closed the engine steps the same ring on the same
+    // physics, and the two have to agree note for note. The physics constants
+    // themselves live in Source/OscBall.h.
     static constexpr int maxNotes = j37::scale::ringMaxNotes;
-    static constexpr double hopSeconds = j37::scale::ringHopSeconds;
-    static constexpr double restSeconds = j37::scale::ringRestSeconds;
 
     /** Fills `notes` with every semitone in the register that the key contains:
         three octaves of the mode's degrees, ascending. CHROMATIC keeps all 36,
@@ -394,9 +381,9 @@ private:
             notes[static_cast<std::size_t> (sector)] = j37::scale::ringNoteAt (tonic, mode, sector);
     }
 
-    // Radians, sector 0 at the top, increasing clockwise - which is the direction
-    // the ball always travels, so a hop reads as movement up the scale and never
-    // as the ball teleporting back behind itself.
+    // Radians, sector 0 at the top, increasing clockwise - the direction the
+    // sectors run, and the direction the spin usually sends the ball, so a walk
+    // reads as movement up the scale rather than as a lottery.
     float sectorAngle (int index) const noexcept
     {
         return -juce::MathConstants<float>::halfPi
@@ -416,51 +403,6 @@ private:
         return juce::String (names[bounded % 12]) + juce::String (bounded / 12 - 1);
     }
 
-    /** Where inside `sector` the ball comes down: within the sector's own wedge,
-        at a radius that is always clear of the note readout in the middle. */
-    juce::Point<float> landingSpot (int sector) const noexcept
-    {
-        // A spread over the middle third of the wedge keeps the landing point
-        // unmistakably inside its sector while still moving from hop to hop.
-        const auto step = juce::MathConstants<float>::twoPi
-                        / static_cast<float> (juce::jmax (1, noteTotal));
-        const auto angle = sectorAngle (sector) + random.nextFloat() * step * 0.33f
-                                              - step * 0.165f;
-
-        // 0.62 .. 0.84 of the radius: outside the text, inside the rim, and never
-        // the same distance twice, so two hops to neighbouring sectors are not the
-        // same short step drawn at different angles.
-        const auto distance = 0.62f + 0.22f * random.nextFloat();
-
-        return juce::Point<float> (std::cos (angle), std::sin (angle)) * distance;
-    }
-
-    void beginHop ()
-    {
-        // Between one and four degrees forward, never zero and never backwards:
-        // the ball walks the scale the way a ball is bounced around a room, and a
-        // random number of steps is what stops it looking like a metronome.
-        hopFrom = ballAtRest;
-        hopSteps = 1 + random.nextInt (4);
-        hopToSector = (currentSector + hopSteps) % juce::jmax (1, noteTotal);
-        hopTo = landingSpot (hopToSector);
-        hopElapsed = 0.0f;
-        hopping = true;
-    }
-
-    void land ()
-    {
-        currentSector = hopToSector;
-        ballAtRest = hopTo;
-        hopping = false;
-        hopElapsed = 0.0f;
-
-        if (running)
-            announceLanded();
-
-        repaint();
-    }
-
     /** Hands the held sector to the client. Only called while running: with the
         module off there is no note sounding, and the editor's callback publishes
         to the wire as well as to the engine. A callback that throws must not
@@ -473,7 +415,7 @@ private:
 
         try
         {
-            onLanded (currentSector);
+            onLanded (currentSector, currentGain);
         }
         catch (...)
         {
@@ -491,24 +433,17 @@ private:
 
     bool running = false;
     bool darkTheme = false;
-    bool hopping = false;
 
     int currentSector = 0;
-    int hopSteps = 1;
-    int hopToSector = 1;
+    float currentGain = 0.80f;
 
-    // Positions are in UNIT disc coordinates (length 0..1 from the centre) so a
-    // resize moves the ball with the ring instead of leaving it in old pixels.
-    juce::Point<float> ballAtRest { 0.0f, -0.74f };
-    juce::Point<float> hopFrom { 0.0f, -0.74f };
-    juce::Point<float> hopTo { 0.0f, -0.74f };
+    //  UNIT disc coordinates (length 0..1 from the centre) so a resize moves the
+    //  ball with the ring instead of leaving it in old pixels. The state carries
+    //  its own fixed-step remainder and spin generator; see Source/OscBall.h.
+    j37::oscball::State ball;
 
-    float hopElapsed = 0.0f;
-    float restLeft = 0.0f;
-
-    //  mutable because landingSpot() is const and still has to draw the landing
-    //  point's angle and radius from it - the widget's appearance is const, the
-    //  spot it picks is not.
+    //  The press's tangent is the only randomness the widget owns - the bounce's
+    //  own spin lives in the physics state, so the processor can reproduce it.
     mutable juce::Random random;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR (OscRing)

@@ -789,8 +789,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     j37panel::userPalette = j37panel::rememberedUserPalette();
 
     // This editor announces a CLOCK, not a lifetime: while the panel is on screen
-    // its timer hops the ring, and when it goes the engine keeps the same sequence
-    // running on its own clock (advanceOscSequence in ProcessorSignalPath.cpp).
+    // its timer steps the ball, and when it goes the engine keeps the same physics
+    // running on its own clock (advanceOscBall in ProcessorSignalPath.cpp).
     // Announced here rather than in a setup phase because it is about the window's
     // lifetime, not about any control - and undone first thing in the destructor,
     // for the same reason.
@@ -883,9 +883,11 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     // See rememberPanelAppearance() in Source/GUI/EditorTheme.cpp.
     rememberPanelAppearance();
 
-    // The window is going away, and with it the clock that hops the ball. Hand the
-    // sequence to the engine's clock rather than silencing it, before this timer is
-    // stopped - the module is part of the machine, not of its window.
+    // The window is going away, and with it the clock that steps the ball. Hand
+    // both the ball and the clock to the engine rather than silencing it: the state
+    // first, so the first audio block after the flag falls continues this exact
+    // bounce, then the flag. That ordering is the whole handoff.
+    audioProcessor.setOscBallState (oscRing.ballState());
     audioProcessor.setOscPanelOpen (false);
 
     stopTimer();

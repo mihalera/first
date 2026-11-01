@@ -856,17 +856,16 @@ void FirstAudioProcessor::configureBlockRateCoefficients (float engineSampleRate
 //    - a GATE that is a one-pole toward the switch's state, so pressing OSC
 //      fades the tone in and out over about fifteen milliseconds instead of
 //      starting or stopping it mid-cycle with a click;
-//    - an ENVELOPE that each landing restarts, so the ball arriving on a sector
-//      is heard as a note being played rather than as the previous note bending
-//      to a new pitch;
+//    - an ENVELOPE that each wall hit restarts, so a contact is heard as a note
+//      being played rather than as the previous note bending to a new pitch;
 //    - a phase accumulator that never resets, so a retune is a continuous wave
 //      and the only discontinuity in the signal is the one the envelope is
 //      there to hide.
 //
-//  WHOSE CLOCK. With an editor on screen its timer lands the ball and calls
-//  setOscNote(); with no editor the engine hops the sequence itself, on the same
-//  rest/hop timings, in advanceOscSequence() above. Closing the window therefore
-//  changes the clock, never the sound.
+//  WHOSE CLOCK. With an editor on screen its timer steps the ball and calls
+//  setOscNote(); with no editor the engine steps the SAME physics itself, in
+//  advanceOscBall() above, from the state the editor handed over. Closing the
+//  window therefore changes the clock, never the sound or the trajectory.
 //
 //  Everything it reads is an atomic written by the message thread or by that
 //  clock and everything else is three floats owned here, so the audio thread
@@ -874,60 +873,67 @@ void FirstAudioProcessor::configureBlockRateCoefficients (float engineSampleRate
 //  before the loop once the gate has faded, which is what makes it free when the
 //  module is not in use.
 //==============================================================================
-void FirstAudioProcessor::advanceOscSequence (double seconds) noexcept
+void FirstAudioProcessor::advanceOscBall (double seconds) noexcept
 {
-    const auto step = (seconds > 0.0 && std::isfinite (seconds)) ? seconds : 0.0;
+    // The editor's handover is a one-shot: after this exchange the ball below is
+    // the engine's own, and the atomics are its output for the next editor.
+    if (oscBallPending.exchange (false, std::memory_order_acquire))
+    {
+        oscBall.x = oscBallX.load (std::memory_order_relaxed);
+        oscBall.y = oscBallY.load (std::memory_order_relaxed);
+        oscBall.vx = oscBallVX.load (std::memory_order_relaxed);
+        oscBall.vy = oscBallVY.load (std::memory_order_relaxed);
+        oscBall.accumulator = oscBallAccumulator.load (std::memory_order_relaxed);
+        oscBall.randomState = oscBallRandom.load (std::memory_order_relaxed);
+        j37::oscball::sanitise (oscBall);
+    }
+
     const auto tonic = getTuningTonic();
     const auto mode = juce::jlimit (0, j37::scale::modeCount - 1, getTuningMode());
+    const auto count = juce::jmax (1, j37::scale::ringNoteCount (mode));
 
-    // A key change while the window is closed retunes the note under the parked
-    // ball and starts the waiting period again: the hop in flight belonged to the
-    // old ring, and its target may not even exist in the new one.
+    // A key change while the window is closed retunes the note under the sector
+    // the ball last hit. The ball keeps its position and momentum: a key change
+    // changes the instrument, it does not interrupt the bounce.
     if (tonic != oscSequencerTonic || mode != oscSequencerMode)
     {
         oscSequencerTonic = tonic;
         oscSequencerMode = mode;
-        oscSequencerHopping = false;
-        oscRestLeft = j37::scale::ringRestSeconds;
 
-        const auto count = juce::jmax (1, j37::scale::ringNoteCount (mode));
         const auto sector = juce::jlimit (0, count - 1, oscSector.load (std::memory_order_relaxed));
         oscSector.store (sector, std::memory_order_relaxed);
         oscNoteMidi.store (j37::scale::ringNoteAt (tonic, mode, sector), std::memory_order_relaxed);
+        oscImpactGain.store (0.80f, std::memory_order_relaxed);
         oscPulse.fetch_add (1, std::memory_order_relaxed);
     }
 
-    const auto count = juce::jmax (1, j37::scale::ringNoteCount (mode));
+    const auto step = (seconds > 0.0 && std::isfinite (seconds))
+                        ? static_cast<float> (seconds) : 0.0f;
+    const auto result = j37::oscball::advance (oscBall, step);
 
-    if (oscSequencerHopping)
+    // Every contact is a note. Two in one block collapse into the last one - the
+    // oscillator is monophonic, and the newest contact is the one still ringing.
+    for (int impact = 0; impact < result.impactCount; ++impact)
     {
-        oscHopLeft -= step;
+        const auto& hit = result.impacts[impact];
+        const auto sector = j37::oscball::sectorForNormal (hit.normalX, hit.normalY, count);
 
-        if (oscHopLeft > 0.0)
-            return;
-
-        oscSequencerHopping = false;
-        oscSector.store (oscSequencerTarget, std::memory_order_relaxed);
-        oscNoteMidi.store (j37::scale::ringNoteAt (tonic, mode, oscSequencerTarget),
+        oscSector.store (sector, std::memory_order_relaxed);
+        oscNoteMidi.store (j37::scale::ringNoteAt (tonic, mode, sector),
                            std::memory_order_relaxed);
+        oscImpactGain.store (j37::oscball::gainForImpactSpeed (hit.speed),
+                             std::memory_order_relaxed);
         oscPulse.fetch_add (1, std::memory_order_relaxed);
-        oscRestLeft = j37::scale::ringRestSeconds;
-        return;
     }
 
-    oscRestLeft -= step;
-
-    if (oscRestLeft > 0.0)
-        return;
-
-    // One to four sectors forward, never zero and never backwards - the same rule
-    // the editor's ball uses, so the sequence does not change character depending
-    // on whether a window happens to be open. Bounded by the ring's count, which
-    // the key change above has already clamped the sector against.
-    const auto steps = 1 + oscSequencerRandom.nextInt (4);
-    oscSequencerTarget = (oscSector.load (std::memory_order_relaxed) + steps) % count;
-    oscSequencerHopping = true;
-    oscHopLeft = j37::scale::ringHopSeconds;
+    // Publish the state after stepping, so an editor opened now starts where the
+    // engine actually is rather than at the previous window's last frame.
+    oscBallX.store (oscBall.x, std::memory_order_relaxed);
+    oscBallY.store (oscBall.y, std::memory_order_relaxed);
+    oscBallVX.store (oscBall.vx, std::memory_order_relaxed);
+    oscBallVY.store (oscBall.vy, std::memory_order_relaxed);
+    oscBallAccumulator.store (oscBall.accumulator, std::memory_order_relaxed);
+    oscBallRandom.store (oscBall.randomState, std::memory_order_relaxed);
 }
 
 void FirstAudioProcessor::mixOscillatorIntoInput (juce::dsp::AudioBlock<float>& block,
@@ -936,25 +942,20 @@ void FirstAudioProcessor::mixOscillatorIntoInput (juce::dsp::AudioBlock<float>& 
     const bool running = oscOnParam != nullptr && oscOnParam->load() >= 0.5f;
     const bool panelOpen = oscPanelOpen.load (std::memory_order_relaxed);
 
-    // With no editor the engine is the ring's clock - the module must keep
+    // With no editor the engine is the ball's clock - the module must keep
     // playing when the window closes. While an editor is on screen its timer is
-    // the clock and this one is parked at a full rest, so switching over starts
-    // with the note already sounding rather than mid-hop.
+    // the clock, from the state it took at open; this one only reads the note the
+    // editor hands over, so the two never step the same bounce at once.
     if (running && ! panelOpen)
     {
         const auto blockSeconds = static_cast<double> (block.getNumSamples())
                                 / static_cast<double> (juce::jmax (1.0f, engineSampleRate));
-        advanceOscSequence (blockSeconds);
-    }
-    else
-    {
-        oscSequencerHopping = false;
-        oscRestLeft = j37::scale::ringRestSeconds;
+        advanceOscBall (blockSeconds);
     }
 
-    // A landing since the last block restarts the envelope. It is a counter read
-    // rather than a flag: two landings inside one block collapse into one note,
-    // which is correct - the note the ball rests on is the one that sounds.
+    // A wall hit since the last block restarts the envelope. It is a counter read
+    // rather than a flag: two hits inside one block collapse into one note, which
+    // is correct - the newest contact is the one that sounds.
     const auto pulse = oscPulse.load (std::memory_order_relaxed);
     if (pulse != oscSeenPulse)
     {
@@ -989,10 +990,13 @@ void FirstAudioProcessor::mixOscillatorIntoInput (juce::dsp::AudioBlock<float>& 
     const auto envelopeStep = std::exp (-1.0f / (0.35f * rate));
     constexpr float sustain = 0.55f;
 
-    // -18 dBFS into the input: audible through a neutral chain, and still thirty
-    // dB below the point where it would be the loudest thing in the block for
-    // anyone who has simply left OSC on while working on something else.
-    constexpr float level = 0.125f;
+    // -18 dBFS at the reference impact into the input: audible through a neutral
+    // chain, and still thirty dB below the point where it would be the loudest
+    // thing in the block for anyone who has simply left OSC on while working on
+    // something else. The collision's speed scales it, so the ring has dynamics
+    // rather than one fixed level for every wall.
+    const auto level = 0.125f * juce::jlimit (0.05f, 2.0f,
+                                               oscImpactGain.load (std::memory_order_relaxed));
 
     const auto numSamples = static_cast<int> (block.getNumSamples());
     const auto activeChannels = juce::jmax (0, juce::jmin (2, channels));
