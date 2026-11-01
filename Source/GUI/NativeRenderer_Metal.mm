@@ -35,6 +35,7 @@ struct alignas(16) MetalUniforms
     simd_float4 baseColour;
     simd_float4 highlightColour;
     simd_float4 parameters;
+    simd_float4 textureWeights;
     simd_float4 globals;
     simd_float4 lightDirection;
 };
@@ -243,11 +244,37 @@ public:
             uniforms.normalMatrix = matrix4(draw.normalMatrix);
             uniforms.baseColour = colour4(draw.baseColour);
             uniforms.highlightColour = colour3(draw.highlightColour);
-            uniforms.parameters = {draw.parameters[0], draw.parameters[1], draw.parameters[2],
-                                   static_cast<float>(draw.material)};
-            uniforms.globals = {frame.timeSeconds, frame.drive, frame.glow, frame.textureWeights[2]};
-            uniforms.lightDirection = {frame.lightDirection[0], frame.lightDirection[1],
-                                       frame.lightDirection[2], frame.textureWeights[1]};
+            const auto material = draw.material;
+            const auto packedMaterial = static_cast<float> (material);
+            switch (material)
+            {
+                case SceneMaterial::tapePack:
+                    uniforms.parameters = { draw.parameters[0], draw.parameters[1], 0.0f, packedMaterial };
+                    break;
+                case SceneMaterial::ribbon:
+                    uniforms.parameters = { draw.parameters[0], 0.0f, 0.0f, packedMaterial };
+                    break;
+                case SceneMaterial::controlPanel:
+                    uniforms.parameters = { draw.parameters[0], draw.parameters[1], draw.parameters[2], packedMaterial };
+                    break;
+                case SceneMaterial::knob:
+                    uniforms.parameters = { draw.parameters[0], 0.0f, 0.0f, packedMaterial };
+                    break;
+                case SceneMaterial::key:
+                    uniforms.parameters = { 0.0f, draw.parameters[1], 0.0f, packedMaterial };
+                    break;
+                case SceneMaterial::glow:
+                    uniforms.parameters = { draw.parameters[0], 0.0f, 0.0f, packedMaterial };
+                    break;
+                case SceneMaterial::solid:
+                    uniforms.parameters = { 0.0f, 0.0f, 0.0f, packedMaterial };
+                    break;
+            }
+            uniforms.textureWeights = { frame.textureWeights[0], frame.textureWeights[1],
+                                        frame.textureWeights[2], 0.0f };
+            uniforms.globals = { frame.timeSeconds, frame.drive, frame.glow, 0.0f };
+            uniforms.lightDirection = { frame.lightDirection[0], frame.lightDirection[1],
+                                        frame.lightDirection[2], 0.0f };
 
             [encoder setRenderPipelineState:pipeline];
             [encoder setVertexBuffer:gpuMeshes[draw.meshIndex].vertices offset:0 atIndex:0];

@@ -85,11 +85,12 @@ void main()
         p.y += sin (t *  7.0 + uTime * 4.0) * uFlutter * 0.026 * envelope;
         vDetail = t * 40.0;
     }
-    else if (uMode > 2.5)
+    else if (uMode > 2.5 && uMode < 3.5)
     {
-        // The one mode with a lifetime: the glow under a working knob
-        // breathes on the wall clock rather than on the transport, so it is
-        // the one place uTime reaches a vertex.
+        p.z += sin (uTime * 2.6) * 0.004 * aPosition.w;
+    }
+    else if (uMode > 5.5)
+    {
         p.z += sin (uTime * 2.6) * 0.004 * aPosition.w;
     }
 
@@ -187,10 +188,7 @@ void main()
 
     if (uMode < 3.5)
     {
-        // The control bank's body: a machined face with a brushed grain,
-        // plus the arithmetic texture (see panelTexture above) sampled
-        // against the face's local xy - grain, live tape shimmer and wear
-        // in one accumulation, doses governed by uTextureWeights.
+        // The control bank's body: a machined face with procedural texture.
         float brush = 0.965
                       + 0.035 * abs (fract (vLocal.y * 46.0) - 0.5) * 2.0;
         colour += panelTexture (vLocal);
@@ -228,11 +226,16 @@ void main()
         return;
     }
 
-    // The panel face is the final material branch.
-    vec2 uv = vLocal / uPanelHalf.xy;
-    colour += panelTexture (vLocal);
-    colour *= 1.0 - 0.28 * smoothstep (0.35, 1.15, length (uv));
-    fragColor = vec4 (colour, 1.0);
+    if (uMode < 6.5)
+    {
+        vec2 uv = vLocal / uPanelHalf.xy;
+        colour += panelTexture (vLocal);
+        colour *= 1.0 - 0.28 * smoothstep (0.35, 1.15, length (uv));
+        fragColor = vec4 (colour, 1.0);
+        return;
+    }
+
+    fragColor = vec4 (uHighlightColour * uGlow, uGlow);
 }
 )GLSL";
 
