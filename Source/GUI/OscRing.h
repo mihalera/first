@@ -37,9 +37,9 @@
 //  WHY THE PHYSICS IS A SHARED HEADER. The editor ticks at the panel's rate and the
 //  engine once per audio block, so neither can own the integration. Both call the
 //  same fixed-step code in Source/OscBall.h, and the state - position, velocity,
-//  the unspent fraction of a step and the spin's generator - is handed over with
-//  the clock. Closing the window therefore does not move the ball; it only changes
-//  who is asking it to fall.
+//  rotation, the unspent fraction of a step and the spin's generator - is handed
+//  over with the clock. Closing the window therefore does not move the ball; it
+//  only changes who is asking it to fall.
 //
 //  WHY A CALL FROM THE EDITOR'S TIMER RATHER THAN A TIMER OF ITS OWN. The
 //  editor already ticks thirty times a second and repaints in a bounded way, so
@@ -142,12 +142,51 @@ public:
                             ? static_cast<float> (seconds) : 0.0f;
         const auto result = j37::oscball::advance (ball, step);
 
+        // The trail is sampled at the editor's frame rate, not at the physics
+        // rate: it is a drawing of the last half-second of the ball's path, and
+        // twenty-four points are plenty at thirty frames a second. Aging it
+        // before the new point is added keeps the newest point at age zero.
+        for (int point = 0; point < trailCount; )
+        {
+            trail[static_cast<std::size_t> (point)].age += step;
+
+            if (trail[static_cast<std::size_t> (point)].age > trailLife)
+            {
+                for (int move = point; move + 1 < trailCount; ++move)
+                    trail[static_cast<std::size_t> (move)] = trail[static_cast<std::size_t> (move + 1)];
+
+                --trailCount;
+            }
+            else
+            {
+                ++point;
+            }
+        }
+
+        if (step > 0.0f)
+        {
+            if (trailCount == trailLength)
+            {
+                for (int move = 0; move + 1 < trailLength; ++move)
+                    trail[static_cast<std::size_t> (move)] = trail[static_cast<std::size_t> (move + 1)];
+
+                --trailCount;
+            }
+
+            trail[static_cast<std::size_t> (trailCount++)] = { ball.x, ball.y, 0.0f };
+        }
+
+        impactAge = juce::jmin (impactLife, impactAge + step);
+
         for (int impact = 0; impact < result.impactCount; ++impact)
         {
             const auto& hit = result.impacts[impact];
             currentSector = j37::oscball::sectorForNormal (hit.normalX, hit.normalY,
                                                             juce::jmax (1, noteTotal));
             currentGain = j37::oscball::gainForImpactSpeed (hit.speed);
+            impactAge = 0.0f;
+            impactX = hit.normalX;
+            impactY = hit.normalY;
             announceLanded();
         }
 
@@ -173,8 +212,13 @@ public:
             if (j37::oscball::speedOf (ball) < 0.05f)
                 ball = j37::oscball::State {};
 
+            clearTrail();
             currentGain = 0.80f;
             announceLanded();
+        }
+        else
+        {
+            clearTrail();
         }
 
         repaint();
@@ -198,6 +242,7 @@ public:
     {
         ball = state;
         j37::oscball::sanitise (ball);
+        clearTrail();
         repaint();
     }
 
@@ -298,6 +343,48 @@ public:
                                            * juce::jmax (0.0f, radius - ballRadius);
         const auto drawnRadius = ballRadius;
 
+        // The trail: where the ball has just been, fading with age. It is drawn
+        // as a row of overlapping discs rather than as a stroked path because a
+        // path would need a new one every frame and a fixed set of discs reads
+        // the same at any angle. The oldest point is the faintest, so the trail
+        // points in the direction of travel without an arrow.
+        if (running && trailCount > 0)
+        {
+            for (int point = 0; point < trailCount; ++point)
+            {
+                const auto& sample = trail[static_cast<std::size_t> (point)];
+                const auto fade = 1.0f - juce::jlimit (0.0f, 1.0f, sample.age / trailLife);
+                const auto along = static_cast<float> (point + 1)
+                                 / static_cast<float> (trailCount);
+                const auto dotRadius = drawnRadius * (0.12f + 0.44f * along)
+                                     * (0.35f + 0.65f * fade);
+                const auto where = centre + juce::Point<float> (sample.x, sample.y)
+                                            * juce::jmax (0.0f, radius - ballRadius);
+
+                g.setColour (palette.accent.withAlpha (0.18f * fade));
+                g.fillEllipse (where.x - dotRadius, where.y - dotRadius,
+                               dotRadius * 2.0f, dotRadius * 2.0f);
+            }
+        }
+
+        // The impact: an expanding ring at the wall, brightest at the contact and
+        // gone in a third of a second. It is the same accent as the live sector,
+        // so the eye reads the flash and the lit dot as one event.
+        if (running && impactAge < impactLife)
+        {
+            const auto age = juce::jlimit (0.0f, 1.0f, impactAge / impactLife);
+            const auto where = centre + juce::Point<float> (impactX, impactY)
+                                        * juce::jmax (0.0f, radius - 1.5f);
+            const auto ring = drawnRadius * (0.85f + 2.60f * age);
+
+            g.setColour (palette.accent.withAlpha ((1.0f - age) * 0.60f));
+            g.drawEllipse (where.x - ring, where.y - ring,
+                           ring * 2.0f, ring * 2.0f, 1.4f);
+            g.setColour (palette.readout.withAlpha ((1.0f - age) * 0.20f));
+            g.fillEllipse (where.x - ring * 0.45f, where.y - ring * 0.45f,
+                           ring * 0.9f, ring * 0.9f);
+        }
+
         // The note the ball last hit, so the ring can be read as a pitch and not
         // only as a pattern of dots. Dimmed while the module is off: that contact is
         // the note it last played, and the note the engine starts on when the switch
@@ -327,6 +414,17 @@ public:
         g.setColour (palette.readout.withAlpha (running ? 0.75f : 0.35f));
         g.fillEllipse (ballCentre.x - drawnRadius * 0.35f, ballCentre.y - drawnRadius * 0.55f,
                        drawnRadius * 0.6f, drawnRadius * 0.6f);
+
+        // The spin mark. The wheel is drawn on the ball and turns with the
+        // angular velocity the physics gives it at each contact, so the ball
+        // reads as rolling rather than as a dot sliding around the disc.
+        const auto markAngle = ball.angle;
+        const auto mark = ballCentre + juce::Point<float> (std::cos (markAngle),
+                                                           std::sin (markAngle))
+                                      * (drawnRadius * 0.58f);
+
+        g.setColour (palette.readout.withAlpha (running ? 0.70f : 0.30f));
+        g.fillEllipse (mark.x - 1.0f, mark.y - 1.0f, 2.0f, 2.0f);
     }
 
     /** Pressing the ring shoves the ball back towards the middle, so the control
@@ -441,6 +539,35 @@ private:
     //  ball with the ring instead of leaving it in old pixels. The state carries
     //  its own fixed-step remainder and spin generator; see Source/OscBall.h.
     j37::oscball::State ball;
+
+    //  The drawing history. These are editor-only: the processor has no use for
+    //  a trail, and the ball's position and rotation are the only parts of the
+    //  motion that cross the handoff. Fixed storage, because a timer callback is
+    //  not a place to grow a vector.
+    static constexpr int trailLength = 24;
+    static constexpr float trailLife = 0.55f;
+    static constexpr float impactLife = 0.38f;
+
+    struct TrailPoint
+    {
+        float x = 0.0f;
+        float y = 0.0f;
+        float age = 0.0f;
+    };
+
+    std::array<TrailPoint, trailLength> trail {};
+    int trailCount = 0;
+    float impactAge = impactLife;
+    float impactX = 0.0f;
+    float impactY = -1.0f;
+
+    void clearTrail() noexcept
+    {
+        trailCount = 0;
+        impactAge = impactLife;
+        impactX = 0.0f;
+        impactY = -1.0f;
+    }
 
     //  The press's tangent is the only randomness the widget owns - the bounce's
     //  own spin lives in the physics state, so the processor can reproduce it.

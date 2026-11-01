@@ -847,7 +847,7 @@ void FirstAudioProcessor::configureBlockRateCoefficients (float engineSampleRate
 //  Where it goes is the whole design. The tone is summed into the block before
 //  any stage runs, so INPUT trims it, the machine colours it, MIX blends it and
 //  the output stage finishes it - the panel's own generator sounds like this
-//  machine rather than like a sine that was pasted over the top of one. The
+//  machine rather than like a tone that was pasted over the top of one. The
 //  alternative (summing at the end) was refused for exactly that reason: it
 //  would have been a tone the user's settings could not reach.
 //
@@ -856,11 +856,15 @@ void FirstAudioProcessor::configureBlockRateCoefficients (float engineSampleRate
 //    - a GATE that is a one-pole toward the switch's state, so pressing OSC
 //      fades the tone in and out over about fifteen milliseconds instead of
 //      starting or stopping it mid-cycle with a click;
-//    - an ENVELOPE that each wall hit restarts, so a contact is heard as a note
-//      being played rather than as the previous note bending to a new pitch;
-//    - a phase accumulator that never resets, so a retune is a continuous wave
-//      and the only discontinuity in the signal is the one the envelope is
-//      there to hide.
+//    - a MODAL STRIKE that each wall hit starts from scratch: six inharmonic
+//      resonators tuned to the note, so a contact is heard as a struck bar
+//      rather than as the previous note bending to a new pitch, and a harder
+//      hit opens the upper modes as well as raising the level;
+//    - no shared phase to reset. The bank's modes are independent, so a retune
+//      is a new strike rather than a discontinuity in a running wave.
+//
+//  The bank itself is Source/DSP/ModalVoice.h: JUCE-free, allocation-free and
+//  exercised by tests/osc, so the audio thread is not the only place it runs.
 //
 //  WHOSE CLOCK. With an editor on screen its timer steps the ball and calls
 //  setOscNote(); with no editor the engine steps the SAME physics itself, in
@@ -868,10 +872,10 @@ void FirstAudioProcessor::configureBlockRateCoefficients (float engineSampleRate
 //  window therefore changes the clock, never the sound or the trajectory.
 //
 //  Everything it reads is an atomic written by the message thread or by that
-//  clock and everything else is three floats owned here, so the audio thread
-//  takes no lock and allocates nothing. With the switch off the function returns
-//  before the loop once the gate has faded, which is what makes it free when the
-//  module is not in use.
+//  clock and everything else is the voice, the gate and the pulse it has seen,
+//  all owned here, so the audio thread takes no lock and allocates nothing. With
+//  the switch off the function returns before the loop once the gate has faded,
+//  which is what makes it free when the module is not in use.
 //==============================================================================
 void FirstAudioProcessor::advanceOscBall (double seconds) noexcept
 {
@@ -883,6 +887,8 @@ void FirstAudioProcessor::advanceOscBall (double seconds) noexcept
         oscBall.y = oscBallY.load (std::memory_order_relaxed);
         oscBall.vx = oscBallVX.load (std::memory_order_relaxed);
         oscBall.vy = oscBallVY.load (std::memory_order_relaxed);
+        oscBall.angle = oscBallAngle.load (std::memory_order_relaxed);
+        oscBall.angularVelocity = oscBallSpin.load (std::memory_order_relaxed);
         oscBall.accumulator = oscBallAccumulator.load (std::memory_order_relaxed);
         oscBall.randomState = oscBallRandom.load (std::memory_order_relaxed);
         j37::oscball::sanitise (oscBall);
@@ -932,6 +938,8 @@ void FirstAudioProcessor::advanceOscBall (double seconds) noexcept
     oscBallY.store (oscBall.y, std::memory_order_relaxed);
     oscBallVX.store (oscBall.vx, std::memory_order_relaxed);
     oscBallVY.store (oscBall.vy, std::memory_order_relaxed);
+    oscBallAngle.store (oscBall.angle, std::memory_order_relaxed);
+    oscBallSpin.store (oscBall.angularVelocity, std::memory_order_relaxed);
     oscBallAccumulator.store (oscBall.accumulator, std::memory_order_relaxed);
     oscBallRandom.store (oscBall.randomState, std::memory_order_relaxed);
 }
@@ -953,21 +961,19 @@ void FirstAudioProcessor::mixOscillatorIntoInput (juce::dsp::AudioBlock<float>& 
         advanceOscBall (blockSeconds);
     }
 
-    // A wall hit since the last block restarts the envelope. It is a counter read
-    // rather than a flag: two hits inside one block collapse into one note, which
-    // is correct - the newest contact is the one that sounds.
-    const auto pulse = oscPulse.load (std::memory_order_relaxed);
-    if (pulse != oscSeenPulse)
-    {
-        oscSeenPulse = pulse;
-        oscEnvelope = 1.0f;
-    }
-
     const auto rate = juce::jmax (1.0f, engineSampleRate);
 
-    // Nothing to render and nothing left to fade: stop cheaply. The phase is kept
-    // (not zeroed) so the next switch-on starts from wherever the wave was rather
-    // than from a discontinuity the gate has not reached yet.
+    // Oversampling changes the engine rate inside the same session. The voice's
+    // resonator coefficients are derived from that rate, so a bank prepared at
+    // the session rate would play flat or sharp by the oversampling factor. The
+    // comparison is deliberately loose: it is a rate identity check, not a
+    // control smoother, and a one-hertz difference is not a rate change.
+    if (std::abs (oscVoice.sampleRateHz() - static_cast<double> (rate)) > 0.5)
+        oscVoice.prepare (rate);
+
+    // Nothing to render and nothing left to fade: stop cheaply. The voice keeps
+    // its state across the off switch, but the gate is what the listener hears,
+    // and a gate at zero is silence whether the tail is still ringing or not.
     if (! running && oscGate < 1.0e-5f)
     {
         oscGate = 0.0f;
@@ -981,22 +987,33 @@ void FirstAudioProcessor::mixOscillatorIntoInput (juce::dsp::AudioBlock<float>& 
     // frequency table.
     const auto note = juce::jlimit (0, 127, oscNoteMidi.load (std::memory_order_relaxed));
     const auto frequency = 440.0f * std::pow (2.0f, static_cast<float> (note - 69) / 12.0f);
-    const auto phaseIncrement = frequency / rate;
+    const auto gain = juce::jlimit (0.05f, 2.0f,
+                                    oscImpactGain.load (std::memory_order_relaxed));
 
-    // The gate's and the envelope's time constants, as a per-sample fraction. Both
-    // are computed once per block; neither is a smoother that steps a control, so
-    // nothing here is measured against the control ramp the rest of the engine uses.
+    // A wall hit since the last block starts a new modal strike. It is a counter
+    // read rather than a flag: two hits inside one block collapse into one note,
+    // which is correct - the newest contact is the one that sounds. The gain
+    // scales the bank and also opens its upper modes, so a hard hit is brighter
+    // as well as louder; the old sine could only do the second.
+    const auto pulse = oscPulse.load (std::memory_order_relaxed);
+    if (pulse != oscSeenPulse)
+    {
+        oscSeenPulse = pulse;
+        oscVoice.trigger (frequency, gain);
+    }
+
+    // The gate's time constant, as a per-sample fraction. It is computed once per
+    // block; it is not a smoother that steps a control, so nothing here is
+    // measured against the control ramp the rest of the engine uses.
     const auto gateStep = 1.0f - std::exp (-1.0f / (0.015f * rate));
-    const auto envelopeStep = std::exp (-1.0f / (0.35f * rate));
-    constexpr float sustain = 0.55f;
 
-    // -18 dBFS at the reference impact into the input: audible through a neutral
-    // chain, and still thirty dB below the point where it would be the loudest
-    // thing in the block for anyone who has simply left OSC on while working on
-    // something else. The collision's speed scales it, so the ring has dynamics
-    // rather than one fixed level for every wall.
-    const auto level = 0.125f * juce::jlimit (0.05f, 2.0f,
-                                               oscImpactGain.load (std::memory_order_relaxed));
+    // Roughly -20 dBFS at the reference impact into the input: audible through a
+    // neutral chain, and still thirty dB below the point where it would be the
+    // loudest thing in the block for anyone who has simply left OSC on while
+    // working on something else. The impact gain is already inside the modal
+    // voice, so this is the fixed trim the bank's own output leaves for the
+    // machine.
+    constexpr float level = 0.125f;
 
     const auto numSamples = static_cast<int> (block.getNumSamples());
     const auto activeChannels = juce::jmax (0, juce::jmin (2, channels));
@@ -1004,14 +1021,8 @@ void FirstAudioProcessor::mixOscillatorIntoInput (juce::dsp::AudioBlock<float>& 
     for (int sample = 0; sample < numSamples; ++sample)
     {
         oscGate += ((running ? 1.0f : 0.0f) - oscGate) * gateStep;
-        oscEnvelope = sustain + (oscEnvelope - sustain) * envelopeStep;
 
-        oscPhase += phaseIncrement;
-        if (oscPhase >= 1.0f)
-            oscPhase -= 1.0f;
-
-        const auto value = std::sin (oscPhase * juce::MathConstants<float>::twoPi)
-                         * level * oscGate * oscEnvelope;
+        const auto value = oscVoice.renderSample() * level * oscGate;
 
         // Identical on every channel: this is one mono source entering a stereo
         // machine, not a stereo image of its own. Output-only channels (a

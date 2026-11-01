@@ -17,11 +17,15 @@
 //  for two minutes, assert it stays inside the circle and visits the ring, and
 //  pin the contact-angle mapping and the impact-gain curve the note uses.
 //
+//  The modal voice is the third: it is rendered here so a bank that rings forever,
+//  aliases at a low session rate or forgets to reset is caught without a host.
+//
 //  tests/osc/run.sh builds and runs this with no JUCE and no toolkit.
 // =============================================================================
 #include "Net/Osc.h"
 #include "Net/OscSurface.h"
 #include "OscBall.h"
+#include "DSP/ModalVoice.h"
 
 #include <cmath>
 #include <cstdint>
@@ -394,6 +398,8 @@ void checkBallPhysics()
 
     check(finite, "two minutes of 60 Hz steps stay finite");
     check(inside, "the ball never escapes the unit circle");
+    check(std::isfinite(state.angle) && std::isfinite(state.angularVelocity),
+          "the ball's rotation stays finite too");
     check(impacts > 60, "it hits the wall often enough to be an instrument");
     check(fastest > slowest + 0.20f, "impacts arrive at different speeds, so the ring has dynamics");
     check(sectors.size() >= 18, "the bounce visits most of the ring's sectors");
@@ -421,6 +427,7 @@ void checkBallPhysics()
     }
 
     check(a.x == b.x && a.y == b.y && a.vx == b.vx && a.vy == b.vy
+          && a.angle == b.angle && a.angularVelocity == b.angularVelocity
           && a.randomState == b.randomState,
           "the same state and time produce the same ball");
 
@@ -428,6 +435,85 @@ void checkBallPhysics()
     broken.x = std::nanf("");
     ball::sanitise(broken);
     check(ball::isFinite(broken), "a NaN state is reset, not carried");
+
+    broken.angle = std::nanf("");
+    ball::sanitise(broken);
+    check(ball::isFinite(broken), "a NaN rotation is reset with the rest of the state");
+
+    ball::State fast;
+    fast.x = 0.99f;
+    fast.y = 0.0f;
+    fast.vx = 3.8f;
+    fast.vy = -3.8f;
+    bool fastInside = true;
+
+    for (int frame = 0; frame < 240; ++frame)
+    {
+        ball::advance(fast, 0.1f);
+        fastInside = fastInside && std::sqrt(fast.x * fast.x + fast.y * fast.y) <= 1.0001f;
+    }
+
+    check(fastInside, "a clamped high-speed ball is still projected inside the ring");
+}
+
+void checkModalVoice()
+{
+    std::printf("\nmodal voice\n");
+
+    j37dsp::ModalVoice voice;
+    voice.prepare(48000.0);
+    check(voice.isSilent(), "a freshly prepared bank is silent");
+
+    voice.trigger(220.0f, 1.0f);
+    check(! voice.isSilent(), "a strike excites the bank");
+
+    float earlyPeak = 0.0f;
+    float latePeak = 0.0f;
+    bool finite = true;
+
+    for (int sample = 0; sample < 48000; ++sample)
+    {
+        const auto value = voice.renderSample();
+        finite = finite && std::isfinite(value);
+
+        if (sample < 4800)
+            earlyPeak = std::fmax(earlyPeak, std::fabs(value));
+        else if (sample >= 24000 && sample < 28800)
+            latePeak = std::fmax(latePeak, std::fabs(value));
+    }
+
+    check(finite, "a second of the modal bank stays finite");
+    check(earlyPeak > 1.0e-4f, "the strike is audible");
+    check(latePeak < earlyPeak, "the modes decay rather than ring forever");
+
+    const auto peakFor = [&voice] (float amplitude)
+    {
+        voice.reset();
+        voice.trigger(220.0f, amplitude);
+        auto peak = 0.0f;
+
+        for (int sample = 0; sample < 2400; ++sample)
+            peak = std::fmax(peak, std::fabs(voice.renderSample()));
+
+        return peak;
+    };
+
+    check(peakFor(0.25f) < peakFor(1.0f) * 0.5f,
+          "impact gain scales the voice's level");
+
+    voice.prepare(32000.0);
+    check(std::abs(voice.sampleRateHz() - 32000.0) < 1.0e-9,
+          "the bank reports the rate it was prepared for");
+    voice.trigger(987.0f, 1.0f);
+    bool highFinite = true;
+
+    for (int sample = 0; sample < 4800; ++sample)
+        highFinite = highFinite && std::isfinite(voice.renderSample());
+
+    check(highFinite, "the top of the ring is finite at a low session rate");
+
+    voice.reset();
+    check(voice.isSilent(), "reset leaves no tail behind");
 }
 
 } // namespace
@@ -443,6 +529,7 @@ int main()
     checkBundles();
     checkSurface();
     checkBallPhysics();
+    checkModalVoice();
 
     std::printf("\n%d check(s), %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;

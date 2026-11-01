@@ -44,6 +44,11 @@
 // so the note does not change character when the window does.
 #include "OscBall.h"
 
+// The OSC module's struck voice. A six-mode resonator bank rather than a sine:
+// JUCE-free and allocation-free, so the harness can render it and the audio
+// thread can run it without knowing about either.
+#include "DSP/ModalVoice.h"
+
 #include <array>
 #include <atomic>
 #include <cmath>
@@ -348,10 +353,10 @@ public:
         it is the tape, the mix and the output trim the user dialled that shape it.
 
         Called from processTapeEngine after the BYPASS early-out, so a machine that
-        is switched out generates nothing. Its state is the three floats and the
-        counter declared beside `oscOnParam`, plus the ball physics below them; all
-        of it belongs to the audio thread, except the ball handoff and `oscSector`,
-        which are how the editor's clock passes the instrument over. */
+        is switched out generates nothing. Its state is the atomics and the counter
+        declared beside `oscOnParam`, the modal voice and the ball physics below
+        them; all of it belongs to the audio thread, except the ball handoff and
+        `oscSector`, which are how the editor's clock passes the instrument over. */
     void mixOscillatorIntoInput (juce::dsp::AudioBlock<float>& block,
                                  float engineSampleRate, int channels);
 
@@ -815,8 +820,8 @@ public:
         meaning anything above the first octave.
 
         The audio thread reads it as an atomic; `retrigger` is true when the ball
-        has just HIT the wall, which restarts the note's envelope so each impact
-        is heard as its own note rather than as a pitch bend on the previous one.
+        has just HIT the wall, which starts a new modal strike so each impact is
+        heard as its own note rather than as a pitch bend on the previous one.
         `impactGain` is the impact speed mapped to a level multiplier by the same
         header that ran the physics, so a hard wall hit is louder than a grazing
         one and the editor does not have to agree with the engine about a curve.
@@ -866,13 +871,15 @@ public:
         state.y = oscBallY.load (std::memory_order_relaxed);
         state.vx = oscBallVX.load (std::memory_order_relaxed);
         state.vy = oscBallVY.load (std::memory_order_relaxed);
+        state.angle = oscBallAngle.load (std::memory_order_relaxed);
+        state.angularVelocity = oscBallSpin.load (std::memory_order_relaxed);
         state.accumulator = oscBallAccumulator.load (std::memory_order_relaxed);
         state.randomState = oscBallRandom.load (std::memory_order_relaxed);
         return state;
     }
 
     /** Hands the editor's ball back to the engine. The pending flag is the release
-        that tells the audio thread the six relaxed values above it are complete;
+        that tells the audio thread the eight relaxed values above it are complete;
         it is consumed once, on the first block after the window closes. */
     void setOscBallState (const j37::oscball::State& state) noexcept
     {
@@ -880,6 +887,8 @@ public:
         oscBallY.store (state.y, std::memory_order_relaxed);
         oscBallVX.store (state.vx, std::memory_order_relaxed);
         oscBallVY.store (state.vy, std::memory_order_relaxed);
+        oscBallAngle.store (state.angle, std::memory_order_relaxed);
+        oscBallSpin.store (state.angularVelocity, std::memory_order_relaxed);
         oscBallAccumulator.store (state.accumulator, std::memory_order_relaxed);
         oscBallRandom.store (state.randomState, std::memory_order_relaxed);
         oscBallPending.store (true, std::memory_order_release);
@@ -1203,14 +1212,13 @@ private:
     // -----------------------------------------------------------------------
     //  OSC, the note generator on the deck.
     //
-    //  The three fields below are the module's whole state and they live in two
-    //  threads with a deliberate split: the two atomics are written by the editor's
-    //  timer (the message thread) and read once per block or once per hit by
-    //  the audio thread; the three floats are owned by the audio thread alone and
-    //  are never touched from outside it. `oscPulse` is a COUNTER rather than a
-    //  bool on purpose - a bool can be missed if a hit arrives while the last
-    //  one is still being read, and a counter only has to be compared with what
-    //  was seen before.
+    //  The atomics below are the module's message-to-audio surface: the editor's
+    //  timer writes them (the message thread) and the audio thread reads them once
+    //  per block or once per hit. The voice and gate fields further down are owned
+    //  by the audio thread alone and are never touched from outside it. `oscPulse`
+    //  is a COUNTER rather than a bool on purpose - a bool can be missed if a hit
+    //  arrives while the last one is still being read, and a counter only has to be
+    //  compared with what was seen before.
     // -----------------------------------------------------------------------
     std::atomic<float>* oscOnParam = nullptr;
     std::atomic<int> oscNoteMidi { 60 };   // absolute MIDI note, 60 = C4
@@ -1226,14 +1234,16 @@ private:
     // its own clock hits, and a new editor reads it for its live dot.
     std::atomic<int> oscSector { 0 };
 
-    // The ball handoff. The editor writes all six and then raises the pending
+    // The ball handoff. The editor writes all eight and then raises the pending
     // flag; the audio thread copies them into its own state once, so it never
     // reads a half-written trajectory. While the engine is bouncing it writes
-    // the same six back, which is what a new editor opens with.
+    // the same eight back, which is what a new editor opens with.
     std::atomic<float> oscBallX { 0.0f };
     std::atomic<float> oscBallY { -0.62f };
     std::atomic<float> oscBallVX { 0.85f };
     std::atomic<float> oscBallVY { 0.0f };
+    std::atomic<float> oscBallAngle { 0.35f };
+    std::atomic<float> oscBallSpin { 2.20f };
     std::atomic<float> oscBallAccumulator { 0.0f };
     std::atomic<std::uint32_t> oscBallRandom { 0x9e3779b9u };
     std::atomic<bool> oscBallPending { false };
@@ -1245,8 +1255,7 @@ private:
     j37::oscball::State oscBall;
     int oscSequencerTonic = -1;
     int oscSequencerMode = -1;
-    float oscPhase = 0.0f;                 // 0..1, the oscillator's own phase
-    float oscEnvelope = 0.0f;              // per-impact decay, audio thread only
+    j37dsp::ModalVoice oscVoice;            // the struck voice, audio thread only
     float oscGate = 0.0f;                  // click-free fade to the switch's state
     int oscSeenPulse = 0;                  // the last wall hit this block acted on
 

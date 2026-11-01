@@ -54,6 +54,9 @@ inline constexpr float maxTangentialSpeed = 1.80f;
 inline constexpr float minInwardSpeed = 2.30f;      // leaves a grazing hit instead of rolling
 inline constexpr float minBounceSpeed = 0.70f;      // a settled ball is not allowed
 inline constexpr float maxSpeed = 3.80f;            // and neither is a runaway one
+inline constexpr float maxAngularSpeed = 18.0f;     // radians per second
+inline constexpr float angularDamping = 0.9995f;     // per fixed step, not per frame
+inline constexpr float twoPi = 6.283185307179586f;
 inline constexpr float fixedStep = 1.0f / 240.0f;
 inline constexpr float maxFrame = 0.10f;            // a stalled frame does not teleport the ball
 inline constexpr int maxSubsteps = 32;
@@ -65,6 +68,13 @@ struct State
     float y = -0.62f;
     float vx = 0.85f;
     float vy = 0.0f;
+
+    // How far the ball has turned, in radians, and how fast it is turning. The
+    // spin is part of the state for the same reason the velocity is: the editor
+    // draws the mark on the ball, the engine keeps the same rotation while no
+    // editor exists, and the handover must not make the ball jump through a turn.
+    float angle = 0.35f;
+    float angularVelocity = 2.20f;
 
     // The part of a fixed step that has not been spent yet. It travels with the
     // state so the editor and the engine continue the same path when the clock
@@ -98,6 +108,7 @@ inline bool isFinite (const State& state) noexcept
 {
     return isFinite (state.x) && isFinite (state.y)
         && isFinite (state.vx) && isFinite (state.vy)
+        && isFinite (state.angle) && isFinite (state.angularVelocity)
         && isFinite (state.accumulator);
 }
 
@@ -135,6 +146,14 @@ inline void sanitise (State& state) noexcept
     }
 
     state.accumulator = std::fmod (state.accumulator, fixedStep);
+
+    state.angle = std::fmod (state.angle, twoPi);
+
+    if (state.angle < 0.0f)
+        state.angle += twoPi;
+
+    state.angularVelocity = std::fmax (-maxAngularSpeed,
+                                      std::fmin (maxAngularSpeed, state.angularVelocity));
 }
 
 /** The sector whose wedge the contact normal points into, 0 at the top and
@@ -145,7 +164,6 @@ inline int sectorForNormal (float normalX, float normalY, int sectorCount) noexc
         return 0;
 
     constexpr auto halfPi = 1.5707963267948966f;
-    constexpr auto twoPi = 6.283185307179586f;
 
     const auto angle = std::atan2 (normalY, normalX) + halfPi;
     const auto step = twoPi / static_cast<float> (sectorCount);
@@ -186,6 +204,12 @@ inline void stepFixed (State& state, StepResult& result) noexcept
     state.vy += gravity * fixedStep;
     state.x += state.vx * fixedStep;
     state.y += state.vy * fixedStep;
+
+    state.angle += state.angularVelocity * fixedStep;
+    state.angularVelocity *= angularDamping;
+
+    if (state.angle >= twoPi || state.angle <= -twoPi)
+        state.angle = std::fmod (state.angle, twoPi);
 
     const auto distanceSquared = state.x * state.x + state.y * state.y;
 
@@ -237,6 +261,15 @@ inline void stepFixed (State& state, StepResult& result) noexcept
 
     state.vx = normalX * -reflected + tangentX * tangential;
     state.vy = normalY * -reflected + tangentY * tangential;
+
+    // Friction at the contact turns the ball. The tangent is the same one the
+    // kick uses, so the drawn mark follows the direction the ball is actually
+    // being sent around the ring rather than an unrelated animation.
+    const auto spinTarget = -tangential * 0.85f;
+    state.angularVelocity = std::fmax (-maxAngularSpeed,
+                                       std::fmin (maxAngularSpeed,
+                                                  0.55f * state.angularVelocity
+                                                      + 0.45f * spinTarget));
 
     // A floor as well as a ceiling: the ring is an instrument, and a ball that
     // has lost its energy stops being one.

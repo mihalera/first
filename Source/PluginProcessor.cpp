@@ -688,6 +688,15 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
 {
     sampleRate = static_cast<float> (sampleRateToUse);
 
+    // The OSC voice is tuned at the engine rate. Preparing it here also clears
+    // any tail from the previous session, so a host that changes rate does not
+    // carry a resonator tuned to the old one into the first block. The pulse
+    // counter is marked as seen: nothing that happened before this point is a
+    // strike the new session should sound.
+    oscVoice.prepare (sampleRateToUse);
+    oscGate = 0.0f;
+    oscSeenPulse = oscPulse.load (std::memory_order_relaxed);
+
     // The oversampling engines only depend on rate and block size, so they are
     // (re)built here. The parameter (if restored by a session) picks which one runs.
     const auto requestedOversampling = oversamplingParam != nullptr
