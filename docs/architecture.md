@@ -122,10 +122,7 @@ why beside it.
 The editor draws through one boundary, `Source/GUI/RenderBackend.h`, selected at
 configure time with `-DJ37_RENDER_BACKEND=`. OpenGL is JUCE's own context; CPU is
 a JUCE `Graphics` renderer for the animated deck; Vulkan, Metal, D3D11, D3D12,
-SOKOL and BGFX have adapters under `Source/GUI/NativeRenderer*`. Of those, only
-OpenGL draws the tape scene: every other selection creates its device, presents a
-cleared surface and then resolves to the CPU paint path rather than to a blank
-editor. The build's selection is the DEFAULT: SETTINGS also carries a BACKEND
+SOKOL and BGFX have adapters under `Source/GUI/NativeRenderer*`.Metal and Sokol already draw the tape scene: every other selection creates its device, presents a cleared surface and then resolves to the CPU paint path rather than to a blank editor. The build's selection is the DEFAULT: SETTINGS also carries a BACKEND
 selector that forces OpenGL or CPU while the plugin runs, with a staged adapter
 listed as PENDING and disabled. That runtime choice is a property of the machine
 and lives in the editor's preferences file

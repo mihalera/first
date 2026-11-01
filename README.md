@@ -1180,10 +1180,10 @@ bit. The build prints which one it is using in its configure summary.
 
 `AUTO` and `OPENGL` use the existing JUCE/OpenGL scene. `CPU` uses a dedicated
 JUCE `Graphics` renderer for the animated transport, while the rest of the panel
-continues through its normal software path. `VULKAN`, `METAL`, `D3D11`, `D3D12`,
-`SOKOL` and `BGFX` are staged selections: each has an adapter in
-`Source/GUI/NativeRenderer_*.cpp` that can create its device and present a cleared
-surface, and none of them draws the tape scene yet - so the editor keeps painting
+continues through its normal software path. `VULKAN`, `D3D11`, `D3D12` and `BGFX` are staged selections: each has an adapter in `Source/GUI/NativeRenderer_*.cpp` that can create its device and present a cleared surface, and none of them draws the tape scene yet.
+
+`METAL` and `SOKOL` are drawn selections: their adapters already render the full `SceneFrame` through the scene contract, so the editor selects them when the build
+lands on them.
 with JUCE instead of showing a blank or half-drawn frame.
 
 Which one is running is printed on the panel's header, beside the brand strip:
@@ -1205,13 +1205,7 @@ claim that the native renderer is already linked.
 
 `sokol_gfx` and `bgfx` are **alternatives, not additions**: each owns a device, a
 surface and a frame, so a build selects one and the other is not compiled at all -
-the same rule `J37_RENDER_BACKEND` applies to Vulkan and Metal. `SOKOL` links
-floooh/sokol and drives it through a JUCE `OpenGLContext` attached to the peer, from
-inside JUCE's own render callback, because JUCE does not expose "make the context
-current" on the message thread. `Source/GUI/SokolGfxImpl.cpp` is the one translation
-unit that compiles sokol's implementation, and it is deliberately JUCE-free: JUCE
-wraps the platform GL headers in `namespace juce::gl` and sokol needs them at global
-scope, so a single TU cannot host both. `BGFX` downloads and links bgfx.cmake and
+the same rule `J37_RENDER_BACKEND` applies to Vulkan and Metal. `METAL` and `SOKOL` link their own backend libraries and drive them through a JUCE `OpenGLContext` attached to the peer, from inside JUCE's own render callback, because JUCE does not expose "make the context current" on the message thread. `Source/GUI/SokolGfxImpl.cpp` is the one translation unit that compiles sokol's implementation, and it is deliberately JUCE-free: JUCE wraps the platform GL headers in `namespace juce::gl` and sokol needs them at global scope, so a single TU cannot host both. The Metal adapter owns its own device path and is compiled in a separate TU (`Source/GUI/NativeRenderer_Metal.mm`), so the two drawn backends do not share an implementation file. `BGFX` downloads and links bgfx.cmake and
 presents into a CHILD surface it creates inside the host's peer - the same rule the
 D3D11 adapter follows - because presenting into the host's own window would paint
 over its UI. bgfx draws nothing without shader binaries, and those are compiled by
