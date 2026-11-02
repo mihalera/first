@@ -1644,6 +1644,15 @@ keystore. To package a `.so` from a different configuration, pass its path to
 gradle -Pj37AndroidLib=/path/to/libjuce_jni.so :app:assembleRelease
 ```
 
+The Android CI job checks that the APK includes the launcher activity and an
+arm64 native library with the JNI entry points JUCE loads at startup, including
+16 KB ELF and APK alignment. From the repository root, run the native APK check
+locally with:
+
+```sh
+python tests/android/check_android_apk.py android/app/build/outputs/apk/release/app-release.apk
+```
+
 ## Build system notes
 
 ### Why CMake, and what changed

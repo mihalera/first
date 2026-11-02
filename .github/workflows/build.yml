@@ -1960,7 +1960,7 @@ jobs:
           # fails under pipefail even though the licences were accepted.
           yes | "$sdkmanager_bin" --sdk_root="$sdk_root" --licenses > /dev/null || true
           "$sdkmanager_bin" --sdk_root="$sdk_root" \
-            "platforms;android-35" "build-tools;35.0.0"
+            "platforms;android-35" "build-tools;36.0.0"
 
           # Gradle packages the .so the CMake step above produced. Its
           # `stageNativeLib` task copies that file into the module's jniLibs;
@@ -1983,6 +1983,21 @@ jobs:
           if ! grep -q "lib/arm64-v8a/libjuce_jni.so" "$RUNNER_TEMP/apk-contents.txt"; then
             echo "The APK does not contain lib/arm64-v8a/libjuce_jni.so"
             head -40 "$RUNNER_TEMP/apk-contents.txt"
+            exit 1
+          fi
+
+          # A packaged library can still fail as soon as the launcher loads it:
+          # verify the ABI, 16 KB page alignment, and the JNI/application factory
+          # symbols JUCE resolves dynamically at startup.
+          python tests/android/check_android_apk.py "$apk"
+
+          # Verify Android will expose the expected activity as the launcher.
+          aapt="$sdk_root/build-tools/36.0.0/aapt"
+          "$aapt" dump badging "$apk" > "$RUNNER_TEMP/apk-badging.txt"
+          if ! grep -Fq "package: name='com.mcsmes.mibox'" "$RUNNER_TEMP/apk-badging.txt" ||
+             ! grep -Fq "launchable-activity: name='com.rmsl.juce.JuceActivity'" "$RUNNER_TEMP/apk-badging.txt"; then
+            echo "APK package or JUCE launcher activity is missing:"
+            cat "$RUNNER_TEMP/apk-badging.txt"
             exit 1
           fi
 

@@ -65,13 +65,21 @@ public:
             return false;
         }
 
-        if (surface != VK_NULL_HANDLE && ! createSwapchain())
+        if (surface != VK_NULL_HANDLE)
         {
-            if (device != VK_NULL_HANDLE)
-                vkDeviceWaitIdle (device);
-            destroySwapchain();
-            destroySurfaceAndWindow();
-            presentationNote = "Vulkan device ready; swapchain creation failed";
+            if (! createSwapchain())
+            {
+                if (device != VK_NULL_HANDLE)
+                    vkDeviceWaitIdle (device);
+                destroySwapchain();
+                destroySurfaceAndWindow();
+                presentationNote = "Vulkan device ready; swapchain creation failed";
+            }
+            else if (! createSceneResources())
+            {
+                shutdown();
+                return false;
+            }
         }
 
         initialised = true;
@@ -93,8 +101,9 @@ public:
         if (initialised && swapchain != VK_NULL_HANDLE)
         {
             vkDeviceWaitIdle (device);
+            destroySceneResources();
             destroySwapchain();
-            if (! createSwapchain())
+            if (! createSwapchain() || ! createSceneResources())
                 presentationNote = "Vulkan swapchain resize failed; using CPU fallback";
         }
     }
@@ -634,7 +643,11 @@ private:
                 return fail ("Vulkan: frame fence creation failed");
         }
 
-        presentExtent = { static_cast<uint32_t> (width), static_cast<uint32_t> (height) };
+        return true;
+    }
+
+    bool createSceneResources()
+    {
         if (! findDepthFormat() || ! createDepthResources ())
             return fail ("Vulkan: depth resources setup failed");
         if (! createStencilResources ())
@@ -676,6 +689,7 @@ private:
         // per-frame UBOs own Vulkan objects, so destroySceneResources must release
         // them before the swapchain/device teardown below.
         destroyDepthResources();
+        destroyStencilResources();
         destroyFrameUboResources();
         destroyDefaultPipelineResources();
 
@@ -779,6 +793,7 @@ private:
             {
                 swapchainImages.resize (actualCount);
                 swapchainFormat = format.format;
+                presentExtent = extent;
                 return true;
             }
 

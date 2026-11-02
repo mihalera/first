@@ -90,6 +90,12 @@ require("ensureMeshes(frame)" in metal,
 # place the pipeline/UBO/mesh/drawScene work is tracked until it lands. No native
 # Vulkan selection may be advertised as drawing the scene until that work is in.
 vulkan = (root / "Source/GUI/NativeRenderer_Vulkan.cpp").read_text()
+vulkan_initialise = vulkan[vulkan.index("bool initialise"):vulkan.index("void resize")]
+vulkan_frame_resources = vulkan[vulkan.index("bool createFrameResources"):vulkan.index("bool createSceneResources")]
+require(vulkan_initialise.index("createSwapchain()") < vulkan_initialise.index("createSceneResources()"),
+        "Vulkan scene resources must be created after the swapchain sets its format")
+require("createDefaultRenderPass" not in vulkan_frame_resources,
+        "Vulkan frame resources must not create a render pass before swapchain setup")
 require("drawScene" in vulkan and "activePassIsDrawable" not in vulkan,
         "the Vulkan adapter must keep the staged scene-draw contract, not a Metal-style active-pass flag")
 require("docs/backend-implementation-plan-vulkan-shaders.md" in vulkan,
