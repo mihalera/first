@@ -21,7 +21,7 @@
 > | OpenGL | JUCE context on `TapeScene` | done | **done** (reference path, GLSL in `TapeSceneShaders.h`) | selectable | done |
 > | Sokol | `NativeRenderer_Sokol.cpp` | done (JUCE `OpenGLContext` + `SokolGfxImpl.cpp` JUCE-free TU) | **done** (GLSL 410 port, `ensureShader/ensurePipelines/ensureMeshes`) | **drawn** (fixed in Phase 0) | done |
 > | Metal | `NativeRenderer_Metal.mm` | done (child `NSView` + `CAMetalLayer`, MSL compiled at runtime from `TapeSceneMetalShaders.h`) | **done** (`drawScene` line 229, `ensureMeshes` line 415) | **drawn** (fixed in Phase 0) | done |
-> | Vulkan | `NativeRenderer_Vulkan.cpp` | done (Win32 child `HWND`, swapchain, frames-in-flight, transfer barriers) | staged | pending | 2.1 |
+> | Vulkan | `NativeRenderer_Vulkan.cpp` | done (Win32 child `HWND`, swapchain, frames-in-flight, transfer barriers) | **shader plumbing only so far** - GLSL 450 source + SPIR-V embed scaffolding (`TapeSceneVulkanShaders.h`) in progress; pipeline/UBO/mesh/draw pending | **shader plumbing phase started** (`docs/backend-implementation-plan-vulkan-shaders.md`) | 2.1 |
 > | D3D11 | `NativeRenderer_D3D11.cpp` | done (`WS_CHILD` window, swapchain, RTV) | staged | pending | 2.2 |
 > | D3D12 | `NativeRenderer_D3D12.cpp` | done (queue, fence + event, RTV heap, per-slot allocators) | staged | pending | 2.3 |
 > | BGFX | `NativeRenderer_Bgfx.cpp` | done (child window, `bgfx::init`) | staged, **blocked** | pending | 2.4 |
