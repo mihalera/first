@@ -186,9 +186,27 @@ void main()
         return;
     }
 
+    if (uMode < 1.5)
+    {
+        // The tape pack carries concentric detail across its wound surface.
+        float band = 0.88
+                     + 0.12 * smoothstep (0.18, 0.50, abs (fract (vDetail) - 0.5));
+        fragColor = vec4 (colour * band, 1.0);
+        return;
+    }
+
+    if (uMode < 2.5)
+    {
+        // Ribbon texture follows the tape and its fluttering geometry.
+        colour += panelTexture (vLocal);
+        float ribbonBand = 0.88
+                           + 0.12 * smoothstep (0.18, 0.50, abs (fract (vDetail) - 0.5));
+        fragColor = vec4 (colour * ribbonBand, 1.0);
+        return;
+    }
+
     if (uMode < 3.5)
     {
-        // The control bank's body: a machined face with procedural texture.
         float brush = 0.965
                       + 0.035 * abs (fract (vLocal.y * 46.0) - 0.5) * 2.0;
         colour += panelTexture (vLocal);
@@ -226,16 +244,25 @@ void main()
         return;
     }
 
-    if (uMode < 6.5)
+    if (uMode < 3.5)
     {
-        vec2 uv = vLocal / uPanelHalf.xy;
+        vec2 panelHalf = max (abs (uPanelHalf.xy), vec2 (0.0001));
+        vec2 uv = vLocal / panelHalf;
         colour += panelTexture (vLocal);
         colour *= 1.0 - 0.28 * smoothstep (0.35, 1.15, length (uv));
         fragColor = vec4 (colour, 1.0);
         return;
     }
 
-    fragColor = vec4 (uHighlightColour * uGlow, uGlow);
+    if (uMode < 4.5)
+    {
+        // Explicit glow material: this is the only branch with variable alpha.
+        fragColor = vec4 (uHighlightColour * uGlow, uGlow);
+        return;
+    }
+
+    // Solid and any future unhandled material values remain opaque.
+    fragColor = vec4 (colour, 1.0);
 }
 )GLSL";
 

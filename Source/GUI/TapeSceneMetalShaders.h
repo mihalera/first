@@ -96,9 +96,6 @@ fragment float4 tapeSceneFragment(SceneVertexOut in [[stage_in]],
     if (material == 3) {
         const float brush = 0.965 + 0.035 * abs(fract(in.local.y * 46.0) - 0.5) * 2.0;
         colour += grain + shimmer - wear;
-        const float2 panelHalf = max(abs(u.parameters.xy), float2(0.0001));
-        const float2 panelUv = in.local / panelHalf;
-        colour *= 1.0 - 0.28 * smoothstep(0.35, 1.15, length(panelUv));
         return float4(clamp(colour * brush, 0.0, 1.0), 1.0);
     }
 
