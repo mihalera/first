@@ -97,6 +97,8 @@ require("docs/backend-implementation-plan-vulkan-shaders.md" in vulkan,
 require("VulkanSceneShaders_vert_spirv" in vulkan
         or "VulkanSceneShaders_frag_spirv" in vulkan,
         "the Vulkan adapter must reference the generated SPIR-V umbrella/symbols it will consume")
+require("render pass" in vulkan.lower() or "renderPass" in vulkan or "depth buffer" in vulkan.lower() or "depthImage" in vulkan,
+        "the Vulkan adapter must call out the render-pass + depth-buffer + pipeline + UBO + ensureMeshes + drawScene boundary it is staged behind")
 
 if errors:
     print("render backend checks failed:", file=sys.stderr)

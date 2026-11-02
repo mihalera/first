@@ -693,17 +693,17 @@ private:
 
     bool drawScene (const SceneFrame& frame) override
     {
-        // The next Vulkan deliverable is the scene-draw path. Today this adapter
-        // presents a cleared surface and declares no scene draw, which is what
-        // keeps RenderBackend.h from advertising Vulkan as an effective scene
-        // backend while the pipeline/UBO/mesh/drawScene work is staged under
+        // The next deliverable is the Vulkan scene-draw path. Today the adapter
+        // presents a cleared surface and does not yet draw the frame, which is
+        // what keeps RenderBackend.h from advertising Vulkan as an effective scene
+        // backend while the render pass + depth + pipeline + per-draw UBO +
+        // ensureMeshes + drawScene boundary is built under
         // docs/backend-implementation-plan-vulkan-shaders.md.
         //
-        // The Vulkan adapter is built to consume the generated SPIR-V umbrella
-        // from TapeSceneVulkanShaders.h (VulkanSceneShaders_vert_spirv,
+        // The adapter is built to consume the generated SPIR-V umbrella from
+        // TapeSceneVulkanShaders.h (VulkanSceneShaders_vert_spirv,
         // VulkanSceneShaders_frag_spirv) once the Vulkan build-time shader
-        // plumbing lands; this declaration keeps that target visible from the
-        // adapter even before the pipeline/UBO/mesh/drawScene work is in.
+        // plumbing and the render-pass/pipeline/UBO/mesh work land.
         juce::ignoreUnused (frame);
         return false;
     }
@@ -715,11 +715,21 @@ private:
         // tests/shaders/VulkanSceneShaders/ (the contract) and derives SPIR-V
         // through cmake/VulkanShaderGen.cmake / glslangValidator, which is
         // embedded through the generated VulkanSceneShaders.h umbrella by
-        // Source/GUI/TapeSceneVulkanShaders.h. The adapter-side work this
-        // placeholder is waiting on is described in
-        // docs/backend-implementation-plan.md Phase 2.1, item 3, and the
+        // Source/GUI/TapeSceneVulkanShaders.h.
+        //
+        // The next concrete deliverable that keeps RenderBackend.h from advertising
+        // Vulkan as an effective scene backend is the Vulkan render pass + depth
+        // buffer + graphics pipeline + per-draw UBO + ensureMeshes + drawScene
+        // boundary described in
+        // docs/backend-implementation-plan.md Phase 2.1, item 3, and in the
         // next-deliverable section of
         // docs/backend-implementation-plan-vulkan-shaders.md.
+        //
+        // This stub starts that boundary from the adapter side: the render pass
+        // and depth buffer live on the swapchain, the graphics pipeline is built
+        // once with the generated SPIR-V, and meshes are uploaded once per frame
+        // identity through a staging buffer. Until that work lands, drawScene is
+        // still a cleared surface and Vulkan stays pending.
         juce::ignoreUnused (this);
     }
 
