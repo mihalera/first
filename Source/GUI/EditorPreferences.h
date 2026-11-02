@@ -38,6 +38,9 @@
 
 #include <JuceHeader.h>
 
+#include <algorithm>
+#include <array>
+
 namespace j37panel
 {
 /** The editor's one machine-wide preferences file. */
@@ -58,6 +61,31 @@ inline juce::PropertiesFile& editorPreferences()
 }
 
 constexpr const char* renderBackendKey = "render_backend";
+
+/** The panel's own working scale. This is deliberately a MACHINE preference rather
+    than a session parameter: a 125 % panel is a fact about the screen and the eyes
+    in front of it, not about the mix. Six stops are offered because a continuous
+    zoom in a host-sized window is a resize fight waiting to happen - and the layout
+    has a real floor, so a free slider would let the user pick a size the panel can
+    no longer draw. */
+constexpr std::array<int, 6> uiScaleStops { 75, 80, 90, 100, 110, 125 };
+constexpr const char* uiScaleKey = "ui_scale";
+
+inline int rememberedUiScale()
+{
+    const auto stored = editorPreferences().getIntValue (uiScaleKey, 100);
+    return std::find (uiScaleStops.begin(), uiScaleStops.end(), stored) != uiScaleStops.end()
+             ? stored : 100;
+}
+
+inline void rememberUiScale (int percent)
+{
+    if (std::find (uiScaleStops.begin(), uiScaleStops.end(), percent) == uiScaleStops.end())
+        return;
+
+    editorPreferences().setValue (uiScaleKey, percent);
+    editorPreferences().saveIfNeeded();
+}
 
 /** The renderer last chosen in SETTINGS, or AUTO when nothing is stored, the
     stored name is unknown, or the backend is not selectable in THIS build. The

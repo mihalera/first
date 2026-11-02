@@ -45,6 +45,8 @@ using j37panel::parameterTooltipText;
 using j37panel::principleOf;
 using j37panel::tabSpecs;
 
+#include <algorithm>
+#include <iterator>
 #include <vector>
 
 void FirstAudioProcessorEditor::setUpWindowAndSize() {
@@ -90,8 +92,11 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
     // minimum something needs rather than a number that was written once.
     constexpr int minEditorWidth = 780;
     constexpr int minEditorHeight = 664;
-    constexpr int preferredEditorWidth = 1060;
-    constexpr int preferredEditorHeight = 916;
+    // The preferred size follows the panel's own stop. The FLOOR does not: it is
+    // the layout's real minimum, and scaling it would let the 75 % choice open
+    // below the width the six deck bands need.
+    const auto preferredEditorWidth = juce::roundToInt (1060.0f * uiScale());
+    const auto preferredEditorHeight = juce::roundToInt (916.0f * uiScale());
 
     // The horizontal margin keeps the frame off the edge of the display. The vertical
     // one covers a decorated window's title bar and border, which sit OUTSIDE the size
@@ -149,6 +154,104 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
         if (openingWidth != preferredEditorWidth || openingHeight != preferredEditorHeight)
             centreWithSize(openingWidth, openingHeight);
     }
+}
+
+float FirstAudioProcessorEditor::uiFontSize (float baseSize) const noexcept
+{
+    // styleLabel has always sat one point below its call-site size and never below
+    // 8.5 pt; keeping that base here means 100 % is pixel-for-pixel the caption
+    // system the panel had before UI SCALE existed. Only then is the factor applied.
+    // The 7.5 floor is the point below which the panel's small engraved captions
+    // stop being legible on a 1x display.
+    const auto base = juce::jmax (8.5f, baseSize - 1.0f);
+    return juce::jmax (7.5f, base * uiScale());
+}
+
+void FirstAudioProcessorEditor::applyUiScaleToLabels()
+{
+    for (auto &style : scaledLabels)
+        if (style.label != nullptr)
+            style.label->setFont (juce::Font (juce::FontOptions (
+                uiFontSize (style.baseSize), style.bold ? juce::Font::bold : juce::Font::plain)));
+
+    // The knob captions are set directly by the control-strip builder rather
+    // than through styleLabel(), so they would otherwise stay at 9 pt while the
+    // plate around them grew. uiFontSize(10) is exactly 9 pt at 100 %.
+    const auto knobFont = juce::Font (juce::FontOptions (uiFontSize (10.0f), juce::Font::bold));
+    for (auto &label : controlLabels)
+        label.setFont (knobFont);
+    for (auto &label : compressorControlLabels)
+        label.setFont (knobFont);
+
+    // The display face is deliberately not a styleLabel(): it keeps Georgia's
+    // fallback chain. Its own base is 30 pt, with no one-point engraving offset.
+    titleLabel.setFont (juce::Font (juce::FontOptions (
+        "Georgia, Times New Roman, Times, serif", 30.0f * uiScale(), juce::Font::bold)));
+}
+
+void FirstAudioProcessorEditor::applyUiScale (int percent)
+{
+    const auto found = std::find (j37panel::uiScaleStops.begin(),
+                                  j37panel::uiScaleStops.end(), percent);
+    const auto applied = found != j37panel::uiScaleStops.end() ? *found : 100;
+
+    uiScalePercent = applied;
+    j37panel::rememberUiScale (applied);
+
+    // The combo can be the caller; keeping it in step costs one comparison and
+    // makes the function safe to call from a restored preference as well.
+    const auto selected = static_cast<int> (
+        std::distance (j37panel::uiScaleStops.begin(),
+                       std::find (j37panel::uiScaleStops.begin(),
+                                  j37panel::uiScaleStops.end(), applied)));
+    if (uiScaleBox.getSelectedId() != selected + 1)
+        uiScaleBox.setSelectedId (selected + 1, juce::dontSendNotification);
+
+    auto wantedWidth = juce::roundToInt (1060.0f * uiScale());
+    auto wantedHeight = juce::roundToInt (916.0f * uiScale());
+
+    // The same work-area clamp the opening size uses. A scale stop is a request,
+    // not a promise that the host's display is large enough for it; opening a
+    // 1325 px editor on a 1366 px laptop would put its right edge under the host's
+    // own chrome, which is worse than honouring a smaller stop.
+    constexpr int screenMarginX = 16;
+    constexpr int screenMarginY = 32;
+    const auto &displays = juce::Desktop::getInstance().getDisplays();
+    juce::Rectangle<int> workArea;
+
+    if (const auto *display = displays.getDisplayForRect (getScreenBounds()))
+        workArea = display->userBounds.toNearestInt();
+    else if (const auto *primary = displays.getPrimaryDisplay())
+        workArea = primary->userBounds.toNearestInt();
+
+    auto minWidth = 780;
+    auto minHeight = 664;
+
+    if (! workArea.isEmpty())
+    {
+        // The same yielding floor setUpWindowAndSize() applies: on a screen too
+        // small for the layout's 780 x 664 minimum, a cramped visible window is
+        // better than one whose bottom edge is off-screen.
+        const auto fittingWidth = juce::jmax (1, workArea.getWidth() - 2 * screenMarginX);
+        const auto fittingHeight = juce::jmax (1, workArea.getHeight() - 2 * screenMarginY);
+
+        minWidth = juce::jmin (minWidth, fittingWidth);
+        minHeight = juce::jmin (minHeight, fittingHeight);
+        wantedWidth = juce::jmin (wantedWidth, fittingWidth);
+        wantedHeight = juce::jmin (wantedHeight, fittingHeight);
+    }
+
+    // setResizeLimits() already owns the 1500 x 1180 ceiling; this clamp keeps the
+    // call valid even when a host has handed the editor a smaller parent.
+    wantedWidth = juce::jlimit (minWidth, 1500, wantedWidth);
+    wantedHeight = juce::jlimit (minHeight, 1180, wantedHeight);
+
+    applyUiScaleToLabels();
+
+    if (getWidth() != wantedWidth || getHeight() != wantedHeight)
+        setSize (wantedWidth, wantedHeight);
+    else
+        repaint();
 }
 
 void FirstAudioProcessorEditor::createDebugInspector() {
@@ -327,7 +430,8 @@ void FirstAudioProcessorEditor::stylePanelLabels() {
     // unpredictable width) on macOS and Linux. FontOptions accepts a comma-separated
     // list and uses the first family that resolves, ending in a generic fallback.
     titleLabel.setFont(juce::Font(
-        juce::FontOptions("Georgia, Times New Roman, Times, serif", 30.0f, juce::Font::bold)));
+        juce::FontOptions("Georgia, Times New Roman, Times, serif", 30.0f * uiScale(),
+                          juce::Font::bold)));
     titleLabel.setJustificationType(juce::Justification::left);
     titleLabel.setInterceptsMouseClicks(false, false);
     styleLabel(subtitleLabel, "NONLINEAR ANALOG / MIX BOX", 10.0f, paletteFor(false).secondary,
@@ -1431,6 +1535,47 @@ void FirstAudioProcessorEditor::setUpSettingsSwitches() {
     addAndMakeVisible(parameterSheetButton);
 
     // ---------------------------------------------------------------
+    //  UI SCALE - the panel's working size, in SETTINGS's second band.
+    //
+    //  Six stops rather than a slider: the layout has a real floor (the six deck
+    //  bands need 780 px) and a real ceiling (1500 x 1180), and a continuous control
+    //  would spend most of its travel in sizes the host cannot show. Every stop is
+    //  a remembered machine preference so a host that tears the editor down and
+    //  builds it again comes back at the size the user chose.
+    // ---------------------------------------------------------------
+    for (std::size_t i = 0; i < j37panel::uiScaleStops.size(); ++i)
+        uiScaleBox.addItem (juce::String (j37panel::uiScaleStops[i]) + " %",
+                            static_cast<int> (i) + 1);
+
+    {
+        const auto selected = std::find (j37panel::uiScaleStops.begin(),
+                                         j37panel::uiScaleStops.end(), uiScalePercent);
+        const auto selectedIndex = selected != j37panel::uiScaleStops.end()
+                                       ? static_cast<int> (std::distance (
+                                             j37panel::uiScaleStops.begin(), selected))
+                                       : 2;
+        uiScaleBox.setSelectedId (selectedIndex + 1, juce::dontSendNotification);
+    }
+
+    uiScaleBox.setLookAndFeel (&customLookAndFeel);
+    setTip (uiScaleBox, "UI SCALE - the panel's working size. The layout is "
+                        "responsive, so a stop makes the controls and their captions "
+                        "larger (or smaller) without changing the sound or the "
+                        "session. It is remembered for this machine; 75 % is the "
+                        "compact stop, 125 % the roomy one, and a display that cannot "
+                        "fit the chosen stop brings the window back to the largest "
+                        "size it can actually show.");
+    uiScaleBox.onChange = [this] {
+        const auto index = uiScaleBox.getSelectedId() - 1;
+        if (index >= 0 && index < static_cast<int> (j37panel::uiScaleStops.size()))
+            applyUiScale (j37panel::uiScaleStops[static_cast<std::size_t> (index)]);
+    };
+    styleLabel (uiScaleLabel, "UI SCALE", 9.0f, paletteFor (false).secondary, true,
+                juce::Justification::left);
+    addAndMakeVisible (uiScaleLabel);
+    addAndMakeVisible (uiScaleBox);
+
+    // ---------------------------------------------------------------
     //  BACKEND - which renderer draws the panel's transport, in SETTINGS's
     //  first band beside OVERSAMPLING and USER THEME.
     //
@@ -1553,11 +1698,25 @@ void FirstAudioProcessorEditor::setUpModelButtons() {
                              "leaves the previous model in place and says why on the "
                              "readout above these keys - hover it for the engine's "
                              "own sentence. The picker reopens in the folder the last "
-                             "model came from. Loading a model does not change any "
-                             "other parameter and is not saved with the session.");
+                             "model came from. A .nam or JSON model can also be "
+                             "dropped straight onto this key. Loading a model does "
+                             "not change any other parameter and is not saved with "
+                             "the session.");
     setTip(clearNeuralButton, "CLEAR - releases the loaded model, returning the NEURAL "
                               "stage to its transparent pass-through.");
     loadNeuralButton.onClick = [this] { loadNeuralModelFromFile(); };
+    loadNeuralButton.acceptsFiles = [](const juce::StringArray& files) {
+        if (files.size() != 1)
+            return false;
+
+        const auto file = juce::File(files[0]);
+        return file.hasFileExtension("nam") || file.hasFileExtension("json")
+            || file.hasFileExtension("rtn");
+    };
+    loadNeuralButton.onFileDropped = [this](const juce::File& file) {
+        if (! neuralFileChooser.active)
+            loadNeuralModelFile(file);
+    };
     clearNeuralButton.onClick = [this] {
         // The processor clears its own model NAME with the model (see
         // clearNeuralModel), so the readout cannot name a stage that is empty.
@@ -1604,12 +1763,25 @@ void FirstAudioProcessorEditor::setUpModelButtons() {
                          "that succeeds opens IR MIX to full while it is still "
                          "closed, so the capture is heard at once. The picker "
                          "reopens in the folder the last impulse response came "
-                         "from. Loading an IR does not change any other parameter "
-                         "and is not saved with the session.");
+                         "from. A WAV or AIFF can also be dropped straight onto "
+                         "this key. Loading an IR does not change any other "
+                         "parameter and is not saved with the session.");
     setTip(clearIrButton, "CLEAR IR - releases the loaded impulse response, "
                           "returning the IR stage to its transparent "
                           "pass-through.");
     loadIrButton.onClick = [this] { loadIrFromFile(); };
+    loadIrButton.acceptsFiles = [](const juce::StringArray& files) {
+        if (files.size() != 1)
+            return false;
+
+        const auto file = juce::File(files[0]);
+        return file.hasFileExtension("wav") || file.hasFileExtension("aif")
+            || file.hasFileExtension("aiff");
+    };
+    loadIrButton.onFileDropped = [this](const juce::File& file) {
+        if (! irFileChooser.active)
+            loadIrFile(file);
+    };
     clearIrButton.onClick = [this] {
         audioProcessor.clearIr();   // clears the processor's IR name with the stage
         irStatusReason = {};
@@ -1654,12 +1826,19 @@ void FirstAudioProcessorEditor::setUpModelButtons() {
                             "the output; the decode runs on a background "
                             "thread and the audio thread never waits for it. "
                             "The picker reopens in the folder the last print "
-                            "came from, and a print is not saved with the "
-                            "session.");
+                            "came from, a WAV can also be dropped straight onto "
+                            "this key, and a print is not saved with the session.");
     setTip(clearNoiseButton, "CLEAR PRINT - releases the loaded print, and the "
                              "VINYL stage goes back to synthesising its own "
                              "surface.");
     loadNoiseButton.onClick = [this] { loadNoisePrintFromFile(); };
+    loadNoiseButton.acceptsFiles = [](const juce::StringArray& files) {
+        return files.size() == 1 && juce::File(files[0]).hasFileExtension("wav");
+    };
+    loadNoiseButton.onFileDropped = [this](const juce::File& file) {
+        if (! noiseFileChooser.active)
+            loadNoisePrintFile(file);
+    };
     clearNoiseButton.onClick = [this] {
         audioProcessor.clearNoiseFile();
         // A refusal belongs to the file that was refused, so releasing the stage
@@ -2026,13 +2205,20 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
     renderBackendChoice = backend;
     rendererLabel.setText(j37::render::backendCaption(backend), juce::dontSendNotification);
 
-    const auto runsOnGpu = j37::render::runsOnOpenGL(backend);
+    // TWO surfaces, two answers. The deck's renderer is the choice; the PANEL is
+    // JUCE's own component painter and can be accelerated independently. Before
+    // this split, choosing a native scene backend (or running a build configured
+    // for one) left the whole 2D panel on the CPU because the panel followed the
+    // deck. Only an explicit CPU choice now turns the panel's GL off.
+    const auto running = j37::render::runningBackend(backend);
+    const auto panelOnGpu = running != j37::render::Backend::cpu;
+    const auto deckOnOpenGl = running == j37::render::Backend::openGL;
 
     // Whatever the user asked for wins: stop the startup retries, or they would
     // switch the accelerator back on seconds after the user chose CPU.
     openGLAttachAttemptsLeft = 0;
 
-    if (runsOnGpu) {
+    if (panelOnGpu) {
         // The same context settings setUpOpenGlRendering() applies: a machine that
         // STARTED on CPU never ran that phase's block, and attaching a context
         // whose component painting is off would show a blank panel.
@@ -2051,14 +2237,14 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
 
     // The scene owns a second context. A false scene detaches it and leaves the
     // component's own paint drawing the transport, so the strip is never empty.
-    tapeScene.setSceneEnabled(runsOnGpu);
+    tapeScene.setSceneEnabled(deckOnOpenGl);
 
     // The native adapter gets the same treatment as that second context: it is
     // released for every choice that does not run through it (so switching to
     // CPU or OpenGL can never leave a second surface on the deck), and brought
     // up for the one that does.
     shutDownNativeScene();
-    if (!runsOnGpu)
+    if (running != j37::render::Backend::cpu && !deckOnOpenGl)
         setUpNativeScene();
 
     // Both paths need the strip redrawn: the GPU path draws the scene, the CPU
@@ -2068,26 +2254,30 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
 }
 
 void FirstAudioProcessorEditor::setUpOpenGlRendering() {
+    const auto running = j37::render::runningBackend(renderBackendChoice);
+
     // A native command renderer takes the deck's surface ONLY when its adapter
     // draws the full scene (hasNativeImplementation) - sokol does, so a SOKOL
     // build attaches it to tapeScene here. The others still implement
     // presentation only: attaching one would create a second surface over the
     // host UI and show nothing on it, so for those this stays a no-op and JUCE's
     // CPU painting keeps drawing the transport.
-    if (!j37::render::usesOpenGL()) {
+    if (running == j37::render::Backend::openGL)
+        tapeScene.setSceneEnabled(true);
+    else if (running != j37::render::Backend::cpu)
         setUpNativeScene();
-        return;
-    }
+    else
+        tapeScene.setSceneEnabled(false);
 
-    // The user's remembered choice has the last word over the build's default: a
-    // machine set to CPU in SETTINGS must open on the software path rather than
-    // re-attaching the context the user turned off.
-    if (!j37::render::runsOnOpenGL(renderBackendChoice))
+    // The panel's context is NOT the deck's. A build configured for SOKOL can
+    // still paint this window through JUCE's OpenGL component painter, and that
+    // is the difference between "the deck has a fast path" and "the panel is
+    // fully accelerated". The explicit CPU choice is the only one that refuses
+    // it; on every other choice the attach is still best-effort and JUCE's
+    // software painter takes over if the driver cannot create the context.
+    if (running == j37::render::Backend::cpu)
         return;
 
-    // OpenGL is automatic and best-effort. JUCE's ordinary component paint
-    // path remains enabled when context creation fails.
-    tapeScene.setSceneEnabled(true);
     openGLContext.setComponentPaintingEnabled(true);
     openGLContext.setContinuousRepainting(false);
     openGLContext.setSwapInterval(1);
@@ -2166,6 +2356,12 @@ void FirstAudioProcessorEditor::submitNativeSceneFrame() {
 }
 
 void FirstAudioProcessorEditor::finishConstruction() {
+    // The panel is complete, so a saved UI scale can be applied to the widgets
+    // that set their own fonts during construction (the knob captions above all).
+    // This also makes the 100 % path a no-op: every base size resolves to the one
+    // it had before UI SCALE existed.
+    applyUiScaleToLabels();
+
     // The interface sounds are attached LAST, after every control they watch
     // exists AND after every existing onClick handler has been installed - so a
     // control's own handler is always the one that runs first and the sound

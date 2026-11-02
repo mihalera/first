@@ -1,7 +1,7 @@
 #pragma once
 namespace j37::render::metal {
 
-inline constexpr char sceneShaderSource[] = Rmetal(
+inline constexpr char sceneShaderSource[] = R"metal(
 #include <metal_stdlib>
 using namespace metal;
 
@@ -118,6 +118,6 @@ fragment float4 tapeSceneFragment(SceneVertexOut in [[stage_in]],
 
     return float4(u.highlightColour.rgb * u.parameters.x, 1.0);
 }
-)metal;
+)metal";
 
 } // namespace j37::render::metal

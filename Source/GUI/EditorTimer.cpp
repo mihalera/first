@@ -266,6 +266,12 @@ juce::Rectangle<int> FirstAudioProcessorEditor::deckAnimationBounds() const {
 }
 
 void FirstAudioProcessorEditor::repaintAnimatedSurfaces() {
+    // A defensive second gate: the timer already skips this call while the sheet
+    // covers the panel, but a future caller must not be able to invalidate the
+    // whole knob strip through a cover that makes it invisible.
+    if (parameterSheet != nullptr && parameterSheet->isOpen())
+        return;
+
     // The knobs. Their halos breathe with the compressor and their pointers ride
     // an orbit of the same phase; the ticks tremble with the transport's drift.
     // All of that is read from the look and feel at PAINT time, and a slider only
@@ -302,6 +308,19 @@ void FirstAudioProcessorEditor::timerCallback() {
     // visible timer tick reconstructs all display-only state from the processor.
     if (!isShowing())
         return;
+
+    // The parameter sheet is an opaque, full-editor overlay. Its rows have their
+    // own attachments and its viewport is the only thing the user can see, so
+    // everything the panel animates underneath is invisible. Four meters and the
+    // ring are told to stop before the next frame, and the invalidations at the
+    // bottom of this function are skipped; the values themselves are still read
+    // because the OSC ball, the scene and the readouts are state, not decoration.
+    const auto panelCovered = parameterSheet != nullptr && parameterSheet->isOpen();
+    inputMeter.setActive(!panelCovered);
+    outputMeter.setActive(!panelCovered);
+    compressorMeterIn.setActive(!panelCovered);
+    compressorMeterOut.setActive(!panelCovered);
+    oscRing.setRedrawEnabled(!panelCovered);
 
     // Retry context creation while the host is still creating its peer. The
     // budget is bounded so an unavailable driver is not polled forever.
@@ -354,23 +373,26 @@ void FirstAudioProcessorEditor::timerCallback() {
     // busy flag when it is done (Source/DSP/NoiseLoader.h).
     refreshNoiseStatus();
 
-    inputMeter.setLoudness(telemetry.inputPeakDb, telemetry.inputRmsDb, telemetry.inputLufs,
-                           telemetry.inputVuDb, telemetry.inputCombinedDb, telemetry.inputClipping);
-    outputMeter.setLoudness(telemetry.outputPeakDb, telemetry.outputRmsDb, telemetry.outputLufs,
-                            telemetry.outputVuDb, telemetry.outputCombinedDb,
-                            telemetry.outputClipping);
+    if (!panelCovered) {
+        inputMeter.setLoudness(telemetry.inputPeakDb, telemetry.inputRmsDb, telemetry.inputLufs,
+                               telemetry.inputVuDb, telemetry.inputCombinedDb,
+                               telemetry.inputClipping);
+        outputMeter.setLoudness(telemetry.outputPeakDb, telemetry.outputRmsDb,
+                                telemetry.outputLufs, telemetry.outputVuDb,
+                                telemetry.outputCombinedDb, telemetry.outputClipping);
 
-    compressorMeterIn.setReduction(telemetry.inputGainReductionDb,
-                                   telemetry.inputCompressorActivity);
-    compressorMeterOut.setReduction(telemetry.outputGainReductionDb,
-                                    telemetry.outputCompressorActivity);
+        compressorMeterIn.setReduction(telemetry.inputGainReductionDb,
+                                       telemetry.inputCompressorActivity);
+        compressorMeterOut.setReduction(telemetry.outputGainReductionDb,
+                                        telemetry.outputCompressorActivity);
+    }
 
     // The MIX page's bar. Read from the seven SOURCE parameters and normalised
     // exactly the way SaturationCore::setWeights normalises them - including its
     // all-zero fallback, so a bar that shows pure tape really is pure tape. It is
     // read only while the page that shows it is on screen: seven parameter reads
     // and a divide per frame is nothing, but nothing is cheaper than nothing.
-    if (mixBar.isVisible()) {
+    if (mixBar.isVisible() && !panelCovered) {
         std::array<float, principleCount> shares{};
         float shareSum = 0.0f;
 
@@ -413,7 +435,7 @@ void FirstAudioProcessorEditor::timerCallback() {
     // the cost this file's repaint strategy exists to avoid. shapersSpectrumBounds()
     // is the same function paint() draws with, so the rectangle that is invalidated
     // is the rectangle that is drawn - see its declaration in PluginEditor.h.
-    if (activeTabIsShapers)
+    if (activeTabIsShapers && !panelCovered)
         repaint(shapersSpectrumBounds());
 
     const auto evenRatio = telemetry.evenHarmonicRatio;
@@ -891,7 +913,7 @@ void FirstAudioProcessorEditor::timerCallback() {
     // window then has to repaint over; that is the same class of problem as the
     // whole-panel repaint noted above, one rectangle at a time. The frame after
     // the menu closes catches the animation up, which at 30 Hz is invisible.
-    if (!popupIsOpen && ++animationPaintTick >= 2) {
+    if (!popupIsOpen && !panelCovered && ++animationPaintTick >= 2) {
         animationPaintTick = 0;
         repaintAnimatedSurfaces();
     }

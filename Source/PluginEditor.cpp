@@ -607,44 +607,55 @@ void FirstAudioProcessorEditor::loadNeuralModelFromFile()
         if (! file.existsAsFile())
             return;
 
-        //  The folder is remembered the moment a file is CHOSEN, not when it
-        //  loads. A picker that only remembered a folder after a successful
-        //  load reopened on Documents after every refused file - and a refused
-        //  model is exactly when a user goes looking for another one, in the
-        //  same folder. The name is set at the same point so the readout names
-        //  the file that was just picked even if the stage refuses it.
-        const auto previousName = editor.audioProcessor.getLoadedNeuralName();
-        editor.audioProcessor.setLoadedNeuralName (file.getFileNameWithoutExtension());
-        rememberFolder ("lastModelFolder", file);
-
-        // A .nam file goes through its own converter; every other extension
-        // keeps the RTNeural JSON path. Both load the same kind of network -
-        // the wire format is the only thing that differs.
-        const auto isNam = file.hasFileExtension (".nam");
-        const auto text = file.loadFileAsString();
-        const bool loaded = isNam ? editor.audioProcessor.loadNamModel (text)
-                                  : editor.audioProcessor.loadNeuralModel (text);
-
-        if (! loaded)
-        {
-            // A refused file leaves whatever was loaded before in place, and the
-            // readout says WHY this one was refused - a .nam that needs the LSTM
-            // architecture is a different download, not a corrupt file, and the
-            // reason is the one thing the user can act on.
-            editor.audioProcessor.setLoadedNeuralName (previousName);
-            editor.neuralStatusReason = editor.audioProcessor.lastLoadError();
-            editor.neuralStatusDetail = editor.audioProcessor.lastLoadDetail();
-            editor.lastShownNeuralStatus = {};   // force the next refresh to repaint the label
-            editor.refreshNeuralStatus();
-            return;
-        }
-
-        editor.neuralStatusReason = {};
-        editor.neuralStatusDetail = {};
-        editor.lastShownNeuralStatus = {};   // force the next refresh to repaint the label
-        editor.openStageMix ("neural_mix");
-        editor.refreshNeuralStatus();
+        // The chooser and the drop target meet here: both hand the file to the
+        // same loader, so a dropped model takes exactly the path a picked one does
+        // (folder memory, name, refusal reason, MIX opening).
+        editor.loadNeuralModelFile (file);
     });
+}
+
+void FirstAudioProcessorEditor::loadNeuralModelFile (const juce::File& file)
+{
+    if (! file.existsAsFile())
+        return;
+
+    //  The folder is remembered the moment a file is CHOSEN, not when it
+    //  loads. A picker that only remembered a folder after a successful
+    //  load reopened on Documents after every refused file - and a refused
+    //  model is exactly when a user goes looking for another one, in the
+    //  same folder. The name is set at the same point so the readout names
+    //  the file that was just picked even if the stage refuses it.
+    const auto previousName = audioProcessor.getLoadedNeuralName();
+    audioProcessor.setLoadedNeuralName (file.getFileNameWithoutExtension());
+    rememberFolder ("lastModelFolder", file);
+
+    // A .nam file goes through its own converter; every other extension
+    // keeps the RTNeural JSON path. Both load the same kind of network -
+    // the wire format is the only thing that differs.
+    const auto isNam = file.hasFileExtension (".nam");
+    const auto text = file.loadFileAsString();
+    const bool loaded = isNam ? audioProcessor.loadNamModel (text)
+                              : audioProcessor.loadNeuralModel (text);
+
+    if (! loaded)
+    {
+        // A refused file leaves whatever was loaded before in place, and the
+        // readout says WHY this one was refused - a .nam that needs the LSTM
+        // architecture is a different download, not a corrupt file, and the
+        // reason is the one thing the user can act on.
+        audioProcessor.setLoadedNeuralName (previousName);
+        neuralStatusReason = audioProcessor.lastLoadError();
+        neuralStatusDetail = audioProcessor.lastLoadDetail();
+        lastShownNeuralStatus = {};   // force the next refresh to repaint the label
+        refreshNeuralStatus();
+        return;
+    }
+
+    neuralStatusReason = {};
+    neuralStatusDetail = {};
+    lastShownNeuralStatus = {};   // force the next refresh to repaint the label
+    openStageMix ("neural_mix");
+    refreshNeuralStatus();
 }
 
 
@@ -686,30 +697,38 @@ void FirstAudioProcessorEditor::loadIrFromFile()
         if (! file.existsAsFile())
             return;
 
-        //  Remembered on CHOICE, like the model picker beside it: an IR that
-        //  fails to decode still tells the user where their IRs live.
-        const auto previousName = editor.audioProcessor.getLoadedIrName();
-        editor.audioProcessor.setLoadedIrName (file.getFileNameWithoutExtension());
-        rememberFolder ("lastIrFolder", file);
-
-        if (! editor.audioProcessor.loadIrFile (file))
-        {
-            // A file that would not decode leaves the previous IR in place and
-            // says WHICH failure it was, in the same shape the model picker uses.
-            editor.audioProcessor.setLoadedIrName (previousName);
-            editor.irStatusReason = editor.audioProcessor.lastLoadError();
-            editor.irStatusDetail = editor.audioProcessor.lastLoadDetail();
-            editor.lastShownIrStatus = {};      // force the next refresh to repaint
-            editor.refreshIrStatus();
-            return;
-        }
-
-        editor.irStatusReason = {};
-        editor.irStatusDetail = {};
-        editor.lastShownIrStatus = {};      // force the next refresh to repaint
-        editor.openStageMix ("ir_mix");
-        editor.refreshIrStatus();
+        editor.loadIrFile (file);
     });
+}
+
+void FirstAudioProcessorEditor::loadIrFile (const juce::File& file)
+{
+    if (! file.existsAsFile())
+        return;
+
+    //  Remembered on CHOICE, like the model picker beside it: an IR that
+    //  fails to decode still tells the user where their IRs live.
+    const auto previousName = audioProcessor.getLoadedIrName();
+    audioProcessor.setLoadedIrName (file.getFileNameWithoutExtension());
+    rememberFolder ("lastIrFolder", file);
+
+    if (! audioProcessor.loadIrFile (file))
+    {
+        // A file that would not decode leaves the previous IR in place and
+        // says WHICH failure it was, in the same shape the model picker uses.
+        audioProcessor.setLoadedIrName (previousName);
+        irStatusReason = audioProcessor.lastLoadError();
+        irStatusDetail = audioProcessor.lastLoadDetail();
+        lastShownIrStatus = {};      // force the next refresh to repaint
+        refreshIrStatus();
+        return;
+    }
+
+    irStatusReason = {};
+    irStatusDetail = {};
+    lastShownIrStatus = {};      // force the next refresh to repaint
+    openStageMix ("ir_mix");
+    refreshIrStatus();
 }
 
 void FirstAudioProcessorEditor::loadNoisePrintFromFile()
@@ -749,21 +768,29 @@ void FirstAudioProcessorEditor::loadNoisePrintFromFile()
         if (! file.existsAsFile())
             return;
 
-        // Choice, not success: the print's decode finishes later and can fail,
-        // but the folder is where the user's prints are either way.
-        rememberFolder ("lastNoiseFolder", file);
-
-        // Whatever this returns, the answer is NOT known here: a print is read
-        // and decoded on the loader's own thread, so the processor only refuses
-        // a file that is not there. Everything else - bad WAV, no frames, NaN,
-        // over the minute cap - arrives through getNoiseError() on a later
-        // tick, which is exactly what the readout is for.
-        editor.audioProcessor.loadNoiseFile (file);
-
-        editor.noiseStatusReason = {};
-        editor.lastShownNoiseStatus = {};    // force the next refresh to repaint
-        editor.refreshNoiseStatus();
+        editor.loadNoisePrintFile (file);
     });
+}
+
+void FirstAudioProcessorEditor::loadNoisePrintFile (const juce::File& file)
+{
+    if (! file.existsAsFile())
+        return;
+
+    // Choice, not success: the print's decode finishes later and can fail,
+    // but the folder is where the user's prints are either way.
+    rememberFolder ("lastNoiseFolder", file);
+
+    // Whatever this returns, the answer is NOT known here: a print is read
+    // and decoded on the loader's own thread, so the processor only refuses
+    // a file that is not there. Everything else - bad WAV, no frames, NaN,
+    // over the minute cap - arrives through getNoiseError() on a later
+    // tick, which is exactly what the readout is for.
+    audioProcessor.loadNoiseFile (file);
+
+    noiseStatusReason = {};
+    lastShownNoiseStatus = {};    // force the next refresh to repaint
+    refreshNoiseStatus();
 }
 
 
@@ -787,6 +814,10 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     // must not travel in a session.
     themeChoice = j37panel::rememberedThemeChoice();
     j37panel::userPalette = j37panel::rememberedUserPalette();
+    // A size preference has to exist before setUpWindowAndSize() reads it, and it
+    // is a machine preference for the same reason the theme is: a host rebuilds the
+    // editor, but the eyes in front of the screen do not change with the session.
+    uiScalePercent = j37panel::rememberedUiScale();
 
     // This editor announces a CLOCK, not a lifetime: while the panel is on screen
     // its timer steps the ball, and when it goes the engine keeps the same physics
@@ -1275,7 +1306,7 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
                                + (headerColumns - 1) * headerGap - 18,
                            headerStatusHeight);
     statusLabel.setJustificationType (juce::Justification::centredLeft);
-    statusLabel.setFont (statusLabel.getFont().withHeight (8.5f));
+    statusLabel.setFont (statusLabel.getFont().withHeight (uiFontSize (9.5f)));
     statusLabel.setBorderSize (juce::BorderSize<int> (0, 26, 0, 0));
 }
 
@@ -2326,6 +2357,8 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     antiPhaseGuardButton.setVisible (geometry.settingsTab);
     parameterSheetButton.setVisible (geometry.settingsTab);
     parameterSheetLabel.setVisible (geometry.settingsTab);
+    uiScaleLabel.setVisible (geometry.settingsTab);
+    uiScaleBox.setVisible (geometry.settingsTab);
     // The USER theme's colour key rides SETTINGS's first band, beside OVERSAMPLING -
     // both are interface preferences rather than controls of the machine.
     userThemeButton.setVisible (geometry.settingsTab);
@@ -2465,16 +2498,16 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
         // ---- SETTINGS: a preference sheet, not a clump at the top ---------
         //
         // This page holds no knobs, so its grid IS the page - and until now its
-        // seven preferences were placed in the first ~106 px of it: three through
+        // eight preferences were placed in the first ~106 px of it: three through
         // placeDeckSwitch and three hand-written at +56 / +76, with the rest of
         // the page left as empty metal. That is the user's report exactly: "many
         // switches and one list, the switches are small, and there is a lot of
         // free space on the tab".
         //
-        // Two rows now share the whole page - four cells on the first, three
-        // centred on the second - and the control height is solved from the row
-        // it is given: 30 px at the tightest window, up to 46 px when there is
-        // room. Every one of the seven goes through ONE placement, so a list,
+        // Two rows now share the whole page - four cells on each - and the control
+        // height is solved from the row it is given: 30 px at the tightest window,
+        // up to 56 px when there is room. Every one of the eight goes through ONE
+        // placement, so a list,
         // a key and a switch are the same rectangle by construction; what
         // differs is only what is drawn on the plate.
         constexpr int settingsRowGap = 12;
@@ -2504,11 +2537,9 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
         };
 
         const auto fullRow = geometry.grid.getX();
-        // A three-item row is centred under the four-item one - the same rule the
-        // knob strip uses for its short last row, so a page whose contents do not
-        // divide evenly still reads as one grid.
-        const auto shortRow = geometry.grid.getX()
-                              + (geometry.grid.getWidth() - 3 * geometry.cellWidth) / 2;
+        // Both preference rows hold four cells. The second row used to hold three
+        // and be centred; UI SCALE makes it a full four, which is the cleaner
+        // reading and keeps every cell the same width as the row above it.
 
         // Row one: the two choices, the colour window and the second view of the
         // machine - the four things that say what the panel IS.
@@ -2517,11 +2548,13 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
         placeSetting (userThemeLabel,       userThemeButton,     2, 0, fullRow);
         placeSetting (parameterSheetLabel,  parameterSheetButton, 3, 0, fullRow);
 
-        // Row two: the language, the interface sounds and the guard - the three
-        // things that describe how it behaves while you use it.
-        placeSetting (languageLabel,         languageBox,          0, 1, shortRow);
-        placeSetting (uiSoundsLabel,         uiSoundsButton,       1, 1, shortRow);
-        placeSetting (antiPhaseGuardLabel,   antiPhaseGuardButton, 2, 1, shortRow);
+        // Row two: the language, the interface sounds, the guard and the panel's
+        // own working scale - the four things that describe how it behaves while
+        // you use it.
+        placeSetting (languageLabel,         languageBox,          0, 1, fullRow);
+        placeSetting (uiSoundsLabel,         uiSoundsButton,       1, 1, fullRow);
+        placeSetting (antiPhaseGuardLabel,   antiPhaseGuardButton, 2, 1, fullRow);
+        placeSetting (uiScaleLabel,          uiScaleBox,           3, 1, fullRow);
 
         // The caption is put back to the left, where every other caption on the
         // page sits: the header grid also places this one Label - right-aligned,

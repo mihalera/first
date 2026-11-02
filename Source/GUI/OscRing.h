@@ -190,7 +190,25 @@ public:
             announceLanded();
         }
 
-        repaint();
+        // The ball still gets its physics and announcements while it is covered;
+        // only the invalidation stops. That keeps /mibox/osc/on honest and the
+        // note under the ball current, and makes opening the parameter sheet a
+        // pause in drawing rather than a pause in playing.
+        if (redrawEnabled)
+            repaint();
+    }
+
+    /** Stops invalidating the ring while another surface covers it. The caller
+        is the editor's timer, which knows when the parameter sheet is open. */
+    void setRedrawEnabled (bool shouldRedraw)
+    {
+        if (redrawEnabled == shouldRedraw)
+            return;
+
+        redrawEnabled = shouldRedraw;
+
+        if (redrawEnabled)
+            repaint();
     }
 
     /** Whether the module runs (the header's OSC switch). Turning it on gives a
@@ -530,6 +548,7 @@ private:
     int noteTotal = 0;
 
     bool running = false;
+    bool redrawEnabled = true;
     bool darkTheme = false;
 
     int currentSector = 0;
