@@ -387,6 +387,11 @@ source = pathlib.Path(sys.argv[1])
 for path in sorted(list(source.glob("*.h")) + list((source / "GUI").glob("*.h"))):
     if path.name.startswith("NativeRenderer"):
         continue
+    # TapeSceneMetalShaders.h is an Rmetal(...) shader literal, not C++. The
+    # Metal adapter's .mm includes it where metal_stdlib exists; compiling it
+    # alone asks every non-Apple header pass for a library that is not there.
+    if path.name == "TapeSceneMetalShaders.h":
+        continue
     # Relative to Source/, which is on the include path - the same way the
     # translation units above name them. `Source/PluginProcessor.h` would not
     # resolve from here, and the failure would look like a missing file rather
