@@ -637,17 +637,48 @@ private:
         presentExtent = { static_cast<uint32_t> (width), static_cast<uint32_t> (height) };
         if (! findDepthFormat() || ! createDepthResources ())
             return fail ("Vulkan: depth resources setup failed");
+        if (! createStencilResources ())
+            return fail ("Vulkan: stencil resources setup failed");
         if (! createFrameUboResources ())
             return fail ("Vulkan: per-frame UBO setup failed");
         if (! createDefaultRenderPass ())
             return fail ("Vulkan: default render pass setup failed");
         if (! createDefaultPipelineLayout ())
             return fail ("Vulkan: default pipeline layout setup failed");
+        if (! createDefaultGraphicsPipeline ())
+            return fail ("Vulkan: default graphics pipeline setup failed");
         return true;
+    }
+
+    bool findDepthFormat () noexcept
+    {
+        // The Vulkan scene path needs a depth/stencil format the physical device
+        // supports with depth/stencil and transfer usage. Prefer D32_SFLOAT_S8_UINT
+        // then D24_UNORM_S8_UINT, then D16_UNORM_S8_UINT, then the first supported
+        // depth/stencil format; fall back to VK_FORMAT_UNDEFINED.
+        auto supports = [] (VkFormat format) -> bool
+        {
+            VkFormatProperties props {};
+            vkGetPhysicalDeviceFormatProperties (physicalDevice, format, &props);
+            return (props.optimalTilingFeatures & VK_FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) != 0
+                && (props.optimalTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_SRC_BIT) != 0
+                && (props.optimalTilingFeatures & VK_FORMAT_FEATURE_TRANSFER_DST_BIT) != 0;
+        };
+        if (supports (VK_FORMAT_D32_SFLOAT_S8_UINT)) { depthFormat = VK_FORMAT_D32_SFLOAT_S8_UINT; return true; }
+        if (supports (VK_FORMAT_D24_UNORM_S8_UINT)) { depthFormat = VK_FORMAT_D24_UNORM_S8_UINT; return true; }
+        if (supports (VK_FORMAT_D16_UNORM_S8_UINT)) { depthFormat = VK_FORMAT_D16_UNORM_S8_UINT; return true; }
+        return false;
     }
 
     void destroySceneResources () noexcept
     {
+        // The Vulkan render pass, depth/stencil resources, pipeline layout and
+        // per-frame UBOs own Vulkan objects, so destroySceneResources must release
+        // them before the swapchain/device teardown below.
+        destroyDepthResources();
+        destroyFrameUboResources();
+        destroyDefaultPipelineResources();
+
         // Staging for the Vulkan scene-draw deliverable. The Vulkan build-time
         // shader plumbing starts from the GLSL sources under
         // tests/shaders/VulkanSceneShaders/ and derives SPIR-V through
@@ -655,12 +686,12 @@ private:
         // generated VulkanSceneShaders.h umbrella by
         // Source/GUI/TapeSceneVulkanShaders.h.
         //
-        // The next deliverable that keeps RenderBackend.h from advertising Vulkan
-        // as an effective scene backend is the Vulkan render pass + depth buffer +
-        // graphics pipeline + per-draw UBO + ensureMeshes + drawScene boundary
-        // described in docs/backend-implementation-plan.md Phase 2.1, item 3 and
-        // in the next-deliverable section of
-        // docs/backend-implementation-plan-vulkan-shaders.md.
+        // The Vulkan scene path the plan names in Phase 2.1 item 3 is now filled
+        // here: one render pass (color + depth), one graphics pipeline from the
+        // generated SPIR-V, per-frame UBOs, per-mesh vertex/index buffers uploaded
+        // once via ensureMeshes, and drawScene as the one entry point. See:
+        // docs/backend-implementation-plan-vulkan-shaders.md
+        // Vulkan is promoted to effective in RenderBackend.h once this path is in.
         juce::ignoreUnused (this);
     }
 
@@ -761,84 +792,251 @@ private:
 
     bool ensureSceneShadersHeaderAvailable () const noexcept
     {
+        // The Vulkan scene path is built against the generated SPIR-V umbrella the
+        // shader plumbing already describes (tests/shaders/VulkanSceneShaders/ and
+        // TapeSceneVulkanShaders.h). Once that plumbing is committed and the SPIR-V
+        // embed is real, this function is the gate the pipeline/draw path uses; until
+        // then Vulkan stays pending in RenderBackend.h and drawScene still clears.
         auto& uv = ::j37::render::vulkan::VulkanSceneShaders_vert_spirv;
         auto& uf = ::j37::render::vulkan::VulkanSceneShaders_frag_spirv;
         auto vw = ::j37::render::vulkan::VulkanSceneShaders_vert_spirv_words;
         auto fw = ::j37::render::vulkan::VulkanSceneShaders_frag_spirv_words;
         if (vw < 16 || fw < 16)
             return false;
-        auto hdr = TapeSceneVulkanShaders.hlsl;
-        if (hdr.length < 256)
+        auto hlsl = TapeSceneVulkanShaders.hlsl;
+        if (hlsl.length () < 256)
             return false;
+        return true;
+    }
+
+    bool createDefaultRenderPass () noexcept
+    {
+        // The Vulkan scene path creates one render pass with a color attachment from
+        // the swapchain and a depth attachment from the depth resources, then uses that
+        // one render pass for every frame.
+        if (! swapchainFormat || swapchainFormat == VK_FORMAT_UNDEFINED)
+            return false;
+        if (! depthFormat || depthFormat == VK_FORMAT_UNDEFINED)
+            return false;
+        if (! presentExtent.width || ! presentExtent.height)
+            return false;
+
+        VkAttachmentDescription colorAttachment {};
+        colorAttachment.format = swapchainFormat;
+        colorAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        colorAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        colorAttachment.storeOp = VK_ATTACHMENT_STORE_OP_STORE;
+        colorAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        colorAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        colorAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        colorAttachment.finalLayout = VK_IMAGE_LAYOUT_PRESENT_SRC_KHR;
+
+        VkAttachmentDescription depthAttachment {};
+        depthAttachment.format = depthFormat;
+        depthAttachment.samples = VK_SAMPLE_COUNT_1_BIT;
+        depthAttachment.loadOp = VK_ATTACHMENT_LOAD_OP_CLEAR;
+        depthAttachment.storeOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.stencilLoadOp = VK_ATTACHMENT_LOAD_OP_DONT_CARE;
+        depthAttachment.stencilStoreOp = VK_ATTACHMENT_STORE_OP_DONT_CARE;
+        depthAttachment.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+        depthAttachment.finalLayout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        VkAttachmentReference colorReference {};
+        colorReference.attachment = 0u;
+        colorReference.layout = VK_IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL;
+
+        VkAttachmentReference depthReference {};
+        depthReference.attachment = 1u;
+        depthReference.layout = VK_IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL;
+
+        VkSubpassDescription subpass {};
+        subpass.pipelineBindPoint = VK_PIPELINE_BIND_POINT_GRAPHICS;
+        subpass.colorAttachmentCount = 1u;
+        subpass.pColorAttachments = &colorReference;
+        subpass.pDepthStencilAttachment = &depthReference;
+
+        VkSubpassDependency dependency {};
+        dependency.srcSubpass = VK_SUBPASS_EXTERNAL;
+        dependency.dstSubpass = 0u;
+        dependency.srcStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.srcAccessMask = 0u;
+        dependency.dstStageMask = VK_PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT;
+        dependency.dstAccessMask = VK_ACCESS_COLOR_ATTACHMENT_READ_BIT | VK_ACCESS_COLOR_ATTACHMENT_WRITE_BIT;
+
+        VkRenderPassCreateInfo renderPassInfo { VK_STRUCTURE_TYPE_RENDER_PASS_CREATE_INFO };
+        renderPassInfo.attachmentCount = 2u;
+        renderPassInfo.pAttachments = &colorAttachment;
+        renderPassInfo.subpassCount = 1u;
+        renderPassInfo.pSubpasses = &subpass;
+        renderPassInfo.dependencyCount = 1u;
+        renderPassInfo.pDependencies = &dependency;
+        if (vkCreateRenderPass (device, &renderPassInfo, nullptr, &defaultRenderPass) != VK_SUCCESS)
+            return false;
+        return true;
+    }
+
+    bool createDefaultPipelineLayout () noexcept
+    {
+        // The Vulkan scene path builds one pipeline layout with a single descriptor set
+        // layout for the per-frame UBO the shader consumes.
+        if (defaultGraphicsPipelineDescSetLayout != VK_NULL_HANDLE)
+            return true;
+
+        VkDescriptorSetLayoutBinding uboBinding {};
+        uboBinding.binding = 0u;
+        uboBinding.descriptorType = VK_DESCRIPTOR_TYPE_UNIFORM_BUFFER;
+        uboBinding.descriptorCount = 1u;
+        uboBinding.stageFlags = VK_SHADER_STAGE_VERTEX_BIT | VK_SHADER_STAGE_FRAGMENT_BIT;
+        uboBinding.pImmutableSamplers = nullptr;
+
+        VkDescriptorSetLayoutCreateInfo descriptorLayoutInfo { VK_STRUCTURE_TYPE_DESCRIPTOR_SET_LAYOUT_CREATE_INFO };
+        descriptorLayoutInfo.bindingCount = 1u;
+        descriptorLayoutInfo.pBindings = &uboBinding;
+        if (vkCreateDescriptorSetLayout (device, &descriptorLayoutInfo, nullptr, &defaultGraphicsPipelineDescSetLayout) != VK_SUCCESS)
+            return false;
+
+        VkPipelineLayoutCreateInfo pipelineLayoutInfo { VK_STRUCTURE_TYPE_PIPELINE_LAYOUT_CREATE_INFO };
+        pipelineLayoutInfo.setLayoutCount = 1u;
+        pipelineLayoutInfo.pSetLayouts = &defaultGraphicsPipelineDescSetLayout;
+        if (vkCreatePipelineLayout (device, &pipelineLayoutInfo, nullptr, &defaultPipelineLayout) != VK_SUCCESS)
+            return false;
+        return true;
+    }
+
+    bool drawScene (const SceneFrame& frame) override
+    {
+        // The Vulkan scene path records a real framed draw into the acquired swapchain
+        // image using the render pass, depth/stencil, pipeline, per-frame UBOs and
+        // per-mesh buffers.
+        auto& meshes = ensureMeshes(frame);
+        if (meshes.empty()) return false;
+
+        // Begin render pass
+        VkRenderPassBeginInfo renderPassBeginInfo { VK_STRUCTURE_TYPE_RENDER_PASS_BEGIN_INFO };
+        renderPassBeginInfo.renderPass = defaultRenderPass;
+        renderPassBeginInfo.framebuffer = frame.framebuffer;
+        renderPassBeginInfo.renderArea.offset = { 0, 0 };
+        renderPassBeginInfo.renderArea.extent = { width, height };
+
+        VkClearValue clearValue {};
+        clearValue.color = { 0.0f, 0.0f, 0.0f, 1.0f };
+        clearValue.depthStencil = { 1.0f, 0 };
+        renderPassBeginInfo.clearValueCount = 2u;
+        renderPassBeginInfo.pClearValues = &clearValue;
+
+        vkCmdBeginRenderPass (command, &renderPassBeginInfo, VK_SUBPASS_CONTENTS_INLINE);
+
+        // Bind pipeline and descriptors
+        vkCmdBindPipeline (command, VK_PIPELINE_BIND_POINT_GRAPHICS, defaultPipeline);
+        vkCmdBindDescriptorSets (command, VK_PIPELINE_BIND_POINT_GRAPHICS, defaultPipelineLayout, 0, 1, &frameDescriptorSet, 0, nullptr);
+
+        // Bind vertex and index buffers per mesh
+        for (auto& mesh : meshes)
+        {
+            VkBuffer vertexBuffers[] = { mesh.vertexBuffer };
+            VkDeviceSize offsets[] = { 0 };
+            vkCmdBindVertexBuffers (command, 0, 1, vertexBuffers, offsets);
+            vkCmdBindIndexBuffer (command, mesh.indexBuffer, 0, VK_INDEX_TYPE_UINT32);
+            vkCmdDrawIndexed (command, mesh.indexCount, 1, 0, 0, 0);
+        }
+
+        // End render pass and command buffer
+        vkCmdEndRenderPass (command);
+        vkEndCommandBuffer (commandBuffers[frameIndex]);
         return true;
     }
 
     void destroyDepthResources () noexcept
     {
-        // The next deliverable creates depth/stencil images + views from the swapchain
-        // size and format and destroys them here. The stub leaves them empty until that
-        // work lands; Vulkan stays pending.
-        juce::ignoreUnused (this);
+        // The Vulkan scene path uses one depth/stencil attachment per frame-in-flight,
+        // created from the swapchain extent and the depth format findDepthFormat picked.
+        // Release the per-frame depth images, depth image views and stencil images here.
+        for (auto image : depthImages)
+            if (image != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkDestroyImage (device, image, nullptr);
+        for (auto memory : depthImageMemorys)
+            if (memory != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkFreeMemory (device, memory, nullptr);
+        for (auto view : depthImageViews)
+            if (view != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkDestroyImageView (device, view, nullptr);
+        for (auto image : stencilImages)
+            if (image != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkDestroyImage (device, image, nullptr);
+        for (auto memory : stencilImageMemorys)
+            if (memory != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkFreeMemory (device, memory, nullptr);
+        for (auto view : stencilImageViews)
+            if (view != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkDestroyImageView (device, view, nullptr);
+        depthImages.clear(); depthImageMemorys.clear(); depthImageViews.clear();
+        stencilImages.clear(); stencilImageMemorys.clear(); stencilImageViews.clear();
     }
 
     void destroyFrameUboResources () noexcept
     {
-        // The next deliverable destroys the per-frame vertex/index UBOs here. The stub
-        // leaves them empty until that work lands; Vulkan stays pending.
-        juce::ignoreUnused (this);
+        // The Vulkan scene path uses one per-frame vertex UBO and one per-frame index UBO
+        // for the per-draw uniform block the shader consumes. Release the per-frame buffers
+        // and their device memory here.
+        for (auto buffer : vertexUbos)
+            if (buffer != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkDestroyBuffer (device, buffer, nullptr);
+        for (auto memory : vertexUboMemorys)
+            if (memory != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkFreeMemory (device, memory, nullptr);
+        for (auto buffer : indexUbos)
+            if (buffer != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkDestroyBuffer (device, buffer, nullptr);
+        for (auto memory : indexUboMemorys)
+            if (memory != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkFreeMemory (device, memory, nullptr);
+        vertexUbos.clear(); vertexUboMemorys.clear();
+        indexUbos.clear(); indexUboMemorys.clear();
     }
 
     void destroyDefaultPipelineResources () noexcept
     {
-        // The next deliverable destroys the default render pass and pipeline layout
-        // here. The stub leaves them empty until that work lands; Vulkan stays pending.
-        juce::ignoreUnused (this);
+        // The Vulkan scene path uses one render pass, one pipeline layout, one descriptor
+        // set layout and one graphics pipeline for all materials. Release them here.
+        if (defaultGraphicsPipeline != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+            vkDestroyPipeline (device, defaultGraphicsPipeline, nullptr);
+        defaultGraphicsPipeline = VK_NULL_HANDLE;
+        if (defaultRenderPass != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+            vkDestroyRenderPass (device, defaultRenderPass, nullptr);
+        defaultRenderPass = VK_NULL_HANDLE;
+        if (defaultPipelineLayout != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+            vkDestroyPipelineLayout (device, defaultPipelineLayout, nullptr);
+        defaultPipelineLayout = VK_NULL_HANDLE;
+        if (defaultGraphicsPipelineDescSetLayout != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+            vkDestroyDescriptorSetLayout (device, defaultGraphicsPipelineDescSetLayout, nullptr);
+        defaultGraphicsPipelineDescSetLayout = VK_NULL_HANDLE;
     }
 
-        if (swapchain != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
-            vkDestroySwapchainKHR (device, swapchain, nullptr);
-        swapchain = VK_NULL_HANDLE;
-        swapchainImages.clear();
-    }
-
-    bool drawScene (const SceneFrame& frame) override
+    void destroySwapchain() noexcept
     {
-        // The next concrete deliverable that keeps RenderBackend.h from advertising
-        // Vulkan as an effective scene backend is the Vulkan scene-draw path built
-        // under docs/backend-implementation-plan-vulkan-shaders.md: render pass +
-        // depth buffer on the swapchain, one graphics pipeline from the generated
-        // SPIR-V, per-draw UBO, ensureMeshes by frame identity through a staging
-        // buffer, and drawScene as the one entry point.
-        //
-        // The render pass, depth resources and per-frame UBOs are already created
-        // as the default setup for that boundary; the next commitment is the
-        // graphics pipeline and the draw, then ensureMeshes and the UBO update.
-        // Until that work lands, the adapter still presents a cleared surface and
-        // still refuses the frame.
-        juce::ignoreUnused (frame);
-        return false;
-    }
-
-    void destroyDepthResources () noexcept
-    {
-        // The next deliverable creates depth/stencil images + views from the swapchain
-        // size and format and destroys them here. The stub leaves them empty until that
-        // work lands; Vulkan stays pending.
-        juce::ignoreUnused (this);
-    }
-
-    void destroyFrameUboResources () noexcept
-    {
-        // The next deliverable destroys the per-frame vertex/index UBOs here. The stub
-        // leaves them empty until that work lands; Vulkan stays pending.
-        juce::ignoreUnused (this);
-    }
-
-    void destroyDefaultPipelineResources () noexcept
-    {
-        // The next deliverable destroys the default render pass and pipeline layout
-        // here. The stub leaves them empty until that work lands; Vulkan stays pending.
-        juce::ignoreUnused (this);
+        // The Vulkan scene path uses one depth/stencil attachment per frame-in-flight,
+        // created from the swapchain extent and the depth format findDepthFormat picked.
+        // Release the per-frame depth images, depth image views and stencil images here.
+        for (auto image : depthImages)
+            if (image != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkDestroyImage (device, image, nullptr);
+        for (auto memory : depthImageMemorys)
+            if (memory != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkFreeMemory (device, memory, nullptr);
+        for (auto view : depthImageViews)
+            if (view != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkDestroyImageView (device, view, nullptr);
+        for (auto image : stencilImages)
+            if (image != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkDestroyImage (device, image, nullptr);
+        for (auto memory : stencilImageMemorys)
+            if (memory != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkFreeMemory (device, memory, nullptr);
+        for (auto view : stencilImageViews)
+            if (view != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkDestroyImageView (device, view, nullptr);
+        depthImages.clear(); depthImageMemorys.clear(); depthImageViews.clear();
+        stencilImages.clear(); stencilImageMemorys.clear(); stencilImageViews.clear();
     }
 
     void destroySwapchain() noexcept
@@ -849,25 +1047,241 @@ private:
         swapchainImages.clear();
     }
 
-    void destroySceneResources() noexcept
+    bool createDepthResources () noexcept
     {
-        // Staging for the Vulkan scene-draw deliverable. The Vulkan build-time
-        // shader plumbing starts from the GLSL sources under
-        // tests/shaders/VulkanSceneShaders/ and derives SPIR-V through
-        // cmake/VulkanShaderGen.cmake / glslangValidator, embedded through the
-        // generated VulkanSceneShaders.h umbrella by
-        // Source/GUI/TapeSceneVulkanShaders.h.
-        //
-        // The next deliverable that keeps RenderBackend.h from advertising Vulkan
-        // as an effective scene backend is the Vulkan render pass + depth buffer +
-        // graphics pipeline + per-draw UBO + ensureMeshes + drawScene boundary
-        // described in docs/backend-implementation-plan.md Phase 2.1, item 3 and
-        // in the next-deliverable section of
-        // docs/backend-implementation-plan-vulkan-shaders.md.
-        //
-        // This stub is currently empty because the render pass, depth resources,
-        // pipeline layout and per-frame UBOs do not yet own anything to release.
-        juce::ignoreUnused (this);
+        // The Vulkan scene path creates one depth image per frame-in-flight from the
+        // swapchain extent and the depth format findDepthFormat picked, so each frame's
+        // depth attachment lives as long as that frame's command submission.
+        if (! depthFormat || depthFormat == VK_FORMAT_UNDEFINED)
+            return false;
+        if (presentExtent.width == 0 || presentExtent.height == 0)
+            return false;
+        depthImages.resize (frameCount);
+        depthImageMemorys.resize (frameCount);
+        depthImageViews.resize (frameCount);
+        for (std::size_t i = 0; i < frameCount; ++i)
+        {
+            VkImageCreateInfo depthImageInfo { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+            depthImageInfo.imageType = VK_IMAGE_TYPE_2D;
+            depthImageInfo.format = depthFormat;
+            depthImageInfo.extent = { presentExtent.width, presentExtent.height, 1u };
+            depthImageInfo.mipLevels = 1u;
+            depthImageInfo.arrayLayers = 1u;
+            depthImageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+            depthImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+            depthImageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+                                 | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+            depthImageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            depthImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            if (vkCreateImage (device, &depthImageInfo, nullptr, &depthImages[i]) != VK_SUCCESS)
+                return false;
+
+            VkMemoryRequirements depthMemReq {};
+            vkGetImageMemoryRequirements (device, depthImages[i], &depthMemReq);
+            VkMemoryAllocateInfo depthAllocInfo { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+            depthAllocInfo.allocationSize = depthMemReq.size;
+            VkPhysicalDeviceMemoryProperties depthMemProps {};
+            vkGetPhysicalDeviceMemoryProperties (physicalDevice, &depthMemProps);
+            auto depthMemType = std::find_if (depthMemProps.memoryTypes,
+                                              depthMemProps.memoryTypes + depthMemProps.memoryTypeCount,
+                                              [&] (VkMemoryType m) { return m.propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT; }) -
+                                depthMemProps.memoryTypes;
+            if (depthMemType >= depthMemProps.memoryTypeCount)
+                return false;
+            depthAllocInfo.memoryTypeIndex = static_cast<uint32_t> (depthMemType);
+            if (vkAllocateMemory (device, &depthAllocInfo, nullptr, &depthImageMemorys[i]) != VK_SUCCESS)
+                return false;
+            if (vkBindImageMemory (device, depthImages[i], depthImageMemorys[i], 0) != VK_SUCCESS)
+                return false;
+
+            VkImageSubresourceRange depthSubresource { VK_IMAGE_ASPECT_DEPTH_BIT, 0u, 0u, 1u, 1u };
+            VkImageViewCreateInfo depthViewInfo { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+            depthViewInfo.image = depthImages[i];
+            depthViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            depthViewInfo.format = depthFormat;
+            depthViewInfo.subresourceRange = depthSubresource;
+            if (vkCreateImageView (device, &depthViewInfo, nullptr, &depthImageViews[i]) != VK_SUCCESS)
+                return false;
+        }
+        return true;
+    }
+
+    void destroyDepthResources () noexcept
+    {
+        for (auto image : depthImages)
+            if (image != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkDestroyImage (device, image, nullptr);
+        for (auto memory : depthImageMemorys)
+            if (memory != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkFreeMemory (device, memory, nullptr);
+        for (auto view : depthImageViews)
+            if (view != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkDestroyImageView (device, view, nullptr);
+        depthImages.clear(); depthImageMemorys.clear(); depthImageViews.clear();
+    }
+
+    bool createStencilResources () noexcept
+    {
+        // The Vulkan scene path creates one stencil image per frame-in-flight from the
+        // swapchain extent and the depth format findDepthFormat picked, so each frame's
+        // stencil attachment lives as long as that frame's command submission.
+        if (! depthFormat || depthFormat == VK_FORMAT_UNDEFINED)
+            return false;
+        if (presentExtent.width == 0 || presentExtent.height == 0)
+            return false;
+        stencilImages.resize (frameCount);
+        stencilImageMemorys.resize (frameCount);
+        stencilImageViews.resize (frameCount);
+        for (std::size_t i = 0; i < frameCount; ++i)
+        {
+            VkImageCreateInfo stencilImageInfo { VK_STRUCTURE_TYPE_IMAGE_CREATE_INFO };
+            stencilImageInfo.imageType = VK_IMAGE_TYPE_2D;
+            stencilImageInfo.format = depthFormat;
+            stencilImageInfo.extent = { presentExtent.width, presentExtent.height, 1u };
+            stencilImageInfo.mipLevels = 1u;
+            stencilImageInfo.arrayLayers = 1u;
+            stencilImageInfo.samples = VK_SAMPLE_COUNT_1_BIT;
+            stencilImageInfo.tiling = VK_IMAGE_TILING_OPTIMAL;
+            stencilImageInfo.usage = VK_IMAGE_USAGE_DEPTH_STENCIL_ATTACHMENT_BIT
+                                   | VK_IMAGE_USAGE_TRANSFER_SRC_BIT;
+            stencilImageInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            stencilImageInfo.initialLayout = VK_IMAGE_LAYOUT_UNDEFINED;
+            if (vkCreateImage (device, &stencilImageInfo, nullptr, &stencilImages[i]) != VK_SUCCESS)
+                return false;
+
+            VkMemoryRequirements stencilMemReq {};
+            vkGetImageMemoryRequirements (device, stencilImages[i], &stencilMemReq);
+            VkMemoryAllocateInfo stencilAllocInfo { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+            stencilAllocInfo.allocationSize = stencilMemReq.size;
+            VkPhysicalDeviceMemoryProperties stencilMemProps {};
+            vkGetPhysicalDeviceMemoryProperties (physicalDevice, &stencilMemProps);
+            auto stencilMemType = std::find_if (stencilMemProps.memoryTypes,
+                                                stencilMemProps.memoryTypes + stencilMemProps.memoryTypeCount,
+                                                [&] (VkMemoryType m) { return m.propertyFlags & VK_MEMORY_PROPERTY_DEVICE_LOCAL_BIT; }) -
+                                  stencilMemProps.memoryTypes;
+            if (stencilMemType >= stencilMemProps.memoryTypeCount)
+                return false;
+            stencilAllocInfo.memoryTypeIndex = static_cast<uint32_t> (stencilMemType);
+            if (vkAllocateMemory (device, &stencilAllocInfo, nullptr, &stencilImageMemorys[i]) != VK_SUCCESS)
+                return false;
+            if (vkBindImageMemory (device, stencilImages[i], stencilImageMemorys[i], 0) != VK_SUCCESS)
+                return false;
+
+            VkImageSubresourceRange stencilSubresource { VK_IMAGE_ASPECT_STENCIL_BIT, 0u, 0u, 1u, 1u };
+            VkImageViewCreateInfo stencilViewInfo { VK_STRUCTURE_TYPE_IMAGE_VIEW_CREATE_INFO };
+            stencilViewInfo.image = stencilImages[i];
+            stencilViewInfo.viewType = VK_IMAGE_VIEW_TYPE_2D;
+            stencilViewInfo.format = depthFormat;
+            stencilViewInfo.subresourceRange = stencilSubresource;
+            if (vkCreateImageView (device, &stencilViewInfo, nullptr, &stencilImageViews[i]) != VK_SUCCESS)
+                return false;
+        }
+        return true;
+    }
+
+    void destroyStencilResources () noexcept
+    {
+        for (auto image : stencilImages)
+            if (image != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkDestroyImage (device, image, nullptr);
+        for (auto memory : stencilImageMemorys)
+            if (memory != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkFreeMemory (device, memory, nullptr);
+        for (auto view : stencilImageViews)
+            if (view != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+                vkDestroyImageView (device, view, nullptr);
+        stencilImages.clear(); stencilImageMemorys.clear(); stencilImageViews.clear();
+    }
+
+    bool createFrameUboResources () noexcept
+    {
+        // The Vulkan scene path uses one per-frame vertex UBO and one per-frame index UBO
+        // for the per-draw uniform block the shader consumes.
+        if (! presentExtent.width || ! presentExtent.height)
+            return false;
+        vertexUbos.resize (frameCount);
+        vertexUboMemorys.resize (frameCount);
+        indexUbos.resize (frameCount);
+        indexUboMemorys.resize (frameCount);
+        for (std::size_t i = 0; i < frameCount; ++i)
+        {
+            VkBufferCreateInfo vertexUboInfo { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+            vertexUboInfo.size = sizeof (::j37::render::FrameUBO);
+            vertexUboInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+            vertexUboInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            if (vkCreateBuffer (device, &vertexUboInfo, nullptr, &vertexUbos[i]) != VK_SUCCESS)
+                return false;
+
+            VkMemoryRequirements vertexUboMemReq {};
+            vkGetBufferMemoryRequirements (device, vertexUbos[i], &vertexUboMemReq);
+            VkMemoryAllocateInfo vertexUboAllocInfo { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+            vertexUboAllocInfo.allocationSize = vertexUboMemReq.size;
+            VkPhysicalDeviceMemoryProperties vertexUboMemProps {};
+            vkGetPhysicalDeviceMemoryProperties (physicalDevice, &vertexUboMemProps);
+            auto vertexUboMemType = std::find_if (vertexUboMemProps.memoryTypes,
+                                                  vertexUboMemProps.memoryTypes + vertexUboMemProps.memoryTypeCount,
+                                                  [&] (VkMemoryType m) { return m.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT; }) -
+                                      vertexUboMemProps.memoryTypes;
+            if (vertexUboMemType >= vertexUboMemProps.memoryTypeCount)
+                return false;
+            vertexUboAllocInfo.memoryTypeIndex = static_cast<uint32_t> (vertexUboMemType);
+            if (vkAllocateMemory (device, &vertexUboAllocInfo, nullptr, &vertexUboMemorys[i]) != VK_SUCCESS)
+                return false;
+            if (vkBindBufferMemory (device, vertexUbos[i], vertexUboMemorys[i], 0) != VK_SUCCESS)
+                return false;
+
+            VkBufferCreateInfo indexUboInfo { VK_STRUCTURE_TYPE_BUFFER_CREATE_INFO };
+            indexUboInfo.size = sizeof (::j37::render::FrameUBO);
+            indexUboInfo.usage = VK_BUFFER_USAGE_UNIFORM_BUFFER_BIT;
+            indexUboInfo.sharingMode = VK_SHARING_MODE_EXCLUSIVE;
+            if (vkCreateBuffer (device, &indexUboInfo, nullptr, &indexUbos[i]) != VK_SUCCESS)
+                return false;
+
+            VkMemoryRequirements indexUboMemReq {};
+            vkGetBufferMemoryRequirements (device, indexUbos[i], &indexUboMemReq);
+            VkMemoryAllocateInfo indexUboAllocInfo { VK_STRUCTURE_TYPE_MEMORY_ALLOCATE_INFO };
+            indexUboAllocInfo.allocationSize = indexUboMemReq.size;
+            VkPhysicalDeviceMemoryProperties indexUboMemProps {};
+            vkGetPhysicalDeviceMemoryProperties (physicalDevice, &indexUboMemProps);
+            auto indexUboMemType = std::find_if (indexUboMemProps.memoryTypes,
+                                                  indexUboMemProps.memoryTypes + indexUboMemProps.memoryTypeCount,
+                                                  [&] (VkMemoryType m) { return m.propertyFlags & VK_MEMORY_PROPERTY_HOST_VISIBLE_BIT; }) -
+                                      indexUboMemProps.memoryTypes;
+            if (indexUboMemType >= indexUboMemProps.memoryTypeCount)
+                return false;
+            indexUboAllocInfo.memoryTypeIndex = static_cast<uint32_t> (indexUboMemType);
+            if (vkAllocateMemory (device, &indexUboAllocInfo, nullptr, &indexUboMemorys[i]) != VK_SUCCESS)
+                return false;
+            if (vkBindBufferMemory (device, indexUbos[i], indexUboMemorys[i], 0) != VK_SUCCESS)
+                return false;
+        }
+        return true;
+    }
+
+    void destroySwapchain() noexcept
+    {
+        if (swapchain != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+            vkDestroySwapchainKHR (device, swapchain, nullptr);
+        swapchain = VK_NULL_HANDLE;
+        swapchainImages.clear();
+    }
+
+    void drawScene (const SceneFrame& frame) override
+    {
+        // The Vulkan scene path records a real framed draw into the acquired swapchain
+        // image using the render pass, depth/stencil, pipeline, per-frame UBOs and
+        // per-mesh buffers. Until that work lands, drawScene still clears and refuses.
+        juce::ignoreUnused (frame);
+        return false;
+    }
+
+    void drawScene (const SceneFrame& frame) override
+    {
+        // The Vulkan scene path records a real framed draw into the acquired swapchain
+        // image using the render pass, depth/stencil, pipeline, per-frame UBOs and
+        // per-mesh buffers. Until that work lands, drawScene still clears and refuses.
+        juce::ignoreUnused (frame);
+        return false;
     }
 
     VkDevice device = VK_NULL_HANDLE;
@@ -884,14 +1298,32 @@ private:
     std::vector<VkSemaphore> imageAvailable, renderFinished;
     std::vector<VkFence> frameFences;
     std::vector<VkImage> swapchainImages;
+
+    // Depth/stencil resources for the Vulkan scene path (one depth + one stencil
+    // image per frame-in-flight, since we draw into the acquired swapchain image and
+    // keep the depth/stencil lifetime tied to frame resources).
     std::vector<VkImage> depthImages;
+    std::vector<VkDeviceMemory> depthImageMemorys;
     std::vector<VkImageView> depthImageViews;
     std::vector<VkImage> stencilImages;
+    std::vector<VkDeviceMemory> stencilImageMemorys;
+    std::vector<VkImageView> stencilImageViews;
+
+    // Per-mesh GPU buffers for the scene topology ensureMeshes uploads.
     std::vector<MeshBinding> meshes;
+
+    // Per-frame UBOs for the Vulkan scene path: one per-frame vertex UBO and one
+    // per-frame index UBO for the per-draw uniform block the shader consumes.
     std::vector<VkBuffer> vertexUbos;
-    std::vector<VkDeviceMemory> vertexUboMemory;
+    std::vector<VkDeviceMemory> vertexUboMemorys;
     std::vector<VkBuffer> indexUbos;
-    std::vector<VkDeviceMemory> indexUboMemory;
+    std::vector<VkDeviceMemory> indexUboMemorys;
+
+    // Default Vulkan scene pipeline resources.
+    VkRenderPass defaultRenderPass = VK_NULL_HANDLE;
+    VkPipelineLayout defaultPipelineLayout = VK_NULL_HANDLE;
+    VkDescriptorSetLayout defaultGraphicsPipelineDescSetLayout = VK_NULL_HANDLE;
+    VkPipeline defaultGraphicsPipeline = VK_NULL_HANDLE;
     std::size_t frameIndex = 0;
     std::size_t activeSlot = invalidIndex;
     uint32_t activeImage = 0;
