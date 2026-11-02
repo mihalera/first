@@ -182,6 +182,18 @@ endif()
 
 add_subdirectory(JUCE)
 
+# JUCE's Android Oboe target adds -Ofast for Release, which current Clang
+# deprecates and repeats for every translation unit. Keep the same optimization
+# semantics using Clang's supported spelling.
+if(ANDROID AND CMAKE_CXX_COMPILER_ID MATCHES "Clang" AND TARGET oboe)
+    get_target_property(_j37_oboe_compile_options oboe COMPILE_OPTIONS)
+    list(REMOVE_ITEM _j37_oboe_compile_options "$<$<CONFIG:RELEASE>:-Ofast>")
+    list(APPEND _j37_oboe_compile_options
+        "$<$<CONFIG:RELEASE>:-O3>"
+        "$<$<CONFIG:RELEASE>:-ffast-math>")
+    set_property(TARGET oboe PROPERTY COMPILE_OPTIONS "${_j37_oboe_compile_options}")
+endif()
+
 # ------------------------------------------------------------------------------
 #  Third-party libraries (CPM). See cmake/J37Dependencies.cmake.
 # ------------------------------------------------------------------------------

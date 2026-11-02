@@ -84,6 +84,7 @@ constexpr Backend configuredBackend() noexcept {
     //   - J37_NATIVE_BGFX   -> BGFX backend has scene draw
 
 constexpr bool hasNativeImplementation(Backend backend) noexcept {
+    (void) backend;
 #if defined(J37_NATIVE_SOKOL)
     if (backend == Backend::sokol)
         return true;
