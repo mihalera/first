@@ -157,19 +157,32 @@ per-draw uniforms, `drawScene`.
    backend is not compiled in (`J37_NATIVE_VULKAN` off) and the build warns -
    the same pattern the CMake platform guards already use, and better than a
    runtime shaderc dependency the plugin does not otherwise carry.
+
+   Shaders-first deliverable has its own document now:
+   `docs/backend-implementation-plan-vulkan-shaders.md`. It carries the GLSL 450
+   scene shader source (`tests/shaders/VulkanSceneShaders/vert.glsl`,
+   `frag.glsl`), the SPIR-V embed contract header
+   (`Source/GUI/TapeSceneVulkanShaders.h`) and the next-deliverable spec for the
+   pipeline/UBO/mesh/upload/drawScene boundary. The Metal shader
+   (`Source/GUI/TapeSceneMetalShaders.h`, commit `e382d6ea`) is the reference
+   spelling; the Vulkan shaders reproduce it in GLSL 450, not a new scene.
+
 2. **Pipeline:** one render pass (color + depth), one graphics pipeline for all
    materials - the material switch is shader-side, as in the Metal port. Vertex
    input mirrors `SceneVertex` (float4 position, float3 normal, interleaved);
    blend state matches the Metal pipeline (src alpha / one-minus-src-alpha);
    depth test less-equal, write on.
+
 3. **Uniforms:** one UBO per frame-in-flight, sub-allocated per draw with
    dynamic offsets; the per-draw block mirrors `MetalUniforms` field for field
    (viewProjection, model, normalMatrix, base/highlight colour, parameters,
    globals, lightDirection) so the packing contract from Phase 1 is copied, not
    re-invented.
+
 4. **Meshes:** `ensureMeshes` by `shared_ptr` identity (the pattern both
    existing ports use), uploaded through a staging buffer with the transfer
    barriers the file already contains.
+
 5. **Gate:** `hasNativeImplementation` flips `J37_NATIVE_VULKAN` to true.
 
 **Why first.** Vulkan is the one pending backend that runs on Windows, Linux

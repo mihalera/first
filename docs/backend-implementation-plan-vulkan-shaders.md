@@ -170,7 +170,7 @@ line.
 `tests/shaders/check_shaders.py` grows a Vulkan section that asserts:
 
 - `tests/shaders/VulkanSceneShaders/vert.glsl` and `frag.glsl` exist and are
-  plain GLSL, not SPIR-V and not a binary blob.
+  plain GLSL 450, not SPIR-V and not a binary blob.
 - `Source/GUI/TapeSceneVulkanShaders.h` exists and carries the anchor constants
   the adapter consumes.
 - The GLSL source still parses as GLSL 450 (no accidental SPIR-V drift into the
@@ -182,6 +182,120 @@ line.
 This is the same discipline the chip-shader path should have had from the start:
 source, binary and embed header all present and agreeing, not one of them floating
 as a lone binary file.
+
+## Next deliverable: pipeline, UBO, mesh upload and drawScene
+
+The shaders above are the first Vulkan deliverable. The next deliverable is the
+backend-side runtime that consumes them: pipeline preparation, per-frame UBOs,
+per-draw uniform layout, mesh upload and the `drawScene` boundary. This section
+documents that deliverable before any Vulkan adapter is written, so the next step
+is a plan for the adapter, not a fait accompli.
+
+### Where this sits in the plan
+
+- Shader plumbing is the first Vulkan deliverable, already committed as
+  `b5681e0e`.
+- This next-deliverable section is the second Vulkan documentation step: it
+  specifies the pipeline/UBO/mesh/draw boundary that the next Phase 2.1 adapter
+  work must implement.
+- The reference shader is `Source/GUI/TapeSceneMetalShaders.h` (commit
+  `e382d6ea`); the Vulkan shaders above reproduce it in GLSL 450.
+
+### Uniform buffer / constant buffer layout
+
+- One UBO per frame-in-flight, updated each time the editor submits a frame.
+  That matches the Vulkan adapter's existing slot/fence scheme: per-slot command
+  buffers already exist, so per-slot uniform storage is the natural companion.
+- The UBO layout is the Vulkan GLSL spelling of `MetalUniforms` from
+  `Source/GUI/TapeSceneMetalShaders.h` (commit `e382d6ea`), field-for-field:
+  - `viewProjection` (mat4) - per-frame, from `SceneFrame::viewProjection`.
+  - `model` (mat4) - per-draw, from `SceneDraw::model`.
+  - `normalMatrix` (mat3) - per-draw, from `SceneDraw::normalMatrix`.
+  - `baseColour` (vec4) - per-draw, from `SceneDraw::baseColour`.
+  - `highlightColour` (vec4) - per-draw, from `SceneDraw::highlightColour`.
+  - `parameters` (vec4) - per-draw, from `SceneDraw::parameters`; the material
+    selector is packed into `w`, exactly as in Metal.
+  - `globals` (vec4) - per-frame, with `timeSeconds`, `drive`, `glow` and the
+    texture-weight component the Metal fragment shader reads.
+  - `lightDirection` (vec4) - per-frame, with the world-space light direction and
+    the texture-weight component the Metal fragment shader reads.
+- The per-draw uniform block is the same shape every draw uses; the material
+  switch is in the shader, not in separate pipelines. That is the one pipeline
+  the plan already names, and it is what makes Vulkan's layout match Metal's
+  layout instead of inventing a Vulkan-specific one.
+- Dynamic offsets may be used for per-draw UBO sub-allocations if the adapter uses
+  a single larger UBO per frame-in-flight; the important contract is that
+  `SceneUniforms.h` is the source of truth, not the Vulkan adapter's layout.
+
+### Pipeline preparation
+
+- One render pass: a color attachment on the swapchain image plus a depth
+  attachment. That is what the plan names: "one render pass (color + depth)".
+- One graphics pipeline for all materials:
+  - vertex input matches `SceneVertex` (`float4 position`, `float3 normal`,
+    interleaved), with the same attribute order and offsets the Metal adapter
+    uses for its vertex descriptor.
+  - blend state matches the Metal pipeline: src-alpha / one-minus-src-alpha for
+    color, with the same alpha treatment.
+  - depth test less-equal, depth write on.
+  - no separate pipeline per material; the material switch is shader-side.
+- Shader stages come from the embedded SPIR-V headers the build produces:
+  - vertex shader from `VulkanSceneShaders_vert_spirv`,
+  - fragment shader from `VulkanSceneShaders_frag_spirv`.
+  - Until the toolchain runs here, the embed headers are placeholder-shaped and
+    the pipeline preparation is documented as a contract, not compiled.
+- The pipeline state is prepared once at init, not per frame, and it is the one
+  object the draw path reuses.
+
+### Meshes
+
+- `ensureMeshes(frame)` uploads the frame's immutable topology through a staging
+  buffer, using the transfer barriers the Vulkan adapter already contains.
+- Meshes are cached by `shared_ptr` identity, the same pattern the Metal and
+  Sokol ports use, so the Vulkan adapter does not rebuild the scene per frame.
+- The Vulkan adapter's existing child-window and swapchain code is the surface
+  side; the mesh upload side is what this deliverable adds next.
+
+### `drawScene` boundary
+
+- `drawScene(const SceneFrame& frame)` is the one entry point the Vulkan adapter
+  exposes for scene rendering.
+- Its contract is the same as Metal's contract: accept an immutable `SceneFrame`,
+  update the per-frame UBO, update per-draw uniforms for each draw, bind the
+  pipeline and meshes, and emit draws.
+- Failure modes are part of the contract:
+  - A refused draw leaves the CPU fallback alive.
+  - The adapter must never paint outside the editor's child surface.
+  - Per-frame resources must be slot-correct relative to the existing fence/
+    command-buffer scheme.
+- `drawScene` does not own scene data; it reads `SceneFrame` and the cached mesh
+  buffers. That is the same boundary the plan states for every port.
+
+### What this deliverable is not
+
+- It is not a finished Vulkan adapter with a working `drawScene`.
+- It is not a separate UBO design invented for Vulkan; the layout above is the
+  Metal contract translated into Vulkan GLSL terms.
+- It is not a decision to split the pipeline per material; the one-pipeline shape
+  is inherited from Metal and stated in the plan.
+
+### Verification carried with it
+
+- `check_render_backend.py` gains the Vulkan contract lines: `drawScene` override
+  present, `ensureMeshes` present, child-surface rule held, never the host peer.
+- The Vulkan pipeline/UBO/mesh/draw section is checked against the Metal contract
+  in `Source/GUI/TapeSceneMetalShaders.h` (commit `e382d6ea`) and the packing
+  contract in `SceneUniforms.h`, because that is the reference the Vulkan shaders
+  were derived from.
+
+### Build plumbing this documentation points back to
+
+- The SPIR-V that feeds this next deliverable is produced by the existing build
+  plumbing the shader deliverable already named: `VulkanShaderGen.cmake`,
+  `cmake/VulkanExtractGlsl.py`, `cmake/VulkanEmbedSpv.py`, and a local
+  `glslangValidator`.
+- Until that toolchain runs here, this section is a specification, not a
+  compiled adapter.
 
 ## Where this sits in the plan order
 
