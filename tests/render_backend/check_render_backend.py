@@ -21,8 +21,20 @@ require("constexpr bool hasNativeImplementation(Backend backend) noexcept {" in 
         "hasNativeImplementation must check build macros per backend")
 require("constexpr bool usesNativeCommandRenderer() noexcept\n{\n    return false;" in backend,
         "native command renderer must not be advertised as active")
-require("if (!j37::render::usesOpenGL())" in setup,
-        "editor must retain the CPU paint path when OpenGL is not selected")
+# The panel's JUCE OpenGL context is independent of the deck's chosen renderer:
+# a SOKOL/native build can still accelerate the 2D panel, and only an explicit
+# CPU choice should detach it. The CPU paint path remains JUCE's fallback when
+# the context cannot be created.
+require("const auto running = j37::render::runningBackend(renderBackendChoice);" in setup,
+        "editor must resolve the running backend before choosing a paint path")
+require("const auto panelOnGpu = running != j37::render::Backend::cpu;" in setup,
+        "panel acceleration must follow CPU choice, not the deck's OpenGL backend")
+require("openGLContext.setComponentPaintingEnabled(true);" in setup,
+        "the panel must enable JUCE component painting on its OpenGL context")
+require("openGLContext.attachTo(*this);" in setup,
+        "the panel context must be attached best-effort, leaving JUCE's CPU path as fallback")
+require("tapeScene.setSceneEnabled(deckOnOpenGl);" in setup,
+        "the deck's OpenGL scene must be gated separately from panel acceleration")
 
 # The two GPU abstraction layers are build OPTIONS, not additions: each owns the
 # device and the surface, so a build selects one and the other is not compiled.

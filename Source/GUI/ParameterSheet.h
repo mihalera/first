@@ -43,6 +43,9 @@
 #include "GUI/PanelText.h"
 #include "GUI/PanelTranslations.h"
 
+#include <functional>
+#include <unordered_set>
+
 #if __has_include(<foleys_gui_magic/foleys_gui_magic.h>)
     #include <foleys_gui_magic/foleys_gui_magic.h>
     #define J37_HAS_PARAMETER_SHEET 1
@@ -93,6 +96,32 @@ class ParameterSheet final : public juce::Component
         juce::String getTooltip() override;
 
       private:
+        /** A viewport that reports scrolls. The sheet's rows are real foleys
+            components, each with a live attachment, so moving them out of the
+            view is not a matter of skipping a paint call: this is the signal
+            that lets the sheet hide the rows the visible area no longer owns. */
+        class VirtualViewport final : public juce::Viewport
+        {
+          public:
+            std::function<void()> onVisibleAreaChanged;
+
+          private:
+            void visibleAreaChanged (const juce::Rectangle<int>& newVisibleArea) override
+            {
+                juce::Viewport::visibleAreaChanged (newVisibleArea);
+
+                if (onVisibleAreaChanged != nullptr)
+                    onVisibleAreaChanged();
+            }
+        };
+
+        /** Hides every foleys row whose canvas rectangle is outside the viewport
+            (plus a small prefetch margin) and restores only the rows this sheet
+            hid. Restoring ONLY our own hides matters: foleys can hide a row for
+            its own reasons, and a virtualizer that called setVisible(true) on
+            every intersecting component would undo that decision. */
+        void virtualizeRows();
+
         juce::ValueTree buildTree (juce::AudioProcessor& processorToUse);
         void appendGroup (juce::ValueTree& parent,
                           const juce::AudioProcessorParameterGroup& group);
@@ -101,8 +130,9 @@ class ParameterSheet final : public juce::Component
         static int countParameters (const juce::AudioProcessorParameterGroup& group);
 
         UiPalette palette;
-        juce::Viewport viewport;
+        VirtualViewport viewport;
         juce::Component canvas;
+        std::unordered_set<juce::Component*> hiddenByVirtualization;
         // The state must outlive the builder, and both must outlive the canvas's
         // children: the builder owns the GuiItems, the state owns the parameter
         // map and the attachments' source. Declaration order is destruction order
@@ -229,6 +259,7 @@ inline ParameterSheet::Sheet::Sheet (juce::AudioProcessor& processorToUse,
     viewport.setViewedComponent (&canvas, false);
     viewport.setScrollBarsShown (true, false);
     viewport.setScrollBarThickness (10);
+    viewport.onVisibleAreaChanged = [this] { virtualizeRows(); };
     addAndMakeVisible (viewport);
 }
 
@@ -293,6 +324,61 @@ inline void ParameterSheet::Sheet::resized()
 
     if (builder != nullptr)
         builder->updateLayout (canvas.getLocalBounds());
+
+    // The layout above has just written every row's rectangle. The scroll
+    // position may still be at the top, so this is where the first frame gets
+    // its offscreen rows switched off - before the viewport paints them once.
+    virtualizeRows();
+}
+
+inline void ParameterSheet::Sheet::virtualizeRows()
+{
+    if (canvas.getWidth() <= 0 || viewport.getHeight() <= 0)
+        return;
+
+    // Prefetch one short screenful so a flick does not expose an unpainted row
+    // for a frame. The margin is deliberately finite: virtualization that keeps
+    // half the document alive is not virtualization.
+    const auto visible = viewport.getViewArea().expanded (0, 96);
+
+    const std::function<void (juce::Component&)> visit = [&] (juce::Component& component)
+    {
+        // Only foleys' own rows and groups are ours to hide. The canvas is the
+        // parent; its scrollbars belong to the viewport and are not in this tree.
+        if (dynamic_cast<foleys::GuiItem*> (&component) != nullptr)
+        {
+            const auto wasHiddenByUs = hiddenByVirtualization.find (&component)
+                                       != hiddenByVirtualization.end();
+            const auto canvasArea = canvas.getLocalArea (&component, component.getLocalBounds());
+
+            if (! canvasArea.intersects (visible))
+            {
+                // A row foleys hid for its own reason stays its decision. Only a
+                // row that is visible now is ours to switch off (and later on).
+                if (! wasHiddenByUs && component.isVisible())
+                {
+                    hiddenByVirtualization.insert (&component);
+                    component.setVisible (false);
+                }
+
+                return;             // its children are hidden with it
+            }
+
+            if (wasHiddenByUs)
+            {
+                hiddenByVirtualization.erase (&component);
+                component.setVisible (true);
+            }
+        }
+
+        for (int index = 0; index < component.getNumChildComponents(); ++index)
+            if (auto* child = component.getChildComponent (index))
+                visit (*child);
+    };
+
+    for (int index = 0; index < canvas.getNumChildComponents(); ++index)
+        if (auto* child = canvas.getChildComponent (index))
+            visit (*child);
 }
 
 inline int ParameterSheet::Sheet::countParameters (const juce::AudioProcessorParameterGroup& group)

@@ -26,6 +26,8 @@
 // and re-created come back on the one it was left on.
 #include "GUI/EditorPreferences.h"
 
+#include <algorithm>
+
 // Only the names this file's own text uses: a header member that is not
 // reachable from here should not look reachable.
 using j37panel::liveThemeChoice;
@@ -150,6 +152,7 @@ void FirstAudioProcessorEditor::applyTheme() {
     // captioned grid: without this they keep the ivory ink on every other theme.
     uiSoundsLabel.setColour(juce::Label::textColourId, palette.secondary);
     parameterSheetLabel.setColour(juce::Label::textColourId, palette.secondary);
+    uiScaleLabel.setColour(juce::Label::textColourId, palette.secondary);
     // The renderer selector's caption is a settings row's caption like LANGUAGE's -
     // unstyled it would keep the ivory ink on the charcoal and metal panels.
     backendLabel.setColour(juce::Label::textColourId, palette.secondary);
@@ -220,6 +223,7 @@ void FirstAudioProcessorEditor::applyTheme() {
     // the reason applyLanguage re-inks textColourId itself is only to colour the
     // window BETWEEN those two moments.
     styleCombo(languageBox);
+    styleCombo(uiScaleBox);
     // The renderer selector is the settings band's fourth combo and follows the
     // same palette as the three above it.
     styleCombo(backendBox);
@@ -442,7 +446,22 @@ void FirstAudioProcessorEditor::styleLabel(juce::Label &label,
     // slight squeeze floor so a long caption ellipsises instead of spilling into
     // the neighbour's cell.
     label.setText(text, juce::dontSendNotification);
-    label.setFont(juce::Font(juce::FontOptions(juce::jmax(8.5f, size - 1.0f),
+
+    // Remember the CALL-SITE size, not the scaled one. A scale change re-applies
+    // every caption from this record; storing the already-scaled point size would
+    // compound the factor each time the user moved the selector.
+    auto recorded = std::find_if(scaledLabels.begin(), scaledLabels.end(),
+                                 [&label](const ScaledLabelStyle &style) {
+                                     return style.label == &label;
+                                 });
+    if (recorded == scaledLabels.end())
+        scaledLabels.push_back({&label, size, bold});
+    else {
+        recorded->baseSize = size;
+        recorded->bold = bold;
+    }
+
+    label.setFont(juce::Font(juce::FontOptions(uiFontSize(size),
                                                bold ? juce::Font::bold : juce::Font::plain)));
     label.setJustificationType(justification);
     label.setMinimumHorizontalScale(0.82f);

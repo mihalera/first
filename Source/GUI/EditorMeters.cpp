@@ -30,10 +30,30 @@ FirstAudioProcessorEditor::LevelMeter::LevelMeter (juce::String meterTitle, juce
     setOpaque (false);
 }
 
+void FirstAudioProcessorEditor::LevelMeter::setActive (bool shouldBeActive)
+{
+    if (active == shouldBeActive)
+        return;
+
+    active = shouldBeActive;
+
+    // On re-entry the first frame uses the nominal 30 Hz interval rather than the
+    // time the meter spent frozen; otherwise a covered panel would make every
+    // needle jump forward by the length of the cover period.
+    if (active)
+    {
+        lastUpdate = {};
+        repaint();
+    }
+}
+
 void FirstAudioProcessorEditor::LevelMeter::setLoudness (float peakDbIn, float rmsDbIn,
                                                         float lufsIn, float vuDbIn,
                                                         float combinedDbIn, bool clippingIn)
 {
+    if (! active)
+        return;
+
     using Clock = std::chrono::steady_clock;
     const auto now = Clock::now();
     const auto frameSeconds = lastUpdate == Clock::time_point {}
@@ -339,8 +359,25 @@ FirstAudioProcessorEditor::CompressorMeter::CompressorMeter (juce::String meterT
     setInterceptsMouseClicks (false, false);
 }
 
+void FirstAudioProcessorEditor::CompressorMeter::setActive (bool shouldBeActive)
+{
+    if (active == shouldBeActive)
+        return;
+
+    active = shouldBeActive;
+
+    if (active)
+    {
+        lastUpdate = {};
+        repaint();
+    }
+}
+
 void FirstAudioProcessorEditor::CompressorMeter::setReduction (float reductionDb, float newActivity)
 {
+    if (! active)
+        return;
+
     using Clock = std::chrono::steady_clock;
     const auto now = Clock::now();
     const auto frameSeconds = lastUpdate == Clock::time_point {}

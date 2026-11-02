@@ -769,11 +769,11 @@ rest stays silent.
 | Transient Sustain (SUS) | -100 to +100 % | What follows the attack - body, ring, room: positive lengthens it (fuller), negative shortens it (tighter, more staccato). Neutral at 0 % |
 | Transient Mix (TR MIX) | 0 to 100 % | How much of the transient-shaped signal reaches the output. At 0 % the shaper is absent. Default 0 % |
 | Neural Mix (NEURAL) | 0 to 100 % | Wet/dry position of the optional learned model. At 0 %, or with no model loaded, the stage is transparent. Default 0 % |
-| Load Model | file | Reads a neural model - RTNeural's own JSON or a NeuralAmpModeler `.nam` - and installs it as an optional per-channel nonlinearity after the tape. A load that succeeds opens NEURAL while it is still closed, so the model is heard at once; the picker reopens in the folder the last one came from. Not saved with the session |
+| Load Model | file | Reads a neural model - RTNeural's own JSON or a NeuralAmpModeler `.nam` - and installs it as an optional per-channel nonlinearity after the tape. A load that succeeds opens NEURAL while it is still closed, so the model is heard at once; the picker reopens in the folder the last one came from, and a matching file can be dropped on the key. Not saved with the session |
 | Clear | - | Releases the loaded model, returning the NEURAL stage to its pass-through |
-| Load IR | file | Reads an impulse response (a WAV or AIFF capture of a cabinet, a room or any other space) and crossfades it into the finished signal, ahead of the reverb and the vinyl stage. A load that succeeds opens IR MIX while it is still closed; the picker reopens in the folder the last one came from. Not saved with the session |
+| Load IR | file | Reads an impulse response (a WAV or AIFF capture of a cabinet, a room or any other space) and crossfades it into the finished signal, ahead of the reverb and the vinyl stage. A load that succeeds opens IR MIX while it is still closed; the picker reopens in the folder the last one came from, and a WAV or AIFF can be dropped on the key. Not saved with the session |
 | Clear IR | - | Releases the loaded impulse response, returning the IR stage to its pass-through |
-| Load Print | file (WAV) | Reads a surface-noise print - a WAV recording of a real record's surface - and plays it as the VINYL stage's own surface, replacing the synthesised groove hiss. CRACKLE, DUST, CLICKS, SCRATCH, WARP and ELECTRICAL keep working over it; the file's own level is kept, so NOISE and VINYL MIX set how much of it is heard. The decode runs on a background thread, the readout says `LOADING PRINT` while it does, and a refusal is reported as `INVALID PRINT (reason)`. The picker reopens in the folder the last print came from. Not saved with the session |
+| Load Print | file (WAV) | Reads a surface-noise print - a WAV recording of a real record's surface - and plays it as the VINYL stage's own surface, replacing the synthesised groove hiss. CRACKLE, DUST, CLICKS, SCRATCH, WARP and ELECTRICAL keep working over it; the file's own level is kept, so NOISE and VINYL MIX set how much of it is heard. The decode runs on a background thread, the readout says `LOADING PRINT` while it does, and a refusal is reported as `INVALID PRINT (reason)`. The picker reopens in the folder the last print came from, and a WAV can be dropped on the key. Not saved with the session |
 | Clear Print | - | Releases the loaded print, and the VINYL stage goes back to synthesising its own surface |
 | Presets | 29 factory | Loaded from the preset box; each application is one undoable step |
 | User presets | unlimited | SAVE stores the whole machine state as a `.miboxpreset` file in the user's application-data directory; DEL removes the selected file; recall is one undoable step |
@@ -805,6 +805,40 @@ own description of that parameter, in the same language, because the sheet reads
 `parameterTooltipText()` instead of keeping a second vocabulary for the same controls.
 Switching the language releases the sheet, so the next press rebuilds it in the language
 that was chosen.
+
+### Panel scale, virtualisation and drop loading
+
+The editor already follows the host's window, but **UI SCALE** on SETTINGS gives the
+panel a working size of its own: 80, 90, 100, 110 or 125 %. A stop resizes the window
+to the layout's proportional size and scales the caption system with it, so the panel
+is not just a small window with large type in it. The layout keeps its real floor
+(780 x 664) and ceiling (1500 x 1180); a stop that the current display's work area
+cannot fit opens at the largest size the screen can show instead. The choice is a
+machine preference in `Source/GUI/EditorPreferences.h`, beside the theme and the
+renderer, not a session value - a host that rebuilds the editor comes back at the size
+the user chose.
+
+The parameter sheet is a real `juce::Viewport`, and its rows are virtualised: every
+`foleys::GuiItem` whose canvas rectangle is outside the visible area plus one short
+prefetch band is hidden, and restored only when it scrolls back in. This is what stops
+109 attachments from painting and animating behind an opaque cover; the attachments
+keep their values while hidden, so restoring a row does not rebuild it. While the
+sheet is open the four meters stop their ballistics and invalidation, the OSC ring
+keeps simulating but stops repainting, and the panel's targeted animation repaints are
+skipped entirely.
+
+The panel's JUCE `OpenGLContext` is now independent of the deck's renderer. A build
+configured for a native scene backend still paints the 2D panel through JUCE's
+component painter when the driver supports it; choosing **CPU** is the one selection
+that detaches the panel context, and a failed attach falls back to JUCE's software
+painter without changing the session. The deck keeps its own choice: OpenGL uses its
+second context, a native adapter owns the strip, and CPU draws the flat transport.
+
+All three file pickers also accept drag-and-drop. Drop a `.nam`, `.json` or `.rtn` on
+**LOAD MODEL**, a WAV or AIFF on **LOAD IR**, or a WAV on **LOAD PRINT**; the drop goes
+through the same loader, folder memory, status readout and refusal handling as the file
+chooser. Only a single file with the matching extension lights the key, so dropping an
+unrelated file does nothing.
 
 ### Analogue nonlinearity
 
@@ -1262,9 +1296,10 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
   second instead of four times as often.
 - **Buffer size** - the DSP is per sample and reads `getNumSamples()` each block, so
   there is no fixed block-size assumption; zero-length blocks are handled too.
-- **Display scale** - the editor opens at 980 x 690 and can be resized between
-  780 x 640 and 1400 x 960; both meter types lay themselves out proportionally to their
-  own bounds. Text scales with the meter, so nothing is drawn at a hardcoded pixel size.
+- **Display scale** - the editor opens at 1060 x 916 and can be resized between
+  780 x 664 and 1500 x 1180; both meter types lay themselves out proportionally to their
+  own bounds. SETTINGS' UI SCALE drives the same responsive layout from 80 % to 125 %,
+  and captions follow the chosen stop instead of staying at a hardcoded pixel size.
   The deck is three control lines - transport, switches / oversampling, then the preset /
   A/B / undo row - with a badge band of its own underneath, and every line's control
   chain is width-accounted to fit the minimum 780 px panel with no overlap. The level

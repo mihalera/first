@@ -15,6 +15,7 @@
 #include <atomic>
 #include <map>
 #include <memory>
+#include <functional>
 #include <vector>
 
 #include <juce_box2d/juce_box2d.h>
@@ -373,6 +374,62 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void resized() override;
 
   private:
+    /** A load key that is also a file drop target. The three file pickers already
+        own the validation, the status line and the folder memory; this only gives
+        the same path a second entrance, so a model or an IR can be dropped on the
+        key that loads it instead of walking a chooser. */
+    class FileDropButton final : public juce::TextButton,
+                                 public juce::FileDragAndDropTarget {
+      public:
+        using juce::TextButton::TextButton;
+
+        /** Whether this key wants the dragged files. Set with the same extension
+            test the chooser uses, so a dropped folder or a .txt neither lights
+            the key nor reaches the loader. */
+        std::function<bool(const juce::StringArray &)> acceptsFiles;
+        std::function<void(const juce::File &)> onFileDropped;
+
+        bool isInterestedInFileDrag (const juce::StringArray &files) override {
+            return acceptsFiles != nullptr && acceptsFiles(files);
+        }
+
+        void fileDragEnter (const juce::StringArray &, int, int) override {
+            setDragActive(true);
+        }
+
+        void fileDragExit (const juce::StringArray &) override {
+            setDragActive(false);
+        }
+
+        void filesDropped (const juce::StringArray &files, int, int) override {
+            setDragActive(false);
+
+            if (! files.isEmpty() && onFileDropped != nullptr)
+                onFileDropped(juce::File(files[0]));
+        }
+
+        void paintOverChildren (juce::Graphics &g) override {
+            if (! dragActive)
+                return;
+
+            // The ring is drawn in the button's own text colour, so it follows
+            // every theme and every inked caption without a second palette rule.
+            g.setColour(findColour(juce::TextButton::textColourOffId));
+            g.drawRoundedRectangle(getLocalBounds().toFloat().reduced(2.0f), 4.0f, 2.0f);
+        }
+
+      private:
+        void setDragActive (bool shouldBeActive) {
+            if (dragActive == shouldBeActive)
+                return;
+
+            dragActive = shouldBeActive;
+            repaint();
+        }
+
+        bool dragActive = false;
+    };
+
     class LevelMeter final : public juce::Component {
       public:
         LevelMeter(juce::String meterTitle, juce::String meterSubtitle);
@@ -386,12 +443,20 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
                          bool clipping);
 
         void setDarkTheme(bool shouldUseDarkTheme) noexcept { darkTheme = shouldUseDarkTheme; }
+
+        /** Stops the meter's ballistics and repaints while it cannot be seen.
+            The editor calls this when the parameter sheet covers the panel; the
+            meter keeps its last reading, so reopening the sheet does not make it
+            jump through a stale history. */
+        void setActive(bool shouldBeActive);
+
         void paint(juce::Graphics &) override;
 
       private:
         juce::String title;
         juce::String subtitle;
         bool darkTheme = false;
+        bool active = true;
 
         // The four independent loudness views, in dB. They are kept separately as well
         // as combined so the meter can show the spread between them: that spread is
@@ -418,6 +483,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
       public:
         CompressorMeter(juce::String meterTitle, juce::String stageCaption);
         void setDarkTheme(bool shouldUseDarkTheme) noexcept { darkTheme = shouldUseDarkTheme; }
+        void setActive(bool shouldBeActive);
         void setReduction(float reductionDb, float activity);
         void paint(juce::Graphics &) override;
 
@@ -425,6 +491,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         juce::String title;
         juce::String caption;
         bool darkTheme = false;
+        bool active = true;
         float displayedDb = 0.0f; // Smoothed reduction, always <= 0.
         float activity = 0.0f;
         std::chrono::steady_clock::time_point lastUpdate{};
@@ -544,6 +611,23 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void timerCallback() override;
     void createDecorativePhysics();
     void applyTheme();
+
+    /** Applies one of j37panel::uiScaleStops and remembers it for this machine.
+        The panel's layout is responsive, so a stop is a real window size rather
+        than a transform applied to a window the host still believes is 100 %;
+        labels that go through styleLabel() follow the same factor. */
+    void applyUiScale (int percent);
+
+    /** The factor the panel is currently drawn at, as a multiplier (1.0 = 100 %). */
+    float uiScale() const noexcept { return static_cast<float> (uiScalePercent) / 100.0f; }
+
+    /** The caption size styleLabel() would use for a base size at the current
+        scale. One place, so a label recoloured after a scale change cannot keep
+        a size from a different panel. */
+    float uiFontSize (float baseSize) const noexcept;
+
+    /** Re-applies the recorded base sizes after a scale change. */
+    void applyUiScaleToLabels();
 
     /** Writes the panel's remembered appearance - the theme choice and the USER
         palette - to the machine-wide preferences file (Source/GUI/EditorPreferences.h).
@@ -929,10 +1013,11 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     //  states the stage is in - "no model" or the loaded file's name - because
     //  the NEURAL knob alone cannot tell a user whether the stage is working.
     // -----------------------------------------------------------------------
-    juce::TextButton loadNeuralButton{"LOAD MODEL"};
+    FileDropButton loadNeuralButton{"LOAD MODEL"};
     juce::TextButton clearNeuralButton{"CLEAR"};
     juce::Label neuralStatusLabel;
     void loadNeuralModelFromFile();
+    void loadNeuralModelFile (const juce::File &file);
     void refreshNeuralStatus();
     juce::String lastShownNeuralStatus;
     // The tooltip that went with that text. Compared alongside it so a second
@@ -953,10 +1038,11 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // the processor's convolvers, CLEAR IR releases it, and the status label
     // reports what the stage holds - the same three-widget shape as the
     // model picker beside it.
-    juce::TextButton loadIrButton{"LOAD IR"};
+    FileDropButton loadIrButton{"LOAD IR"};
     juce::TextButton clearIrButton{"CLEAR IR"};
     juce::Label irStatusLabel;
     void loadIrFromFile();
+    void loadIrFile (const juce::File &file);
     void refreshIrStatus();
     juce::String lastShownIrStatus;
     juce::String lastShownIrTooltip;   // see lastShownNeuralTooltip above
@@ -972,10 +1058,11 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // before the file is read, and the processor returns from loadNoiseFile()
     // before it is decoded. The readout therefore polls for all three states,
     // including the one the other two pickers do not have - a decode in flight.
-    juce::TextButton loadNoiseButton{"LOAD PRINT"};
+    FileDropButton loadNoiseButton{"LOAD PRINT"};
     juce::TextButton clearNoiseButton{"CLEAR PRINT"};
     juce::Label noiseStatusLabel;
     void loadNoisePrintFromFile();
+    void loadNoisePrintFile (const juce::File &file);
     void refreshNoiseStatus();
     juce::String lastShownNoiseStatus;
     juce::String noiseStatusReason; // see neuralStatusReason above
@@ -1299,6 +1386,21 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // -----------------------------------------------------------------------
     j37panel::ThemeChoice themeChoice = j37panel::ThemeChoice::ivory;
     bool darkTheme = false; // derived from the active palette's panel colour
+
+    // The panel's working scale, loaded from the machine preferences before the
+    // first setUpWindowAndSize(). The combo on SETTINGS writes it back; nothing
+    // in the session or a preset can change it.
+    int uiScalePercent = 100;
+
+    struct ScaledLabelStyle {
+        juce::Label *label = nullptr;
+        float baseSize = 9.0f;
+        bool bold = false;
+    };
+    std::vector<ScaledLabelStyle> scaledLabels;
+
+    juce::Label uiScaleLabel;
+    juce::ComboBox uiScaleBox;
     // Transport presentation. `lastShownTransport` is the parameter index the
     // buttons were last painted for, so the three of them are only restyled when
     // the state actually changes; `lastShownSpindown` does the same for the
