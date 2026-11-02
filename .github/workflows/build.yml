@@ -1936,9 +1936,9 @@ jobs:
       - name: Set up Gradle
         uses: gradle/actions/setup-gradle@v6
         with:
-          # The version JUCE 9.0.4's Android template pins. AGP 8.13.2 is the
-          # plugin version in android/build.gradle.
-          gradle-version: '8.14.5'
+          # Current stable Gradle. AGP 9.5 in android/build.gradle requires
+          # Gradle 9.6.0 or newer.
+          gradle-version: '9.8.2'
 
       - name: Build the Android APK
         run: |
@@ -1960,7 +1960,7 @@ jobs:
           # fails under pipefail even though the licences were accepted.
           yes | "$sdkmanager_bin" --sdk_root="$sdk_root" --licenses > /dev/null || true
           "$sdkmanager_bin" --sdk_root="$sdk_root" \
-            "platforms;android-35" "build-tools;35.0.0"
+            "platforms;android-35" "build-tools;36.0.0"
 
           # Gradle packages the .so the CMake step above produced. Its
           # `stageNativeLib` task copies that file into the module's jniLibs;

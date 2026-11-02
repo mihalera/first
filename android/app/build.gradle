@@ -30,7 +30,9 @@ def stageNativeLib = tasks.register('stageNativeLib', Copy) {
 android {
     namespace 'com.mcsmes.mibox'
     compileSdk 35
-    buildToolsVersion '35.0.0'
+    // AGP 9 requires build-tools 36+, even though this app still compiles
+    // against API 35; the two versions are independent.
+    buildToolsVersion '36.0.0'
 
     defaultConfig {
         applicationId 'com.mcsmes.mibox'

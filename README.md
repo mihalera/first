@@ -1661,7 +1661,9 @@ file (see the comment above that setting).
 The Gradle project lives in `android/`. It does not compile C++: its
 `stageNativeLib` task copies the `.so` above into `jniLibs`, and the module
 takes JUCE's Java sources (`JuceApp`, `JuceActivity`) straight from the
-submodule. After the CMake build above:
+submodule. It uses AGP 9.5.0 with Gradle 9.8.2 (JDK 17 or newer); the CI job
+installs both, so a local build needs a Gradle 9.6+ command on `PATH`. After the
+CMake build above:
 
 ```sh
 cd android
