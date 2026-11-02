@@ -150,6 +150,36 @@ public:
 
     bool beginFrame() override { return initialised; }
 
+    bool drawScene (const SceneFrame& frame) override
+    {
+        // The bgfx scene path records a real framed draw using bgfx's API:
+        // vertex/index buffers, shader programs, and draw calls.
+        auto& meshes = ensureMeshes(frame);
+        if (meshes.empty()) return false;
+
+        // Set the default view clear and rect (same as clear() does)
+        const auto packed = juce::uint32 (clearColour.getRed())
+                          | (juce::uint32 (clearColour.getGreen()) << 8)
+                          | (juce::uint32 (clearColour.getBlue()) << 16)
+                          | (juce::uint32 (clearColour.getAlpha()) << 24);
+        bgfx::setViewClear (0, BGFX_CLEAR_COLOR | BGFX_CLEAR_DEPTH, packed, 1.0f, 0);
+        bgfx::setViewRect (0, 0, 0, static_cast<std::uint16_t> (width),
+                           static_cast<std::uint16_t> (height));
+
+        // Bind the default shader program (the scene shader program)
+        bgfx::setProgram (programHandle);
+
+        // Set vertex and index buffers per mesh
+        for (auto& mesh : meshes)
+        {
+            bgfx::setVertexBuffer (0, mesh.vertexBuffer);
+            bgfx::setIndexBuffer (mesh.indexBuffer);
+            bgfx::draw (0, mesh.indexCount);
+        }
+
+        return true;
+    }
+
     void clear (juce::Colour colour) override { clearColour = colour; }
 
     void endFrame() override
@@ -202,7 +232,16 @@ private:
     int height = 1;
     int vsyncInterval = 1;
     bool initialised = false;
-};
+
+    // Draw-scene resources
+    bgfx::ProgramHandle programHandle = bgfx::invalidHandle;
+    struct Mesh
+    {
+        bgfx::VertexBufferHandle vertexBuffer;
+        bgfx::IndexBufferHandle indexBuffer;
+        std::uint32_t indexCount = 0;
+    };
+    std::vector<Mesh> cachedMeshes;
 } // namespace
 
 std::unique_ptr<NativeRenderer> createBgfxRenderer()
