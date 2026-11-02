@@ -1266,24 +1266,6 @@ private:
         swapchainImages.clear();
     }
 
-    void drawScene (const SceneFrame& frame) override
-    {
-        // The Vulkan scene path records a real framed draw into the acquired swapchain
-        // image using the render pass, depth/stencil, pipeline, per-frame UBOs and
-        // per-mesh buffers. Until that work lands, drawScene still clears and refuses.
-        juce::ignoreUnused (frame);
-        return false;
-    }
-
-    void drawScene (const SceneFrame& frame) override
-    {
-        // The Vulkan scene path records a real framed draw into the acquired swapchain
-        // image using the render pass, depth/stencil, pipeline, per-frame UBOs and
-        // per-mesh buffers. Until that work lands, drawScene still clears and refuses.
-        juce::ignoreUnused (frame);
-        return false;
-    }
-
     VkDevice device = VK_NULL_HANDLE;
     VkCommandPool commandPool = VK_NULL_HANDLE;
 
