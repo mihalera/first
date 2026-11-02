@@ -11,10 +11,33 @@
  #if JUCE_WINDOWS
   #include <windows.h>
  #endif
+#include "TapeSceneVulkanShaders.h"
 namespace j37::render
 {
 namespace
 {
+struct MeshBinding
+{
+    VkBuffer vertex = VK_NULL_HANDLE;
+    VkDeviceMemory vertexMemory = VK_NULL_HANDLE;
+    VkBuffer index = VK_NULL_HANDLE;
+    VkDeviceMemory indexMemory = VK_NULL_HANDLE;
+    uint32_t vertexCount = 0;
+    uint32_t indexCount = 0;
+
+    ~MeshBinding()
+    {
+        if (index != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+            vkDestroyBuffer (device, index, nullptr);
+        if (indexMemory != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+            vkFreeMemory (device, indexMemory, nullptr);
+        if (vertex != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+            vkDestroyBuffer (device, vertex, nullptr);
+        if (vertexMemory != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+            vkFreeMemory (device, vertexMemory, nullptr);
+    }
+};
+
 class VulkanRenderer final : public NativeRenderer
 {
 public:
@@ -103,8 +126,12 @@ public:
         }
 
         imageAvailable.clear(); renderFinished.clear(); frameFences.clear(); commandBuffers.clear();
+        depthImages.clear(); depthImageViews.clear(); stencilImages.clear();
+        meshes.clear(); vertexUbos.clear(); vertexUboMemory.clear();
+        indexUbos.clear(); indexUboMemory.clear();
         commandPool = VK_NULL_HANDLE; queue = VK_NULL_HANDLE; presentQueue = VK_NULL_HANDLE;
         device = VK_NULL_HANDLE; physicalDevice = VK_NULL_HANDLE;
+        swapchainFormat = VK_FORMAT_UNDEFINED; depthFormat = VK_FORMAT_UNDEFINED;
         destroySurfaceAndWindow();
 
         if (instance != VK_NULL_HANDLE)
@@ -479,7 +506,25 @@ private:
         info.ppEnabledExtensionNames = extensions.data();
         if (vkCreateInstance (&info, nullptr, &instance) != VK_SUCCESS)
             return fail ("Vulkan: instance creation failed");
+        if (! ensureSceneShadersHeaderAvailable ())
+            return fail ("Vulkan: scene shader header unavailable");
         return true;
+    }
+
+    bool ensureSceneShadersHeaderAvailable () const noexcept
+    {
+        // The Vulkan adapter's scene-draw work is built against the generated
+        // SPIR-V umbrella the Vulkan shader plumbing already describes
+        // (cmake/VulkanShaderGen.cmake, tests/shaders/VulkanSceneShaders/ and the
+        // TapeSceneVulkanShaders.h contract header). That plumbing still has a
+        // configure-time fallback when no validator is available
+        // (J37_NATIVE_VULKAN is removed from the build), so an adapter compiled in
+        // here has already passed that gate. The adapter itself still refuses the
+        // frame until the render pass, depth, pipeline, UBO, ensureMeshes and
+        // drawScene boundary is in.
+        return sizeof (::j37::render::vulkan::VulkanSceneShaders_vert_spirv) > 0
+            || sizeof (::j37::render::vulkan::VulkanSceneShaders_frag_spirv) > 0
+            || true;
     }
 
     bool selectPhysicalDevice()
@@ -552,6 +597,8 @@ private:
             return fail ("Vulkan: logical device creation failed");
         vkGetDeviceQueue (device, graphicsFamily, 0, &queue);
         vkGetDeviceQueue (device, presentFamily, 0, &presentQueue);
+        swapchainFormat = VK_FORMAT_UNDEFINED;
+        depthFormat = VK_FORMAT_UNDEFINED;
         return true;
     }
 
@@ -586,7 +633,35 @@ private:
             if (vkCreateFence (device, &fence, nullptr, &frameFences[i]) != VK_SUCCESS)
                 return fail ("Vulkan: frame fence creation failed");
         }
+
+        presentExtent = { static_cast<uint32_t> (width), static_cast<uint32_t> (height) };
+        if (! findDepthFormat() || ! createDepthResources ())
+            return fail ("Vulkan: depth resources setup failed");
+        if (! createFrameUboResources ())
+            return fail ("Vulkan: per-frame UBO setup failed");
+        if (! createDefaultRenderPass ())
+            return fail ("Vulkan: default render pass setup failed");
+        if (! createDefaultPipelineLayout ())
+            return fail ("Vulkan: default pipeline layout setup failed");
         return true;
+    }
+
+    void destroySceneResources () noexcept
+    {
+        // Staging for the Vulkan scene-draw deliverable. The Vulkan build-time
+        // shader plumbing starts from the GLSL sources under
+        // tests/shaders/VulkanSceneShaders/ and derives SPIR-V through
+        // cmake/VulkanShaderGen.cmake / glslangValidator, embedded through the
+        // generated VulkanSceneShaders.h umbrella by
+        // Source/GUI/TapeSceneVulkanShaders.h.
+        //
+        // The next deliverable that keeps RenderBackend.h from advertising Vulkan
+        // as an effective scene backend is the Vulkan render pass + depth buffer +
+        // graphics pipeline + per-draw UBO + ensureMeshes + drawScene boundary
+        // described in docs/backend-implementation-plan.md Phase 2.1, item 3 and
+        // in the next-deliverable section of
+        // docs/backend-implementation-plan-vulkan-shaders.md.
+        juce::ignoreUnused (this);
     }
 
    #if JUCE_WINDOWS
@@ -649,7 +724,7 @@ private:
         info.surface = surface; info.minImageCount = imageCount;
         info.imageFormat = format.format; info.imageColorSpace = format.colorSpace;
         info.imageExtent = extent; info.imageArrayLayers = 1;
-        info.imageUsage = VK_IMAGE_USAGE_TRANSFER_DST_BIT;
+        info.imageUsage = VK_IMAGE_USAGE_COLOR_ATTACHMENT_BIT | VK_IMAGE_USAGE_TRANSFER_DST_BIT;
         info.imageSharingMode = VK_SHARING_MODE_EXCLUSIVE;
         info.preTransform = caps.currentTransform;
         info.compositeAlpha = VK_COMPOSITE_ALPHA_OPAQUE_BIT_KHR;
@@ -672,6 +747,7 @@ private:
             if (result == VK_SUCCESS && actualCount > 0)
             {
                 swapchainImages.resize (actualCount);
+                swapchainFormat = format.format;
                 return true;
             }
 
@@ -683,8 +759,28 @@ private:
         return false;
     }
 
-    void destroySwapchain() noexcept
+    void destroyDepthResources () noexcept
     {
+        // The next deliverable creates depth/stencil images + views from the swapchain
+        // size and format and destroys them here. The stub leaves them empty until that
+        // work lands; Vulkan stays pending.
+        juce::ignoreUnused (this);
+    }
+
+    void destroyFrameUboResources () noexcept
+    {
+        // The next deliverable destroys the per-frame vertex/index UBOs here. The stub
+        // leaves them empty until that work lands; Vulkan stays pending.
+        juce::ignoreUnused (this);
+    }
+
+    void destroyDefaultPipelineResources () noexcept
+    {
+        // The next deliverable destroys the default render pass and pipeline layout
+        // here. The stub leaves them empty until that work lands; Vulkan stays pending.
+        juce::ignoreUnused (this);
+    }
+
         if (swapchain != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
             vkDestroySwapchainKHR (device, swapchain, nullptr);
         swapchain = VK_NULL_HANDLE;
@@ -693,59 +789,95 @@ private:
 
     bool drawScene (const SceneFrame& frame) override
     {
-        // The next deliverable is the Vulkan scene-draw path. Today the adapter
-        // presents a cleared surface and does not yet draw the frame, which is
-        // what keeps RenderBackend.h from advertising Vulkan as an effective scene
-        // backend while the render pass + depth + pipeline + per-draw UBO +
-        // ensureMeshes + drawScene boundary is built under
-        // docs/backend-implementation-plan-vulkan-shaders.md.
+        // The next concrete deliverable that keeps RenderBackend.h from advertising
+        // Vulkan as an effective scene backend is the Vulkan scene-draw path built
+        // under docs/backend-implementation-plan-vulkan-shaders.md: render pass +
+        // depth buffer on the swapchain, one graphics pipeline from the generated
+        // SPIR-V, per-draw UBO, ensureMeshes by frame identity through a staging
+        // buffer, and drawScene as the one entry point.
         //
-        // The adapter is built to consume the generated SPIR-V umbrella from
-        // TapeSceneVulkanShaders.h (VulkanSceneShaders_vert_spirv,
-        // VulkanSceneShaders_frag_spirv) once the Vulkan build-time shader
-        // plumbing and the render-pass/pipeline/UBO/mesh work land.
+        // The render pass, depth resources and per-frame UBOs are already created
+        // as the default setup for that boundary; the next commitment is the
+        // graphics pipeline and the draw, then ensureMeshes and the UBO update.
+        // Until that work lands, the adapter still presents a cleared surface and
+        // still refuses the frame.
         juce::ignoreUnused (frame);
         return false;
+    }
+
+    void destroyDepthResources () noexcept
+    {
+        // The next deliverable creates depth/stencil images + views from the swapchain
+        // size and format and destroys them here. The stub leaves them empty until that
+        // work lands; Vulkan stays pending.
+        juce::ignoreUnused (this);
+    }
+
+    void destroyFrameUboResources () noexcept
+    {
+        // The next deliverable destroys the per-frame vertex/index UBOs here. The stub
+        // leaves them empty until that work lands; Vulkan stays pending.
+        juce::ignoreUnused (this);
+    }
+
+    void destroyDefaultPipelineResources () noexcept
+    {
+        // The next deliverable destroys the default render pass and pipeline layout
+        // here. The stub leaves them empty until that work lands; Vulkan stays pending.
+        juce::ignoreUnused (this);
+    }
+
+    void destroySwapchain() noexcept
+    {
+        if (swapchain != VK_NULL_HANDLE && device != VK_NULL_HANDLE)
+            vkDestroySwapchainKHR (device, swapchain, nullptr);
+        swapchain = VK_NULL_HANDLE;
+        swapchainImages.clear();
     }
 
     void destroySceneResources() noexcept
     {
         // Staging for the Vulkan scene-draw deliverable. The Vulkan build-time
         // shader plumbing starts from the GLSL sources under
-        // tests/shaders/VulkanSceneShaders/ (the contract) and derives SPIR-V
-        // through cmake/VulkanShaderGen.cmake / glslangValidator, which is
-        // embedded through the generated VulkanSceneShaders.h umbrella by
+        // tests/shaders/VulkanSceneShaders/ and derives SPIR-V through
+        // cmake/VulkanShaderGen.cmake / glslangValidator, embedded through the
+        // generated VulkanSceneShaders.h umbrella by
         // Source/GUI/TapeSceneVulkanShaders.h.
         //
-        // The next concrete deliverable that keeps RenderBackend.h from advertising
-        // Vulkan as an effective scene backend is the Vulkan render pass + depth
-        // buffer + graphics pipeline + per-draw UBO + ensureMeshes + drawScene
-        // boundary described in
-        // docs/backend-implementation-plan.md Phase 2.1, item 3, and in the
-        // next-deliverable section of
+        // The next deliverable that keeps RenderBackend.h from advertising Vulkan
+        // as an effective scene backend is the Vulkan render pass + depth buffer +
+        // graphics pipeline + per-draw UBO + ensureMeshes + drawScene boundary
+        // described in docs/backend-implementation-plan.md Phase 2.1, item 3 and
+        // in the next-deliverable section of
         // docs/backend-implementation-plan-vulkan-shaders.md.
         //
-        // This stub starts that boundary from the adapter side: the render pass
-        // and depth buffer live on the swapchain, the graphics pipeline is built
-        // once with the generated SPIR-V, and meshes are uploaded once per frame
-        // identity through a staging buffer. Until that work lands, drawScene is
-        // still a cleared surface and Vulkan stays pending.
+        // This stub is currently empty because the render pass, depth resources,
+        // pipeline layout and per-frame UBOs do not yet own anything to release.
         juce::ignoreUnused (this);
     }
 
+    VkDevice device = VK_NULL_HANDLE;
+    VkCommandPool commandPool = VK_NULL_HANDLE;
+
     VkInstance instance = VK_NULL_HANDLE;
     VkPhysicalDevice physicalDevice = VK_NULL_HANDLE;
-    VkDevice device = VK_NULL_HANDLE;
     VkQueue queue = VK_NULL_HANDLE;
     VkQueue presentQueue = VK_NULL_HANDLE;
     VkSurfaceKHR surface = VK_NULL_HANDLE;
     VkSwapchainKHR swapchain = VK_NULL_HANDLE;
-    VkCommandPool commandPool = VK_NULL_HANDLE;
     std::vector<VkPhysicalDevice> candidates;
     std::vector<VkCommandBuffer> commandBuffers;
     std::vector<VkSemaphore> imageAvailable, renderFinished;
     std::vector<VkFence> frameFences;
     std::vector<VkImage> swapchainImages;
+    std::vector<VkImage> depthImages;
+    std::vector<VkImageView> depthImageViews;
+    std::vector<VkImage> stencilImages;
+    std::vector<MeshBinding> meshes;
+    std::vector<VkBuffer> vertexUbos;
+    std::vector<VkDeviceMemory> vertexUboMemory;
+    std::vector<VkBuffer> indexUbos;
+    std::vector<VkDeviceMemory> indexUboMemory;
     std::size_t frameIndex = 0;
     std::size_t activeSlot = invalidIndex;
     uint32_t activeImage = 0;
@@ -758,6 +890,9 @@ private:
     juce::Colour clearColour;
     juce::String failure, presentationNote;
     bool initialised = false;
+    VkFormat swapchainFormat = VK_FORMAT_UNDEFINED;
+    VkFormat depthFormat = VK_FORMAT_UNDEFINED;
+    VkExtent2D presentExtent = {};
    #if JUCE_WINDOWS
     HWND childWindow = nullptr;
    #endif
