@@ -100,6 +100,11 @@ constexpr bool hasNativeImplementation(Backend backend) noexcept {
     return false;
 }
 
+// NOTE: current code keeps Vulkan at the cleared-surface stage while the scene
+// draw path (pipeline, UBO, meshes, drawScene) is built under
+// docs/backend-implementation-plan-vulkan-shaders.md. This line is the commit
+// target; the adapter contract and gate are updated together, and Vulkan is only
+// promoted to effective once the Vulkan adapter's scene draw is in.
 constexpr bool isNativeBackendPending(Backend backend) noexcept {
     // If the backend has scene draw, it is NOT pending - it is effective.
     if (hasNativeImplementation(backend))

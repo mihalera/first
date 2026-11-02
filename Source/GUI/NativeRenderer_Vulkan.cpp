@@ -86,6 +86,8 @@ public:
         if (device != VK_NULL_HANDLE)
             vkDeviceWaitIdle (device);
 
+        destroySceneResources();
+
         destroySwapchain();
 
         if (device != VK_NULL_HANDLE)
@@ -687,6 +689,38 @@ private:
             vkDestroySwapchainKHR (device, swapchain, nullptr);
         swapchain = VK_NULL_HANDLE;
         swapchainImages.clear();
+    }
+
+    bool drawScene (const SceneFrame& frame) override
+    {
+        // The next Vulkan deliverable is the scene-draw path. Today this adapter
+        // presents a cleared surface and declares no scene draw, which is what
+        // keeps RenderBackend.h from advertising Vulkan as an effective scene
+        // backend while the pipeline/UBO/mesh/drawScene work is staged under
+        // docs/backend-implementation-plan-vulkan-shaders.md.
+        //
+        // The Vulkan adapter is built to consume the generated SPIR-V umbrella
+        // from TapeSceneVulkanShaders.h (VulkanSceneShaders_vert_spirv,
+        // VulkanSceneShaders_frag_spirv) once the Vulkan build-time shader
+        // plumbing lands; this declaration keeps that target visible from the
+        // adapter even before the pipeline/UBO/mesh/drawScene work is in.
+        juce::ignoreUnused (frame);
+        return false;
+    }
+
+    void destroySceneResources() noexcept
+    {
+        // Staging for the Vulkan scene-draw deliverable. The Vulkan build-time
+        // shader plumbing starts from the GLSL sources under
+        // tests/shaders/VulkanSceneShaders/ (the contract) and derives SPIR-V
+        // through cmake/VulkanShaderGen.cmake / glslangValidator, which is
+        // embedded through the generated VulkanSceneShaders.h umbrella by
+        // Source/GUI/TapeSceneVulkanShaders.h. The adapter-side work this
+        // placeholder is waiting on is described in
+        // docs/backend-implementation-plan.md Phase 2.1, item 3, and the
+        // next-deliverable section of
+        // docs/backend-implementation-plan-vulkan-shaders.md.
+        juce::ignoreUnused (this);
     }
 
     VkInstance instance = VK_NULL_HANDLE;

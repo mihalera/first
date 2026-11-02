@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"Static contract checks for native-renderer capability selection."""
+"""Static contract checks for native-renderer capability selection."""
 from pathlib import Path
 import re
 import sys
@@ -83,6 +83,20 @@ require("bool drawScene(const SceneFrame& frame) override" in metal,
         "Metal must implement the scene draw its backend claims")
 require("ensureMeshes(frame)" in metal,
         "Metal must upload the frame's own immutable topology, not rebuild the scene")
+
+# Vulkan's scene-draw contract is staged: the adapter compiles in, but it still
+# clears the surface and refuses the scene frame. The gate-checking line is the
+# authoritative build-time rule, and the adapter's own doc/markers are the one
+# place the pipeline/UBO/mesh/drawScene work is tracked until it lands. No native
+# Vulkan selection may be advertised as drawing the scene until that work is in.
+vulkan = (root / "Source/GUI/NativeRenderer_Vulkan.cpp").read_text()
+require("drawScene" in vulkan and "activePassIsDrawable" not in vulkan,
+        "the Vulkan adapter must keep the staged scene-draw contract, not a Metal-style active-pass flag")
+require("docs/backend-implementation-plan-vulkan-shaders.md" in vulkan,
+        "the Vulkan adapter must point at the Vulkan next-deliverable spec it is staged behind")
+require("VulkanSceneShaders_vert_spirv" in vulkan
+        or "VulkanSceneShaders_frag_spirv" in vulkan,
+        "the Vulkan adapter must reference the generated SPIR-V umbrella/symbols it will consume")
 
 if errors:
     print("render backend checks failed:", file=sys.stderr)
