@@ -103,3 +103,5 @@ tests/layout/extracted_layout/
 
 # Python bytecode artifacts
 __pycache__/
+git-askpass.sh
+ghtoken

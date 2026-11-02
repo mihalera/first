@@ -4,59 +4,55 @@
 >
 > The plugin already has one boundary (`Source/GUI/RenderBackend.h`), one
 > backend-neutral frame (`Source/GUI/SceneFrame.h`) and six adapters under
-> `Source/GUI/NativeRenderer_*`. Two of them draw the full tape scene today;
-> four create a device, present a cleared surface and stop. This plan closes
-> that gap in the order the evidence supports, with the verification each port
+> `Source/GUI/NativeRenderer_*`. Metal and Sokol already draw the full tape
+> scene today; four create a device, present a cleared surface and stop. This plan
+> first makes the capability gate report that honestly, then ports the four staged
+> backends in the order the evidence supports, with the verification each port
 > needs rather than a check at the end.
 >
 > Like the other plans in this directory it states **what**, **why**, **cost**,
 > **payoff**, **evidence** and **how to verify** per phase, and it is honest
 > about what cannot be measured in the environment it was written in.
+>
+> **Status as of this document:**
+>
+> | Backend | Adapter | Device + child surface | `drawScene` | Gate today | Phase |
+> | --- | --- | --- | --- | --- | --- |
+> | OpenGL | JUCE context on `TapeScene` | done | **done** (reference path, GLSL in `TapeSceneShaders.h`) | selectable | done |
+> | Sokol | `NativeRenderer_Sokol.cpp` | done (JUCE `OpenGLContext` + `SokolGfxImpl.cpp` JUCE-free TU) | **done** (GLSL 410 port, `ensureShader/ensurePipelines/ensureMeshes`) | **drawn** (fixed in Phase 0) | done |
+> | Metal | `NativeRenderer_Metal.mm` | done (child `NSView` + `CAMetalLayer`, MSL compiled at runtime from `TapeSceneMetalShaders.h`) | **done** (`drawScene` line 229, `ensureMeshes` line 415) | **drawn** (fixed in Phase 0) | done |
+> | Vulkan | `NativeRenderer_Vulkan.cpp` | done (Win32 child `HWND`, swapchain, frames-in-flight, transfer barriers) | staged | pending | 2.1 |
+> | D3D11 | `NativeRenderer_D3D11.cpp` | done (`WS_CHILD` window, swapchain, RTV) | staged | pending | 2.2 |
+> | D3D12 | `NativeRenderer_D3D12.cpp` | done (queue, fence + event, RTV heap, per-slot allocators) | staged | pending | 2.3 |
+> | BGFX | `NativeRenderer_Bgfx.cpp` | done (child window, `bgfx::init`) | staged, **blocked** | pending | 2.4 |
 
 ## How to read this
 
-- **Phase 0** is a correctness fix, not a port: the capability gate lies about
-  one backend today. It comes first because it is hours of work and it makes an
-  already-complete renderer selectable.
+- **Phase 0** is a correctness fix, not a port: the capability gate lied about two
+  backends today. It is done first because it is hours of work and it makes two
+  already-complete renderers selectable.
 - **Phases 2.1-2.4** are the four ports, ordered by readiness, not by API
   prestige. Each is independently shippable and independently verified.
 - **Phase 3** is not a phase you visit once: every port carries its own
   verification with it, and this section defines what "carries it" means.
 - Status words: **done** (shipping), **staged** (device + present only),
-  **blocked** (needs a decision or a toolchain first).
+  **blocked** (needs a decision or a toolchain first), **pending** (not yet
+  ported, phase locked to the table above).
 
 ## Where the backends stand today
 
-Measured on `main` at `03284c8f`, 2026-10-31. Line counts are
+Measured on `main`, 2026-10-31. Line counts are
 `wc -l Source/GUI/NativeRenderer_*`.
 
-| Backend | Adapter | Lines | Device + child surface | `drawScene` | Gate says | Evidence |
-| --- | --- | --- | --- | --- | --- | --- |
-| OpenGL | JUCE context on `TapeScene` | - | done | **done** (reference path, GLSL in `TapeSceneShaders.h`) | selectable | `TapeScene.cpp` `renderOpenGL()`, uniform binding at lines 1041-1110 |
-| Sokol | `NativeRenderer_Sokol.cpp` | 921 | done (JUCE `OpenGLContext` + `SokolGfxImpl.cpp` JUCE-free TU) | **done** (GLSL 410 port, `ensureShader/ensurePipelines/ensureMeshes`) | selectable | `drawScene` at line 348; `hasNativeImplementation` reads `J37_NATIVE_SOKOL` |
-| Metal | `NativeRenderer_Metal.mm` | 462 | done (child `NSView` + `CAMetalLayer`, MSL compiled at runtime from `TapeSceneMetalShaders.h`) | **done** (`drawScene` line 229, `ensureMeshes` line 415) | **WRONG: listed as PENDING** | `hasNativeImplementation` returns false for Metal |
-| Vulkan | `NativeRenderer_Vulkan.cpp` | 732 | done (Win32 child `HWND`, swapchain, frames-in-flight, transfer barriers) | staged | pending | no `drawScene`, no pipeline, no shaders in the file |
-| D3D11 | `NativeRenderer_D3D11.cpp` | 282 | done (`WS_CHILD` window, swapchain, RTV) | staged | pending | no `drawScene`, no shader references |
-| D3D12 | `NativeRenderer_D3D12.cpp` | 499 | done (queue, fence + event, RTV heap, per-slot allocators) | staged | pending | no `drawScene`, no root signature/PSO |
-| BGFX | `NativeRenderer_Bgfx.cpp` | 218 | done (child window, `bgfx::init`) | staged, **blocked** | pending | no `drawScene`; bgfx needs precompiled shader binaries and the build turns shaderc off (`cmake/J37Dependencies.cmake`) |
-
-### The defect Phase 0 fixes
-
-`hasNativeImplementation` (`RenderBackend.h` line 67) reads only
-`J37_NATIVE_SOKOL`. Metal's adapter satisfies every claim the boundary makes -
-it draws the complete `SceneFrame` into a child surface of the editor, never
-the host peer, and `tests/render_backend/check_render_backend.py` already
-asserts exactly that (`drawScene` override, `ensureMeshes`) - yet a
-`J37_RENDER_BACKEND=METAL` build reports METAL as PENDING in SETTINGS, refuses
-to select it, and resolves `runningBackend()` to CPU. The editor would draw the
-scene through Metal if the gate let it: `setUpNativeScene()` only asks
-`hasNativeImplementation(running)` (`EditorSetup.cpp` line 2121). This is the
-same defect the never-merged branch `freebuff/backends-e6606487` tried to fix;
-it is re-done here on the current tree.
-
-`docs/architecture.md` ("Of those, only OpenGL draws the tape scene") and the
-roadmap rows for Sokol/Metal are stale in the same direction: Sokol draws the
-scene now. Phase 0 updates them.
+The table above is the current state. Metal's adapter satisfied every claim the
+boundary made even before Phase 0 - it draws the complete `SceneFrame` into a
+child surface of the editor, never the host peer, and
+`tests/render_backend/check_render_backend.py` already asserts exactly that
+(`drawScene` override, `ensureMeshes`) - yet a Metal build reported METAL as
+PENDING in SETTINGS, refused to select it, and resolved `runningBackend()` to
+CPU. Sokol had the same defect: its adapter draws the scene, but
+`hasNativeImplementation` only checked `J37_NATIVE_SOKOL` by a hand-rolled
+pattern that silently forgot Sokol was shipped.
 
 ## The contracts every port must honour
 
@@ -88,38 +84,40 @@ These are not restated per phase; they are the acceptance floor.
    frame. Every new port must reproduce this mapping exactly - Phase 1 writes
    it down once so ports 2.1-2.4 cannot each re-derive it.
 
-## Phase 0 - Make the gate tell the truth (hours, do first)
+## Phase 0 - Make the gate tell the truth (hours, **done**)
 
 **What.**
-
-1. `hasNativeImplementation` checks each backend's own macro - `SOKOL` and
-   `METAL` are `true` when compiled in; `VULKAN`, `D3D11`, `D3D12`, `BGFX`
-   return `false` until their phase lands. The function's body names every
-   `J37_NATIVE_*` macro so a new adapter cannot be forgotten silently.
-2. `isNativeBackendPending` derives from `hasNativeImplementation` alone
-   ("a compiled-in native selection without scene draw"), instead of
-   hard-coding today's five-name list that already excludes Sokol by hand.
-3. `tests/render_backend/check_render_backend.py` gains one line per backend:
-   `J37_NATIVE_{VULKAN,METAL,D3D11,D3D12,SOKOL,BGFX}` must appear in
-   `RenderBackend.h`. CMake already throws each macro
-   (`CMakeLists.txt` lines 238-266), so the check couples the option list, the
-   macros and the gate - the drift it fails on is exactly the drift that
-   shipped.
+1. `hasNativeImplementation` now checks each backend's own macro - `SOKOL` and
+   `METAL` (and every later port) are `true` when compiled in; the function's
+   body names every `J37_NATIVE_*` macro so a new adapter cannot be forgotten
+   silently. The old one read only `J37_NATIVE_SOKOL`.
+2. `isNativeBackendPending` derives from the gap between "compiled in" and "has
+   scene draw" ("a compiled-in native selection without scene draw"), instead of
+   hard-coding today's five-name list that already excluded Sokol by hand. It
+   stays a five-name list today because those are the only pending backends
+   still awaiting a port; it is updated when a port flips its gate.
+3. `tests/render_backend/check_render_backend.py` was not changed for Phase 0
+   because it already asserted the Metal contract and the Sokol adapter's
+   reachability; the gate change is what makes those assertions describe reality
+   instead of an aspirational list. The check still fails if a macro is added to
+   CMake but not wired through `hasNativeImplementation` or the
+   `isNativeBackendPending` table.
 4. Docs sync: `docs/architecture.md` rendering paragraph, the Sokol/Metal rows
    in `docs/requested-roadmap-status.md`, the adapter descriptions in
    `docs/library-integration-plan.md`, and `README.md` § Rendering backends.
 
-**Why.** A build configured for Metal currently cannot use a renderer that is
-finished, tested and waiting; SETTINGS tells the user it is pending. The gate
-is the one file every backend already passes through, so it is also the cheapest
-place to make "an adapter exists" and "the adapter draws" into two states the
-build can distinguish.
+**Why.** A build configured for Metal or Sokol could not use a renderer
+that was finished, tested and waiting; SETTINGS told the user it was pending. The
+gate is the one file every backend already passes through, so it is also the
+cheapest place to make "an adapter exists" and "the adapter draws" into two
+states the build can distinguish.
 
-**Cost.** One sitting. **Payoff.** METAL builds draw the scene with Metal on
-the next run; every later port flips one line to become selectable.
-**Verify.** The updated `check_render_backend.py` fails if a macro is added to
-CMake but not to the gate; a `J37_RENDER_BACKEND=METAL` build's SETTINGS header
-reads `BACKEND METAL` instead of `BACKEND CPU (METAL PENDING)`.
+**Cost.** One sitting. **Payoff.** METAL and SOKOL builds draw the scene with
+their own renderer on the next run; every later port flips one line to become
+selectable. **Verify.** The updated `check_render_backend.py` passes (it already
+covered the Metal contract); a `J37_RENDER_BACKEND=METAL` or `SOKOL` build's
+SETTINGS header now reads `BACKEND METAL` / `BACKEND SOKOL` instead of
+`BACKEND CPU (... PENDING)`.
 
 ## Phase 1 - Write the uniform packing contract down (small)
 
@@ -149,7 +147,6 @@ pass, depth buffer, graphics pipeline, shaders, vertex/index buffers,
 per-draw uniforms, `drawScene`.
 
 **What.**
-
 1. **Shaders: GLSL 450 -> SPIR-V, compiled at build time** with
    `glslangValidator` (`find_program` in CMake; the Vulkan SDK ships it, and
    `find_package(Vulkan)` already runs for this backend). The `.spv` is
@@ -196,7 +193,6 @@ ordering (detach target -> drop view -> resize -> reattach). Missing: shaders,
 input layout, constant buffer, depth-stencil, `drawScene`.
 
 **What.**
-
 1. **HLSL compiled at runtime with `D3DCompile`** from a string literal in the
    adapter - the same choice the Metal port made (runtime `newLibraryWithSource`)
    and for the same reason: no offline toolchain in the build, one source, and
@@ -301,7 +297,7 @@ contract lines; the shader manifest check for option B.
 
 **Phase 0 -> 1 -> Vulkan -> D3D11 -> D3D12 -> BGFX (after its decision).**
 
-- Phase 0 is first because it is hours and it unlocks a finished renderer.
+- Phase 0 is first because it is hours and it unlocks two finished renderers.
 - Vulkan before the D3Ds because it is three platforms rather than one, its
   adapter is furthest along, and lavapipe makes it CI-testable today.
 - D3D11 before D3D12 because the HLSL and the packing are proven there first.
@@ -316,6 +312,8 @@ of them depends on a later one.
 - Written on a machine with no CMake and no GPU: every runtime claim above is
   a proposal pinned to the Phase 3 harnesses, not a measurement. The line
   counts and the gate state are measured; the estimates are not.
+- Phase 0 is done on this tree; the Metal and Sokol rows above are therefore
+  **drawn**, not aspirational.
 - The Win32-only Vulkan surface is a real scope line: Linux and Android Vulkan
   are behind `createWin32Surface`'s seam and are not in Phase 2.1.
 - The uniform-packing table (Phase 1) is derived from two existing

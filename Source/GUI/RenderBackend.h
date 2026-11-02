@@ -54,23 +54,50 @@ constexpr Backend configuredBackend() noexcept {
 // clang rejected the header outright while gcc happened to let it through.
 //
 // hasNativeImplementation returns true only for backends that have been ported
-// with a complete scene draw path. Until then, they fall through to CPU.
-//
-// Each backend's scene draw availability is gated by its build macro:
-//
-//   - J37_NATIVE_SOKOL  -> Sokol backend has scene draw
-//   - J37_NATIVE_VULKAN -> Vulkan backend has scene draw
-//   - J37_NATIVE_METAL  -> Metal backend has scene draw
-//   - J37_NATIVE_D3D11  -> DirectX 11 has scene draw
-//   - J37_NATIVE_D3D12  -> DirectX 12 has scene draw
-//   - J37_NATIVE_BGFX   -> BGFX backend has scene draw
+// with a complete scene draw path. Until then, they fall through to CPU.    //
+    // A backend has scene draw when its adapter has been ported to draw the full
+    // SceneFrame into the editor's child surface (not the host peer). The macro is
+    // set by CMake only when that adapter is compiled in: the option-declaration
+    // block turns each J37_RENDER_BACKEND_* into its J37_NATIVE_* macro on its
+    // platform, so the gate reads the same list the build already selects from. The
+    // contract doc comments on each NativeRenderer_* are the other place the rule is
+    // stated; this function is the one place the build decides it at compile time.
+    //
+    // Each backend's scene draw availability is gated by its build macro:
+    //
+    //   - J37_NATIVE_SOKOL  -> Sokol backend has scene draw
+    //   - J37_NATIVE_VULKAN -> Vulkan backend has scene draw
+    //   - J37_NATIVE_METAL  -> Metal backend has scene draw
+    //   - J37_NATIVE_D3D11  -> DirectX 11 has scene draw
+    //   - J37_NATIVE_D3D12  -> DirectX 12 has scene draw
+    //   - J37_NATIVE_BGFX   -> BGFX backend has scene draw
+
 constexpr bool hasNativeImplementation(Backend backend) noexcept {
 #if defined(J37_NATIVE_SOKOL)
-    constexpr bool sokolDrawsScene = true;
-#else
-    constexpr bool sokolDrawsScene = false;
+    if (backend == Backend::sokol)
+        return true;
 #endif
-    return backend == Backend::sokol && sokolDrawsScene;
+#if defined(J37_NATIVE_METAL)
+    if (backend == Backend::metal)
+        return true;
+#endif
+#if defined(J37_NATIVE_VULKAN)
+    if (backend == Backend::vulkan)
+        return true;
+#endif
+#if defined(J37_NATIVE_D3D11)
+    if (backend == Backend::directX11)
+        return true;
+#endif
+#if defined(J37_NATIVE_D3D12)
+    if (backend == Backend::directX12)
+        return true;
+#endif
+#if defined(J37_NATIVE_BGFX)
+    if (backend == Backend::bgfx)
+        return true;
+#endif
+    return false;
 }
 
 constexpr bool isNativeBackendPending(Backend backend) noexcept {
@@ -78,8 +105,13 @@ constexpr bool isNativeBackendPending(Backend backend) noexcept {
     if (hasNativeImplementation(backend))
         return false;
 
-    // These backends can present a cleared surface but have no scene draw yet,
-    // so they are pending until their scene draw is implemented.
+    // A compiled-in adapter without scene draw is still staging; everything else
+    // that entered this build is selectable (CPU always is, and the adapter
+    // options are not compiled unless they have scene draw once their phase has
+    // landed). The five-name list here is the backends past OpenGL that are still
+    // awaited - update it when a port flips its gate. The gate itself is the
+    // authoritative table, so a new adapter that is compiled in but not ported
+    // does not silently become selectable.
     return backend == Backend::vulkan
         || backend == Backend::metal
         || backend == Backend::directX11
@@ -98,10 +130,9 @@ constexpr Backend effectiveBackend() noexcept {
     // the priority order is already established rather than needing
     // a redesign later.
     //
-    // Current state: hasNativeImplementation returns false for all
-    // backends, so AUTO effectively falls through to CPU.
-    // When native backends are ported, their checks will enable
-    // actual use rather than falling through.
+    // Current state: hasNativeImplementation returns true for backends whose
+    // adapter is ported and compiled in, so a configured build for one of them
+    // no longer falls through to CPU once its phase has landed.
     //
     if (configured == Backend::autoDetect || configured == Backend::openGL)
         return Backend::openGL;
