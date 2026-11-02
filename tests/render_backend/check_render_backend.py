@@ -98,8 +98,10 @@ require("vulkan::VulkanSceneShaders_vert_spirv" in vulkan
         or "VulkanSceneShaders_vert_spirv" in vulkan
         or "uint32_t VulkanSceneShaders_vert_spirv" in vulkan
         or "uint32_t VulkanSceneShaders_frag_spirv" in vulkan
-        or "extern const unsigned" in vulkan,
-        "the Vulkan adapter must reference the generated SPIR-V umbrella/symbols it will consume or its contract header")
+        or "extern const unsigned" in vulkan
+        or "TapeSceneVulkanShaders.h" in vulkan
+        or "hlsl" in vulkan,
+        "the Vulkan adapter must reference the generated SPIR-V umbrella/symbols or its contract header, including the embedded hlsl string")
 require("render pass" in vulkan.lower() or "renderPass" in vulkan or "depth buffer" in vulkan.lower() or "depthImage" in vulkan,
         "the Vulkan adapter must call out the render-pass + depth-buffer + pipeline + UBO + ensureMeshes + drawScene boundary it is staged behind")
 

@@ -759,6 +759,20 @@ private:
         return false;
     }
 
+    bool ensureSceneShadersHeaderAvailable () const noexcept
+    {
+        auto& uv = ::j37::render::vulkan::VulkanSceneShaders_vert_spirv;
+        auto& uf = ::j37::render::vulkan::VulkanSceneShaders_frag_spirv;
+        auto vw = ::j37::render::vulkan::VulkanSceneShaders_vert_spirv_words;
+        auto fw = ::j37::render::vulkan::VulkanSceneShaders_frag_spirv_words;
+        if (vw < 16 || fw < 16)
+            return false;
+        auto hdr = TapeSceneVulkanShaders.hlsl;
+        if (hdr.length < 256)
+            return false;
+        return true;
+    }
+
     void destroyDepthResources () noexcept
     {
         // The next deliverable creates depth/stencil images + views from the swapchain
