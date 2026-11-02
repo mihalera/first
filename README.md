@@ -1610,7 +1610,9 @@ cmake -S . -B build-android \
     -DCMAKE_SYSTEM_NAME=Android \
     -DCMAKE_ANDROID_API=29 \
     -DCMAKE_ANDROID_NDK=$ANDROID_NDK_LATEST_HOME \
-    -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a
+    -DCMAKE_ANDROID_ARCH_ABI=arm64-v8a \
+    -DJ37_ENABLE_IPP=OFF \
+    -DJ37_ENABLE_ARMPL=OFF
 cmake --build build-android --parallel
 ```
 
@@ -1620,6 +1622,12 @@ libraries it links. The name is the loader's, not CMake's: JUCE's Java classes
 call `System.loadLibrary ("juce_jni")`, and `CMakeLists.txt` sets the Android
 Standalone target's `OUTPUT_NAME` to it so packaging never has to rename the
 file (see the comment above that setting).
+
+The Android NDK build uses the portable PocketFFT path. Arm Performance
+Libraries' supported Linux binaries target AArch64 Linux, not Android's NDK
+ABI, so they cannot be linked into this APK; the Android CI configure explicitly
+disables both ArmPL and Intel IPP rather than accidentally selecting an
+incompatible host library. The Linux ARM64 job still builds with ArmPL.
 
 ### Packaging the APK
 
