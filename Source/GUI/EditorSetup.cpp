@@ -93,7 +93,7 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
     constexpr int minEditorWidth = 780;
     constexpr int minEditorHeight = 664;
     // The preferred size follows the panel's own stop. The FLOOR does not: it is
-    // the layout's real minimum, and scaling it would let an 80 % choice open
+    // the layout's real minimum, and scaling it would let the 75 % choice open
     // below the width the six deck bands need.
     const auto preferredEditorWidth = juce::roundToInt (1060.0f * uiScale());
     const auto preferredEditorHeight = juce::roundToInt (916.0f * uiScale());
@@ -1537,7 +1537,7 @@ void FirstAudioProcessorEditor::setUpSettingsSwitches() {
     // ---------------------------------------------------------------
     //  UI SCALE - the panel's working size, in SETTINGS's second band.
     //
-    //  Five stops rather than a slider: the layout has a real floor (the six deck
+    //  Six stops rather than a slider: the layout has a real floor (the six deck
     //  bands need 780 px) and a real ceiling (1500 x 1180), and a continuous control
     //  would spend most of its travel in sizes the host cannot show. Every stop is
     //  a remembered machine preference so a host that tears the editor down and
@@ -1561,7 +1561,7 @@ void FirstAudioProcessorEditor::setUpSettingsSwitches() {
     setTip (uiScaleBox, "UI SCALE - the panel's working size. The layout is "
                         "responsive, so a stop makes the controls and their captions "
                         "larger (or smaller) without changing the sound or the "
-                        "session. It is remembered for this machine; 80 % is the "
+                        "session. It is remembered for this machine; 75 % is the "
                         "compact stop, 125 % the roomy one, and a display that cannot "
                         "fit the chosen stop brings the window back to the largest "
                         "size it can actually show.");

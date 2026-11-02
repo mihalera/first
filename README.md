@@ -809,7 +809,7 @@ that was chosen.
 ### Panel scale, virtualisation and drop loading
 
 The editor already follows the host's window, but **UI SCALE** on SETTINGS gives the
-panel a working size of its own: 80, 90, 100, 110 or 125 %. A stop resizes the window
+panel a working size of its own: 75, 80, 90, 100, 110 or 125 %. A stop resizes the window
 to the layout's proportional size and scales the caption system with it, so the panel
 is not just a small window with large type in it. The layout keeps its real floor
 (780 x 664) and ceiling (1500 x 1180); a stop that the current display's work area
@@ -1298,7 +1298,7 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
   there is no fixed block-size assumption; zero-length blocks are handled too.
 - **Display scale** - the editor opens at 1060 x 916 and can be resized between
   780 x 664 and 1500 x 1180; both meter types lay themselves out proportionally to their
-  own bounds. SETTINGS' UI SCALE drives the same responsive layout from 80 % to 125 %,
+  own bounds. SETTINGS' UI SCALE drives the same responsive layout from 75 % to 125 %,
   and captions follow the chosen stop instead of staying at a hardcoded pixel size.
   The deck is three control lines - transport, switches / oversampling, then the preset /
   A/B / undo row - with a badge band of its own underneath, and every line's control
