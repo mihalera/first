@@ -146,7 +146,10 @@ Concrete pieces:
 - `tests/shaders/VulkanSceneShaders/frag.glsl`
 - `Source/GUI/TapeSceneVulkanShaders.h` - embed header, same shape as the Metal
   one, with the same anchor-constant discipline.
-- `tests/shaders/check_shaders.py` grows the Vulkan section.
+- `tests/shaders/VulkanSceneShaders/README.md` - the Vulkan shader source anchor
+  document.
+- `docs/backend-implementation-plan.md` status table updated to reflect this
+  shader-plumbing step.
 
 That is the deliverable. Pipelines and draw follow in the rest of Phase 2.1.
 
