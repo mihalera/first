@@ -574,7 +574,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         bool compressorTab = false;
     };
 
-    // Sixty-four controls, split across sixteen tab pages of at most one row
+    // Sixty-nine controls, split across eighteen tab pages of at most one row
     // of seven, in signal-flow order: consecutive slices of one chain, read
     // left to right. The page map lives in tabSpecs in the .cpp, and the three
     // large family buttons above the bar (TAPE / FX / SETUP) group those

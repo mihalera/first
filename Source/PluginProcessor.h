@@ -432,6 +432,12 @@ public:
         bool offsetRightChannel = false;
         float polaritySign = 1.0f;
         int trackBleedDelaySamples = 0;
+        // The delay's tone and low-cut coefficients, prepared once per block so
+        // the per-sample path does not rebuild an exp() twice a frame.
+        float delayTone = 0.5f;
+        float delayToneCoefficient = 0.5f;
+        float delayFeedbackHpR = 0.99f;
+        float delayControlCoefficient = 0.001f;
         float trackCrosstalk = 0.0f;
         float trackWidthScale = 1.0f;
 
@@ -1272,6 +1278,11 @@ private:
     std::atomic<float>* delayFeedbackParam = nullptr;
     // PING-PONG's own control, read once per block like the rest of the delay.
     std::atomic<float>* delayPingPongParam = nullptr;
+    // The repeat's tone and the low cut in its feedback path. Both are new
+    // controls on the DELAY page; TONE at 50 percent is neutral and LOW CUT at
+    // 80 Hz only removes sub-bass the old repeat path would have kept.
+    std::atomic<float>* delayToneParam = nullptr;
+    std::atomic<float>* delayLowCutParam = nullptr;
     std::atomic<float>* stOffsetParam = nullptr;
     std::atomic<float>* noiseParam = nullptr;
     std::atomic<float>* transportParam = nullptr;
@@ -1316,6 +1327,9 @@ private:
     std::atomic<float>* mechanicsParam = nullptr;
     std::atomic<float>* reverbParam = nullptr;
     std::atomic<float>* reverbSizeParam = nullptr;
+    std::atomic<float>* reverbPreDelayParam = nullptr;
+    std::atomic<float>* reverbDampParam = nullptr;
+    std::atomic<float>* reverbWidthParam = nullptr;
     std::atomic<float>* delayTypeParam = nullptr;
     std::atomic<float>* distortionParam = nullptr;
     // These are the RAW parameter values, which JUCE stores as floats for every
@@ -1748,8 +1762,9 @@ private:
     int delayWritePosition = 0;
     int delayBufferLength = 0;
     SampleSmoother delaySamplesSmoothed { sampleClock };
+    // LEVEL and feedback are the same control, so one smoother drives both the
+    // tap and the amount written back. It used to be two identical smoothers.
     SampleSmoother delayFeedbackSmoothed { sampleClock };
-    SampleSmoother delayLevelSmoothed { sampleClock };
 
     // PING-PONG is smoothed for the same reason the feedback amount is: it
     // decides how much of the repeat is written into each of the two delay
@@ -1763,6 +1778,15 @@ private:
     // Without this the repeats stack into a bright metallic ring.
     std::array<float, 2> delayDampState {};
     float delayDampCoefficient = 0.35f;
+
+    // The repeat's tone is a tilt around 2.5 kHz, and LOW CUT is a one-pole
+    // high-pass at the head of the repeat path. Both keep per-channel state, and
+    // both are neutral-ish at their defaults rather than switching the delay off.
+    std::array<float, 2> delayToneLpState {};
+    std::array<float, 2> delayHpXState {};
+    std::array<float, 2> delayHpYState {};
+    float delayToneCurrent = 0.5f;
+    float delayFeedbackHpRCurrent = 0.99f;
 
     // -----------------------------------------------------------------------
     //  Stereo tape offset.

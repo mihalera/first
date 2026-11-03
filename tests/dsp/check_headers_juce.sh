@@ -199,7 +199,10 @@ TU="${BUILD}/header_check.cpp"
     DattorroRoom room;
     room.prepare (48000.0);
     std::array<float, 2> roomFrame { x, x };
-    room.processFrame (roomFrame.data(), 2, 0.5f, 0.2f);
+    DattorroRoom::Settings roomSettings;
+    roomSettings.size = 0.5f;
+    roomSettings.mix = 0.2f;
+    room.processFrame (roomFrame.data(), 2, roomSettings);
     x = roomFrame[0] + roomFrame[1] + static_cast<float> (room.delay());
     room.reset();
 

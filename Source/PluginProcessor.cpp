@@ -77,13 +77,14 @@ namespace
             "stereo_width", "tape_type", "speed", "instrument", "drive", "bias",
             "oversampling", "tone", "wow", "flutter", "mix", "tracks",
             "character", "delta", "delay_time", "delay_feedback",
-            "delay_pingpong",
+            "delay_pingpong", "delay_tone", "delay_lowcut",
             "st_offset", "noise", "noise_lvl", "transport", "spindown",
             "ui_sounds", "language", "anti_phase_guard",
             "tape_source", "vinyl_source", "cassette_source", "digital_source",
             "amp_source", "valve_source", "transformer_source",
             "sag", "presence", "cabinet", "amp_bias",
             "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
+            "reverb_predelay", "reverb_damp", "reverb_width",
             "di", "di_load", "di_transformer", "di_pad",
             "delay_type", "distortion", "modern_mode", "lofi_mode",
             "vinyl", "vinyl_crackle", "vinyl_rumble", "vinyl_speed",
@@ -229,6 +230,8 @@ FirstAudioProcessor::FirstAudioProcessor()
     delayTimeParam = parameters.getRawParameterValue ("delay_time");
     delayFeedbackParam = parameters.getRawParameterValue ("delay_feedback");
     delayPingPongParam = parameters.getRawParameterValue ("delay_pingpong");
+    delayToneParam = parameters.getRawParameterValue ("delay_tone");
+    delayLowCutParam = parameters.getRawParameterValue ("delay_lowcut");
     stOffsetParam = parameters.getRawParameterValue ("st_offset");
     noiseParam = parameters.getRawParameterValue ("noise");
     noiseLvlParam = parameters.getRawParameterValue ("noise_lvl");
@@ -267,6 +270,9 @@ FirstAudioProcessor::FirstAudioProcessor()
     mechanicsParam = parameters.getRawParameterValue ("mechanics");
     reverbParam = parameters.getRawParameterValue ("reverb");
     reverbSizeParam = parameters.getRawParameterValue ("reverb_size");
+    reverbPreDelayParam = parameters.getRawParameterValue ("reverb_predelay");
+    reverbDampParam = parameters.getRawParameterValue ("reverb_damp");
+    reverbWidthParam = parameters.getRawParameterValue ("reverb_width");
     delayTypeParam = parameters.getRawParameterValue ("delay_type");
     distortionParam = parameters.getRawParameterValue ("distortion");
     modernModeParam = parameters.getRawParameterValue ("modern_mode");
@@ -852,6 +858,11 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
                          delayBufferLength, false, true, true);
     delayBuffer.clear();
     delayWritePosition = 0;
+    delayToneLpState.fill (0.0f);
+    delayHpXState.fill (0.0f);
+    delayHpYState.fill (0.0f);
+    delayToneCurrent = 0.5f;
+    delayFeedbackHpRCurrent = 0.99f;
 
     // The offset buffer is a fixed short window - a few hundred microseconds is far
     // more than the tens the control asks for - so it is a plain array, not an

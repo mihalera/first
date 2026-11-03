@@ -678,6 +678,30 @@ void FirstAudioProcessorEditor::setUpControlStrip() {
             slider.setRange(0.0, 250.0, 0.1);
             slider.setNumDecimalPlacesToDisplay(1);
             slider.setTextValueSuffix(" ms");
+        } else if (id == "delay_lowcut") {
+            // LOW CUT: a corner in Hz, with the useful range at the bottom.
+            // The range goes in first: setSkewFactorFromMidPoint() reads the
+            // slider's current range, so skewing before it would use 0..1.
+            slider.setRange(20.0, 500.0, 1.0);
+            slider.setSkewFactorFromMidPoint(80.0);
+            slider.setNumDecimalPlacesToDisplay(0);
+            slider.setTextValueSuffix(" Hz");
+        } else if (id == "reverb_predelay") {
+            // PRE-DLY: a real time in milliseconds, not a percentage.
+            slider.setRange(0.0, 100.0, 0.1);
+            slider.setNumDecimalPlacesToDisplay(1);
+            slider.setTextValueSuffix(" ms");
+        } else if (id == "reverb_width") {
+            // WIDTH is stored as a 0..2 multiplier but reads as a percentage:
+            // 100 % is the tank's own pair, 0 is mono and 200 doubles the side.
+            slider.setRange(0.0, 2.0, 0.001);
+            slider.setNumDecimalPlacesToDisplay(0);
+            slider.textFromValueFunction = [](double value) {
+                return juce::String(juce::roundToInt(value * 100.0)) + " %";
+            };
+            slider.valueFromTextFunction = [](const juce::String &text) {
+                return juce::jlimit(0.0, 2.0, text.getDoubleValue() / 100.0);
+            };
         } else if (id == "st_offset") {
             // ST OFFSET: the inter-channel time offset, in microseconds.
             slider.setRange(-500.0, 500.0, 1.0);

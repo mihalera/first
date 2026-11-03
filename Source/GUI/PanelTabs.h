@@ -55,21 +55,34 @@ namespace j37panel
     };
 
     // Eleven pages under three large families - TAPE, FX, SETUP - because the
-    // panel carries fifty-nine knobs and no single subject should own a crowded
+    // panel carries sixty-nine knobs and no single subject should own a crowded
     // page. Walking the bar left to right inside a family still walks the signal:
     //
     // Index map, for reading the table below:
     //   0 input  1 drive  2 bias  3 tone  4 character  5 wow  6 flutter  7 mix
-    //   8 output  9 stereo_width  10 blend  11 shape  12 amp_bias  13 sag
-    //   14 presence  15 cabinet  16 delay_time  17 delay_feedback  18 st_offset
-    //   19 noise  20 subfund  21 preamp  22 distortion  23 flux  24 wear
-    //   25 mechanics  26 reverb  27 reverb_size  28 vinyl  29 vinyl_crackle
-    //   30 vinyl_rumble  31 noise_lvl  32 st_link
-    //   33 dust  34 scratch  35 warp  36 electrical  37 clicks
-    //   38 in_low  39 in_mid  40 in_high   41 out_low  42 out_mid  43 out_high
-    //   44 di  45 di_load  46 di_transformer
-    //   47 in_hp_freq  48 in_lp_freq  49 in_eq_q
-    //   50 out_hp_freq  51 out_lp_freq  52 out_eq_q  53 delay_pingpong
+    //   8 output  9 stereo_width
+    //   10 tape_source  11 valve_source  12 cassette_source  13 vinyl_source
+    //   14 amp_source  15 transformer_source  16 digital_source
+    //   17 amp_bias  18 sag  19 presence  20 cabinet
+    //   21 delay_time  22 delay_feedback  23 st_offset
+    //   24 noise  25 subfund  26 preamp  27 distortion  28 flux  29 wear
+    //   30 mechanics  31 reverb  32 reverb_size
+    //   33 vinyl  34 vinyl_crackle  35 vinyl_rumble  36 noise_lvl  37 st_link
+    //   38 vinyl_dust  39 vinyl_scratch  40 vinyl_warp  41 vinyl_electrical
+    //   42 vinyl_clicks
+    //   43 in_low  44 in_mid  45 in_high
+    //   46 out_low  47 out_mid  48 out_high
+    //   49 di  50 di_load  51 di_transformer
+    //   52 in_hp_freq  53 in_lp_freq  54 in_eq_q
+    //   55 out_hp_freq  56 out_lp_freq  57 out_eq_q
+    //   58 delay_pingpong
+    //   59 transient_attack  60 transient_sustain  61 transient_mix
+    //   62 neural_mix  63 ir_mix
+    //   64 reverb_predelay  65 reverb_damp  66 reverb_width
+    //   67 delay_tone  68 delay_lowcut
+    //
+    // (The live indices are the controlSpecs positions; the map above is kept by
+    // hand and the static_assert below proves every tab entry is in range.)
     //
     // The map above is the controlIds list's own order (the one place the indices
     // are defined), kept in step with it by hand and checked by the static_assert
@@ -179,17 +192,20 @@ namespace j37panel
         //  FX too and sit at the END of the table, where they were appended;
         //  the bar filters the table, so that order is the order they show in.
         // --------------------------------------------------------------------
-        //  delay_time, delay_feedback, st_offset, ping_pong. The deck's TYPE /
-        //  SYNC DELAY / RATE switches belong to this page and ride the band
-        //  under the knobs.
+        //  delay_time, delay_feedback, st_offset, ping_pong, delay_tone,
+        //  delay_lowcut. The deck's TYPE / SYNC DELAY / RATE switches belong to
+        //  this page and ride the band under the knobs.
         { "DELAY", "The second head: DELAY and DLY LVL set the echo, ST OFFSET "
                    "skews the sides against each other, PING-PONG bounces it "
-                   "between them. The deck's TYPE / SYNC DELAY / RATE switches "
-                   "sit under the row.",
-                     4, 1, { 21, 22, 23, 58 } },
-        { "REVERB", "The room: REVERB is how much of it is in the output and RVB "
-                    "SIZE how large the space the reflections build.",
-                     2, 1, { 31, 32 } },
+                   "between them. DLY TONE colours the repeats and LOW CUT keeps "
+                   "the feedback from collecting sub-bass. The deck's TYPE / SYNC "
+                   "DELAY / RATE switches sit under the row.",
+                     6, 1, { 21, 22, 23, 58, 67, 68 } },
+        { "REVERB", "The room: REVERB is how much of it is in the output, RVB "
+                    "SIZE how long the tail runs, PRE-DLY how far behind the note "
+                    "it starts, DAMP how dark it is and RVB WIDTH how wide the "
+                    "wet pair stands.",
+                     5, 1, { 31, 32, 64, 65, 66 } },
         //  transient_attack (54), transient_sustain (55), transient_mix (56).
         //  The stage that acts on the finished signal's envelope rather than on
         //  the waveform - it changes how the sound MOVES without adding a
@@ -257,8 +273,8 @@ namespace j37panel
         "the record-playing stage: how much, how rough, how low",
         "seven machines, seven shares, one character",
         "the curve-benders: bias, supply sag, and the octave below",
-        "the second head: time, repeats, offset and where they land",
-        "the room: how much of it is in the output, and how big",
+        "the second head: time, repeats, tone, low cut and where they land",
+        "the room: level, size, pre-delay, damping and width",
         "the finished signal's envelope, not its waveform",
         "the equaliser after the machine: it corrects the RESULT",
         "the equaliser before the machine: it changes the CHARACTER",

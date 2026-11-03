@@ -7,10 +7,12 @@
 // =============================================================================
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 #include <cstddef>
 #include <cstdlib>
+#include <vector>
 
 // The library is C, so its header has to be included as C. Without this the
 // declarations below get C++ linkage, every symbol is mangled, and the failure
@@ -60,13 +62,19 @@ extern "C"
         pair. A mono bus gets the pair summed back down, because a stereo room
         folded to one channel is what a mono track should hear.
 
-      * **A control.** The stage has one parameter, SIZE, and it is mapped to the
-        two settings that set a tail's length and its colour: the decay, which is
-        the feedback around the tank, and the damping, which is the low-pass in
-        that loop. A bigger room is a longer tail and a darker one, so the decay
-        rises with SIZE and the damping coefficient falls (the library's damping
-        is a one-pole COEFFICIENT - 1 is no damping at all, which reads backwards
-        from the way a plugin knob is named).
+      * **The controls.** SIZE sets the tail's length through the decay around
+        the tank. DAMPING is the low-pass in that loop, and it is independent: a
+        long tail can stay open, and a short one can be dark. The library's
+        damping is a one-pole COEFFICIENT - 1 is no damping at all, which reads
+        backwards from the way a plugin knob is named. PRE-DELAY is kept here at
+        the session rate rather than in the tank, so it is a real time in
+        milliseconds at every rate and a sweep is interpolated instead of
+        stepping an integer tap. WIDTH is a mid/side trim on the two wet taps.
+
+      * **A clear input.** A one-pole high-pass at 120 Hz feeds the tank. A room
+        that keeps the sub-bass of the programme turns every low note into a long
+        cloud, which is what makes a full-mix reverb sound muddy; the low cut is
+        fixed because it is part of the room's voicing rather than another knob.
 
     The library is used exactly as published: this file includes it, calls it,
     and owns nothing of it. The one thing it adds is the rate conversion above,
@@ -110,6 +118,22 @@ struct DattorroRoom
         wet at about the level of the dry. */
     static constexpr float wetGain = 0.35f;
 
+    /** The five controls, in the units the parameters use. The defaults are a
+        20 ms pre-delay, damping at 45 percent and a width of 100 percent. */
+    struct Settings
+    {
+        float size = 0.4f;
+        float mix = 0.0f;
+        float preDelayMs = 20.0f;
+        float damping = 0.45f;
+        float width = 1.0f;
+    };
+
+    /** The longest pre-delay the control can ask for. The tank's own pre-delay is
+        bypassed, so this is the whole of the delay and it is held in a buffer at
+        the session rate rather than at the tank's fixed 48 kHz. */
+    static constexpr float maxPreDelayMs = 100.0f;
+
     DattorroRoom() = default;
 
     ~DattorroRoom()
@@ -126,17 +150,29 @@ struct DattorroRoom
         a rate change, which clears it. */
     void prepare (double sampleRate)
     {
-        if (tank == nullptr)
-            tank = DattorroVerb_create();
-
-        if (tank == nullptr)
-            return;
-
-        step = sampleRate > 1.0 ? tankRate / sampleRate : 1.0;
+        sessionRate = sampleRate > 1.0 ? sampleRate : tankRate;
+        step = tankRate / sessionRate;
         spacing = 1.0 / step;
         active = std::abs (step - 1.0) > sameRate;
 
-        applySize (lastSize);
+        // The pre-delay is a session-rate ring, long enough for the control's
+        // whole travel plus the two samples the linear read brackets. It is
+        // allocated here, not on the audio thread, and reset() only fills it.
+        const auto required = static_cast<std::size_t> (
+            std::ceil (sessionRate * static_cast<double> (maxPreDelayMs) * 0.001)) + 8;
+        preDelayBuffer.assign (juce::jmax<std::size_t> (8, required), 0.0f);
+        preDelaySize = static_cast<int> (preDelayBuffer.size());
+
+        // A 20 ms control ramp: fast enough to feel immediate, slow enough that a
+        // dragged pre-delay glides through its fractional taps instead of making
+        // the room jump. Size, damping and width use the same ramp.
+        controlCoefficient = 1.0f - std::exp (-1.0f / (0.02f * static_cast<float> (sessionRate)));
+
+        // The input's 120 Hz high-pass, in the standard one-pole DC-blocker form.
+        lowCutR = juce::jlimit (0.5f, 0.9999f,
+                                1.0f - (juce::MathConstants<float>::twoPi * 120.0f)
+                                         / static_cast<float> (sessionRate));
+
         reset();
     }
 
@@ -150,10 +186,21 @@ struct DattorroRoom
     void reset()
     {
         if (tank != nullptr)
-        {
             DattorroVerb_delete (tank);
-            tank = DattorroVerb_create();
-        }
+
+        tank = DattorroVerb_create();
+        configureTank();
+
+        std::fill (preDelayBuffer.begin(), preDelayBuffer.end(), 0.0f);
+        preDelayWrite = 0;
+        preDelaySamples = -1.0f;
+        lowCutX = 0.0f;
+        lowCutY = 0.0f;
+        currentWidth = -1.0f;
+        currentSize = -1.0f;
+        currentDamping = -1.0f;
+        lastSize = -1.0f;
+        lastDamping = -1.0f;
 
         xHistory.fill (0.0f);
         wetLHistory.fill (0.0f);
@@ -171,9 +218,9 @@ struct DattorroRoom
     bool isPrepared() const noexcept { return tank != nullptr; }
 
     /** How far behind the dry signal the tail arrives, in session samples, from
-        the conversion's own read-ahead. Zero when the session runs at the tank's
-        rate, where the room is the library's own latency (one sample, from the
-        order the taps are read in) and nothing else. */
+        the conversion's own read-ahead. At the tank's rate it is the library's
+        own one-sample latency; at another rate it adds the interpolation's
+        read-ahead. The pre-delay is separate and is in `Settings`. */
     double delay() const noexcept
     {
         return active ? static_cast<double> (lookahead) + 2.0 * spacing + 1.0 : 1.0;
@@ -182,22 +229,48 @@ struct DattorroRoom
     /** One session frame through the room.
 
         `frame` is the whole frame - one sample per channel - and `channels` is how
-        many of them the host handed over. `size` is 0..1 and sets the tail; `mix`
-        is 0..1 and is how much of the wet pair is added to the dry. At mix 0 the
-        stage does nothing at all, and the frame is bit-for-bit what it was.
+        many of them the host handed over. `Settings` carries the five controls:
+        SIZE sets the tail, MIX how much of the wet pair is added, and PRE-DELAY,
+        DAMPING and WIDTH voice the room. At mix 0 the stage does nothing at all,
+        and the frame is bit-for-bit what it was.
 
         Not const and not re-entrant: the tank's state belongs to the audio thread.
     */
-    void processFrame (float* frame, int channels, float size, float mix) noexcept
+    void processFrame (float* frame, int channels, const Settings& settings) noexcept
     {
-        if (tank == nullptr || frame == nullptr || channels <= 0 || mix <= 1.0e-5f)
+        if (tank == nullptr || frame == nullptr || channels <= 0 || settings.mix <= 1.0e-5f)
             return;
 
-        applySize (size);
+        applySettings (settings);
 
         // One input, two taps: Dattorro's network is fed the mono sum, and the
         // width comes from the taps rather than from two rooms.
-        const auto in = channels > 1 ? 0.5f * (frame[0] + frame[1]) : frame[0];
+        auto in = channels > 1 ? 0.5f * (frame[0] + frame[1]) : frame[0];
+
+        // The room hears a clear top and no sub-bass. This is before the tank's
+        // own pre-filter, which is a low-pass, so the two form a band around the
+        // range a plate actually reflects.
+        lowCutY = in - lowCutX + lowCutR * lowCutY;
+        lowCutX = in;
+        in = lowCutY;
+
+        // Pre-delay, in the session domain. It is interpolated because the
+        // control is smoothed and its read point is almost never a whole sample.
+        if (preDelaySize > 0)
+        {
+            const auto targetSamples = static_cast<float> (
+                juce::jlimit (0.0f, maxPreDelayMs, settings.preDelayMs)
+                * 0.001f * static_cast<float> (sessionRate));
+
+            if (preDelaySamples < 0.0f)
+                preDelaySamples = targetSamples;
+            else
+                preDelaySamples += (targetSamples - preDelaySamples) * controlCoefficient;
+
+            preDelayWrite = (preDelayWrite + 1) % preDelaySize;
+            preDelayBuffer[static_cast<std::size_t> (preDelayWrite)] = in;
+            in = readPreDelay (preDelaySamples);
+        }
 
         float wetLeft = 0.0f;
         float wetRight = 0.0f;
@@ -245,10 +318,21 @@ struct DattorroRoom
             }
         }
 
+        const auto mix = juce::jlimit (0.0f, 1.0f, settings.mix);
+
         if (channels > 1)
         {
-            frame[0] += wetLeft * wetGain * mix;
-            frame[1] += wetRight * wetGain * mix;
+            const auto targetWidth = juce::jlimit (0.0f, 2.0f, settings.width);
+
+            if (currentWidth < 0.0f)
+                currentWidth = targetWidth;
+            else
+                currentWidth += (targetWidth - currentWidth) * controlCoefficient;
+
+            const auto mid = 0.5f * (wetLeft + wetRight);
+            const auto side = 0.5f * (wetLeft - wetRight) * currentWidth;
+            frame[0] += (mid + side) * wetGain * mix;
+            frame[1] += (mid - side) * wetGain * mix;
         }
         else
         {
@@ -311,53 +395,106 @@ private:
                        + (-y0 + 3.0f * y1 - 3.0f * y2 + y3) * u * u * u);
     }
 
-    /** SIZE to the library's two settings. Called per frame; it only touches the
-        tank when the control has actually moved, which is once per block in
-        practice because the stage smooths SIZE before it gets here. */
-    void applySize (float size) noexcept
+    /** The tank's fixed voicing. The library's pre-delay is deliberately zero:
+        this wrapper owns the time in milliseconds, at the session rate. */
+    void configureTank() noexcept
     {
-        const auto clamped = juce::jlimit (0.0f, 1.0f, size);
-
-        if (tank == nullptr || std::abs (clamped - lastSize) < 1.0e-4f)
-        {
-            lastSize = clamped;
+        if (tank == nullptr)
             return;
-        }
 
-        lastSize = clamped;
-        const auto s = static_cast<double> (clamped);
-
-        // The tail. These two numbers are measured rather than chosen: the harness
-        // prints the T60 they produce, and the ends of the control are a room that
-        // has died away before the next word (0.54 s) and a plate with a long one
-        // (4.9 s). The shape between them is the library's own exponential - a
-        // feedback loop's decay is logarithmic in its gain - and that is why the
-        // control is worth having at all: the useful part of a reverb is its
-        // LENGTH, and length doubles where gain barely moves.
-        DattorroVerb_setDecay (tank, 0.24 + 0.64 * s);
-
-        // The colour: a bigger room absorbs more top end per pass, and the
-        // library's damping is a one-pole coefficient, so a LONGER tail is a
-        // SMALLER number here. 0.55 is an open room, 0.30 a dark plate.
-        DattorroVerb_setDamping (tank, 0.55 - 0.25 * s);
-
-        // Everything else is the design's own starting point, stated here so the
-        // sound is one file's worth of numbers rather than the library's defaults
-        // half-overridden: a short pre-delay so the tail sits behind the note, a
-        // bright pre-filter, the paper's diffuser gains.
-        DattorroVerb_setPreDelay (tank, 0.02);
+        DattorroVerb_setPreDelay (tank, 0.0);
         DattorroVerb_setPreFilter (tank, 0.85);
         DattorroVerb_setInputDiffusion1 (tank, 0.75);
         DattorroVerb_setInputDiffusion2 (tank, 0.625);
         DattorroVerb_setDecayDiffusion (tank, 0.70);
     }
 
+    /** The pre-delay ring at a fractional age. */
+    float readPreDelay (float samples) const noexcept
+    {
+        auto readPosition = static_cast<float> (preDelayWrite) - samples;
+
+        while (readPosition < 0.0f)
+            readPosition += static_cast<float> (preDelaySize);
+
+        const auto whole = static_cast<int> (std::floor (readPosition));
+        const auto fraction = readPosition - static_cast<float> (whole);
+        const auto a = preDelayBuffer[static_cast<std::size_t> (whole % preDelaySize)];
+        const auto b = preDelayBuffer[static_cast<std::size_t> ((whole + 1) % preDelaySize)];
+
+        return a + (b - a) * fraction;
+    }
+
+    /** SIZE and DAMPING to the library's settings. Called per frame; it only
+        touches the tank when a control has actually moved. */
+    void applySettings (const Settings& settings) noexcept
+    {
+        if (tank == nullptr)
+            return;
+
+        const auto targetSize = juce::jlimit (0.0f, 1.0f, settings.size);
+        const auto targetDamping = juce::jlimit (0.0f, 1.0f, settings.damping);
+
+        if (currentSize < 0.0f)
+            currentSize = targetSize;
+        else
+            currentSize += (targetSize - currentSize) * controlCoefficient;
+
+        if (currentDamping < 0.0f)
+            currentDamping = targetDamping;
+        else
+            currentDamping += (targetDamping - currentDamping) * controlCoefficient;
+
+        const auto size = currentSize;
+        const auto damping = currentDamping;
+        const auto s = static_cast<double> (size);
+
+        if (std::abs (size - lastSize) >= 1.0e-4f)
+        {
+            lastSize = size;
+
+            // The tail. These two numbers are measured rather than chosen: the
+            // harness prints the T60 they produce, and the ends of the control
+            // are a room that has died away before the next word (0.54 s) and a
+            // plate with a long one (4.9 s). The shape between them is the
+            // library's own exponential - a feedback loop's decay is logarithmic
+            // in its gain - and that is why the control is worth having at all:
+            // the useful part of a reverb is its LENGTH, and length doubles where
+            // gain barely moves.
+            DattorroVerb_setDecay (tank, 0.24 + 0.64 * s);
+        }
+
+        // DAMPING is a separate decision now. The library's damping is a one-pole
+        // coefficient, so a SMALLER number is a darker tail. At the default 45
+        // percent this is 0.448, the coefficient the old SIZE 0.4 produced; the
+        // ends run from an open 0.70 to a dark 0.14.
+        if (std::abs (damping - lastDamping) >= 1.0e-4f)
+        {
+            lastDamping = damping;
+            DattorroVerb_setDamping (tank, 0.70 - 0.56 * static_cast<double> (damping));
+        }
+    }
+
     sDattorroVerb* tank = nullptr;
 
+    double sessionRate = tankRate;
     double step = 1.0;      ///< tank samples per session sample
     double spacing = 1.0;   ///< session samples per tank sample
     bool active = false;    ///< the conversion is actually running
-    float lastSize = -1.0f; ///< so the first applySize always writes
+    float lastSize = -1.0f; ///< so the first applySettings always writes
+    float lastDamping = -1.0f;
+    float currentWidth = 1.0f;
+    float currentSize = -1.0f;
+    float currentDamping = -1.0f;
+    float controlCoefficient = 1.0f;
+
+    std::vector<float> preDelayBuffer;
+    int preDelaySize = 0;
+    int preDelayWrite = 0;
+    float preDelaySamples = -1.0f;
+    float lowCutX = 0.0f;
+    float lowCutY = 0.0f;
+    float lowCutR = 0.0f;
 
     std::array<float, xSize> xHistory {};
     std::array<float, wSize> wetLHistory {};

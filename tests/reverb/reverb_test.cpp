@@ -55,10 +55,18 @@ struct Tail
     bool finite = true;
 };
 
-Tail renderImpulse (double rate, float size, float mix, int channels = 2)
+Tail renderImpulse (double rate, float size, float mix, int channels = 2,
+                    float preDelayMs = 20.0f, float damping = 0.45f, float width = 1.0f)
 {
     DattorroRoom room;
     room.prepare (rate);
+
+    DattorroRoom::Settings settings;
+    settings.size = size;
+    settings.mix = mix;
+    settings.preDelayMs = preDelayMs;
+    settings.damping = damping;
+    settings.width = width;
 
     Tail tail;
     const auto samples = static_cast<int> (rate * kRenderSeconds);
@@ -68,7 +76,7 @@ Tail renderImpulse (double rate, float size, float mix, int channels = 2)
     for (int i = 0; i < samples; ++i)
     {
         float frame[2] { i == 0 ? 1.0f : 0.0f, i == 0 ? 1.0f : 0.0f };
-        room.processFrame (frame, channels, size, mix);
+        room.processFrame (frame, channels, settings);
 
         tail.left[static_cast<std::size_t> (i)] = frame[0];
         tail.right[static_cast<std::size_t> (i)] = frame[channels > 1 ? 1 : 0];
@@ -188,7 +196,11 @@ void testBypassIsBitExact()
         {
             float frame[2] { nextSample() * 0.25f, nextSample() * 0.25f };
             const float before[2] { frame[0], frame[1] };
-            room.processFrame (frame, 2, 0.5f, 0.0f);
+
+            DattorroRoom::Settings settings;
+            settings.size = 0.5f;
+            settings.mix = 0.0f;
+            room.processFrame (frame, 2, settings);
 
             if (frame[0] != before[0] || frame[1] != before[1])
                 identical = false;
@@ -303,7 +315,10 @@ void testTheTailDecaysAndTheLevelIsSane()
         phase += kTwoPi * 1000.0 / 48000.0;
 
         float frame[2] { value, value };
-        room.processFrame (frame, 2, 0.5f, 1.0f);
+        DattorroRoom::Settings settings;
+        settings.size = 0.5f;
+        settings.mix = 1.0f;
+        room.processFrame (frame, 2, settings);
         wetL.push_back (frame[0]);
         wetR.push_back (frame[1]);
     }
@@ -330,16 +345,124 @@ void testSilenceStaysSilent()
 
     auto clean = true;
 
+    DattorroRoom::Settings settings;
+    settings.size = 0.8f;
+    settings.mix = 1.0f;
+
     for (int i = 0; i < 44100; ++i)
     {
         float frame[2] { 0.0f, 0.0f };
-        room.processFrame (frame, 2, 0.8f, 1.0f);
+        room.processFrame (frame, 2, settings);
 
         if (frame[0] != 0.0f || frame[1] != 0.0f)
             clean = false;
     }
 
     check (clean, "silence through the room is silence, at the rate the tank is converted from");
+}
+
+// =============================================================================
+//  Pre-delay moves the tail without changing its length.
+// =============================================================================
+double firstWetOnset (const Tail& tail, double rate, double skipSeconds = 0.005)
+{
+    const auto skip = static_cast<std::size_t> (rate * skipSeconds);
+
+    for (auto i = skip; i < tail.left.size(); ++i)
+        if (std::abs (tail.left[i]) + std::abs (tail.right[i]) > 1.0e-5f)
+            return static_cast<double> (i) / rate;
+
+    return -1.0;
+}
+
+void testPreDelayMovesTheTail()
+{
+    const auto immediate = firstWetOnset (renderImpulse (48000.0, 0.6f, 1.0f, 2, 0.0f), 48000.0);
+    const auto delayed = firstWetOnset (renderImpulse (48000.0, 0.6f, 1.0f, 2, 100.0f), 48000.0);
+
+    std::printf ("        wet onset at PRE-DELAY 0 / 100 ms: %.1f ms / %.1f ms\n",
+                 immediate * 1000.0, delayed * 1000.0);
+
+    check (immediate >= 0.0 && delayed >= 0.0, "both pre-delay settings produce a tail");
+    check (delayed - immediate > 0.06,
+           "100 ms of pre-delay moves the tail by more than 60 ms, rather than changing its level");
+}
+
+// =============================================================================
+//  DAMPING is independent of SIZE: it removes the tail's top end, not its length.
+// =============================================================================
+double highFrequencyEnergyRatio (const Tail& tail, double rate, double skipSeconds = 0.5)
+{
+    const auto skip = static_cast<std::size_t> (rate * skipSeconds);
+    double high = 0.0, total = 0.0;
+    float low = 0.0f;
+
+    // A gentle 2.5 kHz one-pole split, rather than a first difference: the
+    // difference weights the top octave so heavily that the tank's own dither
+    // dominates the number and a real damping change hides underneath it.
+    const auto coefficient = 1.0f - std::exp (-2.0f * 3.14159265358979323846f * 2500.0f
+                                              / static_cast<float> (rate));
+
+    for (auto i = skip; i < tail.left.size(); ++i)
+    {
+        low += (tail.left[i] - low) * coefficient;
+        const auto highPart = static_cast<double> (tail.left[i] - low);
+        high += highPart * highPart;
+        total += static_cast<double> (tail.left[i]) * tail.left[i]
+               + static_cast<double> (tail.right[i]) * tail.right[i];
+    }
+
+    return total > 0.0 ? high / total : 0.0;
+}
+
+void testDampingDarkensTheTail()
+{
+    const auto bright = renderImpulse (48000.0, 0.6f, 1.0f, 2, 20.0f, 0.10f);
+    const auto dark = renderImpulse (48000.0, 0.6f, 1.0f, 2, 20.0f, 0.90f);
+    const auto brightRatio = highFrequencyEnergyRatio (bright, 48000.0);
+    const auto darkRatio = highFrequencyEnergyRatio (dark, 48000.0);
+
+    std::printf ("        high-frequency energy at DAMP 10 / 90 %%: %.5f / %.5f\n",
+                 brightRatio, darkRatio);
+
+    check (brightRatio > darkRatio * 1.5,
+           "DAMPING removes the tail's top end instead of shortening it");
+}
+
+// =============================================================================
+//  WIDTH is a real mid/side control: 0 is mono, 100 is the room's own pair,
+//  150 widens it. It is not a second tank.
+// =============================================================================
+double sideEnergy (const Tail& tail, double rate, double skipSeconds = 0.05)
+{
+    const auto skip = static_cast<std::size_t> (rate * skipSeconds);
+    double energy = 0.0;
+
+    for (auto i = skip; i < tail.left.size(); ++i)
+    {
+        const auto difference = static_cast<double> (tail.left[i] - tail.right[i]);
+        energy += difference * difference;
+    }
+
+    return energy;
+}
+
+void testWidthSetsTheImage()
+{
+    const auto mono = renderImpulse (48000.0, 0.6f, 1.0f, 2, 20.0f, 0.45f, 0.0f);
+    const auto normal = renderImpulse (48000.0, 0.6f, 1.0f, 2, 20.0f, 0.45f, 1.0f);
+    const auto wide = renderImpulse (48000.0, 0.6f, 1.0f, 2, 20.0f, 0.45f, 1.5f);
+
+    const auto monoSide = sideEnergy (mono, 48000.0);
+    const auto normalSide = sideEnergy (normal, 48000.0);
+    const auto wideSide = sideEnergy (wide, 48000.0);
+
+    std::printf ("        side energy at WIDTH 0 / 100 / 150 %%: %.3e / %.3e / %.3e\n",
+                 monoSide, normalSide, wideSide);
+
+    check (monoSide < 1.0e-9, "WIDTH 0 collapses the wet pair to mono");
+    check (wideSide > normalSide * 1.8,
+           "WIDTH above 100 widens the pair without a second room");
 }
 
 // =============================================================================
@@ -366,7 +489,10 @@ int main()
 
     DattorroRoom nullFrameRoom;
     nullFrameRoom.prepare (48000.0);
-    nullFrameRoom.processFrame (nullptr, 2, 0.5f, 1.0f);
+    DattorroRoom::Settings nullSettings;
+    nullSettings.size = 0.5f;
+    nullSettings.mix = 1.0f;
+    nullFrameRoom.processFrame (nullptr, 2, nullSettings);
     check (nullFrameRoom.isPrepared(), "a null frame is safely ignored by the prepared room");
 
     testBypassIsBitExact();
@@ -375,6 +501,9 @@ int main()
     testTheTailIsStereo();
     testTheTailDecaysAndTheLevelIsSane();
     testSilenceStaysSilent();
+    testPreDelayMovesTheTail();
+    testDampingDarkensTheTail();
+    testWidthSetsTheImage();
 
     std::printf ("\n%s (%d failure%s)\n", gFailures == 0 ? "ROOM CHECK PASSED" : "FAILURES PRESENT",
                  gFailures, gFailures == 1 ? "" : "s");
