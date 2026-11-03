@@ -893,6 +893,8 @@ private:
             case SG_BACKEND_METAL_SIMULATOR: return "Metal";
             case SG_BACKEND_D3D11:    return "Direct3D 11";
             case SG_BACKEND_WGPU:     return "WebGPU";
+            case SG_BACKEND_VULKAN:   return "Vulkan";
+            case SG_BACKEND_DUMMY:    return "Dummy";
             default:                  return "an unknown backend";
         }
     }
@@ -932,6 +934,7 @@ private:
     std::vector<GpuMesh> gpuMeshes;
     const void* uploadedFrom = nullptr;
 };
+} // namespace
 
 //==============================================================================
 //  Factory
