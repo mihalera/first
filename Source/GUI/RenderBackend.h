@@ -11,6 +11,7 @@
 #pragma once
 #include <JuceHeader.h>
 #include <array>
+#include <cstddef>
 
 namespace j37::render {
 /**

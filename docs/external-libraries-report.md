@@ -92,7 +92,7 @@ house rule that "vendored is better" or "CPM is better".
 | **Vendored source + CPM fallback** | RTNeural, NAM Core, Eigen, dattorro-verb, `dr_wav`, glm, nlohmann/json, pocketfft, signalsmith-stretch (+ `signalsmith-linear`), xsimd, farbot | Header-only or ABI-sensitive code is on disk; harnesses can compile the "library absent" branch without a configure; offline builds of the engine's own dependencies | Re-pinning is two edits (vendored tree and CPM fallback); the tree carries the source |
 | **Vendored test-only** | libebur128 | An independent oracle that a fresh checkout can run with no network | 72 KB and one test binary |
 | **CPM-configured subproject** | chowdsp_utils, melatonin_inspector, melatonin_blur, foleys_gui_magic, clap-juce-extensions, `readerwriterqueue`, kissfft, pffft, yasio, libsndfile, bgfx, Dawn | Upstream's own target and JUCE-module registration are used unchanged; pins are visible in one file | Configure-time network and a cache; upstream's CMake becomes part of the configure |
-| **CPM download-only + local target** | NAM Core's sources, dattorro-verb's `verb.c`, FFTConvolver, ImGui, YIN, audio_fft/pitch_detector, q_dsp/cycfi_infra, sokol_gfx, Rack headers, dywapitchtrack, `dr_wav`, farbot | The build decides flags, warnings and what is compiled; a package whose own CMake is unusable (too-old minimum, standalone project, no CMake at all) still arrives pinned | This repository owns the target definition and must keep it correct |
+| **CPM download-only + local target** | NAM Core's sources, dattorro-verb's `verb.c`, FFTConvolver, ImGui, YIN, audio_fft/pitch_detector, q_dsp/cycfi_infra, sokol_gfx, dywapitchtrack, `dr_wav`, farbot | The build decides flags, warnings and what is compiled; a package whose own CMake is unusable (too-old minimum, standalone project, no CMake at all) still arrives pinned | This repository owns the target definition and must keep it correct |
 | **Discovered platform SDK** | Intel IPP, Arm Performance Libraries, Apple vDSP, Vulkan, Metal, D3D11/D3D12, OpenGL | No vendoring is possible (proprietary, OS-owned, or architecture-specific); the build uses what the machine has and stays portable without it | Builds differ by machine; CI has to install or require the SDK to test the path |
 | **Dev-only** | Catch2, nanobench, libebur128 | Test evidence without adding anything to a distributed binary | A second configure shape, off by default |
 | **Build-time tool** | CPM.cmake | Pins and caching for everything above | One downloaded script, not a linked library |
@@ -157,7 +157,6 @@ might one day choose, a source to read or lift from, or a backend that a
 | **libsndfile** | **LGPL-2.1** | CPM-configured static target, codecs/programs/tests off | `dr_wav` decodes the one format the feature needs; LGPL is the obligation WP4 removed | **No, and actively harmful.** Linking it would reintroduce the LGPL decision for a decoder the plugin does not need |
 | **q_dsp** | MIT | CPM download-only; header-only target | No caller; the transient shaper's envelopes are hand-written and pinned by `tests/unit` | **No.** A second DSP toolkit for maths already solved and tested |
 | **cycfi_infra** | **none upstream** | CPM download-only; four include paths exposed | Required only if Q is used; no caller | **No, and blocked.** No licence file means there is no grant of rights to rely on; it must not ship until that is settled |
-| **Rack (`rack_dsp`)** | GPL-3 with plugin exception | CPM download-only; headers exposed | The Rack engine is a different host runtime; only its DSP headers could be borrowed, and none are called | **No.** Linking the engine is architecturally impossible inside a plugin; the licence is another reason not to |
 | **yasio** | MIT + Anti-996 | CPM-configured static target, TLS backend 0 | A socket library in an audio plugin has no caller | **No.** Networking is not a plugin capability; keeping TLS off also keeps a configure-time OpenSSL download out |
 | **ImGui** | MIT | CPM download-only; four core TUs compiled into a static target | A second immediate-mode UI would fight JUCE's component/window ownership | **No, detrimental.** The panel is deliberately hand-painted; `melatonin_inspector` already covers debug UI |
 | **farbot** | MIT | Vendored header-only; CPM fallback | No caller; `IrStage`/`NeuralStage` use JUCE and atomics for the same job | **No.** Small and MIT, so it stays one line away; linking it without a caller is exactly the defect the audit removed |
@@ -351,10 +350,6 @@ table says *what*, this says *why*.
   at all. That is not a technical preference; it is a legal blocker. The
   transient shaper's envelopes are hand-written and pinned by unit tests, so
   Q would be a second, untested implementation of the same maths.
-- **Rack (`rack_dsp`)**: its headers could be borrowed, but the engine is a
-  host runtime and the licence is GPL-3 with a plugin exception. Linking it
-  into a JUCE plugin is neither technically nor legally sensible. Keeping the
-  headers readable is the integration.
 - **yasio**: a socket library has no role in an offline audio plugin. Its
   Anti-996 licence and its optional TLS download are two more reasons to keep
   it at zero.
@@ -420,9 +415,9 @@ table says *what*, this says *why*.
 3. **Licence boundaries are load-bearing.** Apart from JUCE itself (AGPLv3 or
    commercial), the link line carries no GPL and no LGPL component.
    `chowdsp_dsp_utils` (GPLv3), SoundTouch (LGPL-2.1), libsndfile (LGPL-2.1),
-   aubio (GPL-3), Rack (GPL-3) and cycfi_infra (no licence) are either off the
-   link line or absent. Any proposal to "just link" one of them is a licence
-   decision before it is a technical one.
+   aubio (GPL-3) and cycfi_infra (no licence) are either off the link line or
+   absent. Any proposal to "just link" one of them is a licence decision before
+   it is a technical one.
 4. **One copy at every ABI boundary.** nlohmann/json is deliberately pinned
    and included ahead of RTNeural's bundled copy; NAM Core, RTNeural and the
    plugin share one `nlohmann::json` type. A second JSON library, a second

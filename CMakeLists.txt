@@ -989,7 +989,7 @@ message(STATUS "  Libraries   : chowdsp_utils, melatonin_inspector, melatonin_bl
 message(STATUS "                clap-juce-extensions (CLAP wrapper - JUCE has no CLAP format)")
 message(STATUS "                signalsmith-stretch, fftconvolver,")
 message(STATUS "                imgui, iPlug2 (source only)")
-message(STATUS "                chowcentaur, vcv_prototype, rack, soundpipe, aubio (source only)")
+message(STATUS "                chowcentaur, vcv_prototype, soundpipe, aubio (source only)")
 message(STATUS "                farbot, readerwriterqueue, kissfft, pocketfft, yasio, dywapitchtrack, pffft")
 message(STATUS "                RTNeural (neural inference, used by the DYNAMICS tab), dr_libs,")
 message(STATUS "                yin_pitch, pitch_detector (MPM), dattorro_verb, sndfile")

@@ -277,6 +277,9 @@ jobs:
       - name: Run the OSC harness
         run: bash tests/osc/run.sh
 
+      - name: Run the scale and note-register tests
+        run: bash tests/scale/run.sh
+
       # The WAV decoder, fed bytes nobody wrote. tests/dsp proves the decoder reads
       # the files it was written against; it cannot say what a truncated header, a
       # channel count of zero or a data chunk claiming more frames than it holds
@@ -396,6 +399,9 @@ jobs:
       # branch survived two builds without being compiled by either.
       - name: Check the link line against the code
         run: python3 tests/linkline/check_linkline.py
+
+      - name: Check configure-time dependency fetches
+        run: python3 tests/dependencies/check_unused_rack_fetch.py
 
       # The renderer selection, against the adapters that implement it. A
       # J37_RENDER_BACKEND value is a promise that a build can be configured for
@@ -707,6 +713,7 @@ jobs:
           J37_SANITIZE=address,undefined bash tests/reverb/run.sh
           J37_SANITIZE=address,undefined bash tests/scene_frame/run.sh
           J37_SANITIZE=address,undefined bash tests/osc/run.sh
+          J37_SANITIZE=address,undefined bash tests/scale/run.sh
           # The sweep only: this pass is "every harness under the sanitizers", and the
           # coverage-guided run already has its own step above with its own budget.
           J37_SANITIZE=address,undefined J37_FUZZ_COVERAGE=0 bash tests/fuzz/run.sh
