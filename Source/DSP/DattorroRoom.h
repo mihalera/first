@@ -160,7 +160,10 @@ struct DattorroRoom
         // allocated here, not on the audio thread, and reset() only fills it.
         const auto required = static_cast<std::size_t> (
             std::ceil (sessionRate * static_cast<double> (maxPreDelayMs) * 0.001)) + 8;
-        preDelayBuffer.assign (juce::jmax<std::size_t> (8, required), 0.0f);
+        // std::max, not juce::jmax: JUCE also has a jmax overload for
+        // SIMDRegister, and an explicit <std::size_t> makes Apple Clang try to
+        // instantiate SIMDRegister<unsigned long> before it reaches this one.
+        preDelayBuffer.assign (std::max (std::size_t { 8 }, required), 0.0f);
         preDelaySize = static_cast<int> (preDelayBuffer.size());
 
         // A 20 ms control ramp: fast enough to feel immediate, slow enough that a
