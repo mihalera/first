@@ -85,12 +85,9 @@ void main()
         p.y += sin (t *  7.0 + uTime * 4.0) * uFlutter * 0.026 * envelope;
         vDetail = t * 40.0;
     }
-    else if (uMode > 2.5 && uMode < 3.5)
+    else if (uMode > 5.75 && uMode < 6.25)
     {
-        p.z += sin (uTime * 2.6) * 0.004 * aPosition.w;
-    }
-    else if (uMode > 5.5)
-    {
+        // Only the glow material pulses; the panel remains stationary.
         p.z += sin (uTime * 2.6) * 0.004 * aPosition.w;
     }
 
@@ -186,19 +183,20 @@ void main()
         return;
     }
 
-    if (uMode < 1.5)
+    if (abs (uMode - 1.0) < 0.25)
     {
-        // The tape pack carries concentric detail across its wound surface.
+        // Pack detail uses the wound width interpolated between the supplied radii.
+        float packRadius = mix (uPackInner, uPackOuter, vDetail);
         float band = 0.88
-                     + 0.12 * smoothstep (0.18, 0.50, abs (fract (vDetail) - 0.5));
+                     + 0.12 * smoothstep (0.18, 0.50, abs (fract (packRadius) - 0.5));
         fragColor = vec4 (colour * band, 1.0);
         return;
     }
 
-    if (uMode < 2.5)
+    if (abs (uMode - 2.0) < 0.25)
     {
-        // Ribbon texture follows the tape and its fluttering geometry.
-        colour += panelTexture (vLocal);
+        // Ribbon geometry already flutters in the vertex shader; retain its
+        // along-tape detail without applying the control-panel texture.
         float ribbonBand = 0.88
                            + 0.12 * smoothstep (0.18, 0.50, abs (fract (vDetail) - 0.5));
         fragColor = vec4 (colour * ribbonBand, 1.0);
@@ -244,7 +242,7 @@ void main()
         return;
     }
 
-    if (uMode < 3.5)
+    if (abs (uMode - 3.0) < 0.25)
     {
         vec2 panelHalf = max (abs (uPanelHalf.xy), vec2 (0.0001));
         vec2 uv = vLocal / panelHalf;
@@ -254,7 +252,7 @@ void main()
         return;
     }
 
-    if (uMode < 4.5)
+    if (abs (uMode - 6.0) < 0.25)
     {
         // Explicit glow material: this is the only branch with variable alpha.
         fragColor = vec4 (uHighlightColour * uGlow, uGlow);
