@@ -64,11 +64,12 @@ constexpr const char* renderBackendKey = "render_backend";
 
 /** The panel's own working scale. This is deliberately a MACHINE preference rather
     than a session parameter: a 125 % panel is a fact about the screen and the eyes
-    in front of it, not about the mix. Six stops are offered because a continuous
+    in front of it, not about the mix. Five stops are offered because a continuous
     zoom in a host-sized window is a resize fight waiting to happen - and the layout
     has a real floor, so a free slider would let the user pick a size the panel can
-    no longer draw. */
-constexpr std::array<int, 6> uiScaleStops { 75, 80, 90, 100, 110, 125 };
+    no longer draw. 80 % is deliberately absent: it was close enough to 75 % that it
+    only made the list longer, and it is the one stop users picked by accident. */
+constexpr std::array<int, 5> uiScaleStops { 75, 90, 100, 110, 125 };
 constexpr const char* uiScaleKey = "ui_scale";
 
 inline int rememberedUiScale()

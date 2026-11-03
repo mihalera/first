@@ -89,6 +89,12 @@ struct RealtimePitchShifter
                 position = 0.0f;
         ratio += (juce::jlimit (0.5f, 2.0f, targetRatio) - ratio) * ratioSmoothing;
 
+        // Four-point (Catmull-Rom) interpolation, not linear. A grain is read at a
+        // fractional position almost all the time, and linear interpolation is a
+        // moving low-pass whose loss and aliasing depend on the ratio: that is one
+        // of the ways a granular corrector adds its own colour. The cubic passes
+        // through the sample at fraction zero and is continuous in its slope, so
+        // the grain keeps its top end and the splice has less to hide.
         const auto read = [&] (float position) noexcept
         {
             if (! std::isfinite (position))
@@ -98,12 +104,28 @@ struct RealtimePitchShifter
                 position += static_cast<float> (bufferSize);
 
             const auto index = juce::jlimit (0, bufferSize - 1, static_cast<int> (position));
-            const auto next = (index + 1) % bufferSize;
             const auto fraction = position - static_cast<float> (index);
+            const auto at = [&] (int offset) noexcept
+            {
+                auto tap = index + offset;
+                if (tap < 0)
+                    tap += bufferSize;
+                else if (tap >= bufferSize)
+                    tap -= bufferSize;
+                return buffer[static_cast<std::size_t> (tap)];
+            };
 
-            return buffer[static_cast<std::size_t> (index)]
-                 + (buffer[static_cast<std::size_t> (next)]
-                    - buffer[static_cast<std::size_t> (index)]) * fraction;
+            const auto y0 = at (-1);
+            const auto y1 = at (0);
+            const auto y2 = at (1);
+            const auto y3 = at (2);
+
+            const auto c0 = y1;
+            const auto c1 = 0.5f * (y2 - y0);
+            const auto c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+            const auto c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+
+            return ((c3 * fraction + c2) * fraction + c1) * fraction + c0;
         };
 
         const auto window = [] (float phase) noexcept

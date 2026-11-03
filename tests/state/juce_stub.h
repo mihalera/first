@@ -274,7 +274,8 @@ class NormalisableRange
 public:
     NormalisableRange() = default;
 
-    NormalisableRange (Type rangeStart, Type rangeEnd, Type intervalValue = 0)
+    NormalisableRange (Type rangeStart, Type rangeEnd, Type intervalValue = 0,
+                       Type = 1, int = 0)
         : start (rangeStart), end (rangeEnd), interval (intervalValue) {}
 
     void setSkewForCentre (Type centre) { centrePoint = centre; }

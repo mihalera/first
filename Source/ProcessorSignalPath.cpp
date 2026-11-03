@@ -394,6 +394,7 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
     reverbSettings.preDelayMs = reverbPreDelayParam != nullptr ? reverbPreDelayParam->load() : 20.0f;
     reverbSettings.damping = reverbDampParam != nullptr ? reverbDampParam->load() : 0.45f;
     reverbSettings.width = reverbWidthParam != nullptr ? reverbWidthParam->load() : 1.0f;
+    reverbSettings.lowCutHz = reverbLowCutParam != nullptr ? reverbLowCutParam->load() : 120.0f;
 
     j37dsp::SafetyLimiter postFxLimiter;
     postFxLimiter.prepare (limiter.getCoefficients());
@@ -511,11 +512,12 @@ const std::array<int, 12>& FirstAudioProcessor::scaleOffsetsForMode (int modeInd
     the frames where the fallback grain is used.
 
     TUNE AMOUNT is the gate's partner rather than its rival: it sets how much of
-    the correction is asked for AND how fast the request travels - half the amount
-    is half the pull at about twice the time constant, which is the difference
-    between a note being nudged and a note being snapped onto the grid. At zero the
-    stage is out of the path entirely, the detector with it, and the signal is
-    bit-for-bit the one that arrived.
+    the correction is asked for, while SPEED sets how fast the request travels.
+    Half the amount is half the pull, so a low setting nudges and a high one lands
+    the note fully on the scale; the two are separate controls because a deep
+    correction does not have to be a fast one. At zero the stage is out of the path
+    entirely, the detector with it, and the signal is bit-for-bit the one that
+    arrived.
 */
 void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, float rate) noexcept
 {
@@ -534,13 +536,32 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
     const auto& offsets = scaleOffsetsForMode (mode);
     const auto stageRate = rate > 1.0f ? rate : 48000.0f;
 
-    // How fast the correction is allowed to travel, as the share of the way to the
-    // target the smoothed ratio covers per frame. This is called once per FRAME,
-    // so full amount is a time constant of 80 frames - 1.7 ms at 48 kHz, the snap
-    // the control promises - and a third of the amount is 222 frames, 4.6 ms. Both
-    // are one gesture rather than two notes, which is the point: what the control
-    // mostly moves is the DEPTH of the pull below, and the glide rides along.
-    const auto glide = 0.0005f + 0.012f * amount;
+    // SPEED is the correction's time constant, separate from its depth. The
+    // mapping is cubic at the slow end so the useful, transparent part of the
+    // travel gets most of the knob: 0 % is 100 ms, 50 % about 13 ms, 100 % 1 ms.
+    // The coefficient is rebuilt here from the ENGINE rate, which is what makes
+    // a session at 96 kHz correct at the same speed as one at 48 kHz; the old
+    // fixed per-frame coefficient changed its time constant with the rate.
+    const auto speed = juce::jlimit (0.0f, 1.0f,
+                                     autoTuneSpeedParam != nullptr ? autoTuneSpeedParam->load() : 0.5f);
+    const auto retuneSeconds = 0.001f + std::pow (1.0f - speed, 3.0f) * 0.099f;
+    const auto glide = 1.0f - std::exp (-1.0f / (retuneSeconds * stageRate));
+
+    // The return to unity is its own, slower gesture. A gate that closes because
+    // a note ended should fade the correction out over 30 ms rather than snap the
+    // shifter to 1.0, which is heard as a click on the last syllable.
+    const auto releaseGlide = 1.0f - std::exp (-1.0f / (0.030f * stageRate));
+
+    // TOLERANCE and GATE are read once per frame, like the key and the mode. A
+    // gate with five points of hysteresis keeps a note hovering at the threshold
+    // from switching the corrector on and off every analysis window; that chatter
+    // is the other way a corrector adds distortion of its own.
+    const auto tolerance = juce::jlimit (0.0f, 100.0f,
+                                         autoTuneToleranceParam != nullptr
+                                             ? autoTuneToleranceParam->load() : 10.0f);
+    const auto gateThreshold = juce::jlimit (0.05f, 0.95f,
+                                             autoTuneGateParam != nullptr
+                                                 ? autoTuneGateParam->load() : 0.5f);
 
     // What the stage below is handed, one entry per channel: the ratio that
     // channel's signal should be read at, and the period the fallback shifter
@@ -561,12 +582,28 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
         const auto detected = tracker.frequency();
         const auto confidence = tracker.confidence();
 
-        // Below the gate the stage is transparent: unity ratio, and a splice
-        // length of zero tells the shifter to use its fixed fallback grain.
-        if (confidence < 0.5f || detected < 45.0f || detected > 1400.0f)
+        // The gate opens at GATE and closes five points below it. Below the gate
+        // the stage is transparent: unity ratio, and a splice length of zero tells
+        // the shifter to use its fixed fallback grain. The return is the slower
+        // release gesture, not the retune glide.
+        auto& gateOpen = autoTuneGateOpen[i];
+
+        if (confidence >= gateThreshold)
+            gateOpen = true;
+        else if (confidence < gateThreshold - 0.05f)
+            gateOpen = false;
+
+        if (! gateOpen || detected < 45.0f || detected > 1400.0f)
         {
-            autoTuneCorrectionSmoothed[i] += (1.0f - autoTuneCorrectionSmoothed[i]) * glide;
+            autoTuneCorrectionSmoothed[i] += (1.0f - autoTuneCorrectionSmoothed[i])
+                                               * releaseGlide;
             autoTuneRatiosForFrame[i] = autoTuneCorrectionSmoothed[i];
+
+            // Hold the last trusted period through the release. Switching to
+            // the fallback grain the instant the gate shuts moves the splice
+            // while the ratio is still non-unity, which is a click on the last
+            // syllable; the grain can go once the ratio has actually arrived.
+            autoTunePeriodHintsFor[i] = autoTuneLastPeriodHint[i];
             continue;
         }
 
@@ -597,7 +634,7 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
         const auto targetHz = 440.0f * std::pow (2.0f, (static_cast<float> (target) - 69.0f) / 12.0f);
 
         // The pull itself, with the two rules that make it a corrector rather
-        // than a quantiser: a reading within +-10 cents of the target is left
+        // than a quantiser: a reading within TOLERANCE of the target is left
         // ALONE (the dead zone - a voice is never exactly on the grid, and the
         // part of the performance that is slightly off is the part that sounds
         // human), and the grip is clamped to a semitone either way, because a
@@ -605,12 +642,12 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
         // live in Source/DSP/PitchCorrectionRule.h, where tests/pitch can drive
         // them at exact cents either side of the boundary.
         //
-        // TUNE AMOUNT is a DEPTH as well as a speed. Half the amount is half the
-        // pull - a note a hair sharp lands, a note a quarter-tone flat is only
-        // nudged - which is the setting a singer reaches for when they want the
-        // corrector felt rather than heard. At full amount the pull is the whole
-        // semitone and the glide is 8 ms, which is the snap the control promises.
-        const auto ratio = j37dsp::PitchCorrectionRule::ratio (detected, targetHz, amount);
+        // TUNE AMOUNT is the DEPTH and SPEED is the travel. Half the amount is
+        // half the pull - a note a hair sharp lands, a note a quarter-tone flat
+        // is only nudged - while the glide comes from SPEED alone, so a deep
+        // correction can still be a slow, transparent one.
+        const auto ratio = j37dsp::PitchCorrectionRule::ratio (detected, targetHz, amount,
+                                                               tolerance);
 
         autoTuneCorrectionSmoothed[i] += (ratio - autoTuneCorrectionSmoothed[i]) * glide;
 
@@ -618,9 +655,13 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
         // SHIFTER's rate. The tracker measured it at its own decimated rate, so
         // it is rescaled here - the one place that knows both rates.
         const auto stagePeriod = tracker.periodFrames() * stageRate / tracker.analysisRateHz();
+        const auto periodHint = stagePeriod > 0.0f ? juce::roundToInt (stagePeriod) : 0;
 
         autoTuneRatiosForFrame[i] = autoTuneCorrectionSmoothed[i];
-        autoTunePeriodHintsFor[i] = stagePeriod > 0.0f ? juce::roundToInt (stagePeriod) : 0;
+        autoTunePeriodHintsFor[i] = periodHint;
+
+        if (periodHint > 0)
+            autoTuneLastPeriodHint[i] = periodHint;
     }
 
     // The audio path, once for the frame. Everything above this line is the
@@ -1127,7 +1168,16 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // vocoder is handed whole blocks, so it runs one block behind, and a session
     // whose AUTOTUNE is off pays none of it - the stage is not in the path at all,
     // and neither is the number. See publishReportedLatency().
-    const auto correctorLatency = state.autoTuneStrength > 1.0e-5f ? corrector.latencyFrames() : 0;
+    //  The corrector runs at the ENGINE's rate, but the host compensates in
+    //  SESSION samples. `latencyFrames()` is therefore divided by the oversampling
+    //  factor before it joins the oversampler's own (base-rate) latency; without
+    //  that division a 2x session reported twice the corrector delay it had, and
+    //  a 4x one four times, which pulled every other track early.
+    const auto correctorLatencyEngine = state.autoTuneStrength > 1.0e-5f
+                                            ? corrector.latencyFrames() : 0;
+    const auto correctorLatency = static_cast<int> (
+        std::lround (static_cast<double> (correctorLatencyEngine)
+                     / static_cast<double> (juce::jmax (1.0f, oversamplingRateFactor))));
 
     if (correctorLatency != publishedCorrectorLatencySamples)
     {
@@ -1211,7 +1261,10 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
                                         delayToneParam != nullptr ? delayToneParam->load() : 0.5f);
     const auto delayLowCut = juce::jlimit (20.0f, 500.0f,
                                            delayLowCutParam != nullptr ? delayLowCutParam->load() : 80.0f);
+    const auto delayDamp = juce::jlimit (0.0f, 1.0f,
+                                         delayDampParam != nullptr ? delayDampParam->load() : 0.0f);
     state.delayTone = delayTone;
+    state.delayDamp = delayDamp;
     const auto stOffsetUs = stOffsetParam != nullptr ? stOffsetParam->load() : 0.0f;
     const auto noiseAmount = noiseParam != nullptr ? noiseParam->load() : 0.5f;
     const auto noiseLvlAmount = noiseLvlParam != nullptr ? noiseLvlParam->load() : 1.0f;
@@ -1309,6 +1362,13 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         0.5f, 0.9999f,
         1.0f - (juce::MathConstants<float>::twoPi * delayLowCut) / state.engineSampleRate);
     state.delayControlCoefficient = onePoleCoefficient (20.0f, state.engineSampleRate);
+
+    // DLY DAMP is a low-pass in the FEEDBACK path only. 0 % is bypassed outright
+    // (the branch below keeps the old repeat bit-for-bit); above it the cutoff
+    // falls from 20 kHz to 500 Hz, so each pass loses a little more top end.
+    state.delayFeedbackDampCoefficient = onePoleCoefficientHz (
+        juce::jlimit (500.0f, 20000.0f, 20000.0f * std::pow (0.025f, delayDamp)),
+        state.engineSampleRate);
 
     // ST OFFSET is given in microseconds and converted to samples the same way. Only
     // the magnitude is the read offset; the sign decides WHICH channel is delayed, so
@@ -2973,10 +3033,13 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         //  clean digital echo of the input. That is the whole difference between
         //  a second tape head and a delay unit.
         //
-        //  The read offset is the smoothed delay in samples, read with linear
-        //  interpolation: the smoothing means the offset is almost never whole,
-        //  and a delay that snapped to whole samples would zipper as the knob
-        //  moved.
+        //  The read offset is the smoothed delay in samples, read with a
+        //  four-point cubic: the smoothing means the offset is almost never
+        //  whole, and linear interpolation loses top end and adds a moving
+        //  comb as the knob sweeps. The cubic needs one sample either side of
+        //  the read point, so the read itself stays three samples behind the
+        //  write head; a shorter setting is still a delay, just not one where
+        //  the interpolator can see a sample that has not been written yet.
         // -------------------------------------------------------------------
         // Zero means the second head is disengaged. An active head must read at
         // least one sample behind the current write position, or a zero offset
@@ -2987,17 +3050,37 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         float delayed = 0.0f;
         if (delayBufferLength > 0 && delayEnabled)
         {
-            float readPosition = static_cast<float> (delayWritePosition) - delaySamples;
+            const float readDelaySamples = juce::jmax (3.0f, delaySamples);
+            float readPosition = static_cast<float> (delayWritePosition) - readDelaySamples;
             if (readPosition < 0.0f)
                 readPosition += static_cast<float> (delayBufferLength);
 
             const int readIndex = static_cast<int> (readPosition);
             const float fraction = readPosition - static_cast<float> (readIndex);
-            const int nextIndex = (readIndex + 1) % delayBufferLength;
-
             const auto* delayRead = delayBuffer.getReadPointer (channel);
-            delayed = delayRead[readIndex]
-                    + (delayRead[nextIndex] - delayRead[readIndex]) * fraction;
+
+            const auto tap = [delayRead, this, readIndex] (int offset) noexcept
+            {
+                auto index = (readIndex + offset) % delayBufferLength;
+                if (index < 0)
+                    index += delayBufferLength;
+                return delayRead[index];
+            };
+
+            const auto y0 = tap (-1);
+            const auto y1 = tap (0);
+            const auto y2 = tap (1);
+            const auto y3 = tap (2);
+
+            // Catmull-Rom, the same four-point kernel the reverb's rate bridge
+            // uses: it passes through the sample at fraction 0 and has a
+            // continuous first derivative across taps.
+            const auto c0 = y1;
+            const auto c1 = 0.5f * (y2 - y0);
+            const auto c2 = y0 - 2.5f * y1 + 2.0f * y2 - 0.5f * y3;
+            const auto c3 = 0.5f * (y3 - y0) + 1.5f * (y1 - y2);
+
+            delayed = ((c3 * fraction + c2) * fraction + c1) * fraction + c0;
         }
 
         // LOW CUT is a one-pole high-pass at the head of the repeat path. It is
@@ -3139,7 +3222,21 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
             // inside the loop would give it more than unity gain at the top end
             // and turn a long repeat into a runaway filter; the low cut is before
             // this point, so it still governs what accumulates.
-            const float feedbackAmount = delayAmount * delayCharacter;
+            //  DLY DAMP is inside the loop and nowhere else: it shapes what the
+            //  NEXT pass records, not the repeat the user hears now. The branch
+            //  at 0 keeps the old feedback bit-for-bit; above it the low-pass
+            //  state is per channel and follows the character stage.
+            auto& feedbackDamp = delayFeedbackDampState[static_cast<std::size_t> (channel)];
+            float feedbackSignal = delayCharacter;
+
+            if (state.delayDamp > 1.0e-4f)
+            {
+                feedbackDamp += (delayCharacter - feedbackDamp)
+                                * state.delayFeedbackDampCoefficient;
+                feedbackSignal = feedbackDamp;
+            }
+
+            const float feedbackAmount = delayAmount * feedbackSignal;
             const float pingPongNow = pingPongSmoothed.getCurrentValue();
             const bool stereo = state.activeChannels > 1;
 

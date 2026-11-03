@@ -938,11 +938,17 @@ void testCorrectionDeadZone()
         check (! PitchCorrectionRule::inDeadZone (beyondSlack, target)
                && PitchCorrectionRule::ratio (beyondSlack, target, 1.0f) != 1.0f,
                "a reading beyond tolerance is corrected on both sides");
-    }
-
-    check (PitchCorrectionRule::inDeadZone (atCents (10.0), target)
+    }    check (PitchCorrectionRule::inDeadZone (atCents (10.0), target)
            && ! PitchCorrectionRule::inDeadZone (atCents (10.5), target),
            "the boundary itself is inside the zone and half a cent past it is not");
+
+    // --- TOLERANCE is the caller's dead zone, not a fixed constant -----------
+    check (PitchCorrectionRule::inDeadZone (atCents (24.0), target, 25.0f)
+           && ! PitchCorrectionRule::inDeadZone (atCents (26.0), target, 25.0f),
+           "a 25 cent tolerance leaves 24 cents alone and corrects 26");
+    check (PitchCorrectionRule::ratio (atCents (24.0), target, 1.0f, 25.0f) == 1.0f
+           && PitchCorrectionRule::ratio (atCents (30.0), target, 1.0f, 25.0f) != 1.0f,
+           "and the ratio follows that tolerance rather than the documented default");
 
     // --- outside it: the interval the reading asked for ---------------------
     {

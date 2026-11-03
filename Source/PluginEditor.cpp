@@ -2010,19 +2010,19 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
 
     // How many knobs the LIVE page has to place, and which list they come from.
     // Two pages own knobs the tabSpecs table cannot describe: COMP's six are the
-    // compressor's own, built beside the meters they belong to, and AUTOTUNE's one
-    // is the tune amount, built with the page's pill switch. Neither is declared
-    // as a knob page, so the strip is handed their count here and reads their
-    // widgets in its placement loop below. Everything after this point is written
-    // against knobCount rather than against the tab's own count, and both pages are
-    // laid out by the same solve as every other page: COMP used to place its own
-    // six by hand, in cells as tall as the whole grid, which drew a small cap at
-    // the top of each cell with its readout a hundred-odd pixels under it, and
-    // AUTOTUNE rode a 30 px band beside its switch, which the toolkit turned into a
-    // three-pixel paint area - a bead on a stock bar, one knob on the panel drawn
-    // by JUCE's own slider art.
+    // compressor's own, built beside the meters they belong to, and AUTOTUNE's
+    // four are its depth, speed, tolerance and gate, built with the page's pill
+    // switch. Neither is declared as a knob page, so the strip is handed their
+    // count here and reads their widgets in its placement loop below. Everything
+    // after this point is written against knobCount rather than against the tab's
+    // own count, and all three pages are laid out by the same solve as every other
+    // page: COMP used to place its own six by hand, in cells as tall as the whole
+    // grid, which drew a small cap at the top of each cell with its readout a
+    // hundred-odd pixels under it, and AUTOTUNE rode a 30 px band beside its
+    // switch, which the toolkit turned into a three-pixel paint area - a bead on a
+    // stock bar, one knob on the panel drawn by JUCE's own slider art.
     const auto knobCount = compressorTab ? static_cast<int> (compressorControls.size())
-                                         : autotuneTab ? 1
+                                         : autotuneTab ? static_cast<int> (autoTuneControls.size())
                                                        : tabControlCount;
 
     // Which pages own a MEMBER BAND - the strip under the knobs that the
@@ -2220,15 +2220,15 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     {
         // Which widget this slot IS. The tab table holds every knob page's
         // controls and nothing else, so a page's slot is an index into it - but
-        // COMP's six and AUTOTUNE's one are the widgets the table cannot hold
+        // COMP's six and AUTOTUNE's four are the widgets the table cannot hold
         // (they belong to their page's own machinery rather than to a knob page),
         // so those two pages' slots address their label and slider directly.
         const auto slotIndex = static_cast<std::size_t> (slot);
         auto& label = compressorTab ? compressorControlLabels[slotIndex]
-                                    : autotuneTab ? autoTuneAmountLabel
+                                    : autotuneTab ? autoTuneControlLabels[slotIndex]
                                                   : controlLabels[activeTab.controls[slotIndex]];
         auto& control = compressorTab ? compressorControls[slotIndex]
-                                      : autotuneTab ? autoTuneAmountSlider
+                                      : autotuneTab ? autoTuneControls[slotIndex]
                                                     : controls[activeTab.controls[slotIndex]];
         const auto row = slot / knobColumns;
         const auto column = slot % knobColumns;
@@ -2343,8 +2343,11 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     tuningTonicBox.setVisible (geometry.autotuneTab);
     tuningModeBox.setVisible (geometry.autotuneTab);
     autoTuneButton.setVisible (geometry.autotuneTab);
-    autoTuneAmountLabel.setVisible (geometry.autotuneTab);
-    autoTuneAmountSlider.setVisible (geometry.autotuneTab);
+    for (std::size_t i = 0; i < autoTuneControls.size(); ++i)
+    {
+        autoTuneControls[i].setVisible (geometry.autotuneTab);
+        autoTuneControlLabels[i].setVisible (geometry.autotuneTab);
+    }
     for (std::size_t i = 0; i < compressorControls.size(); ++i)
     {
         compressorControls[i].setVisible (geometry.compressorTab);
@@ -2566,7 +2569,7 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
     {
         sectionCaptionLabel.setText ("AUTOTUNE", juce::dontSendNotification);
         // Keep the key and scale together with the corrector that uses them. The
-        // tune-amount knob occupies the strip above; the member band holds TONIC,
+        // four tune knobs occupy the strip above; the member band holds TONIC,
         // MODE and the AUTO TUNE switch in its four columns.
         placeDeckSwitch (geometry, tuningTonicLabel, tuningTonicBox, 0, 1, "TONIC");
         // ONE band for the page: the MODE list, the AUTO TUNE switch and the TONIC
@@ -3005,8 +3008,14 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "outEqHp",        &outputEqHpButton },
             { "outEqLp",        &outputEqLpButton },
             { "autoTune",       &autoTuneButton },
-            { "autoTuneLbl",    &autoTuneAmountLabel },
-            { "autoTuneAmt",    &autoTuneAmountSlider },
+            { "autoTuneLbl",    &autoTuneControlLabels[0] },
+            { "autoTuneAmt",    &autoTuneControls[0] },
+            { "autoTuneSpeedLbl", &autoTuneControlLabels[1] },
+            { "autoTuneSpeed",  &autoTuneControls[1] },
+            { "autoTuneTolLbl", &autoTuneControlLabels[2] },
+            { "autoTuneTol",    &autoTuneControls[2] },
+            { "autoTuneGateLbl", &autoTuneControlLabels[3] },
+            { "autoTuneGate",   &autoTuneControls[3] },
         };
 
         // Only what is on screen counts: a hidden tab member is deliberately

@@ -121,7 +121,9 @@ void FirstAudioProcessorEditor::applyTheme() {
     // TONIC and MODE captions are its peers - the two pages used to share one tab.
     // All three follow the panel like every other caption on it, instead of
     // keeping the ivory panel's ink on charcoal.
-    autoTuneAmountLabel.setColour(juce::Label::textColourId, palette.secondary);
+    for (auto &label : autoTuneControlLabels)
+        label.setColour(juce::Label::textColourId, palette.secondary);
+
     tuningTonicLabel.setColour(juce::Label::textColourId, palette.secondary);
     tuningModeLabel.setColour(juce::Label::textColourId, palette.secondary);
 
@@ -192,7 +194,8 @@ void FirstAudioProcessorEditor::applyTheme() {
     for (auto &slider : compressorControls)
         inkKnob(slider);
 
-    inkKnob(autoTuneAmountSlider);
+    for (auto &slider : autoTuneControls)
+        inkKnob(slider);
 
     const auto styleCombo = [&palette](juce::ComboBox &box) {
         box.setColour(juce::ComboBox::backgroundColourId, palette.raised);

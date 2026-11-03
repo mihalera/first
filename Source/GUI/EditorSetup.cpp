@@ -330,50 +330,89 @@ void FirstAudioProcessorEditor::setUpLanguageAndTuning() {
     autoTuneButton.setLookAndFeel(&inlineLookAndFeel);
     autoTuneAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
         audioProcessor.parameters, "autotune", autoTuneButton);
-    // A rotary, laid out by the knob strip like every other page's controls - see
-    // the AUTOTUNE branch in resized(). As a LinearHorizontal bar this was the
-    // one control on the panel the toolkit drew for itself (J37LookAndFeel
-    // overrides the rotary, the switch and the toggle, and inherits JUCE's stock
-    // slider art), and the band it rode was 30 px tall: the toolkit kept a 15 px
-    // value box out of that and handed the art a paint area three pixels deep, so
-    // the page's only knob was a two-pixel bead beside a stock grey track.
-    autoTuneAmountSlider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
-    // 16 px for the readout, as on the deck's knobs - see the note there.
-    autoTuneAmountSlider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 78, 16);
-    autoTuneAmountSlider.setRange(0.0, 1.0, 0.001);
-    // The readout reads "50 %", the way the panel's other fraction knobs read (see
-    // the transient shaper's two amounts, the same pair of functions): the
-    // parameter IS a fraction and its unit IS percent, so the toolkit's own
-    // 0.500-with-a-percent-sign was the wrong number WITH a percent sign after
-    // it. The unit rides inside the text function rather than in
-    // setTextValueSuffix, so it cannot be written twice.
-    autoTuneAmountSlider.textFromValueFunction = [](double value) {
-        return juce::String(juce::roundToInt(value * 100.0)) + " %";
+    // Four rotaries, laid out by the knob strip like every other page's
+    // controls - see the AUTOTUNE branch in resized(). They are built through one
+    // helper because they are one kind of control: a percentage or cents readout
+    // in the caption band, the toolkit's rotary, and an attachment by id. The
+    // helper also keeps the range, the readout and the parameter's own range in
+    // one place, so a knob cannot be added with a percentage readout over a cents
+    // parameter.
+    const auto setupTuneKnob = [this] (int index, const char* id, const char* caption,
+                                       double minimum, double maximum, double interval,
+                                       const char* tip, auto textFrom, auto valueFrom)
+    {
+        const auto slot = static_cast<std::size_t> (index);
+        auto& slider = autoTuneControls[slot];
+        auto& label = autoTuneControlLabels[slot];
+
+        slider.setSliderStyle(juce::Slider::RotaryHorizontalVerticalDrag);
+        // 16 px for the readout, as on the deck's knobs - see the note there.
+        slider.setTextBoxStyle(juce::Slider::TextBoxBelow, false, 78, 16);
+        slider.setRange(minimum, maximum, interval);
+        slider.textFromValueFunction = textFrom;
+        slider.valueFromTextFunction = valueFrom;
+        slider.setLookAndFeel(&customLookAndFeel);
+        autoTuneAttachments[slot] =
+            std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
+                audioProcessor.parameters, id, slider);
+
+        // Centred, and click-through, because these captions are knob-page
+        // captions: the strip places them in the tile's caption band like every
+        // other page's labels.
+        styleLabel(label, caption, 9.0f, paletteFor(false).secondary, true,
+                   juce::Justification::centred);
+        label.setInterceptsMouseClicks(false, false);
+        addAndMakeVisible(label);
+        addAndMakeVisible(slider);
+        setTip(slider, tip);
     };
-    autoTuneAmountSlider.valueFromTextFunction = [](const juce::String &text) {
-        return juce::jlimit(0.0, 1.0, text.getDoubleValue() / 100.0);
+
+    const auto percentText = [] (double value)
+    {
+        return juce::String (juce::roundToInt (value * 100.0)) + " %";
     };
-    autoTuneAmountSlider.setLookAndFeel(&customLookAndFeel);
-    autoTuneAmountAttachment =
-        std::make_unique<juce::AudioProcessorValueTreeState::SliderAttachment>(
-            audioProcessor.parameters, "autotune_amount", autoTuneAmountSlider);
+    const auto percentValue = [] (const juce::String& text)
+    {
+        return juce::jlimit (0.0, 1.0, text.getDoubleValue() / 100.0);
+    };
+
+    setupTuneKnob (0, "autotune_amount", "TUNE AMOUNT", 0.0, 1.0, 0.001,
+                   "TUNE AMOUNT - the depth of the correction: 0 is the untouched "
+                   "signal, 100 is the full pull onto the scale. It no longer "
+                   "changes the retune speed - SPEED owns that - so a deep, natural "
+                   "correction is possible without the snap.",
+                   percentText, percentValue);
+    setupTuneKnob (1, "autotune_speed", "SPEED", 0.0, 1.0, 0.001,
+                   "SPEED - how quickly the correction glides to its new pitch, "
+                   "independent of TUNE AMOUNT. 0 percent is a slow, transparent "
+                   "100 ms glide; 50 percent is about 13 ms; 100 percent is a 1 ms "
+                   "snap. Slower settings are what keep consonants and vibrato from "
+                   "being smeared. Default 50 percent.",
+                   percentText, percentValue);
+    setupTuneKnob (2, "autotune_tolerance", "TOLERANCE", 0.0, 50.0, 0.5,
+                   "TOLERANCE - the dead zone around the target note, in cents. A "
+                   "reading inside it is left bit-for-bit alone, which keeps the "
+                   "human part of the performance. 0 corrects every reading, 10 is "
+                   "the default and 50 lets a wide vibrato through. Default 10 cents.",
+                   [] (double value) { return juce::String (juce::roundToInt (value)) + " ct"; },
+                   [] (const juce::String& text) { return juce::jlimit (0.0, 50.0, text.getDoubleValue()); });
+    setupTuneKnob (3, "autotune_gate", "GATE", 0.0, 1.0, 0.001,
+                   "GATE - how confident the pitch detector must be before the "
+                   "corrector trusts a reading. Higher settings leave breath, noise "
+                   "and ambiguous chords alone; lower settings follow quiet or "
+                   "noisy notes but can chase a reading that is not a pitch. "
+                   "Default 50 percent.",
+                   percentText, percentValue);
+
     styleLabel(tuningTonicLabel, "TONIC", 9.0f, paletteFor(false).secondary, true,
                juce::Justification::left);
     styleLabel(tuningModeLabel, "MODE", 9.0f, paletteFor(false).secondary, true,
                juce::Justification::left);
-    // Centred, and click-through, because this caption is now a knob page's - the
-    // strip places it in the tile's caption band like every other page's label,
-    // and a left-aligned caption over a centred knob reads as a stray word.
-    styleLabel(autoTuneAmountLabel, "TUNE AMOUNT", 9.0f, paletteFor(false).secondary, true,
-               juce::Justification::centred);
-    autoTuneAmountLabel.setInterceptsMouseClicks(false, false);
     addAndMakeVisible(tuningTonicLabel);
     addAndMakeVisible(tuningModeLabel);
     addAndMakeVisible(tuningTonicBox);
     addAndMakeVisible(tuningModeBox);
     addAndMakeVisible(autoTuneButton);
-    addAndMakeVisible(autoTuneAmountLabel);
-    addAndMakeVisible(autoTuneAmountSlider);
 
     // The four tuning controls are the one group on the panel that had no
     // tooltips at all, which is why the page read as unexplained: two of them
@@ -400,17 +439,9 @@ void FirstAudioProcessorEditor::setUpLanguageAndTuning() {
                            "is inaudible. Below its gate - silence, noise, a chord, or "
                            "a note outside 45 Hz to 1.4 kHz - it glides back to unity "
                            "and passes the signal untouched rather than chasing a "
-                           "number it cannot trust. While it runs the stage adds a "
-                           "period of the tracked note as delay, and at full TUNE "
-                           "AMOUNT the correction is a snap. Default off.");
-    setTip(autoTuneAmountSlider, "TUNE AMOUNT - how far and how fast the correction is "
-                                 "allowed to travel: half the amount is half the pull "
-                                 "at about twice the time constant, which is the "
-                                 "difference between a note being nudged and a note "
-                                 "being snapped onto the grid. At full amount a note "
-                                 "lands within a few milliseconds; at 0 the stage is "
-                                 "out of the path entirely, detector included, and "
-                                 "the signal is bit-for-bit the one that arrived.");
+                           "number it cannot trust. TUNE AMOUNT sets the depth, SPEED "
+                           "the retune time, TOLERANCE the dead zone and GATE the "
+                           "confidence required. Default off.");
 }
 
 void FirstAudioProcessorEditor::setUpTooltipsAndPhysics() {
@@ -684,6 +715,14 @@ void FirstAudioProcessorEditor::setUpControlStrip() {
             // slider's current range, so skewing before it would use 0..1.
             slider.setRange(20.0, 500.0, 1.0);
             slider.setSkewFactorFromMidPoint(80.0);
+            slider.setNumDecimalPlacesToDisplay(0);
+            slider.setTextValueSuffix(" Hz");
+        } else if (id == "reverb_lowcut") {
+            // RVB LOW: the corner of the room's input high-pass, in Hz. Like LOW
+            // CUT it is a real frequency, not a percentage, so it needs its own
+            // range before the generic percentage branch clips it to 0..1.
+            slider.setRange(20.0, 500.0, 1.0);
+            slider.setSkewFactorFromMidPoint(120.0);
             slider.setNumDecimalPlacesToDisplay(0);
             slider.setTextValueSuffix(" Hz");
         } else if (id == "reverb_predelay") {

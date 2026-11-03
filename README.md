@@ -306,8 +306,10 @@ absorbs it on every pass. **PRE-DLY** (0-100 ms) sets how far behind the dry not
 room starts, which is what places a voice in front of a plate instead of inside it. It
 is applied at the session rate, so 20 ms is 20 ms at any sample rate. **RVB WIDTH** is a
 mid/side trim on the wet pair: 0 % is mono, 100 % is the tank's own two taps and 200 %
-doubles the side signal. A fixed 120 Hz high-pass feeds the tank, so the room does not
-collect the programme's sub-bass.
+doubles the side signal. **RVB LOW** (20-500 Hz) is the high-pass at the tank's input,
+so the room does not collect the programme's sub-bass; 120 Hz is the default, and the
+control lets a bass or cello be placed in the space without turning a full mix into
+low-end cloud.
 
 **Delay** is the second playback head, and **DELAY TYPE** sets what its repeats sound
 like. The three are genuinely different machines:
@@ -328,6 +330,12 @@ repeat path. TONE at 50 % is neutral; above it the repeats darken, below they br
 and it works on all three delay types. LOW CUT defaults to 80 Hz: feedback collects low
 end, and a long delay turns a bass note into a rising cloud, so the high-pass removes it
 before the first repeat. It reaches 500 Hz for a deliberately thin echo.
+
+**DLY DAMP** is a low-pass in the feedback path only. Each pass loses a little more top
+end, so a long MODERN or BBD repeat settles instead of stacking into a metallic ring,
+while the first repeat keeps the tone DLY TONE set. It is 0 % (open) by default, so the
+stage sounds as it did unless the tail is deliberately darkened; 100 % is a dark,
+tape-like decay.
 
 ## Vinyl
 
@@ -530,8 +538,9 @@ machine's own bandwidth and saturation, and each pass round the tape loses top e
 way a real repeat does. It is a single interpolation-read circular buffer, sized once
 in `prepareToPlay` for the longest time the control can ask for at the highest rate the
 engine can run at, so the DELAY knob moves a read offset and never resizes a buffer on
-the audio thread. DLY TONE colours the output tap, and LOW CUT sits before the character
-stage so the first repeat and every pass of the feedback share the same high-pass.
+the audio thread. DLY TONE colours the output tap, LOW CUT sits before the character stage
+so the first repeat and every pass of the feedback share the same high-pass, and DLY DAMP
+sits inside the feedback loop, darkening each successive pass without touching the first.
 
 ## Stereo tape offset
 
@@ -671,9 +680,13 @@ one tape.
 
 AUTO TUNE is opt-in, off by default, and inert at TUNE AMOUNT 0 - at zero the stage is out
 of the path entirely, detector included, and the signal is bit-for-bit the one that arrived.
-Switched in, the page's four controls are the whole of it: **TONIC** and **MODE** say which
-notes are legal, **AUTO TUNE** switches the stage in, and **TUNE AMOUNT** sets how far and
-how fast the correction is allowed to travel.
+Switched in, **TONIC** and **MODE** say which notes are legal, **AUTO TUNE** switches the
+stage in, and the four knobs split the correction into independent decisions: **TUNE
+AMOUNT** is the depth of the pull, **SPEED** is how long it takes to get there, **TOLERANCE**
+is the dead zone around the target, and **GATE** is how confident the detector must be before
+its reading is trusted. Depth and speed used to be the same control, which is why a deep
+correction was also a fast one; they are separate now, so a note can be pulled all the way
+onto the grid without the snap.
 
 Two pieces of signal processing, and both were rebuilt for one reason, which is the report
 the panel carried: *autotune does nothing*.
@@ -688,14 +701,15 @@ below it - silence, noise, a chord, a note outside 45 Hz to 1.4 kHz - the correc
 back to unity and the signal passes untouched, because correcting towards a number the
 detector made up out of a cymbal is audible only as wrongness.
 
-**The dead zone** is what keeps the result human. A reading within **±10 cents** of the note
-the key asks for is not corrected at all - the ratio is exactly 1, so the shifter reads at
-unity and the note passes untouched - because a voice is never exactly on the grid, and the
-part of a performance that is slightly sharp or flat is the part the ear reads as human. The
-zone is applied before TUNE AMOUNT scales the pull, so half amount is a gentler version of
-the same opinion rather than a differently-tuned one, and the grip outside it is still clamped
-to a semitone either way. It lives in `Source/DSP/PitchCorrectionRule.h` and `tests/pitch/`
-drives it at exact cents either side of the boundary.
+**The dead zone** is what keeps the result human. TOLERANCE sets how many cents around the
+note the key asks for are left alone - the ratio is exactly 1, so the shifter reads at unity
+and the note passes untouched - because a voice is never exactly on the grid, and the part of
+a performance that is slightly sharp or flat is the part the ear reads as human. It is 10
+cents by default, reachable from 0 (correct every reading) to 50 (let a wide vibrato
+through), and it is applied before TUNE AMOUNT scales the pull, so half amount is a gentler
+version of the same opinion rather than a differently-tuned one. The grip outside it is still
+clamped to a semitone either way. It lives in `Source/DSP/PitchCorrectionRule.h` and
+`tests/pitch/` drives it at exact cents either side of the boundary.
 
 **The shifter** moves the audio onto the note by re-reading it at the correction ratio out of
 a delay line. It has two read heads half a grain apart whose Hann windows sum to one, and the
@@ -769,7 +783,10 @@ rest stays silent.
 | Tuning Tonic (TONIC) | C to B | The key the scale is built on: the note the corrector treats as home. No effect on CHROMATIC, which already contains every semitone. Default C |
 | Tuning Mode (MODE) | Chromatic / Major / Minor / Dorian / Pentatonic Major / Pentatonic Minor | Which notes the corrector may land on. CHROMATIC pulls a note to the nearest semitone and nowhere else; a scale lets the reading travel up to a semitone to the nearest note the key contains, so the correction follows the key rather than the grid. Default Chromatic |
 | Auto Tune | on/off | Switches the corrector in: a period detector reads the note, the key decides where it may land, and the shifter re-reads the signal onto it. Below its gate (silence, noise, a chord, 45 Hz to 1.4 kHz) it glides back to unity and passes the signal untouched. Off by default |
-| Auto Tune Amount (TUNE AMOUNT) | 0 to 100 % | How far and how fast the correction travels: half the amount is half the pull at about twice the time constant, so a low setting nudges a note and a high one snaps it onto the grid. At 0 % the stage is out of the path entirely, detector included. Default 0 % |
+| Auto Tune Amount (TUNE AMOUNT) | 0 to 100 % | Depth of the correction: 0 is the untouched signal, 100 is the full pull onto the scale. It no longer changes the retune speed - SPEED owns that. At 0 % the stage is out of the path entirely, detector included. Default 0 % |
+| Auto Tune Speed (SPEED) | 0 to 100 % | How quickly the correction glides to its new pitch, independent of TUNE AMOUNT: 0 % is a slow, transparent 100 ms glide, 50 % about 13 ms, 100 % a 1 ms snap. Default 50 % |
+| Auto Tune Tolerance (TOLERANCE) | 0 to 50 cents | The dead zone around the target note. A reading inside it is left bit-for-bit alone; 0 corrects every reading, 10 is the default and 50 lets a wide vibrato through. Default 10 cents |
+| Auto Tune Gate (GATE) | 0 to 100 % | How confident the pitch detector must be before the corrector trusts a reading. Higher settings leave breath, noise and ambiguous chords alone; lower settings follow quiet or noisy notes. Default 50 % |
 | Output | -32 to +32 dB | Calibrated output trim in dB |
 | Width | 0 to 100 % | Mono through natural to extra wide |
 | Bypass | on/off | Ramps the whole tape engine out without clicking |
@@ -822,7 +839,7 @@ that was chosen.
 ### Panel scale, virtualisation and drop loading
 
 The editor already follows the host's window, but **UI SCALE** on SETTINGS gives the
-panel a working size of its own: 75, 80, 90, 100, 110 or 125 %. A stop resizes the window
+panel a working size of its own: 75, 90, 100, 110 or 125 %. A stop resizes the window
 to the layout's proportional size and scales the caption system with it, so the panel
 is not just a small window with large type in it. The layout keeps its real floor
 (780 x 664) and ceiling (1500 x 1180); a stop that the current display's work area

@@ -79,7 +79,7 @@ namespace j37panel
     //   59 transient_attack  60 transient_sustain  61 transient_mix
     //   62 neural_mix  63 ir_mix
     //   64 reverb_predelay  65 reverb_damp  66 reverb_width
-    //   67 delay_tone  68 delay_lowcut
+    //   67 delay_tone  68 delay_lowcut  69 delay_damp  70 reverb_lowcut
     //
     // (The live indices are the controlSpecs positions; the map above is kept by
     // hand and the static_assert below proves every tab entry is in range.)
@@ -193,19 +193,21 @@ namespace j37panel
         //  the bar filters the table, so that order is the order they show in.
         // --------------------------------------------------------------------
         //  delay_time, delay_feedback, st_offset, ping_pong, delay_tone,
-        //  delay_lowcut. The deck's TYPE / SYNC DELAY / RATE switches belong to
-        //  this page and ride the band under the knobs.
+        //  delay_lowcut, delay_damp. The deck's TYPE / SYNC DELAY / RATE switches
+        //  belong to this page and ride the band under the knobs.
         { "DELAY", "The second head: DELAY and DLY LVL set the echo, ST OFFSET "
                    "skews the sides against each other, PING-PONG bounces it "
-                   "between them. DLY TONE colours the repeats and LOW CUT keeps "
-                   "the feedback from collecting sub-bass. The deck's TYPE / SYNC "
-                   "DELAY / RATE switches sit under the row.",
-                     6, 1, { 21, 22, 23, 58, 67, 68 } },
+                   "between them. DLY TONE colours the repeats, LOW CUT keeps "
+                   "the feedback from collecting sub-bass and DLY DAMP takes the "
+                   "edge off each pass. The deck's TYPE / SYNC DELAY / RATE "
+                   "switches sit under the row.",
+                     7, 1, { 21, 22, 23, 58, 67, 68, 69 } },
         { "REVERB", "The room: REVERB is how much of it is in the output, RVB "
                     "SIZE how long the tail runs, PRE-DLY how far behind the note "
-                    "it starts, DAMP how dark it is and RVB WIDTH how wide the "
-                    "wet pair stands.",
-                     5, 1, { 31, 32, 64, 65, 66 } },
+                    "it starts, DAMP how dark it is, RVB WIDTH how wide the wet "
+                    "pair stands and RVB LOW where the room stops hearing the "
+                    "sub-bass.",
+                     6, 1, { 31, 32, 64, 65, 66, 70 } },
         //  transient_attack (54), transient_sustain (55), transient_mix (56).
         //  The stage that acts on the finished signal's envelope rather than on
         //  the waveform - it changes how the sound MOVES without adding a
@@ -273,8 +275,8 @@ namespace j37panel
         "the record-playing stage: how much, how rough, how low",
         "seven machines, seven shares, one character",
         "the curve-benders: bias, supply sag, and the octave below",
-        "the second head: time, repeats, tone, low cut and where they land",
-        "the room: level, size, pre-delay, damping and width",
+        "the second head: time, repeats, tone, low cut, damping and where they land",
+        "the room: level, size, pre-delay, damping, width and low cut",
         "the finished signal's envelope, not its waveform",
         "the equaliser after the machine: it corrects the RESULT",
         "the equaliser before the machine: it changes the CHARACTER",

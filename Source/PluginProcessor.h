@@ -432,12 +432,15 @@ public:
         bool offsetRightChannel = false;
         float polaritySign = 1.0f;
         int trackBleedDelaySamples = 0;
-        // The delay's tone and low-cut coefficients, prepared once per block so
-        // the per-sample path does not rebuild an exp() twice a frame.
+        // The delay's tone, low-cut and feedback-damper coefficients, prepared
+        // once per block so the per-sample path does not rebuild an exp() twice
+        // a frame.
         float delayTone = 0.5f;
         float delayToneCoefficient = 0.5f;
         float delayFeedbackHpR = 0.99f;
         float delayControlCoefficient = 0.001f;
+        float delayDamp = 0.0f;
+        float delayFeedbackDampCoefficient = 1.0f;
         float trackCrosstalk = 0.0f;
         float trackWidthScale = 1.0f;
 
@@ -1283,6 +1286,9 @@ private:
     // 80 Hz only removes sub-bass the old repeat path would have kept.
     std::atomic<float>* delayToneParam = nullptr;
     std::atomic<float>* delayLowCutParam = nullptr;
+    // The feedback damper: a low-pass inside the repeat loop, separate from the
+    // output-only DLY TONE, so a long delay can decay without turning metallic.
+    std::atomic<float>* delayDampParam = nullptr;
     std::atomic<float>* stOffsetParam = nullptr;
     std::atomic<float>* noiseParam = nullptr;
     std::atomic<float>* transportParam = nullptr;
@@ -1295,6 +1301,12 @@ private:
     std::atomic<float>* tuningModeParam = nullptr;
     std::atomic<float>* autoTuneParam = nullptr;
     std::atomic<float>* autoTuneAmountParam = nullptr;
+    // The three controls that separate the corrector's depth from its feel: how
+    // fast it travels, how far off a note may be before it is touched, and how
+    // confident the detector has to be.
+    std::atomic<float>* autoTuneSpeedParam = nullptr;
+    std::atomic<float>* autoTuneToleranceParam = nullptr;
+    std::atomic<float>* autoTuneGateParam = nullptr;
     std::atomic<float>* compressorThresholdParam = nullptr;
     std::atomic<float>* compressorRatioParam = nullptr;
     std::atomic<float>* compressorAttackParam = nullptr;
@@ -1330,6 +1342,7 @@ private:
     std::atomic<float>* reverbPreDelayParam = nullptr;
     std::atomic<float>* reverbDampParam = nullptr;
     std::atomic<float>* reverbWidthParam = nullptr;
+    std::atomic<float>* reverbLowCutParam = nullptr;
     std::atomic<float>* delayTypeParam = nullptr;
     std::atomic<float>* distortionParam = nullptr;
     // These are the RAW parameter values, which JUCE stores as floats for every
@@ -1707,6 +1720,16 @@ private:
     std::array<float, 2> autoTuneCorrectionSmoothed { 1.0f, 1.0f };
     std::array<float, 2> autoTuneRatiosForFrame { 1.0f, 1.0f };
     std::array<int, 2> autoTunePeriodHintsFor { 0, 0 };
+    // The confidence gate's open/closed state, one per channel. It is what makes
+    // the gate hysteretic: opening at GATE and closing five points below it stops
+    // a note sitting near the threshold from switching the corrector in and out.
+    std::array<bool, 2> autoTuneGateOpen { false, false };
+    //  The last period the detector trusted, held through the gate's release. A
+    //  fallback grain at a ratio that is still gliding back to unity moves the
+    //  splice, and the one place that is audible is the last syllable before the
+    //  gate closes. Keeping the last period keeps the splice phase-locked until
+    //  the ratio has actually reached unity.
+    std::array<int, 2> autoTuneLastPeriodHint { 0, 0 };
     juce::AudioBuffer<float> postFxScratch;
 
     // Measures the harmonics the tape shaper is actually producing, separating even from
@@ -1785,6 +1808,10 @@ private:
     std::array<float, 2> delayToneLpState {};
     std::array<float, 2> delayHpXState {};
     std::array<float, 2> delayHpYState {};
+    // The feedback damper's state is separate from the character stage's damping:
+    // TAPE already has its own loss, while MODERN and BBD need this one to keep a
+    // long repeat from turning into a bright ring.
+    std::array<float, 2> delayFeedbackDampState {};
     float delayToneCurrent = 0.5f;
     float delayFeedbackHpRCurrent = 0.99f;
 

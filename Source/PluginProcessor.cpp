@@ -77,14 +77,14 @@ namespace
             "stereo_width", "tape_type", "speed", "instrument", "drive", "bias",
             "oversampling", "tone", "wow", "flutter", "mix", "tracks",
             "character", "delta", "delay_time", "delay_feedback",
-            "delay_pingpong", "delay_tone", "delay_lowcut",
+            "delay_pingpong", "delay_tone", "delay_lowcut", "delay_damp",
             "st_offset", "noise", "noise_lvl", "transport", "spindown",
             "ui_sounds", "language", "anti_phase_guard",
             "tape_source", "vinyl_source", "cassette_source", "digital_source",
             "amp_source", "valve_source", "transformer_source",
             "sag", "presence", "cabinet", "amp_bias",
             "preamp", "flux", "wear", "mechanics", "reverb", "reverb_size",
-            "reverb_predelay", "reverb_damp", "reverb_width",
+            "reverb_predelay", "reverb_damp", "reverb_width", "reverb_lowcut",
             "di", "di_load", "di_transformer", "di_pad",
             "delay_type", "distortion", "modern_mode", "lofi_mode",
             "vinyl", "vinyl_crackle", "vinyl_rumble", "vinyl_speed",
@@ -100,6 +100,7 @@ namespace
             "valve_type", "amp_type", "transformer_type",
             "digital_type", "vinyl_type",
             "delay_sync", "delay_rate", "tuning_tonic", "tuning_mode", "autotune", "autotune_amount",
+            "autotune_speed", "autotune_tolerance", "autotune_gate",
             "comp_threshold", "comp_ratio", "comp_attack", "comp_release", "comp_makeup", "comp_mix"
         };
 
@@ -232,6 +233,7 @@ FirstAudioProcessor::FirstAudioProcessor()
     delayPingPongParam = parameters.getRawParameterValue ("delay_pingpong");
     delayToneParam = parameters.getRawParameterValue ("delay_tone");
     delayLowCutParam = parameters.getRawParameterValue ("delay_lowcut");
+    delayDampParam = parameters.getRawParameterValue ("delay_damp");
     stOffsetParam = parameters.getRawParameterValue ("st_offset");
     noiseParam = parameters.getRawParameterValue ("noise");
     noiseLvlParam = parameters.getRawParameterValue ("noise_lvl");
@@ -243,6 +245,9 @@ FirstAudioProcessor::FirstAudioProcessor()
     tuningModeParam = parameters.getRawParameterValue ("tuning_mode");
     autoTuneParam = parameters.getRawParameterValue ("autotune");
     autoTuneAmountParam = parameters.getRawParameterValue ("autotune_amount");
+    autoTuneSpeedParam = parameters.getRawParameterValue ("autotune_speed");
+    autoTuneToleranceParam = parameters.getRawParameterValue ("autotune_tolerance");
+    autoTuneGateParam = parameters.getRawParameterValue ("autotune_gate");
     compressorThresholdParam = parameters.getRawParameterValue ("comp_threshold");
     compressorRatioParam = parameters.getRawParameterValue ("comp_ratio");
     compressorAttackParam = parameters.getRawParameterValue ("comp_attack");
@@ -273,6 +278,7 @@ FirstAudioProcessor::FirstAudioProcessor()
     reverbPreDelayParam = parameters.getRawParameterValue ("reverb_predelay");
     reverbDampParam = parameters.getRawParameterValue ("reverb_damp");
     reverbWidthParam = parameters.getRawParameterValue ("reverb_width");
+    reverbLowCutParam = parameters.getRawParameterValue ("reverb_lowcut");
     delayTypeParam = parameters.getRawParameterValue ("delay_type");
     distortionParam = parameters.getRawParameterValue ("distortion");
     modernModeParam = parameters.getRawParameterValue ("modern_mode");
@@ -793,6 +799,8 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     flutterScale = 1.0f;
 
     autoTuneCorrectionSmoothed.fill (1.0f);
+    autoTuneGateOpen.fill (false);
+    autoTuneLastPeriodHint.fill (0);
     // AUTOTUNE's two rate-dependent halves - the trackers' decimation and the
     // corrector's analysis window - are TOLD the rate rather than left at their
     // defaults, and that happens inside setOversamplingFactor above rather than
@@ -861,6 +869,7 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     delayToneLpState.fill (0.0f);
     delayHpXState.fill (0.0f);
     delayHpYState.fill (0.0f);
+    delayFeedbackDampState.fill (0.0f);
     delayToneCurrent = 0.5f;
     delayFeedbackHpRCurrent = 0.99f;
 

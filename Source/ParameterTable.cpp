@@ -524,6 +524,23 @@ namespace
                                                                 juce::NormalisableRange<float> (20.0f, 500.0f, 1.0f),
                                                                 80.0f,
                                                                 juce::AudioParameterFloatAttributes().withLabel ("Hz")));
+
+        // -------------------------------------------------------------------------
+        //  DLY DAMP - a low-pass in the FEEDBACK path only.
+        //
+        //  LOW CUT removes the bottom before the first repeat; this removes the
+        //  top of every pass after it. The distinction matters: DLY TONE is an
+        //  output tilt and deliberately sits outside the loop so a bright setting
+        //  cannot lift the feedback above unity. DAMP is inside the loop, so a
+        //  long MODERN or BBD delay can lose its edge instead of stacking into a
+        //  metallic ring, while the first repeat keeps the colour the user dialled.
+        //
+        //  Default 0 - fully open, so a session saved before this control loads
+        //  the repeat it had.
+        // -------------------------------------------------------------------------
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "delay_damp", 1 }, "Delay Damping",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
     }
 
     /** The inter-channel tape offset and the machine's noise floor.
@@ -697,6 +714,35 @@ namespace
                                                                   "Auto Tune Amount",
                                                                   juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
                                                                   0.0f));
+
+        // SPEED is the time constant of the correction, separate from its depth.
+        // Coupling the two (as this stage used to) meant the only way to get a
+        // deeper pull was also to make it faster, which is exactly how a corrector
+        // starts to sound like a synthesizer. 50 percent is about 13 ms at 48 kHz;
+        // 100 percent is a 1 ms snap and 0 percent a 100 ms glide.
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "autotune_speed", 1 },
+                                                                  "Auto Tune Speed",
+                                                                  percentageRange (0.50f), 0.50f,
+                                                                  juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+        // TOLERANCE is the dead zone around the target, in cents. At the default
+        // 10 cents a reading that is already close enough is left bit-for-bit
+        // alone, which is what keeps a performance human; 0 corrects everything
+        // and 50 lets a wide vibrato through untouched.
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "autotune_tolerance", 1 },
+                                                                  "Auto Tune Tolerance",
+                                                                  juce::NormalisableRange<float> (0.0f, 50.0f, 0.5f),
+                                                                  10.0f,
+                                                                  juce::AudioParameterFloatAttributes().withLabel ("ct")));
+
+        // GATE is the confidence the detector must reach before correction is
+        // trusted. Raising it leaves breath, noise and ambiguous chords alone at
+        // the cost of missing quiet notes; lowering it follows more material but
+        // can chase a reading that is not a pitch.
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "autotune_gate", 1 },
+                                                                  "Auto Tune Gate",
+                                                                  percentageRange (0.50f), 0.50f,
+                                                                  juce::AudioParameterFloatAttributes().withLabel ("%")));
     }
 
     /** The conventional compressor, which is independent of both glue stages.
@@ -1006,6 +1052,17 @@ namespace
                                                                 juce::NormalisableRange<float> (0.0f, 2.0f, 0.001f),
                                                                 1.0f,
                                                                 juce::AudioParameterFloatAttributes().withLabel ("x")));
+
+        // The room's input high-pass. It used to be fixed at 120 Hz, which is the
+        // right default for a full mix but too high for a bass or a cello: a room
+        // that never hears the fundamental cannot put that note in a space. The
+        // control reaches down to 20 Hz (the room hears everything) and up to
+        // 500 Hz (a thin, bright plate). Default 120 Hz keeps every existing
+        // preset and session sounding as it did.
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "reverb_lowcut", 1 }, "Reverb Low Cut",
+                                                                juce::NormalisableRange<float> (20.0f, 500.0f, 1.0f, 0.35f),
+                                                                120.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("Hz")));
     }
 
     /** The delay's character, the hard-clipping stage in front of the machine and

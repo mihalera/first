@@ -230,12 +230,12 @@ struct CorrectorStage
 
     bool isPrepared() const noexcept { return prepared; }
 
-    /** The lookahead this stage costs the plugin, in frames of the session's rate:
-        zero on the granular fallback, the wrapper's block plus the vocoder's own
-        analysis and synthesis latency with the library. The plugin adds this to
-        the latency it reports while the stage is engaged - and only while it is
-        engaged, because a corrector that is switched off must not cost a session
-        its feel. */
+    /** The lookahead this stage costs, in frames of the rate it was prepared at
+        (the engine's, not the session's): zero on the granular fallback, the
+        wrapper's block plus the vocoder's own analysis and synthesis latency with
+        the library. The plugin converts this to session samples before reporting
+        it, and only while the stage is engaged - a corrector that is switched off
+        must not cost a session its feel. */
     int latencyFrames() const noexcept
     {
         return libraryLatency > 0 ? blockFrames + libraryLatency : 0;
