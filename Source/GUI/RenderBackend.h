@@ -66,6 +66,17 @@ constexpr Backend configuredBackend() noexcept {
     // Each backend's scene draw availability is gated by its build macro:
     //
     //   - J37_NATIVE_SOKOL  -> Sokol backend has scene draw
+    // A backend has scene draw when its adapter has been ported to draw the full
+    // SceneFrame into the editor's child surface (not the host peer). The macro is
+    // set by CMake only when that adapter is compiled in: the option-declaration
+    // block turns each J37_RENDER_BACKEND_* into its J37_NATIVE_* macro on its
+    // platform, so the gate reads the same list the build already selects from. The
+    // contract doc comments on each NativeRenderer_* are the other place the rule is
+    // stated; this function is the one place the build decides it at compile time.
+    //
+    // Each backend's scene draw availability is gated by its build macro:
+    //
+    //   - J37_NATIVE_SOKOL  -> Sokol backend has scene draw
     //   - J37_NATIVE_VULKAN -> Vulkan backend has scene draw
     //   - J37_NATIVE_METAL  -> Metal backend has scene draw
     //   - J37_NATIVE_D3D11  -> DirectX 11 has scene draw
@@ -73,6 +84,7 @@ constexpr Backend configuredBackend() noexcept {
     //   - J37_NATIVE_BGFX   -> BGFX backend has scene draw
 
 constexpr bool hasNativeImplementation(Backend backend) noexcept {
+    (void) backend;
 #if defined(J37_NATIVE_SOKOL)
     if (backend == Backend::sokol)
         return true;
@@ -100,6 +112,12 @@ constexpr bool hasNativeImplementation(Backend backend) noexcept {
     return false;
 }
 
+// NOTE: current code keeps Vulkan at the cleared-surface stage while the scene
+// draw path (render pass, depth buffer, graphics pipeline, per-draw UBO,
+// ensureMeshes, drawScene) is built under
+// docs/backend-implementation-plan-vulkan-shaders.md. This line is the commit
+// target; the adapter contract and gate are updated together, and Vulkan is only
+// promoted to effective once the Vulkan adapter's scene draw is in.
 constexpr bool isNativeBackendPending(Backend backend) noexcept {
     // If the backend has scene draw, it is NOT pending - it is effective.
     if (hasNativeImplementation(backend))

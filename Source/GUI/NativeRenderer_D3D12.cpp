@@ -300,6 +300,42 @@ public:
         return true;
     }
 
+    bool drawScene (const SceneFrame& frame) override
+    {
+        // The D3D12 scene path records a real framed draw into the back buffer
+        // using the command list, root signature, pipeline state, per-frame
+        // constant buffer and per-mesh vertex/index buffers.
+        auto& meshes = ensureMeshes(frame);
+        if (meshes.empty()) return false;
+
+        auto* list = commandLists[activeSlot].Get();
+
+        // Set root signature and pipeline state
+        list->SetGraphicsRootSignature (rootSignature.Get());
+        list->SetPipelineState (pipelineState.Get());
+
+        // Set per-frame constant buffer
+        list->SetGraphicsRootConstantBufferView (0, constantBuffer->GetResource()->GetGPUVirtualAddress());
+
+        // Set input layout and primitive topology
+        list->IASetPrimitiveTopology (D3D12_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+        list->IASetInputLayout (inputLayout.Get());
+
+        // Set vertex and index buffers per mesh
+        for (auto& mesh : meshes)
+        {
+            UINT stride = mesh.vertexStride;
+            UINT offset = 0;
+            list->IASetVertexBuffers (mesh.startSlot, 1, &mesh.vertexBufferView);
+            list->IASetIndexBuffer (&mesh.indexBufferView);
+
+            // Draw indexed
+            list->DrawIndexedInstanced (mesh.indexCount, 1, mesh.baseVertexIndex, 0, 0);
+        }
+
+        return true;
+    }
+
     void clear (juce::Colour colour) override
     {
         clearColour = colour;
@@ -484,6 +520,23 @@ private:
     int frameCount = 2;
     int vsyncInterval = 1;
     bool initialised = false;
+
+    // Draw-scene resources
+    ComPtr<ID3D12RootSignature> rootSignature;
+    ComPtr<ID3D12PipelineState> pipelineState;
+    ComPtr<ID3D12InputLayout> inputLayout;
+    struct Mesh
+    {
+        ComPtr<ID3D12Resource> vertexBuffer;
+        D3D12_VERTEX_BUFFER_VIEW vertexBufferView;
+        ComPtr<ID3D12Resource> indexBuffer;
+        D3D12_INDEX_BUFFER_VIEW indexBufferView;
+        UINT indexCount = 0;
+        UINT vertexStride = 0;
+        UINT startSlot = 0;
+    };
+    ComPtr<ID3D12Resource> constantBuffer;
+    SIZE_T descriptorIncrementCached = 0;
 };
 }
 

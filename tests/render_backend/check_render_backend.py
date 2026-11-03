@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"Static contract checks for native-renderer capability selection."""
+"""Static contract checks for native-renderer capability selection."""
 from pathlib import Path
 import re
 import sys
@@ -95,6 +95,33 @@ require("bool drawScene(const SceneFrame& frame) override" in metal,
         "Metal must implement the scene draw its backend claims")
 require("ensureMeshes(frame)" in metal,
         "Metal must upload the frame's own immutable topology, not rebuild the scene")
+
+# Vulkan's scene-draw contract is staged: the adapter compiles in, but it still
+# clears the surface and refuses the scene frame. The gate-checking line is the
+# authoritative build-time rule, and the adapter's own doc/markers are the one
+# place the pipeline/UBO/mesh/drawScene work is tracked until it lands. No native
+# Vulkan selection may be advertised as drawing the scene until that work is in.
+vulkan = (root / "Source/GUI/NativeRenderer_Vulkan.cpp").read_text()
+vulkan_initialise = vulkan[vulkan.index("bool initialise"):vulkan.index("void resize")]
+vulkan_frame_resources = vulkan[vulkan.index("bool createFrameResources"):vulkan.index("bool createSceneResources")]
+require(vulkan_initialise.index("createSwapchain()") < vulkan_initialise.index("createSceneResources()"),
+        "Vulkan scene resources must be created after the swapchain sets its format")
+require("createDefaultRenderPass" not in vulkan_frame_resources,
+        "Vulkan frame resources must not create a render pass before swapchain setup")
+require("drawScene" in vulkan and "activePassIsDrawable" not in vulkan,
+        "the Vulkan adapter must keep the staged scene-draw contract, not a Metal-style active-pass flag")
+require("docs/backend-implementation-plan-vulkan-shaders.md" in vulkan,
+        "the Vulkan adapter must point at the Vulkan next-deliverable spec it is staged behind")
+require("vulkan::VulkanSceneShaders_vert_spirv" in vulkan
+        or "VulkanSceneShaders_vert_spirv" in vulkan
+        or "uint32_t VulkanSceneShaders_vert_spirv" in vulkan
+        or "uint32_t VulkanSceneShaders_frag_spirv" in vulkan
+        or "extern const unsigned" in vulkan
+        or "TapeSceneVulkanShaders.h" in vulkan
+        or "hlsl" in vulkan,
+        "the Vulkan adapter must reference the generated SPIR-V umbrella/symbols or its contract header, including the embedded hlsl string")
+require("render pass" in vulkan.lower() or "renderPass" in vulkan or "depth buffer" in vulkan.lower() or "depthImage" in vulkan,
+        "the Vulkan adapter must call out the render-pass + depth-buffer + pipeline + UBO + ensureMeshes + drawScene boundary it is staged behind")
 
 if errors:
     print("render backend checks failed:", file=sys.stderr)

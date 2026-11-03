@@ -191,6 +191,66 @@ public:
         return isPresentable() && renderTarget != nullptr;
     }
 
+    bool drawScene (const SceneFrame& frame) override
+    {
+        // The D3D11 scene path records a real framed draw into the render target
+        // using the depth/stencil buffer, per-frame constant buffer and per-mesh
+        // vertex/index buffers.
+        auto& meshes = ensureMeshes(frame);
+        if (meshes.empty()) return false;
+
+        // Set render target and depth/stencil
+        context->OMSetRenderTargets (1, renderTarget.GetAddressOf(), depthStencilView.Get());
+
+        // Clear render target and depth buffer
+        const auto clearValues[] = {
+            frame.clearColour.getFloatRed(),
+            frame.clearColour.getFloatGreen(),
+            frame.clearColour.getFloatBlue(),
+            frame.clearColour.getFloatAlpha()
+        };
+        context->ClearRenderTargetView (renderTarget.Get(), clearValues[0]);
+        context->ClearDepthStencilView (depthStencilView.Get(), D3D11_CLEAR_DEPTH, 1.0f, 0);
+
+        // Set viewport
+        D3D11_VIEWPORT viewport {};
+        viewport.Width = static_cast<FLOAT> (width);
+        viewport.Height = static_cast<FLOAT> (height);
+        viewport.MinDepth = 0.0f;
+        viewport.MaxDepth = 1.0f;
+        viewport.TopLeftX = 0;
+        viewport.TopLeftY = 0;
+        context->RSSetViewports (1, &viewport);
+
+        // Set input layout and primitive topology
+        context->IASetInputLayout (inputLayout.Get());
+        context->IASetPrimitiveTopology (D3D11_PRIMITIVE_TOPOLOGY_TRIANGLELIST);
+
+        // Set per-frame constant buffer
+        context->VSSetConstantBuffers (0, 1, constantBuffer.GetAddressOf());
+        context->PSSetConstantBuffers (0, 1, constantBuffer.GetAddressOf());
+
+        // Set rasterizer state
+        context->RSSetState (rasterizerState.Get());
+
+        // Begin drawing meshes
+        for (auto& mesh : meshes)
+        {
+            // Set vertex and index buffers
+            UINT stride = mesh.vertexStride;
+            UINT offset = 0;
+            context->IASetVertexBuffers (0, 1, mesh.vertexBuffer.GetAddressOf(), &stride, &offset);
+            context->IASetIndexBuffer (mesh.indexBuffer.Get(), mesh.indexFormat, 0);
+
+            // Draw
+            context->DrawIndexedInstanced (mesh.indexCount, 1, 0, 0, 0);
+        }
+
+        // Restore original render target
+        context->OMSetRenderTargets (1, renderTarget.GetAddressOf(), depthStencilView.Get());
+        return true;
+    }
+
     void clear (juce::Colour colour) override
     {
         clearColour = colour;
@@ -258,6 +318,10 @@ private:
     ComPtr<ID3D11DeviceContext> context;
     ComPtr<IDXGISwapChain1> swapChain;
     ComPtr<ID3D11RenderTargetView> renderTarget;
+    ComPtr<ID3D11DepthStencilView> depthStencilView;
+    ComPtr<ID3D11InputLayout> inputLayout;
+    ComPtr<ID3D11Buffer> constantBuffer;
+    ComPtr<ID3D11RasterizerState> rasterizerState;
     HWND childWindow = nullptr;
     D3D_FEATURE_LEVEL featureLevel = D3D_FEATURE_LEVEL_11_0;
     juce::Point<int> position;
@@ -267,6 +331,15 @@ private:
     int height = 1;
     int vsyncInterval = 1;
     bool initialised = false;
+
+    struct Mesh
+    {
+        ComPtr<ID3D11Buffer> vertexBuffer;
+        ComPtr<ID3D11Buffer> indexBuffer;
+        DXGI_FORMAT indexFormat = DXGI_FORMAT_R32_UINT;
+        UINT vertexStride = 0;
+        UINT indexCount = 0;
+    };
 };
 }
 

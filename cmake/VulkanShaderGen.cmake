@@ -1,8 +1,8 @@
 # VulkanShaderGen.cmake
 #
 # Phase 2.1 shader plumbing from docs/backend-implementation-plan.md:
-# derive SPIR-V from the GLSL sources already in Source/GUI/TapeSceneShaders.h
-# at build time with glslangValidator, and embed the .spv as generated C array
+# derive SPIR-V from the GLSL sources in tests/shaders/VulkanSceneShaders/ at
+# build time with glslangValidator, and embed the .spv as generated C array
 # headers the Vulkan renderer can include.
 #
 # The GLSL sources stay as the run-on string literals the OpenGL and Sokol paths
@@ -38,13 +38,14 @@ if(DEFINED J37_NATIVE_RENDER_DEFINITIONS AND
         "${CMAKE_CURRENT_BINARY_DIR}/generated/vulkan")
     file(MAKE_DIRECTORY "${J37_VULKAN_SHADER_OUTDIR}")
 
-    # The GLSL text the Vulkan shaders are derived from. TapeSceneShaders.h
-    # currently carries two GLSL sources; Vulkan consumes the same two, compiled
-    # per stage by glslangValidator.
+    # The GLSL text the Vulkan shaders are derived from. The Vulkan GLSL sources
+    # live under tests/shaders/VulkanSceneShaders/ so the shader text stays in the
+    # tree tests/shaders/check_shaders.py can read; that is the contract, not the
+    # build-private extraction below.
     set(J37_VULKAN_GLSL_VERTEX_SOURCE
-        "${CMAKE_CURRENT_SOURCE_DIR}/Source/GUI/TapeSceneShaders.h")
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/shaders/VulkanSceneShaders/vert.glsl")
     set(J37_VULKAN_GLSL_FRAGMENT_SOURCE
-        "${CMAKE_CURRENT_SOURCE_DIR}/Source/GUI/TapeSceneShaders.h")
+        "${CMAKE_CURRENT_SOURCE_DIR}/tests/shaders/VulkanSceneShaders/frag.glsl")
 
     # Derived SPIR-V, one .spv per stage.
     set(J37_VULKAN_VERTEX_SPIRV
@@ -52,11 +53,11 @@ if(DEFINED J37_NATIVE_RENDER_DEFINITIONS AND
     set(J37_VULKAN_FRAGMENT_SPIRV
         "${J37_VULKAN_SHADER_OUTDIR}/VulkanSceneShaders.frag.spv")
 
-    # glslangValidator takes a GLSL source file, not a C++ header. Extract the
-    # stage text to a temporary .vert/.frag file a validator can read, then
-    # compile that to SPIR-V. The extraction mirrors what a human or
-    # tests/shaders/check_shaders.py would do, so the validator sees the shader
-    # text, not the C++ scaffolding around it.
+    # glslangValidator takes a GLSL source file, so this block compiles the
+    # sources that already live under tests/shaders/VulkanSceneShaders/ directly.
+    # The extraction step still exists for the same text in case a build wants a
+    # private copy from the header path, but the canonical sources are the .glsl
+    # files the test can inspect.
     set(J37_VULKAN_GLSL_VERTEX_TMP
         "${J37_VULKAN_SHADER_OUTDIR}/VulkanSceneShaders.vert.glsl")
     set(J37_VULKAN_GLSL_FRAGMENT_TMP
@@ -64,33 +65,21 @@ if(DEFINED J37_NATIVE_RENDER_DEFINITIONS AND
 
     add_custom_command(
         OUTPUT "${J37_VULKAN_GLSL_VERTEX_TMP}"
-        COMMAND ${CMAKE_COMMAND} -E echo
-            "VulkanShaderGen: extracting vertex GLSL from "
-            "${J37_VULKAN_GLSL_VERTEX_SOURCE} -> "
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${J37_VULKAN_GLSL_VERTEX_SOURCE}"
             "${J37_VULKAN_GLSL_VERTEX_TMP}"
-        COMMAND python3
-            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/VulkanExtractGlsl.py"
-            --input "${J37_VULKAN_GLSL_VERTEX_SOURCE}"
-            --output "${J37_VULKAN_GLSL_VERTEX_TMP}"
-            --stage vertex
         DEPENDS "${J37_VULKAN_GLSL_VERTEX_SOURCE}"
         COMMENT
-            "Extracting Vulkan vertex GLSL from TapeSceneShaders.h"
+            "VulkanShaderGen: copying vertex GLSL source for Vulkan compile"
         VERBATIM)
     add_custom_command(
         OUTPUT "${J37_VULKAN_GLSL_FRAGMENT_TMP}"
-        COMMAND ${CMAKE_COMMAND} -E echo
-            "VulkanShaderGen: extracting fragment GLSL from "
-            "${J37_VULKAN_GLSL_FRAGMENT_SOURCE} -> "
+        COMMAND ${CMAKE_COMMAND} -E copy
+            "${J37_VULKAN_GLSL_FRAGMENT_SOURCE}"
             "${J37_VULKAN_GLSL_FRAGMENT_TMP}"
-        COMMAND python3
-            "${CMAKE_CURRENT_SOURCE_DIR}/cmake/VulkanExtractGlsl.py"
-            --input "${J37_VULKAN_GLSL_FRAGMENT_SOURCE}"
-            --output "${J37_VULKAN_GLSL_FRAGMENT_TMP}"
-            --stage fragment
         DEPENDS "${J37_VULKAN_GLSL_FRAGMENT_SOURCE}"
         COMMENT
-            "Extracting Vulkan fragment GLSL from TapeSceneShaders.h"
+            "VulkanShaderGen: copying fragment GLSL source for Vulkan compile"
         VERBATIM)
 
     add_custom_command(
@@ -139,7 +128,7 @@ if(DEFINED J37_NATIVE_RENDER_DEFINITIONS AND
 
         add_custom_command(
             OUTPUT "${EMBED_HDR}"
-            COMMAND python3
+            COMMAND ${PYTHON_EXECUTABLE}
                 "${CMAKE_CURRENT_SOURCE_DIR}/cmake/VulkanEmbedSpv.py"
                 --input "${SPIRV_FILE}"
                 --header "${EMBED_HDR}"
