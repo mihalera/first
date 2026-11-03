@@ -240,7 +240,7 @@ option(COPY_PLUGIN_AFTER_BUILD "Copy plugins to the user plugin folders after bu
 # graphics device and host-owned child surface on the UI thread. Native adapters
 # create their device, command resources and presentation surface; unsupported
 # platform/API combinations use the CPU fallback.
-set(J37_RENDER_BACKEND "AUTO" CACHE STRING
+set(J37_RENDER_BACKEND "SOKOL" CACHE STRING
     "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12, SOKOL, BGFX, CPU")
 set_property(CACHE J37_RENDER_BACKEND PROPERTY STRINGS
     AUTO OPENGL VULKAN METAL D3D11 D3D12 SOKOL BGFX CPU)
@@ -555,9 +555,9 @@ endif()
 
 # WGPU and DAWN stay inside j37_setup_graphics_backend without being accepted by
 # J37_RENDER_BACKEND, because neither has an adapter here yet. What this target
-# compiles is OpenGL, Vulkan, Metal, D3D11, D3D12, SOKOL and BGFX - and the last
-# two still present only a cleared surface, so RenderBackend.h keeps every native
-# selection on the CPU fallback until one of them draws the tape scene.
+# compiles is OpenGL, Vulkan, Metal, D3D11, D3D12, SOKOL and BGFX. Sokol and Metal
+# draw the tape scene; the remaining native selections stay on the CPU fallback
+# until their scene paths are complete.
 
 # ------------------------------------------------------------------------------
 #  Embedded resources - the factory presets and the translation tables.

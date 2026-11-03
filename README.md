@@ -1229,17 +1229,17 @@ bit. The build prints which one it is using in its configure summary.
 JUCE `Graphics` renderer for the animated transport, while the rest of the panel
 continues through its normal software path. `VULKAN`, `D3D11`, `D3D12` and `BGFX` are staged selections: each has an adapter in `Source/GUI/NativeRenderer_*.cpp` that can create its device and present a cleared surface, and none of them draws the tape scene yet.
 
-`METAL` and `SOKOL` are drawn selections: their adapters already render the full `SceneFrame` through the scene contract, so the editor selects them when the build
-lands on them.
-with JUCE instead of showing a blank or half-drawn frame.
+`SOKOL` is the default build selection on every platform and renders the full
+`SceneFrame`. `METAL` is also a drawn selection. `AUTO` resolves to the build's
+selection, so normal builds use Sokol unless explicitly configured otherwise.
 
 Which one is running is printed on the panel's header, beside the brand strip:
-`BACKEND  OPENGL`, and `BACKEND  CPU (VULKAN PENDING)` for a build that asks for a
+`BACKEND  SOKOL`, and `BACKEND  CPU (VULKAN PENDING)` for a build that asks for a
 staged adapter and falls back. The SETTINGS tab carries the matching selector:
-AUTO runs the build's own choice, OPENGL forces the GPU path and CPU forces the
-software painter - the two paths the editor can switch between while it runs. A
-staged adapter is listed there as PENDING and cannot be selected, because it does
-not draw the scene yet. The choice is remembered per machine in the editor's
+AUTO runs the build's own choice and CPU forces the software painter. OPENGL is
+available when the build selects it. A staged adapter is listed there as PENDING
+and cannot be selected, because it does not draw the scene yet. The choice is
+remembered per machine in the editor's
 preferences file (`Source/GUI/EditorPreferences.h`), not in the session, and the
 header caption follows what actually came up. The caption is `RenderBackend.h`'s
 own `backendCaption()`, so it reads `runningBackend()` rather than the requested

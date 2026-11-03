@@ -1585,34 +1585,6 @@ jobs:
             ${{ steps.clap.outputs.clap }}
           if-no-files-found: error
 
-  # ============================================================================
-  # Explicit backend build: AUTO does not define the Sokol-only path, so this job
-  # ensures its shaders, implementation unit, and renderer adapter compile in CI.
-  build-sokol-linux:
-    name: Build Sokol backend (Linux)
-    runs-on: ubuntu-24.04
-    timeout-minutes: 35
-    steps:
-      - name: Checkout repository
-        uses: actions/checkout@v7
-        with:
-          submodules: recursive
-      - name: Install Linux audio and GUI dependencies
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y \
-            libasound2-dev libjack-jackd2-dev libfreetype6-dev \
-            libfontconfig1-dev libfontconfig-dev libcurl4-openssl-dev \
-            libgtk-3-dev libwebkit2gtk-4.1-dev libx11-dev \
-            libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev \
-            libxrandr-dev libxrender-dev libgl1-mesa-dev libglu1-mesa-dev
-      - name: Configure explicit Sokol backend
-        run: |
-          cmake -S . -B build-sokol \
-            -DCMAKE_BUILD_TYPE=Release \
-            -DJ37_RENDER_BACKEND=SOKOL
-      - name: Build Sokol backend
-        run: cmake --build build-sokol --config Release --parallel 2
   #  Linux ARM64 - VST3 + CLAP, with Arm Performance Libraries
   #
   #  A job of its own rather than a matrix leg of build-linux, because almost

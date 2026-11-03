@@ -13,10 +13,14 @@ def require(condition: bool, message: str) -> None:
     if not condition:
         errors.append(message)
 
-# Native adapters currently only clear/present; they do not draw TapeScene's
-# meshes, so they must not be reported as effective scene backends until their
-# scene draw path is complete. hasNativeImplementation now checks each backend's
-# build macro to determine if scene draw is available.
+cmake = (root / "CMakeLists.txt").read_text()
+require('set(J37_RENDER_BACKEND "SOKOL" CACHE STRING' in cmake,
+        "Sokol must be the default renderer for builds without an explicit override")
+
+# Staged native adapters only clear/present; they must not be reported as
+# effective scene backends until their scene draw path is complete.
+# hasNativeImplementation checks each backend's build macro to determine if
+# scene draw is available.
 require("constexpr bool hasNativeImplementation(Backend backend) noexcept {" in backend,
         "hasNativeImplementation must check build macros per backend")
 require("constexpr bool usesNativeCommandRenderer() noexcept\n{\n    return false;" in backend,
@@ -41,7 +45,7 @@ require("tapeScene.setSceneEnabled(deckOnOpenGl);" in setup,
 for name in ("SOKOL", "BGFX"):
     require(f"J37_RENDER_BACKEND_{name}" in backend,
             f"{name} must map to its own Backend value")
-    require(f'J37_RENDER_BACKEND_{name}=1' in (root / "CMakeLists.txt").read_text(),
+    require(f'J37_RENDER_BACKEND_{name}=1' in cmake,
             f"{name} must be a selectable J37_RENDER_BACKEND")
 
 require("backend == Backend::sokol" in (root / "Source/GUI/NativeRenderer.cpp").read_text(),
