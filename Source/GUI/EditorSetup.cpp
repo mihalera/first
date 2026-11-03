@@ -1604,50 +1604,35 @@ void FirstAudioProcessorEditor::setUpSettingsSwitches() {
     //  first band beside OVERSAMPLING and USER THEME.
     //
     //  The header already names the renderer that is RUNNING; this is the only
-    //  place the user can say what it should run. The list is the paths this
-    //  build can HONOUR rather than every name the enum has: a native adapter
-    //  that does not draw the TapeScene frame yet is added as PENDING and stays
-    //  disabled, because a selectable entry that changed nothing would be the
-    //  panel claiming a capability the build does not have. RenderBackend.h owns
-    //  both decisions - which backends are selectable and what a choice runs.
+    //  place the user can say what it should run. The list includes every
+    //  backend this build can honour and omits unavailable adapters.
     //
     //  The choice is stored in the editor's preferences file rather than in a
     //  parameter: it describes the machine's renderer, not the sound, so a
     //  session opened on another computer must not carry it - and it must
     //  survive the host closing and re-creating the editor.
     // ---------------------------------------------------------------
-    backendBox.addItem(j37::render::backendName(j37::render::Backend::autoDetect), 1);
-    backendBox.addItem(j37::render::backendName(j37::render::Backend::openGL), 2);
-    backendBox.addItem(j37::render::backendName(j37::render::Backend::cpu), 3);
-    backendBox.setItemEnabled(2, j37::render::isBackendSelectable(j37::render::Backend::openGL));
+    for (const auto backend : j37::render::allBackends) {
+        if (backend != j37::render::Backend::autoDetect
+            && ! j37::render::isBackendSelectable (backend))
+            continue;
 
-    if (const auto configured = j37::render::configuredBackend();
-        j37::render::isNativeBackendPending(configured)) {
-        backendBox.addItem(juce::String(j37::render::backendName(configured)) + " (PENDING)", 4);
-        backendBox.setItemEnabled(4, false);
+        backendBox.addItem (j37::render::backendName (backend),
+                            j37::render::backendChoiceId (backend));
     }
 
     renderBackendChoice = j37panel::rememberedRenderBackend();
-    backendBox.setSelectedId(renderBackendChoice == j37::render::Backend::cpu      ? 3
-                                 : renderBackendChoice == j37::render::Backend::openGL ? 2
-                                                                                     : 1,
-                             juce::dontSendNotification);
+    backendBox.setSelectedId (j37::render::backendChoiceId (renderBackendChoice),
+                              juce::dontSendNotification);
     backendBox.setLookAndFeel(&customLookAndFeel);
     setTip(backendBox, "BACKEND - which renderer draws the panel's 3D transport. "
-                       "AUTO runs the renderer this build was configured for; "
-                       "OPENGL forces the GPU path; CPU draws the transport with "
-                       "JUCE's software painter, which is the choice for a driver, "
-                       "a remote session or a VM where OpenGL misbehaves. A backend "
-                       "this build only stages is listed as PENDING and cannot be "
-                       "selected, because it does not draw the scene yet. The choice "
-                       "is remembered for this machine, not saved in the session: it "
-                       "describes what this computer can draw with, not what the mix "
-                       "is.");
+                       "AUTO runs the renderer this build was configured for. "
+                       "Other available renderers are listed here; CPU uses JUCE's "
+                       "software painter and can help when a graphics driver, remote "
+                       "session or VM has problems. The choice is remembered for "
+                       "this machine, not saved in the session.");
     backendBox.onChange = [this] {
-        const auto selected = backendBox.getSelectedId();
-        const auto chosen = selected == 3 ? j37::render::Backend::cpu
-                            : selected == 2 ? j37::render::Backend::openGL
-                                            : j37::render::Backend::autoDetect;
+        const auto chosen = j37::render::backendFromChoiceId (backendBox.getSelectedId());
         j37panel::rememberRenderBackend(chosen);
         applyRenderBackend(chosen);
     };

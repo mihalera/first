@@ -124,10 +124,10 @@ configure time with `-DJ37_RENDER_BACKEND=`. Sokol is the default on every
 platform and draws the tape scene; OpenGL is JUCE's own context and CPU is a
 JUCE `Graphics` renderer for the animated deck. Vulkan, Metal, D3D11, D3D12 and
 BGFX have adapters under `Source/GUI/NativeRenderer*`; Metal also draws the tape
-scene, while the staged selections resolve to the CPU paint path rather than to
-a blank editor. SETTINGS carries a BACKEND selector for AUTO (the build's choice)
-or CPU, with staged adapters listed as PENDING and disabled. That runtime choice
-is a property of the machine and lives in the editor's preferences file
+scene, while unavailable native selections are omitted from SETTINGS. The
+selector offers AUTO (the build's choice), CPU, and every renderer compiled into
+the current build. That runtime choice is a property of the machine and lives in
+the editor's preferences file
 (`Source/GUI/EditorPreferences.h`), not in the session. WGPU and DAWN are wired
 inside `j37_setup_graphics_backend` but are not values `J37_RENDER_BACKEND`
 accepts, because neither has an adapter. `README.md § Rendering backends` has the

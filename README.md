@@ -1225,21 +1225,22 @@ curve digests, and 1.19e-7 is below audibility for a stage that is generating
 harmonics on purpose. `-DJ37_USE_SIMD_TANH=OFF` restores `std::tanh` bit for
 bit. The build prints which one it is using in its configure summary.
 
-`AUTO` and `OPENGL` use the existing JUCE/OpenGL scene. `CPU` uses a dedicated
-JUCE `Graphics` renderer for the animated transport, while the rest of the panel
-continues through its normal software path. `VULKAN`, `D3D11`, `D3D12` and `BGFX` are staged selections: each has an adapter in `Source/GUI/NativeRenderer_*.cpp` that can create its device and present a cleared surface, and none of them draws the tape scene yet.
+`AUTO` uses the renderer selected at build time. `OPENGL` is offered when the
+build uses the JUCE/OpenGL scene. `CPU` uses a dedicated JUCE `Graphics` renderer
+for the animated transport, while the rest of the panel continues through its
+normal software path.
 
 `SOKOL` is the default build selection on every platform and renders the full
-`SceneFrame`. `METAL` is also a drawn selection. `AUTO` resolves to the build's
-selection, so normal builds use Sokol unless explicitly configured otherwise.
+`SceneFrame`. `METAL` is also a drawn selection. Other native backends are
+available in SETTINGS only when their adapters are compiled into the build.
+`AUTO` resolves to the build's selection, so normal builds use Sokol unless
+explicitly configured otherwise.
 
 Which one is running is printed on the panel's header, beside the brand strip:
-`BACKEND  SOKOL`, and `BACKEND  CPU (VULKAN PENDING)` for a build that asks for a
-staged adapter and falls back. The SETTINGS tab carries the matching selector:
-AUTO runs the build's own choice and CPU forces the software painter. OPENGL is
-available when the build selects it. A staged adapter is listed there as PENDING
-and cannot be selected, because it does not draw the scene yet. The choice is
-remembered per machine in the editor's
+`BACKEND  SOKOL`. The SETTINGS tab carries the matching selector: AUTO runs the
+build's own choice, CPU forces the software painter, and compiled native
+renderers are listed individually. Backends unavailable in this build are not
+offered. The choice is remembered per machine in the editor's
 preferences file (`Source/GUI/EditorPreferences.h`), not in the session, and the
 header caption follows what actually came up. The caption is `RenderBackend.h`'s
 own `backendCaption()`, so it reads `runningBackend()` rather than the requested

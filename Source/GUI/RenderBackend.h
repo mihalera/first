@@ -10,6 +10,7 @@
 
 #pragma once
 #include <JuceHeader.h>
+#include <array>
 
 namespace j37::render {
 /**
@@ -22,6 +23,36 @@ namespace j37::render {
     selects Vulkan or Metal, which is also what keeps them from interfering.
 */
 enum class Backend { autoDetect, openGL, vulkan, metal, directX11, directX12, sokol, bgfx, cpu };
+
+constexpr std::array<Backend, 9> allBackends {
+    Backend::autoDetect,
+    Backend::openGL,
+    Backend::vulkan,
+    Backend::metal,
+    Backend::directX11,
+    Backend::directX12,
+    Backend::sokol,
+    Backend::bgfx,
+    Backend::cpu
+};
+
+constexpr int backendChoiceId (Backend backend) noexcept
+{
+    for (std::size_t index = 0; index < allBackends.size(); ++index)
+        if (allBackends[index] == backend)
+            return static_cast<int> (index) + 1;
+
+    return 0;
+}
+
+constexpr Backend backendFromChoiceId (int choiceId) noexcept
+{
+    for (std::size_t index = 0; index < allBackends.size(); ++index)
+        if (static_cast<int> (index) + 1 == choiceId)
+            return allBackends[index];
+
+    return Backend::autoDetect;
+}
 
 constexpr Backend configuredBackend() noexcept {
 #if defined(J37_RENDER_BACKEND_VULKAN)
@@ -201,12 +232,9 @@ constexpr bool usesCpuFallback() noexcept { return effectiveBackend() == Backend
 
 /** Whether SETTINGS may offer this backend at RUNTIME.
 
-    A build configured for a native adapter still draws the scene with the CPU
-    until that adapter's scene draw exists, so the choices that can be honoured
-    now are AUTO (whatever the build selected), OPENGL (the one full scene path)
-    and CPU (the software painter). Everything else is listed as PENDING and
-    stays unselectable: an entry that changed nothing would be the panel claiming
-    a capability the build does not have. */
+    AUTO and CPU are always available. OpenGL is available when it is the
+    configured scene backend, and a native backend is available when its
+    adapter is compiled into this build. */
 constexpr bool isBackendSelectable (Backend backend) noexcept {
     return backend == Backend::autoDetect
         || backend == Backend::cpu

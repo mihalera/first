@@ -6,6 +6,7 @@ import sys
 root = Path(__file__).resolve().parents[2]
 backend = (root / "Source/GUI/RenderBackend.h").read_text()
 setup = (root / "Source/GUI/EditorSetup.cpp").read_text()
+preferences = (root / "Source/GUI/EditorPreferences.h").read_text()
 
 errors = []
 
@@ -17,10 +18,7 @@ cmake = (root / "CMakeLists.txt").read_text()
 require('set(J37_RENDER_BACKEND "SOKOL" CACHE STRING' in cmake,
         "Sokol must be the default renderer for builds without an explicit override")
 
-# Staged native adapters only clear/present; they must not be reported as
-# effective scene backends until their scene draw path is complete.
-# hasNativeImplementation checks each backend's build macro to determine if
-# scene draw is available.
+# The native implementation gate follows the backend's build macro.
 require("constexpr bool hasNativeImplementation(Backend backend) noexcept {" in backend,
         "hasNativeImplementation must check build macros per backend")
 require("constexpr bool usesNativeCommandRenderer() noexcept\n{\n    return false;" in backend,
@@ -31,6 +29,33 @@ require("constexpr bool usesNativeCommandRenderer() noexcept\n{\n    return fals
 # the context cannot be created.
 require("const auto running = j37::render::runningBackend(renderBackendChoice);" in setup,
         "editor must resolve the running backend before choosing a paint path")
+require("for (const auto backend : j37::render::allBackends)" in setup,
+        "the backend menu must iterate over the complete backend list")
+require("! j37::render::isBackendSelectable (backend)" in setup,
+        "the backend menu must omit backends this build cannot run")
+require("j37::render::backendChoiceId (backend)" in setup,
+        "every backend menu item must use its stable choice ID")
+require("backendFromChoiceId (backendBox.getSelectedId())" in setup,
+        "backend menu selections must map back to their backend value")
+require("backendChoiceId (renderBackendChoice)" in setup,
+        "the remembered backend must select the matching menu item")
+require("for (const auto backend : j37::render::allBackends)" in preferences,
+        "preferences must restore every backend supported by the current build")
+require("j37::render::isBackendSelectable (backend)" in preferences,
+        "preferences must reject a renderer unavailable in the current build")
+require("constexpr std::array<Backend, 9> allBackends" in backend,
+        "all backend values must be listed once for menu and preference handling")
+require("return Backend::autoDetect;" in backend[backend.index("constexpr Backend backendFromChoiceId"):],
+        "an invalid backend menu ID must safely resolve to AUTO")
+choice_test = (root / "tests/render_backend/backend_choice_test.cpp").read_text()
+require("static_assert (j37::render::backendChoiceId (Backend::sokol) == 7);" in choice_test,
+        "the Sokol menu choice must have a stable ID")
+require("backendFromChoiceId (0) == Backend::autoDetect" in choice_test
+        and "backendFromChoiceId (10) == Backend::autoDetect" in choice_test,
+        "invalid menu IDs must be covered by the executable choice tests")
+workflow = (root / ".github/workflows/build.yml").read_text()
+require("run: bash tests/render_backend/run.sh" in workflow,
+        "the executable backend choice tests must run in CI")
 require("const auto panelOnGpu = running != j37::render::Backend::cpu;" in setup,
         "panel acceleration must follow CPU choice, not the deck's OpenGL backend")
 require("openGLContext.setComponentPaintingEnabled(true);" in setup,

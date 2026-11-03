@@ -47,6 +47,7 @@ python3 tests/shaders/check_shaders.py           # the GLSL and the uniforms it 
 python3 tests/definitions/check_definitions.py   # the macros the build defines, and who reads them
 python3 tests/linkline/check_linkline.py         # the link line, against the includes under Source/
 python3 tests/render_backend/check_render_backend.py  # the renderer options and the adapters behind them
+bash tests/render_backend/run.sh                 # backend choice IDs and AUTO, OPENGL, SOKOL routing
 ```
 
 Two environment switches, both used by the workflows:
