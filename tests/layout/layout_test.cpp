@@ -287,7 +287,7 @@ const Page pages[] = {
     { "MACHINE", 7, true }, { "FRONT END", 5, true }, { "SATURATION", 2, false },
     { "CHARACTER", 3, true }, { "NOISE", 6, false }, { "RECORD", 5, false },
     { "VINYL", 3, false }, { "MIX", 7, true }, { "SUB FUND", 3, false },
-    { "DELAY", 4, true }, { "REVERB", 2, false }, { "DYN", 3, false },
+    { "DELAY", 6, true }, { "REVERB", 5, false }, { "DYN", 3, false },
     { "OUT EQ", 6, true }, { "IN EQ", 6, true }, { "MODELS", 2, true },
     { "SETTINGS", 0, true },
     // The two pages that own their knobs. AUTOTUNE's one rides the strip with a

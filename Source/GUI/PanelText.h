@@ -17,15 +17,16 @@
 #include <JuceHeader.h>
 #include <array>
 
-// The panel's knob strip as ONE number: sixty-four controls. Declared here,
+// The panel's knob strip as ONE number: sixty-nine controls. Declared here,
 // above BOTH of its users, because they no longer live in the same scope: the
 // class below sizes its sliders, labels and attachments from it, and the control
 // table that NAMES those knobs is at file scope in this header (THE CONTROL
 // TABLE, below) - a constant inside the class is not visible there,
 // which is a build error rather than a warning, and was one.
 //
-// 64: the fifty-nine the panel carried, minus the BLEND/SHAPE pair the user asked
-// to remove, plus the seven SOURCE knobs that replaced them.
+// The count grew from 64 when the room gained PRE-DLY, DAMP and WIDTH and the
+// second head gained DLY TONE and LOW CUT. They are appended to the table so
+// every existing index keeps its meaning.
 //
 // The count, the controlIds / controlNames lists, the defaultValues array and the
 // tabSpecs table are all views of ONE list and must agree. Sizing the arrays from
@@ -33,7 +34,7 @@
 // error (C2078) instead of a silent out-of-bounds read at run time, and the tab
 // table is checked against this count by a static_assert in setCurrentTab, so a
 // knob that no tab lists is a build error too.
-inline constexpr std::size_t controlCount = 64;
+inline constexpr std::size_t controlCount = 69;
 
 namespace j37panel
 {
@@ -158,7 +159,15 @@ namespace j37panel
         { "transient_sustain","SUS",       0.0,   "DYN"      },
         { "transient_mix",   "TR MIX",     0.0,   "DYN"      },
         { "neural_mix",      "NEURAL",     0.0,   "MODELS"    },
-        { "ir_mix",          "IR MIX",     0.0,   "MODELS"    }
+        { "ir_mix",          "IR MIX",     0.0,   "MODELS"    },
+        // The room and the second head grew independent voicing controls. They
+        // are appended rather than inserted so every existing tab index and every
+        // stored default keeps its meaning; tabSpecs names them by index below.
+        { "reverb_predelay", "PRE-DLY",   20.0,  "REVERB"    },
+        { "reverb_damp",     "DAMP",       0.45,  "REVERB"    },
+        { "reverb_width",    "RVB WIDTH",  1.0,   "REVERB"    },
+        { "delay_tone",      "DLY TONE",   0.5,   "DELAY"     },
+        { "delay_lowcut",    "LOW CUT",    80.0,  "DELAY"     }
     } };
 
     // A tooltip for EVERY parameter - this is what shows when the user hovers.
@@ -378,12 +387,28 @@ namespace j37panel
                    "rather than feeding back into the saturation - which keeps it "
                    "clean and predictable. Default 0 percent - dry.";
         if (id == "reverb_size")
-            return "RVB SIZE - how long the reverb's tail runs, and "
-                   "how dark it is: a bigger room absorbs more top end per pass, "
-                   "so a long tail is a darker one. That is what stops a large "
-                   "setting from sounding like a metal tank. Decay and level are "
-                   "separate decisions on a real reverb, which is why this is not "
-                   "folded into REVERB. Default 40 percent.";
+            return "RVB SIZE - how long the reverb's tail runs. Decay and "
+                   "level are separate decisions on a real reverb, which is why "
+                   "this is not folded into REVERB. DAMP is the separate colour "
+                   "control, so a long tail does not have to be a dark one. "
+                   "Default 40 percent.";
+        if (id == "reverb_predelay")
+            return "PRE-DLY - how long after the dry note the room starts, in "
+                   "milliseconds. A pre-delay separates the source from its tail, "
+                   "which is what makes a vocal sit in front of a plate instead of "
+                   "inside it. It is applied at the session rate, so 20 ms is "
+                   "20 ms at every sample rate. Default 20 ms.";
+        if (id == "reverb_damp")
+            return "DAMP - how dark the room is, independent of its size. At 0 "
+                   "the tail keeps its top end; at 100 the high frequencies are "
+                   "absorbed on every pass, which is a soft, dark plate. It is the "
+                   "library's one-pole damping coefficient, inverted so that more "
+                   "DAMP means less top end. Default 45 percent.";
+        if (id == "reverb_width")
+            return "RVB WIDTH - the stereo image of the wet pair. 0 collapses the "
+                   "room to mono, 100 is the tank's own two taps, and 200 doubles "
+                   "the side signal for a wider tail. It is a mid/side trim, not a "
+                   "second room. Default 100 percent.";
         if (id == "vinyl")
             return "VINYL - the record-playing end of the chain. A "
                    "turntable adds three things nothing else here does: surface "
@@ -563,6 +588,17 @@ namespace j37panel
                    "the left and right output instead of doubling them in "
                    "both channels. Off, every repeat lands centred. Default "
                    "0 percent - off.";
+        if (id == "delay_tone")
+            return "DLY TONE - the colour of the repeats. It is a tilt around "
+                   "2.5 kHz: 50 percent is neutral, above it the repeats darken, "
+                   "below they brighten. Unlike the machine's damping it works on "
+                   "TAPE, BBD and MODERN alike. Default 50 percent.";
+        if (id == "delay_lowcut")
+            return "LOW CUT - a high-pass at the head of the repeat path, in Hz. "
+                   "Feedback collects low end, and a long delay turns a bass note "
+                   "into a rising cloud; this removes it before the first repeat. "
+                   "80 Hz is below most programme, 500 Hz is a deliberately thin "
+                   "echo. Default 80 Hz.";
         if (id == "in_eq_q")
             return "IN Q - the input equaliser's corner resonance, shared "
                    "by its bell and the shoulders of its shelves. 0.7 is the "

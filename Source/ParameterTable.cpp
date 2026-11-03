@@ -490,6 +490,40 @@ namespace
         layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "delay_pingpong", 1 }, "Ping-Pong",
                                                                 percentageRange (0.50f), 0.0f,
                                                                 juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+        // -------------------------------------------------------------------------
+        //  DELAY TONE - the colour of the repeats, independent of the machine.
+        //
+        //  The character switch sets what the repeats ARE (tape, BBD, modern);
+        //  TONE says where their energy sits. It is a tilt around 2.5 kHz: at 50
+        //  percent the two legs are equal and the control is neutral, above it
+        //  the repeats lean dark, below it they lean bright. This is the one
+        //  colour control that means the same thing on all three machines - the
+        //  old damping was tied to the tape's own tone and could not brighten a
+        //  BBD or a modern repeat.
+        //
+        //  Default 50 - the neutral position, so an existing session loads the
+        //  repeats it had.
+        // -------------------------------------------------------------------------
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "delay_tone", 1 }, "Delay Tone",
+                                                                percentageRange (0.50f), 0.50f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+        // -------------------------------------------------------------------------
+        //  LOW CUT - a high-pass at the head of the repeat path.
+        //
+        //  Feedback accumulates whatever is in the loop, and low frequencies
+        //  accumulate most: a long delay with feedback turns a bass note into a
+        //  rising cloud. 80 Hz is below the fundamental of most programme and
+        //  above the rumble a desk does not want to repeat. The range reaches 500
+        //  Hz for a deliberately thin, telephone-like echo.
+        //
+        //  Default 80 Hz.
+        // -------------------------------------------------------------------------
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "delay_lowcut", 1 }, "Delay Low Cut",
+                                                                juce::NormalisableRange<float> (20.0f, 500.0f, 1.0f),
+                                                                80.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("Hz")));
     }
 
     /** The inter-channel tape offset and the machine's noise floor.
@@ -948,6 +982,30 @@ namespace
         layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "reverb_size", 1 }, "Reverb Size",
                                                                 percentageRange (0.50f), 0.40f,
                                                                 juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+        // How far ahead of the tail the room starts. The tank has its own
+        // pre-delay, but it is measured in 48 kHz samples; this one is kept at
+        // the session rate, so 20 ms is 20 ms at every sample rate and a sweep
+        // is interpolated rather than stepping an integer tap.
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "reverb_predelay", 1 }, "Reverb Pre-Delay",
+                                                                juce::NormalisableRange<float> (0.0f, 100.0f, 0.1f),
+                                                                20.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("ms")));
+
+        // The tail's colour, independent of its length. 0 is an open plate and
+        // 100 a dark, absorbent room; 45 is the coefficient the old SIZE 40 %
+        // produced, which is why the default keeps an existing sound.
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "reverb_damp", 1 }, "Reverb Damping",
+                                                                percentageRange (0.50f), 0.45f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+        // The stereo image of the wet pair: 0 collapses the room to mono, 100 is
+        // the tank's own two taps and 200 doubles the side signal. It is a trim
+        // on the pair, not a second tank.
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "reverb_width", 1 }, "Reverb Width",
+                                                                juce::NormalisableRange<float> (0.0f, 2.0f, 0.001f),
+                                                                1.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("x")));
     }
 
     /** The delay's character, the hard-clipping stage in front of the machine and

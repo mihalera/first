@@ -300,8 +300,14 @@ exactly that: 1.21 / 1.18 / 1.20 s at SIZE 0.5 for 44.1, 48 and 96 kHz. At 48 kH
 conversion is not merely skipped but absent, and at MIX 0 the stage is not quiet but
 absent: the frame comes back bit for bit.
 
-**SPACE SIZE** runs from about half a second to about five, and a larger setting is a
-darker tail as well as a longer one - a bigger room absorbs more top end per pass.
+**SPACE SIZE** runs from about half a second to about five. **DAMP** is its own control
+now, so a long tail does not have to be a dark one: 0 % keeps the top end, 100 %
+absorbs it on every pass. **PRE-DLY** (0-100 ms) sets how far behind the dry note the
+room starts, which is what places a voice in front of a plate instead of inside it. It
+is applied at the session rate, so 20 ms is 20 ms at any sample rate. **RVB WIDTH** is a
+mid/side trim on the wet pair: 0 % is mono, 100 % is the tank's own two taps and 200 %
+doubles the side signal. A fixed 120 Hz high-pass feeds the tank, so the room does not
+collect the programme's sub-bass.
 
 **Delay** is the second playback head, and **DELAY TYPE** sets what its repeats sound
 like. The three are genuinely different machines:
@@ -316,6 +322,12 @@ like. The three are genuinely different machines:
 stay on their original side, at 100 % each repeat crosses to the other side, and values
 in between split the feedback across both. In mono, feedback stays in the single
 available line. A DELAY setting of 0 ms disengages the second head.
+
+**DLY TONE** is a tilt around 2.5 kHz and **LOW CUT** is a high-pass at the head of the
+repeat path. TONE at 50 % is neutral; above it the repeats darken, below they brighten,
+and it works on all three delay types. LOW CUT defaults to 80 Hz: feedback collects low
+end, and a long delay turns a bass note into a rising cloud, so the high-pass removes it
+before the first repeat. It reaches 500 Hz for a deliberately thin echo.
 
 ## Vinyl
 
@@ -518,7 +530,8 @@ machine's own bandwidth and saturation, and each pass round the tape loses top e
 way a real repeat does. It is a single interpolation-read circular buffer, sized once
 in `prepareToPlay` for the longest time the control can ask for at the highest rate the
 engine can run at, so the DELAY knob moves a read offset and never resizes a buffer on
-the audio thread.
+the audio thread. DLY TONE colours the output tap, and LOW CUT sits before the character
+stage so the first repeat and every pass of the feedback share the same high-pass.
 
 ## Stereo tape offset
 

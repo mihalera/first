@@ -387,7 +387,14 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
     }
 
     if (reverbMix <= 1.0e-5f && vinylMix <= 1.0e-5f && ! irActive) return;
-    const auto reverbSize = reverbSizeSmoothed.getCurrentValue();
+
+    DattorroRoom::Settings reverbSettings;
+    reverbSettings.size = reverbSizeSmoothed.getCurrentValue();
+    reverbSettings.mix = reverbMix;
+    reverbSettings.preDelayMs = reverbPreDelayParam != nullptr ? reverbPreDelayParam->load() : 20.0f;
+    reverbSettings.damping = reverbDampParam != nullptr ? reverbDampParam->load() : 0.45f;
+    reverbSettings.width = reverbWidthParam != nullptr ? reverbWidthParam->load() : 1.0f;
+
     j37dsp::SafetyLimiter postFxLimiter;
     postFxLimiter.prepare (limiter.getCoefficients());
 
@@ -425,7 +432,7 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
         }
 
         if (reverbMix > 1.0e-5f)
-            reverb.processFrame (frame, frameWidth, reverbSize, reverbMix);
+            reverb.processFrame (frame, frameWidth, reverbSettings);
 
         for (int c = 0; c < frameWidth; ++c)
         {
@@ -1199,8 +1206,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // level, which is an invitation to someone later "fixing" the level and
     // silently changing the decay instead.
     const auto delayFeedback = delayFeedbackParam != nullptr ? delayFeedbackParam->load() : 0.0f;
-    const auto delayLevel = delayFeedback;
     const auto delayPingPong = delayPingPongParam != nullptr ? delayPingPongParam->load() : 0.0f;
+    const auto delayTone = juce::jlimit (0.0f, 1.0f,
+                                        delayToneParam != nullptr ? delayToneParam->load() : 0.5f);
+    const auto delayLowCut = juce::jlimit (20.0f, 500.0f,
+                                           delayLowCutParam != nullptr ? delayLowCutParam->load() : 80.0f);
+    state.delayTone = delayTone;
     const auto stOffsetUs = stOffsetParam != nullptr ? stOffsetParam->load() : 0.0f;
     const auto noiseAmount = noiseParam != nullptr ? noiseParam->load() : 0.5f;
     const auto noiseLvlAmount = noiseLvlParam != nullptr ? noiseLvlParam->load() : 1.0f;
@@ -1288,8 +1299,16 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
         juce::jlimit (0.0f, static_cast<float> (juce::jmax (0, delayBufferLength - 1)),
                       effectiveDelayMs * 0.001f * state.engineSampleRate));
     delayFeedbackSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, delayFeedback));
-    delayLevelSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, delayLevel));
     pingPongSmoothed.setTargetValue (juce::jlimit (0.0f, 1.0f, delayPingPong));
+
+    // The repeat's tone is a fixed 2.5 kHz tilt; LOW CUT is a one-pole high-pass
+    // in the standard DC-blocker form, rebuilt once per block from the rate. Both
+    // are cheap and neither allocates on the audio thread.
+    state.delayToneCoefficient = onePoleCoefficientHz (2500.0f, state.engineSampleRate);
+    state.delayFeedbackHpR = juce::jlimit (
+        0.5f, 0.9999f,
+        1.0f - (juce::MathConstants<float>::twoPi * delayLowCut) / state.engineSampleRate);
+    state.delayControlCoefficient = onePoleCoefficient (20.0f, state.engineSampleRate);
 
     // ST OFFSET is given in microseconds and converted to samples the same way. Only
     // the magnitude is the read offset; the sign decides WHICH channel is delayed, so
@@ -2981,6 +3000,25 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
                     + (delayRead[nextIndex] - delayRead[readIndex]) * fraction;
         }
 
+        // LOW CUT is a one-pole high-pass at the head of the repeat path. It is
+        // before the character filter so the first repeat and every feedback pass
+        // share it, and it is what keeps a long delay from turning the low end
+        // into a cloud.
+        // Advance the two control ramps once per frame, not once per channel; the
+        // second channel reads the value the first one just produced.
+        if (channel == 0)
+        {
+            delayToneCurrent += (state.delayTone - delayToneCurrent) * state.delayControlCoefficient;
+            delayFeedbackHpRCurrent += (state.delayFeedbackHpR - delayFeedbackHpRCurrent)
+                                       * state.delayControlCoefficient;
+        }
+
+        auto& delayHpX = delayHpXState[static_cast<std::size_t> (channel)];
+        auto& delayHpY = delayHpYState[static_cast<std::size_t> (channel)];
+        delayHpY = delayed - delayHpX + delayFeedbackHpRCurrent * delayHpY;
+        delayHpX = delayed;
+        const float delayedLowCut = delayHpY;
+
         // ------------------------------------------------------------------
         //  The repeat's character: TAPE / BBD / MODERN.
         //
@@ -2998,12 +3036,12 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         //    MODERN - a clean digital delay: full bandwidth, no loss.
         // ------------------------------------------------------------------
         auto& damp = delayDampState[static_cast<std::size_t> (channel)];
-        float delayCharacter = delayed;
+        float delayCharacter = delayedLowCut;
 
         if (delayTypeCached == 0)
         {
             // TAPE: the original damping, unchanged.
-            damp += (delayed - damp) * delayDampCoefficient;
+            damp += (delayedLowCut - damp) * delayDampCoefficient;
             delayCharacter = damp;
         }
         else if (delayTypeCached == 1)
@@ -3036,7 +3074,7 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
                 bbdLowCoefficient = onePoleCoefficientHz (bbdBandwidthHz, state.engineSampleRate);
             }
 
-            bbdLow += (delayed - bbdLow) * bbdLowCoefficient;
+            bbdLow += (delayedLowCut - bbdLow) * bbdLowCoefficient;
 
             // The clock's own noise: a small, high-frequency buzz riding on the
             // repeats, which is the audible signature of a BBD.
@@ -3051,11 +3089,21 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         {
             // MODERN: full bandwidth. The damping state is still advanced so
             // switching back to TAPE does not resume from a stale value.
-            damp += (delayed - damp) * delayDampCoefficient;
-            delayCharacter = delayed;
+            damp += (delayedLowCut - damp) * delayDampCoefficient;
+            delayCharacter = delayedLowCut;
         }
 
-        const float delayTap = delayCharacter * delayLevelSmoothed.getCurrentValue();
+        // TONE is a tilt around 2.5 kHz. At 50 percent the two legs are equal
+        // and the repeat is what the character stage made; above that it leans
+        // on the low-pass, below it lifts the top end. It also gives BBD and
+        // MODERN a colour control, which scaling the tape's damping could not.
+        auto& delayToneLp = delayToneLpState[static_cast<std::size_t> (channel)];
+        delayToneLp += (delayCharacter - delayToneLp) * state.delayToneCoefficient;
+        const float tilt = (delayToneCurrent - 0.5f) * 2.0f;
+        const float voiced = delayCharacter + tilt * (delayToneLp - delayCharacter);
+
+        const float delayAmount = delayFeedbackSmoothed.getCurrentValue();
+        const float delayTap = voiced * delayAmount;
 
         // ------------------------------------------------------------------
         //  What is written back into the line.
@@ -3086,8 +3134,12 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
             // this is the other side; in between it is neither, and the two
             // writes below distribute the feedback across both lines so the
             // control sweeps continuously rather than switching.
-            const float feedbackAmount = delayFeedbackSmoothed.getCurrentValue()
-                                       * damp;
+            // The tone is an OUTPUT trim, so the feedback stays on the
+            // character stage's own signal. Putting the bright half of the tilt
+            // inside the loop would give it more than unity gain at the top end
+            // and turn a long repeat into a runaway filter; the low cut is before
+            // this point, so it still governs what accumulates.
+            const float feedbackAmount = delayAmount * delayCharacter;
             const float pingPongNow = pingPongSmoothed.getCurrentValue();
             const bool stereo = state.activeChannels > 1;
 
