@@ -104,8 +104,13 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
     // work area has to have room for, and over-reserving it is how a window that
     // "fits" ends up smaller than it needs to be. It was 48 a side, which spent 96 px
     // of a 728 px work area on margins the frame does not actually use.
-    constexpr int screenMarginX = JUCE_ANDROID ? 8 : 16;
-    constexpr int screenMarginY = JUCE_ANDROID ? 8 : 32;
+#if defined (__ANDROID__)
+    constexpr int screenMarginX = 8;
+    constexpr int screenMarginY = 8;
+#else
+    constexpr int screenMarginX = 16;
+    constexpr int screenMarginY = 32;
+#endif
 
     const auto &displays = juce::Desktop::getInstance().getDisplays();
     juce::Rectangle<int> workArea;

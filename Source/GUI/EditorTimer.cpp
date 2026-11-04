@@ -925,7 +925,11 @@ void FirstAudioProcessorEditor::timerCallback() {
     // window then has to repaint over; that is the same class of problem as the
     // whole-panel repaint noted above, one rectangle at a time. The frame after
     // the menu closes catches the animation up, which at 30 Hz is invisible.
-    constexpr int animationPaintIntervalTicks = JUCE_ANDROID ? 1 : 2;
+#if defined (__ANDROID__)
+    constexpr int animationPaintIntervalTicks = 1;
+#else
+    constexpr int animationPaintIntervalTicks = 2;
+#endif
     if (!popupIsOpen && !panelCovered && ++animationPaintTick >= animationPaintIntervalTicks) {
         animationPaintTick = 0;
         repaintAnimatedSurfaces();
