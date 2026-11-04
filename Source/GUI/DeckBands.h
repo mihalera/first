@@ -38,7 +38,7 @@ namespace j37panel {
 struct DeckBands {
     // The deck, top to bottom. The names are the headings drawn on the panel.
     enum Band {
-        heading = 0,  // "Deck" and the build id
+        heading = 0,  // "DECK" and the build id
         model = 1,    // SPEED / VINYL SPEED / BPM
         switches = 2, // INSTRUMENT, HARMONICS, SUBFUND, ANTI-PHASE
         types = 3,    // the six type selectors

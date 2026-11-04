@@ -152,11 +152,12 @@ std::array<StubLabel, stubCompressorCount> compressorControlLabels;
 std::array<StubSlider, stubCompressorCount> compressorControls;
 bool compressorTab = false;
 
-// The AUTOTUNE page's own knob, the other widget the tab table cannot hold: the
-// tune amount, one slider built beside the page's pill switch. The strip is
-// handed one knob for that page and reads this pair for its single slot.
-StubLabel autoTuneAmountLabel;
-StubSlider autoTuneAmountSlider;
+// The AUTOTUNE page's own knobs, the other widgets the tab table cannot hold:
+// depth, speed, tolerance and gate, built beside the page's pill switch. The
+// strip is handed four knobs for that page and reads these arrays for its slots.
+constexpr int stubAutotuneCount = 4;
+std::array<StubLabel, stubAutotuneCount> autoTuneControlLabels;
+std::array<StubSlider, stubAutotuneCount> autoTuneControls;
 bool autotuneTab = false;
 
 // ---- the plugin's layout chain, cut verbatim out of Source/ ----------------
@@ -171,9 +172,10 @@ EditorLayout editorLayoutOf (int W, int H)
 
 // Where a page's knobs come from. A page either declares them in the tab table,
 // or owns them itself - COMP's six are the compressor's, built beside the meters
-// they belong to, and AUTOTUNE's one is the tune amount, built with its switch.
-// Both own pages list nothing in their tab entry, and the strip is handed the
-// count and the widgets instead (see knobCount and the placement loop).
+// they belong to, and AUTOTUNE's four are its depth, speed, tolerance and gate,
+// built with its switch. Both own pages list nothing in their tab entry, and the
+// strip is handed the count and the widgets instead (see knobCount and the
+// placement loop).
 enum class Knobs { table, compressor, autotune };
 
 struct Page { const char* name; int knobs; bool band; Knobs source = Knobs::table; };
@@ -190,7 +192,7 @@ struct Built
 Built buildPage (const juce::Rectangle<int>& controlsBand, const Page& page)
 {
     // The tab table's count is zero on both pages that own their knobs - the
-    // compressor's six and the tune amount are not in it - so the two counts are
+    // compressor's six and AUTOTUNE's four are not in it - so the two counts are
     // a page's knobs and nothing.
     const auto tabControlCount = page.source == Knobs::table ? page.knobs : 0;
     const auto memberRows = page.band ? 1 : 0;
@@ -229,7 +231,7 @@ Built buildPage (const juce::Rectangle<int>& controlsBand, const Page& page)
     {
         const auto& slider = compressorTab
                                  ? compressorControls[static_cast<std::size_t> (i)].bounds
-                                 : autotuneTab ? autoTuneAmountSlider.bounds
+                                 : autotuneTab ? autoTuneControls[static_cast<std::size_t> (i)].bounds
                                                : controls[i].bounds;
         built.sliders.push_back (slider);
         // Back from the rectangle the toolkit sizes to the TILE the layout placed:
@@ -287,13 +289,14 @@ const Page pages[] = {
     { "MACHINE", 7, true }, { "FRONT END", 5, true }, { "SATURATION", 2, false },
     { "CHARACTER", 3, true }, { "NOISE", 6, false }, { "RECORD", 5, false },
     { "VINYL", 3, false }, { "MIX", 7, true }, { "SUB FUND", 3, false },
-    { "DELAY", 6, true }, { "REVERB", 5, false }, { "DYN", 3, false },
+    { "DELAY", 7, true }, { "REVERB", 6, false }, { "DYN", 3, false },
     { "OUT EQ", 6, true }, { "IN EQ", 6, true }, { "MODELS", 2, true },
     { "SETTINGS", 0, true },
-    // The two pages that own their knobs. AUTOTUNE's one rides the strip with a
-    // member band under it for the AUTO TUNE pill; COMP's six take the whole page,
-    // as its meters live in their own panel beside the grid - see the stubs above.
-    { "AUTOTUNE", 1, true, Knobs::autotune },
+    // The two pages that own their knobs. AUTOTUNE's four ride the strip with a
+    // member band under them for the AUTO TUNE pill; COMP's six take the whole
+    // page, as its meters live in their own panel beside the grid - see the stubs
+    // above.
+    { "AUTOTUNE", 4, true, Knobs::autotune },
     { "COMP", 6, false, Knobs::compressor },
 };
 

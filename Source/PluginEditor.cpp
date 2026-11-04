@@ -1554,25 +1554,34 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     // ends above them.
     constexpr int reelCorridor = 70;
 
-    // ---- row 1: TRANSPORT SPEED ---------------------------------------------
-    //  Everything that reads as a RATE lives in one row now, which is what the
-    //  user asked for: the tape speed (ips) and the turntable's motor speed
-    //  (RPM) sit side by side, and the host-tempo readout rides with them -
-    //  three rate readouts a user scans as one group instead of MODEL | SPEED
-    //  | BPM, where the model sat between two kinds of speed.
-    //  The empty columns to the right are deliberate: the type row below has
-    //  six columns and the rows should breathe together, not stretch to fill.
+    // ---- row 1: RATE / KEY --------------------------------------------------
+    //  Everything that sets what the machine plays lives in one row: tape speed,
+    //  motor speed, host tempo, and the key the OSC ring and the corrector share.
+    //  TONIC and MODE used to be inside the AUTOTUNE tab, which meant the ring on
+    //  the deck was drawing a key the user could only change after opening that
+    //  page. They are deck controls because both readers are: the ring here and
+    //  the corrector on AUTOTUNE.
+    //
+    //  The rate columns are narrower than the two key lists: "Pentatonic Minor"
+    //  is the widest value any list in the row carries, and a 108 px column would
+    //  ellipsise it at the 780 px floor. 96 / 96 / 96 / 150 / 150 plus four gaps
+    //  is 644 px of the 664 px available there, and the solver shares the
+    //  remainder across all five.
     {
         //  Every height in the table is the band's own: the caption band, the
         //  control band, and the two pixels a readout gives back under it. A
         //  literal here is what put the boxes thirteen pixels into the row below.
         const std::vector<DeckRowItem> row {
-            { &speedLabel,       108, -1,  0, captionHeight, false },
+            { &speedLabel,        96, -1,  0, captionHeight, false },
             { &speedBox,           0, -1, captionHeight, controlHeight, true  },
-            { &vinylSpeedLabel,  108, -1,  0, captionHeight, false },
+            { &vinylSpeedLabel,   96, -1,  0, captionHeight, false },
             { &vinylSpeedBox,      0, -1, captionHeight, controlHeight, true  },
-            { &bpmLabel,         108, -1,  0, captionHeight, false },
-            { &bpmReadout,         0, -1, captionHeight, captionHeight - 2, true  }
+            { &bpmLabel,          96, -1,  0, captionHeight, false },
+            { &bpmReadout,         0, -1, captionHeight, captionHeight - 2, true  },
+            { &tuningTonicLabel, 150, -1,  0, captionHeight, false },
+            { &tuningTonicBox,     0, -1, captionHeight, controlHeight, true  },
+            { &tuningModeLabel,  150, -1,  0, captionHeight, false },
+            { &tuningModeBox,      0, -1, captionHeight, controlHeight, true  }
         };
 
         placeDeckRow (row, deck.getX() + 18, deck.getRight() - reelCorridor,
@@ -2010,19 +2019,19 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
 
     // How many knobs the LIVE page has to place, and which list they come from.
     // Two pages own knobs the tabSpecs table cannot describe: COMP's six are the
-    // compressor's own, built beside the meters they belong to, and AUTOTUNE's one
-    // is the tune amount, built with the page's pill switch. Neither is declared
-    // as a knob page, so the strip is handed their count here and reads their
-    // widgets in its placement loop below. Everything after this point is written
-    // against knobCount rather than against the tab's own count, and both pages are
-    // laid out by the same solve as every other page: COMP used to place its own
-    // six by hand, in cells as tall as the whole grid, which drew a small cap at
-    // the top of each cell with its readout a hundred-odd pixels under it, and
-    // AUTOTUNE rode a 30 px band beside its switch, which the toolkit turned into a
-    // three-pixel paint area - a bead on a stock bar, one knob on the panel drawn
-    // by JUCE's own slider art.
+    // compressor's own, built beside the meters they belong to, and AUTOTUNE's
+    // four are its depth, speed, tolerance and gate, built with the page's pill
+    // switch. Neither is declared as a knob page, so the strip is handed their
+    // count here and reads their widgets in its placement loop below. Everything
+    // after this point is written against knobCount rather than against the tab's
+    // own count, and all three pages are laid out by the same solve as every other
+    // page: COMP used to place its own six by hand, in cells as tall as the whole
+    // grid, which drew a small cap at the top of each cell with its readout a
+    // hundred-odd pixels under it, and AUTOTUNE rode a 30 px band beside its
+    // switch, which the toolkit turned into a three-pixel paint area - a bead on a
+    // stock bar, one knob on the panel drawn by JUCE's own slider art.
     const auto knobCount = compressorTab ? static_cast<int> (compressorControls.size())
-                                         : autotuneTab ? 1
+                                         : autotuneTab ? static_cast<int> (autoTuneControls.size())
                                                        : tabControlCount;
 
     // Which pages own a MEMBER BAND - the strip under the knobs that the
@@ -2220,15 +2229,15 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     {
         // Which widget this slot IS. The tab table holds every knob page's
         // controls and nothing else, so a page's slot is an index into it - but
-        // COMP's six and AUTOTUNE's one are the widgets the table cannot hold
+        // COMP's six and AUTOTUNE's four are the widgets the table cannot hold
         // (they belong to their page's own machinery rather than to a knob page),
         // so those two pages' slots address their label and slider directly.
         const auto slotIndex = static_cast<std::size_t> (slot);
         auto& label = compressorTab ? compressorControlLabels[slotIndex]
-                                    : autotuneTab ? autoTuneAmountLabel
+                                    : autotuneTab ? autoTuneControlLabels[slotIndex]
                                                   : controlLabels[activeTab.controls[slotIndex]];
         auto& control = compressorTab ? compressorControls[slotIndex]
-                                      : autotuneTab ? autoTuneAmountSlider
+                                      : autotuneTab ? autoTuneControls[slotIndex]
                                                     : controls[activeTab.controls[slotIndex]];
         const auto row = slot / knobColumns;
         const auto column = slot % knobColumns;
@@ -2338,13 +2347,12 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     oversamplingBox.setVisible (geometry.settingsTab);
     languageLabel.setVisible (geometry.settingsTab);
     languageBox.setVisible (geometry.settingsTab);
-    tuningTonicLabel.setVisible (geometry.autotuneTab);
-    tuningModeLabel.setVisible (geometry.autotuneTab);
-    tuningTonicBox.setVisible (geometry.autotuneTab);
-    tuningModeBox.setVisible (geometry.autotuneTab);
     autoTuneButton.setVisible (geometry.autotuneTab);
-    autoTuneAmountLabel.setVisible (geometry.autotuneTab);
-    autoTuneAmountSlider.setVisible (geometry.autotuneTab);
+    for (std::size_t i = 0; i < autoTuneControls.size(); ++i)
+    {
+        autoTuneControls[i].setVisible (geometry.autotuneTab);
+        autoTuneControlLabels[i].setVisible (geometry.autotuneTab);
+    }
     for (std::size_t i = 0; i < compressorControls.size(); ++i)
     {
         compressorControls[i].setVisible (geometry.compressorTab);
@@ -2565,25 +2573,15 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
     else if (geometry.autotuneTab)
     {
         sectionCaptionLabel.setText ("AUTOTUNE", juce::dontSendNotification);
-        // Keep the key and scale together with the corrector that uses them. The
-        // tune-amount knob occupies the strip above; the member band holds TONIC,
-        // MODE and the AUTO TUNE switch in its four columns.
-        placeDeckSwitch (geometry, tuningTonicLabel, tuningTonicBox, 0, 1, "TONIC");
-        // ONE band for the page: the MODE list, the AUTO TUNE switch and the TONIC
-        // list beside them are the same plate, so a short window shrinks all three
-        // together - the combo used to be pinned at 30 px while its neighbour gave
-        // way, which is the "two sizes on one row" report in miniature.
+        // TONIC and MODE are on the deck now: the OSC ring there and the corrector
+        // here read the same key, and the ring must not depend on which tab is
+        // open. The member band is therefore the AUTO TUNE switch alone, centred
+        // over the middle two columns instead of parked in the fourth.
         const auto bandHeight = juce::jmin (30, geometry.grid.getBottom() - geometry.memberRowY - 22);
         const auto controlY = geometry.memberRowY + 20;
-        tuningModeLabel.setBounds (geometry.grid.getX() + geometry.cellWidth + 5,
-                                   geometry.memberRowY + 1,
-                                   2 * geometry.cellWidth - 10, 17);
-        tuningModeBox.setBounds (geometry.grid.getX() + geometry.cellWidth + 12,
-                                 controlY,
-                                 2 * geometry.cellWidth - 24, bandHeight);
-        autoTuneButton.setBounds (geometry.grid.getX() + 3 * geometry.cellWidth + 12,
+        autoTuneButton.setBounds (geometry.grid.getX() + geometry.cellWidth + 12,
                                   controlY,
-                                  geometry.cellWidth - 24, bandHeight);
+                                  2 * geometry.cellWidth - 24, bandHeight);
     }
     // The COMP page has no branch here, and that is the point: its six knobs are
     // laid out by the knob strip above, like every other page's, and the page's
@@ -3005,8 +3003,14 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "outEqHp",        &outputEqHpButton },
             { "outEqLp",        &outputEqLpButton },
             { "autoTune",       &autoTuneButton },
-            { "autoTuneLbl",    &autoTuneAmountLabel },
-            { "autoTuneAmt",    &autoTuneAmountSlider },
+            { "autoTuneLbl",    &autoTuneControlLabels[0] },
+            { "autoTuneAmt",    &autoTuneControls[0] },
+            { "autoTuneSpeedLbl", &autoTuneControlLabels[1] },
+            { "autoTuneSpeed",  &autoTuneControls[1] },
+            { "autoTuneTolLbl", &autoTuneControlLabels[2] },
+            { "autoTuneTol",    &autoTuneControls[2] },
+            { "autoTuneGateLbl", &autoTuneControlLabels[3] },
+            { "autoTuneGate",   &autoTuneControls[3] },
         };
 
         // Only what is on screen counts: a hidden tab member is deliberately

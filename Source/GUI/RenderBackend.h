@@ -2,9 +2,11 @@
   ============================================================================
     RenderBackend - renderer selection and capability boundary.
 
-    OpenGL is the only backend that currently renders the full scene. Native
-    API work is staged behind this capability boundary and must not be selected
-    until the scene draw path is complete.
+    OpenGL, Metal and SOKOL draw the complete TapeScene today. The other native
+    values are still staged: their adapters may create a device and present a
+    cleared surface, but they do not draw the scene in this build. They must be
+    advertised as PENDING and resolved to the CPU fallback, never selected as if
+    the scene path existed.
   ============================================================================
 */
 
@@ -78,43 +80,14 @@ constexpr Backend configuredBackend() noexcept {
 }
 
 // A native adapter is not a usable scene backend merely because it can present
-// a cleared surface. Keep every native selection on the established fallback
-// until it can draw the complete TapeScene frame.
+// a cleared surface. J37_NATIVE_* is set by CMake only for an adapter that has
+// the complete SceneFrame draw path; the staged adapters are deliberately left
+// without it, so their configured value stays PENDING and falls through to the
+// CPU fallback rather than showing a blank deck.
 //
-// The parameter is unnamed on purpose: juce::ignoreUnused is not constexpr, so
-// calling it here made this function ill-formed in any constant expression and
-// clang rejected the header outright while gcc happened to let it through.
-//
-// hasNativeImplementation returns true only for backends that have been ported
-// with a complete scene draw path. Until then, they fall through to CPU.    //
-    // A backend has scene draw when its adapter has been ported to draw the full
-    // SceneFrame into the editor's child surface (not the host peer). The macro is
-    // set by CMake only when that adapter is compiled in: the option-declaration
-    // block turns each J37_RENDER_BACKEND_* into its J37_NATIVE_* macro on its
-    // platform, so the gate reads the same list the build already selects from. The
-    // contract doc comments on each NativeRenderer_* are the other place the rule is
-    // stated; this function is the one place the build decides it at compile time.
-    //
-    // Each backend's scene draw availability is gated by its build macro:
-    //
-    //   - J37_NATIVE_SOKOL  -> Sokol backend has scene draw
-    // A backend has scene draw when its adapter has been ported to draw the full
-    // SceneFrame into the editor's child surface (not the host peer). The macro is
-    // set by CMake only when that adapter is compiled in: the option-declaration
-    // block turns each J37_RENDER_BACKEND_* into its J37_NATIVE_* macro on its
-    // platform, so the gate reads the same list the build already selects from. The
-    // contract doc comments on each NativeRenderer_* are the other place the rule is
-    // stated; this function is the one place the build decides it at compile time.
-    //
-    // Each backend's scene draw availability is gated by its build macro:
-    //
-    //   - J37_NATIVE_SOKOL  -> Sokol backend has scene draw
-    //   - J37_NATIVE_VULKAN -> Vulkan backend has scene draw
-    //   - J37_NATIVE_METAL  -> Metal backend has scene draw
-    //   - J37_NATIVE_D3D11  -> DirectX 11 has scene draw
-    //   - J37_NATIVE_D3D12  -> DirectX 12 has scene draw
-    //   - J37_NATIVE_BGFX   -> BGFX backend has scene draw
-
+// The parameter is read in every macro branch that exists; the `(void)` keeps
+// the function well-formed in builds with no J37_NATIVE_* definitions, where
+// none of the branches below are compiled.
 constexpr bool hasNativeImplementation(Backend backend) noexcept {
     (void) backend;
 #if defined(J37_NATIVE_SOKOL)
@@ -144,24 +117,11 @@ constexpr bool hasNativeImplementation(Backend backend) noexcept {
     return false;
 }
 
-// NOTE: current code keeps Vulkan at the cleared-surface stage while the scene
-// draw path (render pass, depth buffer, graphics pipeline, per-draw UBO,
-// ensureMeshes, drawScene) is built under
-// docs/backend-implementation-plan-vulkan-shaders.md. This line is the commit
-// target; the adapter contract and gate are updated together, and Vulkan is only
-// promoted to effective once the Vulkan adapter's scene draw is in.
+/** True for a native value whose scene draw is not part of this build. */
 constexpr bool isNativeBackendPending(Backend backend) noexcept {
-    // If the backend has scene draw, it is NOT pending - it is effective.
     if (hasNativeImplementation(backend))
         return false;
 
-    // A compiled-in adapter without scene draw is still staging; everything else
-    // that entered this build is selectable (CPU always is, and the adapter
-    // options are not compiled unless they have scene draw once their phase has
-    // landed). The five-name list here is the backends past OpenGL that are still
-    // awaited - update it when a port flips its gate. The gate itself is the
-    // authoritative table, so a new adapter that is compiled in but not ported
-    // does not silently become selectable.
     return backend == Backend::vulkan
         || backend == Backend::metal
         || backend == Backend::directX11
@@ -172,58 +132,17 @@ constexpr bool isNativeBackendPending(Backend backend) noexcept {
 constexpr Backend effectiveBackend() noexcept {
     constexpr auto configured = configuredBackend();
 
-    // Priority order for AUTO mode: try backends in sequence,
-    // with CPU as the absolute last resort.
-    //
-    // This structure ensures that when native backends (Vulkan, Metal,
-    // Sokol, BGFX) become portable with complete scene draw paths,
-    // the priority order is already established rather than needing
-    // a redesign later.
-    //
-    // Current state: hasNativeImplementation returns true for backends whose
-    // adapter is ported and compiled in, so a configured build for one of them
-    // no longer falls through to CPU once its phase has landed.
-    //
+    // AUTO and a plain OpenGL build both use JUCE's OpenGL path.
     if (configured == Backend::autoDetect || configured == Backend::openGL)
         return Backend::openGL;
 
-    // Try Metal if configured (will fall to CPU until scene draw is ported)
-#if defined(J37_RENDER_BACKEND_METAL)
-    if (configured == Backend::metal)
-        return Backend::metal;
-#endif
+    // A configured native value is effective ONLY when its adapter can draw the
+    // complete frame. Otherwise the editor keeps the CPU painter: an incomplete
+    // adapter must never become the running backend just because its platform
+    // SDK was found.
+    if (hasNativeImplementation(configured))
+        return configured;
 
-    // Try Vulkan if configured (will fall to CPU until scene draw is ported)
-#if defined(J37_RENDER_BACKEND_VULKAN)
-    if (configured == Backend::vulkan)
-        return Backend::vulkan;
-#endif
-
-    // Try D3D12 if configured (will fall to CPU until scene draw is ported)
-#if defined(J37_RENDER_BACKEND_D3D12)
-    if (configured == Backend::directX12)
-        return Backend::directX12;
-#endif
-
-    // Try D3D11 if configured (will fall to CPU until scene draw is ported)
-#if defined(J37_RENDER_BACKEND_D3D11)
-    if (configured == Backend::directX11)
-        return Backend::directX11;
-#endif
-
-    // Try Sokol if configured (will fall to CPU until scene draw is ported)
-#if defined(J37_RENDER_BACKEND_SOKOL)
-    if (configured == Backend::sokol)
-        return Backend::sokol;
-#endif
-
-    // Try BGFX if configured (will fall to CPU until scene draw is ported)
-#if defined(J37_RENDER_BACKEND_BGFX)
-    if (configured == Backend::bgfx)
-        return Backend::bgfx;
-#endif
-
-    // CPU is the absolute last resort - always available
     return Backend::cpu;
 }
 
@@ -273,7 +192,7 @@ constexpr bool usesNativeCommandRenderer() noexcept
 }
 
 constexpr bool isFallbackActive() noexcept {
-    return isNativeBackendPending (configuredBackend())
+    return isNativeBackendPending(configuredBackend())
         && usesCpuFallback();
 }
 
@@ -302,8 +221,7 @@ constexpr const char* backendName (Backend backend) noexcept {
     for - because a build configured for an adapter that only clears its surface
     draws with the CPU, and saying otherwise would be the panel claiming a
     renderer it is not running. When the build's own adapter is still staged it is
-    named too, as PENDING, which is the state RenderBackend.h is in until the tape
-    scene is ported. */
+    named too, as PENDING. */
 inline juce::String backendCaption (Backend choice = Backend::autoDetect) {
     constexpr auto configured = configuredBackend();
     const auto running = runningBackend (choice);

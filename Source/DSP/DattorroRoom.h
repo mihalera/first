@@ -118,8 +118,9 @@ struct DattorroRoom
         wet at about the level of the dry. */
     static constexpr float wetGain = 0.35f;
 
-    /** The five controls, in the units the parameters use. The defaults are a
-        20 ms pre-delay, damping at 45 percent and a width of 100 percent. */
+    /** The six controls, in the units the parameters use. The defaults are a
+        20 ms pre-delay, damping at 45 percent, a width of 100 percent and the
+        room's original 120 Hz input high-pass. */
     struct Settings
     {
         float size = 0.4f;
@@ -127,6 +128,7 @@ struct DattorroRoom
         float preDelayMs = 20.0f;
         float damping = 0.45f;
         float width = 1.0f;
+        float lowCutHz = 120.0f;
     };
 
     /** The longest pre-delay the control can ask for. The tank's own pre-delay is
@@ -171,7 +173,9 @@ struct DattorroRoom
         // the room jump. Size, damping and width use the same ramp.
         controlCoefficient = 1.0f - std::exp (-1.0f / (0.02f * static_cast<float> (sessionRate)));
 
-        // The input's 120 Hz high-pass, in the standard one-pole DC-blocker form.
+        // The input high-pass starts at the room's original 120 Hz; Settings
+        // smooths it to wherever RVB LOW is set. The coefficient is rebuilt only
+        // while the control is travelling, so a still knob costs no exp().
         lowCutR = juce::jlimit (0.5f, 0.9999f,
                                 1.0f - (juce::MathConstants<float>::twoPi * 120.0f)
                                          / static_cast<float> (sessionRate));
@@ -202,8 +206,10 @@ struct DattorroRoom
         currentWidth = -1.0f;
         currentSize = -1.0f;
         currentDamping = -1.0f;
+        currentLowCut = -1.0f;
         lastSize = -1.0f;
         lastDamping = -1.0f;
+        lastLowCut = -1.0f;
 
         xHistory.fill (0.0f);
         wetLHistory.fill (0.0f);
@@ -250,9 +256,9 @@ struct DattorroRoom
         // width comes from the taps rather than from two rooms.
         auto in = channels > 1 ? 0.5f * (frame[0] + frame[1]) : frame[0];
 
-        // The room hears a clear top and no sub-bass. This is before the tank's
-        // own pre-filter, which is a low-pass, so the two form a band around the
-        // range a plate actually reflects.
+        // The room hears a clear top and as much (or as little) sub-bass as RVB
+        // LOW allows. This is before the tank's own pre-filter, which is a
+        // low-pass, so the two form a band around the range a plate reflects.
         lowCutY = in - lowCutX + lowCutR * lowCutY;
         lowCutX = in;
         in = lowCutY;
@@ -428,8 +434,9 @@ private:
         return a + (b - a) * fraction;
     }
 
-    /** SIZE and DAMPING to the library's settings. Called per frame; it only
-        touches the tank when a control has actually moved. */
+    /** SIZE and DAMPING to the library's settings, and RVB LOW to the wrapper's
+        own input high-pass. Called per frame; it only touches the tank or
+        rebuilds the filter coefficient when a control has actually moved. */
     void applySettings (const Settings& settings) noexcept
     {
         if (tank == nullptr)
@@ -476,6 +483,24 @@ private:
             lastDamping = damping;
             DattorroVerb_setDamping (tank, 0.70 - 0.56 * static_cast<double> (damping));
         }
+
+        // RVB LOW: one-pole high-pass in front of the tank. It is smoothed with
+        // the same 20 ms ramp as SIZE and DAMPING, and its coefficient is only
+        // rebuilt when the smoothed value has actually moved.
+        const auto targetLowCut = juce::jlimit (20.0f, 500.0f, settings.lowCutHz);
+
+        if (currentLowCut < 0.0f)
+            currentLowCut = targetLowCut;
+        else
+            currentLowCut += (targetLowCut - currentLowCut) * controlCoefficient;
+
+        if (std::abs (currentLowCut - lastLowCut) >= 0.05f)
+        {
+            lastLowCut = currentLowCut;
+            lowCutR = juce::jlimit (0.5f, 0.9999f,
+                                    1.0f - (juce::MathConstants<float>::twoPi * currentLowCut)
+                                             / static_cast<float> (sessionRate));
+        }
     }
 
     sDattorroVerb* tank = nullptr;
@@ -489,6 +514,8 @@ private:
     float currentWidth = 1.0f;
     float currentSize = -1.0f;
     float currentDamping = -1.0f;
+    float currentLowCut = -1.0f;
+    float lastLowCut = -1.0f;
     float controlCoefficient = 1.0f;
 
     std::vector<float> preDelayBuffer;

@@ -12,12 +12,12 @@
 //  exactly on the grid, and a stage that never lets it be slightly sharp or flat
 //  removes the part of the performance the ear reads as human.
 //
-//  So there is a DEAD ZONE: a reading within +-10 cents of the target is not
-//  corrected at all - ratio 1, bit for bit, no glide, no pull. Ten cents is under
-//  the just-noticeable difference for a trained singer (about 5-10 cents) and
-//  well under the ~25 cents at which an untrained listener hears "out of tune",
-//  so what is inside the zone is character and what is outside it is the error
-//  the control is for.
+//  So there is a DEAD ZONE: a reading within TOLERANCE of the target is not
+//  corrected at all - ratio 1, bit for bit, no glide, no pull. Ten cents is the
+//  default because it is under the just-noticeable difference for a trained
+//  singer (about 5-10 cents) and well under the ~25 cents at which an untrained
+//  listener hears "out of tune"; the control reaches 0, so the zone can be all
+//  but switched off, and 50, so a wide vibrato can pass through it.
 //
 //  The zone is applied BEFORE TUNE AMOUNT scales the pull, not after: at half
 //  amount the corrector is a gentler version of the same opinion, not a
@@ -62,24 +62,33 @@ struct PitchCorrectionRule
 
     /** True when the reading is close enough to the target to leave alone.
 
+        `toleranceCents` is TOLERANCE, defaulting to the documented +-10 cents for
+        callers and harnesses that ask the question without a control in hand. A
+        zero tolerance still leaves a reading at exactly the target alone; it does
+        not turn the dead zone off, because a corrector that pulls an in-tune note
+        by a float step is still a corrector with nothing to do.
+
         The thousandth of a cent of slack is for the float round trip, not for the
         rule: a caller that asks for exactly ten cents has to compute a frequency
         through a log and back, and the answer lands a hair either side of the
         boundary. Without the slack the same musical distance would be corrected
         or not depending on which way the last bit fell.
     */
-    static bool inDeadZone (float detectedHz, float targetHz) noexcept
+    static bool inDeadZone (float detectedHz, float targetHz,
+                            float toleranceCents = deadZoneCents) noexcept
     {
-        return std::abs (cents (detectedHz, targetHz)) <= deadZoneCents + 1.0e-3f;
+        const auto tolerance = juce::jlimit (0.0f, 100.0f, toleranceCents);
+        return std::abs (cents (detectedHz, targetHz)) <= tolerance + 1.0e-3f;
     }
 
     /** The pitch ratio the shifter should read at.
 
-        `amount` is TUNE AMOUNT, 0..1: it scales the DEPTH of the pull as well as
-        the speed of the glide at the call site, so half amount is half the pull
-        on a note that is outside the zone and no pull at all on one inside it.
+        `amount` is TUNE AMOUNT, 0..1: it scales the DEPTH of the pull only. The
+        speed of the glide is SPEED's job at the call site, so half amount is half
+        the pull on a note outside the zone, and no pull at all on one inside it.
     */
-    static float ratio (float detectedHz, float targetHz, float amount) noexcept
+    static float ratio (float detectedHz, float targetHz, float amount,
+                        float toleranceCents = deadZoneCents) noexcept
     {
         const auto depth = juce::jlimit (0.0f, 1.0f, amount);
 
@@ -87,7 +96,7 @@ struct PitchCorrectionRule
             || detectedHz <= 0.0f || targetHz <= 0.0f)
             return 1.0f;
 
-        if (inDeadZone (detectedHz, targetHz))
+        if (inDeadZone (detectedHz, targetHz, toleranceCents))
             return 1.0f;
 
         const auto ideal = juce::jlimit (minRatio, maxRatio, targetHz / detectedHz);

@@ -56,7 +56,8 @@ struct Tail
 };
 
 Tail renderImpulse (double rate, float size, float mix, int channels = 2,
-                    float preDelayMs = 20.0f, float damping = 0.45f, float width = 1.0f)
+                    float preDelayMs = 20.0f, float damping = 0.45f, float width = 1.0f,
+                    float lowCutHz = 120.0f)
 {
     DattorroRoom room;
     room.prepare (rate);
@@ -67,6 +68,7 @@ Tail renderImpulse (double rate, float size, float mix, int channels = 2,
     settings.preDelayMs = preDelayMs;
     settings.damping = damping;
     settings.width = width;
+    settings.lowCutHz = lowCutHz;
 
     Tail tail;
     const auto samples = static_cast<int> (rate * kRenderSeconds);
@@ -447,6 +449,42 @@ double sideEnergy (const Tail& tail, double rate, double skipSeconds = 0.05)
     return energy;
 }
 
+// =============================================================================
+//  RVB LOW is a high-pass at the room's input: the bottom octave can be kept out
+//  of the tail without shortening it or changing the stereo image.
+// =============================================================================
+double lowFrequencyEnergy (const Tail& tail, double rate, double skipSeconds = 0.5)
+{
+    const auto skip = static_cast<std::size_t> (rate * skipSeconds);
+    const auto coefficient = 1.0f - std::exp (-2.0f * 3.14159265358979323846f * 120.0f
+                                              / static_cast<float> (rate));
+    float low = 0.0f;
+    double energy = 0.0;
+
+    for (auto i = skip; i < tail.left.size(); ++i)
+    {
+        low += (tail.left[i] - low) * coefficient;
+        energy += static_cast<double> (low) * low;
+    }
+
+    return energy;
+}
+
+void testLowCutKeepsTheBottomOut()
+{
+    const auto open = renderImpulse (48000.0, 0.6f, 1.0f, 2, 20.0f, 0.45f, 1.0f, 20.0f);
+    const auto cut = renderImpulse (48000.0, 0.6f, 1.0f, 2, 20.0f, 0.45f, 1.0f, 500.0f);
+
+    const auto openLow = lowFrequencyEnergy (open, 48000.0);
+    const auto cutLow = lowFrequencyEnergy (cut, 48000.0);
+
+    std::printf ("        low-frequency energy at RVB LOW 20 / 500 Hz: %.3e / %.3e\n",
+                 openLow, cutLow);
+
+    check (openLow > cutLow * 1.5,
+           "RVB LOW removes the room's bottom end rather than only filtering the dry path");
+}
+
 void testWidthSetsTheImage()
 {
     const auto mono = renderImpulse (48000.0, 0.6f, 1.0f, 2, 20.0f, 0.45f, 0.0f);
@@ -503,6 +541,7 @@ int main()
     testSilenceStaysSilent();
     testPreDelayMovesTheTail();
     testDampingDarkensTheTail();
+    testLowCutKeepsTheBottomOut();
     testWidthSetsTheImage();
 
     std::printf ("\n%s (%d failure%s)\n", gFailures == 0 ? "ROOM CHECK PASSED" : "FAILURES PRESENT",

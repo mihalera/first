@@ -17,7 +17,7 @@
 #include <JuceHeader.h>
 #include <array>
 
-// The panel's knob strip as ONE number: sixty-nine controls. Declared here,
+// The panel's knob strip as ONE number: seventy-one controls. Declared here,
 // above BOTH of its users, because they no longer live in the same scope: the
 // class below sizes its sliders, labels and attachments from it, and the control
 // table that NAMES those knobs is at file scope in this header (THE CONTROL
@@ -25,7 +25,8 @@
 // which is a build error rather than a warning, and was one.
 //
 // The count grew from 64 when the room gained PRE-DLY, DAMP and WIDTH and the
-// second head gained DLY TONE and LOW CUT. They are appended to the table so
+// second head gained DLY TONE and LOW CUT, then from 69 when the second head
+// gained DLY DAMP and the room gained RVB LOW. They are appended to the table so
 // every existing index keeps its meaning.
 //
 // The count, the controlIds / controlNames lists, the defaultValues array and the
@@ -34,7 +35,7 @@
 // error (C2078) instead of a silent out-of-bounds read at run time, and the tab
 // table is checked against this count by a static_assert in setCurrentTab, so a
 // knob that no tab lists is a build error too.
-inline constexpr std::size_t controlCount = 69;
+inline constexpr std::size_t controlCount = 71;
 
 namespace j37panel
 {
@@ -167,7 +168,11 @@ namespace j37panel
         { "reverb_damp",     "DAMP",       0.45,  "REVERB"    },
         { "reverb_width",    "RVB WIDTH",  1.0,   "REVERB"    },
         { "delay_tone",      "DLY TONE",   0.5,   "DELAY"     },
-        { "delay_lowcut",    "LOW CUT",    80.0,  "DELAY"     }
+        { "delay_lowcut",    "LOW CUT",    80.0,  "DELAY"     },
+        // The second head's feedback damper and the room's low cut. Both are
+        // appended, like the controls above, so no tab index moves.
+        { "delay_damp",      "DLY DAMP",   0.0,   "DELAY"     },
+        { "reverb_lowcut",   "RVB LOW",   120.0,  "REVERB"    }
     } };
 
     // A tooltip for EVERY parameter - this is what shows when the user hovers.
@@ -409,6 +414,12 @@ namespace j37panel
                    "room to mono, 100 is the tank's own two taps, and 200 doubles "
                    "the side signal for a wider tail. It is a mid/side trim, not a "
                    "second room. Default 100 percent.";
+        if (id == "reverb_lowcut")
+            return "RVB LOW - the high-pass at the room's input, in Hz. Below "
+                   "this the room hears nothing, which is what stops a full mix "
+                   "turning into low-end cloud. 120 Hz is the default; lower it "
+                   "for a bass or a cello you want placed in the space, raise it "
+                   "for a thin, bright plate. Default 120 Hz.";
         if (id == "vinyl")
             return "VINYL - the record-playing end of the chain. A "
                    "turntable adds three things nothing else here does: surface "
@@ -599,6 +610,12 @@ namespace j37panel
                    "into a rising cloud; this removes it before the first repeat. "
                    "80 Hz is below most programme, 500 Hz is a deliberately thin "
                    "echo. Default 80 Hz.";
+        if (id == "delay_damp")
+            return "DLY DAMP - a low-pass in the feedback path only. Each pass "
+                   "loses a little more top end, so a long MODERN or BBD repeat "
+                   "settles instead of stacking into a metallic ring, while the "
+                   "first repeat keeps the tone DLY TONE set. 0 is fully open; "
+                   "100 is a dark, tape-like decay. Default 0 percent.";
         if (id == "in_eq_q")
             return "IN Q - the input equaliser's corner resonance, shared "
                    "by its bell and the shoulders of its shelves. 0.7 is the "
@@ -731,15 +748,40 @@ namespace j37panel
                    "minor on the TONIC, or chromatic, which snaps to semitones "
                    "only. It has no effect while AUTO TUNE is off.";
         if (id == "autotune")
-            return "AUTO TUNE - switches the realtime pitch correction in. It "
-                   "tracks the fundamental and moves it to the nearest note of "
-                   "the chosen scale; AUTO TUNE AMOUNT sets how much of the "
-                   "corrected pitch is heard. Default off.";
+            return "AUTO TUNE - switches the corrector in. The stage reads "
+                   "the note that is playing with a period detector, decides "
+                   "the nearest note the key allows, and moves the audio onto "
+                   "it by RE-READING the signal at the correction ratio out "
+                   "of a delay line, spliced a whole period apart so the join "
+                   "is inaudible. Below its gate - silence, noise, a chord, or "
+                   "a note outside 45 Hz to 1.4 kHz - it glides back to unity "
+                   "and passes the signal untouched rather than chasing a "
+                   "number it cannot trust. TUNE AMOUNT sets the depth, SPEED "
+                   "the retune time, TOLERANCE the dead zone and GATE the "
+                   "confidence required. Default off.";
         if (id == "autotune_amount")
-            return "AUTO TUNE AMOUNT - how much of the corrected pitch reaches "
-                   "the output: 0 is the untouched signal, 100 is fully "
-                   "corrected. In between the two are crossfaded, so the effect "
-                   "can be dialled in rather than switched.";
+            return "TUNE AMOUNT - the depth of the correction: 0 is the untouched "
+                   "signal, 100 is the full pull onto the scale. It no longer "
+                   "changes the retune speed - SPEED owns that - so a deep, "
+                   "natural correction is possible without the snap.";
+        if (id == "autotune_speed")
+            return "SPEED - how quickly the correction glides to its new pitch, "
+                   "independent of TUNE AMOUNT. 0 percent is a slow, transparent "
+                   "100 ms glide; 50 percent is about 13 ms; 100 percent is a "
+                   "1 ms snap. Slower settings are what keep consonants and "
+                   "vibrato from being smeared. Default 50 percent.";
+        if (id == "autotune_tolerance")
+            return "TOLERANCE - the dead zone around the target note, in cents. "
+                   "A reading inside it is left bit-for-bit alone, which keeps "
+                   "the human part of the performance. 0 corrects every reading, "
+                   "10 is the default and 50 lets a wide vibrato through. "
+                   "Default 10 cents.";
+        if (id == "autotune_gate")
+            return "GATE - how confident the pitch detector must be before the "
+                   "corrector trusts a reading. Higher settings leave breath, "
+                   "noise and ambiguous chords alone; lower settings follow "
+                   "quiet or noisy notes but can chase a reading that is not a "
+                   "pitch. Default 50 percent.";
         if (id == "comp_threshold")
             return "COMP THRESHOLD - the level above which the conventional "
                    "compressor starts working. Lower thresholds compress more of "
