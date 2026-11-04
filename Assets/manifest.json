@@ -8,9 +8,9 @@
       "width": 1024,
       "height": 512,
       "used_by": "Source/GUI/EditorPaint.cpp (rebuildPanelTextureLayers)",
-      "licence": null,
-      "source": null,
-      "author": null
+      "licence": "CC0-1.0",
+      "source": "Original artwork created for the MiBoX project; drawn procedurally with Python and Pillow.",
+      "author": "OpenAI Codex"
     },
     {
       "name": "brand_mark",
@@ -18,9 +18,9 @@
       "width": 256,
       "height": 256,
       "used_by": "Source/GUI/UserThemeWindow.h (the header band)",
-      "licence": null,
-      "source": null,
-      "author": null
+      "licence": "CC0-1.0",
+      "source": "Original artwork created for the MiBoX project; drawn procedurally with Python and Pillow.",
+      "author": "OpenAI Codex"
     },
     {
       "name": "window_icon",
@@ -28,9 +28,9 @@
       "width": 64,
       "height": 64,
       "used_by": "Source/GUI/UserThemeWindow.h (DocumentWindow::setIcon)",
-      "licence": null,
-      "source": null,
-      "author": null
+      "licence": "CC0-1.0",
+      "source": "Original artwork created for the MiBoX project; drawn procedurally with Python and Pillow.",
+      "author": "OpenAI Codex"
     }
   ]
 }
