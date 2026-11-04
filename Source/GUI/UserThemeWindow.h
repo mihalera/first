@@ -214,12 +214,12 @@ class UserThemePane final : public juce::Component {
         const auto header = area.withHeight(userThemeHeaderHeight);
 
         g.setColour(palette.accent);
-        g.setFont(juce::Font(juce::FontOptions(13.0f, juce::Font::bold)));
+        g.setFont (panelFont (13.0f, juce::Font::bold));
         g.drawText("USER THEME", header.reduced(14, 0).withTrimmedBottom(20),
                    juce::Justification::centredLeft, false);
 
         g.setColour(palette.secondary);
-        g.setFont(juce::Font(juce::FontOptions(10.0f)));
+        g.setFont (panelFont (10.0f));
         g.drawText("start from a preset, then click any colour to edit it",
                    header.reduced(14, 0).withTrimmedTop(20), juce::Justification::centredLeft,
                    false);
@@ -255,13 +255,13 @@ class UserThemePane final : public juce::Component {
             g.drawRoundedRectangle(swatch.reduced(0.5f), 3.0f, 1.0f);
 
             g.setColour(palette.secondary);
-            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+            g.setFont (panelFont (10.0f, juce::Font::bold));
             g.drawText(field.name, bounds.getX() + 14, bounds.getY(),
                        swatchBounds(row).getX() - bounds.getX() - 22, bounds.getHeight(),
                        juce::Justification::centredLeft, false);
 
             g.setColour(palette.text);
-            g.setFont(juce::Font(juce::FontOptions(10.0f)));
+            g.setFont (panelFont (10.0f));
             // One rounded reading of the swatch's edge, used by both the x and
             // the width: the swatch is a rectangle<float>, so writing its right
             // edge into drawText's int parameters truncated it silently in two
@@ -408,7 +408,7 @@ class UserThemePane final : public juce::Component {
             g.fillRect(chip.withTrimmedLeft(2 * barWidth));
 
             g.setColour(face.text);
-            g.setFont(juce::Font(juce::FontOptions(8.5f, juce::Font::bold)));
+            g.setFont (panelFont (9.0f, juce::Font::bold));
             g.drawText(preset.name, bounds.withTrimmedLeft(22).reduced(2, 0),
                        juce::Justification::centredLeft, false);
 
@@ -435,7 +435,7 @@ class UserThemePane final : public juce::Component {
             g.setColour(palette.border);
             g.drawRoundedRectangle(bounds.toFloat().reduced(0.5f), 3.0f, 1.0f);
             g.setColour(ink);
-            g.setFont(juce::Font(juce::FontOptions(10.0f, juce::Font::bold)));
+            g.setFont (panelFont (10.0f, juce::Font::bold));
             g.drawText(caption, bounds, juce::Justification::centred, false);
         };
 

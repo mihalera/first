@@ -175,6 +175,9 @@ class J37LookAndFeel final : public juce::LookAndFeel_V4 {
     */
     void drawButtonText(juce::Graphics &, juce::TextButton &, bool, bool) override;
 
+    juce::Font getComboBoxFont(juce::ComboBox &) override;
+    juce::Font getPopupMenuFont() override;
+
     /** Where the ComboBox's value Label sits, and its font.
 
         juce::ComboBox paints its value with an internal juce::Label that this

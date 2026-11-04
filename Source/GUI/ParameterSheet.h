@@ -165,14 +165,14 @@ inline ParameterSheet::ParameterSheet (juce::AudioProcessor& processorToUse,
     // language through the same table: these are keyed entries, because a title
     // has no English sentence to key on (see the note above xlat).
     titleLabel.setText (xlat ("PARAMETERS").toUpperCase(), juce::dontSendNotification);
-    titleLabel.setFont (juce::Font (juce::FontOptions (17.0f, juce::Font::bold)));
+    titleLabel.setFont (j37panel::panelFont (17.0f, juce::Font::bold));
     titleLabel.setColour (juce::Label::textColourId, palette.accent);
     addAndMakeVisible (titleLabel);
 
     subtitleLabel.setText (xlat ("every control the plugin exposes, grouped as the processor "
                                 "declares it - rest the pointer on a row for what it does"),
                            juce::dontSendNotification);
-    subtitleLabel.setFont (juce::Font (juce::FontOptions (11.0f)));
+    subtitleLabel.setFont (j37panel::panelFont (11.0f));
     subtitleLabel.setColour (juce::Label::textColourId, palette.secondary);
     addAndMakeVisible (subtitleLabel);
 
@@ -296,7 +296,7 @@ inline void ParameterSheet::Sheet::paint (juce::Graphics& g)
     if (parameterCount == 0)
     {
         g.setColour (palette.secondary);
-        g.setFont (juce::Font (juce::FontOptions (13.0f)));
+        g.setFont (j37panel::panelFont (13.0f));
         g.drawFittedText ("this build exposes no parameters", getLocalBounds(),
                           juce::Justification::centred, 1);
     }

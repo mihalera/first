@@ -907,6 +907,17 @@ namespace
 //  text on text, unreadable. Pinning the Label here gives every deck list one
 //  authoritative placement: inside the arrow zone, at the combo font V4 chooses.
 //==============================================================================
+juce::Font J37LookAndFeel::getComboBoxFont (juce::ComboBox& box)
+{
+    const auto height = juce::jlimit (10.0f, 15.0f, static_cast<float> (box.getHeight()) * 0.52f);
+    return j37panel::panelFont (height);
+}
+
+juce::Font J37LookAndFeel::getPopupMenuFont()
+{
+    return j37panel::panelFont (12.0f);
+}
+
 void J37LookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
 {
     // The panel's own height comes in through the camera (setPanelCamera, which
@@ -1078,7 +1089,7 @@ juce::Font J37InlineLookAndFeel::getComboBoxFont (juce::ComboBox& box)
     // Sized from the box's own height so the same style works in a tab cell and
     // on a larger panel without a second constant to keep in step.
     const auto height = juce::jlimit (9.0f, 14.0f, static_cast<float> (box.getHeight()) * 0.50f);
-    return juce::Font (juce::FontOptions (height));
+    return j37panel::panelFont (height);
 }
 
 void J37InlineLookAndFeel::positionComboBoxText (juce::ComboBox& box, juce::Label& label)
@@ -1124,7 +1135,7 @@ juce::Font J37InlineLookAndFeel::getPopupMenuFont()
     // The popup is the one place the in-tab style cannot size itself from a
     // control, so it uses a fixed compact size - the same 12 px the shrinking
     // font settles on for the tab captions, so the menu matches the panel.
-    return juce::Font (juce::FontOptions (12.0f));
+    return j37panel::panelFont (12.0f);
 }
 
 //==============================================================================

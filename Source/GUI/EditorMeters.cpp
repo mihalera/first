@@ -142,11 +142,11 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     const auto subtitleBand = localBounds.removeFromTop (topBlock - titleHeight);
 
     g.setColour (palette.text);
-    g.setFont (juce::Font (juce::FontOptions (10.0f * textScale, juce::Font::bold)));
+    g.setFont (j37panel::panelFont (10.5f * textScale, juce::Font::bold));
     g.drawText (title, titleBand, juce::Justification::centred, false);
 
     g.setColour (palette.secondary);
-    g.setFont (juce::Font (juce::FontOptions (8.0f * textScale)));
+    g.setFont (j37panel::panelFont (9.0f * textScale));
     g.drawText (subtitle, subtitleBand, juce::Justification::centred, false);
 
     // Everything below is derived from this component's own bounds rather than from
@@ -267,7 +267,7 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
             const auto labelPoint = juce::Point<float> (
                 centreX + std::cos (angle) * labelRadius,
                 centreY + std::sin (angle) * labelRadius);
-            g.setFont (juce::Font (juce::FontOptions (8.0f * textScale)));
+            g.setFont (j37panel::panelFont (9.0f * textScale));
             g.drawText (juce::String (db > 0 ? "+" : "") + juce::String (db),
                         juce::Rectangle<int> (juce::roundToInt (labelPoint.x - 10.0f),
                                               juce::roundToInt (labelPoint.y - 5.0f), 20, 11),
@@ -318,7 +318,7 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
         const auto rowTop = juce::roundToInt (readoutTop) + row * rowHeight;
         const auto rowArea = juce::Rectangle<int> (rowInset, rowTop, rowWidth, rowHeight);
         g.setColour (palette.secondary);
-        g.setFont (juce::Font (juce::FontOptions (8.0f * textScale)));
+        g.setFont (j37panel::panelFont (9.0f * textScale));
         g.drawText (label, rowArea, juce::Justification::centredLeft, false);
 
         // The value column uses a monospaced face so digits are all the same width:
@@ -416,7 +416,7 @@ void FirstAudioProcessorEditor::CompressorMeter::paint (juce::Graphics& g)
     const auto textScale = juce::jlimit (0.85f, 1.6f, static_cast<float> (getWidth()) / 190.0f);
 
     g.setColour (palette.text);
-    g.setFont (juce::Font (juce::FontOptions (10.0f * textScale, juce::Font::bold)));
+    g.setFont (j37panel::panelFont (10.5f * textScale, juce::Font::bold));
     g.drawText (title, getLocalBounds().removeFromTop (juce::roundToInt (22.0f * textScale)),
                 juce::Justification::centred, false);
 
@@ -489,7 +489,7 @@ void FirstAudioProcessorEditor::CompressorMeter::paint (juce::Graphics& g)
     // Each meter now belongs to exactly one stage, so the caption names the point in
     // the chain that stage sits at rather than splitting one readout into IN and OUT.
     g.setColour (palette.secondary);
-    g.setFont (juce::Font (juce::FontOptions (8.0f * textScale)));
+    g.setFont (j37panel::panelFont (9.0f * textScale));
     g.drawText (caption,
                 juce::Rectangle<int> (2, readoutY + 16, getWidth() - 4, 13),
                 juce::Justification::centred, false);
@@ -537,15 +537,15 @@ void FirstAudioProcessorEditor::MixBar::paint (juce::Graphics& g)
     // number that says which machines are doing it.
     auto heading = area.removeFromTop (13.0f);
     g.setColour (palette.accent);
-    g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
+    g.setFont (j37panel::panelFont (9.5f, juce::Font::bold));
     g.drawText ("SATURATION MIX", heading.reduced (1.0f, 0.0f),
                 juce::Justification::centredLeft, false);
     g.setColour (total > 0.005f ? palette.readout.withAlpha (0.85f) : palette.accent);
-    g.setFont (juce::Font (juce::FontOptions (9.0f, juce::Font::bold)));
+    g.setFont (j37panel::panelFont (9.5f, juce::Font::bold));
     g.drawText ("AMOUNT " + juce::String (juce::roundToInt (total * 100.0f)) + " %",
                 heading.reduced (1.0f, 0.0f), juce::Justification::centredRight, false);
     g.setColour (palette.secondary);
-    g.setFont (juce::Font (juce::FontOptions (8.0f)));
+    g.setFont (j37panel::panelFont (9.0f));
     g.drawText ("seven machines' shares", heading.reduced (1.0f, 0.0f).reduced (96.0f, 0.0f),
                 juce::Justification::centredRight, false);
 

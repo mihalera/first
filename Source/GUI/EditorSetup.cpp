@@ -158,26 +158,18 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
 
 float FirstAudioProcessorEditor::uiFontSize (float baseSize) const noexcept
 {
-    // styleLabel has always sat one point below its call-site size and never below
-    // 8.5 pt; keeping that base here means 100 % is pixel-for-pixel the caption
-    // system the panel had before UI SCALE existed. Only then is the factor applied.
-    // The 7.5 floor is the point below which the panel's small engraved captions
-    // stop being legible on a 1x display.
-    const auto base = juce::jmax (8.5f, baseSize - 1.0f);
-    return juce::jmax (7.5f, base * uiScale());
+    const auto base = juce::jmax (9.0f, baseSize - 0.5f);
+    return juce::jmax (8.0f, base * uiScale());
 }
 
 void FirstAudioProcessorEditor::applyUiScaleToLabels()
 {
     for (auto &style : scaledLabels)
         if (style.label != nullptr)
-            style.label->setFont (juce::Font (juce::FontOptions (
-                uiFontSize (style.baseSize), style.bold ? juce::Font::bold : juce::Font::plain)));
+            style.label->setFont (j37panel::panelFont (
+                uiFontSize (style.baseSize), style.bold ? juce::Font::bold : juce::Font::plain));
 
-    // The knob captions are set directly by the control-strip builder rather
-    // than through styleLabel(), so they would otherwise stay at 9 pt while the
-    // plate around them grew. uiFontSize(10) is exactly 9 pt at 100 %.
-    const auto knobFont = juce::Font (juce::FontOptions (uiFontSize (10.0f), juce::Font::bold));
+    const auto knobFont = j37panel::panelFont (uiFontSize (10.0f), juce::Font::bold);
     for (auto &label : controlLabels)
         label.setFont (knobFont);
     for (auto &label : compressorControlLabels)
@@ -825,7 +817,7 @@ void FirstAudioProcessorEditor::setUpControlStrip() {
         }
 
         controlLabels[i].setText(controlNames[static_cast<int>(i)], juce::dontSendNotification);
-        controlLabels[i].setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+        controlLabels[i].setFont (j37panel::panelFont (9.5f, juce::Font::bold));
         controlLabels[i].setJustificationType(juce::Justification::centred);
         controlLabels[i].setInterceptsMouseClicks(false, false);
 
@@ -1994,7 +1986,7 @@ void FirstAudioProcessorEditor::setUpInlineLists() {
         compressorControlLabels[i].setText(compressorNames[i], juce::dontSendNotification);
         // Same caption as every other page's knobs - the COMP page's strip is the
         // common one now, so its labels must match it rather than the meters' type.
-        compressorControlLabels[i].setFont(juce::Font(juce::FontOptions(9.0f, juce::Font::bold)));
+        compressorControlLabels[i].setFont (j37panel::panelFont (9.5f, juce::Font::bold));
         compressorControlLabels[i].setJustificationType(juce::Justification::centred);
         compressorControlLabels[i].setInterceptsMouseClicks(false, false);
         addAndMakeVisible(compressorControls[i]);

@@ -59,6 +59,14 @@
 inline constexpr int principleCount = 7;
 
 namespace j37panel {
+inline constexpr const char* uiFontFamily =
+    "Inter, Segoe UI, Helvetica Neue, Arial, sans-serif";
+
+inline juce::Font panelFont (float height, int style = juce::Font::plain)
+{
+    return juce::Font (juce::FontOptions (uiFontFamily, height, style));
+}
+
 /** The front-panel choices, moved here from J37LookAndFeel.
 
     `user` is the sixth and it is a different kind of entry from the other five: they
@@ -676,9 +684,7 @@ inline juce::Font shrinkingFont(const juce::String &text,
                                 float maxHeight,
                                 int fontStyle,
                                 float availableWidth) {
-    const auto makeFont = [fontStyle](float height) {
-        return juce::Font(juce::FontOptions(height, fontStyle));
-    };
+    const auto makeFont = [fontStyle](float height) { return panelFont (height, fontStyle); };
 
     if (availableWidth <= 0.0f || text.isEmpty())
         return makeFont(maxHeight);

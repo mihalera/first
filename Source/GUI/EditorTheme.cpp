@@ -461,8 +461,8 @@ void FirstAudioProcessorEditor::styleLabel(juce::Label &label,
         recorded->bold = bold;
     }
 
-    label.setFont(juce::Font(juce::FontOptions(uiFontSize(size),
-                                               bold ? juce::Font::bold : juce::Font::plain)));
+    label.setFont (j37panel::panelFont (uiFontSize (size),
+                                        bold ? juce::Font::bold : juce::Font::plain));
     label.setJustificationType(justification);
     label.setMinimumHorizontalScale(0.82f);
     label.setColour(juce::Label::textColourId, colour);

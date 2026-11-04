@@ -42,6 +42,9 @@ What is checked:
      panel. The one statement that can set it is written by name, and read by
      name here.
 
+  3. The shared typeface fallback, font helper and scalable editor-label path
+     remain wired, so captions do not silently revert to platform defaults.
+
 Exit status is 0 when the wiring is complete and 1 when it is not, with each
 unreached widget named.
 """
@@ -70,6 +73,7 @@ SOURCE_FILES = [
     ROOT / "Source" / "GUI" / "EditorPaint.cpp",
     ROOT / "Source" / "GUI" / "EditorTimer.cpp",
 ]
+PAINT_KIT = ROOT / "Source" / "GUI" / "PanelPaint.h"
 
 
 def editor_source() -> str:
@@ -252,6 +256,7 @@ def look_and_feel_members(header: str) -> list[str]:
 def main() -> int:
     header = HEADER.read_text(encoding="utf-8")
     source = editor_source()
+    paint_kit = PAINT_KIT.read_text(encoding="utf-8")
 
     bodies = function_bodies(source)
     themed = reached_text(bodies, ROOT_FUNCTION)
@@ -287,7 +292,17 @@ def main() -> int:
         )
         return 1
 
-    print("check_theme_wiring: PASSED - every widget and look and feel follows the theme")
+    if "Inter, Segoe UI, Helvetica Neue, Arial, sans-serif" not in paint_kit:
+        print("  FONT FALLBACK  the shared UI typeface must have cross-platform fallbacks")
+        return 1
+    if "FontOptions (uiFontFamily, height, style)" not in paint_kit:
+        print("  FONT HELPER  panelFont() must apply the shared UI typeface")
+        return 1
+    if "uiFontSize (style.baseSize)" not in source or "j37panel::panelFont" not in source:
+        print("  FONT SCALING  editor labels must use the shared, scalable font")
+        return 1
+
+    print("check_theme_wiring: PASSED - theme wiring and shared typography are intact")
     return 0
 
 

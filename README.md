@@ -849,6 +849,10 @@ machine preference in `Source/GUI/EditorPreferences.h`, beside the theme and the
 renderer, not a session value - a host that rebuilds the editor comes back at the size
 the user chose.
 
+The interface uses a consistent cross-platform sans-serif for controls and
+supporting text, with a serif wordmark and monospaced numeric readouts for clear
+typographic hierarchy. Small captions are larger than before and follow UI SCALE.
+
 The parameter sheet is a real `juce::Viewport`, and its rows are virtualised: every
 `foleys::GuiItem` whose canvas rectangle is outside the visible area plus one short
 prefetch band is hidden, and restored only when it scrolls back in. This is what stops
