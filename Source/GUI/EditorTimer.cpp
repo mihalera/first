@@ -339,6 +339,17 @@ void FirstAudioProcessorEditor::timerCallback() {
     if (openGLContext.isAttached())
         tapeScene.serviceContextAttachment();
 
+    // Native adapters can be requested before the host has created the peer
+    // they need to attach to. Retry that initialisation for a bounded period,
+    // just like the editor's own OpenGL context above.
+    if (nativeSceneAttachAttemptsLeft > 0) {
+        --nativeSceneAttachAttemptsLeft;
+        if (nativeRenderer == nullptr)
+            setUpNativeScene();
+        if (nativeRenderer != nullptr)
+            nativeSceneAttachAttemptsLeft = 0;
+    }
+
     // The native scene path: while a scene-capable adapter owns the deck's
     // surface, every tick builds the frame the OpenGL callback would have built
     // and hands it over - the adapter records it on its own GL thread.

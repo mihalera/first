@@ -6,6 +6,7 @@ import sys
 root = Path(__file__).resolve().parents[2]
 backend = (root / "Source/GUI/RenderBackend.h").read_text()
 setup = (root / "Source/GUI/EditorSetup.cpp").read_text()
+timer = (root / "Source/GUI/EditorTimer.cpp").read_text()
 preferences = (root / "Source/GUI/EditorPreferences.h").read_text()
 
 errors = []
@@ -77,6 +78,13 @@ require("openGLContext.attachTo(*this);" in setup,
         "the panel context must be attached best-effort, leaving JUCE's CPU path as fallback")
 require("tapeScene.setSceneEnabled(deckOnOpenGl);" in setup,
         "the deck's OpenGL scene must be gated separately from panel acceleration")
+require("nativeSceneAttachAttemptsLeft = 90;" in setup,
+        "failed native scene attachment must schedule bounded startup retries")
+require("if (nativeRenderer == nullptr)\n            setUpNativeScene();" in timer
+        and "nativeSceneAttachAttemptsLeft = 0;" in timer,
+        "the timer must retry a missing native scene adapter until it attaches")
+require("int nativeSceneAttachAttemptsLeft = 0;" in (root / "Source/PluginEditor.h").read_text(),
+        "native scene retry state must be owned by the editor")
 
 # The two GPU abstraction layers are build OPTIONS, not additions: each owns the
 # device and the surface, so a build selects one and the other is not compiled.

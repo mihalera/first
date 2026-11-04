@@ -2261,6 +2261,7 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
     // Whatever the user asked for wins: stop the startup retries, or they would
     // switch the accelerator back on seconds after the user chose CPU.
     openGLAttachAttemptsLeft = 0;
+    nativeSceneAttachAttemptsLeft = 0;
 
     if (panelOnGpu) {
         // The same context settings setUpOpenGlRendering() applies: a machine that
@@ -2288,8 +2289,11 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
     // CPU or OpenGL can never leave a second surface on the deck), and brought
     // up for the one that does.
     shutDownNativeScene();
-    if (running != j37::render::Backend::cpu && !deckOnOpenGl)
+    if (running != j37::render::Backend::cpu && !deckOnOpenGl) {
         setUpNativeScene();
+        if (nativeRenderer == nullptr)
+            nativeSceneAttachAttemptsLeft = 90;
+    }
 
     // Both paths need the strip redrawn: the GPU path draws the scene, the CPU
     // path the flat transport underneath it.
@@ -2299,6 +2303,7 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
 
 void FirstAudioProcessorEditor::setUpOpenGlRendering() {
     const auto running = j37::render::runningBackend(renderBackendChoice);
+    nativeSceneAttachAttemptsLeft = 0;
 
     // A native command renderer takes the deck's surface ONLY when its adapter
     // draws the full scene (hasNativeImplementation) - sokol does, so a SOKOL
@@ -2308,10 +2313,13 @@ void FirstAudioProcessorEditor::setUpOpenGlRendering() {
     // CPU painting keeps drawing the transport.
     if (running == j37::render::Backend::openGL)
         tapeScene.setSceneEnabled(true);
-    else if (running != j37::render::Backend::cpu)
+    else if (running != j37::render::Backend::cpu) {
         setUpNativeScene();
-    else
+        if (nativeRenderer == nullptr)
+            nativeSceneAttachAttemptsLeft = 90;
+    } else {
         tapeScene.setSceneEnabled(false);
+    }
 
     // The panel's context is NOT the deck's. A build configured for SOKOL can
     // still paint this window through JUCE's OpenGL component painter, and that

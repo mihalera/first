@@ -1472,6 +1472,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::SpinLock renderOrbsLock;
     juce::OpenGLContext openGLContext;
     int openGLAttachAttemptsLeft = 0;
+    int nativeSceneAttachAttemptsLeft = 0;
 
     // The native scene renderer (sokol today), attached to tapeScene and fed
     // one SceneFrame per timer tick. Null on every build without a scene-capable
