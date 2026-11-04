@@ -1,5 +1,5 @@
 #!/usr/bin/env python3
-"""Check the Android APK's native loader contract."""
+"""Check the Android APK's native loader and launcher contract."""
 from __future__ import annotations
 
 import struct
@@ -11,10 +11,48 @@ from pathlib import Path
 APK_LIBRARY = "lib/arm64-v8a/libjuce_jni.so"
 ANDROID_PAGE_SIZE = 16 * 1024
 REQUIRED_SYMBOLS = {"JNI_OnLoad", "juce_CreateApplication"}
+LAUNCHER_ACTIVITY = "com.mcsmes.mibox.MainActivity"
+# JuceActivity.onResume()/onNewIntent() call native methods that JUCE only
+# compiles when JUCE_PUSH_NOTIFICATIONS_ACTIVITY is defined. This app does not
+# enable push, so shipping that activity produces an APK that installs and
+# then dies with UnsatisfiedLinkError before the first frame.
+FORBIDDEN_ACTIVITY = "com.rmsl.juce.JuceActivity"
 
 
 def fail(message: str) -> None:
     raise SystemExit(f"Android APK check failed: {message}")
+
+
+def contains_string(blob: bytes, value: str) -> bool:
+    # AAPT2 writes class names as UTF-16LE today, but the binary XML string
+    # pool allows UTF-8 too; accept either rather than pin an AAPT detail.
+    return value.encode("utf-8") in blob or value.encode("utf-16le") in blob
+
+
+def check_launcher(archive: zipfile.ZipFile) -> None:
+    manifest = archive.read("AndroidManifest.xml")
+
+    if not contains_string(manifest, LAUNCHER_ACTIVITY):
+        fail(f"manifest does not launch {LAUNCHER_ACTIVITY}")
+
+    if contains_string(manifest, FORBIDDEN_ACTIVITY):
+        fail(f"manifest still names {FORBIDDEN_ACTIVITY}, whose native resume callback is not compiled in")
+
+    dex_files = [name for name in archive.namelist() if name.startswith("classes") and name.endswith(".dex")]
+    if not dex_files:
+        fail("APK has no classes.dex")
+
+    dex = b"".join(archive.read(name) for name in dex_files)
+    launcher = "L" + LAUNCHER_ACTIVITY.replace(".", "/") + ";"
+
+    if launcher.encode("ascii") not in dex:
+        fail(f"{LAUNCHER_ACTIVITY} is missing from the APK's dex")
+
+    if b"Lcom/rmsl/juce/JuceActivity;" in dex:
+        fail("JuceActivity is packaged even though its push-notification callbacks are not")
+
+    if b"Lcom/rmsl/juce/JuceApp;" not in dex:
+        fail("JuceApp (the Application class that initialises JUCE) is missing")
 
 
 def check_library(data: bytes) -> None:
@@ -93,6 +131,7 @@ def main() -> None:
         with zipfile.ZipFile(apk) as archive:
             info = archive.getinfo(APK_LIBRARY)
             library = archive.read(info)
+            check_launcher(archive)
         if info.compress_type != zipfile.ZIP_STORED:
             fail("native library must be uncompressed in the APK")
         with apk.open("rb") as package:
@@ -105,7 +144,7 @@ def main() -> None:
         fail(f"cannot read {APK_LIBRARY} from {apk}: {error}")
 
     check_library(library)
-    print("Android APK loader checks passed (arm64-v8a, 16 KB pages, JNI exports)")
+    print("Android APK loader checks passed (arm64-v8a, 16 KB pages, JNI exports, launcher)")
 
 
 if __name__ == "__main__":

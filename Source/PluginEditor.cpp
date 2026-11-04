@@ -192,7 +192,7 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
     // switches and the three LOAD/CLEAR pairs. They were the group the old
     // onStateChange wiring could not reach - the toggles sent no click because
     // nothing listened, and the TextButtons sent no state change at all.
-    const std::array<juce::Button*, 15> utilityButtons { { &autoTuneButton, &uiSoundsButton, &antiPhaseGuardButton,
+    const std::array<juce::Button*, 14> utilityButtons { { &uiSoundsButton, &antiPhaseGuardButton,
                           &parameterSheetButton, &userThemeButton,
                           &inputEqHpButton, &inputEqLpButton,
                           &outputEqHpButton, &outputEqLpButton,
@@ -2020,16 +2020,16 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     // How many knobs the LIVE page has to place, and which list they come from.
     // Two pages own knobs the tabSpecs table cannot describe: COMP's six are the
     // compressor's own, built beside the meters they belong to, and AUTOTUNE's
-    // four are its depth, speed, tolerance and gate, built with the page's pill
-    // switch. Neither is declared as a knob page, so the strip is handed their
-    // count here and reads their widgets in its placement loop below. Everything
-    // after this point is written against knobCount rather than against the tab's
-    // own count, and all three pages are laid out by the same solve as every other
-    // page: COMP used to place its own six by hand, in cells as tall as the whole
-    // grid, which drew a small cap at the top of each cell with its readout a
-    // hundred-odd pixels under it, and AUTOTUNE rode a 30 px band beside its
-    // switch, which the toolkit turned into a three-pixel paint area - a bead on a
-    // stock bar, one knob on the panel drawn by JUCE's own slider art.
+    // six are its depth, speed, range, octave, tolerance and gate. Neither is
+    // declared as a knob page, so the strip is handed their count here and reads
+    // their widgets in its placement loop below. Everything after this point is
+    // written against knobCount rather than against the tab's own count, and both
+    // pages are laid out by the same solve as every other page: COMP used to place
+    // its own six by hand, in cells as tall as the whole grid, which drew a small
+    // cap at the top of each cell with its readout a hundred-odd pixels under it,
+    // and AUTOTUNE used to ride a 30 px band beside its switch, which the toolkit
+    // turned into a three-pixel paint area - a bead on a stock bar, one knob on
+    // the panel drawn by JUCE's own slider art.
     const auto knobCount = compressorTab ? static_cast<int> (compressorControls.size())
                                          : autotuneTab ? static_cast<int> (autoTuneControls.size())
                                                        : tabControlCount;
@@ -2058,7 +2058,7 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     // page now gives that 50 px to its own three knobs instead.
     const auto memberRows = (settingsTab || delayTab || characterTab
                              || frontEndTab || vinylTab || shapersTab || inEqTab || outEqTab
-                             || machineTab || mixTab || autotuneTab) ? 1 : 0;
+                             || machineTab || mixTab) ? 1 : 0;
 
     // The member band is a FIXED strip - a caption band plus a control band -
     // pinned to the grid's BOTTOM edge, and the knob strip takes what is above
@@ -2229,7 +2229,7 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     {
         // Which widget this slot IS. The tab table holds every knob page's
         // controls and nothing else, so a page's slot is an index into it - but
-        // COMP's six and AUTOTUNE's four are the widgets the table cannot hold
+        // COMP's six and AUTOTUNE's six are the widgets the table cannot hold
         // (they belong to their page's own machinery rather than to a knob page),
         // so those two pages' slots address their label and slider directly.
         const auto slotIndex = static_cast<std::size_t> (slot);
@@ -2347,7 +2347,6 @@ void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geom
     oversamplingBox.setVisible (geometry.settingsTab);
     languageLabel.setVisible (geometry.settingsTab);
     languageBox.setVisible (geometry.settingsTab);
-    autoTuneButton.setVisible (geometry.autotuneTab);
     for (std::size_t i = 0; i < autoTuneControls.size(); ++i)
     {
         autoTuneControls[i].setVisible (geometry.autotuneTab);
@@ -2573,15 +2572,9 @@ void FirstAudioProcessorEditor::placeTabMembers (const ControlGeometry& geometry
     else if (geometry.autotuneTab)
     {
         sectionCaptionLabel.setText ("AUTOTUNE", juce::dontSendNotification);
-        // TONIC and MODE are on the deck now: the OSC ring there and the corrector
-        // here read the same key, and the ring must not depend on which tab is
-        // open. The member band is therefore the AUTO TUNE switch alone, centred
-        // over the middle two columns instead of parked in the fourth.
-        const auto bandHeight = juce::jmin (30, geometry.grid.getBottom() - geometry.memberRowY - 22);
-        const auto controlY = geometry.memberRowY + 20;
-        autoTuneButton.setBounds (geometry.grid.getX() + geometry.cellWidth + 12,
-                                  controlY,
-                                  2 * geometry.cellWidth - 24, bandHeight);
+        // The page is all knobs: TONIC and MODE live on the deck, and TUNE AMOUNT
+        // at zero is the stage's off switch, so there is no member band and no
+        // control to place here.
     }
     // The COMP page has no branch here, and that is the point: its six knobs are
     // laid out by the knob strip above, like every other page's, and the page's
@@ -3002,15 +2995,18 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "inEqLp",         &inputEqLpButton },
             { "outEqHp",        &outputEqHpButton },
             { "outEqLp",        &outputEqLpButton },
-            { "autoTune",       &autoTuneButton },
             { "autoTuneLbl",    &autoTuneControlLabels[0] },
             { "autoTuneAmt",    &autoTuneControls[0] },
             { "autoTuneSpeedLbl", &autoTuneControlLabels[1] },
             { "autoTuneSpeed",  &autoTuneControls[1] },
-            { "autoTuneTolLbl", &autoTuneControlLabels[2] },
-            { "autoTuneTol",    &autoTuneControls[2] },
-            { "autoTuneGateLbl", &autoTuneControlLabels[3] },
-            { "autoTuneGate",   &autoTuneControls[3] },
+            { "autoTuneRangeLbl", &autoTuneControlLabels[2] },
+            { "autoTuneRange",  &autoTuneControls[2] },
+            { "autoTuneOctLbl", &autoTuneControlLabels[3] },
+            { "autoTuneOct",    &autoTuneControls[3] },
+            { "autoTuneTolLbl", &autoTuneControlLabels[4] },
+            { "autoTuneTol",    &autoTuneControls[4] },
+            { "autoTuneGateLbl", &autoTuneControlLabels[5] },
+            { "autoTuneGate",   &autoTuneControls[5] },
         };
 
         // Only what is on screen counts: a hidden tab member is deliberately

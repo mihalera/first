@@ -99,8 +99,8 @@ namespace
             "st_link",
             "valve_type", "amp_type", "transformer_type",
             "digital_type", "vinyl_type",
-            "delay_sync", "delay_rate", "tuning_tonic", "tuning_mode", "autotune", "autotune_amount",
-            "autotune_speed", "autotune_tolerance", "autotune_gate",
+            "delay_sync", "delay_rate", "tuning_tonic", "tuning_mode", "autotune_amount",
+            "autotune_speed", "autotune_range", "autotune_octave", "autotune_tolerance", "autotune_gate",
             "comp_threshold", "comp_ratio", "comp_attack", "comp_release", "comp_makeup", "comp_mix"
         };
 
@@ -243,9 +243,10 @@ FirstAudioProcessor::FirstAudioProcessor()
     antiPhaseGuardParam = parameters.getRawParameterValue ("anti_phase_guard");
     tuningTonicParam = parameters.getRawParameterValue ("tuning_tonic");
     tuningModeParam = parameters.getRawParameterValue ("tuning_mode");
-    autoTuneParam = parameters.getRawParameterValue ("autotune");
     autoTuneAmountParam = parameters.getRawParameterValue ("autotune_amount");
     autoTuneSpeedParam = parameters.getRawParameterValue ("autotune_speed");
+    autoTuneRangeParam = parameters.getRawParameterValue ("autotune_range");
+    autoTuneOctaveParam = parameters.getRawParameterValue ("autotune_octave");
     autoTuneToleranceParam = parameters.getRawParameterValue ("autotune_tolerance");
     autoTuneGateParam = parameters.getRawParameterValue ("autotune_gate");
     compressorThresholdParam = parameters.getRawParameterValue ("comp_threshold");

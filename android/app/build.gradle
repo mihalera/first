@@ -65,12 +65,16 @@ android {
             // Filled by `stageNativeLib`; AGP packages it as lib/arm64-v8a/.
             jniLibs.srcDir jniLibsDir
 
-            // JUCE's own Java classes, straight from the submodule. There is no
-            // copy to drift: a JUCE bump changes these in the same checkout.
+            // JUCE's core Java classes, straight from the submodule. There is
+            // no copy to drift: a JUCE bump changes these in the same checkout.
+            // gui_basics' javaopt/app is deliberately absent: its JuceActivity
+            // calls native push-notification callbacks that JUCE does not
+            // compile without JUCE_PUSH_NOTIFICATIONS_ACTIVITY, which is what
+            // made the APK install and then crash on first resume. The launcher
+            // is src/main/java/.../MainActivity.java instead.
             java.srcDirs += [
                 '../../JUCE/modules/juce_core/native/javacore/init',
                 '../../JUCE/modules/juce_core/native/javacore/app',
-                '../../JUCE/modules/juce_gui_basics/native/javaopt/app',
             ]
         }
     }

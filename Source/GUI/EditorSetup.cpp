@@ -323,16 +323,13 @@ void FirstAudioProcessorEditor::setUpLanguageAndTuning() {
             audioProcessor.parameters, "tuning_tonic", tuningTonicBox);
     tuningModeAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
         audioProcessor.parameters, "tuning_mode", tuningModeBox);
-    autoTuneButton.setLookAndFeel(&inlineLookAndFeel);
-    autoTuneAttachment = std::make_unique<juce::AudioProcessorValueTreeState::ButtonAttachment>(
-        audioProcessor.parameters, "autotune", autoTuneButton);
-    // Four rotaries, laid out by the knob strip like every other page's
-    // controls - see the AUTOTUNE branch in resized(). They are built through one
-    // helper because they are one kind of control: a percentage or cents readout
-    // in the caption band, the toolkit's rotary, and an attachment by id. The
-    // helper also keeps the range, the readout and the parameter's own range in
-    // one place, so a knob cannot be added with a percentage readout over a cents
-    // parameter.
+    // Six rotaries, laid out by the knob strip like every other page's controls -
+    // see the AUTOTUNE branch in resized(). They are built through one helper
+    // because they are one kind of control: a percentage, cents, semitone or
+    // octave readout in the caption band, the toolkit's rotary, and an attachment
+    // by id. The helper also keeps the range, the readout and the parameter's own
+    // range in one place, so a knob cannot be added with a percentage readout over
+    // a cents parameter. There is no on/off switch: TUNE AMOUNT at zero is off.
     const auto setupTuneKnob = [this] (int index, const char* id, const char* caption,
                                        double minimum, double maximum, double interval,
                                        const char* tip, auto textFrom, auto valueFrom)
@@ -373,10 +370,12 @@ void FirstAudioProcessorEditor::setUpLanguageAndTuning() {
     };
 
     setupTuneKnob (0, "autotune_amount", "TUNE AMOUNT", 0.0, 1.0, 0.001,
-                   "TUNE AMOUNT - the depth of the correction: 0 is the untouched "
-                   "signal, 100 is the full pull onto the scale. It no longer "
-                   "changes the retune speed - SPEED owns that - so a deep, natural "
-                   "correction is possible without the snap.",
+                   "TUNE AMOUNT - the depth of the correction and the only on/off: "
+                   "0 is the untouched signal and takes the whole stage, detector "
+                   "included, out of the path; 100 is the full pull onto the scale. "
+                   "It does not change the retune speed - SPEED owns that - so a "
+                   "deep, natural correction is possible without the snap. Default "
+                   "0 percent (off).",
                    percentText, percentValue);
     setupTuneKnob (1, "autotune_speed", "SPEED", 0.0, 1.0, 0.001,
                    "SPEED - how quickly the correction glides to its new pitch, "
@@ -385,14 +384,35 @@ void FirstAudioProcessorEditor::setUpLanguageAndTuning() {
                    "snap. Slower settings are what keep consonants and vibrato from "
                    "being smeared. Default 50 percent.",
                    percentText, percentValue);
-    setupTuneKnob (2, "autotune_tolerance", "TOLERANCE", 0.0, 50.0, 0.5,
+    setupTuneKnob (2, "autotune_range", "RANGE", 1.0, 12.0, 1.0,
+                   "RANGE - how far, in semitones, the corrector may pull a reading "
+                   "toward the note the key asks for. 1 is the classic grip: a note "
+                   "is moved onto the grid, never transposed. Larger values let a "
+                   "scale's nearest note (or a deliberately heavy correction) be "
+                   "reached; 12 is the whole octave. Default 1 semitone.",
+                   [] (double value) { return juce::String (juce::roundToInt (value)) + " st"; },
+                   [] (const juce::String& text)
+                   { return juce::jlimit (1.0, 12.0, static_cast<double> (juce::roundToInt (text.getDoubleValue()))); });
+    setupTuneKnob (3, "autotune_octave", "OCTAVE", -1.0, 1.0, 1.0,
+                   "OCTAVE - transposes the corrected result by whole octaves, after "
+                   "RANGE has taken its grip. 0 leaves the note where the scale puts "
+                   "it; +1 and -1 move it one octave up or down. TUNE AMOUNT scales "
+                   "the transposition like every other pull. Default 0.",
+                   [] (double value)
+                   {
+                       const auto octaves = juce::roundToInt (value);
+                       return juce::String (octaves > 0 ? "+" : "") + juce::String (octaves) + " oct";
+                   },
+                   [] (const juce::String& text)
+                   { return juce::jlimit (-1.0, 1.0, static_cast<double> (juce::roundToInt (text.getDoubleValue()))); });
+    setupTuneKnob (4, "autotune_tolerance", "TOLERANCE", 0.0, 50.0, 0.5,
                    "TOLERANCE - the dead zone around the target note, in cents. A "
                    "reading inside it is left bit-for-bit alone, which keeps the "
                    "human part of the performance. 0 corrects every reading, 10 is "
                    "the default and 50 lets a wide vibrato through. Default 10 cents.",
                    [] (double value) { return juce::String (juce::roundToInt (value)) + " ct"; },
                    [] (const juce::String& text) { return juce::jlimit (0.0, 50.0, text.getDoubleValue()); });
-    setupTuneKnob (3, "autotune_gate", "GATE", 0.0, 1.0, 0.001,
+    setupTuneKnob (5, "autotune_gate", "GATE", 0.0, 1.0, 0.001,
                    "GATE - how confident the pitch detector must be before the "
                    "corrector trusts a reading. Higher settings leave breath, noise "
                    "and ambiguous chords alone; lower settings follow quiet or "
@@ -408,36 +428,24 @@ void FirstAudioProcessorEditor::setUpLanguageAndTuning() {
     addAndMakeVisible(tuningModeLabel);
     addAndMakeVisible(tuningTonicBox);
     addAndMakeVisible(tuningModeBox);
-    addAndMakeVisible(autoTuneButton);
 
-    // The four tuning controls are the one group on the panel that had no
-    // tooltips at all, which is why the page read as unexplained: two of them
-    // (TONIC, MODE) only mean something together, and the corrector's own two
-    // are the pair a user has to understand before turning either on. Keyed on
-    // the English sentence like every other tip, so a translation is one line in
-    // the table.
+    // TONIC and MODE are on the deck now: the OSC ring there and the corrector
+    // here read the same key, and the ring must not depend on which tab is open.
+    // Keyed on the English sentence like every other tip, so a translation is one
+    // line in the table.
     setTip(tuningTonicBox, "TONIC - the key the scale is built on: the note the "
                            "corrector treats as home when MODE is anything but "
                            "CHROMATIC. On CHROMATIC it changes nothing, because "
-                           "every semitone is already in the scale. Default C.");
+                           "every semitone is already in the scale. It only matters "
+                           "while TUNE AMOUNT is above zero. Default C.");
     setTip(tuningModeBox, "MODE - which notes the corrector is allowed to land on. "
                           "CHROMATIC is every semitone and is the default: a note is "
                           "pulled to the nearest one and nowhere else. MAJOR, MINOR, "
                           "DORIAN and the two pentatonics let a reading travel up to "
-                          "a semitone to the nearest note the chosen scale contains, "
-                          "so the correction follows the key rather than the grid. "
+                          "RANGE semitones to the nearest note the chosen scale "
+                          "contains, so the correction follows the key rather than "
+                          "the grid. It has no effect while TUNE AMOUNT is zero. "
                           "Default Chromatic.");
-    setTip(autoTuneButton, "AUTO TUNE - switches the corrector in. The stage reads "
-                           "the note that is playing with a period detector, decides "
-                           "the nearest note the key allows, and moves the audio onto "
-                           "it by RE-READING the signal at the correction ratio out "
-                           "of a delay line, spliced a whole period apart so the join "
-                           "is inaudible. Below its gate - silence, noise, a chord, or "
-                           "a note outside 45 Hz to 1.4 kHz - it glides back to unity "
-                           "and passes the signal untouched rather than chasing a "
-                           "number it cannot trust. TUNE AMOUNT sets the depth, SPEED "
-                           "the retune time, TOLERANCE the dead zone and GATE the "
-                           "confidence required. Default off.");
 }
 
 void FirstAudioProcessorEditor::setUpTooltipsAndPhysics() {
@@ -722,7 +730,7 @@ void FirstAudioProcessorEditor::setUpControlStrip() {
             slider.setNumDecimalPlacesToDisplay(0);
             slider.setTextValueSuffix(" Hz");
         } else if (id == "reverb_predelay") {
-            // PRE-DLY: a real time in milliseconds, not a percentage.
+            // PRE-RVB: a real time in milliseconds, not a percentage.
             slider.setRange(0.0, 100.0, 0.1);
             slider.setNumDecimalPlacesToDisplay(1);
             slider.setTextValueSuffix(" ms");

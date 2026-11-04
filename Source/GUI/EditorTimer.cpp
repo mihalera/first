@@ -284,10 +284,10 @@ void FirstAudioProcessorEditor::repaintAnimatedSurfaces() {
     // The switches. Their thumbs GLIDE between stops for about five frames after
     // a click (noteToggle / updateToggleAnimations in the look and feel) and their
     // lamps light with the machine's activity, so they need the same per-frame
-    // invalidation the knobs do. Twelve widgets, most of them hidden behind a
+    // invalidation the knobs do. Eleven widgets, most of them hidden behind a
     // page: the visible ones are two to four per frame.
     for (auto *toggle : {&deltaButton, &bypassButton, &polarityButton, &autoGainButton,
-                         &autoTuneButton, &uiSoundsButton, &antiPhaseGuardButton, &inputEqHpButton,
+                         &uiSoundsButton, &antiPhaseGuardButton, &inputEqHpButton,
                          &inputEqLpButton, &outputEqHpButton, &outputEqLpButton, &delaySyncButton})
         if (toggle->isVisible())
             toggle->repaint();

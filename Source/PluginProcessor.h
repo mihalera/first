@@ -1301,12 +1301,15 @@ private:
     std::atomic<float>* uiSoundsParam = nullptr;
     std::atomic<float>* tuningTonicParam = nullptr;
     std::atomic<float>* tuningModeParam = nullptr;
-    std::atomic<float>* autoTuneParam = nullptr;
+    // The corrector has no on/off parameter: TUNE AMOUNT is the switch, and zero
+    // is off. The rest separate its depth from its reach and its feel: how fast
+    // it travels, how far it may pull, where the target sits in octaves, how far
+    // off a note may be before it is touched, and how confident the detector has
+    // to be.
     std::atomic<float>* autoTuneAmountParam = nullptr;
-    // The three controls that separate the corrector's depth from its feel: how
-    // fast it travels, how far off a note may be before it is touched, and how
-    // confident the detector has to be.
     std::atomic<float>* autoTuneSpeedParam = nullptr;
+    std::atomic<float>* autoTuneRangeParam = nullptr;
+    std::atomic<float>* autoTuneOctaveParam = nullptr;
     std::atomic<float>* autoTuneToleranceParam = nullptr;
     std::atomic<float>* autoTuneGateParam = nullptr;
     std::atomic<float>* compressorThresholdParam = nullptr;

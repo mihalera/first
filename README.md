@@ -302,7 +302,7 @@ absent: the frame comes back bit for bit.
 
 **SPACE SIZE** runs from about half a second to about five. **DAMP** is its own control
 now, so a long tail does not have to be a dark one: 0 % keeps the top end, 100 %
-absorbs it on every pass. **PRE-DLY** (0-100 ms) sets how far behind the dry note the
+absorbs it on every pass. **PRE-RVB** (0-100 ms) sets how far behind the dry note the
 room starts, which is what places a voice in front of a plate instead of inside it. It
 is applied at the session rate, so 20 ms is 20 ms at any sample rate. **RVB WIDTH** is a
 mid/side trim on the wet pair: 0 % is mono, 100 % is the tank's own two taps and 200 %
@@ -678,16 +678,16 @@ one tape.
 
 ## Autotune: the corrector
 
-AUTO TUNE is opt-in, off by default, and inert at TUNE AMOUNT 0 - at zero the stage is out
-of the path entirely, detector included, and the signal is bit-for-bit the one that arrived.
-Switched in, **TONIC** and **MODE** on the deck say which notes are legal, **AUTO TUNE**
-switches the stage in, and the four knobs split the correction into independent
-decisions: **TUNE AMOUNT** is the depth of the pull, **SPEED** is how long it takes to
-get there, **TOLERANCE**
-is the dead zone around the target, and **GATE** is how confident the detector must be before
-its reading is trusted. Depth and speed used to be the same control, which is why a deep
-correction was also a fast one; they are separate now, so a note can be pulled all the way
-onto the grid without the snap.
+AUTO TUNE is opt-in through **TUNE AMOUNT**, and TUNE AMOUNT 0 is off: at zero the stage
+is out of the path entirely, detector included, and the signal is bit-for-bit the one that
+arrived. There is no separate switch to disagree with the knob. Above zero, **TONIC** and
+**MODE** on the deck say which notes are legal, and six knobs split the correction into
+independent decisions: **TUNE AMOUNT** is the depth of the pull, **SPEED** is how long it
+takes to get there, **RANGE** is how far in semitones it may travel, **OCTAVE** transposes
+the corrected result, **TOLERANCE** is the dead zone around the target, and **GATE** is how
+confident the detector must be before its reading is trusted. Depth and speed used to be the
+same control, which is why a deep correction was also a fast one; they are separate now, so
+a note can be pulled all the way onto the grid without the snap.
 
 Two pieces of signal processing, and both were rebuilt for one reason, which is the report
 the panel carried: *autotune does nothing*.
@@ -708,9 +708,12 @@ and the note passes untouched - because a voice is never exactly on the grid, an
 a performance that is slightly sharp or flat is the part the ear reads as human. It is 10
 cents by default, reachable from 0 (correct every reading) to 50 (let a wide vibrato
 through), and it is applied before TUNE AMOUNT scales the pull, so half amount is a gentler
-version of the same opinion rather than a differently-tuned one. The grip outside it is still
-clamped to a semitone either way. It lives in `Source/DSP/PitchCorrectionRule.h` and
-`tests/pitch/` drives it at exact cents either side of the boundary.
+version of the same opinion rather than a differently-tuned one. Outside it the pull is
+clamped by **RANGE** - one semitone by default, which is the classic "onto the grid, never
+transposed" grip, and up to twelve for a deliberately heavy correction - and **OCTAVE**
+then transposes the corrected result by a whole octave up or down, scaled by TUNE AMOUNT
+like every other pull. It lives in `Source/DSP/PitchCorrectionRule.h` and `tests/pitch/`
+drives it at exact cents either side of every boundary.
 
 **The shifter** moves the audio onto the note by re-reading it at the correction ratio out of
 a delay line. It has two read heads half a grain apart whose Hann windows sum to one, and the
@@ -742,7 +745,7 @@ cannot do: it reads the material through an analysis window, so the correction d
 shorten the note it corrects (100 ms of note comes back 103 ms where a resampler answers
 97 ms). What it costs, measured by building the same harness both ways, is stated in
 `CMakeLists.txt` beside the option rather than here: **1216 frames of lookahead at 48 kHz**
-(25 ms, reported to the host while AUTO TUNE is engaged) and a transposition that is two
+(25 ms, reported to the host while TUNE AMOUNT is above zero) and a transposition that is two
 percent wide of the ratio it is handed - 8 cents at 1.06x and 32 at 0.94x - against the
 granular engine's sub-cent reading. That figure is itself the result of a measurement: the
 error follows the analysis geometry, so eight analyses per window halve what the usual four
@@ -782,10 +785,11 @@ rest stays silent.
 | Transport | Stop / Play / Start | The machine's three states. STOP brakes the capstan to rest in 0.75 s - no hiss, no wow, no delay tail: true silence, not a mute - and pressing it again spins the machine back up. START is the spin-up and nothing else: 1.1 s from rest, it catches a coasting machine and brings it back up at the same rate, it settles on PLAY by itself, and it never brakes first; pressed while the DAW is parked it is ARMED instead, and the machine waits at rest until the host rolls. PLAY is normal running, and a re-lock from a partial ramp takes 0.25 s. TAPE SPEED scales the three capstan gestures, VINYL SPEED scales the run-down, and the host tempo scales them all - see [Transport](#transport-start-play-stop) |
 | Spindown | on/off (momentary in the panel) | Hold to cut the platter's power: the machine coasts down over 1.6 s (2.46 s on a 78 rpm platter) and comes back up in 0.9 s when released. A hold also brings the platter up if the machine was stopped, and releasing a hold leaves the machine running. As a parameter it survives in the state and can be automated. Default off |
 | Tuning Tonic (TONIC) | C to B | The key the scale is built on: the note the corrector treats as home. No effect on CHROMATIC, which already contains every semitone. Default C |
-| Tuning Mode (MODE) | Chromatic / Major / Minor / Dorian / Pentatonic Major / Pentatonic Minor | Which notes the corrector may land on. CHROMATIC pulls a note to the nearest semitone and nowhere else; a scale lets the reading travel up to a semitone to the nearest note the key contains, so the correction follows the key rather than the grid. Default Chromatic |
-| Auto Tune | on/off | Switches the corrector in: a period detector reads the note, the key decides where it may land, and the shifter re-reads the signal onto it. Below its gate (silence, noise, a chord, 45 Hz to 1.4 kHz) it glides back to unity and passes the signal untouched. Off by default |
-| Auto Tune Amount (TUNE AMOUNT) | 0 to 100 % | Depth of the correction: 0 is the untouched signal, 100 is the full pull onto the scale. It no longer changes the retune speed - SPEED owns that. At 0 % the stage is out of the path entirely, detector included. Default 0 % |
+| Tuning Mode (MODE) | Chromatic / Major / Minor / Dorian / Pentatonic Major / Pentatonic Minor | Which notes the corrector may land on. CHROMATIC pulls a note to the nearest semitone and nowhere else; a scale lets the reading travel up to RANGE semitones to the nearest note the key contains, so the correction follows the key rather than the grid. No effect while TUNE AMOUNT is zero. Default Chromatic |
+| Auto Tune Amount (TUNE AMOUNT) | 0 to 100 % | Depth of the correction, and the only on/off: 0 is the untouched signal and takes the whole stage, detector included, out of the path; 100 is the full pull onto the scale. It does not change the retune speed - SPEED owns that. Default 0 % (off) |
 | Auto Tune Speed (SPEED) | 0 to 100 % | How quickly the correction glides to its new pitch, independent of TUNE AMOUNT: 0 % is a slow, transparent 100 ms glide, 50 % about 13 ms, 100 % a 1 ms snap. Default 50 % |
+| Auto Tune Range (RANGE) | 1 to 12 semitones | How far the corrector may pull a reading toward the note the key asks for. 1 is the classic grip: a note is moved onto the grid, never transposed. Larger values let the scale's nearest note (or a deliberately heavy correction) be reached; 12 is the whole octave. Default 1 semitone |
+| Auto Tune Octave (OCTAVE) | -1 to +1 octaves | Transposes the corrected result by whole octaves, after RANGE has taken its grip: 0 leaves the note where the scale puts it, +1 and -1 move it one octave up or down. TUNE AMOUNT scales the transposition. Default 0 |
 | Auto Tune Tolerance (TOLERANCE) | 0 to 50 cents | The dead zone around the target note. A reading inside it is left bit-for-bit alone; 0 corrects every reading, 10 is the default and 50 lets a wide vibrato through. Default 10 cents |
 | Auto Tune Gate (GATE) | 0 to 100 % | How confident the pitch detector must be before the corrector trusts a reading. Higher settings leave breath, noise and ambiguous chords alone; lower settings follow quiet or noisy notes. Default 50 % |
 | Output | -32 to +32 dB | Calibrated output trim in dB |
@@ -1709,8 +1713,12 @@ incompatible host library. The Linux ARM64 job still builds with ArmPL.
 
 The Gradle project lives in `android/`. It does not compile C++: its
 `stageNativeLib` task copies the `.so` above into `jniLibs`, and the module
-takes JUCE's Java sources (`JuceApp`, `JuceActivity`) straight from the
-submodule. It uses AGP 9.5.0 with Gradle 9.8.2 (JDK 17 or newer); the CI job
+takes JUCE's `JuceApp`/`Java` sources straight from the submodule, and its own
+`MainActivity` as the launcher. JUCE's `JuceActivity` is deliberately left out:
+its `onResume()` calls a native push-notification callback that JUCE compiles
+only when push is enabled, so an APK that uses it installs and then dies on
+first resume with `UnsatisfiedLinkError`. It uses AGP 9.5.0 with Gradle 9.8.2
+(JDK 17 or newer); the CI job
 installs both, so a local build needs a Gradle 9.6+ command on `PATH`. After the
 CMake build above:
 

@@ -153,9 +153,9 @@ std::array<StubSlider, stubCompressorCount> compressorControls;
 bool compressorTab = false;
 
 // The AUTOTUNE page's own knobs, the other widgets the tab table cannot hold:
-// depth, speed, tolerance and gate, built beside the page's pill switch. The
-// strip is handed four knobs for that page and reads these arrays for its slots.
-constexpr int stubAutotuneCount = 4;
+// depth, speed, range, octave, tolerance and gate. There is no pill switch: the
+// strip is handed six knobs and TUNE AMOUNT at zero is off.
+constexpr int stubAutotuneCount = 6;
 std::array<StubLabel, stubAutotuneCount> autoTuneControlLabels;
 std::array<StubSlider, stubAutotuneCount> autoTuneControls;
 bool autotuneTab = false;
@@ -172,7 +172,8 @@ EditorLayout editorLayoutOf (int W, int H)
 
 // Where a page's knobs come from. A page either declares them in the tab table,
 // or owns them itself - COMP's six are the compressor's, built beside the meters
-// they belong to, and AUTOTUNE's four are its depth, speed, tolerance and gate,
+// they belong to, and AUTOTUNE's six are its depth, speed, range, octave,
+// tolerance and gate,
 // built with its switch. Both own pages list nothing in their tab entry, and the
 // strip is handed the count and the widgets instead (see knobCount and the
 // placement loop).
@@ -192,7 +193,7 @@ struct Built
 Built buildPage (const juce::Rectangle<int>& controlsBand, const Page& page)
 {
     // The tab table's count is zero on both pages that own their knobs - the
-    // compressor's six and AUTOTUNE's four are not in it - so the two counts are
+    // compressor's six and AUTOTUNE's six are not in it - so the two counts are
     // a page's knobs and nothing.
     const auto tabControlCount = page.source == Knobs::table ? page.knobs : 0;
     const auto memberRows = page.band ? 1 : 0;
@@ -292,11 +293,10 @@ const Page pages[] = {
     { "DELAY", 7, true }, { "REVERB", 6, false }, { "DYN", 3, false },
     { "OUT EQ", 6, true }, { "IN EQ", 6, true }, { "MODELS", 2, true },
     { "SETTINGS", 0, true },
-    // The two pages that own their knobs. AUTOTUNE's four ride the strip with a
-    // member band under them for the AUTO TUNE pill; COMP's six take the whole
-    // page, as its meters live in their own panel beside the grid - see the stubs
-    // above.
-    { "AUTOTUNE", 4, true, Knobs::autotune },
+    // The two pages that own their knobs. AUTOTUNE's six take the whole page,
+    // as there is no switch left to put in a member band; COMP's six take it too,
+    // as its meters live in their own panel beside the grid - see the stubs above.
+    { "AUTOTUNE", 6, false, Knobs::autotune },
     { "COMP", 6, false, Knobs::compressor },
 };
 
