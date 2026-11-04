@@ -105,7 +105,6 @@ void main()
     gl_Position = uViewProjection * uModel * vec4 (p, 1.0);
 }
 )GLSL";
-#undef J37_SOKOL_SHADER_VERSION
 
 constexpr const char fragmentShaderSource[] = J37_SOKOL_SHADER_VERSION R"GLSL(
 
