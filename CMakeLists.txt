@@ -129,6 +129,7 @@ set(J37_AAP_JUCE_SOURCE_DIR "" CACHE PATH
 set(J37_AAP_PATCHES_9_0_5 "" CACHE STRING
     "Semicolon-separated AAP patch files already applied to JUCE 9.0.5")
 
+<<<<<<< HEAD
 if(J37_ENABLE_AAP)
     if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
         message(FATAL_ERROR "J37_ENABLE_AAP is Android-only")
@@ -174,6 +175,9 @@ else()
     endif()
     add_subdirectory(JUCE)
 endif()
+=======
+add_subdirectory(JUCE)
+>>>>>>> a495de4b (Juce 5)
 
 # JUCE's Android Oboe target adds -Ofast for Release, which current Clang
 # deprecates and repeats for every translation unit. Keep the same optimization

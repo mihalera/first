@@ -58,3 +58,8 @@
 	path = ThirdParty/signalsmith-linear
 	url = https://github.com/Signalsmith-Audio/linear.git
 	branch = main
+
+[submodule "ThirdParty/signalsmith-linear"]
+	path = ThirdParty/signalsmith-linear
+	url = https://github.com/Signalsmith-Audio/linear.git
+	branch = main
