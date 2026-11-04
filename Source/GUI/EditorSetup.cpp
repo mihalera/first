@@ -190,6 +190,7 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
 =======
     constexpr int screenMarginX = JUCE_ANDROID ? 8 : 16;
     constexpr int screenMarginY = JUCE_ANDROID ? 8 : 32;
+=======
 
     const auto &displays = juce::Desktop::getInstance().getDisplays();
     juce::Rectangle<int> workArea;
