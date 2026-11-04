@@ -131,6 +131,8 @@ public class MainActivity extends Activity
         super.onRequestPermissionsResult (requestCode, permissions, results);
 =======
         initEdgeToEdge();
+=======
         super.onCreate (savedInstanceState);
+        initEdgeToEdge();
     }
 }

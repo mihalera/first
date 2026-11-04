@@ -300,9 +300,11 @@ void FirstAudioProcessorEditor::repaintAnimatedSurfaces() {
     if (!j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()) && !tapeScene.isSceneLive())
 =======
     if (!j37panel::usesPhoneLayout (getWidth()))
+=======
+    if (!j37panel::usesPhoneLayout (getWidth(), getHeight()))
         repaint(statusPillBounds());
 
-    if (!j37panel::usesPhoneLayout (getWidth()) && !tapeScene.isSceneLive())
+    if (!j37panel::usesPhoneLayout (getWidth(), getHeight()) && !tapeScene.isSceneLive())
         repaint(deckAnimationBounds());
 }
 
@@ -326,7 +328,7 @@ void FirstAudioProcessorEditor::timerCallback() {
     // phone layout also omits the large meters and OSC ring to leave room for
     // touch controls, so neither surface should consume update or repaint work.
     const auto panelCovered = parameterSheet != nullptr && parameterSheet->isOpen();
-    const auto phoneLayout = j37panel::usesPhoneLayout (getWidth());
+    const auto phoneLayout = j37panel::usesPhoneLayout (getWidth(), getHeight());
     const auto metersVisible = ! panelCovered && ! phoneLayout;
     inputMeter.setActive(metersVisible);
     outputMeter.setActive(metersVisible);

@@ -517,6 +517,9 @@ void checkPhoneLayout()
            "800 px portrait is the widest phone page", "PHONE", 800, 800);
     check (! j37panel::usesPhoneLayout (801, 800),
            "801 px portrait keeps the desktop layout", "PHONE", 801, 800);
+=======
+    check (! j37panel::usesPhoneLayout (601, 800),
+           "601 px portrait keeps the desktop layout", "PHONE", 601, 800);
     check (j37panel::usesPhoneLayout (800, 360),
            "800 x 360 landscape uses the phone layout", "PHONE", 800, 360);
     check (j37panel::usesPhoneLayout (915, 412),
@@ -563,6 +566,9 @@ void checkPhoneLayout()
     check (j37panel::usesPhoneLayout (360), "360 px uses the phone layout", "PHONE", 360, 800);
     check (j37panel::usesPhoneLayout (600), "600 px uses the phone layout", "PHONE", 600, 800);
     check (! j37panel::usesPhoneLayout (601), "601 px keeps the desktop layout", "PHONE", 601, 800);
+=======
+    check (! j37panel::usesPhoneLayout (1280, 720),
+           "1280 x 720 keeps the desktop layout", "PHONE", 1280, 720);
 
     for (const auto& size : { std::array<int, 2> { 360, 800 },
                               std::array<int, 2> { 412, 915 },
@@ -601,6 +607,7 @@ void checkPhoneLayout()
                "phone controls follow the deck", "PHONE", width, height);
         check (layout.controls.width == width - 2 * j37panel::phoneLayoutInset,
                "phone controls use the full inset width", "PHONE", width, height);
+=======
     }
 
     const auto compact = j37panel::computePhoneEditorLayout (360, 800);
@@ -662,8 +669,11 @@ void checkPhoneLayout()
                               std::array<int, 2> { 915, 412 } })
     {
 =======
+=======
     for (const auto& size : { std::array<int, 2> { 360, 800 },
-                              std::array<int, 2> { 412, 915 } })
+                              std::array<int, 2> { 412, 915 },
+                              std::array<int, 2> { 800, 360 },
+                              std::array<int, 2> { 915, 412 } })
     {
         const auto width = size[0];
         const auto height = size[1];

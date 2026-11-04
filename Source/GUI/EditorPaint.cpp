@@ -231,6 +231,8 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     if (! j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
 =======
     if (! j37panel::usesPhoneLayout (getWidth()))
+=======
+    if (! j37panel::usesPhoneLayout (getWidth(), getHeight()))
     {
         g.setColour(grainColour);
         for (float y = chassis.getY() + 2.0f; y < chassis.getBottom(); y += 3.0f)

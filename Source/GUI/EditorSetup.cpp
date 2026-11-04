@@ -2448,6 +2448,8 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
     if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight())) {
 =======
     if (j37panel::usesPhoneLayout (getWidth())) {
+=======
+    if (j37panel::usesPhoneLayout (getWidth(), getHeight())) {
         openGLContext.detach();
         tapeScene.setSceneEnabled(false);
         shutDownNativeScene();
@@ -2501,6 +2503,8 @@ void FirstAudioProcessorEditor::setUpOpenGlRendering() {
     if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight())) {
 =======
     if (j37panel::usesPhoneLayout (getWidth())) {
+=======
+    if (j37panel::usesPhoneLayout (getWidth(), getHeight())) {
         tapeScene.setSceneEnabled(false);
         shutDownNativeScene();
         openGLContext.detach();
@@ -2584,6 +2588,8 @@ void FirstAudioProcessorEditor::setUpNativeScene() {
     if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
 =======
     if (j37panel::usesPhoneLayout (getWidth()))
+=======
+    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
         return;
 
     shutDownNativeScene();

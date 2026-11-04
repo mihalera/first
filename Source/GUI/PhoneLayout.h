@@ -78,14 +78,20 @@ namespace j37panel
                && width <= phoneLandscapeMaxWidth;
 =======
     inline constexpr int phoneLayoutMaxWidth = 600;
+    inline constexpr int phoneLandscapeMaxWidth = 1100;
+    inline constexpr int phoneLandscapeMaxHeight = 520;
     inline constexpr int phoneLayoutInset = 8;
     inline constexpr int phoneHeaderHeight = 74;
     inline constexpr int phoneDeckHeight = 120;
+    inline constexpr int phoneLandscapeDeckWidth = 240;
     inline constexpr int phoneBandGap = 4;
 
-    constexpr bool usesPhoneLayout (int width) noexcept
+    constexpr bool usesPhoneLayout (int width, int height) noexcept
     {
-        return width > 0 && width <= phoneLayoutMaxWidth;
+        return width > 0 && height > 0
+               && (width <= phoneLayoutMaxWidth
+                   || (width <= phoneLandscapeMaxWidth
+                       && height <= phoneLandscapeMaxHeight));
     }
 
     constexpr int nonNegative (int value) noexcept
@@ -139,6 +145,10 @@ namespace j37panel
         const auto contentWidth = nonNegative (width - 2 * phoneLayoutInset);
         const auto contentHeight = nonNegative (height - 2 * phoneLayoutInset);
         if (isPhoneLandscape (width, height))
+=======
+
+        if (width > height && height <= phoneLandscapeMaxHeight
+            && width <= phoneLandscapeMaxWidth)
         {
             const auto headerHeight = contentHeight < phoneHeaderHeight
                                         ? contentHeight : phoneHeaderHeight;
@@ -160,6 +170,7 @@ namespace j37panel
             return { header, deck, controls };
         }
 
+=======
 =======
         auto remainingHeight = contentHeight;
         auto y = phoneLayoutInset;
