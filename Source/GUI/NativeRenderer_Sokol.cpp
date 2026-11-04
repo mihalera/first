@@ -16,23 +16,34 @@
  #include <sokol_gfx.h>
 
  #include <algorithm>
+ #include <atomic>
+ #include <cmath>
+ #include <cstdint>
  #include <mutex>
+ #include <utility>
+ #include <vector>
 
 namespace j37::render
 {
 namespace
 {
+#if defined (SOKOL_GLES3)
+ #define J37_SOKOL_SHADER_VERSION "#version 300 es\nprecision highp float;\n"
+constexpr auto sceneDepthFormat = SG_PIXELFORMAT_DEPTH;
+#else
+ #define J37_SOKOL_SHADER_VERSION "#version 330 core\n"
+constexpr auto sceneDepthFormat = SG_PIXELFORMAT_DEPTH_STENCIL;
+#endif
+
 //==============================================================================
-//  The deck's shader programs, ported to GLSL 410.
+//  The deck's shader programs, ported to the Sokol GL dialect.
 //
 //  These are TapeSceneShaders.h's vertex and fragment programs in sokol's
 //  dialect rather than JUCE's. Three things change and nothing else does:
 //
-//    * sokol's GLCORE backend hands the source to the driver verbatim, so the
-//      #version line is written here (GLSL 410 is the desktop minimum sokol
-//      accepts) and `attribute`/`varying`/`gl_FragColor` become `in`/`out`/
-//      a declared fragment output - the rewrite JUCE's translator used to do
-//      for the OpenGL path.
+//    * desktop GL uses GLSL 330 core (the GLCORE backend's baseline), while
+//      JUCE's Android/iOS ES context uses GLSL ES 300 with explicit precision.
+//      Both spellings use `in`/`out` and a declared fragment output.
 //    * TAPE_SCENE_HIGHP is already resolved: it is empty on desktop, which is
 //      where this adapter runs (SokolBackend.h picks SOKOL_GLCORE), so the
 //      qualifier is simply gone from the ported text.
@@ -46,8 +57,7 @@ namespace
 //  newline INSIDE a string literal - textually plausible, and a compile error
 //  only in a SOKOL build.
 //==============================================================================
-constexpr const char vertexShaderSource[] = R"GLSL(
-#version 410
+constexpr const char vertexShaderSource[] = J37_SOKOL_SHADER_VERSION R"GLSL(
 
 in vec4 aPosition;
 in vec3 aNormal;
@@ -95,9 +105,9 @@ void main()
     gl_Position = uViewProjection * uModel * vec4 (p, 1.0);
 }
 )GLSL";
+#undef J37_SOKOL_SHADER_VERSION
 
-constexpr const char fragmentShaderSource[] = R"GLSL(
-#version 410
+constexpr const char fragmentShaderSource[] = J37_SOKOL_SHADER_VERSION R"GLSL(
 
 in vec3 vNormal;
 in float vDetail;
@@ -342,27 +352,41 @@ public:
 
         width = juce::jmax (1, config.width);
         height = juce::jmax (1, config.height);
-        position = { config.positionX, config.positionY };
 
         context = std::make_unique<juce::OpenGLContext>();
         context->setComponentPaintingEnabled (false);
+        context->setContinuousRepainting (false);
+#if defined (SOKOL_GLES3)
+        context->setPreferredVersion ({ 3, 0 });
+#else
+        context->setPreferredVersion ({ 3, 3 });
+        context->setPreferredProfile (juce::OpenGLProfile::core);
+#endif
 
-        // The scene needs a depth buffer, and the pipeline's declared
-        // DEPTH_STENCIL only validates against a swapchain that has one - the
-        // pair is requested here rather than hoped for from the driver's
-        // default pixel format.
+        // Keep the requested surface format paired with the Sokol pipeline
+        // format. GLES platforms expose a depth buffer without stencil.
         juce::OpenGLPixelFormat pixelFormat;
         pixelFormat.depthBufferBits = 24;
+#if ! defined (SOKOL_GLES3)
         pixelFormat.stencilBufferBits = 8;
+#endif
         context->setPixelFormat (pixelFormat);
 
         context->setRenderer (this);
+        deviceSetupFailed.store (false, std::memory_order_relaxed);
         context->attachTo (component);
 
         if (! context->isAttached())
         {
             shutdown();
             return fail ("sokol_gfx: JUCE could not attach an OpenGL context");
+        }
+
+        {
+            const std::lock_guard<std::mutex> lock (frameMutex);
+            pendingFrame = SceneFrame {};
+            hasPendingFrame = false;
+            drawFailure.clear();
         }
 
         // The device itself is created in newOpenGLContextCreated(), where the
@@ -375,7 +399,9 @@ public:
 
     bool drawScene (const SceneFrame& frame) override
     {
-        if (! deviceReady || ! sg_isvalid() || ! isValid (frame))
+        // NativeFrameSubmission validates this snapshot before dispatch. Avoid
+        // walking the shared mesh topology a second time on every timer tick.
+        if (! deviceReady.load (std::memory_order_acquire))
             return false;
 
         // A copy, because the caller's frame dies at the end of its scope and
@@ -396,9 +422,11 @@ public:
         // A default-pass render uses the size it is handed, so there is nothing
         // to reallocate here - which is the whole of why sokol_gfx is the cheap
         // adapter to keep correct through a host resize.
-        width = juce::jmax (1, config.width);
-        height = juce::jmax (1, config.height);
-        position = { config.positionX, config.positionY };
+        {
+            const std::lock_guard<std::mutex> lock (frameMutex);
+            width = juce::jmax (1, config.width);
+            height = juce::jmax (1, config.height);
+        }
 
         if (context != nullptr)
             context->triggerRepaint();
@@ -406,7 +434,8 @@ public:
 
     bool isPresentable() const noexcept override
     {
-        return initialised && context != nullptr && context->isAttached() && deviceReady;
+        return initialised && context != nullptr && context->isAttached()
+            && deviceReady.load (std::memory_order_acquire);
     }
 
     void shutdown() noexcept override
@@ -422,15 +451,16 @@ public:
             context.reset();
         }
 
-        deviceReady = false;
+        deviceReady.store (false, std::memory_order_release);
+        deviceSetupFailed.store (false, std::memory_order_relaxed);
         initialised = false;
     }
 
     bool beginFrame() override { return isPresentable(); }
 
-    void clear (juce::Colour colour) override
+    void clear (juce::Colour) override
     {
-        clearColour.store (colour.getARGB(), std::memory_order_relaxed);
+        // The submitted SceneFrame carries the clear colour for its pass.
     }
 
     void endFrame() override
@@ -446,8 +476,13 @@ public:
         if (! initialised)
             return failure;
 
-        if (! deviceReady)
+        if (! deviceReady.load (std::memory_order_acquire))
+        {
+            if (deviceSetupFailed.load (std::memory_order_acquire))
+                return "sokol_gfx: device setup failed or the active GL backend is unsupported";
+
             return "sokol_gfx: the GL context has not produced a frame yet";
+        }
 
         const std::lock_guard<std::mutex> lock (frameMutex);
         if (drawFailure.isNotEmpty())
@@ -462,13 +497,30 @@ private:
     //==========================================================================
     void newOpenGLContextCreated() override
     {
+        deviceReady.store (false, std::memory_order_relaxed);
+        deviceSetupFailed.store (false, std::memory_order_relaxed);
+
         sg_desc desc {};
         desc.environment.defaults.color_format = SG_PIXELFORMAT_RGBA8;
-        desc.environment.defaults.depth_format = SG_PIXELFORMAT_DEPTH;
+        desc.environment.defaults.depth_format = sceneDepthFormat;
         desc.environment.defaults.sample_count = 1;
 
         sg_setup (&desc);
-        deviceReady = sg_isvalid();
+        if (! sg_isvalid())
+        {
+            deviceSetupFailed.store (true, std::memory_order_release);
+            return;
+        }
+
+#if defined (SOKOL_GLES3)
+        if (sg_query_backend() != SG_BACKEND_GLES3)
+#else
+        if (sg_query_backend() != SG_BACKEND_GLCORE)
+#endif
+        {
+            deviceSetupFailed.store (true, std::memory_order_release);
+            return;
+        }
 
         // Every handle below belonged to the previous context. GL objects die
         // with it, so the cached ids must not outlive them.
@@ -477,54 +529,57 @@ private:
         glowPipeline = {};
         gpuMeshes.clear();
         uploadedFrom = nullptr;
+        {
+            const std::lock_guard<std::mutex> lock (frameMutex);
+            drawFailure.clear();
+        }
+        deviceReady.store (true, std::memory_order_release);
     }
 
     void renderOpenGL() override
     {
-        if (! deviceReady || ! sg_isvalid())
+        if (! deviceReady.load (std::memory_order_acquire) || ! sg_isvalid())
             return;
 
-        // Take the pending frame, if the message thread submitted one.
+        int logicalWidth = 1;
+        int logicalHeight = 1;
         SceneFrame frame;
-        bool haveFrame = false;
         {
             const std::lock_guard<std::mutex> lock (frameMutex);
-            if (hasPendingFrame)
-            {
-                frame = std::move (pendingFrame);
-                pendingFrame = SceneFrame {};
-                hasPendingFrame = false;
-                haveFrame = true;
-            }
+            logicalWidth = width;
+            logicalHeight = height;
+
+            if (! hasPendingFrame)
+                return;
+
+            frame = std::move (pendingFrame);
+            pendingFrame = SceneFrame {};
+            hasPendingFrame = false;
         }
+        const auto renderingScale = context->getRenderingScale();
+        const auto framebufferWidth = juce::jmax (
+            1, static_cast<int> (std::lround (static_cast<double> (logicalWidth) * renderingScale)));
+        const auto framebufferHeight = juce::jmax (
+            1, static_cast<int> (std::lround (static_cast<double> (logicalHeight) * renderingScale)));
 
         // GPU resources are created here, never on the message thread: this is
         // the only callback where the context is current by construction.
-        if (haveFrame
-            && ! (ensureShader() && ensurePipelines() && ensureMeshes (frame)))
+        if (! (ensureShader() && ensurePipelines() && ensureMeshes (frame)))
         {
-            // Degrade to the clear below. The reason is written under the same
-            // mutex drawScene() and status() use, so the panel reads either the
-            // failure or a later success - never a torn string.
+            // Keep the last presented frame rather than replacing it with an
+            // empty clear. The reason is written under the same mutex drawScene()
+            // and status() use, so the panel reads either the failure or a later
+            // success - never a torn string.
             const std::lock_guard<std::mutex> lock (frameMutex);
             if (drawFailure.isEmpty())
                 drawFailure = "sokol_gfx: the scene frame could not be drawn";
-            haveFrame = false;
+            return;
         }
 
-        juce::Colour colour;
-        if (haveFrame)
-        {
-            colour = juce::Colour::fromFloatRGBA (frame.backgroundColour[0],
-                                                   frame.backgroundColour[1],
-                                                   frame.backgroundColour[2],
-                                                   frame.backgroundColour[3]);
-        }
-        else
-        {
-            const auto argb = clearColour.load (std::memory_order_relaxed);
-            colour = juce::Colour (static_cast<juce::uint32> (argb));
-        }
+        const auto colour = juce::Colour::fromFloatRGBA (frame.backgroundColour[0],
+                                                          frame.backgroundColour[1],
+                                                          frame.backgroundColour[2],
+                                                          frame.backgroundColour[3]);
 
         sg_pass_action action {};
         action.colors[0].load_action = SG_LOADACTION_CLEAR;
@@ -535,18 +590,16 @@ private:
         action.depth.load_action = SG_LOADACTION_CLEAR;
         action.depth.clear_value = 1.0f;
 
-        // sokol_gfx has no windowing layer of its own: the swapchain is described
-        // by the caller, and here it is the default framebuffer (0) of JUCE's
-        // context. The size is the size JUCE gave that framebuffer, which is the
-        // only number that matches the surface being cleared, and the depth
-        // format is the one initialise() asked JUCE for.
+        // sokol_gfx has no windowing layer of its own: JUCE owns the surface.
+        // Its framebuffer is not zero on iOS, and render scale converts logical
+        // component dimensions to physical pixels on high-DPI displays.
         sg_swapchain swapchain {};
-        swapchain.width = width;
-        swapchain.height = height;
+        swapchain.width = framebufferWidth;
+        swapchain.height = framebufferHeight;
         swapchain.sample_count = 1;
         swapchain.color_format = SG_PIXELFORMAT_RGBA8;
-        swapchain.depth_format = SG_PIXELFORMAT_DEPTH_STENCIL;
-        swapchain.gl.framebuffer = 0;
+        swapchain.depth_format = sceneDepthFormat;
+        swapchain.gl.framebuffer = context->getFrameBufferID();
 
         sg_pass pass {};
         pass.action = action;
@@ -554,8 +607,7 @@ private:
 
         sg_begin_pass (&pass);
 
-        if (haveFrame)
-            drawFrame (frame);
+        drawFrame (frame);
 
         sg_end_pass();
         sg_commit();
@@ -637,8 +689,20 @@ private:
         OpenGL path makes with glEnable(GL_BLEND)/glBlendFunc(SRC_ALPHA, ONE). */
     bool ensurePipelines()
     {
-        if (mainPipeline.id != 0)
+        if (mainPipeline.id != 0 && glowPipeline.id != 0)
             return true;
+
+        if (mainPipeline.id != 0)
+        {
+            sg_destroy_pipeline (mainPipeline);
+            mainPipeline = {};
+        }
+
+        if (glowPipeline.id != 0)
+        {
+            sg_destroy_pipeline (glowPipeline);
+            glowPipeline = {};
+        }
 
         if (! ensureShader())
             return false;
@@ -655,7 +719,7 @@ private:
         desc.index_type = SG_INDEXTYPE_UINT32;
         desc.color_count = 1;
         desc.colors[0].pixel_format = SG_PIXELFORMAT_RGBA8;
-        desc.depth.pixel_format = SG_PIXELFORMAT_DEPTH_STENCIL;
+        desc.depth.pixel_format = sceneDepthFormat;
         desc.depth.compare = SG_COMPAREFUNC_LESS_EQUAL;
         desc.depth.write_enabled = true;
         desc.cull_mode = SG_CULLMODE_NONE;
@@ -673,6 +737,18 @@ private:
 
         if (mainPipeline.id == 0 || glowPipeline.id == 0)
         {
+            if (mainPipeline.id != 0)
+            {
+                sg_destroy_pipeline (mainPipeline);
+                mainPipeline = {};
+            }
+
+            if (glowPipeline.id != 0)
+            {
+                sg_destroy_pipeline (glowPipeline);
+                glowPipeline = {};
+            }
+
             const std::lock_guard<std::mutex> lock (frameMutex);
             drawFailure = "sokol_gfx: the scene pipelines could not be created";
             return false;
@@ -730,7 +806,7 @@ private:
 
                     releaseMeshes();
                     const std::lock_guard<std::mutex> lock (frameMutex);
-                    drawFailure = "sokol_gfx: vertex buffer allocation failed";
+                    drawFailure = "sokol_gfx: mesh buffer allocation failed";
                     return false;
                 }
             }
@@ -913,12 +989,11 @@ private:
     };
 
     std::unique_ptr<juce::OpenGLContext> context;
-    std::atomic<juce::uint32> clearColour { 0xff000000u };
-    juce::Point<int> position;
     juce::String failure;
     int width = 1;
     int height = 1;
     std::atomic<bool> deviceReady { false };
+    std::atomic<bool> deviceSetupFailed { false };
     bool initialised = false;
 
     // The frame crossing from the message thread to the GL thread.

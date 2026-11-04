@@ -1152,8 +1152,8 @@ target_link_libraries(q_dsp INTERFACE cycfi_infra)
 #  fighting over the same window is the integration that does not work.
 #
 #  Two things whoever uses this needs to know, both of which are silent when
-#  they are wrong: the backend must be selected by defining SOKOL_GLCORE (or
-#  SOKOL_METAL / SOKOL_D3D11) before including sokol_gfx.h, and the
+#  they are wrong: the backend must be selected by defining SOKOL_GLCORE or
+#  SOKOL_GLES3 before including sokol_gfx.h, and the
 #  implementation must be compiled exactly once in the whole program by
 #  defining SOKOL_IMPL in a single translation unit. The other headers are
 #  declaration-only and including sokol_glue.h anywhere else just declares the

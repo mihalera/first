@@ -65,7 +65,7 @@ void FirstAudioProcessorEditor::applyTheme() {
     oscRing.repaint();
 
     // The 3D transport reads the same active palette as the panel.
-    tapeScene.setPalette(palette.readout, palette.raised, palette.accent,
+    tapeScene.setPalette(palette.panel, palette.raised, palette.accent,
                          palette.knobFace.brighter(0.28f).withSaturation(0.55f));
     {
         const juce::SpinLock::ScopedLockType lock(renderOrbsLock);

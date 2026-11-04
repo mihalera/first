@@ -16,10 +16,18 @@
 */
 #pragma once
 
+// JUCE supplies a GLES context on Android/iOS and a desktop GL context on
+// Windows/Linux/macOS. Sokol must record into that same API; its Metal backend
+// cannot consume JUCE's OpenGL framebuffer.
 #if defined (__ANDROID__)
  #define SOKOL_GLES3
-#elif defined (__APPLE__) && defined (TARGET_OS_IPHONE) && TARGET_OS_IPHONE
- #define SOKOL_METAL
+#elif defined (__APPLE__)
+ #include <TargetConditionals.h>
+ #if TARGET_OS_IPHONE
+  #define SOKOL_GLES3
+ #else
+  #define SOKOL_GLCORE
+ #endif
 #else
  #define SOKOL_GLCORE
 #endif

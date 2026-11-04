@@ -106,6 +106,83 @@ require("SOKOL_IMPL" in sokol_impl and "#include <JuceHeader.h>" not in sokol_im
         "sokol_gfx's implementation must be compiled once without JUCE's GL namespace")
 require("#include <sokol_gfx.h>" in (root / "Source/GUI/NativeRenderer_Sokol.cpp").read_text(),
         "the sokol adapter must include sokol_gfx itself")
+sokol = (root / "Source/GUI/NativeRenderer_Sokol.cpp").read_text()
+sokol_backend = (root / "Source/GUI/SokolBackend.h").read_text()
+require("context->setContinuousRepainting (false);" in sokol
+        and "context->triggerRepaint();" in sokol,
+        "Sokol must render only when a new scene frame is submitted")
+require("context->setPreferredVersion ({ 3, 3 });" in sokol
+        and "context->setPreferredProfile (juce::OpenGLProfile::core);" in sokol,
+        "desktop Sokol must request the GLCORE version/profile required by its shaders")
+require("#define J37_SOKOL_SHADER_VERSION \"#version 300 es" in sokol
+        and "#define J37_SOKOL_SHADER_VERSION \"#version 330 core" in sokol,
+        "Sokol shaders must provide GLES 3 and desktop GL 3.3 sources")
+require("#if defined (__ANDROID__)\n #define SOKOL_GLES3\n#elif defined (__APPLE__)" in sokol_backend
+        and "#if TARGET_OS_IPHONE\n  #define SOKOL_GLES3\n #else\n  #define SOKOL_GLCORE" in sokol_backend
+        and "#define SOKOL_METAL" not in sokol_backend,
+        "Sokol must match JUCE's GLES context on Android/iOS rather than selecting Metal")
+require("constexpr auto sceneDepthFormat = SG_PIXELFORMAT_DEPTH;" in sokol
+        and "constexpr auto sceneDepthFormat = SG_PIXELFORMAT_DEPTH_STENCIL;" in sokol
+        and "desc.depth.pixel_format = sceneDepthFormat;" in sokol
+        and "swapchain.depth_format = sceneDepthFormat;" in sokol,
+        "Sokol pipeline and swapchain depth formats must match the platform framebuffer")
+
+shader_sources = {}
+for name in ("vertex", "fragment"):
+    match = re.search(
+        rf"constexpr const char {name}ShaderSource\[\] = J37_SOKOL_SHADER_VERSION "
+        rf'R"GLSL\((.*?)\)GLSL";',
+        sokol,
+        re.DOTALL,
+    )
+    require(match is not None, f"Sokol {name} shader source must remain extractable for checks")
+    if match is not None:
+        shader_sources[name] = match.group(1)
+
+uniform_metadata = sokol[sokol.index("auto& vsBlock"):sokol.index("shader = sg_make_shader")]
+vertex_metadata = uniform_metadata[uniform_metadata.index("auto& vsBlock"):uniform_metadata.index("auto& fsBlock")]
+fragment_metadata = uniform_metadata[uniform_metadata.index("auto& fsBlock"):]
+for stage, block in (("vertex", vertex_metadata), ("fragment", fragment_metadata)):
+    shader_uniforms = set(
+        re.findall(r"\buniform\s+[A-Za-z_]\w*\s+([A-Za-z_]\w*)", shader_sources.get(stage, ""))
+    )
+    bound_uniforms = set(
+        re.findall(
+            r'glsl_uniforms\[\d+\]\s*=\s*\{\s*SG_UNIFORMTYPE_\w+,\s*\d+,\s*"(u\w+)"\s*\}',
+            block,
+        )
+    )
+    require(shader_uniforms == bound_uniforms,
+            f"Sokol {stage} shader uniforms and sokol_gfx bindings must match exactly")
+
+render_callback = sokol[
+    sokol.index("void renderOpenGL() override"):sokol.index("void openGLContextClosing() override")
+]
+require("if (! hasPendingFrame)\n                return;" in render_callback,
+        "Sokol must not clear its scene surface between submitted frames")
+require("context->getRenderingScale()" in render_callback
+        and "context->getFrameBufferID()" in render_callback,
+        "Sokol must target JUCE's physical-size framebuffer, including iOS and high-DPI displays")
+resize_body = sokol[
+    sokol.index("void resize (Config config) override"):
+    sokol.index("bool isPresentable() const noexcept override")
+]
+draw_scene = sokol[
+    sokol.index("bool drawScene (const SceneFrame& frame) override"):
+    sokol.index("void resize (Config config) override")
+]
+require("std::lock_guard<std::mutex> lock (frameMutex);" in resize_body
+        and "logicalWidth = width;" in render_callback
+        and "logicalHeight = height;" in render_callback,
+        "Sokol resize dimensions must be synchronized with the frame handoff")
+require("isValid (frame)" not in draw_scene,
+        "Sokol must not revalidate the full shared mesh topology after common frame submission")
+require("sg_destroy_pipeline (mainPipeline);" in sokol
+        and "sg_destroy_pipeline (glowPipeline);" in sokol,
+        "partial pipeline creation failure must release successful pipeline allocations")
+theme = (root / "Source/GUI/EditorTheme.cpp").read_text()
+require("tapeScene.setPalette(palette.panel," in theme,
+        "the Sokol scene background must blend with the deck panel rather than look like a black inset")
 
 # bgfx renders into a native window bgfx is handed. A plugin host owns the
 # editor's window, so the adapter must present into a CHILD surface, never the
