@@ -241,7 +241,20 @@ option(COPY_PLUGIN_AFTER_BUILD "Copy plugins to the user plugin folders after bu
 # graphics device and host-owned child surface on the UI thread. Native adapters
 # create their device, command resources and presentation surface; unsupported
 # platform/API combinations use the CPU fallback.
-set(J37_RENDER_BACKEND "SOKOL" CACHE STRING
+#
+# The default is platform-specific on purpose. Sokol's scene shaders are written
+# as desktop GLSL 410, while SokolBackend.h selects SOKOL_GLES3 on Android - the
+# driver there rejects the shaders and sg_setup cannot produce a pipeline, so
+# Sokol is not a usable Android backend on its own (the launcher crash that also
+# stopped every APK is fixed in android/.../MainActivity.java, not here). OPENGL
+# was Android's working path before SOKOL became the desktop default, so Android
+# keeps it. Desktop builds are unchanged.
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    set(J37_DEFAULT_RENDER_BACKEND "OPENGL")
+else()
+    set(J37_DEFAULT_RENDER_BACKEND "SOKOL")
+endif()
+set(J37_RENDER_BACKEND "${J37_DEFAULT_RENDER_BACKEND}" CACHE STRING
     "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12, SOKOL, BGFX, CPU")
 set_property(CACHE J37_RENDER_BACKEND PROPERTY STRINGS
     AUTO OPENGL VULKAN METAL D3D11 D3D12 SOKOL BGFX CPU)
@@ -273,6 +286,16 @@ elseif(J37_RENDER_BACKEND STREQUAL "D3D12")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_D3D12=1)
     # Staged; see D3D11 above.
 elseif(J37_RENDER_BACKEND STREQUAL "SOKOL")
+    # Refuse at configure time rather than ship an APK whose editor cannot create
+    # a pipeline: the Sokol scene shaders are GLSL 410, and its Android backend
+    # compiles GLES3 shaders. Android's supported path is OPENGL (the default
+    # above).
+    if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+        message(FATAL_ERROR
+            "J37_RENDER_BACKEND=SOKOL is not supported on Android: the Sokol scene "
+            "shaders are desktop GLSL 410 and the Android build selects GLES3. "
+            "Use -DJ37_RENDER_BACKEND=OPENGL (the Android default).")
+    endif()
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_SOKOL=1)
     list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_SOKOL=1)
 elseif(J37_RENDER_BACKEND STREQUAL "BGFX")
@@ -563,9 +586,9 @@ endif()
 # J37_RENDER_BACKEND, because neither has an adapter here yet. What this target
 # compiles is OpenGL, Metal and SOKOL as complete scene backends; Vulkan, D3D11,
 # D3D12 and BGFX are selectable PENDING values whose adapters present only a
-# cleared surface. SOKOL is the default build selection; RenderBackend.h routes
-# the staged native values to the CPU fallback until their drawScene path is
-# complete.
+# cleared surface. SOKOL is the desktop default and OPENGL the Android default;
+# RenderBackend.h routes the staged native values to the CPU fallback until their
+# drawScene path is complete.
 
 # ------------------------------------------------------------------------------
 #  Embedded resources - the factory presets and the translation tables.

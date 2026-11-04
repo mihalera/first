@@ -883,8 +883,8 @@ void printDiagnostics()
     }
 }
 // =============================================================================
-//  The corrector's rule: the +-10 cent dead zone, the semitone grip, and how
-//  TUNE AMOUNT scales what is left.
+//  The corrector's rule: the +-10 cent dead zone, RANGE's grip, OCTAVE's
+//  transposition, and how TUNE AMOUNT scales what is left.
 //
 //  This is the one part of the autotune path that is pure arithmetic - the note
 //  the detector heard and the note the scale wants go in, the ratio the shifter
@@ -895,7 +895,8 @@ void printDiagnostics()
 //  What it pins is the claim the header makes: inside the zone the ratio is 1
 //  BIT FOR BIT (so the shifter reads at unity and the note passes untouched),
 //  outside it the pull is the interval the reading asked for, amount scales the
-//  pull rather than the zone, and the grip never exceeds a semitone.
+//  pull rather than the zone, the grip never exceeds RANGE, and OCTAVE moves the
+//  corrected note without moving the zone.
 // =============================================================================
 void testCorrectionDeadZone()
 {
@@ -980,18 +981,112 @@ void testCorrectionDeadZone()
         check (none == 1.0f, "and zero amount is no pull at all");
     }
 
-    // --- the grip: a semitone either way, never more ------------------------
+    // --- RANGE is the grip: one semitone by default, twelve at most --------
     {
         // A reading SHARP of the target has to be pulled DOWN (ratio below 1) and
         // a flat one pushed UP, so the clamps are the other way round from the
         // direction of the error.
         const auto sharp = PitchCorrectionRule::ratio (atCents (200.0), target, 1.0f);
         const auto flat = PitchCorrectionRule::ratio (atCents (-200.0), target, 1.0f);
+        const auto grip = PitchCorrectionRule::gripRatio();
 
-        check (std::abs (sharp - PitchCorrectionRule::minRatio) < 1.0e-6f,
-               "a reading two semitones sharp is gripped to the -6 % clamp");
-        check (std::abs (flat - PitchCorrectionRule::maxRatio) < 1.0e-6f,
-               "and two semitones flat to the +6 % one");
+        check (std::abs (grip - std::pow (2.0f, 1.0f / 12.0f)) < 1.0e-6f,
+               "the default grip is exactly one semitone");
+        check (std::abs (sharp - 1.0f / grip) < 1.0e-6f,
+               "a reading two semitones sharp is gripped to one semitone below");
+        check (std::abs (flat - grip) < 1.0e-6f,
+               "and two semitones flat to one semitone above");
+    }
+    {
+        // RANGE 12 is the whole octave: a two-semitone error is inside the grip,
+        // so it is corrected the whole way rather than clamped.
+        const auto detected = atCents (200.0);
+        const auto ratio = PitchCorrectionRule::ratio (detected, target, 1.0f,
+                                                       PitchCorrectionRule::deadZoneCents, 12.0f);
+        const auto expected = target / detected;
+
+        check (std::abs (ratio - expected) < 1.0e-6f,
+               "RANGE 12 corrects a two-semitone error the whole way");
+    }
+    {
+        // ...and a reading 20 semitones away is outside even that grip, so the
+        // shifter's own 0.5 floor is the next limit, not a transposition.
+        const auto ratio = PitchCorrectionRule::ratio (atCents (2000.0), target, 1.0f,
+                                                       PitchCorrectionRule::deadZoneCents, 12.0f);
+
+        check (std::abs (ratio - PitchCorrectionRule::minRatio) < 1.0e-6f,
+               "a reading beyond RANGE 12 stops at the shifter's lower limit");
+    }
+    {
+        // A four-semitone RANGE clamps a six-semitone error halfway, and the
+        // control's own limits are enforced rather than trusted.
+        const auto ratio = PitchCorrectionRule::ratio (atCents (-600.0), target, 1.0f,
+                                                       PitchCorrectionRule::deadZoneCents, 4.0f);
+        const auto grip = PitchCorrectionRule::gripRatio (4.0f);
+
+        check (std::abs (ratio - grip) < 1.0e-6f,
+               "RANGE 4 grips a six-semitone error at four semitones");
+        check (PitchCorrectionRule::gripRatio (0.0f) == PitchCorrectionRule::gripRatio (1.0f)
+               && PitchCorrectionRule::gripRatio (24.0f) == PitchCorrectionRule::gripRatio (12.0f),
+               "RANGE is clamped to its documented 1..12 semitones");
+    }
+
+    // --- OCTAVE transposes the corrected result, after the grip -------------
+    {
+        const auto ratio = PitchCorrectionRule::octaveRatio();
+
+        check (ratio == 1.0f, "OCTAVE 0 is unity");
+        check (PitchCorrectionRule::octaveRatio (1) == 2.0f
+               && PitchCorrectionRule::octaveRatio (-1) == 0.5f,
+               "OCTAVE +-1 is a whole octave either way");
+        check (PitchCorrectionRule::octaveRatio (5) == PitchCorrectionRule::octaveRatio (1)
+               && PitchCorrectionRule::octaveRatio (-5) == PitchCorrectionRule::octaveRatio (-1),
+               "OCTAVE is clamped to its documented -1..+1");
+    }
+    {
+        // In tune, the dead zone leaves the reading alone - but OCTAVE was asked
+        // for explicitly, so the transposition still lands. At zero it is bit for
+        // bit unity, which is what keeps an unused stage transparent.
+        check (PitchCorrectionRule::ratio (target, target, 1.0f,
+                                           PitchCorrectionRule::deadZoneCents,
+                                           PitchCorrectionRule::defaultRangeSemitones,
+                                           1) == 2.0f,
+               "OCTAVE +1 shifts an in-tune reading a whole octave up");
+        check (PitchCorrectionRule::ratio (target, target, 1.0f,
+                                           PitchCorrectionRule::deadZoneCents,
+                                           PitchCorrectionRule::defaultRangeSemitones,
+                                           -1) == 0.5f,
+               "OCTAVE -1 shifts it a whole octave down");
+        check (PitchCorrectionRule::ratio (target, target, 1.0f) == 1.0f,
+               "OCTAVE 0 leaves it exactly at unity");
+    }
+    {
+        // The correction and the octave compose: a reading 10.5 cents flat is
+        // pulled onto the target and then transposed. The top of the shifter's
+        // range is 2.0, so the 0.6 % correction gives way there rather than
+        // asking for a ratio the shifter would clamp.
+        const auto corrected = PitchCorrectionRule::ratio (atCents (-10.5), target, 1.0f);
+        const auto shifted = PitchCorrectionRule::ratio (atCents (-10.5), target, 1.0f,
+                                                         PitchCorrectionRule::deadZoneCents,
+                                                         PitchCorrectionRule::defaultRangeSemitones,
+                                                         1);
+
+        check (corrected > 1.0f && shifted == 2.0f,
+               "an octave up is exact and the correction gives way at the shifter's limit");
+    }
+    {
+        // TUNE AMOUNT scales the octave too, so zero is still the stage's off
+        // switch and half amount is half the pull in log space.
+        check (PitchCorrectionRule::ratio (target, target, 0.0f,
+                                           PitchCorrectionRule::deadZoneCents,
+                                           PitchCorrectionRule::defaultRangeSemitones,
+                                           1) == 1.0f,
+               "zero TUNE AMOUNT is off even with OCTAVE set");
+        check (std::abs (PitchCorrectionRule::ratio (target, target, 0.5f,
+                                                     PitchCorrectionRule::deadZoneCents,
+                                                     PitchCorrectionRule::defaultRangeSemitones,
+                                                     1) - 1.5f) < 1.0e-6f,
+               "half amount is half the octave in ratio space");
     }
 
     // --- nonsense in, unity out --------------------------------------------

@@ -893,11 +893,11 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> languageAttachment;
     juce::ComboBox tuningTonicBox;
     juce::ComboBox tuningModeBox;
-    juce::ToggleButton autoTuneButton{"AUTO TUNE"};
-    // AUTOTUNE owns four knobs now: depth, speed, tolerance and gate. They are
-    // its own array, like the compressor's six, because they carry their own
-    // ranges and readouts and are not part of the generic control table.
-    static constexpr int autoTuneControlCount = 4;
+    // AUTOTUNE owns six knobs: depth, speed, range, octave, tolerance and gate.
+    // They are its own array, like the compressor's six, because they carry their
+    // own ranges and readouts and are not part of the generic control table. There
+    // is no switch: TUNE AMOUNT at zero is off.
+    static constexpr int autoTuneControlCount = 6;
     std::array<juce::Slider, autoTuneControlCount> autoTuneControls;
     std::array<juce::Label, autoTuneControlCount> autoTuneControlLabels;
     std::array<std::unique_ptr<juce::AudioProcessorValueTreeState::SliderAttachment>,
@@ -910,7 +910,6 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::Label tuningModeLabel;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tuningTonicAttachment;
     std::unique_ptr<juce::AudioProcessorValueTreeState::ComboBoxAttachment> tuningModeAttachment;
-    std::unique_ptr<juce::AudioProcessorValueTreeState::ButtonAttachment> autoTuneAttachment;
 
     std::array<juce::Slider, controlCount> controls;
     std::array<juce::Label, controlCount> controlLabels;

@@ -237,8 +237,7 @@ bool FirstAudioProcessor::processBypassedBlock (juce::dsp::AudioBlock<float>& bl
     // it, bypass would arrive a block early against every other track in the
     // session. With the stage off the delay is zero and none of this costs
     // anything: the loop below advances no ring at all.
-    if (autoTuneParam != nullptr && autoTuneParam->load() >= 0.5f
-        && autoTuneAmountParam != nullptr && autoTuneAmountParam->load() > 1.0e-5f)
+    if (autoTuneAmountParam != nullptr && autoTuneAmountParam->load() > 1.0e-5f)
     {
         const auto frameChannels = juce::jmin (2, context.channels);
         auto& corrector = activeCorrector();
@@ -327,12 +326,12 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
     //  corrected signal.
     //
     //  The lookahead the stage costs is reported to the host (see
-    //  publishReportedLatency) and is zero while AUTOTUNE is off, so a session that
-    //  does not use the stage pays nothing for it - no latency, no CPU, and the
-    //  bit-for-bit pass-through the panel's own documentation promises.
+    //  publishReportedLatency) and is zero while TUNE AMOUNT is zero, so a session
+    //  that does not use the stage pays nothing for it - no latency, no CPU, and
+    //  the bit-for-bit pass-through the panel's own documentation promises.
+    //  TUNE AMOUNT is also the only on/off: there is no switch to disagree with.
     // -----------------------------------------------------------------------
-    const bool autoTuneEngaged = autoTuneParam != nullptr && autoTuneParam->load() >= 0.5f
-                                 && autoTuneAmountParam != nullptr
+    const bool autoTuneEngaged = autoTuneAmountParam != nullptr
                                  && autoTuneAmountParam->load() > 1.0e-5f;
 
     if (autoTuneEngaged && activeCorrector().isPrepared())
@@ -522,7 +521,7 @@ const std::array<int, 12>& FirstAudioProcessor::scaleOffsetsForMode (int modeInd
 */
 void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, float rate) noexcept
 {
-    if (samples == nullptr || autoTuneParam == nullptr || autoTuneParam->load() < 0.5f)
+    if (samples == nullptr)
         return;
 
     const auto amount = juce::jlimit (0.0f, 1.0f,
@@ -543,6 +542,16 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
     // The coefficient is rebuilt here from the ENGINE rate, which is what makes
     // a session at 96 kHz correct at the same speed as one at 48 kHz; the old
     // fixed per-frame coefficient changed its time constant with the rate.
+    // RANGE and OCTAVE are read once per frame like the key and the mode. RANGE
+    // is the grip in semitones (the old fixed semitone is now the default value
+    // of the control); OCTAVE transposes the corrected result by whole octaves.
+    const auto range = juce::jlimit (1.0f, 12.0f,
+                                     autoTuneRangeParam != nullptr ? autoTuneRangeParam->load() : 1.0f);
+    const auto octave = juce::jlimit (j37dsp::PitchCorrectionRule::minOctave,
+                                      j37dsp::PitchCorrectionRule::maxOctave,
+                                      autoTuneOctaveParam != nullptr
+                                          ? juce::roundToInt (autoTuneOctaveParam->load()) : 0);
+
     const auto speed = juce::jlimit (0.0f, 1.0f,
                                      autoTuneSpeedParam != nullptr ? autoTuneSpeedParam->load() : 0.5f);
     const auto retuneSeconds = 0.001f + std::pow (1.0f - speed, 3.0f) * 0.099f;
@@ -636,21 +645,21 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
 
         const auto targetHz = 440.0f * std::pow (2.0f, (static_cast<float> (target) - 69.0f) / 12.0f);
 
-        // The pull itself, with the two rules that make it a corrector rather
-        // than a quantiser: a reading within TOLERANCE of the target is left
-        // ALONE (the dead zone - a voice is never exactly on the grid, and the
-        // part of the performance that is slightly off is the part that sounds
-        // human), and the grip is clamped to a semitone either way, because a
-        // corrector pulls a note onto the grid rather than transposing it. Both
-        // live in Source/DSP/PitchCorrectionRule.h, where tests/pitch can drive
-        // them at exact cents either side of the boundary.
+        // The pull itself, with the rules that make it a corrector rather than a
+        // quantiser: a reading within TOLERANCE of the target is left ALONE (the
+        // dead zone - a voice is never exactly on the grid, and the part of the
+        // performance that is slightly off is the part that sounds human), RANGE
+        // clamps the grip in semitones, and OCTAVE transposes the corrected
+        // result. All of it lives in Source/DSP/PitchCorrectionRule.h, where
+        // tests/pitch drives it at exact cents either side of every boundary.
         //
         // TUNE AMOUNT is the DEPTH and SPEED is the travel. Half the amount is
         // half the pull - a note a hair sharp lands, a note a quarter-tone flat
         // is only nudged - while the glide comes from SPEED alone, so a deep
-        // correction can still be a slow, transparent one.
+        // correction can still be a slow, transparent one. Zero amount is the
+        // stage's off switch, checked at the top of this function.
         const auto ratio = j37dsp::PitchCorrectionRule::ratio (detected, targetHz, amount,
-                                                               tolerance);
+                                                               tolerance, range, octave);
 
         autoTuneCorrectionSmoothed[i] += (ratio - autoTuneCorrectionSmoothed[i]) * glide;
 
@@ -1162,9 +1171,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     state.compressorMakeup = compressorMakeupParam != nullptr ? compressorMakeupParam->load() : 0.0f;
     const auto compressorMix = compressorMixParam != nullptr ? compressorMixParam->load() : 0.0f;
     state.compressorMixAmount = juce::jlimit (0.0f, 1.0f, compressorMix);
-    const bool autoTuneEnabled = autoTuneParam != nullptr && autoTuneParam->load() >= 0.5f;
     const auto autoTuneAmount = autoTuneAmountParam != nullptr ? autoTuneAmountParam->load() : 0.0f;
-    state.autoTuneStrength = autoTuneEnabled ? juce::jlimit (0.0f, 1.0f, autoTuneAmount) : 0.0f;
+    state.autoTuneStrength = juce::jlimit (0.0f, 1.0f, autoTuneAmount);
 
     // The corrector's lookahead is part of the plugin's latency only while the
     // stage is engaged. That is the whole of the trade the library makes: a phase

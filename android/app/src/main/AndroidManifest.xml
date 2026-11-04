@@ -1,10 +1,12 @@
 <?xml version="1.0" encoding="utf-8"?>
 <!--
-  JUCE's Android entry points are the classes in the framework's own Java
-  sources, not this repository's: `JuceApp` initialises the engine and
-  `JuceActivity` hosts the surface the editor draws into. The activity is the
-  launcher because this APK is the plugin's Standalone wrapper, which has no
-  host application to be loaded by.
+  `JuceApp` initialises the engine. The launcher is this app's own
+  `MainActivity`, not JUCE's `JuceActivity`: the latter's onResume() calls a
+  native `appOnResume` that JUCE only compiles when push notifications are
+  enabled, so an APK using it installs and then dies on first resume with
+  UnsatisfiedLinkError. See MainActivity.java for the whole story. The activity
+  is the launcher because this APK is the plugin's Standalone wrapper, which
+  has no host application to be loaded by.
 
   RECORD_AUDIO is requested because the Standalone wrapper asks for it before it
   opens an audio device with an input. The media permissions are the ones a file
@@ -25,7 +27,7 @@
       android:hardwareAccelerated="false">
 
     <activity
-        android:name="com.rmsl.juce.JuceActivity"
+        android:name="com.mcsmes.mibox.MainActivity"
         android:configChanges="keyboard|keyboardHidden|orientation|screenSize|navigation|smallestScreenSize|screenLayout|uiMode"
         android:launchMode="singleTask"
         android:hardwareAccelerated="true"

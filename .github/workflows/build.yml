@@ -2071,11 +2071,13 @@ jobs:
           python tests/android/check_android_apk.py "$apk"
 
           # Verify Android will expose the expected activity as the launcher.
+          # It is the project's own MainActivity, not JUCE's JuceActivity: see
+          # android/app/src/main/java/com/mcsmes/mibox/MainActivity.java.
           aapt="$sdk_root/build-tools/36.0.0/aapt"
           "$aapt" dump badging "$apk" > "$RUNNER_TEMP/apk-badging.txt"
           if ! grep -Fq "package: name='com.mcsmes.mibox'" "$RUNNER_TEMP/apk-badging.txt" ||
-             ! grep -Fq "launchable-activity: name='com.rmsl.juce.JuceActivity'" "$RUNNER_TEMP/apk-badging.txt"; then
-            echo "APK package or JUCE launcher activity is missing:"
+             ! grep -Fq "launchable-activity: name='com.mcsmes.mibox.MainActivity'" "$RUNNER_TEMP/apk-badging.txt"; then
+            echo "APK package or launcher activity is missing:"
             cat "$RUNNER_TEMP/apk-badging.txt"
             exit 1
           fi

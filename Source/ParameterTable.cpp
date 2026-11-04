@@ -698,8 +698,9 @@ namespace
     void addTuningControls (ParamLayout& layout)
     {
         // Musical reference and optional pitch correction. The correction is deliberately
-        // opt-in and uses the selected key as a quantisation grid; at zero correction the
-        // detector remains idle and the signal is bit-for-bit unchanged by this stage.
+        // opt-in through TUNE AMOUNT and uses the selected key as a quantisation grid; at
+        // zero amount the detector remains idle and the signal is bit-for-bit unchanged by
+        // this stage. There is no separate on/off: zero IS off.
         layout.add (std::make_unique<juce::AudioParameterChoice> (juce::ParameterID { "tuning_tonic", 1 },
                                                                   "Tonic",
                                                                   juce::StringArray { "C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B" },
@@ -708,8 +709,6 @@ namespace
                                                                   "Mode",
                                                                   juce::StringArray { "Chromatic", "Major", "Minor", "Dorian", "Pentatonic Major", "Pentatonic Minor" },
                                                                   0));
-        layout.add (std::make_unique<juce::AudioParameterBool> (juce::ParameterID { "autotune", 1 },
-                                                                "Auto Tune", false));
         layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "autotune_amount", 1 },
                                                                   "Auto Tune Amount",
                                                                   juce::NormalisableRange<float> (0.0f, 1.0f, 0.001f),
@@ -743,6 +742,29 @@ namespace
                                                                   "Auto Tune Gate",
                                                                   percentageRange (0.50f), 0.50f,
                                                                   juce::AudioParameterFloatAttributes().withLabel ("%")));
+
+        // RANGE is the corrector's grip: how far, in semitones, it may pull a
+        // reading toward the note the key asks for. One semitone is the default
+        // and the classic behaviour - a corrector lands a note on the grid rather
+        // than transposing it - while larger values let a scale (or a deliberately
+        // heavy correction) travel further. Twelve is the whole octave.
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "autotune_range", 1 },
+                                                                  "Auto Tune Range",
+                                                                  juce::NormalisableRange<float> (1.0f, 12.0f, 1.0f),
+                                                                  1.0f,
+                                                                  juce::AudioParameterFloatAttributes().withLabel ("st")));
+
+        // OCTAVE transposes the corrected result by whole octaves, after RANGE has
+        // taken its grip. It is separate from RANGE because the two answer
+        // different questions: RANGE is how far off the target a reading may be,
+        // OCTAVE is where the target sits. Zero is no transposition. One octave
+        // either way is what the granular shifter can read (0.5..2); a wider
+        // control would be a number that silently stops moving.
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "autotune_octave", 1 },
+                                                                  "Auto Tune Octave",
+                                                                  juce::NormalisableRange<float> (-1.0f, 1.0f, 1.0f),
+                                                                  0.0f,
+                                                                  juce::AudioParameterFloatAttributes().withLabel ("oct")));
     }
 
     /** The conventional compressor, which is independent of both glue stages.

@@ -24,7 +24,7 @@
 // TABLE, below) - a constant inside the class is not visible there,
 // which is a build error rather than a warning, and was one.
 //
-// The count grew from 64 when the room gained PRE-DLY, DAMP and WIDTH and the
+// The count grew from 64 when the room gained PRE-RVB, DAMP and WIDTH and the
 // second head gained DLY TONE and LOW CUT, then from 69 when the second head
 // gained DLY DAMP and the room gained RVB LOW. They are appended to the table so
 // every existing index keeps its meaning.
@@ -164,7 +164,7 @@ namespace j37panel
         // The room and the second head grew independent voicing controls. They
         // are appended rather than inserted so every existing tab index and every
         // stored default keeps its meaning; tabSpecs names them by index below.
-        { "reverb_predelay", "PRE-DLY",   20.0,  "REVERB"    },
+        { "reverb_predelay", "PRE-RVB",   20.0,  "REVERB"    },
         { "reverb_damp",     "DAMP",       0.45,  "REVERB"    },
         { "reverb_width",    "RVB WIDTH",  1.0,   "REVERB"    },
         { "delay_tone",      "DLY TONE",   0.5,   "DELAY"     },
@@ -398,7 +398,7 @@ namespace j37panel
                    "control, so a long tail does not have to be a dark one. "
                    "Default 40 percent.";
         if (id == "reverb_predelay")
-            return "PRE-DLY - how long after the dry note the room starts, in "
+            return "PRE-RVB - how long after the dry note the room starts, in "
                    "milliseconds. A pre-delay separates the source from its tail, "
                    "which is what makes a vocal sit in front of a plate instead of "
                    "inside it. It is applied at the session rate, so 20 ms is "
@@ -741,35 +741,38 @@ namespace j37panel
                    "plugin's output, be recorded or be bounced. Off is silent.";
         if (id == "tuning_tonic")
             return "TONIC - the root the pitch correction quantises to. With "
-                   "AUTO TUNE engaged, the corrected pitch is snapped to the "
-                   "scale that starts on this note.";
+                   "TUNE AMOUNT above zero, the corrected pitch is snapped to "
+                   "the scale that starts on this note.";
         if (id == "tuning_mode")
             return "MODE - the scale the pitch correction quantises to: major or "
                    "minor on the TONIC, or chromatic, which snaps to semitones "
-                   "only. It has no effect while AUTO TUNE is off.";
-        if (id == "autotune")
-            return "AUTO TUNE - switches the corrector in. The stage reads "
-                   "the note that is playing with a period detector, decides "
-                   "the nearest note the key allows, and moves the audio onto "
-                   "it by RE-READING the signal at the correction ratio out "
-                   "of a delay line, spliced a whole period apart so the join "
-                   "is inaudible. Below its gate - silence, noise, a chord, or "
-                   "a note outside 45 Hz to 1.4 kHz - it glides back to unity "
-                   "and passes the signal untouched rather than chasing a "
-                   "number it cannot trust. TUNE AMOUNT sets the depth, SPEED "
-                   "the retune time, TOLERANCE the dead zone and GATE the "
-                   "confidence required. Default off.";
+                   "only. It has no effect while TUNE AMOUNT is zero.";
         if (id == "autotune_amount")
-            return "TUNE AMOUNT - the depth of the correction: 0 is the untouched "
-                   "signal, 100 is the full pull onto the scale. It no longer "
-                   "changes the retune speed - SPEED owns that - so a deep, "
-                   "natural correction is possible without the snap.";
+            return "TUNE AMOUNT - the depth of the correction and the only on/off: "
+                   "0 is the untouched signal and takes the whole stage, detector "
+                   "included, out of the path; 100 is the full pull onto the "
+                   "scale. It does not change the retune speed - SPEED owns "
+                   "that - so a deep, natural correction is possible without "
+                   "the snap. Default 0 percent (off).";
         if (id == "autotune_speed")
             return "SPEED - how quickly the correction glides to its new pitch, "
                    "independent of TUNE AMOUNT. 0 percent is a slow, transparent "
                    "100 ms glide; 50 percent is about 13 ms; 100 percent is a "
                    "1 ms snap. Slower settings are what keep consonants and "
                    "vibrato from being smeared. Default 50 percent.";
+        if (id == "autotune_range")
+            return "RANGE - how far, in semitones, the corrector may pull a "
+                   "reading toward the note the key asks for. 1 is the classic "
+                   "grip: a note is moved onto the grid, never transposed. "
+                   "Larger values let a scale's nearest note (or a deliberately "
+                   "heavy correction) be reached; 12 is the whole octave. "
+                   "Default 1 semitone.";
+        if (id == "autotune_octave")
+            return "OCTAVE - transposes the corrected result by whole octaves, "
+                   "after RANGE has taken its grip. 0 leaves the note where the "
+                   "scale puts it; +1 and -1 move it one octave up or down. "
+                   "TUNE AMOUNT scales the transposition like every other pull. "
+                   "Default 0.";
         if (id == "autotune_tolerance")
             return "TOLERANCE - the dead zone around the target note, in cents. "
                    "A reading inside it is left bit-for-bit alone, which keeps "

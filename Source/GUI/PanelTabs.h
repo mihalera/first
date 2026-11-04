@@ -203,7 +203,7 @@ namespace j37panel
                    "switches sit under the row.",
                      7, 1, { 21, 22, 23, 58, 67, 68, 69 } },
         { "REVERB", "The room: REVERB is how much of it is in the output, RVB "
-                    "SIZE how long the tail runs, PRE-DLY how far behind the note "
+                    "SIZE how long the tail runs, PRE-RVB how far behind the note "
                     "it starts, DAMP how dark it is, RVB WIDTH how wide the wet "
                     "pair stands and RVB LOW where the room stops hearing the "
                     "sub-bass.",
