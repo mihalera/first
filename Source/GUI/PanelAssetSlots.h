@@ -22,6 +22,10 @@
     atlas, seven small alpha glyphs share another, and the factory preset artwork
     shares a third. All use one cached loader. Art needing unlimited scale can use
     the Drawable loader from the README.
+=======
+    WHY PNG HERE: the surface is raster art, and the seven small alpha glyphs
+    share a single sprite sheet and the same cached loader. Art that must remain
+    crisp at unlimited scale can use the Drawable loader described in the README.
   ============================================================================ */
 #pragma once
 
@@ -59,7 +63,6 @@ inline constexpr Slot slots[] = {
     { "principle_icons", "principle_icons.png", "principle_icons_png", 448, 64,
       "Seven monochrome alpha glyphs for the MIX bar, ordered TAPE, VALVE, "
       "CASSETTE, VINYL, AMP, TRANSFORMER, DIGITAL. Tinted by the active palette." },
-
     { "factory_preset_art", "factory_preset_art.png", "factory_preset_art_png", 2240, 64,
       "Twenty-nine 64 px preset artwork tiles in the exact FACTORY_PRESET_FILES "
       "order from CMakeLists.txt; selected in the deck's current-preset badge." },
@@ -97,6 +100,7 @@ inline constexpr Slot slots[] = {
 
     { "signal_path", "signal_path.png", "signal_path_png", 1600, 500,
       "Full-width MiBoX signal-flow diagram for the user guide." },
+=======
 };
 
 inline constexpr int slotCount = static_cast<int> (sizeof (slots) / sizeof (slots[0]));

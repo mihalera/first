@@ -17,8 +17,6 @@ def require(condition: bool, message: str) -> None:
 
 cmake = (root / "CMakeLists.txt").read_text()
 
-<<<<<<< HEAD
-<<<<<<< HEAD
 # Sokol is the default on every platform and its shader sources match GLES.
 require('set(J37_RENDER_BACKEND "SOKOL" CACHE STRING' in cmake,
         "Sokol must be the default renderer on every platform")
@@ -49,7 +47,6 @@ sokol_native = cmake.find("J37_NATIVE_SOKOL=1", sokol_branch)
 require(sokol_branch >= 0 and sokol_branch < android_guard < sokol_native
         and "message(FATAL_ERROR" in cmake[android_guard:sokol_native],
         "an explicit Sokol build on Android must fail at configure time, not ship a broken APK")
->>>>>>> 8566b797 (Fix Android launch crash and finish Auto-Tune controls)
 =======
 # Sokol is the default on every platform and its shader sources match GLES.
 require('set(J37_RENDER_BACKEND "SOKOL" CACHE STRING' in cmake,
@@ -60,7 +57,6 @@ sokol_native = cmake.find("J37_NATIVE_SOKOL=1", sokol_branch)
 require(sokol_branch >= 0 and sokol_native > sokol_branch
         and (android_guard < 0 or android_guard > sokol_native),
         "Sokol must be selectable on Android without an Android-specific fatal guard")
->>>>>>> ec9354a7 (copi)
 
 # The native implementation gate follows the backend's build macro.
 require("constexpr bool hasNativeImplementation(Backend backend) noexcept {" in backend,

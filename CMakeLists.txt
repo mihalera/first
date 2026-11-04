@@ -129,7 +129,6 @@ set(J37_AAP_JUCE_SOURCE_DIR "" CACHE PATH
 set(J37_AAP_PATCHES_9_0_5 "" CACHE STRING
     "Semicolon-separated AAP patch files already applied to JUCE 9.0.5")
 
-<<<<<<< HEAD
 if(J37_ENABLE_AAP)
     if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
         message(FATAL_ERROR "J37_ENABLE_AAP is Android-only")
@@ -177,7 +176,6 @@ else()
 endif()
 =======
 add_subdirectory(JUCE)
->>>>>>> a495de4b (Juce 5)
 
 # JUCE's Android Oboe target adds -Ofast for Release, which current Clang
 # deprecates and repeats for every translation unit. Keep the same optimization
@@ -241,7 +239,6 @@ option(COPY_PLUGIN_AFTER_BUILD "Copy plugins to the user plugin folders after bu
 # SokolBackend.h selects the platform graphics API, and NativeRenderer_Sokol.cpp
 # provides matching shader sources for desktop and GLES contexts.
 set(J37_RENDER_BACKEND "SOKOL" CACHE STRING
-<<<<<<< HEAD
 =======
 # The default is platform-specific on purpose. Sokol's scene shaders are written
 # as desktop GLSL 410, while SokolBackend.h selects SOKOL_GLES3 on Android - the
@@ -257,7 +254,6 @@ else()
 endif()
 set(J37_RENDER_BACKEND "${J37_DEFAULT_RENDER_BACKEND}" CACHE STRING
 =======
->>>>>>> ec9354a7 (copi)
     "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12, SOKOL, BGFX, CPU")
 set_property(CACHE J37_RENDER_BACKEND PROPERTY STRINGS
     AUTO OPENGL VULKAN METAL D3D11 D3D12 SOKOL BGFX CPU)
@@ -290,7 +286,6 @@ elseif(J37_RENDER_BACKEND STREQUAL "D3D12")
     # Staged; see D3D11 above.
 elseif(J37_RENDER_BACKEND STREQUAL "SOKOL")
     # Use the platform-matched shader dialect (desktop GLSL or GLSL ES).
-<<<<<<< HEAD
 =======
     # Refuse at configure time rather than ship an APK whose editor cannot create
     # a pipeline: the Sokol scene shaders are GLSL 410, and its Android backend
@@ -303,7 +298,6 @@ elseif(J37_RENDER_BACKEND STREQUAL "SOKOL")
             "Use -DJ37_RENDER_BACKEND=OPENGL (the Android default).")
     endif()
 =======
->>>>>>> ec9354a7 (copi)
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_SOKOL=1)
     list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_SOKOL=1)
 elseif(J37_RENDER_BACKEND STREQUAL "BGFX")

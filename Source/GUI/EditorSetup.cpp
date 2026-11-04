@@ -187,6 +187,9 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
     constexpr int screenMarginX = 16;
     constexpr int screenMarginY = 32;
 #endif
+=======
+    constexpr int screenMarginX = JUCE_ANDROID ? 8 : 16;
+    constexpr int screenMarginY = JUCE_ANDROID ? 8 : 32;
 
     const auto &displays = juce::Desktop::getInstance().getDisplays();
     juce::Rectangle<int> workArea;
@@ -466,7 +469,6 @@ void FirstAudioProcessorEditor::setUpLanguageAndTuning() {
     setupTuneKnob (0, "autotune_amount", "TUNE AMOUNT", 0.0, 1.0, 0.001,
                    "TUNE AMOUNT - the depth of the correction and the only on/off: "
                    "0 is the untouched signal and takes the whole stage, detector "
-<<<<<<< HEAD
                    "included, out of the path; 100 is the full pull the current "
                    "RANGE allows. It does not change the retune speed - SPEED owns "
                    "that - so a deep, natural correction is possible without the "
@@ -476,7 +478,6 @@ void FirstAudioProcessorEditor::setUpLanguageAndTuning() {
                    "It does not change the retune speed - SPEED owns that - so a "
                    "deep, natural correction is possible without the snap. Default "
                    "0 percent (off).",
->>>>>>> 8566b797 (Fix Android launch crash and finish Auto-Tune controls)
                    percentText, percentValue);
     setupTuneKnob (1, "autotune_speed", "SPEED", 0.0, 1.0, 0.001,
                    "SPEED - how quickly the correction glides to its new pitch, "
@@ -787,7 +788,6 @@ void FirstAudioProcessorEditor::setUpControlStrip() {
                           "steps, double-click to reset.");
 
         const auto &id = controlIds[static_cast<int>(i)];
-<<<<<<< HEAD
         configureControlSlider(slider, id);
 =======
 
@@ -911,7 +911,6 @@ void FirstAudioProcessorEditor::setUpControlStrip() {
                 return juce::jlimit(0.0, 1.0, text.getDoubleValue() / 100.0);
             };
         }
->>>>>>> 8566b797 (Fix Android launch crash and finish Auto-Tune controls)
 
         controlLabels[i].setText(controlNames[static_cast<int>(i)], juce::dontSendNotification);
         controlLabels[i].setFont (j37panel::panelFont (9.5f, juce::Font::bold));
@@ -947,7 +946,6 @@ void FirstAudioProcessorEditor::setUpTabButtons() {
     }
 
     phonePageBox.setLookAndFeel (&customLookAndFeel);
-
     // The phone's page list is the table ORDERED BY FAMILY, which the bar does by
     // filtering and the table cannot do without moving its rows: the ui_icons
     // atlas pairs a glyph with each page by position. So the list is built here,
@@ -960,6 +958,9 @@ void FirstAudioProcessorEditor::setUpTabButtons() {
             if (tabSpecs[static_cast<std::size_t> (tab)].family == family)
                 phonePageBox.addItem (tabSpecs[static_cast<std::size_t> (tab)].name, tab + 1);
 
+=======
+    for (int tab = 0; tab < numTabs; ++tab)
+        phonePageBox.addItem (tabSpecs[static_cast<std::size_t> (tab)].name, tab + 1);
     phonePageBox.onChange = [this]
     {
         const auto selectedTab = phonePageBox.getSelectedId() - 1;
@@ -970,6 +971,8 @@ void FirstAudioProcessorEditor::setUpTabButtons() {
     phonePageBox.setVisible (false);
 
     // The four tab families share one row above the page buttons. The grid
+=======
+    // The three tab families share one row above the page buttons. The grid
     // below reflows to accommodate them.
     const std::array<juce::TextButton *, tabFamilyCount> familyButtons{
         &tabFamilyTapeButton, &tabFamilyFxButton, &tabFamilyRackButton,
@@ -2572,6 +2575,8 @@ void FirstAudioProcessorEditor::setUpNativeScene() {
     // The phone layout intentionally has no 3D deck. Delay adapter creation
     // until the editor is wide enough to show it, avoiding an unused GPU surface.
     if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
+=======
+    if (j37panel::usesPhoneLayout (getWidth()))
         return;
 
     shutDownNativeScene();

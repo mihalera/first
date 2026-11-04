@@ -757,7 +757,6 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
         // semitone in chromatic mode. Keep that mapping separate from frame state.
         const auto targetHz = autoTuneTargetFrequency (detected, tonic, mode);
 
-<<<<<<< HEAD
 =======
         if (mode != 0)
         {
@@ -778,7 +777,6 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
 
         const auto targetHz = 440.0f * std::pow (2.0f, (static_cast<float> (target) - 69.0f) / 12.0f);
 
->>>>>>> 8566b797 (Fix Android launch crash and finish Auto-Tune controls)
         // The pull itself, with the rules that make it a corrector rather than a
         // quantiser: a reading within TOLERANCE of the target is left ALONE (the
         // dead zone - a voice is never exactly on the grid, and the part of the
@@ -1312,7 +1310,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     state.compressorMakeup = compressorMakeupParam != nullptr ? compressorMakeupParam->load() : 0.0f;
     const auto compressorMix = compressorMixParam != nullptr ? compressorMixParam->load() : 0.0f;
     state.compressorMixAmount = juce::jlimit (0.0f, 1.0f, compressorMix);
-<<<<<<< HEAD
     state.compressorUpwardAmount = compUpwardParam != nullptr
                                        ? juce::jlimit (0.0f, 1.0f, compUpwardParam->load()) : 0.0f;
 
@@ -1361,7 +1358,6 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     fxTargets.speed = fxSpeedParam != nullptr ? fxSpeedParam->load() : 0.5f;
     fxRack.setTargets (fxTargets);
 =======
->>>>>>> 8566b797 (Fix Android launch crash and finish Auto-Tune controls)
     const auto autoTuneAmount = autoTuneAmountParam != nullptr ? autoTuneAmountParam->load() : 0.0f;
     state.autoTuneStrength = juce::jlimit (0.0f, 1.0f, autoTuneAmount);
 

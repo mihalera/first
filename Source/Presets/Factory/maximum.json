@@ -93,7 +93,6 @@
   "vinyl_source": 1.0,
   "cassette_source": 1.0,
   "digital_source": 1.0,
-<<<<<<< HEAD
   "amp_source": 1.0,
   "valve_source": 1.0,
   "transformer_source": 1.0,
@@ -161,5 +160,4 @@
   "comp_makeup": 0.0,
   "comp_mix": 0.0,
   "ir_mix": 0.0
->>>>>>> 8566b797 (Fix Android launch crash and finish Auto-Tune controls)
 }

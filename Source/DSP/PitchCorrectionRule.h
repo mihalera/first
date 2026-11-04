@@ -118,13 +118,11 @@ struct PitchCorrectionRule
     /** OCTAVE as the ratio it transposes by: +1 -> 2, -1 -> 0.5. */
     static float octaveRatio (int octave = 0) noexcept
     {
-<<<<<<< HEAD
         const auto clampedOctave = juce::jlimit (minOctave, maxOctave, octave);
         return juce::jlimit (minRatio, maxRatio, std::pow (2.0f, static_cast<float> (clampedOctave)));
 =======
         return std::pow (2.0f, static_cast<float> (juce::jlimit (minOctave, maxOctave,
                                                                  octave)));
->>>>>>> 8566b797 (Fix Android launch crash and finish Auto-Tune controls)
     }
 
     /** The pitch ratio the shifter should read at.

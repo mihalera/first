@@ -66,6 +66,12 @@ those files directly; CMake embeds only the PNGs in this `Assets/` folder.
 python Assets/generate_asset_pack.py
 python tests/assets/check_assets.py
 ```
+=======
+
+PNG with alpha. `panel_texture` should be **seamless-ish and low contrast**: it is
+multiplied into a dark (or ivory) panel at a low dose, so any single bright feature
+will read as a stain. The marks are artwork; the principle sprite sheet is a white
+alpha mask, so JUCE can tint the same seven shapes for every theme.
 
 ## Licences — read this before committing anything
 

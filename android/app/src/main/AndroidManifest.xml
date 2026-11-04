@@ -34,11 +34,9 @@
 
     <activity
         android:name="com.mcsmes.mibox.MainActivity"
-<<<<<<< HEAD
         android:configChanges="orientation"
 =======
         android:configChanges="keyboard|keyboardHidden|orientation|screenSize|navigation|smallestScreenSize|screenLayout|uiMode"
->>>>>>> 8566b797 (Fix Android launch crash and finish Auto-Tune controls)
         android:launchMode="singleTask"
         android:hardwareAccelerated="true"
         android:exported="true">

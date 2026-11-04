@@ -1292,6 +1292,10 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
 
     // The 60 Hz timer invalidates desktop animation every second tick and Android
     // animation every tick. See repaintAnimatedSurfaces().
+=======
+    // Desktop animation invalidations run every second timer tick; Android runs
+    // them on every 30 Hz tick so the phone UI is not capped at 15 fps. See
+    // repaintAnimatedSurfaces().
     int animationPaintTick = 0;
     int lastShownPreset = -2;
     int lastShownSlot = -1;

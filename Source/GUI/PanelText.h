@@ -779,7 +779,6 @@ namespace j37panel
                    "plugin's output, be recorded or be bounced. Off is silent.";
         if (id == "tuning_tonic")
             return "TONIC - the root the pitch correction quantises to. With "
-<<<<<<< HEAD
                    "TUNE AMOUNT above zero, the corrected pitch is pulled toward "
                    "the scale that starts on this note, up to RANGE semitones.";
         if (id == "tuning_mode")
@@ -804,7 +803,6 @@ namespace j37panel
                    "0 is the untouched signal and takes the whole stage, detector "
                    "included, out of the path; 100 is the full pull onto the "
                    "scale. It does not change the retune speed - SPEED owns "
->>>>>>> 8566b797 (Fix Android launch crash and finish Auto-Tune controls)
                    "that - so a deep, natural correction is possible without "
                    "the snap. Default 0 percent (off).";
         if (id == "autotune_speed")
