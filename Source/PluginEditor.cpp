@@ -1045,10 +1045,11 @@ bool FirstAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
 
 FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayout() const
 {
-    if (j37panel::usesPhoneLayout (getWidth()))
+    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
     {
-        // Phones trade the desktop's side-by-side meter bank for a compact deck
-        // and a full-width, multi-row control workspace.
+        // Phones trade the desktop meter bank for a compact deck and a touch-sized
+        // control workspace; the helper stacks them in portrait and places them
+        // side by side in landscape.
         const auto phone = j37panel::computePhoneEditorLayout (getWidth(), getHeight());
         EditorLayout layout;
         layout.header = { phone.header.x, phone.header.y,
@@ -1172,7 +1173,7 @@ void FirstAudioProcessorEditor::resized()
     // stretched over a size it was not built for.
     rebuildPanelTextureLayers();
 
-    const auto phoneLayout = j37panel::usesPhoneLayout (getWidth());
+    const auto phoneLayout = j37panel::usesPhoneLayout (getWidth(), getHeight());
     const auto phoneLayoutChanged = phoneLayout != phoneLayoutActive;
     phoneLayoutActive = phoneLayout;
     const auto parameterSheetWasOpen = parameterSheet != nullptr && parameterSheet->isOpen();
@@ -1231,7 +1232,7 @@ void FirstAudioProcessorEditor::resized()
 //==============================================================================
 void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
 {
-    if (j37panel::usesPhoneLayout (getWidth()))
+    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
     {
         const auto rowOneY = header.getY() + 5;
         const auto titleWidth = juce::jmin (82, juce::jmax (0, header.getWidth() / 4));
@@ -1392,7 +1393,7 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
 //==============================================================================
 void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
 {
-    if (j37panel::usesPhoneLayout (getWidth()))
+    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
     {
         presetArtworkBadge.setVisible (false);
         const auto buttonGap = 4;
@@ -1992,7 +1993,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
 //==============================================================================
 void FirstAudioProcessorEditor::placeControls (const EditorLayout& layout)
 {
-    if (j37panel::usesPhoneLayout (getWidth()))
+    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
     {
         controlsHeadingLabel.setBounds (layout.controls.getX() + 12,
                                         layout.controls.getY() + 7,
@@ -2029,7 +2030,7 @@ void FirstAudioProcessorEditor::placeControls (const EditorLayout& layout)
 //==============================================================================
 void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& controlsPanel)
 {
-    if (j37panel::usesPhoneLayout (getWidth()))
+    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
     {
         for (auto& button : tabButtons)
         {

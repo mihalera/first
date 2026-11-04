@@ -478,9 +478,18 @@ void checkPhoneLayout()
                name, "PHONE", width, height);
     };
 
-    check (j37panel::usesPhoneLayout (360), "360 px uses the phone layout", "PHONE", 360, 800);
-    check (j37panel::usesPhoneLayout (600), "600 px uses the phone layout", "PHONE", 600, 800);
-    check (! j37panel::usesPhoneLayout (601), "601 px keeps the desktop layout", "PHONE", 601, 800);
+    check (j37panel::usesPhoneLayout (360, 800),
+           "360 px portrait uses the phone layout", "PHONE", 360, 800);
+    check (j37panel::usesPhoneLayout (600, 800),
+           "600 px portrait uses the phone layout", "PHONE", 600, 800);
+    check (! j37panel::usesPhoneLayout (601, 800),
+           "601 px portrait keeps the desktop layout", "PHONE", 601, 800);
+    check (j37panel::usesPhoneLayout (800, 360),
+           "800 x 360 landscape uses the phone layout", "PHONE", 800, 360);
+    check (j37panel::usesPhoneLayout (915, 412),
+           "915 x 412 landscape uses the phone layout", "PHONE", 915, 412);
+    check (! j37panel::usesPhoneLayout (1280, 720),
+           "1280 x 720 keeps the desktop layout", "PHONE", 1280, 720);
 
     for (const auto& size : { std::array<int, 2> { 360, 800 },
                               std::array<int, 2> { 412, 915 },
@@ -492,20 +501,40 @@ void checkPhoneLayout()
         assertInside (layout.header, width, height, "phone header stays inside the display");
         assertInside (layout.deck, width, height, "phone deck stays inside the display");
         assertInside (layout.controls, width, height, "phone controls stay inside the display");
-        check (layout.deck.y >= layout.header.y + layout.header.height,
-               "phone deck follows the header", "PHONE", width, height);
-        check (layout.controls.y >= layout.deck.y + layout.deck.height,
-               "phone controls follow the deck", "PHONE", width, height);
-        check (layout.controls.width == width - 2 * j37panel::phoneLayoutInset,
-               "phone controls use the full inset width", "PHONE", width, height);
+        if (width > height)
+        {
+            check (layout.deck.y >= layout.header.y + layout.header.height,
+                   "landscape deck follows the header", "PHONE", width, height);
+            check (layout.controls.y == layout.deck.y
+                       && layout.controls.x >= layout.deck.x + layout.deck.width,
+                   "landscape controls sit beside the deck", "PHONE", width, height);
+            check (layout.controls.width >= 300
+                       && layout.controls.height == layout.deck.height,
+                   "landscape preserves a useful control workspace", "PHONE", width, height);
+        }
+        else
+        {
+            check (layout.deck.y >= layout.header.y + layout.header.height,
+                   "portrait deck follows the header", "PHONE", width, height);
+            check (layout.controls.y >= layout.deck.y + layout.deck.height,
+                   "portrait controls follow the deck", "PHONE", width, height);
+            check (layout.controls.width == width - 2 * j37panel::phoneLayoutInset,
+                   "portrait controls use the full inset width", "PHONE", width, height);
+        }
     }
 
     const auto compact = j37panel::computePhoneEditorLayout (360, 800);
     check (compact.controls.height >= 580,
            "portrait phone keeps a tall control workspace", "PHONE", 360, 800);
 
+    const auto landscape = j37panel::computePhoneEditorLayout (800, 360);
+    check (landscape.controls.width >= 500 && landscape.controls.height >= 250,
+           "landscape phone keeps a wide, usable control workspace", "PHONE", 800, 360);
+
     for (const auto& size : { std::array<int, 2> { 360, 800 },
-                              std::array<int, 2> { 412, 915 } })
+                              std::array<int, 2> { 412, 915 },
+                              std::array<int, 2> { 800, 360 },
+                              std::array<int, 2> { 915, 412 } })
     {
         const auto width = size[0];
         const auto height = size[1];

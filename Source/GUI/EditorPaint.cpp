@@ -220,7 +220,7 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     const auto grainTop = static_cast<float>(clip.getY());
     const auto grainBottom = static_cast<float>(clip.getBottom());
 
-    if (! j37panel::usesPhoneLayout (getWidth()))
+    if (! j37panel::usesPhoneLayout (getWidth(), getHeight()))
     {
         g.setColour(grainColour);
         for (float y = chassis.getY() + 2.0f; y < chassis.getBottom(); y += 3.0f)
