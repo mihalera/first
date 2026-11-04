@@ -138,8 +138,11 @@ public:
         if (! running)
             return;
 
+        // A debugger pause or a stalled message thread must not trigger an
+        // unbounded fixed-step catch-up on the next timer callback.
+        constexpr double maximumCatchUpSeconds = 0.1;
         const auto step = (std::isfinite (seconds) && seconds > 0.0)
-                            ? static_cast<float> (seconds) : 0.0f;
+                            ? static_cast<float> (std::min (seconds, maximumCatchUpSeconds)) : 0.0f;
         const auto result = j37::oscball::advance (ball, step);
 
         // The trail is sampled at the editor's frame rate, not at the physics

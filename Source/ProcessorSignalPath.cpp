@@ -395,9 +395,8 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
     reverbSettings.damping = reverbDampParam != nullptr ? reverbDampParam->load() : 0.45f;
     reverbSettings.width = reverbWidthParam != nullptr ? reverbWidthParam->load() : 1.0f;
 
-    j37dsp::SafetyLimiter postFxLimiter;
-    postFxLimiter.prepare (limiter.getCoefficients());
-
+    // Reuse the processor-owned limiter so its detector and gain envelope persist
+    // across blocks, just as they do for the main safety stage.
     // The room takes the WHOLE frame rather than one channel of it: Dattorro's
     // network is fed one signal and its width comes from tapping the tank twice,
     // so there is no per-channel reverb to call. That is what the two loops around
@@ -467,7 +466,7 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
             peak = juce::jmax (peak,
                                std::abs (block.getChannelPointer (static_cast<std::size_t> (c))[i]));
 
-        const auto gain = postFxLimiter.process (peak);
+        const auto gain = limiter.process (peak);
         for (int c = 0; c < frameWidth; ++c)
         {
             auto* data = block.getChannelPointer (static_cast<std::size_t> (c));

@@ -382,9 +382,9 @@ struct VinylStage
         if (scratchAmount > 0.0f && scratchIncrement > 0.0f)
         {
             float& phase = channel == 0 ? scratchPhaseL : scratchPhaseR;
-            phase += scratchIncrement;
-            if (phase >= 1.0f)
-                phase -= 1.0f;
+            phase = std::fmod (phase + scratchIncrement, 1.0f);
+            if (phase < 0.0f)
+                phase += 1.0f;
 
             // The burst window: the first few percent of the revolution. A short
             // raised-cosine so the event fades in and out instead of clicking -

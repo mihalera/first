@@ -720,7 +720,7 @@ struct NeuralStage
         std::unique_ptr<InferenceModel> retired;
         {
             std::lock_guard<std::mutex> lock (controlMutex);
-            if (! audioQuiescent.load (std::memory_order_acquire))
+            if (! audioQuiescent.load (std::memory_order_seq_cst))
                 return;
             retired = std::move (retiredModel);
         }
@@ -760,14 +760,16 @@ struct NeuralStage
         if (amount <= 1.0e-5f)
             return x;
 
-        auto* active = activeModel.load (std::memory_order_acquire);
+        // Announce the read before loading the pointer. A control-thread
+        // reclamation that observes this flag must defer; the acquire/release
+        // pair also ensures a concurrently published model remains visible.
+        audioQuiescent.store (false, std::memory_order_seq_cst);
+        auto* active = activeModel.load (std::memory_order_seq_cst);
         if (active == nullptr)
+        {
+            audioQuiescent.store (true, std::memory_order_seq_cst);
             return x;
-
-        if (activeModel.load (std::memory_order_acquire) != active)
-            return x;
-
-        audioQuiescent.store (false, std::memory_order_release);
+        }
         struct QuiescentGuard
         {
             std::atomic<bool>& state;
@@ -775,7 +777,7 @@ struct NeuralStage
             ~QuiescentGuard()
             {
                 if (std::uncaught_exceptions() > exceptionsOnEntry)
-                    state.store (true, std::memory_order_release);
+                    state.store (true, std::memory_order_seq_cst);
             }
         } quiescentGuard { audioQuiescent };
 
@@ -809,7 +811,7 @@ struct NeuralStage
 
         const auto output = converted.dry
                           + (converted.wet - converted.dry) * juce::jlimit (0.0f, 1.0f, amount);
-        audioQuiescent.store (true, std::memory_order_release);
+        audioQuiescent.store (true, std::memory_order_seq_cst);
         quiescentGuard.exceptionsOnEntry = std::uncaught_exceptions();
         return output;
 #else

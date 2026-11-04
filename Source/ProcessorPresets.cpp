@@ -404,8 +404,10 @@ namespace
         auto directory = juce::File::getSpecialLocation (juce::File::userApplicationDataDirectory)
                             .getChildFile ("MiBoX")
                             .getChildFile ("Presets");
+        if (! directory.isDirectory() && ! directory.createDirectory().wasOk())
+            return false;
         if (! directory.isDirectory())
-            directory.createDirectory();
+            return false;
 
         file = directory.getChildFile (safeName + ".miboxpreset");
         return file.getParentDirectory().getFullPathName() == directory.getFullPathName();
