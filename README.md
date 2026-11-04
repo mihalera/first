@@ -680,9 +680,10 @@ one tape.
 
 AUTO TUNE is opt-in, off by default, and inert at TUNE AMOUNT 0 - at zero the stage is out
 of the path entirely, detector included, and the signal is bit-for-bit the one that arrived.
-Switched in, **TONIC** and **MODE** say which notes are legal, **AUTO TUNE** switches the
-stage in, and the four knobs split the correction into independent decisions: **TUNE
-AMOUNT** is the depth of the pull, **SPEED** is how long it takes to get there, **TOLERANCE**
+Switched in, **TONIC** and **MODE** on the deck say which notes are legal, **AUTO TUNE**
+switches the stage in, and the four knobs split the correction into independent
+decisions: **TUNE AMOUNT** is the depth of the pull, **SPEED** is how long it takes to
+get there, **TOLERANCE**
 is the dead zone around the target, and **GATE** is how confident the detector must be before
 its reading is trusted. Depth and speed used to be the same control, which is why a deep
 correction was also a fast one; they are separate now, so a note can be pulled all the way
@@ -1042,7 +1043,9 @@ the whole tape engine in a polyphase half-band upsampler, runs the model at two,
 eight times the session rate, and filters back down. The added filter delay (zero at Off,
 a few samples at 2x/4x/8x) is reported to the host through `setLatencySamples`, so DAW PDC
 compensates automatically. The four engines exist side by side with independent filter
-state, so switching mid-playback is glitch-free.
+state, so switching mid-playback is glitch-free. The corrector, IR, pitch trackers and
+repitch stage are prepared once per factor in `prepareToPlay` too, so the switch only
+selects an already-prepared slot and allocates nothing on the audio thread.
 
 ## Presets, A/B compare and undo
 
@@ -1075,7 +1078,7 @@ it.
 ## OSC: the note ring
 
 A note generator that lives on the deck: a ring of the selected key's notes - the
-degrees of the AUTOTUNE tab's **TONIC** and **MODE** across three octaves, C3 to B5 -
+degrees of the deck's **TONIC** and **MODE** across three octaves, C3 to B5 -
 with a ball that falls under gravity and bounces off the inside of the disc. The angle
 of each contact is the note that sounds, and the harder the impact the louder it is
 played. The ring therefore follows the key: seven places per octave in MAJOR, five in a
@@ -1246,17 +1249,20 @@ bit. The build prints which one it is using in its configure summary.
 JUCE `Graphics` renderer for the animated transport, while the rest of the panel
 continues through its normal software path. `VULKAN`, `D3D11`, `D3D12` and `BGFX` are staged selections: each has an adapter in `Source/GUI/NativeRenderer_*.cpp` that can create its device and present a cleared surface, and none of them draws the tape scene yet.
 
-`METAL` and `SOKOL` are drawn selections: their adapters already render the full `SceneFrame` through the scene contract, so the editor selects them when the build
-lands on them.
-with JUCE instead of showing a blank or half-drawn frame.
+`METAL` and `SOKOL` are drawn selections: their adapters already render the full
+`SceneFrame` through the scene contract, so the editor selects them when the build
+lands on them. CMake defines `J37_NATIVE_*` only for those complete adapters: a
+configured Vulkan, D3D11, D3D12 or BGFX build is listed as PENDING and draws with
+JUCE instead of showing a blank or half-drawn frame.
 
 Which one is running is printed on the panel's header, beside the brand strip:
 `BACKEND  OPENGL`, and `BACKEND  CPU (VULKAN PENDING)` for a build that asks for a
 staged adapter and falls back. The SETTINGS tab carries the matching selector:
 AUTO runs the build's own choice, OPENGL forces the GPU path and CPU forces the
-software painter - the two paths the editor can switch between while it runs. A
-staged adapter is listed there as PENDING and cannot be selected, because it does
-not draw the scene yet. The choice is remembered per machine in the editor's
+software painter - the two paths the editor can switch between while it runs, and
+OPENGL remains available even in a build configured for a native adapter. A staged
+adapter is listed there as PENDING and cannot be selected, because it does not
+draw the scene yet. The choice is remembered per machine in the editor's
 preferences file (`Source/GUI/EditorPreferences.h`), not in the session, and the
 header caption follows what actually came up. The caption is `RenderBackend.h`'s
 own `backendCaption()`, so it reads `runningBackend()` rather than the requested
@@ -1330,8 +1336,8 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
   780 x 664 and 1500 x 1180; both meter types lay themselves out proportionally to their
   own bounds. SETTINGS' UI SCALE drives the same responsive layout from 75 % to 125 %,
   and captions follow the chosen stop instead of staying at a hardcoded pixel size.
-  The deck is three control lines - transport, switches / oversampling, then the preset /
-  A/B / undo row - with a badge band of its own underneath, and every line's control
+  The deck's control rows - model / rate-key, switches, types, transport, then the preset /
+  A/B / undo row - are followed by a badge band of their own, and every line's control
   chain is width-accounted to fit the minimum 780 px panel with no overlap. The level
   meters keep clear air between the dial and the readout rows, and each level
   meter's title and subtitle are carved out of one proportional top block as two

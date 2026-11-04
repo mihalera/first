@@ -72,17 +72,15 @@ void FirstAudioProcessor::replaceParameterState (const juce::ValueTree& newState
     // UI, the DAW automation display and the engine all agree after a swap.
     parameters.replaceState (newState.createCopy());
 
-    // A state swap can include the oversampling switch, so the active engine and the
-    // reported latency must follow before the next block is rendered. The RAW value
-    // is the choice index; getValue() returns the normalised 0..1 form, which for a
-    // choice parameter would round the 4x entry down to 2x. The rebuild uses the
-    // remembered host block size rather than a hardcoded one.
-    if (auto* rawOversampling = parameters.getRawParameterValue ("oversampling"))
-    {
-        const auto requested = static_cast<int> (rawOversampling->load());
-        if (requested != static_cast<int> (currentOversampling))
-            setOversamplingFactor (static_cast<OversamplingFactor> (requested), lastBlockSize);
-    }
+    // A state swap can include the oversampling switch, but this method runs on the
+    // MESSAGE thread while the audio callback may be reading the active slot. Do
+    // not select it here: processBlock already compares the (now replaced) raw
+    // parameter with currentOversampling at the top of every callback, and selects
+    // the prepared slot there before any audio is rendered. That keeps one owner
+    // for currentOversampling and its stages, and the reported latency follows on
+    // the same block boundary as the switch. The RAW value is the choice index;
+    // getValue() returns the normalised 0..1 form, which for a choice parameter
+    // would round the 4x entry down to 2x.
 }
 
 void FirstAudioProcessor::applyStateWithUndo (const juce::ValueTree& targetState,

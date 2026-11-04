@@ -673,7 +673,7 @@ void FirstAudioProcessorEditor::timerCallback() {
     }
 
     // The ring's notes are the KEY's notes, so its key follows the two selectors
-    // on the AUTOTUNE tab. Pushed every frame rather than listened to: setKey()
+    // on the DECK. Pushed every frame rather than listened to: setKey()
     // compares and returns, so the steady state is one comparison per frame, and
     // the ring has no listener to unregister when the editor closes.
     oscRing.setKey(audioProcessor.getTuningTonic(), audioProcessor.getTuningMode());

@@ -714,17 +714,38 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     const auto requestedOversampling = oversamplingParam != nullptr
         ? static_cast<OversamplingFactor> (static_cast<int> (oversamplingParam->load()))
         : currentOversampling;
-    // Pre-initialize all oversampler engines so processBlock never needs to reallocate
-    for (auto* oversampler : oversamplers)
+    const auto preparedBlockSize = juce::jmax (1, samplesPerBlock);
+
+    // Prepare every oversampler AND every rate-dependent stage once, here, for
+    // every factor. This is the allocation point for the whole oversampling
+    // switch: processBlock later only selects a slot, so pressing OVERSAMPLING
+    // no longer calls CorrectorStage::prepare, IrStage::prepare or
+    // RepitchStage::prepare on the audio thread.
+    for (int slot = 0; slot < static_cast<int> (oversamplingFactorCount); ++slot)
     {
-        if (oversampler != nullptr)
+        const auto factor = 1 << slot; // 1, 2, 4, 8 - the order of `oversamplers`
+        const auto engineRate = sampleRateToUse * static_cast<double> (factor);
+        const auto engineBlock = preparedBlockSize * factor;
+
+        if (auto* oversampler = oversamplers[slot])
         {
-            oversampler->initProcessing (static_cast<size_t> (juce::jmax (1, samplesPerBlock)));
+            oversampler->initProcessing (static_cast<size_t> (preparedBlockSize));
             oversampler->reset();
         }
+
+        auto& corrector = correctors[static_cast<std::size_t> (slot)];
+        corrector.prepare (engineRate, 2);
+
+        irStages[static_cast<std::size_t> (slot)].prepare (
+            { engineRate, static_cast<juce::uint32> (engineBlock), 2 });
+
+        repitchStages[static_cast<std::size_t> (slot)].prepare (engineRate);
+
+        for (auto& tracker : autoTuneTrackers[static_cast<std::size_t> (slot)])
+            tracker.prepare (engineRate);
     }
 
-    setOversamplingFactor (requestedOversampling, juce::jmax (1, samplesPerBlock));
+    setOversamplingFactor (requestedOversampling, preparedBlockSize);
     // Stated as a double on purpose: SmoothedValue::reset takes the ramp length in seconds
     // as a double, and `auto` here would have deduced the same type silently. Naming it
     // makes the intent explicit and keeps the literal from looking like a float that lost
@@ -802,16 +823,14 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     autoTuneGateOpen.fill (false);
     autoTuneLastPeriodHint.fill (0);
     // AUTOTUNE's two rate-dependent halves - the trackers' decimation and the
-    // corrector's analysis window - are TOLD the rate rather than left at their
-    // defaults, and that happens inside setOversamplingFactor above rather than
-    // here, because the rate they must be told is the ENGINE's and this method
-    // reads the session's. They are fed the engine's frames: the stage runs at the
-    // end of processTapeEngine, on the block the oversampler expanded. Preparing
-    // them here from `sampleRate` was a real defect over one factor of two - the
-    // tracker read a 440 Hz note as 880 and the corrector would have carried the
-    // wrong window - so both are prepared where the engine's rate is known and all
-    // that is left here is to start them clean.
-    corrector.reset();
+    // corrector's analysis window - were prepared for every factor above, where
+    // the ENGINE's rate is known. They are fed the engine's frames: the stage runs
+    // at the end of processTapeEngine, on the block the oversampler expanded. A
+    // prepare from `sampleRate` here would be off by one factor of two - the
+    // tracker would read a 440 Hz note as 880 - so this method only starts every
+    // slot clean.
+    for (auto& corrector : correctors)
+        corrector.reset();
 
     // The sample rate changed, so every time-domain constant has to be rebuilt.
     // The tone filters are cached rather than recomputed per block, and their
@@ -821,9 +840,9 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     resetSampleRateDependentState();
 
     //  The IR convolvers are NOT prepared here: they run inside the oversampled
-    //  engine, and setOversamplingFactor above has already handed them that rate
-    //  and block. Preparing them again from the session's numbers here was the
-    //  defect - see the call site for the whole of it.
+    //  engine, and the per-factor prepare loop above already handed every slot its
+    //  own rate and block. Preparing them again from the session's numbers here
+    //  was the defect - see the call site for the whole of it.
     //
     //  What is left for this method is the part of a prepare that is not about
     //  sizing: the convolution's own tail. The old prepare used to clear it as a
@@ -836,7 +855,8 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // prepare may allocate, an audio callback may not - and the print stays in
     // its decoded form so a later rate switch costs arithmetic rather than
     // another read of the file.
-    irStage.reset();
+    for (auto& stage : irStages)
+        stage.reset();
 
     noiseLoader.prepare (sampleRate);
     postFxScratch.setSize (2, juce::jmax (1, samplesPerBlock * 8), false, true, true);
@@ -887,10 +907,11 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // gesture durations are wall-clock seconds.
     transport.prepare (static_cast<double> (sampleRate) * oversamplingRateFactor);
 
-    // The repitch stage is prepared at the ENGINE's rate for the same reason the
+    // The repitch stage is prepared at each ENGINE rate for the same reason the
     // rig is: it advances once per engine frame, so its seconds and its samples
-    // belong to the oversampled rate, not the host's.
-    repitchStage.prepare (static_cast<double> (sampleRate) * oversamplingRateFactor);
+    // belong to the oversampled rate, not the host's. All four slots were
+    // prepared above; the active one was reset when the factor was selected.
+
     if (spindownParam != nullptr)
         spindownHeld.store (spindownParam->load() >= 0.5f, std::memory_order_relaxed);
 
@@ -1161,9 +1182,14 @@ void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int 
     else
         oversamplingRateFactor = 1.0f;
 
+    // Select the PREPARED slot. prepareToPlay has already called prepare() on the
+    // corrector, IR, trackers and repitch stage for every factor, so nothing here
+    // allocates and nothing here may call prepare(): this function also runs from
+    // processBlock when the host automation moves OVERSAMPLING.
+    currentOversampling = clamped;
+
     if (auto* oversampler = oversamplers.getUnchecked (clampedIndex))
     {
-        oversampler->initProcessing (static_cast<size_t> (lastBlockSize));
         oversampler->reset();
 
         // The dummy stage adds no delay; the real ones report their filter latency
@@ -1172,45 +1198,33 @@ void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int 
         oversamplerLatencySamples = (clamped == OversamplingFactor::off)
                                         ? 0
                                         : juce::roundToInt (oversampler->getLatencyInSamples());
+
+        // A factor change lands in a different engine, so the slot it left behind
+        // must not hand its old tail to the new rate. These resets only clear
+        // state - every buffer was sized in prepareToPlay - and resetting the
+        // selected slot also makes a return to a factor start clean rather than
+        // resume a stale ring.
+        activeCorrector().reset();
+        activeIrStage().reset();
+        activeRepitchStage().reset();
+
+        for (auto& tracker : activeAutoTuneTrackers())
+            tracker.reset();
+
+        autoTuneCorrectionSmoothed.fill (1.0f);
+        autoTuneGateOpen.fill (false);
+        autoTuneLastPeriodHint.fill (0);
+        autoTuneRatiosForFrame = { 1.0f, 1.0f };
+        autoTunePeriodHintsFor = { 0, 0 };
+
         publishReportedLatency();
-
-        // The corrector runs INSIDE the engine, so its own lookahead - the
-        // vocoder's analysis window - has to be rebuilt for the rate the engine is
-        // about to run at. Allocating here is the same trade the oversamplers' own
-        // initProcessing makes above: a rate change is a parameter change, and the
-        // alternative is an engineering change on the audio thread.
-        const auto engineRate = static_cast<double> (juce::jmax (1.0f, sampleRate * oversamplingRateFactor));
-        corrector.prepare (engineRate, 2);
-
-        //  The IR convolvers run inside the engine too - Source/ProcessorSignalPath.cpp
-        //  hands them the block the upsampler produced, at the rate it produced it.
-        //  They were prepared from prepareToPlay's SESSION rate and block, so the
-        //  stage was prepared for a rate and a maximum block it never saw: the file
-        //  was resampled for the wrong rate, and at 2x and above every block it
-        //  received was longer than the maximum it had been prepared for. Both
-        //  numbers are the engine's here, beside the corrector's, and the stage
-        //  ignores a spec that has not moved.
-        irStage.prepare ({ engineRate,
-                           static_cast<juce::uint32> (juce::jmax (1, lastBlockSize)
-                                                      * juce::jmax (1, static_cast<int> (oversamplingRateFactor))),
-                           2 });
-
-        // The tracker rides the same rate, for the same reason and with the same
-        // absence of allocation: its decimation is what makes a lag mean the same
-        // frequency at every rate, and it is fed the engine's frames. A separate
-        // prepare() here is not redundancy - the two are handed the same number
-        // because they must be, so the number is written once above.
-        for (auto& tracker : autoTuneTrackers)
-            tracker.prepare (engineRate);
     }
-
-    currentOversampling = clamped;
 
     // The engine's rate just moved, so a loaded model's conversion has to move
     // with it: a model trained at 48 kHz is run at 48 kHz from a 96 kHz engine
     // and from a 384 kHz one alike (see RateBridge). Cheap - it publishes two
-    // numbers and the stages latch them - which matters, because this is also
-    // reached from the audio thread when the OVERSAMPLING parameter changes.
+    // numbers and the stages latch them - and safe here because the spectrum
+    // analyser's prepare() is allocation-free.
     updateNeuralSampleRates();
 }
 
@@ -1569,8 +1583,30 @@ bool FirstAudioProcessor::loadIrFile (const juce::File& irFile)
         return false;
     }
 
-    if (irStage.loadFromFile (irFile))
+    // Load the file into every factor's slot. Each slot's convolvers were
+    // prepared for a different engine rate in prepareToPlay, and the active one
+    // can change while this IR is loaded; loading only the slot that happens to
+    // be active would leave the next factor silent. The decode itself is JUCE's
+    // background job, so this remains a message-thread call.
+    bool anyLoaded = false;
+    bool allLoaded = true;
+    for (auto& stage : irStages)
+    {
+        const auto loaded = stage.loadFromFile (irFile);
+        anyLoaded = anyLoaded || loaded;
+        allLoaded = allLoaded && loaded;
+    }
+
+    if (allLoaded)
         return true;
+
+    // A partial load is not a usable IR: keep every slot in the same state rather
+    // than leaving one factor with a file and the others without one. If NO slot
+    // loaded, every stage still holds its previous IR and nothing changes - the
+    // same "a failed load does not replace what was playing" rule as before.
+    if (anyLoaded)
+        for (auto& stage : irStages)
+            stage.clear();
 
     // The one way a real WAV gets here is a header JUCE will not decode (an
     // unsupported codec, or a file that is not audio at all). The reason is
@@ -1584,7 +1620,8 @@ bool FirstAudioProcessor::loadIrFile (const juce::File& irFile)
 
 void FirstAudioProcessor::clearIr()
 {
-    irStage.clear();
+    for (auto& stage : irStages)
+        stage.clear();
     loadedIrName = {};
 }
 

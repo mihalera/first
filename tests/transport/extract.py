@@ -141,7 +141,7 @@ PREAMBLE = (
 # because that call lives in a 3,500-line function that cannot be compiled
 # without JUCE - and a stage that is extracted, tested and then never called in
 # the audio path is exactly the class of bug this file exists to catch.
-REPITCH_CALL = re.compile(r"repitchStage\.processFrame \(([^;]*)\);")
+REPITCH_CALL = re.compile(r"activeRepitchStage\(\)\.processFrame \(([^;]*)\);")
 
 # The engine-side half of the ARM: START waits for the host, and the host's
 # answer is a bit the engine has to read off the playhead and hand to the rig.
@@ -253,7 +253,7 @@ def check_engine_repitch() -> list[str]:
     calls = REPITCH_CALL.findall(impl)
 
     if len(calls) != 1:
-        problems.append(f"`repitchStage.processFrame` appears {len(calls)} times in {IMPL_NAMES}: "
+        problems.append(f"`activeRepitchStage().processFrame` appears {len(calls)} times in {IMPL_NAMES}: "
                         f"the stage is advanced once per frame or it is not advanced at all")
     else:
         arguments = calls[0]
@@ -266,13 +266,13 @@ def check_engine_repitch() -> list[str]:
             problems.append("the repitch stage is not handed the platter's speed, so it has "
                             f"nothing to follow: {arguments.strip()}")
 
-    if "RepitchStage repitchStage;" not in header:
-        problems.append(f"{HEADER.name} does not declare a `RepitchStage repitchStage;` member, "
-                        f"so the engine cannot be calling the stage it is calling")
+    if "std::array<RepitchStage, oversamplingFactorCount> repitchStages;" not in header:
+        problems.append(f"{HEADER.name} does not declare the prepared per-factor repitch "
+                        f"slots, so the engine cannot be calling the stage it is calling")
 
-    if not re.search(r"repitchStage\.prepare \(([^;]*)\);", impl):
-        problems.append(f"{IMPL_NAMES} never prepares the repitch stage, so its line would be "
-                        f"sized for no rate at all")
+    if not re.search(r"repitchStages\[[^\]]+\]\.prepare \(([^;]*)\);", impl):
+        problems.append(f"{IMPL_NAMES} never prepares the repitch stages, so their lines would "
+                        f"be sized for no rate at all")
 
     return problems
 

@@ -241,6 +241,7 @@ bool FirstAudioProcessor::processBypassedBlock (juce::dsp::AudioBlock<float>& bl
         && autoTuneAmountParam != nullptr && autoTuneAmountParam->load() > 1.0e-5f)
     {
         const auto frameChannels = juce::jmin (2, context.channels);
+        auto& corrector = activeCorrector();
 
         for (int sample = 0; sample < context.samples; ++sample)
         {
@@ -334,7 +335,7 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
                                  && autoTuneAmountParam != nullptr
                                  && autoTuneAmountParam->load() > 1.0e-5f;
 
-    if (autoTuneEngaged && corrector.isPrepared())
+    if (autoTuneEngaged && activeCorrector().isPrepared())
     {
         const auto frameChannels = juce::jmin (2, channels);
 
@@ -362,6 +363,7 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
         }
     }
 
+    auto& irStage = activeIrStage();
     bool irActive = false;
     if (irMix > 1.0e-5f && irStage.hasIr
         && channels <= postFxScratch.getNumChannels()
@@ -571,11 +573,13 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
     autoTuneRatiosForFrame = { 1.0f, 1.0f };
     autoTunePeriodHintsFor = { 0, 0 };
 
+    auto& trackers = activeAutoTuneTrackers();
+
     for (int channel = 0; channel < juce::jlimit (0, 2, channels); ++channel)
     {
         const auto i = static_cast<std::size_t> (channel);
         const auto input = samples[i];
-        auto& tracker = autoTuneTrackers[i];
+        auto& tracker = trackers[i];
 
         tracker.push (input);
 
@@ -668,8 +672,8 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
     // CONTROL - what note is playing, where it should sit, how fast the pull is
     // allowed to travel - and the line below is the engine that does it. Which
     // engine is Source/DSP/CorrectorStage.h's business, not this function's.
-    corrector.processFrame (samples, autoTuneRatiosForFrame.data(),
-                            autoTunePeriodHintsFor.data(), channels);
+    activeCorrector().processFrame (samples, autoTuneRatiosForFrame.data(),
+                                    autoTunePeriodHintsFor.data(), channels);
 }
 
 void FirstAudioProcessor::publishBlockTelemetry (const BlockContext& context,
@@ -1174,7 +1178,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     //  that division a 2x session reported twice the corrector delay it had, and
     //  a 4x one four times, which pulled every other track early.
     const auto correctorLatencyEngine = state.autoTuneStrength > 1.0e-5f
-                                            ? corrector.latencyFrames() : 0;
+                                            ? activeCorrector().latencyFrames() : 0;
     const auto correctorLatency = static_cast<int> (
         std::lround (static_cast<double> (correctorLatencyEngine)
                      / static_cast<double> (juce::jmax (1.0f, oversamplingRateFactor))));
@@ -3360,7 +3364,7 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     //  like the transport's own advance: the delay line's two heads move once
     //  per frame and the two channels are one tape.
     // ------------------------------------------------------------------
-    repitchStage.processFrame (tapeOutput, state.activeChannels, platterSpeed);
+    activeRepitchStage().processFrame (tapeOutput, state.activeChannels, platterSpeed);
 
     // ------------------------------------------------------------------
     //  Subharmonic anti-phase protection.

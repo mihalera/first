@@ -212,6 +212,11 @@ void FirstAudioProcessorEditor::applyTheme() {
     styleCombo(vinylTypeBox);
     styleCombo(vinylSpeedBox);
     styleCombo(speedBox);
+    // TONIC and MODE are deck lists now (see their construction), so they take the
+    // same raised field, border and accent arrow as SPEED rather than the flat
+    // in-tab list treatment.
+    styleCombo(tuningTonicBox);
+    styleCombo(tuningModeBox);
     styleCombo(presetBox);
     // The user-preset combo is the seventh ComboBox and was the one left out of this
     // list - and of the one in applyTheme() below - so it kept LookAndFeel_V4's light
@@ -319,14 +324,6 @@ void FirstAudioProcessorEditor::applyTheme() {
     styleInlineListValue(vinylGenerationBox);
     styleInlineListValue(vinylTurntableBox);
     styleInlineListValue(vinylCartridgeBox);
-    // The tuning pair was missing from this list and from every other colour
-    // call in the file, so TONIC and MODE were the only two lists on the panel
-    // still painted with LookAndFeel_V4's own grey value - which on this panel
-    // reads as a DISABLED control: a grey field under a live caption, beside an
-    // OVERSAMPLING list that is the same widget in the same kind of cell and
-    // looks nothing like it. Two lines, one cause.
-    styleInlineListValue(tuningTonicBox);
-    styleInlineListValue(tuningModeBox);
     // The delay trio is on the deck Look and Feel (see its construction), so it
     // follows styleCombo like every other deck list.
     styleCombo(delayTypeBox);

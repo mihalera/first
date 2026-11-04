@@ -320,8 +320,12 @@ void FirstAudioProcessorEditor::setUpLanguageAndTuning() {
     tuningModeBox.addItemList(juce::StringArray{"Chromatic", "Major", "Minor", "Dorian",
                                                 "Pentatonic Major", "Pentatonic Minor"},
                               1);
-    tuningTonicBox.setLookAndFeel(&inlineLookAndFeel);
-    tuningModeBox.setLookAndFeel(&inlineLookAndFeel);
+    // TONIC and MODE are DECK controls: the OSC ring on the deck and the
+    // corrector on the AUTOTUNE page both read them, so they belong on the
+    // machine rather than inside one tab. They use the deck's list style for
+    // the same reason the stock and speed selectors do.
+    tuningTonicBox.setLookAndFeel(&customLookAndFeel);
+    tuningModeBox.setLookAndFeel(&customLookAndFeel);
     tuningTonicAttachment =
         std::make_unique<juce::AudioProcessorValueTreeState::ComboBoxAttachment>(
             audioProcessor.parameters, "tuning_tonic", tuningTonicBox);
@@ -477,7 +481,7 @@ void FirstAudioProcessorEditor::stylePanelLabels() {
                true, juce::Justification::centredRight);
     styleLabel(statusLabel, "STEREO / REAL TIME", 9.0f, paletteFor(false).status, true,
                juce::Justification::centred);
-    styleLabel(deckHeadingLabel, "Deck", 10.0f, paletteFor(false).accent, true,
+    styleLabel(deckHeadingLabel, "DECK", 10.0f, paletteFor(false).accent, true,
                juce::Justification::left);
 
     // Build identity, printed on the deck's heading strip. CMake resolves
@@ -916,7 +920,7 @@ void FirstAudioProcessorEditor::setUpDeckSelectors() {
                     "around the INSIDE of the disc, and the angle it hits the "
                     "edge at is the note the module plays - a harder hit is a "
                     "louder note. The ring holds the notes of the selected KEY - "
-                    "the AUTOTUNE tab's TONIC and MODE - across three octaves, C3 "
+                    "the deck's TONIC and MODE - across three octaves, C3 "
                     "to B5, so every contact is in key and a run of bounces has a "
                     "register as well as a pitch. Press the ring to shove the ball "
                     "back across the disc. The note is generated into the INPUT, "

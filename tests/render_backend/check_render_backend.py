@@ -6,6 +6,7 @@ import sys
 root = Path(__file__).resolve().parents[2]
 backend = (root / "Source/GUI/RenderBackend.h").read_text()
 setup = (root / "Source/GUI/EditorSetup.cpp").read_text()
+cmake = (root / "CMakeLists.txt").read_text()
 
 errors = []
 
@@ -19,6 +20,21 @@ def require(condition: bool, message: str) -> None:
 # build macro to determine if scene draw is available.
 require("constexpr bool hasNativeImplementation(Backend backend) noexcept {" in backend,
         "hasNativeImplementation must check build macros per backend")
+require("if (hasNativeImplementation(configured))" in backend,
+        "effectiveBackend must gate the configured native value on scene-draw capability")
+require("return Backend::openGL;" in backend,
+        "an explicit OpenGL choice must remain runnable in every build")
+
+# J37_NATIVE_* means "this adapter draws the complete SceneFrame", not "the
+# platform SDK was found". The staged adapters must not be compiled in as scene
+# backends until their drawScene path is complete; otherwise a native build
+# advertises a renderer that only clears its surface.
+for staged in ("VULKAN", "D3D11", "D3D12", "BGFX"):
+    require(f"J37_NATIVE_{staged}=1" not in cmake,
+            f"{staged} is still staged and must not define J37_NATIVE_{staged}")
+for complete in ("SOKOL", "METAL"):
+    require(f"J37_NATIVE_{complete}=1" in cmake,
+            f"{complete} draws the scene and must define J37_NATIVE_{complete}")
 require("constexpr bool usesNativeCommandRenderer() noexcept\n{\n    return false;" in backend,
         "native command renderer must not be advertised as active")
 # The panel's JUCE OpenGL context is independent of the deck's chosen renderer:

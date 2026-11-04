@@ -912,7 +912,7 @@ public:
     }
 
     /** The key the OSC ring lays its notes out in, 0..11 (C..B). The panel reads
-        both this and the mode every frame so the ring follows the AUTOTUNE tab's
+        both this and the mode every frame so the ring follows the deck's
         TONIC and MODE selectors without a listener of its own. */
     int getTuningTonic() const noexcept
     {
@@ -997,7 +997,7 @@ public:
     double getNoisePrintSourceRate() const noexcept { return noiseLoader.loadedSourceRate(); }
 
     /** True while an impulse response is loaded. */
-    bool hasIr() const noexcept { return irStage.hasIr; }
+    bool hasIr() const noexcept { return irStages.front().hasIr; }
 
     /** Releases any installed model, returning the stage to the pass-through. */
     void clearNeuralModel();
@@ -1142,7 +1142,9 @@ private:
     /** Rebuilds rate-dependent block coefficients from the current engine rate. */
     void configureBlockRateCoefficients (float engineSampleRate, float cabinetAmount);
 
-    /** (Re)creates the oversampling engine for the requested factor and reports latency. */
+    /** Selects the prepared oversampling slot for the requested factor and reports
+        latency. Allocation-free: all slots were prepared in prepareToPlay, so this
+        is safe from processBlock. */
     void setOversamplingFactor (OversamplingFactor factor, int samplesPerBlock);
 
     /** Message-thread callback for realtime-safe latency changes. */
@@ -1495,10 +1497,26 @@ private:
     juce::OwnedArray<juce::dsp::Oversampling<float>> oversamplers;
     OversamplingFactor currentOversampling = OversamplingFactor::off;
 
-    // The block size the engines were last built for, and the rate multiplier of the
-    // ACTIVE engine. processBlock picks a rebuild size from lastBlockSize rather than
-    // buffer.getNumSamples(), which on the oversampled path returns the wrong rate's
-    // sample count and would oscillate between rebuilds every block.
+    // Every rate-dependent stage below exists once per factor, all prepared in
+    // prepareToPlay. A factor change then selects a prepared slot instead of
+    // calling prepare() from the audio callback: CorrectorStage, IrStage and
+    // RepitchStage allocate in prepare(), and the previous code reached all three
+    // from processBlock whenever OVERSAMPLING moved. Four small stages cost less
+    // than an allocation on the audio thread and keep the switch click-free at the
+    // same rate as well as at a new one.
+    static constexpr std::size_t oversamplingFactorCount = 4;
+
+    static constexpr std::size_t oversamplingSlot (OversamplingFactor factor) noexcept
+    {
+        const auto index = static_cast<int> (factor);
+        const auto last = static_cast<int> (oversamplingFactorCount) - 1;
+        return static_cast<std::size_t> (index < 0 ? 0 : (index > last ? last : index));
+    }
+
+    // The block size the engines were last prepared for, and the rate multiplier
+    // of the ACTIVE engine. prepareToPlay prepares all four slots with these
+    // numbers; processBlock only selects one, so lastBlockSize is never used to
+    // rebuild anything on the audio thread.
     int lastBlockSize = 512;
     float oversamplingRateFactor = 1.0f;
 
@@ -1710,13 +1728,25 @@ private:
     // The corrector's audio path. Two engines live behind it - see
     // Source/DSP/CorrectorStage.h - and which one this build has is decided by
     // OptionalLibraries.h, not here. It is prepared at the ENGINE's rate, since
-    // that is the rate the stage is handed frames at.
-    CorrectorStage corrector;
-    // One YIN tracker per channel: the estimate a corrector needs is the pitch of
-    // the note in THIS channel, and a stereo mix's two notes are not the same
-    // note. The tracker is only fed while the stage is switched on - see
-    // processAutoTuneSample, which is the only caller.
-    std::array<PitchTracker, 2> autoTuneTrackers;
+    // that is the rate the stage is handed frames at, and one instance per
+    // factor means an OVERSAMPLING change never prepares it on the audio thread.
+    std::array<CorrectorStage, oversamplingFactorCount> correctors;
+    // One YIN tracker per channel per factor: the estimate a corrector needs is
+    // the pitch of the note in THIS channel, and a stereo mix's two notes are not
+    // the same note. The tracker is only fed while the stage is switched on - see
+    // processAutoTuneSample, which is the only caller - and its decimation is a
+    // function of the engine rate, so it follows the corrector's slot.
+    std::array<std::array<PitchTracker, 2>, oversamplingFactorCount> autoTuneTrackers;
+
+    CorrectorStage& activeCorrector() noexcept
+    {
+        return correctors[oversamplingSlot (currentOversampling)];
+    }
+
+    std::array<PitchTracker, 2>& activeAutoTuneTrackers() noexcept
+    {
+        return autoTuneTrackers[oversamplingSlot (currentOversampling)];
+    }
     std::array<float, 2> autoTuneCorrectionSmoothed { 1.0f, 1.0f };
     std::array<float, 2> autoTuneRatiosForFrame { 1.0f, 1.0f };
     std::array<int, 2> autoTunePeriodHintsFor { 0, 0 };
@@ -2296,14 +2326,24 @@ private:
     //  blends the model. The convolutions run on the FINISHED block after the
     //  per-sample loop, beside the reverb and the vinyl - the engine's own
     //  note there explains why a stage with a tail cannot live in that loop.
-    IrStage irStage;
+    std::array<IrStage, oversamplingFactorCount> irStages;
     SampleSmoother irMixSmoothed { sampleClock, false, false, 0.0f };
+
+    IrStage& activeIrStage() noexcept
+    {
+        return irStages[oversamplingSlot (currentOversampling)];
+    }
 
     //  The repitch stage: the one place the transport's speed changes the PITCH
     //  rather than the level. Prepared at the ENGINE rate, advanced once per
     //  frame; see the stage's own note above for what it does and why it is
     //  bounded the way it is.
-    RepitchStage repitchStage;
+    std::array<RepitchStage, oversamplingFactorCount> repitchStages;
+
+    RepitchStage& activeRepitchStage() noexcept
+    {
+        return repitchStages[oversamplingSlot (currentOversampling)];
+    }
 
     //  The reason the last file load failed, so the picker can say WHAT was
     //  wrong with the file instead of only that something was. Message thread

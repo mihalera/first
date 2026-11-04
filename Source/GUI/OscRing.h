@@ -2,7 +2,7 @@
 //  OSC on the deck: a circle of the key's notes and a ball that BOUNCES inside it.
 //
 //  WHAT THE WIDGET IS. A disc divided into one place per note of the selected
-//  KEY - the degrees of TONIC and MODE (the AUTOTUNE tab's two selectors) across
+//  KEY - the degrees of TONIC and MODE (the deck's two selectors) across
 //  three octaves, C3 to B5 - with a ball that falls under gravity and rebounds
 //  off the edge. Where it HITS IS the note: the contact angle picks the place, and
 //  the dot for it lights up so the mapping is visible rather than implied. How
@@ -90,7 +90,7 @@ public:
     /** Re-derives the ring's notes from the deck's key: `tonicSemitone` is 0..11
         (C..B) and `modeIndex` is 0..5, the same two selectors the corrector uses.
         Called from the editor's tick with the live parameter values, so a change
-        of TONIC or MODE on the AUTOTUNE tab reaches the ring without a listener.
+        of TONIC or MODE on the deck reaches the ring without a listener.
 
         When either value actually moves, the notes are rebuilt (7 places per
         octave in MAJOR, 5 in a pentatonic, 12 in CHROMATIC, over C3..B5) and a

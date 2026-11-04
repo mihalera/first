@@ -445,7 +445,11 @@ void TapeScene::setPalette(juce::Colour background,
 }
 
 void TapeScene::setSceneEnabled(bool shouldBeEnabled) {
-    sceneEnabled = shouldBeEnabled && j37::render::usesOpenGL();
+    // The CALLER decides: openGL here means the editor resolved the running
+    // backend to OpenGL, whether this build was configured for OpenGL, SOKOL or
+    // a staged native value. Gating this on configuredBackend() made the one
+    // complete GPU fallback unreachable in every non-OpenGL build.
+    sceneEnabled = shouldBeEnabled;
     if (sceneEnabled) {
         attachAttemptsLeft = openGLContext.isAttached() ? 0 : 90;
         serviceContextAttachment();
@@ -456,8 +460,7 @@ void TapeScene::setSceneEnabled(bool shouldBeEnabled) {
 }
 
 void TapeScene::serviceContextAttachment() {
-    if (!sceneEnabled || !j37::render::usesOpenGL() || openGLContext.isAttached() ||
-        attachAttemptsLeft <= 0)
+    if (!sceneEnabled || openGLContext.isAttached() || attachAttemptsLeft <= 0)
         return;
 
     --attachAttemptsLeft;
@@ -570,8 +573,7 @@ void TapeScene::resized() {
 }
 
 bool TapeScene::isSceneLive() const noexcept {
-    return j37::render::usesOpenGL() && sceneEnabled && programLinked.load() != 0 &&
-           openGLContext.isAttached();
+    return sceneEnabled && programLinked.load() != 0 && openGLContext.isAttached();
 }
 
 int TapeScene::controlIndexAt(juce::Point<int> position) const {

@@ -252,9 +252,13 @@ if(J37_RENDER_BACKEND STREQUAL "OPENGL")
 elseif(J37_RENDER_BACKEND STREQUAL "VULKAN")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_VULKAN=1)
     find_package(Vulkan QUIET)
-    if(Vulkan_FOUND)
-        list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_VULKAN=1)
-    endif()
+    # J37_NATIVE_VULKAN is deliberately NOT set here yet. It means "this adapter
+    # draws the complete SceneFrame", not "the SDK is installed": the Vulkan
+    # adapter still owns the clear/present half and its scene path is staged
+    # behind docs/backend-implementation-plan-vulkan-shaders.md. Setting it here
+    # made a Vulkan build select a native renderer whose drawScene was incomplete
+    # (and, at the time of this check, did not compile). The backend value remains
+    # selectable as PENDING and resolves to the CPU fallback.
 elseif(J37_RENDER_BACKEND STREQUAL "METAL")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_METAL=1)
     if(APPLE)
@@ -262,20 +266,19 @@ elseif(J37_RENDER_BACKEND STREQUAL "METAL")
     endif()
 elseif(J37_RENDER_BACKEND STREQUAL "D3D11")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_D3D11=1)
-    if(WIN32)
-        list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_D3D11=1)
-    endif()
+    # Staged, like Vulkan: the DirectX adapters are not complete scene backends
+    # yet, so they must not be compiled in as one.
 elseif(J37_RENDER_BACKEND STREQUAL "D3D12")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_D3D12=1)
-    if(WIN32)
-        list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_D3D12=1)
-    endif()
+    # Staged; see D3D11 above.
 elseif(J37_RENDER_BACKEND STREQUAL "SOKOL")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_SOKOL=1)
     list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_SOKOL=1)
 elseif(J37_RENDER_BACKEND STREQUAL "BGFX")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_BGFX=1)
-    list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_BGFX=1)
+    # Staged: bgfx's shaderc tool is off in this build, so it presents a cleared
+    # surface rather than the tape scene. It stays a selectable PENDING value and
+    # the CPU fallback draws the deck.
 elseif(J37_RENDER_BACKEND STREQUAL "CPU")
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_CPU=1)
 elseif(NOT J37_RENDER_BACKEND STREQUAL "AUTO")
@@ -555,9 +558,10 @@ endif()
 
 # WGPU and DAWN stay inside j37_setup_graphics_backend without being accepted by
 # J37_RENDER_BACKEND, because neither has an adapter here yet. What this target
-# compiles is OpenGL, Vulkan, Metal, D3D11, D3D12, SOKOL and BGFX - and the last
-# two still present only a cleared surface, so RenderBackend.h keeps every native
-# selection on the CPU fallback until one of them draws the tape scene.
+# compiles is OpenGL, Metal and SOKOL as complete scene backends; Vulkan, D3D11,
+# D3D12 and BGFX are selectable PENDING values whose adapters present only a
+# cleared surface. RenderBackend.h routes those to the CPU fallback until their
+# drawScene path is complete.
 
 # ------------------------------------------------------------------------------
 #  Embedded resources - the factory presets and the translation tables.
