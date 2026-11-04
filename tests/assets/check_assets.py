@@ -37,6 +37,7 @@ PANEL_PAINT = REPO / "Source" / "GUI" / "PanelPaint.h"
 CMAKE = REPO / "CMakeLists.txt"
 LOOK_AND_FEEL = REPO / "Source" / "GUI" / "J37LookAndFeel.cpp"
 EDITOR_SETUP = REPO / "Source" / "GUI" / "EditorSetup.cpp"
+=======
 MANIFEST = REPO / "Assets" / "manifest.json"
 CATALOG = REPO / "Assets" / "asset_catalog.json"
 ASSET_DIR = REPO / "Assets"
@@ -101,6 +102,7 @@ def main() -> int:
     look_and_feel = LOOK_AND_FEEL.read_text()
     editor_setup = (REPO / "Source" / "GUI" / "EditorSetup.cpp").read_text()
     asset_generator = (ASSET_DIR / "generate_asset_pack.py").read_text()
+=======
 
     if "setWindowIcon (art);" not in theme_window:
         problems.append("UserThemeWindow must apply the window_icon asset when present")
@@ -108,7 +110,6 @@ def main() -> int:
         problems.append("UserThemeWindow must apply its drawn fallback icon when the asset is absent")
     if "peer->setIcon (icon);" not in theme_window:
         problems.append("UserThemeWindow must pass its icon to the native desktop peer")
-
     if ("panel_materials_png" not in editor_paint
             or "getClippedImage" not in editor_paint
             or "j37panel::liveThemeChoice" not in editor_paint):
@@ -153,6 +154,7 @@ def main() -> int:
             or "mibox.family." not in look_and_feel
             or "button.setComponentID (\"mibox.family.\"" not in editor_setup):
         problems.append("the TAPE / FX / SETUP family controls must draw their indexed UI atlas glyphs")
+=======
 
     if not MANIFEST.exists():
         raise SystemExit(f"{MANIFEST.relative_to(REPO)} is missing; the asset pipeline "
