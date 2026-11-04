@@ -38,6 +38,7 @@ CMAKE = REPO / "CMakeLists.txt"
 LOOK_AND_FEEL = REPO / "Source" / "GUI" / "J37LookAndFeel.cpp"
 EDITOR_SETUP = REPO / "Source" / "GUI" / "EditorSetup.cpp"
 =======
+=======
 MANIFEST = REPO / "Assets" / "manifest.json"
 CATALOG = REPO / "Assets" / "asset_catalog.json"
 ASSET_DIR = REPO / "Assets"
@@ -88,6 +89,7 @@ def slug(value: str) -> str:
     return re.sub(r"[^a-z0-9]+", "_", value.strip().lower()).strip("_")
 
 
+=======
 def main() -> int:
     problems: list[str] = []
     rows = slot_table()
@@ -102,6 +104,7 @@ def main() -> int:
     look_and_feel = LOOK_AND_FEEL.read_text()
     editor_setup = (REPO / "Source" / "GUI" / "EditorSetup.cpp").read_text()
     asset_generator = (ASSET_DIR / "generate_asset_pack.py").read_text()
+=======
 =======
 
     if "setWindowIcon (art);" not in theme_window:
@@ -156,6 +159,32 @@ def main() -> int:
         problems.append("the TAPE / FX / SETUP family controls must draw their indexed UI atlas glyphs")
 =======
 
+    if ("panel_materials_png" not in editor_paint
+            or "getClippedImage" not in editor_paint
+            or "j37panel::liveThemeChoice" not in editor_paint):
+        problems.append("EditorPaint must select a panel-material atlas tile from the live theme")
+    theme_enum = re.search(r"enum class ThemeChoice\s*\{([^}]*)\}", panel_paint)
+    theme_choices = ([] if theme_enum is None else
+                     [(name, int(value)) for name, value in
+                      re.findall(r"\b(\w+)\s*=\s*(-?\d+)", theme_enum.group(1))])
+    theme_values = [value for _, value in theme_choices]
+    if not theme_values or theme_values != list(range(len(theme_values))):
+        problems.append("ThemeChoice values must remain contiguous from zero for the material atlas")
+    if theme_choices and theme_choices[-1][0] != "user":
+        problems.append("ThemeChoice::user must remain last because it selects the final material tile")
+    if "static_cast<int> (j37panel::ThemeChoice::user) + 1" not in editor_paint:
+        problems.append("EditorPaint must derive the atlas tile count from the final ThemeChoice")
+    if "liveThemeChoice = themeChoice;" not in editor_theme:
+        problems.append("applyTheme must publish ThemeChoice before rebuilding its material surface")
+    elif (editor_theme.find("liveThemeChoice = themeChoice;")
+          > editor_theme.find("rebuildPanelTextureLayers();")):
+        problems.append("applyTheme must set the live theme before rebuilding the material surface")
+
+    if ("principle_icons_png" not in editor_meters
+            or not re.search(r"drawImage\s*\(\s*icons,.*?p\s*\*\s*64,\s*0,\s*64,\s*64,\s*true",
+                             editor_meters, re.DOTALL)):
+        problems.append("MixBar must draw and tint the matching 64 px principle icon cell")
+
     if not MANIFEST.exists():
         raise SystemExit(f"{MANIFEST.relative_to(REPO)} is missing; the asset pipeline "
                          f"has a manifest even when it has no art")
@@ -177,7 +206,6 @@ def main() -> int:
         expected_width = int(principle_count.group(1)) * 64
         if icon_entry.get("width") != expected_width or icon_entry.get("height") != 64:
             problems.append("principle_icons must contain one 64x64 cell per saturation principle")
-
     preset_art_entry = entries.get("factory_preset_art")
     if preset_art_entry is not None:
         if preset_art_entry.get("tile_order") != preset_order:
@@ -321,6 +349,7 @@ def main() -> int:
                 paths = android.get(key, []) if isinstance(android.get(key), list) else [android.get(key)]
                 if any(not (REPO / path).is_file() for path in paths if path):
                     problems.append(f"Android launcher catalog references a missing {key} resource")
+=======
 
     by_name = {row["name"]: row for row in rows}
 

@@ -68,10 +68,12 @@ python tests/assets/check_assets.py
 ```
 =======
 
-PNG with alpha. `panel_texture` should be **seamless-ish and low contrast**: it is
-multiplied into a dark (or ivory) panel at a low dose, so any single bright feature
-will read as a stain. The marks are artwork; the principle sprite sheet is a white
-alpha mask, so JUCE can tint the same seven shapes for every theme.
+PNG with alpha. `panel_texture` and each tile in `panel_materials` should be
+**seamless-ish and low contrast**: they are overlaid on a dark or light palette, so
+bright features can read as stains. The material tile order is locked to
+`ThemeChoice` in `Source/GUI/PanelPaint.h`; keep the enum and the atlas in step.
+The marks are artwork; the principle sprite sheet is a white alpha mask, so JUCE
+can tint the same seven shapes for every theme.
 
 ## Licences — read this before committing anything
 

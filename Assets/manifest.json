@@ -1,5 +1,7 @@
 {
   "about": "Optional MiBoX artwork: theme materials, brand marks, 320 named atlas tiles, signal-flow and help illustrations, plus Android launcher assets. Atlas names and order are documented in asset_catalog.json; every slot is licensed original CC0 artwork.",
+=======
+  "about": "Optional MiBoX artwork: six theme-mapped material surfaces, product marks and seven saturation-machine glyphs. Every slot is optional; a missing file falls back to the panel's own drawing. See Assets/README.md for dimensions, licences and integration.",
   "licence_policy": "CC0-1.0 or another public-domain dedication. Do not commit a file whose licence is missing, non-commercial, or unclear. Fill in licence, source and author when a file is added.",
   "slots": [
     {
@@ -23,8 +25,19 @@
       "author": "OpenAI Codex"
 =======
       "used_by": "Source/GUI/EditorPaint.cpp (rebuildPanelTextureLayers)",
+=======
       "licence": "CC0-1.0",
       "source": "Original artwork created for the MiBoX project; drawn procedurally with Python and Pillow.",
+      "author": "OpenAI Codex"
+    },
+    {
+      "name": "panel_materials",
+      "file": "panel_materials.png",
+      "width": 3072,
+      "height": 256,
+      "used_by": "Source/GUI/EditorPaint.cpp (rebuildPanelTextureLayers; ThemeChoice-selected atlas tile)",
+      "licence": "CC0-1.0",
+      "source": "Original six-surface atlas created for MiBoX; procedurally drawn with Python and Pillow.",
       "author": "OpenAI Codex"
     },
     {

@@ -26,6 +26,9 @@
     WHY PNG HERE: the surface is raster art, and the seven small alpha glyphs
     share a single sprite sheet and the same cached loader. Art that must remain
     crisp at unlimited scale can use the Drawable loader described in the README.
+=======
+    atlas and seven small alpha glyphs share another, with one cached loader for
+    both. Art needing unlimited scale can use the Drawable loader from the README.
   ============================================================================ */
 #pragma once
 
