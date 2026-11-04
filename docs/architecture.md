@@ -146,8 +146,7 @@ cmake/J37ThirdPartyWarnings.cmake  warning suppression for vendored code
 cmake/J37Tests.cmake        Catch2 + nanobench, off by default
 cmake/J37BuildIdentity.cmake  the git hash the editor prints
 ThirdParty/                 the vendored libraries, at the versions CPM would fetch
-JUCE/                       the JUCE 9.0.4 submodule
-patches/juce-9.0.4/         the one JUCE header this repository supplies itself
+JUCE/                       the JUCE 9.0.5 submodule
 tests/                      the harnesses; no CMake configure
 ```
 
@@ -157,11 +156,8 @@ Two things about this layout are worth knowing before changing it:
   `ThirdParty/` when it exists, so a fresh clone configures and builds offline
   and CI downloads nothing but JUCE. Re-pinning means changing *both* the
   vendored tree and the CPM block in one commit.
-- **`patches/juce-9.0.4/` is per-version on purpose.** It carries the JUCE 9.0.4
-  opus config header plus two typedefs that make `juce_audio_formats` compile.
-  The version is part of the directory name and of the guard in `CMakeLists.txt`,
-  so bumping the submodule stops the copy instead of writing an old header over a
-  newer tree. `plugin-analysis.md` records when that patch can go away.
+- **JUCE 9.0.5 fixes the Opus include order upstream.** The local 9.0.4-only
+  header workaround and its configure-time copy have been removed.
 
 ## The checks
 

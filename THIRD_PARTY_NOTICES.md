@@ -63,7 +63,7 @@ binary - see
 
 | Component | Pin | Licence | Upstream |
 | --- | --- | --- | --- |
-| **JUCE** | `9.0.4` | **AGPLv3 or commercial** | <https://github.com/juce-framework/JUCE> · <https://juce.com/legal/juce-9-licence/> |
+| **JUCE** | `9.0.5` | **AGPLv3 or commercial** | <https://github.com/juce-framework/JUCE> · <https://juce.com/legal/juce-9-licence/> |
 | **chowdsp_utils** | `v2.4.0` | **per module**: `chowdsp_math` and `chowdsp_simd` BSD 3-Clause (both linked), `chowdsp_dsp_utils` **GPLv3** (**not linked**) - see the note below | <https://github.com/Chowdhury-DSP/chowdsp_utils> |
 | **melatonin_inspector** | `9c483f86` | MIT | <https://github.com/sudara/melatonin_inspector> |
 | **melatonin_blur** | `v1.4` | MIT | <https://github.com/sudara/melatonin_blur> |
@@ -172,7 +172,7 @@ ArmPL's FFTW-compatible header (`fftw3.h`) is distributed by Arm and is BSD-2-Cl
 according to Arm's own third-party licence list, which is the only part of that package
 this repository's source includes. The library itself is not covered by it.
 
-Unlike IPP and vDSP, ArmPL is not merely linked: it has a caller. JUCE 9.0.4 has no ArmPL
+Unlike IPP and vDSP, ArmPL is not merely linked: it has a caller. JUCE 9.0.5 has no ArmPL
 FFT engine, so there is no `juce_dsp` switch to throw, and linking the library without a
 caller would be a dead link-line entry - the defect the audit removed sixteen of. The
 spectrum analyser therefore takes ArmPL's transform when `J37_HAS_ARMPL` is defined, and
@@ -187,7 +187,7 @@ is licensed under and what a shipped binary links are two different questions** 
 and the answer has changed once already: the GPLv3 module below is fetched and not
 linked, and it used to be both.
 
-* **JUCE 9.0.4** is AGPLv3 or a commercial JUCE licence. A distributed plugin
+* **JUCE 9.0.5** is AGPLv3 or a commercial JUCE licence. A distributed plugin
   that links it is under one of those two; there is no third answer.
 * **`chowdsp_dsp_utils` is GPLv3, and is not linked.** It is one module of
   `chowdsp_utils`, whose other modules are not: `chowdsp_math` and `chowdsp_simd`

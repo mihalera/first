@@ -109,7 +109,7 @@ machine has them; §6 covers those paths.
 
 | Library | Pin | Licence | Integration | Role / caller | Deeper integration? |
 | --- | --- | --- | --- | --- | --- |
-| **JUCE** | `9.0.4` submodule | AGPLv3 or commercial | `add_subdirectory(JUCE)`, 8 modules linked, one version-keyed opus-header patch | The framework: processor, editor, formats, DSP, `box2d` | **No.** Keep the submodule and the narrow patch; vendoring or forking the framework would be a maintenance and licence liability |
+| **JUCE** | `9.0.5` submodule | AGPLv3 or commercial | `add_subdirectory(JUCE)`, 8 modules linked | The framework: processor, editor, formats, DSP, `box2d` | **No.** Keep the submodule; vendoring or forking the framework would be a maintenance and licence liability |
 | **chowdsp_math + chowdsp_simd** | `v2.4.0` | BSD-3 | CPM subproject, JUCE modules, `EXCLUDE_FROM_ALL`/`SYSTEM` | `J37Math.h` (`PowApprox`, `LogApprox`), metering and auto-gain (`DecibelsApprox`) | **No.** The per-module split is what keeps GPLv3 `chowdsp_dsp_utils` off the link line; taking the umbrella would undo WP1 |
 | **xsimd** | `14.3.0`, vendored | BSD-3 | Vendored header-only; CPM fallback | `J37Tanh` in `HotPathMath.h`, default via `J37_USE_SIMD_TANH` | **No.** One SIMD layer, one wrapper call site; a second SIMD abstraction (Highway) is a rejected duplicate |
 | **RTNeural** | `95c3c0f9`, vendored | BSD-3 | Vendored header-only; CPM fallback, `RTNEURAL_STL` | `NeuralStage.h`, the LSTM `.nam` path | **No.** Vendored is right for an ABI-adjacent model format; keep it behind the stage seam |
@@ -234,13 +234,11 @@ table says *what*, this says *why*.
 ### 9a. Already at the right depth - keep exactly as is
 
 - **JUCE** is the framework, not a dependency beside the framework. A
-  submodule at `9.0.4`, `add_subdirectory`, and one patched opus header keyed
-  to that version is the minimum integration that works. Vendoring JUCE into
-  the repository would add 109 MB, a second source of updates, and an AGPL /
+  submodule at `9.0.5` and `add_subdirectory` are the minimum integration that
+  works; JUCE fixes the Opus include order upstream. Vendoring JUCE into the
+  repository would add 109 MB, a second source of updates, and an AGPL /
   commercial licensing surface that the submodule already states. Forking it
-  to carry the opus fix would be worse: the fix is two typedefs, and the
-  content-hash guard means the patch applies once and can never silently
-  overwrite a newer tree.
+  to carry local fixes would be worse.
 - **chowdsp_math** and **chowdsp_simd** are used as JUCE modules through CPM.
   This is the correct granularity: `chowdsp_dsp_utils` is GPLv3 and is not
   linked, and the package's own CMake lets the build select modules. Vendoring

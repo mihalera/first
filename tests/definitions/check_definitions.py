@@ -59,7 +59,7 @@ CMAKE_DIR = os.path.join(ROOT, "cmake")
 JUCE_DSP = os.path.join(ROOT, "JUCE", "modules", "juce_dsp")
 
 # The switch JUCE's own FFT engine is gated on, and the flag that does not exist
-# in JUCE 9.0.4 however often it is named online. Both spellings are asserted
+# in JUCE 9.0.5 however often it is named online. Both spellings are asserted
 # below, in opposite directions.
 JUCE_IPP_SWITCH = "_IPP_SEQUENTIAL_STATIC"
 JUCE_IPP_FLAG_THAT_DOES_NOT_EXIST = "JUCE_DSP_USE_INTEL_IPP"
@@ -182,7 +182,7 @@ else:
                     % os.path.relpath(vendor, ROOT))
 
 if vendor_text is not None and JUCE_IPP_FLAG_THAT_DOES_NOT_EXIST in vendor_text:
-    problems.append("%s defines %s, which JUCE 9.0.4 does not read anywhere: its Intel IPP "
+    problems.append("%s defines %s, which JUCE 9.0.5 does not read anywhere: its Intel IPP "
                     "FFT engine is gated on the IPP linking-model macros instead"
                     % (os.path.relpath(vendor, ROOT), JUCE_IPP_FLAG_THAT_DOES_NOT_EXIST))
 

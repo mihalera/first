@@ -30,7 +30,7 @@ The text above covers **this repository's own source** - everything under
 It does **not** cover what the build links against, and those terms are stricter
 than MIT in places. What you have to know before shipping a binary:
 
-- **JUCE 9.0.4** is a git submodule at `JUCE/` and is licensed under the
+- **JUCE 9.0.5** is a git submodule at `JUCE/` and is licensed under the
   **AGPLv3** or a commercial JUCE licence - see
   <https://juce.com/legal/juce-9-licence/>. A plugin that links JUCE is
   distributed under one of those two, never under the MIT text above.

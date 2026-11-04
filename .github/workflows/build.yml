@@ -372,7 +372,7 @@ jobs:
       # neither - so "the DSP takes its vDSP path" was a statement about the build
       # that nothing checked, and the IPP install on this runner accelerated
       # nothing at all. The switch that library's own FFT engine is gated on is
-      # JUCE's, and it is not the flag named online (JUCE 9.0.4 has no
+      # JUCE's, and it is not the flag named online (JUCE 9.0.5 has no
       # JUCE_DSP_USE_INTEL_IPP anywhere). This compares both lists and asserts
       # both directions of that one.
       - name: Check the compile definitions
@@ -754,7 +754,7 @@ jobs:
       - name: Checkout repository
         uses: actions/checkout@v7
         with:
-          # JUCE is a submodule pinned at 9.0.4. Recursive checkout gives exactly
+          # JUCE is a submodule pinned at 9.0.5. Recursive checkout gives exactly
           # the same source that the macOS job builds, so neither platform can
           # drift onto a different JUCE revision.
           submodules: recursive

@@ -109,7 +109,7 @@ included by nothing.
    route.** `cmake/J37VendorLibraries.cmake` used to discover Intel IPP and Apple
    vDSP, link them, and define `J37_HAVE_IPP` / `J37_HAVE_VDSP` for a plugin that
    read neither. It now throws the IPP **linking-model** macro JUCE's own FFT
-   engine is compiled under - there is no `JUCE_DSP_USE_INTEL_IPP` in JUCE 9.0.4,
+   engine is compiled under - there is no `JUCE_DSP_USE_INTEL_IPP` in JUCE 9.0.5,
    whatever the build guides say - and throws it only for the single-threaded
    static layout whose whole link line was measured against Intel's own wheel.
    That measurement also fixed two things the switch alone would not have
@@ -275,10 +275,10 @@ number that can be moved.
   the stereo sum. That is self-consistent and it is nowhere stated; the next
   reader will "fix" it and move every mono mix by 3 LU. Put it in the meter's doc
   comment (`Source/DSP/LoudnessMeter.h`).
-- **The JUCE opus patch** (`patches/juce-9.0.4/`): record in `CMakeLists.txt`
-  what upstream would have to change for it to go away, so the next JUCE bump
-  starts by asking whether it is still needed. *Evidence*:
-  [analysis §8](plugin-analysis.md#8-the-one-juce-patch-this-repository-carries),
+- **The JUCE Opus compile issue is resolved in 9.0.5.** Upstream now includes
+  `kiss_fft.h` from `mdct.h` before using its scalar types, so this repository's
+  local header workaround and CMake copy are no longer needed. *Evidence*:
+  [analysis §8](plugin-analysis.md#8-the-juce-opus-issue-fixed-upstream-in-905),
   [§9](plugin-analysis.md#9-details-that-will-bite-the-next-reader).
 
 ### 11. Put the numbers where they can be re-measured

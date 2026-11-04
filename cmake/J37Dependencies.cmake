@@ -267,7 +267,7 @@ CPMAddPackage(
 #
 #  Pinned to a commit rather than the 0.26.0 tag: the tagged release predates
 #  the JUCE 8.0.11 rename and the JUCE 9 API change this checkout builds against
-#  (JUCE 9.0.4), so a tag build fails on names JUCE has since moved. The commit
+#  (JUCE 9.0.5), so a tag build fails on names JUCE has since moved. The commit
 #  below is the current main head, whose CI covers JUCE 9.
 #
 #  The checkout carries two git submodules of its own - clap-libs/clap (the

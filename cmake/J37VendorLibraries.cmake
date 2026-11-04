@@ -32,7 +32,7 @@
 #            not want it.
 #
 #            The switch that makes IPP DO anything is not a "use IPP" flag, and
-#            the one the internet names does not exist: JUCE 9.0.4 has no
+#            the one the internet names does not exist: JUCE 9.0.5 has no
 #            JUCE_DSP_USE_INTEL_IPP anywhere in its tree (its only such flag is
 #            JUCE_DSP_USE_INTEL_MKL, which is MKL). What juce_dsp.cpp and
 #            juce_FFT.cpp gate their Intel Performance Primitives FFT engine on
@@ -63,7 +63,7 @@
 #
 #    ARM   - Arm Performance Libraries, the AArch64 counterpart. Discovered the
 #            same way - installed, never vendored - and it is the one vendor
-#            library here with a caller in Source/: JUCE 9.0.4 has no ArmPL FFT
+#            library here with a caller in Source/: JUCE 9.0.5 has no ArmPL FFT
 #            engine at all (its engines are IPP, MKL and vDSP), so there is no
 #            juce_dsp switch to throw, and linking the library without a caller
 #            would be exactly the dead link-line entry the audit removed.

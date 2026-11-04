@@ -1,12 +1,12 @@
 # MiBoX
 
-**A JUCE 9.0.4 saturation plugin built around a nonlinear magnetic tape machine** - six saturation principles you can blend, a transport you can start and stop, and a mastering-grade output chain around it. Repository: <https://github.com/mihalera/first>
+**A JUCE 9.0.5 saturation plugin built around a nonlinear magnetic tape machine** - six saturation principles you can blend, a transport you can start and stop, and a mastering-grade output chain around it. Repository: <https://github.com/mihalera/first>
 
 | | |
 | --- | --- |
 | **Formats** | VST3, Audio Unit, AUv3, CLAP, Standalone (Android) |
 | **Platforms** | Windows x64 + arm64, macOS universal (arm64 + x86_64), Linux x64 + arm64, Android arm64-v8a |
-| **Framework** | JUCE `9.0.4`, pinned as a git submodule |
+| **Framework** | JUCE `9.0.5`, pinned as a git submodule |
 | **Build** | CMake 3.22+, MSVC on Windows, Xcode on macOS |
 | **Parameters** | 109, in 23 groups, with 29 factory presets |
 | **Checked by** | thirteen harnesses and seven text checks that need no JUCE, on every pull request |
@@ -1447,7 +1447,7 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
 ## Project type
 
 - Audio plugin: **VST3**, **Audio Unit**, **AUv3** and **CLAP**
-- Framework: JUCE 9.0.4 (pinned as a git submodule)
+- Framework: JUCE 9.0.5 (pinned as a git submodule)
 - Target platforms: Windows (x64 and arm64), macOS (universal: arm64 + x86_64), Linux (x64 and arm64), Android (arm64-v8a, Standalone)
 - Build system: **CMake** (3.22+), driving MSVC on Windows and Xcode on macOS
 
@@ -1466,7 +1466,7 @@ stays `kAudioUnitType_Effect`; CLAP keeps its `audio-effect` feature, because CL
 equivalent "effect that is also an instrument" category and a host would otherwise offer
 it as a synth with no note input.
 
-**CLAP is not in that list, and cannot be.** JUCE 9.0.4's plugin kinds are AAX, AU, LV2,
+**CLAP is not in that list, and cannot be.** JUCE 9.0.5's plugin kinds are AAX, AU, LV2,
 Standalone, Unity and VST3; a `FORMATS CLAP` entry is silently intersected away, leaving a
 build one wrapper short with nothing in the log to say so. The build therefore wraps the
 plugin with `clap-juce-extensions`, which compiles CLAP's own entry point into a `first_CLAP`
@@ -1476,7 +1476,7 @@ the artefact table under [macOS](#macos), which is the same layout on every plat
 
 ## Getting the source
 
-JUCE is a **git submodule pinned at 9.0.4**, so it must be checked out along with the
+JUCE is a **git submodule pinned at 9.0.5**, so it must be checked out along with the
 project. A plain clone leaves `JUCE/` empty and every build fails:
 
 ```sh
@@ -1945,8 +1945,7 @@ installs exactly this set.
 CMakeLists.txt   the build, and the only place build settings live
 cmake/           the build split by concern: dependencies, platforms, vendors, tests
 Source/          the plugin: the processor, the editor, Source/DSP/ and Source/GUI/
-JUCE/            JUCE 9.0.4, pinned as a git submodule
-patches/         the one JUCE header this repository supplies itself, per JUCE version
+JUCE/            JUCE 9.0.5, pinned as a git submodule
 ThirdParty/      the vendored libraries, at the versions CMake would otherwise fetch
 .github/         CI: the harnesses, and builds for Windows, macOS, Linux and Android
 tests/           what checks what, and what it does not - see tests/README.md
@@ -1998,7 +1997,7 @@ line:
 
 | Component | Terms | What it means for a distributed build |
 | --- | --- | --- |
-| **JUCE 9.0.4** | AGPLv3, or a commercial JUCE licence | distribution requires complying with AGPLv3 for the plugin as a whole or obtaining a commercial JUCE licence; there is no third option |
+| **JUCE 9.0.5** | AGPLv3, or a commercial JUCE licence | distribution requires complying with AGPLv3 for the plugin as a whole or obtaining a commercial JUCE licence; there is no third option |
 | **`chowdsp_dsp_utils`** | **GPLv3** (the modules the code calls, `chowdsp_math` and `chowdsp_simd`, are BSD) | **not linked**: no file under `Source/` included it, so it came off the link line and a binary carries none of it - the obligation goes with it, and putting the module back restores it |
 | **SoundTouch 2.4.1**, **libsndfile** | LGPL-2.1 | **not present**: SoundTouch was linked by nothing and its target, fetch and vendored tree were removed under WP4 of [library-integration-plan.md](docs/library-integration-plan.md); libsndfile is still fetched and still **not linked**. A linked-but-uncalled library is a licence obligation with no upside, and `tests/linkline/check_linkline.py` is what keeps the link line honest |
 | **Eigen**, with **`NeuralAmpModelerCore`** | **MPL-2.0** (file-level copyleft), and MIT for NAM Core | **linked by default** (`J37_NAMCORE`, ON; `-DJ37_NAMCORE=OFF` removes both). Eigen stays under MPL-2.0 in its own files and this repository does not modify them; linking it does not place the binary as a whole under MPL. The complete corresponding source is vendored at `ThirdParty/eigen/`, which is what MPL-2.0 asks a distributor to make available. NAM Core is MIT: its notice is the only obligation |

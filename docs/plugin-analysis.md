@@ -201,7 +201,7 @@ required only transitively (1):
 > prose said the DSP took "its vDSP path" under one of them and the portable path
 > otherwise; neither path existed, and the IPP install on the CI runners
 > accelerated nothing at all. The switch that library's own FFT engine is gated
-> on is JUCE's, and it is not the flag the internet names: JUCE 9.0.4 has no
+> on is JUCE's, and it is not the flag the internet names: JUCE 9.0.5 has no
 > `JUCE_DSP_USE_INTEL_IPP` anywhere in its tree, and `juce_dsp.cpp` /
 > `juce_FFT.cpp` compile their Intel IPP engine under the IPP **linking-model**
 > macros instead. Both halves are fixed and both are now checked:
@@ -324,21 +324,18 @@ compile half is still the platform jobs', and it now covers two more adapters
 (`NativeRenderer_Sokol.cpp`, `NativeRenderer_Bgfx.cpp`) that only one
 configuration of the build compiles at all.
 
-## 8. The one JUCE patch this repository carries
+## 8. The JUCE Opus issue, fixed upstream in 9.0.5
 
-`patches/juce-9.0.4/juce_opus_config.h` is JUCE's own 9.0.4 opus config header
-with two `typedef`s inserted (`kiss_twiddle_scalar`, `kiss_fft_scalar`).
-`CMakeLists.txt` copies it over the submodule's copy before JUCE is configured,
-and the copy is keyed to the submodule's version on purpose: bumping JUCE stops
-the copy rather than writing a stale header into a newer tree.
+JUCE 9.0.4's Opus `mdct.h` used scalar FFT types before including `kiss_fft.h`.
+This repository temporarily worked around that compile failure by inserting
+two typedefs into JUCE's Opus config header and copying it during CMake
+configuration.
 
-The cause is upstream: `mdct.c` includes `mdct.h` before `kiss_fft.h`, and
-`mdct.h` declares its trig table in terms of a type that is defined in the second
-one. It is a real defect in the JUCE 9.0.4 tree, it is not the only way to fix it
-(patching `mdct.h`'s include order would also do), and it is tracked here because
-it cannot be pushed upstream from this repository. **The thing to check on every
-JUCE bump is whether the typedefs are still needed** - if a future 9.0.x adds
-them, the patch directory and its guard go away in one commit.
+JUCE 9.0.5 fixes the include order upstream: `mdct.h` includes `kiss_fft.h`
+before declaring members that use its types. The local workaround and
+configure-time copy have therefore been removed. On future JUCE upgrades, verify
+that the upstream include order remains correct and the codec builds without a
+local patch.
 
 ## 9. Details that will bite the next reader
 
@@ -373,7 +370,7 @@ Not everything is a finding. This repository does three things that most plugin
 codebases of this size do not:
 
 - **It explains its decisions where they are made.** The `CMakeLists.txt` comment
-  on the manufacturer code, the one on the opus patch, the one in
+  on the manufacturer code, the JUCE 9.0.5 pin, the one in
   `Source/DSP/J37Math.h` stating the conventions of the directory: a reader
   arriving at any of them knows why, not just what.
 - **It tests what is hard to test.** The loudness meter, the transport's
