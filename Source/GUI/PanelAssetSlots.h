@@ -29,6 +29,7 @@
 =======
     atlas and seven small alpha glyphs share another, with one cached loader for
     both. Art needing unlimited scale can use the Drawable loader from the README.
+=======
   ============================================================================ */
 #pragma once
 
@@ -104,6 +105,11 @@ inline constexpr Slot slots[] = {
     { "signal_path", "signal_path.png", "signal_path_png", 1600, 500,
       "Full-width MiBoX signal-flow diagram for the user guide." },
 =======
+=======
+
+    { "factory_preset_art", "factory_preset_art.png", "factory_preset_art_png", 1856, 64,
+      "Twenty-nine 64 px preset artwork tiles in the exact FACTORY_PRESET_FILES "
+      "order from CMakeLists.txt; selected in the deck's current-preset badge." },
 };
 
 inline constexpr int slotCount = static_cast<int> (sizeof (slots) / sizeof (slots[0]));

@@ -2,6 +2,8 @@
   "about": "Optional MiBoX artwork: theme materials, brand marks, 320 named atlas tiles, signal-flow and help illustrations, plus Android launcher assets. Atlas names and order are documented in asset_catalog.json; every slot is licensed original CC0 artwork.",
 =======
   "about": "Optional MiBoX artwork: six theme-mapped material surfaces, product marks and seven saturation-machine glyphs. Every slot is optional; a missing file falls back to the panel's own drawing. See Assets/README.md for dimensions, licences and integration.",
+=======
+  "about": "Optional MiBoX artwork: six theme-mapped material surfaces, product marks, seven saturation-machine glyphs and 29 factory-preset illustrations. Every slot is optional; a missing file falls back to the panel's own drawing. See Assets/README.md for dimensions, licences and integration.",
   "licence_policy": "CC0-1.0 or another public-domain dedication. Do not commit a file whose licence is missing, non-commercial, or unclear. Fill in licence, source and author when a file is added.",
   "slots": [
     {
@@ -74,6 +76,8 @@
       "name": "factory_preset_art",
       "file": "factory_preset_art.png",
       "width": 2240,
+=======
+      "width": 1856,
       "height": 64,
       "used_by": "Source/GUI/EditorMeters.cpp (PresetArtworkBadge; selected tile follows FACTORY_PRESET_FILES order)",
       "tile_size": 64,
@@ -189,6 +193,12 @@
       "author": "OpenAI Codex"
 =======
 =======
+=======
+        "shellac_radio", "transient_punch", "soft_touch", "tight_bus"
+      ],
+      "licence": "CC0-1.0",
+      "source": "Original 29-tile artwork atlas created for MiBoX; procedurally drawn with Python and Pillow, with preset parameters used to vary the illustrations.",
+      "author": "OpenAI Codex"
     }
   ]
 }

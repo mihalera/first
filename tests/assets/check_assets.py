@@ -39,6 +39,7 @@ LOOK_AND_FEEL = REPO / "Source" / "GUI" / "J37LookAndFeel.cpp"
 EDITOR_SETUP = REPO / "Source" / "GUI" / "EditorSetup.cpp"
 =======
 =======
+=======
 MANIFEST = REPO / "Assets" / "manifest.json"
 CATALOG = REPO / "Assets" / "asset_catalog.json"
 ASSET_DIR = REPO / "Assets"
@@ -104,6 +105,7 @@ def main() -> int:
     look_and_feel = LOOK_AND_FEEL.read_text()
     editor_setup = (REPO / "Source" / "GUI" / "EditorSetup.cpp").read_text()
     asset_generator = (ASSET_DIR / "generate_asset_pack.py").read_text()
+=======
 =======
 =======
 
@@ -184,6 +186,21 @@ def main() -> int:
             or not re.search(r"drawImage\s*\(\s*icons,.*?p\s*\*\s*64,\s*0,\s*64,\s*64,\s*true",
                              editor_meters, re.DOTALL)):
         problems.append("MixBar must draw and tint the matching 64 px principle icon cell")
+
+    preset_block = re.search(r"set\(FACTORY_PRESET_FILES\s*(.*?)\)", cmake, re.DOTALL)
+    preset_order = ([] if preset_block is None else
+                    re.findall(r"\$\{FACTORY_PRESET_DIR\}/([a-z0-9_]+)\.json",
+                               preset_block.group(1)))
+    if not preset_order:
+        problems.append("CMakeLists.txt must define the ordered FACTORY_PRESET_FILES list")
+
+    if ("factory_preset_art_png" not in editor_meters
+            or "processor.getLastPresetIndex()" not in editor_meters
+            or not re.search(r"drawImage\s*\(\s*atlas,.*?index\s*\*\s*64,\s*0,\s*64,\s*64",
+                             editor_meters, re.DOTALL)):
+        problems.append("PresetArtworkBadge must crop the selected 64 px tile by processor preset index")
+    if "brand_mark_png" not in editor_meters:
+        problems.append("PresetArtworkBadge must provide a product-mark fallback for non-factory states")
 
     if not MANIFEST.exists():
         raise SystemExit(f"{MANIFEST.relative_to(REPO)} is missing; the asset pipeline "
@@ -350,6 +367,15 @@ def main() -> int:
                 if any(not (REPO / path).is_file() for path in paths if path):
                     problems.append(f"Android launcher catalog references a missing {key} resource")
 =======
+
+    preset_art_entry = entries.get("factory_preset_art")
+    if preset_art_entry is not None:
+        if preset_art_entry.get("tile_order") != preset_order:
+            problems.append("factory_preset_art tile_order must exactly match CMake's factory preset order")
+        if (preset_art_entry.get("tile_size") != 64
+                or preset_art_entry.get("width") != len(preset_order) * 64
+                or preset_art_entry.get("height") != 64):
+            problems.append("factory_preset_art must have one 64x64 tile per ordered factory preset")
 
     by_name = {row["name"]: row for row in rows}
 

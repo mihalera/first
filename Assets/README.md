@@ -67,6 +67,7 @@ python Assets/generate_asset_pack.py
 python tests/assets/check_assets.py
 ```
 =======
+=======
 
 PNG with alpha. `panel_texture` and each tile in `panel_materials` should be
 **seamless-ish and low contrast**: they are overlaid on a dark or light palette, so
@@ -74,6 +75,11 @@ bright features can read as stains. The material tile order is locked to
 `ThemeChoice` in `Source/GUI/PanelPaint.h`; keep the enum and the atlas in step.
 The marks are artwork; the principle sprite sheet is a white alpha mask, so JUCE
 can tint the same seven shapes for every theme.
+The preset artwork atlas has one tile for every entry in CMake's factory preset
+list. That list also generates the preset index used by the processor and combo
+box, so the badge, selector, and embedded presets share one order. When no factory
+preset is active (for example, a fresh or user-edited state), the badge falls back
+to `brand_mark.png` and then to a drawn reel symbol.
 
 ## Licences — read this before committing anything
 

@@ -223,6 +223,8 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
                                : preferredEditorWidth,
                 rememberedSize ? juce::jlimit (minEditorHeight, 1180, rememberedSize->y)
                                : preferredEditorHeight);
+=======
+        setSize(preferredEditorWidth, preferredEditorHeight);
 #endif
     } else {
         // toNearestInt() above already rounded, so subtracting the margin afterwards
@@ -2444,6 +2446,8 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
     // while narrow, then attach the selected renderer when the editor grows past
     // the phone breakpoint.
     if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight())) {
+=======
+    if (j37panel::usesPhoneLayout (getWidth())) {
         openGLContext.detach();
         tapeScene.setSceneEnabled(false);
         shutDownNativeScene();
@@ -2495,6 +2499,8 @@ void FirstAudioProcessorEditor::setUpOpenGlRendering() {
     nativeSceneAttachAttemptsLeft = 0;
 
     if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight())) {
+=======
+    if (j37panel::usesPhoneLayout (getWidth())) {
         tapeScene.setSceneEnabled(false);
         shutDownNativeScene();
         openGLContext.detach();

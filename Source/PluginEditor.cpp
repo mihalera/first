@@ -1333,6 +1333,8 @@ void FirstAudioProcessorEditor::resized()
     phoneLayoutActive = phoneLayout;
 =======
     const auto phoneLayout = j37panel::usesPhoneLayout (getWidth());
+    const auto phoneLayoutChanged = phoneLayout != phoneLayoutActive;
+    phoneLayoutActive = phoneLayout;
     const auto parameterSheetWasOpen = parameterSheet != nullptr && parameterSheet->isOpen();
     for (int child = 0; child < getNumChildComponents(); ++child)
         getChildComponent (child)->setVisible (! phoneLayout);
@@ -1591,6 +1593,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
 =======
     if (j37panel::usesPhoneLayout (getWidth()))
     {
+        presetArtworkBadge.setVisible (false);
         const auto buttonGap = 4;
         const auto buttonLeft = deck.getX() + 6;
         const auto buttonWidth = juce::jmax (1, (deck.getWidth() - 12 - 3 * buttonGap) / 4);
