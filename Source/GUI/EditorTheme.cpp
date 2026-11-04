@@ -206,6 +206,7 @@ void FirstAudioProcessorEditor::applyTheme() {
         box.setColour(juce::ComboBox::focusedOutlineColourId, palette.accent);
     };
     styleCombo(tapeTypeBox);
+    styleCombo(phonePageBox);
     styleCombo(valveTypeBox);
     styleCombo(ampTypeBox);
     styleCombo(transformerTypeBox);
@@ -346,6 +347,7 @@ void FirstAudioProcessorEditor::applyTheme() {
     styleWorkflowButton(redoButton, false);
     styleWorkflowButton(savePresetButton, false);
     styleWorkflowButton(deletePresetButton, false);
+    styleWorkflowButton(phoneActionsButton, false);
     // polarityButton and autoGainButton are drawn by J37LookAndFeel::drawToggleButton
     // and need no per-theme colour calls here.
     presetHeadingLabel.setColour(juce::Label::textColourId, palette.secondary);
