@@ -87,11 +87,35 @@ void FirstAudioProcessorEditor::rebuildPanelTextureLayers() {
     const auto w = juce::jmax(1, bounds.getWidth() / 2);
     const auto h = juce::jmax(1, bounds.getHeight() / 2);
 
-    // A hand-drawn surface, when this build carries one, replaces the generated
-    // grain and wear outright - it is the same layer, at the same dose, so a
-    // texture pack changes the material and nothing else. The generated layers
-    // below stay the fallback, which is what keeps a build with an empty Assets/
-    // directory identical to the panel that shipped.
+    // ThemeChoice's six values are the atlas's left-to-right material order.
+    // applyTheme() updates liveThemeChoice before it rebuilds this image, so
+    // changing themes changes the surface in the same frame as the palette.
+    // A malformed or absent atlas falls through to the generic texture and then
+    // to the arithmetic grain below.
+    if (const auto& materials = j37panel::assets::cachedImage ("panel_materials_png");
+        materials.isValid())
+    {
+        constexpr int materialCount = static_cast<int> (j37panel::ThemeChoice::user) + 1;
+        const auto materialIndex = static_cast<int> (j37panel::liveThemeChoice);
+
+        if (materials.getWidth() % materialCount == 0
+            && materialIndex >= 0 && materialIndex < materialCount)
+        {
+            const auto materialWidth = materials.getWidth() / materialCount;
+            const auto material = materials.getClippedImage (
+                juce::Rectangle<int> (materialIndex * materialWidth, 0,
+                                      materialWidth, materials.getHeight()));
+
+            if (material.isValid())
+            {
+                panelTextureImage = material.rescaled (w, h, juce::Graphics::mediumResamplingQuality);
+                return;
+            }
+        }
+    }
+
+    // The generic hand-drawn surface is kept as a second fallback. It replaces
+    // the generated grain and wear at the same dose, without implying a theme.
     if (const auto &surface = j37panel::assets::cachedImage("panel_texture_png");
         surface.isValid()) {
         panelTextureImage = surface.rescaled(w, h, juce::Graphics::mediumResamplingQuality);

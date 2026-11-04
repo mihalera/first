@@ -30,6 +30,10 @@ import sys
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SLOTS = REPO / "Source" / "GUI" / "PanelAssetSlots.h"
 THEME_WINDOW = REPO / "Source" / "GUI" / "UserThemeWindow.h"
+EDITOR_PAINT = REPO / "Source" / "GUI" / "EditorPaint.cpp"
+EDITOR_METERS = REPO / "Source" / "GUI" / "EditorMeters.cpp"
+EDITOR_THEME = REPO / "Source" / "GUI" / "EditorTheme.cpp"
+PANEL_PAINT = REPO / "Source" / "GUI" / "PanelPaint.h"
 MANIFEST = REPO / "Assets" / "manifest.json"
 ASSET_DIR = REPO / "Assets"
 
@@ -57,10 +61,23 @@ def png_size(path: pathlib.Path) -> tuple[int, int] | None:
     return width, height
 
 
+def png_has_alpha(path: pathlib.Path) -> bool:
+    """True for PNG colour types that carry an alpha channel."""
+    with path.open("rb") as handle:
+        header = handle.read(26)
+    return (header[:8] == b"\x89PNG\r\n\x1a\n"
+            and header[12:16] == b"IHDR"
+            and header[25] in {4, 6})
+
+
 def main() -> int:
     problems: list[str] = []
     rows = slot_table()
     theme_window = THEME_WINDOW.read_text()
+    editor_paint = EDITOR_PAINT.read_text()
+    editor_meters = EDITOR_METERS.read_text()
+    editor_theme = EDITOR_THEME.read_text()
+    panel_paint = PANEL_PAINT.read_text()
 
     if "setWindowIcon (art);" not in theme_window:
         problems.append("UserThemeWindow must apply the window_icon asset when present")
@@ -69,12 +86,53 @@ def main() -> int:
     if "peer->setIcon (icon);" not in theme_window:
         problems.append("UserThemeWindow must pass its icon to the native desktop peer")
 
+    if ("panel_materials_png" not in editor_paint
+            or "getClippedImage" not in editor_paint
+            or "j37panel::liveThemeChoice" not in editor_paint):
+        problems.append("EditorPaint must select a panel-material atlas tile from the live theme")
+    theme_enum = re.search(r"enum class ThemeChoice\s*\{([^}]*)\}", panel_paint)
+    theme_choices = ([] if theme_enum is None else
+                     [(name, int(value)) for name, value in
+                      re.findall(r"\b(\w+)\s*=\s*(-?\d+)", theme_enum.group(1))])
+    theme_values = [value for _, value in theme_choices]
+    if not theme_values or theme_values != list(range(len(theme_values))):
+        problems.append("ThemeChoice values must remain contiguous from zero for the material atlas")
+    if theme_choices and theme_choices[-1][0] != "user":
+        problems.append("ThemeChoice::user must remain last because it selects the final material tile")
+    if "static_cast<int> (j37panel::ThemeChoice::user) + 1" not in editor_paint:
+        problems.append("EditorPaint must derive the atlas tile count from the final ThemeChoice")
+    if "liveThemeChoice = themeChoice;" not in editor_theme:
+        problems.append("applyTheme must publish ThemeChoice before rebuilding its material surface")
+    elif (editor_theme.find("liveThemeChoice = themeChoice;")
+          > editor_theme.find("rebuildPanelTextureLayers();")):
+        problems.append("applyTheme must set the live theme before rebuilding the material surface")
+
+    if ("principle_icons_png" not in editor_meters
+            or not re.search(r"drawImage\s*\(\s*icons,.*?p\s*\*\s*64,\s*0,\s*64,\s*64,\s*true",
+                             editor_meters, re.DOTALL)):
+        problems.append("MixBar must draw and tint the matching 64 px principle icon cell")
+
     if not MANIFEST.exists():
         raise SystemExit(f"{MANIFEST.relative_to(REPO)} is missing; the asset pipeline "
                          f"has a manifest even when it has no art")
 
     manifest = json.loads(MANIFEST.read_text())
     entries = {entry["name"]: entry for entry in manifest.get("slots", [])}
+    manifest_order = [entry["name"] for entry in manifest.get("slots", [])]
+    table_order = [row["name"] for row in rows]
+    if manifest_order != table_order:
+        problems.append("manifest slot order must mirror PanelAssetSlots.h, including atlas tile order")
+
+    material_entry = entries.get("panel_materials")
+    if material_entry is not None and theme_values:
+        if material_entry.get("width", 0) % len(theme_values) != 0:
+            problems.append("panel_materials width must divide evenly across every ThemeChoice")
+    principle_count = re.search(r"inline constexpr int principleCount = (\d+);", panel_paint)
+    icon_entry = entries.get("principle_icons")
+    if icon_entry is not None and principle_count is not None:
+        expected_width = int(principle_count.group(1)) * 64
+        if icon_entry.get("width") != expected_width or icon_entry.get("height") != 64:
+            problems.append("principle_icons must contain one 64x64 cell per saturation principle")
 
     by_name = {row["name"]: row for row in rows}
 
@@ -125,6 +183,8 @@ def main() -> int:
             elif size != (int(row["width"]), int(row["height"])):
                 problems.append(f"{path.name}: {size[0]}x{size[1]} on disk, but the slot "
                                 f"asks for {row['width']}x{row['height']} (see Assets/README.md)")
+            if not png_has_alpha(path):
+                problems.append(f"{path.name}: PNG needs an alpha channel for the panel asset pipeline")
 
     print(f"asset slots: {len(rows)} declared, {len(present)} file(s) in Assets/")
 

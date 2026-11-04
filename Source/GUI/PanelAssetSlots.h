@@ -18,9 +18,9 @@
          and a build with no Assets/ directory behaves exactly as before, because
          every call site falls back to the drawn panel when the image is invalid.
 
-    WHY PNG HERE: the surface is raster art, and the seven small alpha glyphs
-    share a single sprite sheet and the same cached loader. Art that must remain
-    crisp at unlimited scale can use the Drawable loader described in the README.
+    WHY PNG HERE: the panel materials are raster art; six surfaces share one
+    atlas and seven small alpha glyphs share another, with one cached loader for
+    both. Art needing unlimited scale can use the Drawable loader from the README.
   ============================================================================ */
 #pragma once
 
@@ -40,8 +40,12 @@ struct Slot
 
 inline constexpr Slot slots[] = {
     { "panel_texture", "panel_texture.png", "panel_texture_png", 1024, 512,
-      "The chassis surface: grain, wear, faint print marks. Drawn over the whole "
-      "editor at half resolution, UNDER the controls and OVER the palette." },
+      "The generic chassis texture retained as a fallback when the theme-indexed "
+      "panel_materials atlas is absent." },
+
+    { "panel_materials", "panel_materials.png", "panel_materials_png", 3072, 256,
+      "Six 512 px wide theme materials in ThemeChoice order: ivory paper, charcoal "
+      "bakelite, brushed steel, anodized graphite, white enamel, user-neutral fibre." },
 
     { "brand_mark", "brand_mark.png", "brand_mark_png", 256, 256,
       "The product mark: a reel, a monogram, a drawn logo. Drawn in the USER THEME "

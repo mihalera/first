@@ -1,5 +1,5 @@
 {
-  "about": "Optional art for the MiBoX panel. Every slot is OPTIONAL: a missing file means the panel draws that surface itself. See Assets/README.md for the sizes, the licence rule and the exact workflow.",
+  "about": "Optional MiBoX artwork: six theme-mapped material surfaces, product marks and seven saturation-machine glyphs. Every slot is optional; a missing file falls back to the panel's own drawing. See Assets/README.md for dimensions, licences and integration.",
   "licence_policy": "CC0-1.0 or another public-domain dedication. Do not commit a file whose licence is missing, non-commercial, or unclear. Fill in licence, source and author when a file is added.",
   "slots": [
     {
@@ -7,9 +7,19 @@
       "file": "panel_texture.png",
       "width": 1024,
       "height": 512,
-      "used_by": "Source/GUI/EditorPaint.cpp (rebuildPanelTextureLayers)",
+      "used_by": "Source/GUI/EditorPaint.cpp (generic texture fallback when panel_materials is absent)",
       "licence": "CC0-1.0",
       "source": "Original artwork created for the MiBoX project; drawn procedurally with Python and Pillow.",
+      "author": "OpenAI Codex"
+    },
+    {
+      "name": "panel_materials",
+      "file": "panel_materials.png",
+      "width": 3072,
+      "height": 256,
+      "used_by": "Source/GUI/EditorPaint.cpp (rebuildPanelTextureLayers; ThemeChoice-selected atlas tile)",
+      "licence": "CC0-1.0",
+      "source": "Original six-surface atlas created for MiBoX; procedurally drawn with Python and Pillow.",
       "author": "OpenAI Codex"
     },
     {

@@ -17,15 +17,18 @@ mirrors it for the check and for whoever is sourcing the art.
 
 | File | Size (px) | What it is | Where it is drawn |
 | --- | --- | --- | --- |
-| `panel_texture.png` | 1024 × 512 | The chassis surface: grain, wear, faint print marks. Half-resolution layer stretched over the whole editor, under the controls. | `rebuildPanelTextureLayers()`, `Source/GUI/EditorPaint.cpp` |
+| `panel_texture.png` | 1024 × 512 | Generic chassis grain retained as a fallback when the theme atlas is missing. Half-resolution layer under the controls. | `rebuildPanelTextureLayers()`, `Source/GUI/EditorPaint.cpp` |
+| `panel_materials.png` | 3072 × 256 | Six subtle material tiles, each 512 × 256, in `ThemeChoice` order: ivory paper, charcoal bakelite, brushed steel, anodized graphite, white enamel, neutral user fibre. | Selected by `ThemeChoice` in `rebuildPanelTextureLayers()`, `Source/GUI/EditorPaint.cpp` |
 | `brand_mark.png` | 256 × 256 | The product mark: a reel, a monogram, a drawn logo. Read as a signature, not a control. | The USER THEME window's header |
 | `window_icon.png` | 64 × 64 | Title-bar / taskbar icon for the USER THEME window. Must read at 16 px. Without it the window draws its own reel mark (`defaultWindowIcon` in the same header), so the corner is never blank. | `UserThemeWindow`, `DocumentWindow::setIcon` |
 | `principle_icons.png` | 448 × 64 | Seven 64 px white-on-transparent glyphs, ordered TAPE, VALVE, CASSETTE, VINYL, AMP, TRANSFORMER, DIGITAL. The panel tints each glyph to the active machine colour. | The seven cells in the MIX bar, `Source/GUI/EditorMeters.cpp` |
 
-PNG with alpha. `panel_texture` should be **seamless-ish and low contrast**: it is
-multiplied into a dark (or ivory) panel at a low dose, so any single bright feature
-will read as a stain. The marks are artwork; the principle sprite sheet is a white
-alpha mask, so JUCE can tint the same seven shapes for every theme.
+PNG with alpha. `panel_texture` and each tile in `panel_materials` should be
+**seamless-ish and low contrast**: they are overlaid on a dark or light palette, so
+bright features can read as stains. The material tile order is locked to
+`ThemeChoice` in `Source/GUI/PanelPaint.h`; keep the enum and the atlas in step.
+The marks are artwork; the principle sprite sheet is a white alpha mask, so JUCE
+can tint the same seven shapes for every theme.
 
 ## Licences — read this before committing anything
 
