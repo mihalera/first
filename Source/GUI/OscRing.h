@@ -315,6 +315,31 @@ public:
         g.drawEllipse (centre.x - radius, centre.y - radius,
                        radius * 2.0f, radius * 2.0f, 1.2f);
 
+        // A fine inner rail gives the note positions a physical track to sit on.
+        // The three tonic marks then show where the same scale degree returns in
+        // each octave, even when the selected mode has a different number of notes.
+        const auto innerRail = radius * 0.84f;
+        g.setColour (palette.knobEdge.withAlpha (running ? 0.34f : 0.22f));
+        g.drawEllipse (centre.x - innerRail, centre.y - innerRail,
+                       innerRail * 2.0f, innerRail * 2.0f, 0.7f);
+
+        for (int sector = 0; sector < noteTotal; ++sector)
+        {
+            if (noteAt (sector) % 12 != tonic)
+                continue;
+
+            const auto angle = sectorAngle (sector);
+            const auto inner = radius * 0.86f;
+            const auto outer = radius * 0.98f;
+            const auto ink = running ? palette.accent : palette.secondary;
+            g.setColour (ink.withAlpha (running ? 0.78f : 0.42f));
+            g.drawLine (centre.x + std::cos (angle) * inner,
+                        centre.y + std::sin (angle) * inner,
+                        centre.x + std::cos (angle) * outer,
+                        centre.y + std::sin (angle) * outer,
+                        1.4f);
+        }
+
         // One dot per note of the key. The one the ball is over is drawn larger
         // and in the accent, which is what makes the ring readable as a note
         // SELECTOR rather than as a decorative circle: the highlighted dot is the
@@ -333,13 +358,25 @@ public:
             const auto angle = sectorAngle (sector);
             const auto x = centre.x + std::cos (angle) * radius;
             const auto y = centre.y + std::sin (angle) * radius;
-            const auto live = running && sector == currentSector;
-            const auto dot = live ? juce::jlimit (1.8f, 2.4f, spacing * 0.40f)
-                                  : juce::jlimit (0.9f, 1.4f, spacing * 0.26f);
+            const auto selected = sector == currentSector;
+            const auto root = noteAt (sector) % 12 == tonic;
+            const auto dot = selected ? juce::jlimit (1.9f, 2.6f, spacing * 0.42f)
+                                      : root ? juce::jlimit (1.2f, 1.7f, spacing * 0.30f)
+                                             : juce::jlimit (0.9f, 1.4f, spacing * 0.26f);
 
-            g.setColour (live ? palette.accent
-                              : palette.secondary.withAlpha (running ? 0.85f : 0.5f));
+            const auto ink = selected || root ? palette.accent : palette.secondary;
+            const auto alpha = selected ? (running ? 1.0f : 0.48f)
+                              : root ? (running ? 0.88f : 0.56f)
+                                     : (running ? 0.85f : 0.5f);
+            g.setColour (ink.withAlpha (alpha));
             g.fillEllipse (x - dot, y - dot, dot * 2.0f, dot * 2.0f);
+
+            if (selected)
+            {
+                const auto halo = dot + (running ? 1.8f : 1.2f);
+                g.setColour (palette.accent.withAlpha (running ? 0.34f : 0.18f));
+                g.drawEllipse (x - halo, y - halo, halo * 2.0f, halo * 2.0f, 0.9f);
+            }
         }
 
         // The spoke: centre to the live dot. It is the one line that says WHY the
@@ -359,7 +396,7 @@ public:
         // its CENTRE inside the circle; the multiplier leaves room for the drawn
         // ball, so at the rim the ball's edge touches the ring rather than
         // crossing it.
-        const auto ballRadius = juce::jmax (2.6f, radius * 0.13f);
+        const auto ballRadius = juce::jmax (3.0f, radius * 0.16f);
         const auto ballCentre = centre + juce::Point<float> (ball.x, ball.y)
                                            * juce::jmax (0.0f, radius - ballRadius);
         const auto drawnRadius = ballRadius;
@@ -410,42 +447,71 @@ public:
         // only as a pattern of dots. Dimmed while the module is off: that contact is
         // the note it last played, and the note the engine starts on when the switch
         // goes back on.
-        // Drawn before the ball so the ball always wins the overlap.
+        // A small inset plate makes it read like a live instrument readout; it is
+        // drawn before the ball so the ball always wins the overlap.
+        const auto displayWidth = juce::jmin (radius * 1.48f, 48.0f);
+        const auto displayHeight = juce::jmin (radius * 0.90f, 24.0f);
+        const auto display = juce::Rectangle<float> (displayWidth, displayHeight)
+                                 .withCentre (centre);
+        g.setColour (palette.panel.withAlpha (running ? 0.94f : 0.82f));
+        g.fillRoundedRectangle (display, juce::jmin (4.0f, displayHeight * 0.2f));
+        g.setColour (palette.knobEdge.withAlpha (running ? 0.72f : 0.42f));
+        g.drawRoundedRectangle (display, juce::jmin (4.0f, displayHeight * 0.2f), 0.8f);
+
+        auto displayText = display.reduced (2.0f, 0.5f);
+        const auto statusBand = displayText.removeFromBottom (displayHeight * 0.25f);
         g.setFont (juce::Font (juce::FontOptions (
             juce::Font::getDefaultMonospacedFontName(),
-            juce::jmax (7.0f, juce::jmin (11.0f, radius * 0.30f)),
+            juce::jmax (7.0f, juce::jmin (11.0f, radius * 0.32f)),
             juce::Font::bold)));
         g.setColour (running ? palette.readout : palette.secondary);
         g.drawText (noteName (noteAt (currentSector)),
-                    juce::Rectangle<float> (radius * 0.9f, radius * 0.55f)
-                        .withCentre (centre),
+                    displayText,
+                    juce::Justification::centred, false);
+        g.setFont (panelFont (juce::jlimit (5.0f, 6.5f, displayHeight * 0.27f),
+                              juce::Font::bold));
+        g.setColour ((running ? palette.accent : palette.secondary).withAlpha (0.9f));
+        g.drawText (running ? "LIVE" : "HOLD", statusBand,
                     juce::Justification::centred, false);
 
-        // The shadow: a fixed offset, because the ball is drawn at the disc's own
-        // scale rather than lifted towards the viewer.
-        g.setColour (palette.knobEdge.withAlpha (0.32f));
-        g.fillEllipse (ballCentre.x - drawnRadius + 1.0f,
-                       ballCentre.y - drawnRadius + 1.5f,
+        // A soft contact shadow and a lit dome give the ball volume instead of
+        // making it read as another flat selector dot.
+        const auto shadowAlpha = running ? 0.34f : 0.20f;
+        g.setColour (palette.knobEdge.withAlpha (shadowAlpha * 0.35f));
+        g.fillEllipse (ballCentre.x - drawnRadius * 1.18f,
+                       ballCentre.y - drawnRadius * 0.80f,
+                       drawnRadius * 2.36f, drawnRadius * 2.10f);
+        g.setColour (palette.knobEdge.withAlpha (shadowAlpha));
+        g.fillEllipse (ballCentre.x - drawnRadius + 0.8f,
+                       ballCentre.y - drawnRadius + 1.2f,
                        drawnRadius * 2.0f, drawnRadius * 2.0f);
 
-        g.setColour (running ? palette.accent : palette.secondary.withAlpha (0.7f));
-        g.fillEllipse (ballCentre.x - drawnRadius, ballCentre.y - drawnRadius,
-                       drawnRadius * 2.0f, drawnRadius * 2.0f);
+        const auto ballBody = running ? palette.accent : palette.secondary.withAlpha (0.78f);
+        fillLitDome (g, ballCentre, drawnRadius, ballBody,
+                     palette.knobHighlight, palette.knobEdge.darker (0.18f),
+                     running ? 0.88f : 0.52f);
 
-        g.setColour (palette.readout.withAlpha (running ? 0.75f : 0.35f));
-        g.fillEllipse (ballCentre.x - drawnRadius * 0.35f, ballCentre.y - drawnRadius * 0.55f,
-                       drawnRadius * 0.6f, drawnRadius * 0.6f);
+        // The rotating meridian turns with the physics state. Its dark edge and
+        // fine highlight keep the spin legible against either a bright or dark skin.
+        juce::Path meridian;
+        meridian.addCentredArc (ballCentre.x, ballCentre.y,
+                                drawnRadius * 0.34f, drawnRadius * 0.86f,
+                                ball.angle, 0.0f, juce::MathConstants<float>::twoPi, true);
+        g.setColour (palette.knobEdge.withAlpha (running ? 0.72f : 0.48f));
+        g.strokePath (meridian, juce::PathStrokeType (0.8f, juce::PathStrokeType::curved,
+                                                       juce::PathStrokeType::rounded));
+        g.setColour (palette.knobHighlight.withAlpha (running ? 0.70f : 0.38f));
+        g.strokePath (meridian, juce::PathStrokeType (0.35f, juce::PathStrokeType::curved,
+                                                       juce::PathStrokeType::rounded));
 
-        // The spin mark. The wheel is drawn on the ball and turns with the
-        // angular velocity the physics gives it at each contact, so the ball
-        // reads as rolling rather than as a dot sliding around the disc.
-        const auto markAngle = ball.angle;
-        const auto mark = ballCentre + juce::Point<float> (std::cos (markAngle),
-                                                           std::sin (markAngle))
-                                      * (drawnRadius * 0.58f);
+        g.setColour (palette.knobHighlight.withAlpha (running ? 0.58f : 0.30f));
+        g.fillEllipse (ballCentre.x - drawnRadius * 0.47f,
+                       ballCentre.y - drawnRadius * 0.56f,
+                       drawnRadius * 0.42f, drawnRadius * 0.26f);
 
-        g.setColour (palette.readout.withAlpha (running ? 0.70f : 0.30f));
-        g.fillEllipse (mark.x - 1.0f, mark.y - 1.0f, 2.0f, 2.0f);
+        g.setColour (palette.knobEdge.withAlpha (running ? 0.72f : 0.48f));
+        g.drawEllipse (ballCentre.x - drawnRadius, ballCentre.y - drawnRadius,
+                       drawnRadius * 2.0f, drawnRadius * 2.0f, 0.65f);
     }
 
     /** Pressing the ring shoves the ball back towards the middle, so the control
