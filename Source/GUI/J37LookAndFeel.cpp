@@ -1074,6 +1074,9 @@ void J37LookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button
                          juce::roundToInt (iconBounds.getY()),
                          juce::roundToInt (iconBounds.getWidth()),
                          juce::roundToInt (iconBounds.getHeight()),
+=======
+            g.drawImage (icons, iconBounds.getX(), iconBounds.getY(),
+                         iconBounds.getWidth(), iconBounds.getHeight(),
                          (iconIndex % atlasColumns) * tileSize,
                          (iconIndex / atlasColumns) * tileSize,
                          tileSize, tileSize, true);
@@ -1092,6 +1095,8 @@ void J37LookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button
                                                                 bounds.getWidth())
                            : 12.0f;
     g.setFont (shrinkingFont (text, asked, juce::Font::bold, bounds.getWidth()));
+=======
+    g.setFont (shrinkingFont (text, 12.0f, juce::Font::bold, bounds.getWidth()));
     g.drawText (text, bounds, juce::Justification::centred, true);
 
     if (button.hasKeyboardFocus (false))

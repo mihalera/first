@@ -95,6 +95,7 @@ namespace juce
 #include "GUI/PhoneLayout.h"
 #include "GUI/AnimationTiming.h"
 =======
+=======
 
 // The spectrum curve's arithmetic, which is checked here for the reason the knob
 // metrics are: what it can get wrong is not a crash, it is a curve that draws
@@ -569,6 +570,12 @@ void checkPhoneLayout()
 =======
     check (! j37panel::usesPhoneLayout (1280, 720),
            "1280 x 720 keeps the desktop layout", "PHONE", 1280, 720);
+    check (j37panel::editorTimerHz == 60
+               && j37panel::editorTimerHz
+                      / j37panel::desktopAnimationPaintIntervalTicks == 30
+               && j37panel::editorTimerHz
+                      / j37panel::androidAnimationPaintIntervalTicks == 60,
+           "desktop and Android animation rates are 30 and 60 Hz", "ANIMATION", 60, 1);
 
     for (const auto& size : { std::array<int, 2> { 360, 800 },
                               std::array<int, 2> { 412, 915 },
@@ -668,6 +675,7 @@ void checkPhoneLayout()
                               std::array<int, 2> { 800, 360 },
                               std::array<int, 2> { 915, 412 } })
     {
+=======
 =======
 =======
     for (const auto& size : { std::array<int, 2> { 360, 800 },

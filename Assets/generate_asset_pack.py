@@ -75,6 +75,7 @@ def ui_definitions() -> list[dict]:
         # pitch. Each borrows the glyph its subject already uses elsewhere rather
         # than introducing four new drawings for a bar of navigation.
         "DRIVE": "wave", "SHAPE": "filter", "MOTION": "sine", "PITCH": "note",
+=======
     }
     for tab in tab_names():
         if tab not in tab_shapes:
@@ -181,6 +182,7 @@ def parameter_definitions() -> list[dict]:
         "fx_phaser": "phase", "fx_tremolo": "envelope", "fx_vibrato": "wobble",
         "fx_rotary": "reel", "fx_vocoder": "chip", "fx_granular": "spark",
         "fx_spectral": "eq_high", "fx_speed": "clock", "comp_upward": "compressor",
+=======
     }
     result = []
     for key in control_ids():

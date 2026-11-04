@@ -1603,9 +1603,17 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
     {
         presetArtworkBadge.setVisible (false);
+        const auto landscape = j37panel::isPhoneLandscape (getWidth(), getHeight());
+        const auto ringBounds = j37panel::computePhoneOscRingBounds (
+            { deck.getX(), deck.getY(), deck.getWidth(), deck.getHeight() }, landscape);
+        oscRing.setBounds (ringBounds.x, ringBounds.y, ringBounds.width, ringBounds.height);
+        oscRing.setVisible (ringBounds.width > 0 && ringBounds.height > 0);
+
         const auto buttonGap = 4;
         const auto buttonLeft = deck.getX() + 6;
-        const auto buttonWidth = juce::jmax (1, (deck.getWidth() - 12 - 3 * buttonGap) / 4);
+        const auto contentRight = landscape ? deck.getRight() - 6 : ringBounds.x - 8;
+        const auto contentWidth = juce::jmax (0, contentRight - buttonLeft);
+        const auto buttonWidth = juce::jmax (1, (contentWidth - 3 * buttonGap) / 4);
         const auto buttonY = deck.getY() + 3;
         const auto buttonHeight = 30;
         const std::array<juce::Component*, 4> transportButtons {
@@ -1627,6 +1635,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         const auto selectorHeight = landscape ? 34 : 30;
 =======
         const auto selectorWidth = juce::jmax (1, (deck.getWidth() - 12 - 2 * selectorGap) / 3);
+=======
         const auto captionY = deck.getY() + 37;
         const auto selectorY = deck.getY() + 49;
         const auto selectorHeight = 30;
@@ -1652,7 +1661,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
                                       workflowY, workflowWidth, selectorHeight);
 =======
         const auto workflowY = deck.getY() + 83;
-        const auto workflowWidth = juce::jmax (1, (deck.getWidth() - 12 - 2 * selectorGap) / 3);
+        const auto workflowWidth = juce::jmax (1, (contentWidth - 2 * selectorGap) / 3);
         presetBox.setBounds (selectorLeft, workflowY, workflowWidth, 30);
         userPresetBox.setBounds (selectorLeft + workflowWidth + selectorGap,
                                  workflowY, workflowWidth, 30);
@@ -2236,6 +2245,7 @@ void FirstAudioProcessorEditor::placeControls (const EditorLayout& layout)
             return;
         }
 =======
+=======
         sectionCaptionLabel.setBounds (layout.controls.getX() + 12,
                                        layout.controls.getY() + 72,
                                        layout.controls.getWidth() - 24, 14);
@@ -2272,6 +2282,9 @@ void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& control
     if (j37panel::usesPhoneLayout (getWidth()))
 =======
     if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
+=======
+    if (j37panel::usesPhoneLayout (getWidth(), getHeight())
+        && ! j37panel::isPhoneLandscape (getWidth(), getHeight()))
     {
         for (auto& button : tabButtons)
         {
@@ -2336,6 +2349,16 @@ void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& control
         familyButtons[static_cast<std::size_t> (family)]
             ->setBounds (familyRow.getX() + family * (familyButtonWidth + 6),
                          familyRow.getY(), familyButtonWidth, familyRow.getHeight());
+=======
+    const auto familyButtonWidth = (familyRow.getWidth() - 2 * 6) / tabFamilyCount;
+    tabFamilyTapeButton.setBounds (familyRow.getX(), familyRow.getY(),
+                                   familyButtonWidth, familyRow.getHeight());
+    tabFamilyFxButton.setBounds (familyRow.getX() + familyButtonWidth + 6,
+                                 familyRow.getY(), familyButtonWidth,
+                                 familyRow.getHeight());
+    tabFamilySetupButton.setBounds (familyRow.getX() + 2 * (familyButtonWidth + 6),
+                                    familyRow.getY(), familyButtonWidth,
+                                    familyRow.getHeight());
 
     const auto tabBarTop = tabStrip.pages.y;
     constexpr int tabBarHeight = 22;

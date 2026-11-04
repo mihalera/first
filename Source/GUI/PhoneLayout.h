@@ -77,6 +77,7 @@ namespace j37panel
         return width > height && height <= phoneLandscapeMaxHeight
                && width <= phoneLandscapeMaxWidth;
 =======
+=======
     inline constexpr int phoneLayoutMaxWidth = 600;
     inline constexpr int phoneLandscapeMaxWidth = 1100;
     inline constexpr int phoneLandscapeMaxHeight = 520;
@@ -92,6 +93,12 @@ namespace j37panel
                && (width <= phoneLayoutMaxWidth
                    || (width <= phoneLandscapeMaxWidth
                        && height <= phoneLandscapeMaxHeight));
+    }
+
+    constexpr bool isPhoneLandscape (int width, int height) noexcept
+    {
+        return width > height && height <= phoneLandscapeMaxHeight
+               && width <= phoneLandscapeMaxWidth;
     }
 
     constexpr int nonNegative (int value) noexcept
@@ -130,6 +137,12 @@ namespace j37panel
             const auto size = bandHeight < widthLimit ? bandHeight : widthLimit;
             return { deck.x + (deck.width - size) / 2,
                      bandTop + (bandHeight - size) / 2, size, size };
+=======
+            const auto size = deck.height > 132
+                                ? (deck.height - 132 < 78 ? deck.height - 132 : 78)
+                                : 0;
+            return { deck.x + (deck.width - size) / 2,
+                     deck.y + deck.height - size - 8, size, size };
         }
 
         const auto size = deck.height > 4
@@ -140,6 +153,7 @@ namespace j37panel
     }
 
 =======
+=======
     constexpr PhoneEditorLayout computePhoneEditorLayout (int width, int height) noexcept
     {
         const auto contentWidth = nonNegative (width - 2 * phoneLayoutInset);
@@ -147,8 +161,7 @@ namespace j37panel
         if (isPhoneLandscape (width, height))
 =======
 
-        if (width > height && height <= phoneLandscapeMaxHeight
-            && width <= phoneLandscapeMaxWidth)
+        if (isPhoneLandscape (width, height))
         {
             const auto headerHeight = contentHeight < phoneHeaderHeight
                                         ? contentHeight : phoneHeaderHeight;

@@ -9,6 +9,8 @@ The plugin therefore removes the saved input mask before the holder reloads its
 device, while the holder's settings are already live in createPluginFilter(). This
 checks that project-side guard together with the upstream retry path.
 """
+=======
+"""Verify that denying Android microphone access keeps standalone audio output available."""
 from __future__ import annotations
 
 import re
@@ -25,6 +27,7 @@ DEVICE_MANAGER_CPP = (
     ROOT / "JUCE" / "modules" / "juce_audio_devices"
     / "audio_io" / "juce_AudioDeviceManager.cpp"
 )
+=======
 
 
 def fail(message: str) -> None:
@@ -62,6 +65,18 @@ def main() -> None:
     if not re.search(
         r"deviceManager\.initialise\s*\(\s*enableAudioInput\s*\?\s*inputChannels\s*:\s*0"
         r"\s*,\s*outputChannels\s*,\s*savedState\.get\(\)\s*,\s*true\s*,",
+=======
+    permission_fallback = re.search(
+        r"if\s*\(\s*!\s*enableAudioInput\s*&&\s*savedState\s*!=\s*nullptr\s*\)"
+        r"\s*savedState->removeAttribute\s*\(\s*\"audioDeviceInChans\"\s*\)\s*;",
+        reload_body,
+    )
+    if permission_fallback is None:
+        fail("saved input-channel settings are not disabled when microphone access is denied")
+
+    if not re.search(
+        r"deviceManager\.initialise\s*\(\s*enableAudioInput\s*\?\s*inputChannels\s*:\s*0"
+        r"\s*,\s*outputChannels",
         reload_body,
     ):
         fail("device initialization does not preserve output while disabling input")
@@ -100,6 +115,7 @@ def main() -> None:
     if not re.search(r"removeAttribute\s*\(\s*\"audioDeviceInChans\"\s*\)", guard_body):
         fail("the saved input-channel mask is not removed when microphone access is denied")
 
+=======
     print("Android audio permission fallback check passed (output remains enabled, input stays disabled)")
 
 

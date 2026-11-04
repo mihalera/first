@@ -3,7 +3,6 @@
 namespace j37panel
 {
     inline constexpr int editorTimerHz = 60;
-
     // The panel's paint rate is chosen per frame rather than per platform: a
     // machine that is running, or a panel whose activity is still breathing,
     // is repainted on every tick, and a panel at rest on every third one. The
@@ -66,4 +65,7 @@ namespace j37panel
         return transportEngaged || spindownHeld || waitingForHost
             || activity > 0.02f || drift > 0.02f;
     }
+=======
+    inline constexpr int desktopAnimationPaintIntervalTicks = 2;
+    inline constexpr int androidAnimationPaintIntervalTicks = 1;
 }

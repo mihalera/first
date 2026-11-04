@@ -327,6 +327,7 @@ void FirstAudioProcessorEditor::timerCallback() {
 =======
     // phone layout also omits the large meters and OSC ring to leave room for
     // touch controls, so neither surface should consume update or repaint work.
+=======
     const auto panelCovered = parameterSheet != nullptr && parameterSheet->isOpen();
     const auto phoneLayout = j37panel::usesPhoneLayout (getWidth(), getHeight());
     const auto metersVisible = ! panelCovered && ! phoneLayout;
@@ -337,6 +338,7 @@ void FirstAudioProcessorEditor::timerCallback() {
     oscRing.setRedrawEnabled(! panelCovered && oscRing.isVisible());
 =======
     oscRing.setRedrawEnabled(! panelCovered && ! phoneLayout);
+=======
 
     // Retry context creation while the host is still creating its peer. The
     // budget is bounded so an unavailable driver is not polled forever.
@@ -985,12 +987,16 @@ void FirstAudioProcessorEditor::timerCallback() {
         && ++animationPaintTick >= animationPaintIntervalTicks) {
 =======
     // the menu closes catches the animation up, which at 30 Hz is invisible.
+=======
 #if defined (__ANDROID__)
-    constexpr int animationPaintIntervalTicks = 1;
+    constexpr int animationPaintIntervalTicks = j37panel::androidAnimationPaintIntervalTicks;
 #else
-    constexpr int animationPaintIntervalTicks = 2;
+    constexpr int animationPaintIntervalTicks = j37panel::desktopAnimationPaintIntervalTicks;
 #endif
-    if (!popupIsOpen && !panelCovered && ++animationPaintTick >= animationPaintIntervalTicks) {
+    // Desktop repaints at 30 Hz to keep the textured panel affordable; Android
+    // repaints at 60 Hz, where the compact layout does not draw the full deck.
+    if (!popupIsOpen && !panelCovered
+        && ++animationPaintTick >= animationPaintIntervalTicks) {
         animationPaintTick = 0;
         repaintAnimatedSurfaces();
     }
