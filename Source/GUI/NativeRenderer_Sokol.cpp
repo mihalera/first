@@ -213,12 +213,13 @@ void main()
         return;
     }
 
-    if (uMode < 3.5)
+    if (abs (uMode - 3.0) < 0.25)
     {
-        float brush = 0.965
-                      + 0.035 * abs (fract (vLocal.y * 46.0) - 0.5) * 2.0;
+        vec2 panelHalf = max (abs (uPanelHalf.xy), vec2 (0.0001));
+        vec2 uv = vLocal / panelHalf;
         colour += panelTexture (vLocal);
-        fragColor = vec4 (colour * brush, 1.0);
+        colour *= 1.0 - 0.28 * smoothstep (0.35, 1.15, length (uv));
+        fragColor = vec4 (colour, 1.0);
         return;
     }
 
@@ -248,16 +249,6 @@ void main()
     {
         // A keycap darkens slightly while pressed.
         colour *= 1.0 - 0.35 * uKeyDown;
-        fragColor = vec4 (colour, 1.0);
-        return;
-    }
-
-    if (abs (uMode - 3.0) < 0.25)
-    {
-        vec2 panelHalf = max (abs (uPanelHalf.xy), vec2 (0.0001));
-        vec2 uv = vLocal / panelHalf;
-        colour += panelTexture (vLocal);
-        colour *= 1.0 - 0.28 * smoothstep (0.35, 1.15, length (uv));
         fragColor = vec4 (colour, 1.0);
         return;
     }

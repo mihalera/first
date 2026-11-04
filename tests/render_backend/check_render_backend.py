@@ -155,6 +155,14 @@ for stage, block in (("vertex", vertex_metadata), ("fragment", fragment_metadata
     require(shader_uniforms == bound_uniforms,
             f"Sokol {stage} shader uniforms and sokol_gfx bindings must match exactly")
 
+fragment_source = shader_sources.get("fragment", "")
+panel_branch = fragment_source.find("if (abs (uMode - 3.0) < 0.25)")
+knob_branch = fragment_source.find("if (uMode < 4.5)")
+key_branch = fragment_source.find("if (uMode < 5.5)")
+require(panel_branch >= 0 and knob_branch >= 0 and key_branch >= 0
+        and panel_branch < knob_branch < key_branch,
+        "Sokol's control-panel material branch must precede broader knob and key branches")
+
 render_callback = sokol[
     sokol.index("void renderOpenGL() override"):sokol.index("void openGLContextClosing() override")
 ]

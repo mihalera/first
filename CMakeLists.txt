@@ -10,7 +10,8 @@
 #
 #   Supported configurations
 #     Windows : Visual Studio / x64                -> VST3, CLAP
-#     macOS   : Xcode / universal (arm64 + x86_64) -> VST3, AU, AUv3
+#     macOS   : Xcode / universal (arm64 + x86_64) -> VST3, AU, AUv3, CLAP
+#     iOS     : Xcode / arm64 device + simulator    -> AUv3
 #     Linux   : GCC / Clang x64                    -> VST3
 #     Android : NDK (arm64-v8a)                    -> Standalone (the only format
 #                                                    JUCE's CMake layer produces there)
@@ -315,14 +316,15 @@ set(J37_BUNDLE_ID "com.MCsmes.first")
 # has carried since the wrapper was added, so it must not change either.
 set(J37_CLAP_ID "com.mcsmes.mibox")
 
-# The format list is platform-conditional for one reason: JUCE's platform kind
-# list reduces to Standalone alone on Android, and a FORMATS entry JUCE cannot
-# produce there is simply intersected away - leaving an empty active-format set
-# and a build with no wrapper to link. On desktop this stays exactly what it
-# always was.
+# The format list is platform-conditional because JUCE exposes different plugin
+# kinds on Android and iOS. An unsupported FORMATS entry is intersected away;
+# leaving Android with no active format would produce no wrapper to link. On iOS
+# only AUv3 is a host-loadable plugin format, so do not build a Standalone app.
 set(J37_PLUGIN_FORMATS AU AUv3 VST3)
 if(CMAKE_SYSTEM_NAME STREQUAL "Android")
     set(J37_PLUGIN_FORMATS Standalone)
+elseif(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    set(J37_PLUGIN_FORMATS AUv3)
 endif()
 
 juce_add_plugin(first
@@ -441,8 +443,8 @@ j37_apply_thirdparty_warnings(first)
 #    * its artefact is first_CLAP, a file on Linux and Windows and a .clap
 #      bundle on macOS - the platform's own convention, which is what a host
 #      expects to find in its CLAP folder.
-#    * Android is excluded. That build is Standalone-only for the reason stated
-#      above the FORMATS list, and a CLAP module has no host to load it there.
+#    * Android and iOS are excluded. Android is Standalone-only and iOS ships
+#      AUv3; neither platform can load a CLAP module.
 #
 #  CLAP_ID is the plugin's reverse-DNS identity to a CLAP host and is the key a
 #  host saves session state under, so it is as load-bearing as PLUGIN_CODE is to
@@ -456,7 +458,8 @@ j37_apply_thirdparty_warnings(first)
 #  a host that offered this one as a synth would be offering a channel with no
 #  note input. The dual listing above is VST3's, where Steinberg defines it.
 # ------------------------------------------------------------------------------
-if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
+if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android"
+   AND NOT CMAKE_SYSTEM_NAME STREQUAL "iOS")
     clap_juce_extensions_plugin(TARGET first
         CLAP_ID         "${J37_CLAP_ID}"
         CLAP_FEATURES   audio-effect distortion stereo)
@@ -981,7 +984,9 @@ message(STATUS "  Generator   : ${CMAKE_GENERATOR}")
 message(STATUS "  Build type  : ${CMAKE_BUILD_TYPE}")
 message(STATUS "  Renderer    : requested ${J37_RENDER_BACKEND}")
 message(STATUS "  Build commit: ${J37_BUILD_COMMIT}")
-if(APPLE)
+if(CMAKE_SYSTEM_NAME STREQUAL "iOS")
+    message(STATUS "  Formats     : AUv3 (iOS)")
+elseif(CMAKE_SYSTEM_NAME STREQUAL "Darwin")
     message(STATUS "  Archs       : ${CMAKE_OSX_ARCHITECTURES}")
     message(STATUS "  macOS floor : ${CMAKE_OSX_DEPLOYMENT_TARGET}")
     message(STATUS "  Formats     : VST3, AU, AUv3, CLAP")

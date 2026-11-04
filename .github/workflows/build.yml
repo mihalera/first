@@ -1413,6 +1413,102 @@ jobs:
           if-no-files-found: error
 
   # ============================================================================
+  #  iOS - AUv3 for device and simulator
+  # ============================================================================
+  build-ios:
+    name: build-ios (AUv3, ${{ matrix.sdk }}, arm64)
+    runs-on: macos-latest
+    timeout-minutes: 90
+    strategy:
+      fail-fast: false
+      matrix:
+        sdk: [iphoneos, iphonesimulator]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Verify JUCE submodule is present
+        run: |
+          if [ ! -f "JUCE/CMakeLists.txt" ]; then
+            echo "JUCE submodule missing - CMakeLists.txt adds it via add_subdirectory(JUCE)."
+            echo "Run: git submodule update --init --recursive"
+            exit 1
+          fi
+          ls JUCE/modules | head -n 5
+
+      - name: Configure CMake for ${{ matrix.sdk }}
+        run: |
+          cmake -S . -B "build-ios-${{ matrix.sdk }}" -G Xcode \
+            -DCMAKE_SYSTEM_NAME=iOS \
+            -DCMAKE_OSX_SYSROOT=${{ matrix.sdk }} \
+            -DCMAKE_OSX_ARCHITECTURES=arm64 \
+            -DCMAKE_BUILD_TYPE=${{ env.BUILD_TYPE }} \
+            -DJ37_RENDER_BACKEND=SOKOL \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_ALLOWED=NO \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGNING_REQUIRED=NO \
+            -DCMAKE_XCODE_ATTRIBUTE_CODE_SIGN_IDENTITY=""
+
+      - name: Build the AUv3 extension
+        run: |
+          set -o pipefail
+          cmake --build "build-ios-${{ matrix.sdk }}" \
+            --config ${{ env.BUILD_TYPE }} \
+            --target first_AUv3 \
+            --parallel 2 2>&1 |
+            grep -E 'error|warning|Error|FAILED|BUILD' || true
+
+          cmake --build "build-ios-${{ matrix.sdk }}" \
+            --config ${{ env.BUILD_TYPE }} \
+            --target first_AUv3 \
+            --parallel 2 > /dev/null 2>&1 || {
+              echo "iOS AUv3 build failed - re-running with full output:"
+              cmake --build "build-ios-${{ matrix.sdk }}" \
+                --config ${{ env.BUILD_TYPE }} \
+                --target first_AUv3 \
+                --parallel 2
+              exit 1
+            }
+
+      - name: Verify the iOS AUv3 bundle
+        run: |
+          set -euo pipefail
+          appex=$(find "build-ios-${{ matrix.sdk }}/first_artefacts/${{ env.BUILD_TYPE }}/AUv3" \
+            -name "*.appex" -prune -print -quit)
+          if [ -z "$appex" ]; then
+            echo "No iOS AUv3 extension was produced for ${{ matrix.sdk }}."
+            find "build-ios-${{ matrix.sdk }}/first_artefacts" -print 2>/dev/null || true
+            exit 1
+          fi
+
+          executable=$(/usr/libexec/PlistBuddy \
+            -c "Print :CFBundleExecutable" "$appex/Info.plist")
+          binary="$appex/$executable"
+          if [ ! -f "$binary" ]; then
+            echo "AUv3 executable is missing: $binary"
+            exit 1
+          fi
+
+          archs=$(lipo -archs "$binary")
+          echo "$binary: $archs"
+          case " $archs " in
+            *" arm64 "*) ;;
+            *)
+              echo "AUv3 bundle does not contain the requested arm64 slice."
+              exit 1
+              ;;
+          esac
+
+      - name: Upload iOS AUv3 artifact
+        uses: actions/upload-artifact@v7
+        with:
+          name: MiBoX-AUv3-${{ matrix.sdk }}-arm64
+          path: build-ios-${{ matrix.sdk }}/first_artefacts/${{ env.BUILD_TYPE }}/AUv3/*.appex
+          if-no-files-found: error
+
+  # ============================================================================
   #  Linux - VST3
   # ============================================================================
   build-linux:
