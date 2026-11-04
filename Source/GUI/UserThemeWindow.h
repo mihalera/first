@@ -588,13 +588,14 @@ class UserThemeWindow final : public juce::DocumentWindow {
         // that says its own size cannot be left blank by an ordering detail.
         setContentOwned(content.release(), false);
         setContentComponentSize(userThemeWidth, userThemePaneHeight);
-        setResizable(false, false);        // The title-bar / taskbar icon: the art pack's when this build carries one,
-        // otherwise the drawn reel above. Either way the window never opens with
-        // the peer's blank square in the corner.
+        setResizable(false, false);
+        // setIcon() covers JUCE-drawn title bars; this window uses the native title
+        // bar, so also pass the image to the desktop peer for Windows' title bar and
+        // taskbar. Without the peer call Windows shows its generic blank-file icon.
         if (const auto &art = j37panel::assets::cachedImage ("window_icon_png"); art.isValid())
-            setIcon (art);
+            setWindowIcon (art);
         else
-            setIcon (defaultWindowIcon (start));
+            setWindowIcon (defaultWindowIcon (start));
     }
 
     ~UserThemeWindow() override { pane = nullptr; }
@@ -609,6 +610,14 @@ class UserThemeWindow final : public juce::DocumentWindow {
     void closeButtonPressed() override { setVisible(false); }
 
   private:
+    void setWindowIcon (const juce::Image& icon)
+    {
+        setIcon (icon);
+
+        if (auto* peer = getPeer())
+            peer->setIcon (icon);
+    }
+
     UserThemePane *pane = nullptr;
 
     JUCE_DECLARE_NON_COPYABLE_WITH_LEAK_DETECTOR(UserThemeWindow)

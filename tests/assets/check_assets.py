@@ -29,6 +29,7 @@ import sys
 
 REPO = pathlib.Path(__file__).resolve().parents[2]
 SLOTS = REPO / "Source" / "GUI" / "PanelAssetSlots.h"
+THEME_WINDOW = REPO / "Source" / "GUI" / "UserThemeWindow.h"
 MANIFEST = REPO / "Assets" / "manifest.json"
 ASSET_DIR = REPO / "Assets"
 
@@ -59,6 +60,14 @@ def png_size(path: pathlib.Path) -> tuple[int, int] | None:
 def main() -> int:
     problems: list[str] = []
     rows = slot_table()
+    theme_window = THEME_WINDOW.read_text()
+
+    if "setWindowIcon (art);" not in theme_window:
+        problems.append("UserThemeWindow must apply the window_icon asset when present")
+    if "setWindowIcon (defaultWindowIcon (start));" not in theme_window:
+        problems.append("UserThemeWindow must apply its drawn fallback icon when the asset is absent")
+    if "peer->setIcon (icon);" not in theme_window:
+        problems.append("UserThemeWindow must pass its icon to the native desktop peer")
 
     if not MANIFEST.exists():
         raise SystemExit(f"{MANIFEST.relative_to(REPO)} is missing; the asset pipeline "
