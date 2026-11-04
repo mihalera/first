@@ -18,8 +18,40 @@
 // =============================================================================
 #pragma once
 
+#include <cmath>
+
 namespace j37panel
 {
+    struct KnobPerspective
+    {
+        float squashX = 1.0f;
+        float squashY = 1.0f;
+        float tilt = 0.0f;
+        float wall = 0.0f;
+        float lean = 0.0f;
+    };
+
+    inline KnobPerspective computeKnobPerspective (float dx, float dy) noexcept
+    {
+        KnobPerspective view;
+        dx = juce::jlimit (-1.0f, 1.0f, dx);
+        dy = juce::jlimit (-1.0f, 1.0f, dy);
+
+        view.tilt = juce::jlimit (0.0f, 1.0f,
+                                  std::sqrt (dx * dx + dy * dy) * 0.70710678f);
+
+        // Horizontal position changes the light-facing lean, not the physical
+        // size: knobs in the same row must not widen or shrink across the panel.
+        view.squashY = juce::jlimit (0.58f, 1.0f,
+                                     0.88f - 0.30f * juce::jmax (0.0f, dy));
+        view.squashX = juce::jlimit (0.74f, 1.0f,
+                                     0.90f - 0.06f * juce::jmax (0.0f, dy));
+        view.wall = juce::jlimit (0.0f, 1.0f,
+                                  0.08f + 0.34f * juce::jmax (0.0f, dy));
+        view.lean = dx;
+        return view;
+    }
+
     struct KnobMetrics
     {
         float paintCeiling = 0.0f;    // half the paint area's short side

@@ -209,7 +209,7 @@ class J37LookAndFeel final : public juce::LookAndFeel_V4 {
     /** What one control looks like from the camera. */
     struct Perspective {
         juce::Point<float> centre; ///< the control's own centre, in its own coordinates
-        float squashX = 1.0f;      ///< across the panel: < 1 seen off to one side
+        float squashX = 1.0f;      ///< horizontal foreshortening, shared across each row
         float squashY = 1.0f;      ///< down the panel: < 1 the nearer the near edge
         float tilt = 0.0f;         ///< 0 dead centre, 1 at a far corner: how edge-on
         float wall = 0.0f; ///< the side wall this angle makes visible, as a fraction of the radius

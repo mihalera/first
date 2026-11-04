@@ -639,9 +639,6 @@ J37LookAndFeel::Perspective J37LookAndFeel::perspectiveFor (juce::Rectangle<floa
     const auto dx = juce::jlimit (-1.0f, 1.0f, (controlCentre.x - panelCentre.x) / halfWidth);
     const auto dy = juce::jlimit (-1.0f, 1.0f, (controlCentre.y - panelCentre.y) / halfHeight);
 
-    view.tilt = juce::jlimit (0.0f, 1.0f,
-                              std::sqrt (dx * dx + dy * dy) * 0.70710678f);
-
     // 0.88 rather than 1.0: the whole panel is seen from in front, so no top
     // face anywhere on it is ever a true circle. The near half of the panel
     // falls away much faster than the far half - a control by the near edge is
@@ -650,17 +647,12 @@ J37LookAndFeel::Perspective J37LookAndFeel::perspectiveFor (juce::Rectangle<floa
     // difference between a camera and a decoration: at 0.24 the spread between a
     // knob's top row and its bottom row was under a tenth of the knob, which the
     // eye reads as no depth at all.
-    view.squashY = juce::jlimit (0.58f, 1.0f, 0.88f - 0.30f * juce::jmax (0.0f, dy));
-    view.squashX = juce::jlimit (0.74f, 1.0f, 0.90f - 0.12f * std::abs (dx)
-                                            - 0.06f * juce::jmax (0.0f, dy));
-
-    // The side wall: none at the viewer's own axis, the full height of the part
-    // at the near edge. 0.34 rather than more because the viewer is seated, not
-    // kneeling on the panel - but 0.34 of a part's height IS visible on a 26 px
-    // rocker, which is where the depth has to show.
-    view.wall = juce::jlimit (0.0f, 1.0f, 0.08f + 0.34f * juce::jmax (0.0f, dy)
-                                              + 0.12f * std::abs (dx));
-    view.lean = dx;
+    const auto camera = j37panel::computeKnobPerspective (dx, dy);
+    view.squashX = camera.squashX;
+    view.squashY = camera.squashY;
+    view.tilt = camera.tilt;
+    view.wall = camera.wall;
+    view.lean = camera.lean;
 
     return view;
 }

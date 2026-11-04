@@ -244,12 +244,12 @@ Built buildPage (const juce::Rectangle<int>& controlsBand, const Page& page)
     return built;
 }
 
-// The camera, from J37LookAndFeel::perspectiveFor / setPanelCamera(*this).
+// The camera's side wall, from J37LookAndFeel::perspectiveFor / setPanelCamera(*this).
 float wallFor (float absX, float absY, int W, int H)
 {
     const float dx = juce::jlimit (-1.0f, 1.0f, (absX - W * 0.5f) / std::max (1.0f, W * 0.5f));
     const float dy = juce::jlimit (-1.0f, 1.0f, (absY - H * 0.5f) / std::max (1.0f, H * 0.5f));
-    return juce::jlimit (0.0f, 1.0f, 0.08f + 0.34f * std::max (0.0f, dy) + 0.12f * std::abs (dx));
+    return j37panel::computeKnobPerspective (dx, dy).wall;
 }
 
 // The deck's fields - SPEED, the type selectors, the presets - are 30 px tall at
@@ -309,6 +309,22 @@ void check (bool ok, const char* what, const char* page, int W, int H)
         std::printf ("  FAIL [%s %dx%d] %s\n", page, W, H, what);
         ++failures;
     }
+}
+
+void checkHorizontalKnobConsistency()
+{
+    constexpr float dy = 0.25f;
+    const auto left = j37panel::computeKnobPerspective (-0.85f, dy);
+    const auto right = j37panel::computeKnobPerspective (0.85f, dy);
+    const auto leftFace = computeKnobMetrics (180.0f, 180.0f, left.wall).radius * left.squashX;
+    const auto rightFace = computeKnobMetrics (180.0f, 180.0f, right.wall).radius * right.squashX;
+
+    check (std::abs (leftFace - rightFace) < 1.0e-5f,
+           "knobs in the same row keep the same width across the panel",
+           "CAMERA", 1280, 800);
+    check (left.lean < 0.0f && right.lean > 0.0f,
+           "the camera still leans left and right for directional lighting",
+           "CAMERA", 1280, 800);
 }
 
 // The strip the page used to ride: four fixed columns of the grid's full rows.
@@ -452,6 +468,7 @@ void checkDeckBands()
 int main()
 {
     checkDeckBands();
+    checkHorizontalKnobConsistency();
 
     // The editor's own resize limits, and two sizes inside them a session is
     // likely to sit at - wide, tall, and the two extremes of the floor.
