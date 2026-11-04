@@ -792,6 +792,7 @@ void FirstAudioProcessorEditor::timerCallback() {
         // Item IDs are index + 1, so 0 means "no selection" - what a user preset
         // (index -1) should show in the FACTORY combo.
         presetBox.setSelectedId(presetNow + 1, juce::dontSendNotification);
+        presetArtworkBadge.repaint();
         refreshUserPresetList(); // a factory load clears the user-preset selection
     }
     // The box's SELECTED ENTRY follows the loaded preset, but a preset that is

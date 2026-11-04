@@ -18,8 +18,9 @@
       * when the deck is short, the caption and the control shrink together (30 ->
         24 px of control) before any gap does, because an unreadable caption is a
         worse trade than a smaller box;
-      * the gaps only take what is left over, floored at two pixels, so the deck
-        always fits the rectangle it was handed.
+      * the gaps take what is left over, floored at two pixels; if integer rounding
+        leaves less room than six minimum gaps, the control row gives up the needed
+        pixel so the bottom inset stays clear too.
 
     It is JUCE-free on purpose: tests/layout compiles it and walks every deck
     height from the floor to the preferred one, asserting that no band overlaps
@@ -59,7 +60,7 @@ struct DeckBands {
     // plus its control; the two are solved together below.
     static constexpr int headingHeight = 16;
     static constexpr int presetHeight = 32;
-    static constexpr int badgeHeight = 14;
+    static constexpr int badgeHeight = 20;
 
     // The control row, solved. 30 / 15 is the reference (the size the panel was
     // drawn at); 24 / 12 is the floor, and both move together so the row is never
@@ -98,8 +99,20 @@ struct DeckBands {
         bands.captionHeight = std::clamp(bands.controlHeight / 2, 12, 15);
         bands.rowHeight = bands.controlHeight + bands.captionHeight;
 
-        // What the deck has to hold, ignoring the gaps.
-        const auto content = headingHeight + 4 * bands.rowHeight + presetHeight + badgeHeight;
+        // What the deck has to hold, ignoring the gaps. The integer row ramp can
+        // leave one pixel too little for six minimum gaps at a few intermediate
+        // heights. Keep the promised bottom inset by trimming that pixel from the
+        // control row, down to its 24 px floor, before solving the gaps.
+        auto content = headingHeight + 4 * bands.rowHeight + presetHeight + badgeHeight;
+        const auto roomWithMinimumGaps = deckHeight - topOffset - bottomInset
+                                         - minimumGap * (bandCount - 1);
+        while (content > roomWithMinimumGaps && bands.controlHeight > 24)
+        {
+            --bands.controlHeight;
+            bands.captionHeight = std::clamp (bands.controlHeight / 2, 12, 15);
+            bands.rowHeight = bands.controlHeight + bands.captionHeight;
+            content = headingHeight + 4 * bands.rowHeight + presetHeight + badgeHeight;
+        }
 
         // Then the gaps take the remainder, floored and capped. Capping them means
         // a very tall deck keeps its bands together at the top instead of pulling

@@ -413,7 +413,7 @@ void checkDeckBands()
     {
         const auto bands = DeckBands::solve (height);
 
-        if (bands.bottom() > height)
+        if (bands.bottom() > height - DeckBands::bottomInset)
             inside = false;
 
         for (int band = 0; band < DeckBands::bandCount; ++band)
@@ -458,7 +458,8 @@ void checkDeckBands()
     std::printf ("\ndeck bands: controls %.0f..%.0f px, floor bottom %d of %d\n",
                  smallest, largest, atFloor.bottom(), DeckBands::minimumHeight);
 
-    check (inside, "the bands stay inside the deck at every height it can take", "DECK", 0, 0);
+    check (inside, "the bands stay inside the deck and clear its bottom inset at every height",
+           "DECK", 0, 0);
     check (ordered, "no band overlaps the one above it", "DECK", 0, 0);
     check (rowsFit, "every control row's band is tall enough for its caption and control",
            "DECK", 0, 0);

@@ -805,7 +805,7 @@ void FirstAudioProcessorEditor::loadNoisePrintFile (const juce::File& file)
 
 
 FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
-    : AudioProcessorEditor (&p), audioProcessor (p)
+    : AudioProcessorEditor (&p), audioProcessor (p), presetArtworkBadge (p)
 {
     // The panel the desk was left on, read BEFORE the build phases and before the
     // applyTheme() at the end of them, so the first frame is already on it. A host
@@ -1173,6 +1173,8 @@ void FirstAudioProcessorEditor::resized()
     rebuildPanelTextureLayers();
 
     const auto phoneLayout = j37panel::usesPhoneLayout (getWidth());
+    const auto phoneLayoutChanged = phoneLayout != phoneLayoutActive;
+    phoneLayoutActive = phoneLayout;
     const auto parameterSheetWasOpen = parameterSheet != nullptr && parameterSheet->isOpen();
     for (int child = 0; child < getNumChildComponents(); ++child)
         getChildComponent (child)->setVisible (! phoneLayout);
@@ -1216,6 +1218,9 @@ void FirstAudioProcessorEditor::resized()
         nativeSceneAttachAttemptsLeft = 90;
 
     verifyPanelHasNoOverlaps();
+
+    if (renderSetupComplete && phoneLayoutChanged)
+        applyRenderBackend (renderBackendChoice);
 }
 
 //==============================================================================
@@ -1389,6 +1394,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
 {
     if (j37panel::usesPhoneLayout (getWidth()))
     {
+        presetArtworkBadge.setVisible (false);
         const auto buttonGap = 4;
         const auto buttonLeft = deck.getX() + 6;
         const auto buttonWidth = juce::jmax (1, (deck.getWidth() - 12 - 3 * buttonGap) / 4);
@@ -1931,22 +1937,15 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         placeBackward (tailEdge, copyAButton,       64);
     }
 
-    // The badge band is inset further than the other deck text (22 px instead of 18)
-    // and its caption is fitted to the width it actually has, so neither "FACTORY
-    // STATE" nor a long user-preset name can run into the panel edges or be clipped.
-    //
-    // The machine state moved here from the header: it is a readout of what the
-    // engine is doing, and this is the band the deck's other readouts (the
-    // preset badge, the compare badge) already live on. It takes a fixed cell
-    // off the band's right end and the preset badge gives up exactly that
-    // width, so a long preset name shrinks into what is left rather than
-    // printing under the state text - the shrinking font below measures the
-    // label's ACTUAL bounds, so narrowing it is the whole fix.
-    // The state readout is back in the header on its drawn pill (see the header
-    // grid above), so the badge line is the preset badge's alone again - full
-    // band width, the pill painted UNDER this line in paint() needs no cell.
-    presetBadgeLabel.setBounds (deck.getX() + 22, deckTop (j37panel::DeckBands::badge),
-                                deck.getWidth() - 44,
+    // The artwork gets a 20 px cell at the band's 22 px inset; the caption starts
+    // six pixels after it and keeps the same 22 px inset at the right edge. The
+    // caption is fitted to its actual width, so long user-preset names shrink
+    // instead of running into the panel frame.
+    presetArtworkBadge.setBounds (deck.getX() + 22, deckTop (j37panel::DeckBands::badge),
+                                  20, deckBandHeight (j37panel::DeckBands::badge));
+    presetArtworkBadge.setVisible (true);
+    presetBadgeLabel.setBounds (deck.getX() + 48, deckTop (j37panel::DeckBands::badge),
+                                deck.getWidth() - 70,
                                 deckBandHeight (j37panel::DeckBands::badge));
     presetBadgeLabel.setFont (shrinkingFont (presetBadgeLabel.getText(), 8.0f,
                                              juce::Font::plain,
@@ -3097,6 +3096,7 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "undo",               &undoButton },
             { "redo",               &redoButton },
             { "compareBadge",       &compareBadgeLabel },
+            { "presetArtwork",      &presetArtworkBadge },
             { "presetBadge",        &presetBadgeLabel },
             { "phonePage",          &phonePageBox },
 

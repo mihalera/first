@@ -1,5 +1,5 @@
 {
-  "about": "Optional MiBoX artwork: six theme-mapped material surfaces, product marks and seven saturation-machine glyphs. Every slot is optional; a missing file falls back to the panel's own drawing. See Assets/README.md for dimensions, licences and integration.",
+  "about": "Optional MiBoX artwork: six theme-mapped material surfaces, product marks, seven saturation-machine glyphs and 29 factory-preset illustrations. Every slot is optional; a missing file falls back to the panel's own drawing. See Assets/README.md for dimensions, licences and integration.",
   "licence_policy": "CC0-1.0 or another public-domain dedication. Do not commit a file whose licence is missing, non-commercial, or unclear. Fill in licence, source and author when a file is added.",
   "slots": [
     {
@@ -50,6 +50,25 @@
       "used_by": "Source/GUI/EditorMeters.cpp (MixBar::paint)",
       "licence": "CC0-1.0",
       "source": "Original seven-symbol sprite sheet created for the MiBoX project; drawn procedurally with Python and Pillow.",
+      "author": "OpenAI Codex"
+    },
+    {
+      "name": "factory_preset_art",
+      "file": "factory_preset_art.png",
+      "width": 1856,
+      "height": 64,
+      "used_by": "Source/GUI/EditorMeters.cpp (PresetArtworkBadge; selected tile follows FACTORY_PRESET_FILES order)",
+      "tile_size": 64,
+      "tile_order": [
+        "default", "minimum", "maximum", "gentle_warmth", "bus_glue_tape",
+        "drum_slam", "vintage_lo_fi", "wide_master", "clean_glue", "saturated_crunch",
+        "wobbly_cassette", "bright_air_tape", "mix_saturation", "master_bounce", "vocal_rail",
+        "drum_room_warm", "bass_weight", "master_safety", "lo_fi_radio", "ferric_master",
+        "british_valve", "plexi_bite", "iron_bloom", "twelve_bit_bounce", "dubplate_dub",
+        "shellac_radio", "transient_punch", "soft_touch", "tight_bus"
+      ],
+      "licence": "CC0-1.0",
+      "source": "Original 29-tile artwork atlas created for MiBoX; procedurally drawn with Python and Pillow, with preset parameters used to vary the illustrations.",
       "author": "OpenAI Codex"
     }
   ]

@@ -131,8 +131,16 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
         workArea = displays.getTotalBounds(true);
 
     if (workArea.isEmpty()) {
+#if defined (__ANDROID__)
+        // Android may create the standalone editor before its Activity has
+        // published display metrics. Do not request the desktop default in that
+        // window: it can exceed the phone's content view before the first resize.
+        setResizeLimits (1, 1, 1500, 1180);
+        setSize (360, 800);
+#else
         setResizeLimits(minEditorWidth, minEditorHeight, 1500, 1180);
         setSize(preferredEditorWidth, preferredEditorHeight);
+#endif
     } else {
         // toNearestInt() above already rounded, so subtracting the margin afterwards
         // cannot leave the window half a pixel - or a whole one - over the edge.
@@ -2189,6 +2197,7 @@ void FirstAudioProcessorEditor::setUpPresetBar() {
     styleLabel(presetBadgeLabel, "", 8.0f, paletteFor(false).secondary, false,
                juce::Justification::centredLeft);
     addAndMakeVisible(presetBadgeLabel);
+    addAndMakeVisible(presetArtworkBadge);
 
     workflowButtonSetup(copyAButton, "Store the current settings in slot A. "
                                      "A is the side the plugin starts on.");
@@ -2329,6 +2338,18 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
     openGLAttachAttemptsLeft = 0;
     nativeSceneAttachAttemptsLeft = 0;
 
+    // The phone layout does not show the 3D deck. Keep its GPU surfaces detached
+    // while narrow, then attach the selected renderer when the editor grows past
+    // the phone breakpoint.
+    if (j37panel::usesPhoneLayout (getWidth())) {
+        openGLContext.detach();
+        tapeScene.setSceneEnabled(false);
+        shutDownNativeScene();
+        tapeScene.repaint();
+        repaint();
+        return;
+    }
+
     if (panelOnGpu) {
         // The same context settings setUpOpenGlRendering() applies: a machine that
         // STARTED on CPU never ran that phase's block, and attaching a context
@@ -2371,6 +2392,15 @@ void FirstAudioProcessorEditor::setUpOpenGlRendering() {
     const auto running = j37::render::runningBackend(renderBackendChoice);
     nativeSceneAttachAttemptsLeft = 0;
 
+    if (j37panel::usesPhoneLayout (getWidth())) {
+        tapeScene.setSceneEnabled(false);
+        shutDownNativeScene();
+        openGLContext.detach();
+        openGLAttachAttemptsLeft = 0;
+        renderSetupComplete = true;
+        return;
+    }
+
     // A native command renderer takes the deck's surface ONLY when its adapter
     // draws the full scene (hasNativeImplementation) - sokol does, so a SOKOL
     // build attaches it to tapeScene here. The others still implement
@@ -2393,14 +2423,17 @@ void FirstAudioProcessorEditor::setUpOpenGlRendering() {
     // fully accelerated". The explicit CPU choice is the only one that refuses
     // it; on every other choice the attach is still best-effort and JUCE's
     // software painter takes over if the driver cannot create the context.
-    if (running == j37::render::Backend::cpu)
+    if (running == j37::render::Backend::cpu) {
+        renderSetupComplete = true;
         return;
+    }
 
     openGLContext.setComponentPaintingEnabled(true);
     openGLContext.setContinuousRepainting(false);
     openGLContext.setSwapInterval(1);
     openGLContext.attachTo(*this);
     openGLAttachAttemptsLeft = openGLContext.isAttached() ? 0 : 90;
+    renderSetupComplete = true;
 }
 
 //==============================================================================

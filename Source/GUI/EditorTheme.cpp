@@ -99,6 +99,7 @@ void FirstAudioProcessorEditor::applyTheme() {
     // without being told. Three lines of state instead of a wrong colour on a
     // theme the user just cycled.
     mixBar.setDarkTheme(darkTheme);
+    presetArtworkBadge.repaint();
     metersHeadingLabel.setColour(juce::Label::textColourId, palette.accent);
     metersHintLabel.setColour(juce::Label::textColourId, palette.secondary);
 

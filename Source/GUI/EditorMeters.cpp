@@ -13,6 +13,7 @@
 #include <chrono>
 #include <utility>
 #include "GUI/PanelPaint.h"
+#include "GUI/PanelAssets.h"
 #include "GUI/PanelTabs.h"
 #include "GUI/PanelText.h"
 
@@ -22,6 +23,50 @@ using j37panel::formatDb;
 using j37panel::paletteFor;
 using j37panel::principleColour;
 using j37panel::shrinkingFont;
+
+void FirstAudioProcessorEditor::PresetArtworkBadge::paint (juce::Graphics& g)
+{
+    const auto& palette = paletteFor (false);
+    const auto bounds = getLocalBounds().toFloat();
+
+    if (bounds.isEmpty())
+        return;
+
+    g.setColour (palette.raised);
+    g.fillRoundedRectangle (bounds, 3.0f);
+
+    const auto& atlas = j37panel::assets::cachedImage ("factory_preset_art_png");
+    const auto index = processor.getLastPresetIndex();
+    const auto tiles = atlas.isValid() && atlas.getHeight() == 64 && atlas.getWidth() % 64 == 0
+                         ? atlas.getWidth() / 64 : 0;
+
+    if (index >= 0 && index < tiles)
+    {
+        g.drawImage (atlas, bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight(),
+                     index * 64, 0, 64, 64, false);
+    }
+    else
+    {
+        const auto& brand = j37panel::assets::cachedImage ("brand_mark_png");
+        if (brand.isValid())
+        {
+            g.drawImageWithin (brand, getLocalBounds().getX() + 2, getLocalBounds().getY() + 2,
+                               juce::jmax (1, getWidth() - 4), juce::jmax (1, getHeight() - 4),
+                               juce::RectanglePlacement::centred, false);
+        }
+        else
+        {
+            const auto reel = bounds.reduced (4.0f);
+            g.setColour (palette.accent);
+            g.drawEllipse (reel, 1.5f);
+            g.drawEllipse (reel.reduced (reel.getWidth() * 0.28f), 1.0f);
+            g.fillEllipse (reel.getCentreX() - 1.2f, reel.getCentreY() - 1.2f, 2.4f, 2.4f);
+        }
+    }
+
+    g.setColour (palette.border.withAlpha (0.9f));
+    g.drawRoundedRectangle (bounds.reduced (0.5f), 3.0f, 0.75f);
+}
 
 //==============================================================================
 FirstAudioProcessorEditor::LevelMeter::LevelMeter (juce::String meterTitle, juce::String meterSubtitle)

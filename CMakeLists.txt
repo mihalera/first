@@ -592,9 +592,8 @@ endforeach()
 #  Optional panel art.
 #
 #  The panel is drawn from code - palettes, arithmetic, no bitmaps - and the files
-#  below are the additive layer: theme materials, saturation glyphs, brand marks
-#  and window/app icons, named by
-#  named by Source/GUI/PanelAssetSlots.h and loaded through
+#  below are the additive layer: theme materials, saturation glyphs, preset tiles,
+#  brand marks and window/app icons, named by Source/GUI/PanelAssetSlots.h and loaded through
 #  Source/GUI/PanelAssets.h. Nothing here is required: when the glob is empty the
 #  plugin builds and behaves exactly as before, and every draw site falls back to
 #  its own drawn panel. Drop a file in Assets/ and reconfigure; that is the whole

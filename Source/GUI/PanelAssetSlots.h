@@ -19,8 +19,9 @@
          every call site falls back to the drawn panel when the image is invalid.
 
     WHY PNG HERE: the panel materials are raster art; six surfaces share one
-    atlas and seven small alpha glyphs share another, with one cached loader for
-    both. Art needing unlimited scale can use the Drawable loader from the README.
+    atlas, seven small alpha glyphs share another, and the factory preset artwork
+    shares a third. All use one cached loader. Art needing unlimited scale can use
+    the Drawable loader from the README.
   ============================================================================ */
 #pragma once
 
@@ -58,6 +59,10 @@ inline constexpr Slot slots[] = {
     { "principle_icons", "principle_icons.png", "principle_icons_png", 448, 64,
       "Seven monochrome alpha glyphs for the MIX bar, ordered TAPE, VALVE, "
       "CASSETTE, VINYL, AMP, TRANSFORMER, DIGITAL. Tinted by the active palette." },
+
+    { "factory_preset_art", "factory_preset_art.png", "factory_preset_art_png", 1856, 64,
+      "Twenty-nine 64 px preset artwork tiles in the exact FACTORY_PRESET_FILES "
+      "order from CMakeLists.txt; selected in the deck's current-preset badge." },
 };
 
 inline constexpr int slotCount = static_cast<int> (sizeof (slots) / sizeof (slots[0]));

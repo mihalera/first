@@ -34,6 +34,7 @@ EDITOR_PAINT = REPO / "Source" / "GUI" / "EditorPaint.cpp"
 EDITOR_METERS = REPO / "Source" / "GUI" / "EditorMeters.cpp"
 EDITOR_THEME = REPO / "Source" / "GUI" / "EditorTheme.cpp"
 PANEL_PAINT = REPO / "Source" / "GUI" / "PanelPaint.h"
+CMAKE = REPO / "CMakeLists.txt"
 MANIFEST = REPO / "Assets" / "manifest.json"
 ASSET_DIR = REPO / "Assets"
 
@@ -78,6 +79,7 @@ def main() -> int:
     editor_meters = EDITOR_METERS.read_text()
     editor_theme = EDITOR_THEME.read_text()
     panel_paint = PANEL_PAINT.read_text()
+    cmake = CMAKE.read_text()
 
     if "setWindowIcon (art);" not in theme_window:
         problems.append("UserThemeWindow must apply the window_icon asset when present")
@@ -112,6 +114,21 @@ def main() -> int:
                              editor_meters, re.DOTALL)):
         problems.append("MixBar must draw and tint the matching 64 px principle icon cell")
 
+    preset_block = re.search(r"set\(FACTORY_PRESET_FILES\s*(.*?)\)", cmake, re.DOTALL)
+    preset_order = ([] if preset_block is None else
+                    re.findall(r"\$\{FACTORY_PRESET_DIR\}/([a-z0-9_]+)\.json",
+                               preset_block.group(1)))
+    if not preset_order:
+        problems.append("CMakeLists.txt must define the ordered FACTORY_PRESET_FILES list")
+
+    if ("factory_preset_art_png" not in editor_meters
+            or "processor.getLastPresetIndex()" not in editor_meters
+            or not re.search(r"drawImage\s*\(\s*atlas,.*?index\s*\*\s*64,\s*0,\s*64,\s*64",
+                             editor_meters, re.DOTALL)):
+        problems.append("PresetArtworkBadge must crop the selected 64 px tile by processor preset index")
+    if "brand_mark_png" not in editor_meters:
+        problems.append("PresetArtworkBadge must provide a product-mark fallback for non-factory states")
+
     if not MANIFEST.exists():
         raise SystemExit(f"{MANIFEST.relative_to(REPO)} is missing; the asset pipeline "
                          f"has a manifest even when it has no art")
@@ -133,6 +150,15 @@ def main() -> int:
         expected_width = int(principle_count.group(1)) * 64
         if icon_entry.get("width") != expected_width or icon_entry.get("height") != 64:
             problems.append("principle_icons must contain one 64x64 cell per saturation principle")
+
+    preset_art_entry = entries.get("factory_preset_art")
+    if preset_art_entry is not None:
+        if preset_art_entry.get("tile_order") != preset_order:
+            problems.append("factory_preset_art tile_order must exactly match CMake's factory preset order")
+        if (preset_art_entry.get("tile_size") != 64
+                or preset_art_entry.get("width") != len(preset_order) * 64
+                or preset_art_entry.get("height") != 64):
+            problems.append("factory_preset_art must have one 64x64 tile per ordered factory preset")
 
     by_name = {row["name"]: row for row in rows}
 

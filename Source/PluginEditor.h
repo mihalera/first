@@ -532,6 +532,18 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         bool darkTheme = false;
     };
 
+    /** Small deck badge artwork for the active factory preset. The atlas and
+        processor preset indices both follow CMake's FACTORY_PRESET_FILES order;
+        non-factory states use the product mark as a stable fallback. */
+    class PresetArtworkBadge final : public juce::Component {
+      public:
+        explicit PresetArtworkBadge (FirstAudioProcessor& p) : processor (p) {}
+        void paint (juce::Graphics&) override;
+
+      private:
+        FirstAudioProcessor& processor;
+    };
+
     struct PhysicsOrb {
         b2Body *body = nullptr;
         float radius = 0.0f;
@@ -863,6 +875,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void toggleParameterSheet();
 
     FirstAudioProcessor &audioProcessor;
+    PresetArtworkBadge presetArtworkBadge;
     J37LookAndFeel customLookAndFeel;
     // The second, deliberately different design for the lists and switches that
     // live INSIDE a tab. See the class comment for why it is a separate LookAndFeel
@@ -1472,6 +1485,8 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::OpenGLContext openGLContext;
     int openGLAttachAttemptsLeft = 0;
     int nativeSceneAttachAttemptsLeft = 0;
+    bool renderSetupComplete = false;
+    bool phoneLayoutActive = false;
 
     // The native scene renderer (sokol today), attached to tapeScene and fed
     // one SceneFrame per timer tick. Null on every build without a scene-capable

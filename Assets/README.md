@@ -22,6 +22,7 @@ mirrors it for the check and for whoever is sourcing the art.
 | `brand_mark.png` | 256 × 256 | The product mark: a reel, a monogram, a drawn logo. Read as a signature, not a control. | The USER THEME window's header |
 | `window_icon.png` | 64 × 64 | Title-bar / taskbar icon for the USER THEME window. Must read at 16 px. Without it the window draws its own reel mark (`defaultWindowIcon` in the same header), so the corner is never blank. | `UserThemeWindow`, `DocumentWindow::setIcon` |
 | `principle_icons.png` | 448 × 64 | Seven 64 px white-on-transparent glyphs, ordered TAPE, VALVE, CASSETTE, VINYL, AMP, TRANSFORMER, DIGITAL. The panel tints each glyph to the active machine colour. | The seven cells in the MIX bar, `Source/GUI/EditorMeters.cpp` |
+| `factory_preset_art.png` | 1856 × 64 | Twenty-nine 64 px illustrated tiles, one per factory preset. Its order exactly follows `FACTORY_PRESET_FILES` in `CMakeLists.txt`. | The selected preset's artwork badge, `PresetArtworkBadge` in `Source/GUI/EditorMeters.cpp` |
 
 PNG with alpha. `panel_texture` and each tile in `panel_materials` should be
 **seamless-ish and low contrast**: they are overlaid on a dark or light palette, so
@@ -29,6 +30,11 @@ bright features can read as stains. The material tile order is locked to
 `ThemeChoice` in `Source/GUI/PanelPaint.h`; keep the enum and the atlas in step.
 The marks are artwork; the principle sprite sheet is a white alpha mask, so JUCE
 can tint the same seven shapes for every theme.
+The preset artwork atlas has one tile for every entry in CMake's factory preset
+list. That list also generates the preset index used by the processor and combo
+box, so the badge, selector, and embedded presets share one order. When no factory
+preset is active (for example, a fresh or user-edited state), the badge falls back
+to `brand_mark.png` and then to a drawn reel symbol.
 
 ## Licences — read this before committing anything
 
