@@ -3,7 +3,7 @@
 //  asks for, and the eleven readers that turn the processor's state into what the
 //  panel shows.
 //
-//  Moved out of PluginEditor.cpp, prose and all. Thirty times a second this is what
+//  Moved out of PluginEditor.cpp, prose and all. Sixty times a second this is what
 //  runs, and it was spread through the file in eleven places, each next to the
 //  control it updates. What it costs to keep them together is that a control's
 //  styling and its refresh are now in two files (EditorTheme.cpp styles it, this
@@ -19,6 +19,7 @@
 #include "GUI/PanelPaint.h"
 #include "GUI/PanelText.h"
 #include "GUI/PanelTranslations.h"
+#include "GUI/AnimationTiming.h"
 
 // Only the names this file's own text uses: a header member that is not
 // reachable from here should not look reachable.
@@ -312,8 +313,8 @@ void FirstAudioProcessorEditor::timerCallback() {
 
     // The parameter sheet is an opaque, full-editor overlay. Its rows have their
     // own attachments and its viewport is the only thing the user can see. The
-    // phone layout also omits the large meters and OSC ring to leave room for
-    // touch controls, so neither surface should consume update or repaint work.
+    // phone layout omits the large meters; its compact OSC ring remains active
+    // and is redrawn only while visible.
     const auto panelCovered = parameterSheet != nullptr && parameterSheet->isOpen();
     const auto phoneLayout = j37panel::usesPhoneLayout (getWidth(), getHeight());
     const auto metersVisible = ! panelCovered && ! phoneLayout;
@@ -321,7 +322,7 @@ void FirstAudioProcessorEditor::timerCallback() {
     outputMeter.setActive(metersVisible);
     compressorMeterIn.setActive(metersVisible);
     compressorMeterOut.setActive(metersVisible);
-    oscRing.setRedrawEnabled(! panelCovered && ! phoneLayout);
+    oscRing.setRedrawEnabled(! panelCovered && oscRing.isVisible());
 
     // Retry context creation while the host is still creating its peer. The
     // budget is bounded so an unavailable driver is not polled forever.
@@ -372,8 +373,7 @@ void FirstAudioProcessorEditor::timerCallback() {
 
     // The neural model readout is cheap to refresh and cheap to check: the
     // status only changes when a model is loaded or cleared, so the label is
-    // only rewritten when its text would actually differ. That keeps a 30 Hz
-    // timer from re-laying out a label sixty times a second for no reason.
+    // only rewritten when its text would actually differ.
     refreshNeuralStatus();
     // The IR readout follows the same rule - and it is the one place a load
     // that finished on the convolution's background thread still gets drawn,
@@ -600,7 +600,7 @@ void FirstAudioProcessorEditor::timerCallback() {
 
     // The spindown lamp follows both the parameter (so automation lights it) and
     // the button's own mouse state (so the lamp is instant on a press, before the
-    // 30 Hz poll would see the parameter change).
+    // next timer poll would see the parameter change).
     const auto transportNow = currentTransportState();
     const auto spindownNow = audioProcessor.isSpindownHeld() || spindownButton.isDown();
 
@@ -648,7 +648,7 @@ void FirstAudioProcessorEditor::timerCallback() {
     const auto animationNow = Clock::now();
     const auto animationDelta =
         lastAnimationFrame == Clock::time_point{}
-            ? 1.0f / 30.0f
+            ? 1.0f / static_cast<float> (j37panel::editorTimerHz)
             : juce::jlimit(0.0f, 0.25f,
                            std::chrono::duration<float>(animationNow - lastAnimationFrame).count());
     lastAnimationFrame = animationNow;
@@ -722,7 +722,7 @@ void FirstAudioProcessorEditor::timerCallback() {
     // something STRUCTURAL changes - a theme switch, a resize - through
     // rebuildPanelTextureLayers(); the timer used to repaint the whole editor
     // every tick besides, and that was the lists' lag: with a popup menu open
-    // (presets, vinyl types, oversampling - every combo), each 30 Hz tick
+    // (presets, vinyl types, oversampling - every timer tick)
     // buried the popup's window under a full-panel invalidation and the menu
     // repainted itself behind it, which the eye read as the list dragging.
     // The knobs need none of it - they repaint themselves when their own value
@@ -767,7 +767,7 @@ void FirstAudioProcessorEditor::timerCallback() {
     const auto popupIsOpen = presetBox.isPopupActive() || userPresetBox.isPopupActive()
                              || juce::Component::getCurrentlyModalComponent() != nullptr;
 
-    // Workflow state is cheap to poll at 30 Hz and makes the panel self-healing:
+    // Workflow state is cheap to poll and makes the panel self-healing:
     // if the host, a session load or a preset change moves anything, the buttons,
     // badge and preset display catch up on the next frame instead of lying.
     // Skipped while a popup is open, so nothing the poll touches can pull the
@@ -812,13 +812,13 @@ void FirstAudioProcessorEditor::timerCallback() {
     // While the user turns knobs, the live state drifts away from the stored side, so
     // the active A/B slot is re-mirrored periodically and COPY A / COPY B always capture
     // the machine as it is right now. This used to run on EVERY timer frame: each call
-    // deep-copies the whole parameter tree twice, so at 30 Hz that was sixty whole-tree
+    // deep-copies the whole parameter tree twice, so at 60 Hz that would be 120 whole-tree
     // copies a second landing on the message thread in the middle of a knob drag - on top
     // of the repaint work. That is exactly when the GUI thread is busiest and the audio
     // thread has least headroom, and the resulting dropouts are heard as clicks. It now
     // runs at ~5 Hz and only while the editor is actually on screen, which is far faster
     // than a person can hear the EDITED badge appear.
-    if (isShowing() && ++compareMirrorTick >= 6) {
+    if (isShowing() && ++compareMirrorTick >= j37panel::editorTimerHz / 5) {
         compareMirrorTick = 0;
         audioProcessor.updateActiveCompareSlot();
     }
@@ -826,7 +826,7 @@ void FirstAudioProcessorEditor::timerCallback() {
     if (physicsWorld == nullptr)
         return;
 
-    physicsWorld->Step(1.0f / 30.0f, 6, 2);
+    physicsWorld->Step (1.0f / static_cast<float> (j37panel::editorTimerHz), 6, 2);
 
     // Dust does not settle. Box2D's restitution is below one, so energy leaves at
     // every bounce, and six bodies left alone would eventually come to rest in a
@@ -925,13 +925,15 @@ void FirstAudioProcessorEditor::timerCallback() {
     // open is an invalidation of the panel BEHIND it, which the popup's own
     // window then has to repaint over; that is the same class of problem as the
     // whole-panel repaint noted above, one rectangle at a time. The frame after
-    // the menu closes catches the animation up, which at 30 Hz is invisible.
 #if defined (__ANDROID__)
-    constexpr int animationPaintIntervalTicks = 1;
+    constexpr int animationPaintIntervalTicks = j37panel::androidAnimationPaintIntervalTicks;
 #else
-    constexpr int animationPaintIntervalTicks = 2;
+    constexpr int animationPaintIntervalTicks = j37panel::desktopAnimationPaintIntervalTicks;
 #endif
-    if (!popupIsOpen && !panelCovered && ++animationPaintTick >= animationPaintIntervalTicks) {
+    // Desktop repaints at 30 Hz to keep the textured panel affordable; Android
+    // repaints at 60 Hz, where the compact layout does not draw the full deck.
+    if (!popupIsOpen && !panelCovered
+        && ++animationPaintTick >= animationPaintIntervalTicks) {
         animationPaintTick = 0;
         repaintAnimatedSurfaces();
     }

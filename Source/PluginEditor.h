@@ -1047,7 +1047,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // behind it - see refreshNeuralStatus().
     juce::String lastShownNeuralTooltip;
     // Non-empty while the last load was REFUSED: the reason the processor gave,
-    // held here so the readout keeps showing it. The 30 Hz refresh repaints the
+    // held here so the readout keeps showing it. The timer refresh repaints the
     // label from the stage's own state, and without this hold a refused file
     // would read as a plain "NO MODEL" one frame after the picker said why.
     juce::String neuralStatusReason;
@@ -1259,9 +1259,8 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // while a knob is being dragged.
     int compareMirrorTick = 0;
 
-    // Desktop animation invalidations run every second timer tick; Android runs
-    // them on every 30 Hz tick so the phone UI is not capped at 15 fps. See
-    // repaintAnimatedSurfaces().
+    // The 60 Hz timer invalidates desktop animation every second tick and Android
+    // animation every tick. See repaintAnimatedSurfaces().
     int animationPaintTick = 0;
     int lastShownPreset = -2;
     int lastShownSlot = -1;

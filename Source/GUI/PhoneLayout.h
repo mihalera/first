@@ -17,6 +17,12 @@ namespace j37panel
         PhoneLayoutRectangle controls;
     };
 
+    struct PhoneTabStripLayout
+    {
+        PhoneLayoutRectangle families;
+        PhoneLayoutRectangle pages;
+    };
+
     inline constexpr int phoneLayoutMaxWidth = 600;
     inline constexpr int phoneLandscapeMaxWidth = 1100;
     inline constexpr int phoneLandscapeMaxHeight = 520;
@@ -34,9 +40,48 @@ namespace j37panel
                        && height <= phoneLandscapeMaxHeight));
     }
 
+    constexpr bool isPhoneLandscape (int width, int height) noexcept
+    {
+        return width > height && height <= phoneLandscapeMaxHeight
+               && width <= phoneLandscapeMaxWidth;
+    }
+
     constexpr int nonNegative (int value) noexcept
     {
         return value > 0 ? value : 0;
+    }
+
+    constexpr PhoneTabStripLayout computePhoneLandscapeTabStrip (
+        PhoneLayoutRectangle controls) noexcept
+    {
+        const PhoneLayoutRectangle row {
+            controls.x + 14, controls.y + 34,
+            nonNegative (controls.width - 28), 22
+        };
+        const PhoneLayoutRectangle pages {
+            controls.x + 14, controls.y + 60,
+            nonNegative (controls.width - 28), 22
+        };
+        return { row, pages };
+    }
+
+    constexpr PhoneLayoutRectangle computePhoneOscRingBounds (
+        PhoneLayoutRectangle deck, bool landscape) noexcept
+    {
+        if (landscape)
+        {
+            const auto size = deck.height > 132
+                                ? (deck.height - 132 < 78 ? deck.height - 132 : 78)
+                                : 0;
+            return { deck.x + (deck.width - size) / 2,
+                     deck.y + deck.height - size - 8, size, size };
+        }
+
+        const auto size = deck.height > 4
+                            ? (deck.height - 4 < 68 ? deck.height - 4 : 68)
+                            : 0;
+        return { deck.x + deck.width - size - 6,
+                 deck.y + (deck.height - size) / 2, size, size };
     }
 
     constexpr PhoneEditorLayout computePhoneEditorLayout (int width, int height) noexcept
@@ -44,8 +89,7 @@ namespace j37panel
         const auto contentWidth = nonNegative (width - 2 * phoneLayoutInset);
         const auto contentHeight = nonNegative (height - 2 * phoneLayoutInset);
 
-        if (width > height && height <= phoneLandscapeMaxHeight
-            && width <= phoneLandscapeMaxWidth)
+        if (isPhoneLandscape (width, height))
         {
             const auto headerHeight = contentHeight < phoneHeaderHeight
                                         ? contentHeight : phoneHeaderHeight;

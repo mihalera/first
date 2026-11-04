@@ -12,6 +12,7 @@
 #include <cmath>
 #include <cstring>
 #include "GUI/PanelPaint.h"
+#include "GUI/PanelAssets.h"
 
 // The knob's radial budget, which drawRotarySlider solves the cap, the groove and
 // the marks inside. It is Source/GUI/KnobMetrics.h: called from here and from the
@@ -1007,10 +1008,39 @@ void J37LookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button
     // Side bearing so the fitted caption is never clipped by the rounded corners. 3 px
     // rather than 5: the workflow buttons are only 38-44 px wide, so every pixel here is
     // the difference between a full "SAVE" and an ellipsised "SA...".
-    const auto bounds = button.getLocalBounds().toFloat().reduced (3.0f, 1.0f);
+    auto bounds = button.getLocalBounds().toFloat().reduced (3.0f, 1.0f);
     const auto text = button.getButtonText();
 
     g.setColour (colour);
+
+    // The three broad family keys have room for one small monochrome atlas glyph.
+    // Their IDs select cells 18-20: the same TAPE / FX / SETUP order checked
+    // against the generated asset_catalog.json by tests/assets/check_assets.py.
+    const auto componentID = button.getComponentID();
+    if (componentID.startsWith ("mibox.family."))
+    {
+        const auto family = componentID.substring (13).getIntValue();
+        const auto iconIndex = 18 + family;
+        const auto& icons = j37panel::assets::cachedImage ("ui_icons_png");
+        constexpr int atlasColumns = 8;
+        constexpr int tileSize = 64;
+        const auto tileCount = icons.isValid() && icons.getHeight() % tileSize == 0
+                                 ? (icons.getWidth() / tileSize) * (icons.getHeight() / tileSize)
+                                 : 0;
+        if (family >= 0 && family < 3 && iconIndex < tileCount)
+        {
+            auto iconBounds = bounds.removeFromLeft (18.0f);
+            iconBounds.setY (static_cast<float> (button.getHeight() - 16) * 0.5f);
+            iconBounds.setHeight (16.0f);
+            g.drawImage (icons, iconBounds.getX(), iconBounds.getY(),
+                         iconBounds.getWidth(), iconBounds.getHeight(),
+                         (iconIndex % atlasColumns) * tileSize,
+                         (iconIndex / atlasColumns) * tileSize,
+                         tileSize, tileSize, true);
+            bounds.removeFromLeft (3.0f);
+        }
+    }
+
     g.setFont (shrinkingFont (text, 12.0f, juce::Font::bold, bounds.getWidth()));
     g.drawText (text, bounds, juce::Justification::centred, true);
 

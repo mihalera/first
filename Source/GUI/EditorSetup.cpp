@@ -24,6 +24,7 @@
 #include "GUI/PanelTabs.h"
 #include "GUI/PanelText.h"
 #include "GUI/PanelTranslations.h"
+#include "GUI/AnimationTiming.h"
 
 // The renderer probe setUpOpenGlRendering() reads. It used to reach this file
 // through PluginEditor.cpp's include of it, which stopped being enough the day
@@ -886,6 +887,7 @@ void FirstAudioProcessorEditor::setUpTabButtons() {
         &tabFamilyTapeButton, &tabFamilyFxButton, &tabFamilySetupButton};
     for (std::size_t f = 0; f < familyButtons.size(); ++f) {
         auto &button = *familyButtons[f];
+        button.setComponentID ("mibox.family." + juce::String (static_cast<int> (f)));
         button.setLookAndFeel(&customLookAndFeel);
         button.onClick = [this, f] { setTabFamily(static_cast<int>(f)); };
         addAndMakeVisible(button);
@@ -1013,7 +1015,7 @@ void FirstAudioProcessorEditor::setUpDeckSelectors() {
                           "differently at 33 and 45, and a 78's wind-up motor "
                           "wobbles hardest. 33 RPM is the default.");
 
-    // The deck's readout pairs: the numbers change at 30 Hz, so a tooltip on
+    // The deck's readout pairs: the numbers change at 60 Hz, so a tooltip on
     // the VALUE would sit under a moving mouse on every frame. The caption
     // carries the explanation instead - it is static, and it is what a user
     // actually points at when reading a column.
@@ -2525,7 +2527,7 @@ void FirstAudioProcessorEditor::finishConstruction() {
     // voice is chosen.
     attachInterfaceSounds();
 
-    startTimerHz(30);
+    startTimerHz(j37panel::editorTimerHz);
 }
 
 void FirstAudioProcessorEditor::createDecorativePhysics() {

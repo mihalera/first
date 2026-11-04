@@ -1,0 +1,2435 @@
+{
+  "about": "Generated MiBoX visual library. Sprite keys and indices are stable within each atlas; white glyph atlases are tintable for normal, active, disabled and high-contrast states.",
+  "generator": "Assets/generate_asset_pack.py (Pillow required)",
+  "atlases": [
+    {
+      "file": "ui_icons.png",
+      "columns": 8,
+      "rows": 13,
+      "tile_size": 64,
+      "width": 512,
+      "height": 832,
+      "items": [
+        {
+          "key": "tab.machine",
+          "label": "MACHINE",
+          "family": "navigation",
+          "shape": "reel",
+          "tile": 0
+        },
+        {
+          "key": "tab.front_end",
+          "label": "FRONT END",
+          "family": "navigation",
+          "shape": "input",
+          "tile": 1
+        },
+        {
+          "key": "tab.saturation",
+          "label": "SATURATION",
+          "family": "navigation",
+          "shape": "wave",
+          "tile": 2
+        },
+        {
+          "key": "tab.character",
+          "label": "CHARACTER",
+          "family": "navigation",
+          "shape": "knob",
+          "tile": 3
+        },
+        {
+          "key": "tab.noise",
+          "label": "NOISE",
+          "family": "navigation",
+          "shape": "wobble",
+          "tile": 4
+        },
+        {
+          "key": "tab.record",
+          "label": "RECORD",
+          "family": "navigation",
+          "shape": "vinyl",
+          "tile": 5
+        },
+        {
+          "key": "tab.vinyl",
+          "label": "VINYL",
+          "family": "navigation",
+          "shape": "vinyl",
+          "tile": 6
+        },
+        {
+          "key": "tab.mix",
+          "label": "MIX",
+          "family": "navigation",
+          "shape": "sliders",
+          "tile": 7
+        },
+        {
+          "key": "tab.subfund",
+          "label": "SUBFUND",
+          "family": "navigation",
+          "shape": "octave",
+          "tile": 8
+        },
+        {
+          "key": "tab.delay",
+          "label": "DELAY",
+          "family": "navigation",
+          "shape": "echo",
+          "tile": 9
+        },
+        {
+          "key": "tab.reverb",
+          "label": "REVERB",
+          "family": "navigation",
+          "shape": "room",
+          "tile": 10
+        },
+        {
+          "key": "tab.dyn",
+          "label": "DYN",
+          "family": "navigation",
+          "shape": "envelope",
+          "tile": 11
+        },
+        {
+          "key": "tab.out_eq",
+          "label": "OUT EQ",
+          "family": "navigation",
+          "shape": "eq",
+          "tile": 12
+        },
+        {
+          "key": "tab.in_eq",
+          "label": "IN EQ",
+          "family": "navigation",
+          "shape": "eq",
+          "tile": 13
+        },
+        {
+          "key": "tab.models",
+          "label": "MODELS",
+          "family": "navigation",
+          "shape": "chip",
+          "tile": 14
+        },
+        {
+          "key": "tab.settings",
+          "label": "SETTINGS",
+          "family": "navigation",
+          "shape": "gear",
+          "tile": 15
+        },
+        {
+          "key": "tab.autotune",
+          "label": "AUTOTUNE",
+          "family": "navigation",
+          "shape": "note",
+          "tile": 16
+        },
+        {
+          "key": "tab.comp",
+          "label": "COMP",
+          "family": "navigation",
+          "shape": "compressor",
+          "tile": 17
+        },
+        {
+          "key": "family.tape",
+          "label": "Tape family",
+          "family": "navigation",
+          "shape": "reel",
+          "tile": 18
+        },
+        {
+          "key": "family.fx",
+          "label": "Effects family",
+          "family": "navigation",
+          "shape": "echo",
+          "tile": 19
+        },
+        {
+          "key": "family.setup",
+          "label": "Setup family",
+          "family": "navigation",
+          "shape": "gear",
+          "tile": 20
+        },
+        {
+          "key": "family.menu",
+          "label": "Menu",
+          "family": "navigation",
+          "shape": "menu",
+          "tile": 21
+        },
+        {
+          "key": "family.back",
+          "label": "Back",
+          "family": "navigation",
+          "shape": "back",
+          "tile": 22
+        },
+        {
+          "key": "family.close",
+          "label": "Close",
+          "family": "navigation",
+          "shape": "close",
+          "tile": 23
+        },
+        {
+          "key": "family.expand",
+          "label": "Expand",
+          "family": "navigation",
+          "shape": "expand",
+          "tile": 24
+        },
+        {
+          "key": "family.collapse",
+          "label": "Collapse",
+          "family": "navigation",
+          "shape": "collapse",
+          "tile": 25
+        },
+        {
+          "key": "switch.bypass",
+          "label": "Bypass",
+          "family": "controls",
+          "shape": "switch",
+          "tile": 26
+        },
+        {
+          "key": "switch.delta",
+          "label": "Delta monitor",
+          "family": "controls",
+          "shape": "delta",
+          "tile": 27
+        },
+        {
+          "key": "switch.polarity",
+          "label": "Polarity",
+          "family": "controls",
+          "shape": "phase",
+          "tile": 28
+        },
+        {
+          "key": "switch.auto_gain",
+          "label": "Auto gain",
+          "family": "controls",
+          "shape": "level",
+          "tile": 29
+        },
+        {
+          "key": "switch.sync",
+          "label": "Tempo sync",
+          "family": "controls",
+          "shape": "sync",
+          "tile": 30
+        },
+        {
+          "key": "switch.tempo",
+          "label": "Tempo",
+          "family": "controls",
+          "shape": "metronome",
+          "tile": 31
+        },
+        {
+          "key": "switch.oversampling",
+          "label": "Oversampling",
+          "family": "controls",
+          "shape": "steps",
+          "tile": 32
+        },
+        {
+          "key": "switch.lofi",
+          "label": "Lo-Fi",
+          "family": "controls",
+          "shape": "cassette",
+          "tile": 33
+        },
+        {
+          "key": "switch.modern",
+          "label": "Modern",
+          "family": "controls",
+          "shape": "digital",
+          "tile": 34
+        },
+        {
+          "key": "switch.theme",
+          "label": "Theme",
+          "family": "controls",
+          "shape": "sunmoon",
+          "tile": 35
+        },
+        {
+          "key": "switch.language",
+          "label": "Language",
+          "family": "controls",
+          "shape": "globe",
+          "tile": 36
+        },
+        {
+          "key": "switch.renderer",
+          "label": "Renderer",
+          "family": "controls",
+          "shape": "screen",
+          "tile": 37
+        },
+        {
+          "key": "workflow.preset",
+          "label": "Preset",
+          "family": "presets",
+          "shape": "file",
+          "tile": 38
+        },
+        {
+          "key": "workflow.save",
+          "label": "Save",
+          "family": "presets",
+          "shape": "save",
+          "tile": 39
+        },
+        {
+          "key": "workflow.delete",
+          "label": "Delete",
+          "family": "presets",
+          "shape": "trash",
+          "tile": 40
+        },
+        {
+          "key": "workflow.import",
+          "label": "Import",
+          "family": "presets",
+          "shape": "import",
+          "tile": 41
+        },
+        {
+          "key": "workflow.export",
+          "label": "Export",
+          "family": "presets",
+          "shape": "export",
+          "tile": 42
+        },
+        {
+          "key": "workflow.undo",
+          "label": "Undo",
+          "family": "presets",
+          "shape": "undo",
+          "tile": 43
+        },
+        {
+          "key": "workflow.redo",
+          "label": "Redo",
+          "family": "presets",
+          "shape": "redo",
+          "tile": 44
+        },
+        {
+          "key": "workflow.compare",
+          "label": "Compare",
+          "family": "presets",
+          "shape": "compare",
+          "tile": 45
+        },
+        {
+          "key": "workflow.copy_a",
+          "label": "Copy to A",
+          "family": "presets",
+          "shape": "copy",
+          "tile": 46
+        },
+        {
+          "key": "workflow.copy_b",
+          "label": "Copy to B",
+          "family": "presets",
+          "shape": "copy",
+          "tile": 47
+        },
+        {
+          "key": "workflow.slot_a",
+          "label": "Slot A",
+          "family": "presets",
+          "shape": "slot_a",
+          "tile": 48
+        },
+        {
+          "key": "workflow.slot_b",
+          "label": "Slot B",
+          "family": "presets",
+          "shape": "slot_b",
+          "tile": 49
+        },
+        {
+          "key": "workflow.favorite",
+          "label": "Favorite",
+          "family": "presets",
+          "shape": "star",
+          "tile": 50
+        },
+        {
+          "key": "workflow.search",
+          "label": "Search",
+          "family": "presets",
+          "shape": "search",
+          "tile": 51
+        },
+        {
+          "key": "workflow.randomize",
+          "label": "Randomize",
+          "family": "presets",
+          "shape": "dice",
+          "tile": 52
+        },
+        {
+          "key": "workflow.reset",
+          "label": "Reset",
+          "family": "presets",
+          "shape": "reset",
+          "tile": 53
+        },
+        {
+          "key": "files.model",
+          "label": "Neural model",
+          "family": "files",
+          "shape": "chip",
+          "tile": 54
+        },
+        {
+          "key": "files.impulse",
+          "label": "Impulse response",
+          "family": "files",
+          "shape": "wave_file",
+          "tile": 55
+        },
+        {
+          "key": "files.browse",
+          "label": "Browse",
+          "family": "files",
+          "shape": "folder",
+          "tile": 56
+        },
+        {
+          "key": "files.load",
+          "label": "Load",
+          "family": "files",
+          "shape": "import",
+          "tile": 57
+        },
+        {
+          "key": "files.unload",
+          "label": "Unload",
+          "family": "files",
+          "shape": "eject",
+          "tile": 58
+        },
+        {
+          "key": "files.drop",
+          "label": "Drop file",
+          "family": "files",
+          "shape": "download",
+          "tile": 59
+        },
+        {
+          "key": "files.ready",
+          "label": "File ready",
+          "family": "files",
+          "shape": "check",
+          "tile": 60
+        },
+        {
+          "key": "files.missing",
+          "label": "File missing",
+          "family": "files",
+          "shape": "missing",
+          "tile": 61
+        },
+        {
+          "key": "status.active",
+          "label": "Active",
+          "family": "status",
+          "shape": "check",
+          "tile": 62
+        },
+        {
+          "key": "status.inactive",
+          "label": "Inactive",
+          "family": "status",
+          "shape": "circle",
+          "tile": 63
+        },
+        {
+          "key": "status.warning",
+          "label": "Warning",
+          "family": "status",
+          "shape": "warning",
+          "tile": 64
+        },
+        {
+          "key": "status.error",
+          "label": "Error",
+          "family": "status",
+          "shape": "error",
+          "tile": 65
+        },
+        {
+          "key": "status.success",
+          "label": "Success",
+          "family": "status",
+          "shape": "check",
+          "tile": 66
+        },
+        {
+          "key": "status.clipped",
+          "label": "Clipped",
+          "family": "status",
+          "shape": "clip",
+          "tile": 67
+        },
+        {
+          "key": "status.silence",
+          "label": "No signal",
+          "family": "status",
+          "shape": "silence",
+          "tile": 68
+        },
+        {
+          "key": "status.signal",
+          "label": "Signal",
+          "family": "status",
+          "shape": "wave",
+          "tile": 69
+        },
+        {
+          "key": "status.automation",
+          "label": "Automated",
+          "family": "status",
+          "shape": "automation",
+          "tile": 70
+        },
+        {
+          "key": "status.modified",
+          "label": "Modified",
+          "family": "status",
+          "shape": "asterisk",
+          "tile": 71
+        },
+        {
+          "key": "status.default",
+          "label": "Default",
+          "family": "status",
+          "shape": "reset",
+          "tile": 72
+        },
+        {
+          "key": "status.locked",
+          "label": "Locked",
+          "family": "status",
+          "shape": "lock",
+          "tile": 73
+        },
+        {
+          "key": "status.cpu",
+          "label": "CPU",
+          "family": "status",
+          "shape": "cpu",
+          "tile": 74
+        },
+        {
+          "key": "status.latency",
+          "label": "Latency",
+          "family": "status",
+          "shape": "latency",
+          "tile": 75
+        },
+        {
+          "key": "status.mono",
+          "label": "Mono",
+          "family": "status",
+          "shape": "mono",
+          "tile": 76
+        },
+        {
+          "key": "status.stereo",
+          "label": "Stereo",
+          "family": "status",
+          "shape": "stereo",
+          "tile": 77
+        },
+        {
+          "key": "audio.input",
+          "label": "Input",
+          "family": "audio",
+          "shape": "input",
+          "tile": 78
+        },
+        {
+          "key": "audio.output",
+          "label": "Output",
+          "family": "audio",
+          "shape": "output",
+          "tile": 79
+        },
+        {
+          "key": "audio.left",
+          "label": "Left channel",
+          "family": "audio",
+          "shape": "left",
+          "tile": 80
+        },
+        {
+          "key": "audio.right",
+          "label": "Right channel",
+          "family": "audio",
+          "shape": "right",
+          "tile": 81
+        },
+        {
+          "key": "audio.phase_normal",
+          "label": "Normal phase",
+          "family": "audio",
+          "shape": "phase",
+          "tile": 82
+        },
+        {
+          "key": "audio.phase_inverted",
+          "label": "Inverted phase",
+          "family": "audio",
+          "shape": "phase_inverted",
+          "tile": 83
+        },
+        {
+          "key": "audio.peak",
+          "label": "Peak",
+          "family": "audio",
+          "shape": "peak",
+          "tile": 84
+        },
+        {
+          "key": "audio.rms",
+          "label": "RMS",
+          "family": "audio",
+          "shape": "rms",
+          "tile": 85
+        },
+        {
+          "key": "audio.lufs",
+          "label": "LUFS",
+          "family": "audio",
+          "shape": "lufs",
+          "tile": 86
+        },
+        {
+          "key": "audio.vu",
+          "label": "VU",
+          "family": "audio",
+          "shape": "vu",
+          "tile": 87
+        },
+        {
+          "key": "audio.limiter",
+          "label": "Limiter",
+          "family": "audio",
+          "shape": "limiter",
+          "tile": 88
+        },
+        {
+          "key": "audio.width",
+          "label": "Stereo width",
+          "family": "audio",
+          "shape": "stereo",
+          "tile": 89
+        },
+        {
+          "key": "platform.windows",
+          "label": "Windows",
+          "family": "platform",
+          "shape": "windows",
+          "tile": 90
+        },
+        {
+          "key": "platform.macos",
+          "label": "macOS",
+          "family": "platform",
+          "shape": "macos",
+          "tile": 91
+        },
+        {
+          "key": "platform.linux",
+          "label": "Linux",
+          "family": "platform",
+          "shape": "linux",
+          "tile": 92
+        },
+        {
+          "key": "platform.android",
+          "label": "Android",
+          "family": "platform",
+          "shape": "android",
+          "tile": 93
+        },
+        {
+          "key": "platform.vst3",
+          "label": "VST3",
+          "family": "platform",
+          "shape": "plugin",
+          "tile": 94
+        },
+        {
+          "key": "platform.au",
+          "label": "Audio Unit",
+          "family": "platform",
+          "shape": "plugin",
+          "tile": 95
+        },
+        {
+          "key": "platform.auv3",
+          "label": "Audio Unit v3",
+          "family": "platform",
+          "shape": "plugin",
+          "tile": 96
+        },
+        {
+          "key": "platform.standalone",
+          "label": "Standalone",
+          "family": "platform",
+          "shape": "screen",
+          "tile": 97
+        },
+        {
+          "key": "platform.help",
+          "label": "Help",
+          "family": "platform",
+          "shape": "help",
+          "tile": 98
+        }
+      ],
+      "tintable": true
+    },
+    {
+      "file": "parameter_glyphs.png",
+      "columns": 8,
+      "rows": 9,
+      "tile_size": 64,
+      "width": 512,
+      "height": 576,
+      "items": [
+        {
+          "key": "parameter.input",
+          "label": "INPUT",
+          "family": "parameter",
+          "shape": "input",
+          "tile": 0
+        },
+        {
+          "key": "parameter.drive",
+          "label": "DRIVE",
+          "family": "parameter",
+          "shape": "wave",
+          "tile": 1
+        },
+        {
+          "key": "parameter.bias",
+          "label": "BIAS",
+          "family": "parameter",
+          "shape": "magnet",
+          "tile": 2
+        },
+        {
+          "key": "parameter.tone",
+          "label": "TONE",
+          "family": "parameter",
+          "shape": "eq",
+          "tile": 3
+        },
+        {
+          "key": "parameter.character",
+          "label": "CHARACTER",
+          "family": "parameter",
+          "shape": "knob",
+          "tile": 4
+        },
+        {
+          "key": "parameter.wow",
+          "label": "WOW",
+          "family": "parameter",
+          "shape": "wobble",
+          "tile": 5
+        },
+        {
+          "key": "parameter.flutter",
+          "label": "FLUTTER",
+          "family": "parameter",
+          "shape": "wobble",
+          "tile": 6
+        },
+        {
+          "key": "parameter.mix",
+          "label": "MIX",
+          "family": "parameter",
+          "shape": "sliders",
+          "tile": 7
+        },
+        {
+          "key": "parameter.output",
+          "label": "OUTPUT",
+          "family": "parameter",
+          "shape": "output",
+          "tile": 8
+        },
+        {
+          "key": "parameter.stereo_width",
+          "label": "STEREO WIDTH",
+          "family": "parameter",
+          "shape": "stereo",
+          "tile": 9
+        },
+        {
+          "key": "parameter.tape_source",
+          "label": "TAPE SOURCE",
+          "family": "parameter",
+          "shape": "reel",
+          "tile": 10
+        },
+        {
+          "key": "parameter.valve_source",
+          "label": "VALVE SOURCE",
+          "family": "parameter",
+          "shape": "valve",
+          "tile": 11
+        },
+        {
+          "key": "parameter.cassette_source",
+          "label": "CASSETTE SOURCE",
+          "family": "parameter",
+          "shape": "cassette",
+          "tile": 12
+        },
+        {
+          "key": "parameter.vinyl_source",
+          "label": "VINYL SOURCE",
+          "family": "parameter",
+          "shape": "vinyl",
+          "tile": 13
+        },
+        {
+          "key": "parameter.amp_source",
+          "label": "AMP SOURCE",
+          "family": "parameter",
+          "shape": "amp",
+          "tile": 14
+        },
+        {
+          "key": "parameter.transformer_source",
+          "label": "TRANSFORMER SOURCE",
+          "family": "parameter",
+          "shape": "transformer",
+          "tile": 15
+        },
+        {
+          "key": "parameter.digital_source",
+          "label": "DIGITAL SOURCE",
+          "family": "parameter",
+          "shape": "digital",
+          "tile": 16
+        },
+        {
+          "key": "parameter.amp_bias",
+          "label": "AMP BIAS",
+          "family": "parameter",
+          "shape": "magnet",
+          "tile": 17
+        },
+        {
+          "key": "parameter.sag",
+          "label": "SAG",
+          "family": "parameter",
+          "shape": "envelope",
+          "tile": 18
+        },
+        {
+          "key": "parameter.presence",
+          "label": "PRESENCE",
+          "family": "parameter",
+          "shape": "spark",
+          "tile": 19
+        },
+        {
+          "key": "parameter.cabinet",
+          "label": "CABINET",
+          "family": "parameter",
+          "shape": "speaker",
+          "tile": 20
+        },
+        {
+          "key": "parameter.delay_time",
+          "label": "DELAY TIME",
+          "family": "parameter",
+          "shape": "clock",
+          "tile": 21
+        },
+        {
+          "key": "parameter.delay_feedback",
+          "label": "DELAY FEEDBACK",
+          "family": "parameter",
+          "shape": "echo",
+          "tile": 22
+        },
+        {
+          "key": "parameter.st_offset",
+          "label": "ST OFFSET",
+          "family": "parameter",
+          "shape": "stereo",
+          "tile": 23
+        },
+        {
+          "key": "parameter.noise",
+          "label": "NOISE",
+          "family": "parameter",
+          "shape": "noise",
+          "tile": 24
+        },
+        {
+          "key": "parameter.subfund",
+          "label": "SUBFUND",
+          "family": "parameter",
+          "shape": "octave",
+          "tile": 25
+        },
+        {
+          "key": "parameter.preamp",
+          "label": "PREAMP",
+          "family": "parameter",
+          "shape": "input",
+          "tile": 26
+        },
+        {
+          "key": "parameter.distortion",
+          "label": "DISTORTION",
+          "family": "parameter",
+          "shape": "wave",
+          "tile": 27
+        },
+        {
+          "key": "parameter.flux",
+          "label": "FLUX",
+          "family": "parameter",
+          "shape": "magnet",
+          "tile": 28
+        },
+        {
+          "key": "parameter.wear",
+          "label": "WEAR",
+          "family": "parameter",
+          "shape": "scratch",
+          "tile": 29
+        },
+        {
+          "key": "parameter.mechanics",
+          "label": "MECHANICS",
+          "family": "parameter",
+          "shape": "gear",
+          "tile": 30
+        },
+        {
+          "key": "parameter.reverb",
+          "label": "REVERB",
+          "family": "parameter",
+          "shape": "room",
+          "tile": 31
+        },
+        {
+          "key": "parameter.reverb_size",
+          "label": "REVERB SIZE",
+          "family": "parameter",
+          "shape": "room",
+          "tile": 32
+        },
+        {
+          "key": "parameter.vinyl",
+          "label": "VINYL",
+          "family": "parameter",
+          "shape": "vinyl",
+          "tile": 33
+        },
+        {
+          "key": "parameter.vinyl_crackle",
+          "label": "VINYL CRACKLE",
+          "family": "parameter",
+          "shape": "noise",
+          "tile": 34
+        },
+        {
+          "key": "parameter.vinyl_rumble",
+          "label": "VINYL RUMBLE",
+          "family": "parameter",
+          "shape": "wobble",
+          "tile": 35
+        },
+        {
+          "key": "parameter.noise_lvl",
+          "label": "NOISE LVL",
+          "family": "parameter",
+          "shape": "level",
+          "tile": 36
+        },
+        {
+          "key": "parameter.st_link",
+          "label": "ST LINK",
+          "family": "parameter",
+          "shape": "link",
+          "tile": 37
+        },
+        {
+          "key": "parameter.vinyl_dust",
+          "label": "VINYL DUST",
+          "family": "parameter",
+          "shape": "dust",
+          "tile": 38
+        },
+        {
+          "key": "parameter.vinyl_scratch",
+          "label": "VINYL SCRATCH",
+          "family": "parameter",
+          "shape": "scratch",
+          "tile": 39
+        },
+        {
+          "key": "parameter.vinyl_warp",
+          "label": "VINYL WARP",
+          "family": "parameter",
+          "shape": "wobble",
+          "tile": 40
+        },
+        {
+          "key": "parameter.vinyl_electrical",
+          "label": "VINYL ELECTRICAL",
+          "family": "parameter",
+          "shape": "spark",
+          "tile": 41
+        },
+        {
+          "key": "parameter.vinyl_clicks",
+          "label": "VINYL CLICKS",
+          "family": "parameter",
+          "shape": "pulse",
+          "tile": 42
+        },
+        {
+          "key": "parameter.in_low",
+          "label": "IN LOW",
+          "family": "parameter",
+          "shape": "eq_low",
+          "tile": 43
+        },
+        {
+          "key": "parameter.in_mid",
+          "label": "IN MID",
+          "family": "parameter",
+          "shape": "eq_mid",
+          "tile": 44
+        },
+        {
+          "key": "parameter.in_high",
+          "label": "IN HIGH",
+          "family": "parameter",
+          "shape": "eq_high",
+          "tile": 45
+        },
+        {
+          "key": "parameter.out_low",
+          "label": "OUT LOW",
+          "family": "parameter",
+          "shape": "eq_low",
+          "tile": 46
+        },
+        {
+          "key": "parameter.out_mid",
+          "label": "OUT MID",
+          "family": "parameter",
+          "shape": "eq_mid",
+          "tile": 47
+        },
+        {
+          "key": "parameter.out_high",
+          "label": "OUT HIGH",
+          "family": "parameter",
+          "shape": "eq_high",
+          "tile": 48
+        },
+        {
+          "key": "parameter.di",
+          "label": "DI",
+          "family": "parameter",
+          "shape": "input",
+          "tile": 49
+        },
+        {
+          "key": "parameter.di_load",
+          "label": "DI LOAD",
+          "family": "parameter",
+          "shape": "coil",
+          "tile": 50
+        },
+        {
+          "key": "parameter.di_transformer",
+          "label": "DI TRANSFORMER",
+          "family": "parameter",
+          "shape": "transformer",
+          "tile": 51
+        },
+        {
+          "key": "parameter.in_hp_freq",
+          "label": "IN HP FREQ",
+          "family": "parameter",
+          "shape": "filter",
+          "tile": 52
+        },
+        {
+          "key": "parameter.in_lp_freq",
+          "label": "IN LP FREQ",
+          "family": "parameter",
+          "shape": "filter",
+          "tile": 53
+        },
+        {
+          "key": "parameter.in_eq_q",
+          "label": "IN EQ Q",
+          "family": "parameter",
+          "shape": "eq_mid",
+          "tile": 54
+        },
+        {
+          "key": "parameter.out_hp_freq",
+          "label": "OUT HP FREQ",
+          "family": "parameter",
+          "shape": "filter",
+          "tile": 55
+        },
+        {
+          "key": "parameter.out_lp_freq",
+          "label": "OUT LP FREQ",
+          "family": "parameter",
+          "shape": "filter",
+          "tile": 56
+        },
+        {
+          "key": "parameter.out_eq_q",
+          "label": "OUT EQ Q",
+          "family": "parameter",
+          "shape": "eq_mid",
+          "tile": 57
+        },
+        {
+          "key": "parameter.delay_pingpong",
+          "label": "DELAY PINGPONG",
+          "family": "parameter",
+          "shape": "pingpong",
+          "tile": 58
+        },
+        {
+          "key": "parameter.transient_attack",
+          "label": "TRANSIENT ATTACK",
+          "family": "parameter",
+          "shape": "envelope",
+          "tile": 59
+        },
+        {
+          "key": "parameter.transient_sustain",
+          "label": "TRANSIENT SUSTAIN",
+          "family": "parameter",
+          "shape": "envelope",
+          "tile": 60
+        },
+        {
+          "key": "parameter.transient_mix",
+          "label": "TRANSIENT MIX",
+          "family": "parameter",
+          "shape": "sliders",
+          "tile": 61
+        },
+        {
+          "key": "parameter.neural_mix",
+          "label": "NEURAL MIX",
+          "family": "parameter",
+          "shape": "chip",
+          "tile": 62
+        },
+        {
+          "key": "parameter.ir_mix",
+          "label": "IR MIX",
+          "family": "parameter",
+          "shape": "wave_file",
+          "tile": 63
+        },
+        {
+          "key": "parameter.reverb_predelay",
+          "label": "REVERB PREDELAY",
+          "family": "parameter",
+          "shape": "clock",
+          "tile": 64
+        },
+        {
+          "key": "parameter.reverb_damp",
+          "label": "REVERB DAMP",
+          "family": "parameter",
+          "shape": "filter",
+          "tile": 65
+        },
+        {
+          "key": "parameter.reverb_width",
+          "label": "REVERB WIDTH",
+          "family": "parameter",
+          "shape": "stereo",
+          "tile": 66
+        },
+        {
+          "key": "parameter.delay_tone",
+          "label": "DELAY TONE",
+          "family": "parameter",
+          "shape": "eq",
+          "tile": 67
+        },
+        {
+          "key": "parameter.delay_lowcut",
+          "label": "DELAY LOWCUT",
+          "family": "parameter",
+          "shape": "filter",
+          "tile": 68
+        },
+        {
+          "key": "parameter.delay_damp",
+          "label": "DELAY DAMP",
+          "family": "parameter",
+          "shape": "filter",
+          "tile": 69
+        },
+        {
+          "key": "parameter.reverb_lowcut",
+          "label": "REVERB LOWCUT",
+          "family": "parameter",
+          "shape": "filter",
+          "tile": 70
+        }
+      ],
+      "tintable": true
+    },
+    {
+      "file": "machine_models.png",
+      "columns": 8,
+      "rows": 8,
+      "tile_size": 64,
+      "width": 512,
+      "height": 512,
+      "items": [
+        {
+          "key": "model.tape.j37",
+          "label": "J37",
+          "family": "tape",
+          "shape": "reel",
+          "variant": 0,
+          "tile": 0
+        },
+        {
+          "key": "model.tape.ampex_456",
+          "label": "Ampex 456",
+          "family": "tape",
+          "shape": "reel",
+          "variant": 1,
+          "tile": 1
+        },
+        {
+          "key": "model.tape.studer_a800",
+          "label": "Studer A800",
+          "family": "tape",
+          "shape": "reel",
+          "variant": 2,
+          "tile": 2
+        },
+        {
+          "key": "model.tape.chrome",
+          "label": "Chrome",
+          "family": "tape",
+          "shape": "reel",
+          "variant": 3,
+          "tile": 3
+        },
+        {
+          "key": "model.tape.type_111",
+          "label": "Type 111",
+          "family": "tape",
+          "shape": "reel",
+          "variant": 4,
+          "tile": 4
+        },
+        {
+          "key": "model.tape.gp9",
+          "label": "GP9",
+          "family": "tape",
+          "shape": "reel",
+          "variant": 5,
+          "tile": 5
+        },
+        {
+          "key": "model.tape.quantegy_499",
+          "label": "Quantegy 499",
+          "family": "tape",
+          "shape": "reel",
+          "variant": 6,
+          "tile": 6
+        },
+        {
+          "key": "model.tape.rtm_sm911",
+          "label": "RTM SM911",
+          "family": "tape",
+          "shape": "reel",
+          "variant": 7,
+          "tile": 7
+        },
+        {
+          "key": "model.tape.sm_468",
+          "label": "SM 468",
+          "family": "tape",
+          "shape": "reel",
+          "variant": 8,
+          "tile": 8
+        },
+        {
+          "key": "model.tape.888",
+          "label": "888",
+          "family": "tape",
+          "shape": "reel",
+          "variant": 9,
+          "tile": 9
+        },
+        {
+          "key": "model.tape.815",
+          "label": "815",
+          "family": "tape",
+          "shape": "reel",
+          "variant": 10,
+          "tile": 10
+        },
+        {
+          "key": "model.tape.811",
+          "label": "811",
+          "family": "tape",
+          "shape": "reel",
+          "variant": 11,
+          "tile": 11
+        },
+        {
+          "key": "model.tape.off",
+          "label": "Off",
+          "family": "tape",
+          "shape": "off",
+          "variant": 12,
+          "tile": 12
+        },
+        {
+          "key": "model.valve.12ax7",
+          "label": "12AX7",
+          "family": "valve",
+          "shape": "valve",
+          "variant": 0,
+          "tile": 13
+        },
+        {
+          "key": "model.valve.ecc82",
+          "label": "ECC82",
+          "family": "valve",
+          "shape": "valve",
+          "variant": 1,
+          "tile": 14
+        },
+        {
+          "key": "model.valve.el34",
+          "label": "EL34",
+          "family": "valve",
+          "shape": "valve",
+          "variant": 2,
+          "tile": 15
+        },
+        {
+          "key": "model.valve.6l6",
+          "label": "6L6",
+          "family": "valve",
+          "shape": "valve",
+          "variant": 3,
+          "tile": 16
+        },
+        {
+          "key": "model.valve.300b",
+          "label": "300B",
+          "family": "valve",
+          "shape": "valve",
+          "variant": 4,
+          "tile": 17
+        },
+        {
+          "key": "model.valve.kt88",
+          "label": "KT88",
+          "family": "valve",
+          "shape": "valve",
+          "variant": 5,
+          "tile": 18
+        },
+        {
+          "key": "model.valve.off",
+          "label": "Off",
+          "family": "valve",
+          "shape": "off",
+          "variant": 6,
+          "tile": 19
+        },
+        {
+          "key": "model.amp.fender_blackface",
+          "label": "Fender Blackface",
+          "family": "amp",
+          "shape": "amp",
+          "variant": 0,
+          "tile": 20
+        },
+        {
+          "key": "model.amp.marshall_plexi",
+          "label": "Marshall Plexi",
+          "family": "amp",
+          "shape": "amp",
+          "variant": 1,
+          "tile": 21
+        },
+        {
+          "key": "model.amp.vox_ac30",
+          "label": "Vox AC30",
+          "family": "amp",
+          "shape": "amp",
+          "variant": 2,
+          "tile": 22
+        },
+        {
+          "key": "model.amp.hiwatt_dr103",
+          "label": "Hiwatt DR103",
+          "family": "amp",
+          "shape": "amp",
+          "variant": 3,
+          "tile": 23
+        },
+        {
+          "key": "model.amp.mesa_recto",
+          "label": "Mesa Recto",
+          "family": "amp",
+          "shape": "amp",
+          "variant": 4,
+          "tile": 24
+        },
+        {
+          "key": "model.amp.matchless_hc30",
+          "label": "Matchless HC30",
+          "family": "amp",
+          "shape": "amp",
+          "variant": 5,
+          "tile": 25
+        },
+        {
+          "key": "model.amp.off",
+          "label": "Off",
+          "family": "amp",
+          "shape": "off",
+          "variant": 6,
+          "tile": 26
+        },
+        {
+          "key": "model.transformer.jensen_jt_11p",
+          "label": "Jensen JT-11P",
+          "family": "transformer",
+          "shape": "transformer",
+          "variant": 0,
+          "tile": 27
+        },
+        {
+          "key": "model.transformer.cinemag_cm_7510",
+          "label": "Cinemag CM-7510",
+          "family": "transformer",
+          "shape": "transformer",
+          "variant": 1,
+          "tile": 28
+        },
+        {
+          "key": "model.transformer.lundahl_ll1544",
+          "label": "Lundahl LL1544",
+          "family": "transformer",
+          "shape": "transformer",
+          "variant": 2,
+          "tile": 29
+        },
+        {
+          "key": "model.transformer.oep_a262",
+          "label": "OEP A262",
+          "family": "transformer",
+          "shape": "transformer",
+          "variant": 3,
+          "tile": 30
+        },
+        {
+          "key": "model.transformer.sowter_4381",
+          "label": "Sowter 4381",
+          "family": "transformer",
+          "shape": "transformer",
+          "variant": 4,
+          "tile": 31
+        },
+        {
+          "key": "model.transformer.off",
+          "label": "Off",
+          "family": "transformer",
+          "shape": "off",
+          "variant": 5,
+          "tile": 32
+        },
+        {
+          "key": "model.digital.16_bit",
+          "label": "16-bit",
+          "family": "digital",
+          "shape": "digital",
+          "variant": 0,
+          "tile": 33
+        },
+        {
+          "key": "model.digital.12_bit",
+          "label": "12-bit",
+          "family": "digital",
+          "shape": "digital",
+          "variant": 1,
+          "tile": 34
+        },
+        {
+          "key": "model.digital.8_bit",
+          "label": "8-bit",
+          "family": "digital",
+          "shape": "digital",
+          "variant": 2,
+          "tile": 35
+        },
+        {
+          "key": "model.digital.bit_crush",
+          "label": "Bit Crush",
+          "family": "digital",
+          "shape": "digital",
+          "variant": 3,
+          "tile": 36
+        },
+        {
+          "key": "model.digital.sample_hold",
+          "label": "Sample Hold",
+          "family": "digital",
+          "shape": "digital",
+          "variant": 4,
+          "tile": 37
+        },
+        {
+          "key": "model.digital.off",
+          "label": "Off",
+          "family": "digital",
+          "shape": "off",
+          "variant": 5,
+          "tile": 38
+        },
+        {
+          "key": "model.vinyl.standard_lp",
+          "label": "Standard LP",
+          "family": "vinyl",
+          "shape": "vinyl",
+          "variant": 0,
+          "tile": 39
+        },
+        {
+          "key": "model.vinyl.single",
+          "label": "Single",
+          "family": "vinyl",
+          "shape": "vinyl",
+          "variant": 1,
+          "tile": 40
+        },
+        {
+          "key": "model.vinyl.shellac_78",
+          "label": "Shellac 78",
+          "family": "vinyl",
+          "shape": "vinyl",
+          "variant": 2,
+          "tile": 41
+        },
+        {
+          "key": "model.vinyl.worn_classic",
+          "label": "Worn Classic",
+          "family": "vinyl",
+          "shape": "vinyl",
+          "variant": 3,
+          "tile": 42
+        },
+        {
+          "key": "model.vinyl.dubplate",
+          "label": "Dubplate",
+          "family": "vinyl",
+          "shape": "vinyl",
+          "variant": 4,
+          "tile": 43
+        },
+        {
+          "key": "model.vinyl.half_speed_master",
+          "label": "Half-Speed Master",
+          "family": "vinyl",
+          "shape": "vinyl",
+          "variant": 5,
+          "tile": 44
+        },
+        {
+          "key": "model.vinyl.off",
+          "label": "Off",
+          "family": "vinyl",
+          "shape": "off",
+          "variant": 6,
+          "tile": 45
+        },
+        {
+          "key": "model.principle.tape",
+          "label": "Tape",
+          "family": "model",
+          "shape": "reel",
+          "tile": 46
+        },
+        {
+          "key": "model.principle.valve",
+          "label": "Valve",
+          "family": "model",
+          "shape": "valve",
+          "tile": 47
+        },
+        {
+          "key": "model.principle.cassette",
+          "label": "Cassette",
+          "family": "model",
+          "shape": "cassette",
+          "tile": 48
+        },
+        {
+          "key": "model.principle.vinyl",
+          "label": "Vinyl",
+          "family": "model",
+          "shape": "vinyl",
+          "tile": 49
+        },
+        {
+          "key": "model.principle.amp",
+          "label": "Amplifier",
+          "family": "model",
+          "shape": "amp",
+          "tile": 50
+        },
+        {
+          "key": "model.principle.transformer",
+          "label": "Transformer",
+          "family": "model",
+          "shape": "transformer",
+          "tile": 51
+        },
+        {
+          "key": "model.principle.digital",
+          "label": "Digital",
+          "family": "model",
+          "shape": "digital",
+          "tile": 52
+        },
+        {
+          "key": "model.neural",
+          "label": "Neural model",
+          "family": "model",
+          "shape": "chip",
+          "tile": 53
+        },
+        {
+          "key": "model.impulse_response",
+          "label": "Impulse response",
+          "family": "model",
+          "shape": "wave_file",
+          "tile": 54
+        },
+        {
+          "key": "model.cabinet",
+          "label": "Cabinet",
+          "family": "model",
+          "shape": "speaker",
+          "tile": 55
+        },
+        {
+          "key": "model.room",
+          "label": "Room",
+          "family": "model",
+          "shape": "room",
+          "tile": 56
+        }
+      ],
+      "tintable": true
+    },
+    {
+      "file": "meter_status.png",
+      "columns": 8,
+      "rows": 4,
+      "tile_size": 64,
+      "width": 512,
+      "height": 256,
+      "items": [
+        {
+          "key": "meter.input",
+          "label": "Input",
+          "family": "meter_status",
+          "shape": "input",
+          "tile": 0
+        },
+        {
+          "key": "meter.output",
+          "label": "Output",
+          "family": "meter_status",
+          "shape": "output",
+          "tile": 1
+        },
+        {
+          "key": "meter.peak",
+          "label": "Peak",
+          "family": "meter_status",
+          "shape": "peak",
+          "tile": 2
+        },
+        {
+          "key": "meter.rms",
+          "label": "RMS",
+          "family": "meter_status",
+          "shape": "rms",
+          "tile": 3
+        },
+        {
+          "key": "meter.lufs",
+          "label": "LUFS",
+          "family": "meter_status",
+          "shape": "lufs",
+          "tile": 4
+        },
+        {
+          "key": "meter.vu",
+          "label": "VU",
+          "family": "meter_status",
+          "shape": "vu",
+          "tile": 5
+        },
+        {
+          "key": "meter.clipping",
+          "label": "Clipping",
+          "family": "meter_status",
+          "shape": "clip",
+          "tile": 6
+        },
+        {
+          "key": "meter.limiter",
+          "label": "Limiter",
+          "family": "meter_status",
+          "shape": "limiter",
+          "tile": 7
+        },
+        {
+          "key": "meter.silence",
+          "label": "Silence",
+          "family": "meter_status",
+          "shape": "silence",
+          "tile": 8
+        },
+        {
+          "key": "meter.signal",
+          "label": "Signal",
+          "family": "meter_status",
+          "shape": "wave",
+          "tile": 9
+        },
+        {
+          "key": "meter.mono",
+          "label": "Mono",
+          "family": "meter_status",
+          "shape": "mono",
+          "tile": 10
+        },
+        {
+          "key": "meter.stereo",
+          "label": "Stereo",
+          "family": "meter_status",
+          "shape": "stereo",
+          "tile": 11
+        },
+        {
+          "key": "meter.phase",
+          "label": "Phase",
+          "family": "meter_status",
+          "shape": "phase",
+          "tile": 12
+        },
+        {
+          "key": "meter.width",
+          "label": "Width",
+          "family": "meter_status",
+          "shape": "stereo",
+          "tile": 13
+        },
+        {
+          "key": "meter.cpu",
+          "label": "CPU",
+          "family": "meter_status",
+          "shape": "cpu",
+          "tile": 14
+        },
+        {
+          "key": "meter.latency",
+          "label": "Latency",
+          "family": "meter_status",
+          "shape": "latency",
+          "tile": 15
+        },
+        {
+          "key": "meter.warning",
+          "label": "Warning",
+          "family": "meter_status",
+          "shape": "warning",
+          "tile": 16
+        },
+        {
+          "key": "meter.error",
+          "label": "Error",
+          "family": "meter_status",
+          "shape": "error",
+          "tile": 17
+        },
+        {
+          "key": "meter.ok",
+          "label": "Healthy",
+          "family": "meter_status",
+          "shape": "check",
+          "tile": 18
+        },
+        {
+          "key": "meter.automation",
+          "label": "Automation",
+          "family": "meter_status",
+          "shape": "automation",
+          "tile": 19
+        },
+        {
+          "key": "meter.noise",
+          "label": "Noise",
+          "family": "meter_status",
+          "shape": "noise",
+          "tile": 20
+        },
+        {
+          "key": "meter.transient",
+          "label": "Transient",
+          "family": "meter_status",
+          "shape": "pulse",
+          "tile": 21
+        },
+        {
+          "key": "meter.low",
+          "label": "Low band",
+          "family": "meter_status",
+          "shape": "eq_low",
+          "tile": 22
+        },
+        {
+          "key": "meter.mid",
+          "label": "Mid band",
+          "family": "meter_status",
+          "shape": "eq_mid",
+          "tile": 23
+        },
+        {
+          "key": "meter.high",
+          "label": "High band",
+          "family": "meter_status",
+          "shape": "eq_high",
+          "tile": 24
+        },
+        {
+          "key": "meter.left",
+          "label": "Left",
+          "family": "meter_status",
+          "shape": "left",
+          "tile": 25
+        },
+        {
+          "key": "meter.right",
+          "label": "Right",
+          "family": "meter_status",
+          "shape": "right",
+          "tile": 26
+        },
+        {
+          "key": "meter.delta",
+          "label": "Delta",
+          "family": "meter_status",
+          "shape": "delta",
+          "tile": 27
+        },
+        {
+          "key": "meter.bypass",
+          "label": "Bypass",
+          "family": "meter_status",
+          "shape": "switch",
+          "tile": 28
+        },
+        {
+          "key": "meter.saturation",
+          "label": "Saturation",
+          "family": "meter_status",
+          "shape": "wave",
+          "tile": 29
+        },
+        {
+          "key": "meter.delay",
+          "label": "Delay",
+          "family": "meter_status",
+          "shape": "echo",
+          "tile": 30
+        },
+        {
+          "key": "meter.room",
+          "label": "Room",
+          "family": "meter_status",
+          "shape": "room",
+          "tile": 31
+        }
+      ],
+      "tintable": true
+    },
+    {
+      "file": "preset_categories.png",
+      "columns": 8,
+      "rows": 1,
+      "tile_size": 64,
+      "width": 512,
+      "height": 64,
+      "items": [
+        {
+          "key": "category.mixing",
+          "label": "Mixing",
+          "family": "preset_category",
+          "shape": "sliders",
+          "tile": 0
+        },
+        {
+          "key": "category.mastering",
+          "label": "Mastering",
+          "family": "preset_category",
+          "shape": "limiter",
+          "tile": 1
+        },
+        {
+          "key": "category.drums",
+          "label": "Drums",
+          "family": "preset_category",
+          "shape": "pulse",
+          "tile": 2
+        },
+        {
+          "key": "category.vocals",
+          "label": "Vocals",
+          "family": "preset_category",
+          "shape": "note",
+          "tile": 3
+        },
+        {
+          "key": "category.bass",
+          "label": "Bass",
+          "family": "preset_category",
+          "shape": "wobble",
+          "tile": 4
+        },
+        {
+          "key": "category.guitar",
+          "label": "Guitar",
+          "family": "preset_category",
+          "shape": "amp",
+          "tile": 5
+        },
+        {
+          "key": "category.keys",
+          "label": "Keys",
+          "family": "preset_category",
+          "shape": "digital",
+          "tile": 6
+        },
+        {
+          "key": "category.creative",
+          "label": "Creative",
+          "family": "preset_category",
+          "shape": "spark",
+          "tile": 7
+        }
+      ],
+      "tintable": true
+    },
+    {
+      "file": "hardware_details.png",
+      "columns": 4,
+      "rows": 4,
+      "tile_size": 64,
+      "width": 256,
+      "height": 256,
+      "items": [
+        {
+          "key": "hardware.screw",
+          "label": "Cross-head screw",
+          "family": "panel_hardware",
+          "shape": "screw_head",
+          "tile": 0
+        },
+        {
+          "key": "hardware.screw_slot",
+          "label": "Slotted screw",
+          "family": "panel_hardware",
+          "shape": "screw_slot",
+          "tile": 1
+        },
+        {
+          "key": "hardware.washer",
+          "label": "Washer",
+          "family": "panel_hardware",
+          "shape": "washer",
+          "tile": 2
+        },
+        {
+          "key": "hardware.rivet",
+          "label": "Rivet",
+          "family": "panel_hardware",
+          "shape": "circle",
+          "tile": 3
+        },
+        {
+          "key": "hardware.vent",
+          "label": "Vent",
+          "family": "panel_hardware",
+          "shape": "sliders",
+          "tile": 4
+        },
+        {
+          "key": "hardware.label_plate",
+          "label": "Label plate",
+          "family": "panel_hardware",
+          "shape": "file",
+          "tile": 5
+        },
+        {
+          "key": "hardware.jack",
+          "label": "Jack",
+          "family": "panel_hardware",
+          "shape": "output",
+          "tile": 6
+        },
+        {
+          "key": "hardware.toggle",
+          "label": "Toggle",
+          "family": "panel_hardware",
+          "shape": "switch",
+          "tile": 7
+        },
+        {
+          "key": "hardware.knob_tick",
+          "label": "Knob scale",
+          "family": "panel_hardware",
+          "shape": "knob",
+          "tile": 8
+        },
+        {
+          "key": "hardware.dial_face",
+          "label": "Dial face",
+          "family": "panel_hardware",
+          "shape": "clock",
+          "tile": 9
+        },
+        {
+          "key": "hardware.meter_frame",
+          "label": "Meter frame",
+          "family": "panel_hardware",
+          "shape": "vu",
+          "tile": 10
+        },
+        {
+          "key": "hardware.safety_mark",
+          "label": "Safety mark",
+          "family": "panel_hardware",
+          "shape": "warning",
+          "tile": 11
+        },
+        {
+          "key": "hardware.edge_seam",
+          "label": "Panel seam",
+          "family": "panel_hardware",
+          "shape": "link",
+          "tile": 12
+        },
+        {
+          "key": "hardware.reel_hub",
+          "label": "Reel hub",
+          "family": "panel_hardware",
+          "shape": "reel",
+          "tile": 13
+        },
+        {
+          "key": "hardware.badge_plate",
+          "label": "Badge plate",
+          "family": "panel_hardware",
+          "shape": "plugin",
+          "tile": 14
+        },
+        {
+          "key": "hardware.status_lamp",
+          "label": "Status lamp",
+          "family": "panel_hardware",
+          "shape": "spark",
+          "tile": 15
+        }
+      ],
+      "tintable": true
+    },
+    {
+      "file": "factory_preset_art.png",
+      "columns": 29,
+      "rows": 1,
+      "tile_size": 64,
+      "width": 1856,
+      "height": 64,
+      "items": [
+        {
+          "key": "preset.default",
+          "label": "Default",
+          "family": "factory_preset",
+          "tile": 0
+        },
+        {
+          "key": "preset.minimum",
+          "label": "Minimum",
+          "family": "factory_preset",
+          "tile": 1
+        },
+        {
+          "key": "preset.maximum",
+          "label": "Maximum",
+          "family": "factory_preset",
+          "tile": 2
+        },
+        {
+          "key": "preset.gentle_warmth",
+          "label": "Gentle Warmth",
+          "family": "factory_preset",
+          "tile": 3
+        },
+        {
+          "key": "preset.bus_glue_tape",
+          "label": "Bus Glue Tape",
+          "family": "factory_preset",
+          "tile": 4
+        },
+        {
+          "key": "preset.drum_slam",
+          "label": "Drum Slam",
+          "family": "factory_preset",
+          "tile": 5
+        },
+        {
+          "key": "preset.vintage_lo_fi",
+          "label": "Vintage Lo-Fi",
+          "family": "factory_preset",
+          "tile": 6
+        },
+        {
+          "key": "preset.wide_master",
+          "label": "Wide Master",
+          "family": "factory_preset",
+          "tile": 7
+        },
+        {
+          "key": "preset.clean_glue",
+          "label": "Clean Glue",
+          "family": "factory_preset",
+          "tile": 8
+        },
+        {
+          "key": "preset.saturated_crunch",
+          "label": "Saturated Crunch",
+          "family": "factory_preset",
+          "tile": 9
+        },
+        {
+          "key": "preset.wobbly_cassette",
+          "label": "Wobbly Cassette",
+          "family": "factory_preset",
+          "tile": 10
+        },
+        {
+          "key": "preset.bright_air_tape",
+          "label": "Bright Air Tape",
+          "family": "factory_preset",
+          "tile": 11
+        },
+        {
+          "key": "preset.mix_saturation",
+          "label": "Mix Saturation",
+          "family": "factory_preset",
+          "tile": 12
+        },
+        {
+          "key": "preset.master_bounce",
+          "label": "Master Bounce",
+          "family": "factory_preset",
+          "tile": 13
+        },
+        {
+          "key": "preset.vocal_rail",
+          "label": "Vocal Rail",
+          "family": "factory_preset",
+          "tile": 14
+        },
+        {
+          "key": "preset.drum_room_warm",
+          "label": "Drum Room Warm",
+          "family": "factory_preset",
+          "tile": 15
+        },
+        {
+          "key": "preset.bass_weight",
+          "label": "Bass Weight",
+          "family": "factory_preset",
+          "tile": 16
+        },
+        {
+          "key": "preset.master_safety",
+          "label": "Master Safety",
+          "family": "factory_preset",
+          "tile": 17
+        },
+        {
+          "key": "preset.lo_fi_radio",
+          "label": "Lo-Fi Radio",
+          "family": "factory_preset",
+          "tile": 18
+        },
+        {
+          "key": "preset.ferric_master",
+          "label": "Ferric Master",
+          "family": "factory_preset",
+          "tile": 19
+        },
+        {
+          "key": "preset.british_valve",
+          "label": "British Valve",
+          "family": "factory_preset",
+          "tile": 20
+        },
+        {
+          "key": "preset.plexi_bite",
+          "label": "Plexi Bite",
+          "family": "factory_preset",
+          "tile": 21
+        },
+        {
+          "key": "preset.iron_bloom",
+          "label": "Iron Bloom",
+          "family": "factory_preset",
+          "tile": 22
+        },
+        {
+          "key": "preset.twelve_bit_bounce",
+          "label": "12-bit Bounce",
+          "family": "factory_preset",
+          "tile": 23
+        },
+        {
+          "key": "preset.dubplate_dub",
+          "label": "Dubplate Dub",
+          "family": "factory_preset",
+          "tile": 24
+        },
+        {
+          "key": "preset.shellac_radio",
+          "label": "Shellac Radio",
+          "family": "factory_preset",
+          "tile": 25
+        },
+        {
+          "key": "preset.transient_punch",
+          "label": "Transient Punch",
+          "family": "factory_preset",
+          "tile": 26
+        },
+        {
+          "key": "preset.soft_touch",
+          "label": "Soft Touch",
+          "family": "factory_preset",
+          "tile": 27
+        },
+        {
+          "key": "preset.tight_bus",
+          "label": "Tight Bus",
+          "family": "factory_preset",
+          "tile": 28
+        }
+      ],
+      "tintable": false,
+      "tile_order": [
+        "default",
+        "minimum",
+        "maximum",
+        "gentle_warmth",
+        "bus_glue_tape",
+        "drum_slam",
+        "vintage_lo_fi",
+        "wide_master",
+        "clean_glue",
+        "saturated_crunch",
+        "wobbly_cassette",
+        "bright_air_tape",
+        "mix_saturation",
+        "master_bounce",
+        "vocal_rail",
+        "drum_room_warm",
+        "bass_weight",
+        "master_safety",
+        "lo_fi_radio",
+        "ferric_master",
+        "british_valve",
+        "plexi_bite",
+        "iron_bloom",
+        "twelve_bit_bounce",
+        "dubplate_dub",
+        "shellac_radio",
+        "transient_punch",
+        "soft_touch",
+        "tight_bus"
+      ]
+    },
+    {
+      "file": "brand_lockups.png",
+      "columns": 4,
+      "rows": 1,
+      "tile_size": 128,
+      "width": 512,
+      "height": 128,
+      "items": [
+        {
+          "key": "brand.square",
+          "label": "Square brand mark",
+          "tile": 0
+        },
+        {
+          "key": "brand.horizontal",
+          "label": "Horizontal wordmark",
+          "tile": 1
+        },
+        {
+          "key": "brand.monochrome",
+          "label": "Monochrome mark",
+          "tile": 2
+        },
+        {
+          "key": "brand.reversed",
+          "label": "Reversed mark",
+          "tile": 3
+        }
+      ],
+      "tintable": false
+    },
+    {
+      "file": "help_illustrations.png",
+      "columns": 2,
+      "rows": 2,
+      "tile_size": [
+        512,
+        288
+      ],
+      "width": 1024,
+      "height": 576,
+      "items": [
+        {
+          "key": "help.signal_path",
+          "label": "Signal path",
+          "tile": 0
+        },
+        {
+          "key": "help.ab_compare",
+          "label": "A/B comparison",
+          "tile": 1
+        },
+        {
+          "key": "help.preset_workflow",
+          "label": "Preset workflow",
+          "tile": 2
+        },
+        {
+          "key": "help.load_model",
+          "label": "Load a model or impulse response",
+          "tile": 3
+        }
+      ],
+      "tintable": false
+    }
+  ],
+  "platform_assets": [
+    {
+      "platform": "Android",
+      "package": "com.mcsmes.mibox",
+      "manifest": "android/app/src/main/AndroidManifest.xml",
+      "manifest_icon": "@mipmap/ic_launcher",
+      "density_icons": [
+        {
+          "density": "mdpi",
+          "file": "android/app/src/main/res/mipmap-mdpi/ic_launcher.png",
+          "width": 48,
+          "height": 48
+        },
+        {
+          "density": "hdpi",
+          "file": "android/app/src/main/res/mipmap-hdpi/ic_launcher.png",
+          "width": 72,
+          "height": 72
+        },
+        {
+          "density": "xhdpi",
+          "file": "android/app/src/main/res/mipmap-xhdpi/ic_launcher.png",
+          "width": 96,
+          "height": 96
+        },
+        {
+          "density": "xxhdpi",
+          "file": "android/app/src/main/res/mipmap-xxhdpi/ic_launcher.png",
+          "width": 144,
+          "height": 144
+        },
+        {
+          "density": "xxxhdpi",
+          "file": "android/app/src/main/res/mipmap-xxxhdpi/ic_launcher.png",
+          "width": 192,
+          "height": 192
+        }
+      ],
+      "adaptive_icons": [
+        "android/app/src/main/res/mipmap-anydpi-v26/ic_launcher.xml",
+        "android/app/src/main/res/mipmap-anydpi-v33/ic_launcher.xml"
+      ],
+      "foreground_vector": "android/app/src/main/res/drawable/ic_launcher_foreground.xml",
+      "monochrome_vector": "android/app/src/main/res/drawable/ic_launcher_monochrome.xml"
+    }
+  ],
+  "standalone": [
+    {
+      "key": "help.signal_path_full",
+      "file": "signal_path.png",
+      "width": 1600,
+      "height": 500,
+      "description": "Full signal path overview for the manual."
+    }
+  ]
+}

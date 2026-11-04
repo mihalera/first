@@ -394,7 +394,7 @@ void TapeScene::setAudioState(float newOutputLevel,
     wowFlutter.store(juce::jlimit(-1.0f, 1.0f, newWowFlutter), std::memory_order_relaxed);
     transportSpeed.store(juce::jlimit(0.0f, 1.0f, newTransportSpeed), std::memory_order_relaxed);
 
-    // The repaint is the whole animation loop, and it is the editor's 30 Hz
+    // The repaint is the whole animation loop, and it is the editor's 60 Hz
     // timer asking for it rather than a timer of this component's own: the panel
     // already has one, and a second one would be a second thing to stop when the
     // editor goes away. The GPU path also needs this invalidation because its

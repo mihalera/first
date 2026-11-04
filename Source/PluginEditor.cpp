@@ -1396,9 +1396,17 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
     {
         presetArtworkBadge.setVisible (false);
+        const auto landscape = j37panel::isPhoneLandscape (getWidth(), getHeight());
+        const auto ringBounds = j37panel::computePhoneOscRingBounds (
+            { deck.getX(), deck.getY(), deck.getWidth(), deck.getHeight() }, landscape);
+        oscRing.setBounds (ringBounds.x, ringBounds.y, ringBounds.width, ringBounds.height);
+        oscRing.setVisible (ringBounds.width > 0 && ringBounds.height > 0);
+
         const auto buttonGap = 4;
         const auto buttonLeft = deck.getX() + 6;
-        const auto buttonWidth = juce::jmax (1, (deck.getWidth() - 12 - 3 * buttonGap) / 4);
+        const auto contentRight = landscape ? deck.getRight() - 6 : ringBounds.x - 8;
+        const auto contentWidth = juce::jmax (0, contentRight - buttonLeft);
+        const auto buttonWidth = juce::jmax (1, (contentWidth - 3 * buttonGap) / 4);
         const auto buttonY = deck.getY() + 3;
         const auto buttonHeight = 30;
         const std::array<juce::Component*, 4> transportButtons {
@@ -1414,7 +1422,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
 
         const auto selectorGap = 4;
         const auto selectorLeft = deck.getX() + 6;
-        const auto selectorWidth = juce::jmax (1, (deck.getWidth() - 12 - 2 * selectorGap) / 3);
+        const auto selectorWidth = juce::jmax (1, (contentWidth - 2 * selectorGap) / 3);
         const auto captionY = deck.getY() + 37;
         const auto selectorY = deck.getY() + 49;
         const auto selectorHeight = 30;
@@ -1432,7 +1440,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         placeSelector (instrumentLabel, instrumentBox, 2);
 
         const auto workflowY = deck.getY() + 83;
-        const auto workflowWidth = juce::jmax (1, (deck.getWidth() - 12 - 2 * selectorGap) / 3);
+        const auto workflowWidth = juce::jmax (1, (contentWidth - 2 * selectorGap) / 3);
         presetBox.setBounds (selectorLeft, workflowY, workflowWidth, 30);
         userPresetBox.setBounds (selectorLeft + workflowWidth + selectorGap,
                                  workflowY, workflowWidth, 30);
@@ -2000,6 +2008,11 @@ void FirstAudioProcessorEditor::placeControls (const EditorLayout& layout)
                                         layout.controls.getWidth() - 24, 19);
         controlsHeadingLabel.setVisible (true);
         controlsHintLabel.setVisible (false);
+        if (j37panel::isPhoneLandscape (getWidth(), getHeight()))
+        {
+            sectionCaptionLabel.setVisible (false);
+            return;
+        }
         sectionCaptionLabel.setBounds (layout.controls.getX() + 12,
                                        layout.controls.getY() + 72,
                                        layout.controls.getWidth() - 24, 14);
@@ -2030,7 +2043,8 @@ void FirstAudioProcessorEditor::placeControls (const EditorLayout& layout)
 //==============================================================================
 void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& controlsPanel)
 {
-    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
+    if (j37panel::usesPhoneLayout (getWidth(), getHeight())
+        && ! j37panel::isPhoneLandscape (getWidth(), getHeight()))
     {
         for (auto& button : tabButtons)
         {
@@ -2067,7 +2081,10 @@ void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& control
     //  enough to read, the knobs underneath get a whole grid to themselves, and
     //  only the selected tab's controls are on screen at all.
     // ------------------------------------------------------------------
-    const auto tabBarLeft = controlsPanel.getX() + 14;
+    const auto tabStrip = j37panel::computePhoneLandscapeTabStrip (
+        { controlsPanel.getX(), controlsPanel.getY(),
+          controlsPanel.getWidth(), controlsPanel.getHeight() });
+    const auto tabBarLeft = tabStrip.pages.x;
     // The two rows of tabs-inside-tabs live between the heading and the divider:
     // FAMILIES on top (the three large buttons), the active family's PAGES under
     // them. The divider (controlsDividerOffset) sits below both, so the knob grid
@@ -2078,11 +2095,10 @@ void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& control
     //  kind of difference that reads as a mistake long before anyone can name
     //  it - and exactly what "the toggles on one tab are stretched differently"
     //  was pointing at.
-    constexpr int familyRowHeight = 22;
-    const auto familyRow = juce::Rectangle<int> (controlsPanel.getX() + 14,
-                                                 controlsPanel.getY() + 34,
-                                                 controlsPanel.getWidth() - 28,
-                                                 familyRowHeight);
+    const auto familyRow = juce::Rectangle<int> (tabStrip.families.x,
+                                                 tabStrip.families.y,
+                                                 tabStrip.families.width,
+                                                 tabStrip.families.height);
     const auto familyButtonWidth = (familyRow.getWidth() - 2 * 6) / tabFamilyCount;
     tabFamilyTapeButton.setBounds (familyRow.getX(), familyRow.getY(),
                                    familyButtonWidth, familyRow.getHeight());
@@ -2093,7 +2109,7 @@ void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& control
                                     familyRow.getY(), familyButtonWidth,
                                     familyRow.getHeight());
 
-    const auto tabBarTop = controlsPanel.getY() + 60;
+    const auto tabBarTop = tabStrip.pages.y;
     constexpr int tabBarHeight = 22;
 
     // Pages of the CURRENT family only: the bar re-flows to the family's page
@@ -2115,11 +2131,13 @@ void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& control
         {
             tabButtons[static_cast<std::size_t> (tab)].setBounds (tabBarLeft,
                                                                   tabBarTop, 0, 0);
+            tabButtons[static_cast<std::size_t> (tab)].setVisible (false);
             continue;
         }
         tabButtons[static_cast<std::size_t> (tab)]
             .setBounds (tabBarLeft + placedTabIndex * (tabButtonWidth + tabGap),
                         tabBarTop, tabButtonWidth, tabBarHeight);
+        tabButtons[static_cast<std::size_t> (tab)].setVisible (true);
         ++placedTabIndex;
     }
 

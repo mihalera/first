@@ -11,6 +11,8 @@ Two companion documents: [README.md § Signal path](../README.md#signal-path) is
 short version, and [architecture.md](architecture.md#the-signal-path) is the map of
 which header owns which stage.
 
+![MiBoX signal path illustration](../Assets/signal_path.png)
+
 ## The wrapper: rate, blocks and where the stages sit
 
 ```

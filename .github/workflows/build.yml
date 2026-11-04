@@ -2069,6 +2069,7 @@ jobs:
           # verify the ABI, 16 KB page alignment, and the JNI/application factory
           # symbols JUCE resolves dynamically at startup.
           python tests/android/check_android_apk.py "$apk"
+          python tests/android/check_audio_permission_fallback.py
 
           # Verify Android will expose the expected activity as the launcher.
           # It is the project's own MainActivity, not JUCE's JuceActivity: see

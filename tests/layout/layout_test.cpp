@@ -93,6 +93,7 @@ namespace juce
 // row below it, and it is the only part of that fix a harness can see.
 #include "GUI/DeckBands.h"
 #include "GUI/PhoneLayout.h"
+#include "GUI/AnimationTiming.h"
 
 // The spectrum curve's arithmetic, which is checked here for the reason the knob
 // metrics are: what it can get wrong is not a crash, it is a curve that draws
@@ -490,6 +491,12 @@ void checkPhoneLayout()
            "915 x 412 landscape uses the phone layout", "PHONE", 915, 412);
     check (! j37panel::usesPhoneLayout (1280, 720),
            "1280 x 720 keeps the desktop layout", "PHONE", 1280, 720);
+    check (j37panel::editorTimerHz == 60
+               && j37panel::editorTimerHz
+                      / j37panel::desktopAnimationPaintIntervalTicks == 30
+               && j37panel::editorTimerHz
+                      / j37panel::androidAnimationPaintIntervalTicks == 60,
+           "desktop and Android animation rates are 30 and 60 Hz", "ANIMATION", 60, 1);
 
     for (const auto& size : { std::array<int, 2> { 360, 800 },
                               std::array<int, 2> { 412, 915 },
@@ -530,6 +537,51 @@ void checkPhoneLayout()
     const auto landscape = j37panel::computePhoneEditorLayout (800, 360);
     check (landscape.controls.width >= 500 && landscape.controls.height >= 250,
            "landscape phone keeps a wide, usable control workspace", "PHONE", 800, 360);
+
+    for (const auto& size : { std::array<int, 2> { 800, 360 },
+                              std::array<int, 2> { 915, 412 } })
+    {
+        const auto phone = j37panel::computePhoneEditorLayout (size[0], size[1]);
+        const auto tabs = j37panel::computePhoneLandscapeTabStrip (phone.controls);
+        const auto ring = j37panel::computePhoneOscRingBounds (phone.deck, true);
+
+        check (j37panel::isPhoneLandscape (size[0], size[1]),
+               "landscape layout uses visible family and page tabs", "PHONE",
+               size[0], size[1]);
+        check (tabs.families.width > 0 && tabs.families.height == 22
+                   && tabs.pages.width > 0 && tabs.pages.height == 22
+                   && tabs.families.x >= phone.controls.x
+                   && tabs.pages.x + tabs.pages.width
+                          <= phone.controls.x + phone.controls.width
+                   && tabs.families.y >= phone.controls.y
+                   && tabs.pages.y >= tabs.families.y + tabs.families.height,
+               "landscape family and page tabs fit in separate rows", "PHONE",
+               size[0], size[1]);
+        check (tabs.pages.y + tabs.pages.height
+                   <= phone.controls.y + phone.controls.height,
+               "landscape page tabs stay above the controls workspace", "PHONE",
+               size[0], size[1]);
+        check (ring.width >= 48 && ring.width == ring.height
+                   && ring.x >= phone.deck.x
+                   && ring.x + ring.width <= phone.deck.x + phone.deck.width
+                   && ring.y >= phone.deck.y
+                   && ring.y + ring.height <= phone.deck.y + phone.deck.height,
+               "landscape OSC ring fits inside the deck", "PHONE", size[0], size[1]);
+    }
+
+    for (const auto& size : { std::array<int, 2> { 360, 800 },
+                              std::array<int, 2> { 412, 915 } })
+    {
+        const auto phone = j37panel::computePhoneEditorLayout (size[0], size[1]);
+        const auto ring = j37panel::computePhoneOscRingBounds (phone.deck, false);
+        check (ring.width == 68 && ring.width == ring.height
+                   && ring.x >= phone.deck.x
+                   && ring.x + ring.width <= phone.deck.x + phone.deck.width
+                   && ring.y >= phone.deck.y
+                   && ring.y + ring.height <= phone.deck.y + phone.deck.height,
+               "portrait OSC ring fits beside the deck controls", "PHONE",
+               size[0], size[1]);
+    }
 
     for (const auto& size : { std::array<int, 2> { 360, 800 },
                               std::array<int, 2> { 412, 915 },

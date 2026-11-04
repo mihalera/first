@@ -213,8 +213,8 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     // Two passes over the whole chassis is a few hundred rules, and the panels are
     // drawn over the top of them immediately afterwards - so most of them are
     // covered within the same paint. Skipping the ones the clip cannot see is what
-    // keeps that affordable at 30 Hz with a context attached, where every one of
-    // these repaints is a render of this component.
+    // keeps that affordable at the desktop's 30 Hz with a context attached,
+    // where every one of these repaints is a render of this component.
     // Float, to match the float y the loops below count with. getY()/getBottom()
     // are int, and the implicit conversions warned on every Clang build.
     const auto grainTop = static_cast<float>(clip.getY());

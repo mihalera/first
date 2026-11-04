@@ -754,7 +754,7 @@ inline void drawPanel(juce::Graphics &g,
     // all five gradients and re-fills all five panels however small the dirty
     // rectangle was, because the geometry and the gradient setup are paid for
     // whether or not the rasteriser then clips the result away. That fixed cost
-    // per repaint is what the panel's 30 Hz animation pays, and attaching a
+    // per repaint is what the panel's 30 Hz desktop animation pays, and attaching a
     // context makes every one of those repaints a render of this component.
     if (!rect.intersects(g.getClipBounds().toFloat()))
         return;
@@ -769,7 +769,8 @@ inline void drawPanel(juce::Graphics &g,
     //  read as sitting ABOVE the chassis instead of being outlined on it. The
     //  library caches the blurred mask against its path and radius, so the
     //  cost is one blur the first time and a blit on every frame after - which
-    //  is why it is affordable on a panel repainted at 30 Hz. Without the
+    //  is why it is affordable on desktop's 30 Hz repaint. The compact Android
+    //  panel uses this at 60 Hz. Without the
     //  module the hand-drawn approximation below is unchanged.
     // ------------------------------------------------------------------
 #if J37_HAS_MELATONIN_BLUR

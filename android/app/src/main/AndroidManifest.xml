@@ -9,10 +9,11 @@
   has no host application to be loaded by.
 
   RECORD_AUDIO is requested because the Standalone wrapper asks for it before it
-  opens an audio device with an input. The media permissions are the ones a file
-  chooser needs on the API levels before the Storage Access Framework applies;
-  IR and .nam files are still picked through SAF, so none of them are required
-  for the plugin to run.
+  opens an audio device with an input. If permission is denied, the app continues
+  with output-only audio, including when restoring a saved device setup. The media
+  permissions are the ones a file chooser needs on API levels before the Storage
+  Access Framework applies; IR and .nam files are still picked through SAF, so
+  none of them are required for the plugin to run.
 -->
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
 

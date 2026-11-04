@@ -82,7 +82,7 @@ void FirstAudioProcessorEditor::LevelMeter::setActive (bool shouldBeActive)
 
     active = shouldBeActive;
 
-    // On re-entry the first frame uses the nominal 30 Hz interval rather than the
+    // On re-entry the first frame uses the nominal 60 Hz interval rather than the
     // time the meter spent frozen; otherwise a covered panel would make every
     // needle jump forward by the length of the cover period.
     if (active)
@@ -102,7 +102,7 @@ void FirstAudioProcessorEditor::LevelMeter::setLoudness (float peakDbIn, float r
     using Clock = std::chrono::steady_clock;
     const auto now = Clock::now();
     const auto frameSeconds = lastUpdate == Clock::time_point {}
-                                ? 1.0f / 30.0f
+                                ? 1.0f / 60.0f
                                 : juce::jlimit (0.0f, 0.25f,
                                     std::chrono::duration<float> (now - lastUpdate).count());
     lastUpdate = now;
@@ -426,7 +426,7 @@ void FirstAudioProcessorEditor::CompressorMeter::setReduction (float reductionDb
     using Clock = std::chrono::steady_clock;
     const auto now = Clock::now();
     const auto frameSeconds = lastUpdate == Clock::time_point {}
-                                ? 1.0f / 30.0f
+                                ? 1.0f / 60.0f
                                 : juce::jlimit (0.0f, 0.25f,
                                     std::chrono::duration<float> (now - lastUpdate).count());
     lastUpdate = now;

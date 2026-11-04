@@ -23,18 +23,49 @@ mirrors it for the check and for whoever is sourcing the art.
 | `window_icon.png` | 64 × 64 | Title-bar / taskbar icon for the USER THEME window. Must read at 16 px. Without it the window draws its own reel mark (`defaultWindowIcon` in the same header), so the corner is never blank. | `UserThemeWindow`, `DocumentWindow::setIcon` |
 | `principle_icons.png` | 448 × 64 | Seven 64 px white-on-transparent glyphs, ordered TAPE, VALVE, CASSETTE, VINYL, AMP, TRANSFORMER, DIGITAL. The panel tints each glyph to the active machine colour. | The seven cells in the MIX bar, `Source/GUI/EditorMeters.cpp` |
 | `factory_preset_art.png` | 1856 × 64 | Twenty-nine 64 px illustrated tiles, one per factory preset. Its order exactly follows `FACTORY_PRESET_FILES` in `CMakeLists.txt`. | The selected preset's artwork badge, `PresetArtworkBadge` in `Source/GUI/EditorMeters.cpp` |
+| `ui_icons.png` | 512 × 832 | 99 named glyphs for the 18 pages, controls, workflows, files, statuses, audio and supported platforms. White strokes and alpha support palette tinting; the three family glyphs appear in the TAPE / FX / SETUP keys. | `J37LookAndFeel.cpp`; remaining sprite indices in `asset_catalog.json` |
+| `parameter_glyphs.png` | 512 × 576 | 71 glyphs in `controlSpecs` order, one for every plugin control. | Sprite indices in `asset_catalog.json` |
+| `machine_models.png` | 512 × 512 | 57 glyphs from the processor's tape, valve, amp, transformer, digital and vinyl model tables, including OFF entries. | Sprite indices in `asset_catalog.json` |
+| `meter_status.png` | 512 × 256 | 32 glyphs for input/output, peak/RMS/LUFS/VU, phase, frequency bands, clipping, latency, CPU and signal states. | Sprite indices in `asset_catalog.json` |
+| `preset_categories.png` | 512 × 64 | Mixing, mastering, drums, vocals, bass, guitar, keys and creative category glyphs. | Sprite indices in `asset_catalog.json` |
+| `hardware_details.png` | 256 × 256 | 16 small panel details: screws, washers, vents, label plates, jacks, scales, seams, reels and lamps. | Sprite indices in `asset_catalog.json` |
+| `brand_lockups.png` | 512 × 128 | Square, horizontal, monochrome and reversed MiBoX marks, each in a 128 px cell. | Product windows and documentation |
+| `help_illustrations.png` | 1024 × 576 | Four 512 × 288 scenes for signal flow, A/B comparison, preset workflow and model loading. | User guide and quick-start material |
+| `signal_path.png` | 1600 × 500 | Full-width signal-flow diagram showing the major processing stages. | [`docs/signal-path.md`](../docs/signal-path.md) |
 
 PNG with alpha. `panel_texture` and each tile in `panel_materials` should be
 **seamless-ish and low contrast**: they are overlaid on a dark or light palette, so
 bright features can read as stains. The material tile order is locked to
 `ThemeChoice` in `Source/GUI/PanelPaint.h`; keep the enum and the atlas in step.
 The marks are artwork; the principle sprite sheet is a white alpha mask, so JUCE
-can tint the same seven shapes for every theme.
+can tint the same seven shapes for every theme. The new icon atlases are indexed
+by stable names in [`asset_catalog.json`](asset_catalog.json); all their cells can
+be tinted from the alpha channel for normal, active, disabled or high-contrast
+states.
 The preset artwork atlas has one tile for every entry in CMake's factory preset
 list. That list also generates the preset index used by the processor and combo
 box, so the badge, selector, and embedded presets share one order. When no factory
 preset is active (for example, a fresh or user-edited state), the badge falls back
 to `brand_mark.png` and then to a drawn reel symbol.
+
+## Rebuilding the generated pack
+
+`generate_asset_pack.py` recreates the icon atlases, the 29 preset tiles, brand
+lockups and help illustrations. It reads the current tab and control names, model
+name arrays, and `FACTORY_PRESET_FILES`, then writes their cell names and indices
+to `asset_catalog.json`. This keeps the icon order attached to the plugin's own
+tables instead of maintaining a second handwritten list. Pillow 10.1 or newer is
+needed only to regenerate these PNGs; it is not a build or runtime dependency.
+
+The same catalog records the Android launcher set maintained under
+`android/app/src/main/res`: its five density PNGs, adaptive icon definitions,
+foreground vector, monochrome vector and package icon reference. Gradle reads
+those files directly; CMake embeds only the PNGs in this `Assets/` folder.
+
+```sh
+python Assets/generate_asset_pack.py
+python tests/assets/check_assets.py
+```
 
 ## Licences — read this before committing anything
 
