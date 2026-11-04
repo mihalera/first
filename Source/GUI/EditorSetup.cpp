@@ -104,8 +104,8 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
     // work area has to have room for, and over-reserving it is how a window that
     // "fits" ends up smaller than it needs to be. It was 48 a side, which spent 96 px
     // of a 728 px work area on margins the frame does not actually use.
-    constexpr int screenMarginX = 16;
-    constexpr int screenMarginY = 32;
+    constexpr int screenMarginX = JUCE_ANDROID ? 8 : 16;
+    constexpr int screenMarginY = JUCE_ANDROID ? 8 : 32;
 
     const auto &displays = juce::Desktop::getInstance().getDisplays();
     juce::Rectangle<int> workArea;
@@ -854,6 +854,18 @@ void FirstAudioProcessorEditor::setUpTabButtons() {
         button.onClick = [this, tab] { setCurrentTab(tab); };
         addAndMakeVisible(button);
     }
+
+    phonePageBox.setLookAndFeel (&customLookAndFeel);
+    for (int tab = 0; tab < numTabs; ++tab)
+        phonePageBox.addItem (tabSpecs[static_cast<std::size_t> (tab)].name, tab + 1);
+    phonePageBox.onChange = [this]
+    {
+        const auto selectedTab = phonePageBox.getSelectedId() - 1;
+        if (juce::isPositiveAndBelow (selectedTab, numTabs))
+            setCurrentTab (selectedTab);
+    };
+    addAndMakeVisible (phonePageBox);
+    phonePageBox.setVisible (false);
 
     // The three tab families share one row above the page buttons. The grid
     // below reflows to accommodate them.
@@ -2202,6 +2214,47 @@ void FirstAudioProcessorEditor::setUpPresetBar() {
         updateWorkflowButtons();
     };
 
+    phoneActionsButton.setLookAndFeel (&customLookAndFeel);
+    setTip (phoneActionsButton, "TOOLS - save or delete presets, manage A/B comparisons, "
+                               "undo or redo, and change the machine mode.");
+    phoneActionsButton.onClick = [this]
+    {
+        juce::PopupMenu menu;
+        menu.addItem (1, "MACHINE MODE", modeCycleButton.isEnabled());
+        menu.addSeparator();
+        menu.addItem (2, "SAVE USER PRESET", savePresetButton.isEnabled());
+        menu.addItem (3, "DELETE USER PRESET", deletePresetButton.isEnabled());
+        menu.addSeparator();
+        menu.addItem (4, "COPY TO A", copyAButton.isEnabled());
+        menu.addItem (5, "COPY TO B", copyBButton.isEnabled());
+        menu.addItem (6, "COMPARE A / B", compareButton.isEnabled());
+        menu.addSeparator();
+        menu.addItem (7, "UNDO", undoButton.isEnabled());
+        menu.addItem (8, "REDO", redoButton.isEnabled());
+
+        juce::Component::SafePointer<FirstAudioProcessorEditor> safeThis (this);
+        menu.showMenuAsync (juce::PopupMenu::Options().withTargetComponent (&phoneActionsButton),
+                            [safeThis] (int selection)
+        {
+            if (safeThis == nullptr)
+                return;
+
+            switch (selection)
+            {
+                case 1: safeThis->modeCycleButton.triggerClick(); break;
+                case 2: safeThis->savePresetButton.triggerClick(); break;
+                case 3: safeThis->deletePresetButton.triggerClick(); break;
+                case 4: safeThis->copyAButton.triggerClick(); break;
+                case 5: safeThis->copyBButton.triggerClick(); break;
+                case 6: safeThis->compareButton.triggerClick(); break;
+                case 7: safeThis->undoButton.triggerClick(); break;
+                case 8: safeThis->redoButton.triggerClick(); break;
+                default: break;
+            }
+        });
+    };
+    addAndMakeVisible (phoneActionsButton);
+
     styleLabel(compareBadgeLabel, "", 8.5f, paletteFor(false).accent, true,
                juce::Justification::centred);
     addAndMakeVisible(compareBadgeLabel);
@@ -2376,6 +2429,11 @@ void FirstAudioProcessorEditor::setUpNativeScene() {
     // presents a cleared surface never reaches the deck's component, which is
     // what keeps PENDING entries harmless even when they are compiled in.
     if (!j37::render::hasNativeImplementation(running))
+        return;
+
+    // The phone layout intentionally has no 3D deck. Delay adapter creation
+    // until the editor is wide enough to show it, avoiding an unused GPU surface.
+    if (j37panel::usesPhoneLayout (getWidth()))
         return;
 
     shutDownNativeScene();

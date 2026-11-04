@@ -18,10 +18,9 @@
          and a build with no Assets/ directory behaves exactly as before, because
          every call site falls back to the drawn panel when the image is invalid.
 
-    WHY PNG AND NOT SVG HERE: these are surfaces (grain, wear, a mark), not icons
-    that must stay crisp at any size. Vector art belongs in Assets/ as .svg
-    files, loaded with juce::Drawable, which is a different loader and row type; the
-    pipeline for it is described in Assets/README.md rather than half-built here.
+    WHY PNG HERE: the surface is raster art, and the seven small alpha glyphs
+    share a single sprite sheet and the same cached loader. Art that must remain
+    crisp at unlimited scale can use the Drawable loader described in the README.
   ============================================================================ */
 #pragma once
 
@@ -51,6 +50,10 @@ inline constexpr Slot slots[] = {
     { "window_icon", "window_icon.png", "window_icon_png", 64, 64,
       "The title-bar and taskbar icon of the USER THEME window. Square, and it "
       "should read at 16 px." },
+
+    { "principle_icons", "principle_icons.png", "principle_icons_png", 448, 64,
+      "Seven monochrome alpha glyphs for the MIX bar, ordered TAPE, VALVE, "
+      "CASSETTE, VINYL, AMP, TRANSFORMER, DIGITAL. Tinted by the active palette." },
 };
 
 inline constexpr int slotCount = static_cast<int> (sizeof (slots) / sizeof (slots[0]));

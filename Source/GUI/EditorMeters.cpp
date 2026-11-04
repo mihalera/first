@@ -557,6 +557,7 @@ void FirstAudioProcessorEditor::MixBar::paint (juce::Graphics& g)
     static constexpr const char* principleNames[principleCount] {
         "TAPE", "VALVE", "CASSETTE", "VINYL", "AMP", "TRANSFORMER", "DIGITAL"
     };
+    static constexpr const char* principleIconSymbol = "principle_icons_png";
 
     const auto strip = area.reduced (0.0f, 3.0f);
     constexpr float gap = 3.0f;
@@ -639,10 +640,27 @@ void FirstAudioProcessorEditor::MixBar::paint (juce::Graphics& g)
         // width a cell is about 100 px, which TRANSFORMER at 9 px just fits,
         // and on a narrower host it has to fit anyway.
         auto nameRow = cell.reduced (3.0f, 2.0f).removeFromTop (cell.getHeight() * 0.42f);
-        g.setColour (share > 0.0005f ? ink.brighter (0.30f)
-                                     : palette.secondary.withAlpha (0.65f));
-        g.setFont (shrinkingFont (principleNames[p], 8.5f, juce::Font::bold, nameRow.getWidth()));
-        g.drawText (principleNames[p], nameRow, juce::Justification::centred, false);
+        const auto nameInk = share > 0.0005f ? ink.brighter (0.30f)
+                                             : palette.secondary.withAlpha (0.65f);
+        auto labelBounds = nameRow;
+        const auto& icons = j37panel::assets::cachedImage (principleIconSymbol);
+        const auto iconSide = juce::jmin (11.0f, nameRow.getHeight() - 1.0f,
+                                         cell.getWidth() * 0.14f);
+
+        if (icons.isValid() && iconSide >= 4.0f)
+        {
+            const auto iconX = juce::roundToInt (cell.getX() + 4.0f);
+            const auto iconY = juce::roundToInt (nameRow.getCentreY() - iconSide * 0.5f);
+            g.setColour (nameInk);
+            g.drawImage (icons, iconX, iconY,
+                         juce::roundToInt (iconSide), juce::roundToInt (iconSide),
+                         p * 64, 0, 64, 64, true /* alpha mask, tinted with this machine's colour */);
+            labelBounds.removeFromLeft (iconSide + 4.0f);
+        }
+
+        g.setColour (nameInk);
+        g.setFont (shrinkingFont (principleNames[p], 8.5f, juce::Font::bold, labelBounds.getWidth()));
+        g.drawText (principleNames[p], labelBounds, juce::Justification::centred, false);
 
         auto valueRow = cell.reduced (3.0f, 2.0f).removeFromBottom (cell.getHeight() * 0.40f);
         g.setColour (share > 0.0005f ? palette.readout.withAlpha (0.92f)

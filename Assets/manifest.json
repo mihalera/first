@@ -31,6 +31,16 @@
       "licence": "CC0-1.0",
       "source": "Original artwork created for the MiBoX project; drawn procedurally with Python and Pillow.",
       "author": "OpenAI Codex"
+    },
+    {
+      "name": "principle_icons",
+      "file": "principle_icons.png",
+      "width": 448,
+      "height": 64,
+      "used_by": "Source/GUI/EditorMeters.cpp (MixBar::paint)",
+      "licence": "CC0-1.0",
+      "source": "Original seven-symbol sprite sheet created for the MiBoX project; drawn procedurally with Python and Pillow.",
+      "author": "OpenAI Codex"
     }
   ]
 }

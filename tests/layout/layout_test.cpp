@@ -37,6 +37,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <vector>
 
 // ---- the toolkit, stubbed down to what the extracted code touches -----------
@@ -91,6 +92,7 @@ namespace juce
 // used to put a 30 px combo box inside a 32 px band and over the captions of the
 // row below it, and it is the only part of that fix a harness can see.
 #include "GUI/DeckBands.h"
+#include "GUI/PhoneLayout.h"
 
 // The spectrum curve's arithmetic, which is checked here for the reason the knob
 // metrics are: what it can get wrong is not a crash, it is a curve that draws
@@ -465,10 +467,81 @@ void checkDeckBands()
     check (floorHolds, "the deck's floor keeps a 24 px control and still fits", "DECK", 0, 0);
 }
 
+void checkPhoneLayout()
+{
+    const auto assertInside = [] (const j37panel::PhoneLayoutRectangle& area,
+                                  int width, int height, const char* name)
+    {
+        check (area.x >= 0 && area.y >= 0 && area.width >= 0 && area.height >= 0
+                   && area.x + area.width <= width && area.y + area.height <= height,
+               name, "PHONE", width, height);
+    };
+
+    check (j37panel::usesPhoneLayout (360), "360 px uses the phone layout", "PHONE", 360, 800);
+    check (j37panel::usesPhoneLayout (600), "600 px uses the phone layout", "PHONE", 600, 800);
+    check (! j37panel::usesPhoneLayout (601), "601 px keeps the desktop layout", "PHONE", 601, 800);
+
+    for (const auto& size : { std::array<int, 2> { 360, 800 },
+                              std::array<int, 2> { 412, 915 },
+                              std::array<int, 2> { 320, 480 } })
+    {
+        const auto width = size[0];
+        const auto height = size[1];
+        const auto layout = j37panel::computePhoneEditorLayout (width, height);
+        assertInside (layout.header, width, height, "phone header stays inside the display");
+        assertInside (layout.deck, width, height, "phone deck stays inside the display");
+        assertInside (layout.controls, width, height, "phone controls stay inside the display");
+        check (layout.deck.y >= layout.header.y + layout.header.height,
+               "phone deck follows the header", "PHONE", width, height);
+        check (layout.controls.y >= layout.deck.y + layout.deck.height,
+               "phone controls follow the deck", "PHONE", width, height);
+        check (layout.controls.width == width - 2 * j37panel::phoneLayoutInset,
+               "phone controls use the full inset width", "PHONE", width, height);
+    }
+
+    const auto compact = j37panel::computePhoneEditorLayout (360, 800);
+    check (compact.controls.height >= 580,
+           "portrait phone keeps a tall control workspace", "PHONE", 360, 800);
+
+    for (const auto& size : { std::array<int, 2> { 360, 800 },
+                              std::array<int, 2> { 412, 915 } })
+    {
+        const auto width = size[0];
+        const auto height = size[1];
+        const auto phone = j37panel::computePhoneEditorLayout (width, height);
+        const juce::Rectangle<int> controlsBand (phone.controls.x, phone.controls.y,
+                                                  phone.controls.width, phone.controls.height);
+
+        for (const auto& page : pages)
+        {
+            const auto built = buildPage (controlsBand, page);
+            const auto memberBand = built.areaHeight != built.grid.getHeight()
+                                      ? memberBandHeight : 0;
+            const auto usableBottom = built.grid.getBottom() - memberBand;
+            auto smallestDisc = std::numeric_limits<float>::max();
+
+            for (const auto& slider : built.sliders)
+            {
+                const auto metrics = metricsFor (slider, width, height);
+                smallestDisc = std::min (smallestDisc, metrics.radius * 2.0f);
+                check (slider.getX() >= built.grid.getX()
+                           && slider.getRight() <= built.grid.getRight()
+                           && slider.getY() >= built.grid.getY()
+                           && slider.getBottom() <= usableBottom,
+                       "phone knob stays within its page workspace", page.name, width, height);
+            }
+
+            if (page.knobs > 0)
+                check (smallestDisc > 12.0f, "phone knobs remain drawable", page.name, width, height);
+        }
+    }
+}
+
 int main()
 {
     checkDeckBands();
     checkHorizontalKnobConsistency();
+    checkPhoneLayout();
 
     // The editor's own resize limits, and two sizes inside them a session is
     // likely to sit at - wide, tall, and the two extremes of the floor.

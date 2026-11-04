@@ -2,8 +2,8 @@
 
 The panel is **drawn from code**: every plate, knob, screw, tick and grain line is
 arithmetic and palette colour. That is what makes it scale, theme and stay sharp on
-any display. The files in this directory are the **additive** layer — surfaces and
-marks that a designer can drop in later without touching the drawing.
+any display. The files in this directory are the **additive** layer — surface art,
+product marks and small glyphs that can be added without replacing the drawing.
 
 **Nothing here is required.** A checkout with this directory empty builds and looks
 exactly like the current panel: every draw site asks for its slot and falls back to
@@ -20,11 +20,12 @@ mirrors it for the check and for whoever is sourcing the art.
 | `panel_texture.png` | 1024 × 512 | The chassis surface: grain, wear, faint print marks. Half-resolution layer stretched over the whole editor, under the controls. | `rebuildPanelTextureLayers()`, `Source/GUI/EditorPaint.cpp` |
 | `brand_mark.png` | 256 × 256 | The product mark: a reel, a monogram, a drawn logo. Read as a signature, not a control. | The USER THEME window's header |
 | `window_icon.png` | 64 × 64 | Title-bar / taskbar icon for the USER THEME window. Must read at 16 px. Without it the window draws its own reel mark (`defaultWindowIcon` in the same header), so the corner is never blank. | `UserThemeWindow`, `DocumentWindow::setIcon` |
+| `principle_icons.png` | 448 × 64 | Seven 64 px white-on-transparent glyphs, ordered TAPE, VALVE, CASSETTE, VINYL, AMP, TRANSFORMER, DIGITAL. The panel tints each glyph to the active machine colour. | The seven cells in the MIX bar, `Source/GUI/EditorMeters.cpp` |
 
 PNG with alpha. `panel_texture` should be **seamless-ish and low contrast**: it is
 multiplied into a dark (or ivory) panel at a low dose, so any single bright feature
-will read as a stain. The other two are spots of colour and can be as bold as the
-brand allows.
+will read as a stain. The marks are artwork; the principle sprite sheet is a white
+alpha mask, so JUCE can tint the same seven shapes for every theme.
 
 ## Licences — read this before committing anything
 

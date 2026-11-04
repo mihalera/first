@@ -27,6 +27,7 @@
 // handed the theme the palettes select on, so the header of the panel's paint
 // kit is the one file the editor's own header has to include.
 #include "GUI/PanelPaint.h"
+#include "GUI/PhoneLayout.h"
 
 // The deck's OSC ring - a j37panel component like the parameter sheet below, so
 // it comes after the paint kit it reads its palette through.
@@ -1236,6 +1237,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // and writes both parameters itself (no attachment: a ButtonAttachment on
     // each side would fight the cycle).
     juce::TextButton modeCycleButton{"MODE: OFF"};
+    juce::TextButton phoneActionsButton{"TOOLS"};
     juce::Label presetHeadingLabel;
     juce::Label compareBadgeLabel;
     juce::Label presetBadgeLabel;
@@ -1244,11 +1246,8 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // while a knob is being dragged.
     int compareMirrorTick = 0;
 
-    // The animated surfaces are invalidated every SECOND timer tick (15 Hz)
-    // rather than every tick. The terms they carry - the knobs' breathing halos,
-    // the specular sweep, the ticking scale wobble, the switches' five-frame
-    // thumb glide - are all 2 to 4 second motions, so half the timer rate looks
-    // identical to the eye and costs half the paints. See
+    // Desktop animation invalidations run every second timer tick; Android runs
+    // them on every 30 Hz tick so the phone UI is not capped at 15 fps. See
     // repaintAnimatedSurfaces().
     int animationPaintTick = 0;
     int lastShownPreset = -2;
@@ -1311,6 +1310,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // buttons are on screen: the families themselves are the three buttons below,
     // so nine pages of tabs never fight for one row's width.
     std::array<juce::TextButton, numTabs> tabButtons;
+    juce::ComboBox phonePageBox;
     int currentTab = 0;
     int currentTabFamily = 0;
     juce::TextButton tabFamilyTapeButton{"TAPE"};

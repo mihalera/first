@@ -192,13 +192,14 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
     // switches and the three LOAD/CLEAR pairs. They were the group the old
     // onStateChange wiring could not reach - the toggles sent no click because
     // nothing listened, and the TextButtons sent no state change at all.
-    const std::array<juce::Button*, 14> utilityButtons { { &uiSoundsButton, &antiPhaseGuardButton,
+    const std::array<juce::Button*, 15> utilityButtons { { &uiSoundsButton, &antiPhaseGuardButton,
                           &parameterSheetButton, &userThemeButton,
                           &inputEqHpButton, &inputEqLpButton,
                           &outputEqHpButton, &outputEqLpButton,
                           &loadNeuralButton, &clearNeuralButton,
                           &loadIrButton, &clearIrButton,
-                          &loadNoiseButton, &clearNoiseButton } };
+                          &loadNoiseButton, &clearNoiseButton,
+                          &phoneActionsButton } };
     for (auto* button : utilityButtons)
         attachVoice (*button, UiSoundEngine::Voice::click);
 
@@ -277,6 +278,7 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
     // invalidated with the page (see the repaint at the foot of this function).
     const auto previousTab = currentTab;
     currentTab = juce::jlimit (0, numTabs - 1, newTab);
+    phonePageBox.setSelectedId (currentTab + 1, juce::dontSendNotification);
     // The section caption: the active page's own one-line subject, from the same
     // index the page itself came from, so the two can never name different pages.
     sectionCaptionLabel.setText (tabSubtitles[static_cast<std::size_t> (currentTab)],
@@ -1043,6 +1045,21 @@ bool FirstAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
 
 FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayout() const
 {
+    if (j37panel::usesPhoneLayout (getWidth()))
+    {
+        // Phones trade the desktop's side-by-side meter bank for a compact deck
+        // and a full-width, multi-row control workspace.
+        const auto phone = j37panel::computePhoneEditorLayout (getWidth(), getHeight());
+        EditorLayout layout;
+        layout.header = { phone.header.x, phone.header.y,
+                          phone.header.width, phone.header.height };
+        layout.deck = { phone.deck.x, phone.deck.y,
+                        phone.deck.width, phone.deck.height };
+        layout.controls = { phone.controls.x, phone.controls.y,
+                            phone.controls.width, phone.controls.height };
+        return layout;
+    }
+
     // Outer padding of 14 px instead of 18: the screws and the panel border only need
     // that much clearance, and every pixel saved here goes to the working areas.
     auto remaining = getLocalBounds().reduced (14);
@@ -1155,6 +1172,11 @@ void FirstAudioProcessorEditor::resized()
     // stretched over a size it was not built for.
     rebuildPanelTextureLayers();
 
+    const auto phoneLayout = j37panel::usesPhoneLayout (getWidth());
+    const auto parameterSheetWasOpen = parameterSheet != nullptr && parameterSheet->isOpen();
+    for (int child = 0; child < getNumChildComponents(); ++child)
+        getChildComponent (child)->setVisible (! phoneLayout);
+
     const auto layout = getEditorLayout();
 
     placeHeader (layout.header);
@@ -1165,20 +1187,33 @@ void FirstAudioProcessorEditor::resized()
     const auto geometry = placeControlStrip (layout);
     updateTabVisibility (geometry);
     placeTabMembers (geometry);
-    placeMeters (layout);
+    if (! phoneLayout)
+        placeMeters (layout);
 
     // The sheet is an overlay, not a band: it covers the panel while open, so its
     // bounds are the editor's own and it is deliberately not in the overlap
     // check's furniture list (it would collide with every item on that list by
     // design).
     if (parameterSheet != nullptr)
+    {
         parameterSheet->setBounds (getLocalBounds());
+        parameterSheet->setVisible (parameterSheetWasOpen);
+    }
 
     // The native scene adapter sizes its swapchain from the same numbers its
     // setup used; without this the surface and the frame would disagree about
     // the viewport the moment the window is dragged.
-    if (nativeRenderer != nullptr)
+    if (phoneLayout && nativeRenderer != nullptr)
+    {
+        shutDownNativeScene();
+        nativeSceneAttachAttemptsLeft = 90;
+    }
+    else if (nativeRenderer != nullptr)
         nativeRenderer->resize (nativeSceneConfig());
+    else if (phoneLayout && nativeSceneAttachAttemptsLeft == 0
+             && j37::render::hasNativeImplementation (
+                    j37::render::runningBackend (renderBackendChoice)))
+        nativeSceneAttachAttemptsLeft = 90;
 
     verifyPanelHasNoOverlaps();
 }
@@ -1191,11 +1226,45 @@ void FirstAudioProcessorEditor::resized()
 //==============================================================================
 void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
 {
+    if (j37panel::usesPhoneLayout (getWidth()))
+    {
+        const auto rowOneY = header.getY() + 5;
+        const auto titleWidth = juce::jmin (82, juce::jmax (0, header.getWidth() / 4));
+        titleLabel.setBounds (header.getX() + 4, rowOneY, titleWidth, 32);
+        titleLabel.setFont (juce::Font (juce::FontOptions (
+            "Georgia, Times New Roman, Times, serif", uiFontSize (21.0f), juce::Font::bold)));
+        titleLabel.setVisible (true);
+
+        const auto switchesLeft = header.getX() + titleWidth + 8;
+        const auto switchWidth = juce::jmax (1, (header.getRight() - switchesLeft - 4) / 4);
+        const auto placeSwitch = [&] (juce::Component& component, int index)
+        {
+            component.setBounds (switchesLeft + index * switchWidth, rowOneY,
+                                 switchWidth - 3, 30);
+            component.setVisible (true);
+        };
+        placeSwitch (bypassButton, 0);
+        placeSwitch (deltaButton, 1);
+        placeSwitch (polarityButton, 2);
+        placeSwitch (autoGainButton, 3);
+
+        const auto rowTwoY = header.getY() + 41;
+        const auto utilityWidth = juce::jmax (1, juce::jmin (88, (header.getWidth() - 12) / 3));
+        oscButton.setBounds (header.getX() + 4, rowTwoY, utilityWidth, 25);
+        themeButton.setBounds (header.getX() + utilityWidth + 8, rowTwoY,
+                               utilityWidth, 25);
+        oscButton.setVisible (true);
+        themeButton.setVisible (true);
+        return;
+    }
+
     // Header captions: the small brand strip sits ABOVE the big title (they used to
     // share the same band and printed over each other), the subtitle starts right of
     // the title box, and all three stay clear of the theme button / status badge.
     brandLabel.setBounds (header.getX() + 26, header.getY() + 8, 120, 12);
     titleLabel.setBounds (header.getX() + 25, header.getY() + 24, 96, 46);
+    titleLabel.setFont (juce::Font (juce::FontOptions (
+        "Georgia, Times New Roman, Times, serif", 30.0f * uiScale(), juce::Font::bold)));
     subtitleLabel.setBounds (header.getX() + 126, header.getY() + 46, 220, 18);
     // The engine switches live in the header's right half, two per row - the
     // request was to move BYPASS / DELTA / POLARITY / AUTO GAIN up here, where
@@ -1318,6 +1387,62 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
 //==============================================================================
 void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
 {
+    if (j37panel::usesPhoneLayout (getWidth()))
+    {
+        const auto buttonGap = 4;
+        const auto buttonLeft = deck.getX() + 6;
+        const auto buttonWidth = juce::jmax (1, (deck.getWidth() - 12 - 3 * buttonGap) / 4);
+        const auto buttonY = deck.getY() + 3;
+        const auto buttonHeight = 30;
+        const std::array<juce::Component*, 4> transportButtons {
+            &transportStopButton, &transportPlayButton, &transportStartButton, &spindownButton
+        };
+        for (std::size_t i = 0; i < transportButtons.size(); ++i)
+        {
+            transportButtons[i]->setBounds (
+                buttonLeft + static_cast<int> (i) * (buttonWidth + buttonGap),
+                buttonY, buttonWidth, buttonHeight);
+            transportButtons[i]->setVisible (true);
+        }
+
+        const auto selectorGap = 4;
+        const auto selectorLeft = deck.getX() + 6;
+        const auto selectorWidth = juce::jmax (1, (deck.getWidth() - 12 - 2 * selectorGap) / 3);
+        const auto captionY = deck.getY() + 37;
+        const auto selectorY = deck.getY() + 49;
+        const auto selectorHeight = 30;
+        const auto placeSelector = [&] (juce::Label& label, juce::Component& selector,
+                                        int column)
+        {
+            const auto x = selectorLeft + column * (selectorWidth + selectorGap);
+            label.setBounds (x, captionY, selectorWidth, 11);
+            selector.setBounds (x, selectorY, selectorWidth, selectorHeight);
+            label.setVisible (true);
+            selector.setVisible (true);
+        };
+        placeSelector (tapeTypeLabel, tapeTypeBox, 0);
+        placeSelector (speedLabel, speedBox, 1);
+        placeSelector (instrumentLabel, instrumentBox, 2);
+
+        const auto workflowY = deck.getY() + 83;
+        const auto workflowWidth = juce::jmax (1, (deck.getWidth() - 12 - 2 * selectorGap) / 3);
+        presetBox.setBounds (selectorLeft, workflowY, workflowWidth, 30);
+        userPresetBox.setBounds (selectorLeft + workflowWidth + selectorGap,
+                                 workflowY, workflowWidth, 30);
+        phoneActionsButton.setBounds (selectorLeft + 2 * (workflowWidth + selectorGap),
+                                      workflowY, workflowWidth, 30);
+        presetBox.setVisible (true);
+        userPresetBox.setVisible (true);
+        phoneActionsButton.setVisible (true);
+
+        tapeScene.setBounds (0, 0, 0, 0);
+        tapeScene.setVisible (false);
+        return;
+    }
+
+    phoneActionsButton.setBounds (0, 0, 0, 0);
+    phoneActionsButton.setVisible (false);
+
     // ------------------------------------------------------------------
     //  The deck.
     //
@@ -1868,6 +1993,20 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
 //==============================================================================
 void FirstAudioProcessorEditor::placeControls (const EditorLayout& layout)
 {
+    if (j37panel::usesPhoneLayout (getWidth()))
+    {
+        controlsHeadingLabel.setBounds (layout.controls.getX() + 12,
+                                        layout.controls.getY() + 7,
+                                        layout.controls.getWidth() - 24, 19);
+        controlsHeadingLabel.setVisible (true);
+        controlsHintLabel.setVisible (false);
+        sectionCaptionLabel.setBounds (layout.controls.getX() + 12,
+                                       layout.controls.getY() + 72,
+                                       layout.controls.getWidth() - 24, 14);
+        sectionCaptionLabel.setVisible (true);
+        return;
+    }
+
     controlsHeadingLabel.setBounds (layout.controls.getX() + 18, layout.controls.getY() + 10, 210, 19);
     // The section caption takes the gap between the heading and the hint, which is
     // where the panel has always had a wide empty stretch: the hint is drawn
@@ -1891,6 +2030,26 @@ void FirstAudioProcessorEditor::placeControls (const EditorLayout& layout)
 //==============================================================================
 void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& controlsPanel)
 {
+    if (j37panel::usesPhoneLayout (getWidth()))
+    {
+        for (auto& button : tabButtons)
+        {
+            button.setBounds (controlsPanel.getX(), controlsPanel.getY(), 0, 0);
+            button.setVisible (false);
+        }
+        tabFamilyTapeButton.setVisible (false);
+        tabFamilyFxButton.setVisible (false);
+        tabFamilySetupButton.setVisible (false);
+        phonePageBox.setBounds (controlsPanel.getX() + 12,
+                                controlsPanel.getY() + 33,
+                                controlsPanel.getWidth() - 24, 36);
+        phonePageBox.setSelectedId (currentTab + 1, juce::dontSendNotification);
+        phonePageBox.setVisible (true);
+        return;
+    }
+
+    phonePageBox.setVisible (false);
+
     // ------------------------------------------------------------------
     //  The tab bar.
     //
@@ -2319,6 +2478,13 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
 //==============================================================================
 void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geometry)
 {
+    for (std::size_t i = 0; i < controlCount; ++i)
+    {
+        const auto onActiveTab = controlIsInTab (i, currentTab);
+        controls[i].setVisible (onActiveTab);
+        controlLabels[i].setVisible (onActiveTab);
+    }
+
     // Visibility for the deck switches is re-asserted here rather than only in
     // setCurrentTab, because resized() also runs from setSize() in the constructor
     // - BEFORE some of these widgets had a parent - and a show/hide decision made
@@ -2919,6 +3085,7 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "spindown",           &spindownButton },
             { "deckHint",           &deckHintLabel },
             { "mode",               &modeCycleButton },
+            { "phoneActions",       &phoneActionsButton },
             { "presetHeading",      &presetHeadingLabel },
             { "presetBox",          &presetBox },
             { "userPresetBox",      &userPresetBox },
@@ -2931,6 +3098,7 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "redo",               &redoButton },
             { "compareBadge",       &compareBadgeLabel },
             { "presetBadge",        &presetBadgeLabel },
+            { "phonePage",          &phonePageBox },
 
             // The tab pages' own members: one page's worth is hand-placed on the
             // member band at a time, exactly like the deck's line above - and

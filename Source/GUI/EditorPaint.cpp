@@ -196,17 +196,20 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     const auto grainTop = static_cast<float>(clip.getY());
     const auto grainBottom = static_cast<float>(clip.getBottom());
 
-    g.setColour(grainColour);
-    for (float y = chassis.getY() + 2.0f; y < chassis.getBottom(); y += 3.0f)
-        if (y >= grainTop && y <= grainBottom)
-            g.drawHorizontalLine(juce::roundToInt(y), chassis.getX() + 6.0f,
-                                 chassis.getRight() - 6.0f);
+    if (! j37panel::usesPhoneLayout (getWidth()))
+    {
+        g.setColour(grainColour);
+        for (float y = chassis.getY() + 2.0f; y < chassis.getBottom(); y += 3.0f)
+            if (y >= grainTop && y <= grainBottom)
+                g.drawHorizontalLine(juce::roundToInt(y), chassis.getX() + 6.0f,
+                                     chassis.getRight() - 6.0f);
 
-    g.setColour(palette.text.withAlpha(grainAlpha * 0.6f));
-    for (float y = chassis.getY() + 7.0f; y < chassis.getBottom(); y += 12.0f)
-        if (y >= grainTop && y <= grainBottom)
-            g.drawHorizontalLine(juce::roundToInt(y), chassis.getX() + 6.0f,
-                                 chassis.getRight() - 6.0f);
+        g.setColour(palette.text.withAlpha(grainAlpha * 0.6f));
+        for (float y = chassis.getY() + 7.0f; y < chassis.getBottom(); y += 12.0f)
+            if (y >= grainTop && y <= grainBottom)
+                g.drawHorizontalLine(juce::roundToInt(y), chassis.getX() + 6.0f,
+                                     chassis.getRight() - 6.0f);
+    }
 
     // (The arithmetic texture is blitted further down, AFTER the panels, so the
     // panels' own faces sit over the chassis grain rather than over the texture.)

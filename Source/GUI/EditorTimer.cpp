@@ -293,9 +293,10 @@ void FirstAudioProcessorEditor::repaintAnimatedSurfaces() {
             toggle->repaint();
 
     // The status lamp and the deck's own transport, both drawn by paint().
-    repaint(statusPillBounds());
+    if (!j37panel::usesPhoneLayout (getWidth()))
+        repaint(statusPillBounds());
 
-    if (!tapeScene.isSceneLive())
+    if (!j37panel::usesPhoneLayout (getWidth()) && !tapeScene.isSceneLive())
         repaint(deckAnimationBounds());
 }
 
@@ -310,17 +311,17 @@ void FirstAudioProcessorEditor::timerCallback() {
         return;
 
     // The parameter sheet is an opaque, full-editor overlay. Its rows have their
-    // own attachments and its viewport is the only thing the user can see, so
-    // everything the panel animates underneath is invisible. Four meters and the
-    // ring are told to stop before the next frame, and the invalidations at the
-    // bottom of this function are skipped; the values themselves are still read
-    // because the OSC ball, the scene and the readouts are state, not decoration.
+    // own attachments and its viewport is the only thing the user can see. The
+    // phone layout also omits the large meters and OSC ring to leave room for
+    // touch controls, so neither surface should consume update or repaint work.
     const auto panelCovered = parameterSheet != nullptr && parameterSheet->isOpen();
-    inputMeter.setActive(!panelCovered);
-    outputMeter.setActive(!panelCovered);
-    compressorMeterIn.setActive(!panelCovered);
-    compressorMeterOut.setActive(!panelCovered);
-    oscRing.setRedrawEnabled(!panelCovered);
+    const auto phoneLayout = j37panel::usesPhoneLayout (getWidth());
+    const auto metersVisible = ! panelCovered && ! phoneLayout;
+    inputMeter.setActive(metersVisible);
+    outputMeter.setActive(metersVisible);
+    compressorMeterIn.setActive(metersVisible);
+    compressorMeterOut.setActive(metersVisible);
+    oscRing.setRedrawEnabled(! panelCovered && ! phoneLayout);
 
     // Retry context creation while the host is still creating its peer. The
     // budget is bounded so an unavailable driver is not polled forever.
@@ -336,13 +337,13 @@ void FirstAudioProcessorEditor::timerCallback() {
         }
     }
 
-    if (openGLContext.isAttached())
+    if (!phoneLayout && openGLContext.isAttached())
         tapeScene.serviceContextAttachment();
 
     // Native adapters can be requested before the host has created the peer
     // they need to attach to. Retry that initialisation for a bounded period,
     // just like the editor's own OpenGL context above.
-    if (nativeSceneAttachAttemptsLeft > 0) {
+    if (!phoneLayout && nativeSceneAttachAttemptsLeft > 0) {
         --nativeSceneAttachAttemptsLeft;
         if (nativeRenderer == nullptr)
             setUpNativeScene();
@@ -353,7 +354,7 @@ void FirstAudioProcessorEditor::timerCallback() {
     // The native scene path: while a scene-capable adapter owns the deck's
     // surface, every tick builds the frame the OpenGL callback would have built
     // and hands it over - the adapter records it on its own GL thread.
-    if (nativeRenderer != nullptr)
+    if (!phoneLayout && nativeRenderer != nullptr)
         submitNativeSceneFrame();
 
     // Four meters: the two level meters each show the full four-way loudness reading
@@ -384,7 +385,7 @@ void FirstAudioProcessorEditor::timerCallback() {
     // busy flag when it is done (Source/DSP/NoiseLoader.h).
     refreshNoiseStatus();
 
-    if (!panelCovered) {
+    if (metersVisible) {
         inputMeter.setLoudness(telemetry.inputPeakDb, telemetry.inputRmsDb, telemetry.inputLufs,
                                telemetry.inputVuDb, telemetry.inputCombinedDb,
                                telemetry.inputClipping);
@@ -924,7 +925,8 @@ void FirstAudioProcessorEditor::timerCallback() {
     // window then has to repaint over; that is the same class of problem as the
     // whole-panel repaint noted above, one rectangle at a time. The frame after
     // the menu closes catches the animation up, which at 30 Hz is invisible.
-    if (!popupIsOpen && !panelCovered && ++animationPaintTick >= 2) {
+    constexpr int animationPaintIntervalTicks = JUCE_ANDROID ? 1 : 2;
+    if (!popupIsOpen && !panelCovered && ++animationPaintTick >= animationPaintIntervalTicks) {
         animationPaintTick = 0;
         repaintAnimatedSurfaces();
     }
