@@ -194,7 +194,11 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
     // switches and the three LOAD/CLEAR pairs. They were the group the old
     // onStateChange wiring could not reach - the toggles sent no click because
     // nothing listened, and the TextButtons sent no state change at all.
+<<<<<<< HEAD
     const std::array<juce::Button*, 15> utilityButtons { { &uiSoundsButton, &antiPhaseGuardButton,
+=======
+    const std::array<juce::Button*, 14> utilityButtons { { &uiSoundsButton, &antiPhaseGuardButton,
+>>>>>>> 8566b797 (Fix Android launch crash and finish Auto-Tune controls)
                           &parameterSheetButton, &userThemeButton,
                           &inputEqHpButton, &inputEqLpButton,
                           &outputEqHpButton, &outputEqLpButton,

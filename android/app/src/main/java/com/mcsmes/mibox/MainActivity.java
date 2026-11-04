@@ -1,13 +1,19 @@
 package com.mcsmes.mibox;
 
 import android.app.Activity;
+<<<<<<< HEAD
 import android.content.Intent;
+=======
+>>>>>>> 8566b797 (Fix Android launch crash and finish Auto-Tune controls)
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 
+<<<<<<< HEAD
 import java.util.Arrays;
 
+=======
+>>>>>>> 8566b797 (Fix Android launch crash and finish Auto-Tune controls)
 // ============================================================================
 //  The APK's launcher.
 //
@@ -25,10 +31,13 @@ import java.util.Arrays;
 //  ComponentPeerView to this activity, and drives the audio engine from the
 //  Application. The only behaviour worth keeping from JuceActivity is the
 //  edge-to-edge setup below, which is pure platform code.
+<<<<<<< HEAD
 //
 //  Every lifecycle callback also writes a line through Diag, which is dormant
 //  unless the app was started with `--ez miboxDiag true`. That trace is the only
 //  way to see how far a start gets on a device we cannot attach a debugger to.
+=======
+>>>>>>> 8566b797 (Fix Android launch crash and finish Auto-Tune controls)
 // ============================================================================
 public class MainActivity extends Activity
 {
@@ -63,6 +72,7 @@ public class MainActivity extends Activity
     @Override
     protected void onCreate (Bundle savedInstanceState)
     {
+<<<<<<< HEAD
         Diag.enable (this, getIntent());
         Diag.note ("MainActivity.onCreate begin");
 
@@ -126,5 +136,9 @@ public class MainActivity extends Activity
                    + " results=" + Arrays.toString (results));
 
         super.onRequestPermissionsResult (requestCode, permissions, results);
+=======
+        initEdgeToEdge();
+        super.onCreate (savedInstanceState);
+>>>>>>> 8566b797 (Fix Android launch crash and finish Auto-Tune controls)
     }
 }

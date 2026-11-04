@@ -237,6 +237,20 @@ option(COPY_PLUGIN_AFTER_BUILD "Copy plugins to the user plugin folders after bu
 # SokolBackend.h selects the platform graphics API, and NativeRenderer_Sokol.cpp
 # provides matching shader sources for desktop and GLES contexts.
 set(J37_RENDER_BACKEND "SOKOL" CACHE STRING
+=======
+# The default is platform-specific on purpose. Sokol's scene shaders are written
+# as desktop GLSL 410, while SokolBackend.h selects SOKOL_GLES3 on Android - the
+# driver there rejects the shaders and sg_setup cannot produce a pipeline, so
+# Sokol is not a usable Android backend on its own (the launcher crash that also
+# stopped every APK is fixed in android/.../MainActivity.java, not here). OPENGL
+# was Android's working path before SOKOL became the desktop default, so Android
+# keeps it. Desktop builds are unchanged.
+if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+    set(J37_DEFAULT_RENDER_BACKEND "OPENGL")
+else()
+    set(J37_DEFAULT_RENDER_BACKEND "SOKOL")
+endif()
+set(J37_RENDER_BACKEND "${J37_DEFAULT_RENDER_BACKEND}" CACHE STRING
     "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12, SOKOL, BGFX, CPU")
 set_property(CACHE J37_RENDER_BACKEND PROPERTY STRINGS
     AUTO OPENGL VULKAN METAL D3D11 D3D12 SOKOL BGFX CPU)
@@ -269,6 +283,17 @@ elseif(J37_RENDER_BACKEND STREQUAL "D3D12")
     # Staged; see D3D11 above.
 elseif(J37_RENDER_BACKEND STREQUAL "SOKOL")
     # Use the platform-matched shader dialect (desktop GLSL or GLSL ES).
+=======
+    # Refuse at configure time rather than ship an APK whose editor cannot create
+    # a pipeline: the Sokol scene shaders are GLSL 410, and its Android backend
+    # compiles GLES3 shaders. Android's supported path is OPENGL (the default
+    # above).
+    if(CMAKE_SYSTEM_NAME STREQUAL "Android")
+        message(FATAL_ERROR
+            "J37_RENDER_BACKEND=SOKOL is not supported on Android: the Sokol scene "
+            "shaders are desktop GLSL 410 and the Android build selects GLES3. "
+            "Use -DJ37_RENDER_BACKEND=OPENGL (the Android default).")
+    endif()
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_SOKOL=1)
     list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_SOKOL=1)
 elseif(J37_RENDER_BACKEND STREQUAL "BGFX")
