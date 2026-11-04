@@ -30,6 +30,7 @@ tests/spectrum/run.sh     # the spectrum analyser: pocketfft in, out, and the Ar
 tests/reverb/run.sh       # the room reverb: T60 in seconds, at 44.1, 48 and 96 kHz
 tests/scene_frame/run.sh  # the frame a native backend receives: validity, shared meshes, the deck's layout
 tests/osc/run.sh          # the staged OSC codec (bytes, padding, bundles), its address surface, the ring's ball and the modal voice
+tests/scale/run.sh        # scale degree membership, all tonic/mode ring notes and note-sector round trips
 tests/fuzz/run.sh         # the WAV decoder fed mutated bytes, under ASan/UBSan and (where clang is) libFuzzer
 tests/unit/run.sh         # the equaliser, the compressor and the transient shaper, as units
 
@@ -46,7 +47,9 @@ python3 tests/parameters/check_parameters.py     # the table and the code that r
 python3 tests/shaders/check_shaders.py           # the GLSL and the uniforms it is fed
 python3 tests/definitions/check_definitions.py   # the macros the build defines, and who reads them
 python3 tests/linkline/check_linkline.py         # the link line, against the includes under Source/
+python3 tests/dependencies/check_unused_rack_fetch.py  # no unused Rack fetch with its unreliable GitLab submodule
 python3 tests/render_backend/check_render_backend.py  # the renderer options and the adapters behind them
+bash tests/render_backend/run.sh                 # backend choice IDs and AUTO, OPENGL, SOKOL routing
 ```
 
 Two environment switches, both used by the workflows:
@@ -104,6 +107,7 @@ shipping header* tests the code the plugin compiles.
 | `spectrum` | `SpectrumAnalyser` | `#include`s the shipping header from `Source/DSP/`, compiled THREE times: with `ThirdParty/pocketfft` on the include path; without it (the absent-library branch); and with `-DJ37_HAS_ARMPL=1` plus `tests/spectrum/fftw_stub` in place of ArmPL's `fftw3.h`, which compiles and RUNS the branch the ARM builds take, on an x86 machine that cannot link the real library |
 | `fuzz` | `Source/DSP/NoiseDecoder.h`, compiled with the vendored `ThirdParty/dr_libs` | feeds the shipping decoder bytes no one wrote - truncations, bit flips across the header, zeroed and maximal channel/rate/size fields, appended garbage, random buffers - and asserts the header's own contract on every outcome. TWO builds of one source: the file's `main` is a fixed sweep that runs on any C++17 compiler, and the same file with `-fsanitize=fuzzer` is a coverage-guided run for `J37_FUZZ_SECONDS` (default 20) on a clang that has libFuzzer. Two mutators, one decoder: a machine without clang loses the search, not the gate |
 | `osc` | `Source/Net/Osc.h`, `Source/Net/OscSurface.h`, `Source/OscBall.h` and `Source/DSP/ModalVoice.h`, as they ship | `#include`s the four headers with no JUCE on the include path at all - they name nothing of the toolkit, on purpose, so the codec, the ball and the voice can be checked without a plugin, a window or a host |
+| `scale` | `Source/ScaleDegrees.h`, as it ships | exhaustively checks degree membership over positive and negative octaves, every note in all twelve keys and six modes, register clamping, and note/sector round trips |
 | `scene_frame` | `Source/GUI/SceneFrame.h` and `Source/GUI/SceneLayout.h`, as they ship | `#include`s both headers with no JUCE, no GPU and no host: a frame is plain data and `isValid()` is arithmetic on it, so the boundary a native adapter receives is measured on every pull request rather than only where one is built |
 | `reverb` | `DattorroRoom`, linked against the vendored `ThirdParty/dattorro-verb/verb.c` | `#include`s the shipping header against the DSP harness's `shim.h`, and compiles the library's own C source beside it: `verb.c` as C, the header as C++, which is also the only place the stage's `extern "C"` wrapping is measured |
 | `unit` | `ThreeBandEq`, `StandardCompressor` and `TransientShaper` - one stage per file | `#include`s the shipping headers from `Source/DSP/` against the same shim the DSP harness uses, and links Catch2's amalgamated sources: no replica of the engine, because none of the three needs one |

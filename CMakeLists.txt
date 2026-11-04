@@ -240,7 +240,7 @@ option(COPY_PLUGIN_AFTER_BUILD "Copy plugins to the user plugin folders after bu
 # graphics device and host-owned child surface on the UI thread. Native adapters
 # create their device, command resources and presentation surface; unsupported
 # platform/API combinations use the CPU fallback.
-set(J37_RENDER_BACKEND "AUTO" CACHE STRING
+set(J37_RENDER_BACKEND "SOKOL" CACHE STRING
     "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12, SOKOL, BGFX, CPU")
 set_property(CACHE J37_RENDER_BACKEND PROPERTY STRINGS
     AUTO OPENGL VULKAN METAL D3D11 D3D12 SOKOL BGFX CPU)
@@ -560,8 +560,9 @@ endif()
 # J37_RENDER_BACKEND, because neither has an adapter here yet. What this target
 # compiles is OpenGL, Metal and SOKOL as complete scene backends; Vulkan, D3D11,
 # D3D12 and BGFX are selectable PENDING values whose adapters present only a
-# cleared surface. RenderBackend.h routes those to the CPU fallback until their
-# drawScene path is complete.
+# cleared surface. SOKOL is the default build selection; RenderBackend.h routes
+# the staged native values to the CPU fallback until their drawScene path is
+# complete.
 
 # ------------------------------------------------------------------------------
 #  Embedded resources - the factory presets and the translation tables.
@@ -993,7 +994,7 @@ message(STATUS "  Libraries   : chowdsp_utils, melatonin_inspector, melatonin_bl
 message(STATUS "                clap-juce-extensions (CLAP wrapper - JUCE has no CLAP format)")
 message(STATUS "                signalsmith-stretch, fftconvolver,")
 message(STATUS "                imgui, iPlug2 (source only)")
-message(STATUS "                chowcentaur, vcv_prototype, rack, soundpipe, aubio (source only)")
+message(STATUS "                chowcentaur, vcv_prototype, soundpipe, aubio (source only)")
 message(STATUS "                farbot, readerwriterqueue, kissfft, pocketfft, yasio, dywapitchtrack, pffft")
 message(STATUS "                RTNeural (neural inference, used by the DYNAMICS tab), dr_libs,")
 message(STATUS "                yin_pitch, pitch_detector (MPM), dattorro_verb, sndfile")

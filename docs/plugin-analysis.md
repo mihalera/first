@@ -158,7 +158,7 @@ named by a single line of the plugin's own code:
 ```
 linked, never included (16):
   dr_libs  dywapitchtrack  fftconvolver  imgui  kissfft  PFFFT  pocketfft
-  rack_dsp  sndfile  sokol_gfx  yasio  AudioFFT  audio_fft  dattorro_verb
+  sndfile  sokol_gfx  yasio  AudioFFT  audio_fft  dattorro_verb
   pitch_detector  yin_pitch
 
 actually included by Source/ (13):
@@ -244,9 +244,10 @@ Three consequences, only the first of which is about build time:
   this was measured; neither is on the link line now, and SoundTouch's target,
   fetch and vendored tree have since been removed altogether (WP4 of
   [library-integration-plan.md](library-integration-plan.md)).
-  `rack_dsp` is GPL-3.0-or-later with a plugin exception. `aubio` is a fetched
-dependency that is neither linked nor included, so it is dead weight rather than
-  an exposure. `THIRD_PARTY_NOTICES.md` lists each component's terms.
+  Rack was never linked and its unused configure-time fetch has been removed.
+  `aubio` is a fetched dependency that is neither linked nor included, so it is
+  dead weight rather than an exposure. `THIRD_PARTY_NOTICES.md` lists each
+  component's terms.
 
 The reason it survived is worth naming: the link line is written the way a
 "kitchen sink" dependency list is written, and nothing in the repository ever

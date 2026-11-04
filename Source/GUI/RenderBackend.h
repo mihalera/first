@@ -12,6 +12,8 @@
 
 #pragma once
 #include <JuceHeader.h>
+#include <array>
+#include <cstddef>
 
 namespace j37::render {
 /**
@@ -24,6 +26,36 @@ namespace j37::render {
     selects Vulkan or Metal, which is also what keeps them from interfering.
 */
 enum class Backend { autoDetect, openGL, vulkan, metal, directX11, directX12, sokol, bgfx, cpu };
+
+constexpr std::array<Backend, 9> allBackends {
+    Backend::autoDetect,
+    Backend::openGL,
+    Backend::vulkan,
+    Backend::metal,
+    Backend::directX11,
+    Backend::directX12,
+    Backend::sokol,
+    Backend::bgfx,
+    Backend::cpu
+};
+
+constexpr int backendChoiceId (Backend backend) noexcept
+{
+    for (std::size_t index = 0; index < allBackends.size(); ++index)
+        if (allBackends[index] == backend)
+            return static_cast<int> (index) + 1;
+
+    return 0;
+}
+
+constexpr Backend backendFromChoiceId (int choiceId) noexcept
+{
+    for (std::size_t index = 0; index < allBackends.size(); ++index)
+        if (static_cast<int> (index) + 1 == choiceId)
+            return allBackends[index];
+
+    return Backend::autoDetect;
+}
 
 constexpr Backend configuredBackend() noexcept {
 #if defined(J37_RENDER_BACKEND_VULKAN)
@@ -120,35 +152,29 @@ constexpr bool usesCpuFallback() noexcept { return effectiveBackend() == Backend
 
 /** Whether SETTINGS may offer this backend at RUNTIME.
 
-    A build configured for a staged native adapter still draws the scene with the
-    CPU, so the choices that can be honoured now are AUTO (whatever the build
-    selected), OPENGL (JUCE's always-available scene path) and CPU (the software
-    painter). Everything else is listed as PENDING and stays unselectable: an
-    entry that changed nothing would be the panel claiming a capability the
-    build does not have. */
+    AUTO and CPU are always available. OpenGL is available when it is the
+    configured scene backend, and a native backend is available when its
+    adapter is compiled into this build. */
 constexpr bool isBackendSelectable (Backend backend) noexcept {
-    // OPENGL is JUCE's own context and is always available at runtime, even in
-    // a build configured for a native adapter: the panel's GL context and the
-    // deck's are separate, and a staged native value must not remove the one
-    // complete GPU scene path the user can fall back to.
     return backend == Backend::autoDetect
         || backend == Backend::cpu
-        || backend == Backend::openGL
+        || (backend == Backend::openGL && usesOpenGL())
         || hasNativeImplementation(backend);
 }
 
 /** The renderer a CHOSEN backend actually runs.
 
-    CPU is always CPU, AUTO defers to the build, and OPENGL is JUCE's own path in
-    every build. A native adapter is answered by its capability probe rather than
-    by its name - so a selection made in one build can never make another build
-    claim a renderer it cannot draw with. */
+    CPU is always CPU and AUTO defers to the build. OPENGL resolves to the
+    software path in a build whose scene has no GL path, and a native adapter is
+    answered by its capability probe rather than by its name - so a selection
+    made in one build can never make another build claim a renderer it cannot
+    draw with. */
 constexpr Backend runningBackend (Backend choice) noexcept {
     if (choice == Backend::autoDetect)
         return effectiveBackend();
 
     if (choice == Backend::openGL)
-        return Backend::openGL;
+        return usesOpenGL() ? Backend::openGL : Backend::cpu;
 
     if (choice == Backend::cpu)
         return Backend::cpu;
@@ -193,9 +219,9 @@ constexpr const char* backendName (Backend backend) noexcept {
     `choice` is the renderer selected in SETTINGS (AUTO when there is no choice),
     and `runningBackend()` is what that choice actually runs - not what it asks
     for - because a build configured for an adapter that only clears its surface
-    draws with the CPU under AUTO, and saying otherwise would be the panel
-    claiming a renderer it is not running. When the build's own adapter is still
-    staged it is named too, as PENDING. */
+    draws with the CPU, and saying otherwise would be the panel claiming a
+    renderer it is not running. When the build's own adapter is still staged it is
+    named too, as PENDING. */
 inline juce::String backendCaption (Backend choice = Backend::autoDetect) {
     constexpr auto configured = configuredBackend();
     const auto running = runningBackend (choice);

@@ -576,19 +576,6 @@ CPMAddPackage(
 j37_declare_header_only_library(farbot "${farbot_SOURCE_DIR}/include")
 endif ()
 
-# Rack DSP - VCVRack/Rack, the VCV Rack SDK: the DSP utilities (SVF, filters,
-# quantizers, envelopes, resamplers) plus the whole module engine. The DSP
-# half is header-only and JUCE-independent, so its include directory is exposed
-# for the engine to adopt piece by piece. The ENGINE half must never be linked
-# - it owns the module runtime no other host can host.
-CPMAddPackage(
-    NAME rack
-    GITHUB_REPOSITORY VCVRack/Rack
-    GIT_TAG v2.6.6
-    DOWNLOAD_ONLY YES)
-
-j37_declare_header_only_library(rack_dsp "${rack_SOURCE_DIR}/include")
-
 # DywaPitchTrack - the Dynamic Wavelet Algorithm pitch tracker (Antoine
 # Schmitt's dywapitchtrack, MIT). The author's own repository is GONE from
 # GitHub, so this fetches hzeller/pitch-hero, a checkout that vendors the two

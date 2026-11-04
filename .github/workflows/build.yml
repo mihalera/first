@@ -277,6 +277,9 @@ jobs:
       - name: Run the OSC harness
         run: bash tests/osc/run.sh
 
+      - name: Run the scale and note-register tests
+        run: bash tests/scale/run.sh
+
       # The WAV decoder, fed bytes nobody wrote. tests/dsp proves the decoder reads
       # the files it was written against; it cannot say what a truncated header, a
       # channel count of zero or a data chunk claiming more frames than it holds
@@ -397,6 +400,9 @@ jobs:
       - name: Check the link line against the code
         run: python3 tests/linkline/check_linkline.py
 
+      - name: Check configure-time dependency fetches
+        run: python3 tests/dependencies/check_unused_rack_fetch.py
+
       # The renderer selection, against the adapters that implement it. A
       # J37_RENDER_BACKEND value is a promise that a build can be configured for
       # that API and land somewhere sensible; a value with no adapter, or an
@@ -407,6 +413,9 @@ jobs:
       # layers, which are ALTERNATIVES and must stay one per build.
       - name: Check the renderer backend boundary
         run: python3 tests/render_backend/check_render_backend.py
+
+      - name: Test backend choice routing
+        run: bash tests/render_backend/run.sh
 
       # The stages that have moved into Source/DSP/ are compiled by the harnesses
       # against their own small stand-in for juce::, which is what keeps a harness
@@ -704,6 +713,7 @@ jobs:
           J37_SANITIZE=address,undefined bash tests/reverb/run.sh
           J37_SANITIZE=address,undefined bash tests/scene_frame/run.sh
           J37_SANITIZE=address,undefined bash tests/osc/run.sh
+          J37_SANITIZE=address,undefined bash tests/scale/run.sh
           # The sweep only: this pass is "every harness under the sanitizers", and the
           # coverage-guided run already has its own step above with its own budget.
           J37_SANITIZE=address,undefined J37_FUZZ_COVERAGE=0 bash tests/fuzz/run.sh
@@ -1585,7 +1595,6 @@ jobs:
             ${{ steps.clap.outputs.clap }}
           if-no-files-found: error
 
-  # ============================================================================
   #  Linux ARM64 - VST3 + CLAP, with Arm Performance Libraries
   #
   #  A job of its own rather than a matrix leg of build-linux, because almost

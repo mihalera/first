@@ -84,8 +84,8 @@ public:
                 throw std::invalid_argument ("an OSC surface slot path is invalid");
 
             if (! std::isfinite (slot.minimum) || ! std::isfinite (slot.maximum)
-                || slot.maximum < slot.minimum)
-                throw std::invalid_argument ("an OSC surface slot range must be finite and ordered");
+                || slot.maximum <= slot.minimum)
+                throw std::invalid_argument ("an OSC surface slot range must be finite and strictly ordered");
 
             if (slot.id.empty())
                 throw std::invalid_argument ("an OSC surface slot ID cannot be empty");

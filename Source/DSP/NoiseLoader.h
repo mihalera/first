@@ -102,6 +102,11 @@ public:
         {
             if (! rebuildAtEngineRate())
             {
+                // Do not keep publishing a loop sampled for the previous engine
+                // rate: silence is safer than a print playing at the wrong speed.
+                publish (nullptr);
+                sourcePrint.reset();
+                loadedFileNameText = {};
                 lastErrorMessage = "the print could not be converted to the engine rate";
             }
             else

@@ -881,6 +881,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     struct TooltipSource {
         juce::SettableTooltipClient *component;
         juce::String english;
+        juce::String englishHints;
     };
     std::vector<TooltipSource> tooltipSources;
 

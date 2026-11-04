@@ -89,20 +89,12 @@ inline void rememberUiScale (int percent)
 }
 
 /** The renderer last chosen in SETTINGS, or AUTO when nothing is stored, the
-    stored name is unknown, or the backend is not selectable in THIS build. The
-    last case matters: a machine updated to a build that stages a different
-    adapter must fall back to AUTO rather than keep asking for a path the build
-    no longer has. */
+    stored name is unknown, or the backend is not selectable in THIS build. */
 inline j37::render::Backend rememberedRenderBackend()
 {
     const auto stored = editorPreferences().getValue (renderBackendKey);
 
-    if (stored.isEmpty())
-        return j37::render::Backend::autoDetect;
-
-    for (const auto backend : {j37::render::Backend::autoDetect,
-                               j37::render::Backend::openGL,
-                               j37::render::Backend::cpu})
+    for (const auto backend : j37::render::allBackends)
     {
         if (stored.equalsIgnoreCase (j37::render::backendName (backend))
             && j37::render::isBackendSelectable (backend))

@@ -97,7 +97,6 @@ binary - see
 | **ChowDSP_ChowCentaur** | `2c0414f3` | BSD 3-Clause | <https://github.com/AviateAudio/ChowDSP_ChowCentaur> |
 | **libsndfile** | `b9103bd4` | **LGPL 2.1** | <https://github.com/libsndfile/libsndfile> |
 | **aubio** | `ad5cf975` | **GPL 3.0** | <https://github.com/aubio/aubio> |
-| **VCVRack/Rack** (`rack_dsp`) | `v2.6.6` | GPL-3.0-or-later, with a plugin exception and a commercial option - see the note below | <https://github.com/VCVRack/Rack> |
 | **VCV-Prototype** | `7cb75fda` | GPLv3 (upstream) | <https://github.com/VCVRack/VCV-Prototype> |
 | **iPlug2** | `b1aac7ec` | permissive, custom (upstream) | <https://github.com/iPlug2/iPlug2> |
 | **pffft** - Martin Pichler | `e1dbebc9` | BSD-like (FFTPACK lineage; upstream states no SPDX id) | <https://github.com/marton78/pffft> |
@@ -210,11 +209,6 @@ linked, and it used to be both.
 * **libsndfile** (LGPL-2.1) is fetched and **not linked**, and nothing under
   `Source/` includes it either - see
   [plugin-analysis.md, §5](docs/plugin-analysis.md#5-the-link-line-is-larger-than-the-code).
-* **`rack_dsp`** comes from VCVRack/Rack, which is GPL-3.0-or-later **with a
-  plugin exception**: a plugin may link Rack's API regardless of its own licence
-  as long as it is distributed free of charge; selling it needs Rack's
-  commercial option. It is fetched and **not linked**, so that exception is not
-  on the critical path of this binary at all.
 * **aubio** is fetched by CMake and is **GPL-3.0**, but it is not linked and not
   included - it cannot affect a binary. It is dead dependency weight rather than
   a licensing problem, and it is on the list to remove.

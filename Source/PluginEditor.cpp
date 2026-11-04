@@ -343,7 +343,7 @@ void FirstAudioProcessorEditor::setTippedSentence (juce::SettableTooltipClient& 
     // Here the sentence is registered and shown separately, the hints are a
     // constant that xlat()s on the spot, and updateTooltips() re-translates
     // each half on its own key.
-    tooltipSources.push_back ({ &component, englishSentence });
+    tooltipSources.push_back ({ &component, englishSentence, englishHints });
     component.setTooltip (xlat (englishSentence) + xlat (englishHints));
 }
 
@@ -355,7 +355,7 @@ void FirstAudioProcessorEditor::updateTooltips()
     // the table is a translation.
     for (const auto& source : tooltipSources)
         if (source.component != nullptr)
-            source.component->setTooltip (xlat (source.english));
+            source.component->setTooltip (xlat (source.english) + xlat (source.englishHints));
 }
 
 void FirstAudioProcessorEditor::applyLanguage (int languageIndex)

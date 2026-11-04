@@ -1245,24 +1245,25 @@ curve digests, and 1.19e-7 is below audibility for a stage that is generating
 harmonics on purpose. `-DJ37_USE_SIMD_TANH=OFF` restores `std::tanh` bit for
 bit. The build prints which one it is using in its configure summary.
 
-`AUTO` and `OPENGL` use the existing JUCE/OpenGL scene. `CPU` uses a dedicated
-JUCE `Graphics` renderer for the animated transport, while the rest of the panel
-continues through its normal software path. `VULKAN`, `D3D11`, `D3D12` and `BGFX` are staged selections: each has an adapter in `Source/GUI/NativeRenderer_*.cpp` that can create its device and present a cleared surface, and none of them draws the tape scene yet.
+`AUTO` uses the renderer selected at build time. `OPENGL` is offered when the
+build uses the JUCE/OpenGL scene. `CPU` uses a dedicated JUCE `Graphics` renderer
+for the animated transport, while the rest of the panel continues through its
+normal software path.
 
-`METAL` and `SOKOL` are drawn selections: their adapters already render the full
-`SceneFrame` through the scene contract, so the editor selects them when the build
-lands on them. CMake defines `J37_NATIVE_*` only for those complete adapters: a
-configured Vulkan, D3D11, D3D12 or BGFX build is listed as PENDING and draws with
-JUCE instead of showing a blank or half-drawn frame.
+`SOKOL` is the default build selection on every platform and renders the full
+`SceneFrame`. `METAL` also renders it. `OPENGL` is the scene path when the build
+is configured for it. CMake defines `J37_NATIVE_*` only for complete scene
+adapters: a configured Vulkan, D3D11, D3D12 or BGFX build is listed as PENDING and
+draws with JUCE instead of showing a blank or half-drawn frame.
 
 Which one is running is printed on the panel's header, beside the brand strip:
-`BACKEND  OPENGL`, and `BACKEND  CPU (VULKAN PENDING)` for a build that asks for a
+`BACKEND  SOKOL`, and `BACKEND  CPU (VULKAN PENDING)` for a build that asks for a
 staged adapter and falls back. The SETTINGS tab carries the matching selector:
-AUTO runs the build's own choice, OPENGL forces the GPU path and CPU forces the
-software painter - the two paths the editor can switch between while it runs, and
-OPENGL remains available even in a build configured for a native adapter. A staged
-adapter is listed there as PENDING and cannot be selected, because it does not
-draw the scene yet. The choice is remembered per machine in the editor's
+AUTO runs the build's own choice, OPENGL is offered when it is the build's scene
+path, CPU forces the software painter, and compiled native renderers are listed
+individually. Backends unavailable in this build are not offered, so a staged
+adapter cannot be selected before it draws the scene. The choice is remembered
+per machine in the editor's
 preferences file (`Source/GUI/EditorPreferences.h`), not in the session, and the
 header caption follows what actually came up. The caption is `RenderBackend.h`'s
 own `backendCaption()`, so it reads `runningBackend()` rather than the requested
@@ -1988,7 +1989,6 @@ line:
 | **JUCE 9.0.4** | AGPLv3, or a commercial JUCE licence | distribution requires complying with AGPLv3 for the plugin as a whole or obtaining a commercial JUCE licence; there is no third option |
 | **`chowdsp_dsp_utils`** | **GPLv3** (the modules the code calls, `chowdsp_math` and `chowdsp_simd`, are BSD) | **not linked**: no file under `Source/` included it, so it came off the link line and a binary carries none of it - the obligation goes with it, and putting the module back restores it |
 | **SoundTouch 2.4.1**, **libsndfile** | LGPL-2.1 | **not present**: SoundTouch was linked by nothing and its target, fetch and vendored tree were removed under WP4 of [library-integration-plan.md](docs/library-integration-plan.md); libsndfile is still fetched and still **not linked**. A linked-but-uncalled library is a licence obligation with no upside, and `tests/linkline/check_linkline.py` is what keeps the link line honest |
-| **`rack_dsp`** (VCVRack/Rack) | GPL-3.0-or-later, with a plugin exception for plugins distributed free of charge | **not linked** for the same reason: fetched, and named by no file of the plugin's own code |
 | **Eigen**, with **`NeuralAmpModelerCore`** | **MPL-2.0** (file-level copyleft), and MIT for NAM Core | **linked by default** (`J37_NAMCORE`, ON; `-DJ37_NAMCORE=OFF` removes both). Eigen stays under MPL-2.0 in its own files and this repository does not modify them; linking it does not place the binary as a whole under MPL. The complete corresponding source is vendored at `ThirdParty/eigen/`, which is what MPL-2.0 asks a distributor to make available. NAM Core is MIT: its notice is the only obligation |
 | everything else | MIT / BSD / zlib / public domain | the notices in [THIRD_PARTY_NOTICES.md](THIRD_PARTY_NOTICES.md) are the obligation |
 
