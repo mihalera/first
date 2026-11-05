@@ -128,8 +128,9 @@ scene, while unavailable native selections are omitted from SETTINGS. The
 selector offers AUTO (the build's choice), CPU, and every renderer compiled into
 the current build. That runtime choice is a property of the machine and lives in
 the editor's preferences file
-(`Source/GUI/EditorPreferences.h`), not in the session. WGPU and DAWN are wired
-inside `j37_setup_graphics_backend` but are not values `J37_RENDER_BACKEND`
+(`Source/GUI/EditorPreferences.h`), not in the session; the same file holds the UI
+scale, the last editor window size, the theme and the USER palette. WGPU and DAWN
+are wired inside `j37_setup_graphics_backend` but are not values `J37_RENDER_BACKEND`
 accepts, because neither has an adapter. `README.md § Rendering backends` has the
 detail, and
 [plugin-analysis.md](plugin-analysis.md#7-the-renderers-have-no-coverage) has the
