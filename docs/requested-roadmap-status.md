@@ -40,7 +40,7 @@ section after the tables).
 | Sub generator from phase accumulators | **done** | `Source/DSP/SubharmonicGenerator.h` (the undertone series with downward saturation), stage 9 and 21 of [signal-path.md](signal-path.md) |
 | Signalsmith phase vocoder for autotune | **built, OFF by default** | `Source/DSP/CorrectorStage.h` is the stage: the granular shifter by default, signalsmith-stretch behind `-DJ37_CORRECTOR_USE_STRETCH=ON`. The restructure the row above predicted is done - the stage runs on blocks, at the top of `processPostMachineStages()`, and its lookahead is reported to the host. It is OFF because `tests/pitch` measured what it costs: 1216 frames of lookahead at 48 kHz, and a transposition 8 cents wide of the ratio it was given at 1.06x and 32 at 0.94x against the granular engine's sub-cent reading. That 32 is already the GOOD configuration: the error follows the analysis geometry, so eight analyses per window halve what the usual four cost (16 and 57 cents) for no extra latency, and a sixteenth halves it again for four times the analysis work (6.7 % of a core per channel) and still reads 17 cents at 0.94x. A longer window does not close it either - 60 ms reads 13 cents at 1.06x at three times the lookahead. Both shapes are built and measured on every run |
 | **±10 cent dead zone** | **done** | `Source/DSP/PitchCorrectionRule.h`, used by `processAutoTuneSample`, pinned at exact cents by `tests/pitch` |
-| Formant preservation | **not applicable to this stage** | The library does compensate: on a synthetic vowel with formants at 660/1211/2642 Hz shifted 1.5x, `setFormantFactor (1, true)` keeps them at 798/1149/2604 Hz where the uncompensated render puts them at 896/1007/1928. What rules it out is the RANGE, not the capability: the ratio this stage is handed is clamped to a semitone either way (`PitchCorrectionRule`), so the envelope moves by at most 6 % - inside the measurement's own band-tracking error, and what a correcting shifter has always done. The switch belongs to the commit that first asks the stage for an octave, and `tests/pitch` prints the pitch it does move |
+| Formant preservation | **not enabled; open with OCTAVE** | The library does compensate: on a synthetic vowel with formants at 660/1211/2642 Hz shifted 1.5x, `setFormantFactor (1, true)` keeps them at 798/1149/2604 Hz where the uncompensated render puts them at 896/1007/1928. What kept it off was the range: at the default RANGE (1 semitone) and OCTAVE 0 the envelope moves by at most 6 %, inside the measurement's own band-tracking error and what a correcting shifter has always done. OCTAVE now lets the stage ask for 0.5x-2.0x, so that reason no longer covers the control: `CorrectorStage.h` still leaves `setFormantFactor` off, and turning it on needs a measurement at both octave extremes. `tests/pitch` prints the pitch it does move |
 | cycfi/q true-RMS envelopes for the transient shaper | **open** | `Source/DSP/TransientShaper.h` has its own fast/slow envelopes, pinned by `tests/unit` |
 
 ## Stage 4 - NAM, IR, micro-models, noise loader
@@ -120,9 +120,11 @@ analyses at 20 ms, which costs no latency at all.
 - **Formant compensation works, and was wrongly written off.** The header said
 `setFormantFactor (1, true)` changed nothing; on a vowel with formants at 660, 1211 and
 2642 Hz shifted 1.5x it holds them at 798, 1149 and 2604 Hz where the uncompensated
-render puts them at 896, 1007 and 1928. It still is not switched on, for a reason the
-range gives: this stage's ratio is clamped to a semitone, where the envelope moves
-6 % and the compensated and uncompensated renders agree to a few Hz.
+render puts them at 896, 1007 and 1928. It still is not switched on: at the default
+RANGE (1 semitone) and OCTAVE 0 the envelope moves 6 %, where the compensated and
+uncompensated renders agree to a few Hz. OCTAVE now lets the stage ask for 0.5x-2.0x,
+so that is a default-path measurement rather than a limit of the feature; enabling it
+is an open item at both octave extremes.
 
 The tracker's own reading at the bottom of its range is still a few cents low (the
 harness's diagnostic prints -8.6 cents at 55 Hz), so a very low note is inside the
@@ -136,19 +138,17 @@ every run so it stays visible.
    nothing calls; WP2 gave `dr_libs` a caller as the vinyl stage's user noise print,
    which is the shape that argument wanted - a library adopted by USING it.
    The multiband anti-phase guard this list used to open with is done (Stage 5).
-2. **~~Formant preservation and the block-based corrector~~**, answered by measurement
-   and closed - and the answer is that neither half is left to build. Formant
-   preservation exists in the library and works at 1.5x (the envelope holds to within
-   ~140 Hz where the uncompensated render moves it by 240), and the stage's ratio is
-   clamped to a semitone, where it changes nothing: the row says so now instead of
-   calling it open. The accuracy half turned out to be the analysis GEOMETRY, not the
-   window: going from four analyses per window to eight halves the vocoder's error
-   (16/57 cents to 8/32) at exactly the same lookahead, which is what
-   `Source/DSP/CorrectorStage.h` now runs, and it still leaves the vocoder three times
-   worse than the shifter it would replace - so the flag stays OFF with a number
-   behind it rather than a hope. The remaining next step is the one this list has not
-   had: **a second detector behind `PitchTracker`** would need the harness comparison
-   the Stage 3 row asks for, and nothing else on the list is waiting on code.
+2. **Formant preservation with OCTAVE, and the block-based corrector.** The vocoder
+   itself stays OFF: eight analyses per window halve its error (16/57 cents to 8/32)
+   at the same lookahead, and it is still three times worse than the shifter it would
+   replace. Formant preservation exists in the library and works at 1.5x (the
+   envelope holds to within ~140 Hz where the uncompensated render moves it by 240),
+   but it is still not switched on. The old argument - the stage's ratio is clamped to
+   a semitone, where it changes nothing - no longer covers OCTAVE: the stage can now
+   ask for 0.5x-2.0x, so enabling it needs a measurement at both octave extremes.
+   The remaining next step is the one this list has not had: **a second detector
+   behind `PitchTracker`** would need the harness comparison the Stage 3 row asks
+   for, and nothing else on the list is waiting on code.
 3. **~~NAM Core + Eigen~~**, done behind the existing `NeuralStage` seam: LSTM still
    goes through RTNeural and everything else through NAM Core, behind `J37_NAMCORE`
    (now ON by default). `tests/neural` builds both shapes and compares both engines

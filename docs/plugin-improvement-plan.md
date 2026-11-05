@@ -263,11 +263,12 @@ mark the preset dirty, or they are named as session-level like the twelve.
 
 ### 9. Make translation coverage a number
 
-`uk.txt` is 153 live entries against 1,014 translatable strings in the panel
-(analysis §3, §9). Printing the untranslated count per language on every run - as
-a report line, not a gate, because a half-translated panel showing English is the
-deliberate design - turns "how translated is the panel" from a feeling into a
-number that can be moved.
+`uk.txt` is 367 live entries against 1,434 distinct source strings (analysis §3,
+§9). `tests/translations/check_translations.py` now gates dead keys, missing
+lookups and empty entries; printing the untranslated count per language on every
+run - as a report line, not a gate, because a half-translated panel showing English
+is the deliberate design - is the half that is still open. It would turn "how
+translated is the panel" from a feeling into a number that can be moved.
 
 ### 10. Write down the two decisions a reader will otherwise re-litigate
 
@@ -366,7 +367,7 @@ logs of the day. Its items, and where they stand:
 | Give the rendering backends a compile check | **open** - item 6 |
 | Drive `processBlock` with real buffer shapes | **open** - item 5 |
 | Say what a mono instance reads, or change it | **open** - item 10 |
-| Make translation coverage a number | **open** - item 9 |
+| Make translation coverage a number | **partly** - `tests/translations/check_translations.py` gates dead keys, missing lookups and empty entries, but the untranslated count per language is not printed yet (item 9) |
 | An index of what the suite guarantees | **done** - [tests/README.md](../tests/README.md) |
 | A fast compile gate, and ccache | **open** - item 2 |
 

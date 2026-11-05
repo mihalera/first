@@ -4,8 +4,9 @@
 
     Not the session. What lives here describes the COMPUTER rather than the mix:
     the folders the file pickers reopen in, the renderer the panel was last told
-    to draw with, and the front panel it was left on - the theme choice and the
-    USER palette the COLOURS window edits. Those have to outlive an editor (a host
+    to draw with, the UI scale and the editor window's last size, and the front
+    panel it was left on - the theme choice and the USER palette the COLOURS
+    window edits. Those have to outlive an editor (a host
     closes and re-creates one), they must not travel in a session to a machine
     that cannot honour them, and a preset must never be able to change them.
 

@@ -248,7 +248,7 @@ namespace j37panel
         //  preferences, shown by setCurrentTab rather than by the knob grid.
              { "SETTINGS", "The engine-level switches and interface preferences: rate, language, renderer and UI sounds.",
                                0, 2, {} },
-             { "AUTOTUNE", "Pitch correction with safe realtime tracking and scale quantisation.",
+             { "AUTOTUNE", "Pitch correction with safe realtime tracking, RANGE-limited scale quantisation and OCTAVE transposition.",
                                0, 1, {} },
              { "COMP", "The conventional compressor: threshold, ratio, attack, release, makeup and mix. Independent of both glue stages.",
                                0, 1, {} }

@@ -397,10 +397,10 @@ void FirstAudioProcessorEditor::setUpLanguageAndTuning() {
     setupTuneKnob (0, "autotune_amount", "TUNE AMOUNT", 0.0, 1.0, 0.001,
                    "TUNE AMOUNT - the depth of the correction and the only on/off: "
                    "0 is the untouched signal and takes the whole stage, detector "
-                   "included, out of the path; 100 is the full pull onto the scale. "
-                   "It does not change the retune speed - SPEED owns that - so a "
-                   "deep, natural correction is possible without the snap. Default "
-                   "0 percent (off).",
+                   "included, out of the path; 100 is the full pull the current "
+                   "RANGE allows. It does not change the retune speed - SPEED owns "
+                   "that - so a deep, natural correction is possible without the "
+                   "snap. Default 0 percent (off).",
                    percentText, percentValue);
     setupTuneKnob (1, "autotune_speed", "SPEED", 0.0, 1.0, 0.001,
                    "SPEED - how quickly the correction glides to its new pitch, "
@@ -1645,8 +1645,8 @@ void FirstAudioProcessorEditor::setUpSettingsSwitches() {
     //  Six stops rather than a slider: the layout has a real floor (the six deck
     //  bands need 780 px) and a real ceiling (1500 x 1180), and a continuous control
     //  would spend most of its travel in sizes the host cannot show. Every stop is
-    //  a remembered machine preference so a host that tears the editor down and
-    //  builds it again comes back at the size the user chose.
+    //  remembered, and so is a manually dragged window size: a host that tears the
+    //  editor down and builds it again comes back at the size the user last left it at.
     // ---------------------------------------------------------------
     for (std::size_t i = 0; i < j37panel::uiScaleStops.size(); ++i)
         uiScaleBox.addItem (juce::String (j37panel::uiScaleStops[i]) + " %",
@@ -1666,10 +1666,11 @@ void FirstAudioProcessorEditor::setUpSettingsSwitches() {
     setTip (uiScaleBox, "UI SCALE - the panel's working size. The layout is "
                         "responsive, so a stop makes the controls and their captions "
                         "larger (or smaller) without changing the sound or the "
-                        "session. It is remembered for this machine; 75 % is the "
-                        "compact stop, 125 % the roomy one, and a display that cannot "
-                        "fit the chosen stop brings the window back to the largest "
-                        "size it can actually show.");
+                        "session. The chosen stop and the window's last size are both "
+                        "remembered for this machine; a manual resize survives closing "
+                        "and reopening the editor, and a display that cannot fit it "
+                        "brings the window back to the largest size it can actually "
+                        "show. 75 % is the compact stop, 125 % the roomy one.");
     uiScaleBox.onChange = [this] {
         const auto index = uiScaleBox.getSelectedId() - 1;
         if (index >= 0 && index < static_cast<int> (j37panel::uiScaleStops.size()))
