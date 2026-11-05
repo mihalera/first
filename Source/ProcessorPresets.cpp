@@ -277,6 +277,9 @@ juce::StringArray FirstAudioProcessor::getPresetNames()
 std::map<juce::String, float> FirstAudioProcessor::factoryPresetValues (int index)
 {
     const auto& presets = FactoryPresets::all();
+    if (presets.empty())
+        return {};
+
     // size() is unsigned and index is signed, and jmax/jlimit are templates that
     // will not mix the two - so the bound is converted once, here, rather than
     // at three call sites.

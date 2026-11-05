@@ -523,6 +523,10 @@ public:
 
     bool processBypassedBlock (juce::dsp::AudioBlock<float>&, const BlockContext&);
     void processPostMachineStages (juce::dsp::AudioBlock<float>&, const BlockContext&);
+    bool processIrStage (juce::dsp::AudioBlock<float>&, int channels, int samples, float irMix);
+    void processReverbAndVinylStages (juce::dsp::AudioBlock<float>&, const BlockContext&,
+                                      float irMix, bool irActive);
+    void processPostEffectsSafetyLimiter (juce::dsp::AudioBlock<float>&, int channels, int samples);
     void processAutoTuneSample (float* stereoSamples, int channels, float rate) noexcept;
     void publishBlockTelemetry (const BlockContext& context,
                                 float inputPeak, float inputRms,

@@ -33,6 +33,7 @@
 
 #include "Net/Osc.h"
 
+#include <algorithm>
 #include <cmath>
 #include <optional>
 #include <stdexcept>
@@ -87,8 +88,11 @@ public:
                 || slot.maximum <= slot.minimum)
                 throw std::invalid_argument ("an OSC surface slot range must be finite and strictly ordered");
 
-            if (slot.id.empty())
-                throw std::invalid_argument ("an OSC surface slot ID cannot be empty");
+            if (slot.id.empty()
+                || slot.id.find ('\\0') != std::string::npos
+                || ! std::all_of (slot.id.begin(), slot.id.end(), [] (unsigned char character)
+                   { return character >= 0x21 && character <= 0x7e; }))
+                throw std::invalid_argument ("an OSC surface slot ID must be printable non-space ASCII");
 
             for (std::size_t previous = 0; previous < index; ++previous)
             {

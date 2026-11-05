@@ -362,31 +362,45 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
         }
     }
 
+    const auto irActive = processIrStage (block, channels, samples, irMix);
+    processReverbAndVinylStages (block, context, irMix, irActive);
+    processPostEffectsSafetyLimiter (block, channels, samples);
+}
+
+bool FirstAudioProcessor::processIrStage (juce::dsp::AudioBlock<float>& block,
+                                         int channels, int samples, float irMix)
+{
     auto& irStage = activeIrStage();
-    bool irActive = false;
-    if (irMix > 1.0e-5f && irStage.hasIr
-        && channels <= postFxScratch.getNumChannels()
-        && samples <= postFxScratch.getNumSamples())
-    {
-        for (int c = 0; c < channels; ++c)
+    if (irMix <= 1.0e-5f || ! irStage.hasIr
+        || channels > postFxScratch.getNumChannels()
+        || samples > postFxScratch.getNumSamples())
+        return false;
+
+    for (int c = 0; c < channels; ++c)
             // AudioBlock::getChannelPointer takes the channel as a size_t; the
             // loops count channels as int because everything around them (frame
             // widths, the stage APIs) does. The five casts in this function are
             // that boundary and nothing else - -Wsign-conversion on both compilers.
             postFxScratch.copyFrom (c, 0, block.getChannelPointer (static_cast<std::size_t> (c)),
                                     samples);
-        //  `samples`, not the scratch buffer's capacity: the buffer is allocated
-        //  for the longest block the engine can ever see (eight times the session
-        //  block), and the frames past this block's end are last callback's.
-        //  Passing the whole buffer asked the convolver to process eight times the
-        //  audio in hand - and the block after an IR load is the one where JUCE's
-        //  convolution mixer is crossfading, whose buffers are sized for the
-        //  prepared maximum. That is the write that crashed, and it crashed on the
-        //  load because openStageMix had just opened IR MIX.
-        irStage.process (postFxScratch, channels, samples, true);
-        irActive = true;
-    }
+    // AudioBlock::getChannelPointer takes a size_t channel index; loops and stage
+    // APIs use int, so keep that conversion at the boundary.
+    for (int c = 0; c < channels; ++c)
+        postFxScratch.copyFrom (c, 0, block.getChannelPointer (static_cast<std::size_t> (c)), samples);
 
+    // Process only this block's samples; unused scratch capacity contains old frames.
+    irStage.process (postFxScratch, channels, samples, true);
+    return true;
+}
+
+void FirstAudioProcessor::processReverbAndVinylStages (juce::dsp::AudioBlock<float>& block,
+                                                       const BlockContext& context,
+                                                       float irMix, bool irActive)
+{
+    const auto channels = context.channels;
+    const auto samples = context.samples;
+    const auto reverbMix = reverbMixSmoothed.getCurrentValue();
+    const auto vinylMix = vinylSmoothed.getCurrentValue();
     if (reverbMix <= 1.0e-5f && vinylMix <= 1.0e-5f && ! irActive) return;
 
     DattorroRoom::Settings reverbSettings;
@@ -456,11 +470,14 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
             data[i] = value;
         }
     }
+}
 
-    // IR, reverb and vinyl are intentionally post-machine effects, but their
-    // convolution, tank and generated surface can all add peaks. Run a final
-    // frame-linked safety stage after them so none can exceed the output ceiling.
-    // Below the ceiling its gain remains exactly unity, preserving normal audio.
+void FirstAudioProcessor::processPostEffectsSafetyLimiter (juce::dsp::AudioBlock<float>& block,
+                                                           int channels, int samples)
+{
+    const auto frameWidth = juce::jmin (2, channels);
+    // IR, reverb and vinyl can add peaks. Limit after them so their output also
+    // stays inside the output ceiling while normal material remains unchanged.
     for (int i = 0; i < samples; ++i)
     {
         float peak = 0.0f;
@@ -472,11 +489,6 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
         for (int c = 0; c < frameWidth; ++c)
         {
             auto* data = block.getChannelPointer (static_cast<std::size_t> (c));
-            // `softClip` is Source/DSP/HotPathMath.h's, and that header is
-            // deliberately namespace-free - it was lifted out of this file's
-            // anonymous namespace and its comment says the move removed the
-            // indentation and nothing else. Qualifying it with j37dsp, as the
-            // safety-limiter commit did, does not compile.
             data[i] = softClip (data[i] * gain);
         }
     }

@@ -46,6 +46,75 @@ using j37panel::parameterTooltipText;
 using j37panel::principleOf;
 using j37panel::tabSpecs;
 
+namespace
+{
+void configureControlSlider (juce::Slider& slider, const juce::String& id)
+{
+    if (id == "input" || id == "output") {
+        slider.setRange(minStageDb, maxStageDb, 0.1);
+        slider.setNumDecimalPlacesToDisplay(1);
+        slider.setTextValueSuffix(" dB");
+    } else if (id == "delay_time") {
+        slider.setRange(0.0, 250.0, 0.1);
+        slider.setNumDecimalPlacesToDisplay(1);
+        slider.setTextValueSuffix(" ms");
+    } else if (id == "delay_lowcut" || id == "reverb_lowcut") {
+        slider.setRange(20.0, 500.0, 1.0);
+        slider.setSkewFactorFromMidPoint(id == "delay_lowcut" ? 80.0 : 120.0);
+        slider.setNumDecimalPlacesToDisplay(0);
+        slider.setTextValueSuffix(" Hz");
+    } else if (id == "reverb_predelay") {
+        slider.setRange(0.0, 100.0, 0.1);
+        slider.setNumDecimalPlacesToDisplay(1);
+        slider.setTextValueSuffix(" ms");
+    } else if (id == "reverb_width") {
+        slider.setRange(0.0, 2.0, 0.001);
+        slider.setNumDecimalPlacesToDisplay(0);
+        slider.textFromValueFunction = [] (double value)
+        { return juce::String(juce::roundToInt(value * 100.0)) + " %"; };
+        slider.valueFromTextFunction = [] (const juce::String& text)
+        { return juce::jlimit(0.0, 2.0, text.getDoubleValue() / 100.0); };
+    } else if (id == "st_offset") {
+        slider.setRange(-500.0, 500.0, 1.0);
+        slider.setNumDecimalPlacesToDisplay(0);
+        slider.setTextValueSuffix(" us");
+    } else if (id == "in_low" || id == "in_mid" || id == "in_high" || id == "out_low"
+               || id == "out_mid" || id == "out_high") {
+        slider.setRange(-12.0, 12.0, 0.1);
+        slider.setNumDecimalPlacesToDisplay(1);
+        slider.setTextValueSuffix(" dB");
+        slider.textFromValueFunction = [] (double value) { return juce::String(value, 1) + " dB"; };
+        slider.valueFromTextFunction = [] (const juce::String& text)
+        { return juce::jlimit(-12.0, 12.0, text.getDoubleValue()); };
+    } else if (id == "transient_attack" || id == "transient_sustain") {
+        slider.setRange(-1.0, 1.0, 0.001);
+        slider.setNumDecimalPlacesToDisplay(0);
+        slider.textFromValueFunction = [] (double value)
+        { return juce::String(juce::roundToInt(value * 100.0)) + " %"; };
+        slider.valueFromTextFunction = [] (const juce::String& text)
+        { return juce::jlimit(-1.0, 1.0, text.getDoubleValue() / 100.0); };
+    } else if (id == "in_hp_freq" || id == "out_hp_freq" || id == "in_lp_freq"
+               || id == "out_lp_freq") {
+        const auto highPass = id == "in_hp_freq" || id == "out_hp_freq";
+        slider.setSkewFactorFromMidPoint(highPass ? 100.0 : 8000.0);
+        slider.setRange(highPass ? 20.0 : 2000.0, highPass ? 500.0 : 20000.0,
+                        highPass ? 1.0 : 10.0);
+        slider.setNumDecimalPlacesToDisplay(0);
+        slider.setTextValueSuffix(" Hz");
+    } else if (id == "in_eq_q" || id == "out_eq_q") {
+        slider.setRange(0.5, 1.5, 0.01);
+        slider.setNumDecimalPlacesToDisplay(2);
+        slider.setTextValueSuffix(" Q");
+    } else {
+        slider.setRange(0.0, 1.0, 0.001);
+        slider.textFromValueFunction = [] (double value)
+        { return juce::String(juce::roundToInt(value * 100.0)) + " %"; };
+        slider.valueFromTextFunction = [] (const juce::String& text)
+        { return juce::jlimit(0.0, 1.0, text.getDoubleValue() / 100.0); };
+    }
+}
+}
+
 #include <algorithm>
 #include <iterator>
 #include <vector>
@@ -710,26 +779,9 @@ void FirstAudioProcessorEditor::setUpControlStrip() {
                           " Hold Shift for fine control, mouse wheel for small "
                           "steps, double-click to reset.");
 
-        // Index 8 is OUTPUT, not 7: the control order is INPUT, DRIVE, BIAS, BRIGHT,
-        // TONE, WOW, FLUTTER, MIX, OUTPUT, WIDTH, SUBFUND, DELAY, DLY LVL, ST OFFSET,
-        // NOISE. The old check (i == 7) handed MIX the -32..+32 dB range and suffix -
-        // which is why the Mix knob displayed dB - and left OUTPUT stuck in the
-        // 0..1 percentage branch, where its slider range clipped the real +/-32 dB
-        // parameter down to 0..1.
-        //
-        // DELAY (11) and ST OFFSET (13) are the other two exceptions: they are real
-        // units (milliseconds and microseconds), not percentages, so a percentage
-        // range would make the knob unable to reach either end of its own parameter.
-        // The range is chosen by the control's ID, not by its position in the array.
-        // It used to be `i == 11` and `i == 13`, which was correct only while the list
-        // happened to be ordered that way - and when the list grew, index 11 became
-        // SHAPE and index 13 became SAG, so the DELAY knob silently acquired a
-        // percentage range and could no longer reach 250 ms, and ST OFFSET lost its
-        // bipolar range entirely. An id cannot be renumbered by an unrelated edit.
         const auto &id = controlIds[static_cast<int>(i)];
+        configureControlSlider(slider, id);
 
-        if (id == "input" || id == "output") {
-            // Input and Output are both calibrated decibel trims over the same range.
             slider.setRange(minStageDb, maxStageDb, 0.1);
             slider.setNumDecimalPlacesToDisplay(1);
             slider.setTextValueSuffix(" dB");

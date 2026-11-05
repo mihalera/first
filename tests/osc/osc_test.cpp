@@ -298,11 +298,22 @@ void checkSurface()
     };
     check (rejectsInvalid ({ ParameterSlot { "range", "range", 1.0f, 0.0f } }),
            "a reversed parameter range is rejected");
+    check (rejectsInvalid ({ ParameterSlot { "range", "range", -INFINITY, 1.0f } }),
+           "a non-finite parameter range is rejected");
     check (rejectsInvalid ({ ParameterSlot { "", "empty-id", 0.0f, 1.0f } }),
            "an empty parameter ID is rejected");
+    check (rejectsInvalid ({ ParameterSlot { "bad id", "bad-id", 0.0f, 1.0f } }),
+           "an ID containing whitespace is rejected");
+    check (rejectsInvalid ({ ParameterSlot { "bad\\x01id", "control-id", 0.0f, 1.0f } }),
+           "an ID containing a control character is rejected");
+    check (rejectsInvalid ({ ParameterSlot { "valid", "bad?path", 0.0f, 1.0f } }),
+           "a path containing an OSC pattern character is rejected");
     check (rejectsInvalid ({ ParameterSlot { "same", "first", 0.0f, 1.0f },
                              ParameterSlot { "same", "second", 0.0f, 1.0f } }),
            "duplicate parameter IDs are rejected");
+    check (rejectsInvalid ({ ParameterSlot { "first", "same", 0.0f, 1.0f },
+                             ParameterSlot { "second", "same", 0.0f, 1.0f } }),
+           "duplicate OSC paths are rejected");
 
     Message message;
     message.address = "/mibox/tape/drive";
