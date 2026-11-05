@@ -508,6 +508,9 @@ private:
         if (sg_query_backend() != SG_BACKEND_GLCORE)
 #endif
         {
+            // The context is current here, so release the device Sokol just set
+            // up before returning from an unsupported backend.
+            sg_shutdown();
             deviceSetupFailed.store (true, std::memory_order_release);
             return;
         }
