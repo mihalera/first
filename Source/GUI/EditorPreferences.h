@@ -40,6 +40,7 @@
 
 #include <algorithm>
 #include <array>
+#include <optional>
 
 namespace j37panel
 {
@@ -85,6 +86,37 @@ inline void rememberUiScale (int percent)
         return;
 
     editorPreferences().setValue (uiScaleKey, percent);
+    editorPreferences().saveIfNeeded();
+}
+
+/** The editor's window size, remembered across hosts that destroy and re-create
+    the editor every time its window is closed. The size is a machine preference
+    for the same reason the scale is: it describes the desk, not the mix, so it
+    must not travel in a session or a preset. A stored size is clamped to the
+    layout's limits and the screen by setUpWindowAndSize(); this store only
+    answers whether there was one. */
+constexpr const char* editorWidthKey = "editor_width";
+constexpr const char* editorHeightKey = "editor_height";
+
+inline std::optional<juce::Point<int>> rememberedEditorSize()
+{
+    const auto& preferences = editorPreferences();
+    const auto width = preferences.getIntValue (editorWidthKey, 0);
+    const auto height = preferences.getIntValue (editorHeightKey, 0);
+
+    if (width <= 0 || height <= 0)
+        return std::nullopt;
+
+    return juce::Point<int> (width, height);
+}
+
+inline void rememberEditorSize (juce::Point<int> size)
+{
+    if (size.x <= 0 || size.y <= 0)
+        return;
+
+    editorPreferences().setValue (editorWidthKey, size.x);
+    editorPreferences().setValue (editorHeightKey, size.y);
     editorPreferences().saveIfNeeded();
 }
 

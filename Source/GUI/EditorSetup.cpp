@@ -66,10 +66,11 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
     //      added; vertically it is the header, the deck and the space the knob grid
     //      needs for its three rows.
     //
-    //   2. The OPENING size is the preferred size CLAMPED TO THE SCREEN IT OPENS ON.
-    //      A fixed size fits a 27" monitor and nothing smaller, and the host is
-    //      under no obligation to shrink the window for us. So the display the editor
-    //      lands on decides: the preferred size when there is room, and the work area
+    //   2. The OPENING size is the last size the user chose, or the preferred size
+    //      before they have chosen one, CLAMPED TO THE SCREEN IT OPENS ON. A fixed
+    //      size fits a 27" monitor and nothing smaller, and the host is under no
+    //      obligation to shrink the window for us. So the display the editor lands
+    //      on decides: the requested size when there is room, and the work area
     //      minus a frame allowance when there is not, centred so the whole panel is
     //      reachable instead of hanging off the bottom edge.
     //
@@ -99,6 +100,11 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
     const auto preferredEditorWidth = juce::roundToInt (1060.0f * uiScale());
     const auto preferredEditorHeight = juce::roundToInt (916.0f * uiScale());
 
+    // The user's own last size wins over the layout's preferred one, but only after
+    // the floor and the screen have had their say below: a size remembered on a
+    // large display must not put the window off the edge of a smaller one.
+    const auto rememberedSize = j37panel::rememberedEditorSize();
+
     // The horizontal margin keeps the frame off the edge of the display. The vertical
     // one covers a decorated window's title bar and border, which sit OUTSIDE the size
     // requested here - on Windows and GNOME that is another 30-45 px of screen the
@@ -120,7 +126,7 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
     // almost certainly put the editor near it. The other two cases are the mouse sitting
     // outside every known display (a KVM switch, a locked session) and a headless build
     // with no displays at all - in both of them there is nothing sensible to clamp to, so
-    // the preferred size is used unchanged.
+    // the remembered size (or the preferred one when none is stored) is used unchanged.
     // The Point<float> overload: the Point<int> one is deprecated, and Clang says so on
     // every macOS build. Same screen, same result - only the coordinate type differs.
     if (const auto *display =
@@ -140,7 +146,10 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
         setSize (360, 800);
 #else
         setResizeLimits(minEditorWidth, minEditorHeight, 1500, 1180);
-        setSize(preferredEditorWidth, preferredEditorHeight);
+        setSize(rememberedSize ? juce::jlimit (minEditorWidth, 1500, rememberedSize->x)
+                               : preferredEditorWidth,
+                rememberedSize ? juce::jlimit (minEditorHeight, 1180, rememberedSize->y)
+                               : preferredEditorHeight);
 #endif
     } else {
         // toNearestInt() above already rounded, so subtracting the margin afterwards
@@ -154,18 +163,20 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
         // opening size and left the floor alone was the bug, not a near miss of it.
         const auto floorWidth = juce::jmax(1, juce::jmin(minEditorWidth, fittingWidth));
         const auto floorHeight = juce::jmax(1, juce::jmin(minEditorHeight, fittingHeight));
-        const auto openingWidth =
-            juce::jlimit(floorWidth, juce::jmax(floorWidth, fittingWidth), preferredEditorWidth);
-        const auto openingHeight = juce::jlimit(floorHeight, juce::jmax(floorHeight, fittingHeight),
-                                                preferredEditorHeight);
+        const auto requestedWidth = rememberedSize ? rememberedSize->x : preferredEditorWidth;
+        const auto requestedHeight = rememberedSize ? rememberedSize->y : preferredEditorHeight;
+        const auto maximumOpeningWidth = juce::jmax(floorWidth, juce::jmin(1500, fittingWidth));
+        const auto maximumOpeningHeight = juce::jmax(floorHeight, juce::jmin(1180, fittingHeight));
+        const auto openingWidth = juce::jlimit(floorWidth, maximumOpeningWidth, requestedWidth);
+        const auto openingHeight = juce::jlimit(floorHeight, maximumOpeningHeight, requestedHeight);
 
         setResizeLimits(floorWidth, floorHeight, 1500, 1180);
         setSize(openingWidth, openingHeight);
 
-        // Centred only when the screen forced a smaller window. At the preferred size the
-        // host decides where the editor goes, and re-centring it here would fight the
-        // DAW's own window management.
-        if (openingWidth != preferredEditorWidth || openingHeight != preferredEditorHeight)
+        // Centred only when the screen forced a different size. At the requested size
+        // the host decides where the editor goes, and re-centring it here would fight
+        // the DAW's own window management.
+        if (openingWidth != requestedWidth || openingHeight != requestedHeight)
             centreWithSize(openingWidth, openingHeight);
     }
 }
