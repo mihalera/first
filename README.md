@@ -790,6 +790,7 @@ rest stays silent.
 | Auto Tune Amount (TUNE AMOUNT) | 0 to 100 % | Depth of the correction, and the only on/off: 0 is the untouched signal and takes the whole stage, detector included, out of the path; 100 is the full pull the current RANGE allows. It does not change the retune speed - SPEED owns that. Default 0 % (off) |
 =======
 | Auto Tune Amount (TUNE AMOUNT) | 0 to 100 % | Depth of the correction, and the only on/off: 0 is the untouched signal and takes the whole stage, detector included, out of the path; 100 is the full pull onto the scale. It does not change the retune speed - SPEED owns that. Default 0 % (off) |
+=======
 | Auto Tune Speed (SPEED) | 0 to 100 % | How quickly the correction glides to its new pitch, independent of TUNE AMOUNT: 0 % is a slow, transparent 100 ms glide, 50 % about 13 ms, 100 % a 1 ms snap. Default 50 % |
 | Auto Tune Range (RANGE) | 1 to 12 semitones | How far the corrector may pull a reading toward the note the key asks for. 1 is the classic grip: a note is moved onto the grid, never transposed. Larger values let the scale's nearest note (or a deliberately heavy correction) be reached; 12 is the whole octave. Default 1 semitone |
 | Auto Tune Octave (OCTAVE) | -1 to +1 octaves | Transposes the corrected result by whole octaves, after RANGE has taken its grip: 0 leaves the note where the scale puts it, +1 and -1 move it one octave up or down. TUNE AMOUNT scales the transposition. Default 0 |

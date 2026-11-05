@@ -482,6 +482,7 @@ void FirstAudioProcessorEditor::setUpLanguageAndTuning() {
                    "It does not change the retune speed - SPEED owns that - so a "
                    "deep, natural correction is possible without the snap. Default "
                    "0 percent (off).",
+=======
                    percentText, percentValue);
     setupTuneKnob (1, "autotune_speed", "SPEED", 0.0, 1.0, 0.001,
                    "SPEED - how quickly the correction glides to its new pitch, "
