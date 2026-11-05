@@ -16,6 +16,7 @@
 # committed. The generic names below catch a default `cmake -B build`, and the
 # explicit `build/` entry catches the one the CI and the README use.
 build/
+build-clangd/
 cmake-build-*/
 CMakeFiles/
 CMakeCache.txt
@@ -85,6 +86,10 @@ Desktop.ini
 # GitHub Actions artifacts
 .github/workflows/*.local.yml
 
+# Claude Code personal settings and instructions
+.claude/settings.local.json
+CLAUDE.local.md
+
 # Android / Gradle
 #
 # The APK itself is a build artefact, never source. Gradle's own caches and the
@@ -105,3 +110,13 @@ tests/layout/extracted_layout/
 __pycache__/
 git-askpass.sh
 ghtoken
+.omx-state-locks/
+.omx-state-locks.identity.json
+.codex/*
+!.codex/agents/
+!.codex/agents/**
+!.codex/skills/
+!.codex/skills/**
+.codex/skills/.system/**
+!.codex/prompts/
+!.codex/prompts/**

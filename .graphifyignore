@@ -1,0 +1,3 @@
+# Keep the project graph focused on MiBoX-owned code and documentation.
+JUCE/
+ThirdParty/

@@ -1,0 +1,7 @@
+{
+  "scope": "project",
+  "mcpMode": "none",
+  "teamMode": "disabled",
+  "installMode": "plugin",
+  "mergeAgents": true
+}
