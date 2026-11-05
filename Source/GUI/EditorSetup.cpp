@@ -225,6 +225,7 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
                                : preferredEditorHeight);
 =======
         setSize(preferredEditorWidth, preferredEditorHeight);
+=======
 #endif
     } else {
         // toNearestInt() above already rounded, so subtracting the margin afterwards

@@ -1021,6 +1021,7 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
         j37diag::note ("editor dtor: begin");
     }
 
+=======
     // The host destroys this editor when its window is closed and rebuilds it at
     // the layout's preferred size, so the user's last drag has to be written down
     // here or it is lost. See rememberedEditorSize() in EditorPreferences.h.
