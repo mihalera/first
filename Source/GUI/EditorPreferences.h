@@ -4,8 +4,9 @@
 
     Not the session. What lives here describes the COMPUTER rather than the mix:
     the folders the file pickers reopen in, the renderer the panel was last told
-    to draw with, and the front panel it was left on - the theme choice and the
-    USER palette the COLOURS window edits. Those have to outlive an editor (a host
+    to draw with, the UI scale and the editor window's last size, and the front
+    panel it was left on - the theme choice and the USER palette the COLOURS
+    window edits. Those have to outlive an editor (a host
     closes and re-creates one), they must not travel in a session to a machine
     that cannot honour them, and a preset must never be able to change them.
 
@@ -40,6 +41,7 @@
 
 #include <algorithm>
 #include <array>
+#include <optional>
 
 namespace j37panel
 {
@@ -85,6 +87,37 @@ inline void rememberUiScale (int percent)
         return;
 
     editorPreferences().setValue (uiScaleKey, percent);
+    editorPreferences().saveIfNeeded();
+}
+
+/** The editor's window size, remembered across hosts that destroy and re-create
+    the editor every time its window is closed. The size is a machine preference
+    for the same reason the scale is: it describes the desk, not the mix, so it
+    must not travel in a session or a preset. A stored size is clamped to the
+    layout's limits and the screen by setUpWindowAndSize(); this store only
+    answers whether there was one. */
+constexpr const char* editorWidthKey = "editor_width";
+constexpr const char* editorHeightKey = "editor_height";
+
+inline std::optional<juce::Point<int>> rememberedEditorSize()
+{
+    const auto& preferences = editorPreferences();
+    const auto width = preferences.getIntValue (editorWidthKey, 0);
+    const auto height = preferences.getIntValue (editorHeightKey, 0);
+
+    if (width <= 0 || height <= 0)
+        return std::nullopt;
+
+    return juce::Point<int> (width, height);
+}
+
+inline void rememberEditorSize (juce::Point<int> size)
+{
+    if (size.x <= 0 || size.y <= 0)
+        return;
+
+    editorPreferences().setValue (editorWidthKey, size.x);
+    editorPreferences().setValue (editorHeightKey, size.y);
     editorPreferences().saveIfNeeded();
 }
 

@@ -786,7 +786,7 @@ rest stays silent.
 | Spindown | on/off (momentary in the panel) | Hold to cut the platter's power: the machine coasts down over 1.6 s (2.46 s on a 78 rpm platter) and comes back up in 0.9 s when released. A hold also brings the platter up if the machine was stopped, and releasing a hold leaves the machine running. As a parameter it survives in the state and can be automated. Default off |
 | Tuning Tonic (TONIC) | C to B | The key the scale is built on: the note the corrector treats as home. No effect on CHROMATIC, which already contains every semitone. Default C |
 | Tuning Mode (MODE) | Chromatic / Major / Minor / Dorian / Pentatonic Major / Pentatonic Minor | Which notes the corrector may land on. CHROMATIC pulls a note to the nearest semitone and nowhere else; a scale lets the reading travel up to RANGE semitones to the nearest note the key contains, so the correction follows the key rather than the grid. No effect while TUNE AMOUNT is zero. Default Chromatic |
-| Auto Tune Amount (TUNE AMOUNT) | 0 to 100 % | Depth of the correction, and the only on/off: 0 is the untouched signal and takes the whole stage, detector included, out of the path; 100 is the full pull onto the scale. It does not change the retune speed - SPEED owns that. Default 0 % (off) |
+| Auto Tune Amount (TUNE AMOUNT) | 0 to 100 % | Depth of the correction, and the only on/off: 0 is the untouched signal and takes the whole stage, detector included, out of the path; 100 is the full pull the current RANGE allows. It does not change the retune speed - SPEED owns that. Default 0 % (off) |
 | Auto Tune Speed (SPEED) | 0 to 100 % | How quickly the correction glides to its new pitch, independent of TUNE AMOUNT: 0 % is a slow, transparent 100 ms glide, 50 % about 13 ms, 100 % a 1 ms snap. Default 50 % |
 | Auto Tune Range (RANGE) | 1 to 12 semitones | How far the corrector may pull a reading toward the note the key asks for. 1 is the classic grip: a note is moved onto the grid, never transposed. Larger values let the scale's nearest note (or a deliberately heavy correction) be reached; 12 is the whole octave. Default 1 semitone |
 | Auto Tune Octave (OCTAVE) | -1 to +1 octaves | Transposes the corrected result by whole octaves, after RANGE has taken its grip: 0 leaves the note where the scale puts it, +1 and -1 move it one octave up or down. TUNE AMOUNT scales the transposition. Default 0 |
@@ -851,7 +851,10 @@ is not just a small window with large type in it. The layout keeps its real floo
 cannot fit opens at the largest size the screen can show instead. The choice is a
 machine preference in `Source/GUI/EditorPreferences.h`, beside the theme and the
 renderer, not a session value - a host that rebuilds the editor comes back at the size
-the user chose.
+the user chose. The window's own size is remembered the same way: drag the editor to
+any size the limits allow, close it, and the next editor opens at that size even when
+UI SCALE was never touched. The resulting size, whether it came from a stop or a drag,
+is clamped to the current display's work area.
 
 The interface uses a consistent cross-platform sans-serif for controls and
 supporting text, with a serif wordmark and monospaced numeric readouts for clear
@@ -1341,10 +1344,11 @@ Supported rates are **44.1, 48, 88.2, 96, 176.4 and 192 kHz**.
   second instead of four times as often.
 - **Buffer size** - the DSP is per sample and reads `getNumSamples()` each block, so
   there is no fixed block-size assumption; zero-length blocks are handled too.
-- **Display scale** - the editor opens at 1060 x 916 and can be resized between
-  780 x 664 and 1500 x 1180; both meter types lay themselves out proportionally to their
-  own bounds. SETTINGS' UI SCALE drives the same responsive layout from 75 % to 125 %,
-  and captions follow the chosen stop instead of staying at a hardcoded pixel size.
+- **Display scale** - the editor opens at its preferred 1060 x 916 the first time,
+  then at the size it was last left at, and can be resized between 780 x 664 and
+  1500 x 1180; both meter types lay themselves out proportionally to their own bounds.
+  SETTINGS' UI SCALE drives the same responsive layout from 75 % to 125 %, and captions
+  follow the chosen stop instead of staying at a hardcoded pixel size.
   The deck's control rows - model / rate-key, switches, types, transport, then the preset /
   A/B / undo row - are followed by a badge band of their own, and every line's control
   chain is width-accounted to fit the minimum 780 px panel with no overlap. The level
@@ -1675,7 +1679,9 @@ kinds VST3 / AU / AUv3 are desktop-host formats and are excluded there
 `clap_juce_extensions_plugin`, which has no Android host to be loaded by. The
 plugin's whole engine - DSP, editor and every third-party library in the build -
 cross-compiles for the Android NDK as the Standalone wrapper, a shared library
-the Gradle project in `android/` packages into an APK.
+the Gradle project in `android/` packages into an APK. Microphone access is optional:
+when permission is denied, the standalone device setup retries with zero inputs, so
+output-only playback still starts.
 
 ### Building for Android
 

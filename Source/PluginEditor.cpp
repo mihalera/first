@@ -910,6 +910,11 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 
 FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
 {
+    // The host destroys this editor when its window is closed and rebuilds it at
+    // the layout's preferred size, so the user's last drag has to be written down
+    // here or it is lost. See rememberedEditorSize() in EditorPreferences.h.
+    j37panel::rememberEditorSize ({ getWidth(), getHeight() });
+
     // The editor is the last thing to go when a host closes a plugin window, so this
     // is the last chance to remember a USER palette edited but never re-selected. The
     // theme choice itself is written when the key is pressed; this catches the colours.

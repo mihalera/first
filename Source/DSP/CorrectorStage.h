@@ -75,25 +75,23 @@
         the material rather than a block, and it is not reported because it was
         not reported before this file existed.
 
-    FORMANT COMPENSATION IS NOT TURNED ON, and the reason is the RANGE this stage
-    works in rather than a limitation of the library. `setFormantFactor (1, true)`
-    does hold the envelope: on a synthetic vowel with formants at 660, 1211 and
-    2642 Hz, shifted 1.5x, the compensated render keeps them at 798, 1149 and
-    2604 Hz against 896, 1007 and 1928 uncompensated - the tracking is coarse (the
+    FORMANT COMPENSATION IS NOT TURNED ON. `setFormantFactor (1, true)` does hold
+    the envelope: on a synthetic vowel with formants at 660, 1211 and 2642 Hz,
+    shifted 1.5x, the compensated render keeps them at 798, 1149 and 2604 Hz
+    against 896, 1007 and 1928 uncompensated - the tracking is coarse (the
     measurement finds the strongest partial in a band, and the bands overlap when
     the envelope moves that far) but it is clearly compensation and not drift.
 
-    The autotune path never asks for 1.5x. The rule that decides the ratio is
-    clamped to a semitone either way (Source/DSP/PitchCorrectionRule.h), so the
-    envelope moves by at most 6 %, which is what a correcting shifter has always
-    done and is inside the ambiguity of the measurement above: at 1.0595x the
-    compensated and uncompensated renders agree to within a few Hz. So the call
-    would be a switch that costs an envelope estimate on every block and changes
-    nothing anyone can hear at the only ratios the stage is asked for - and if a
-    transposing feature ever asks this stage for an octave, that is the commit that
-    turns the flag on. What the stage does claim is what tests/pitch measures: the
-    pitch moves by the ratio it is given, the material keeps its duration and its
-    level, and the lookahead is the number the plugin reports to the host.
+    At the default RANGE (1 semitone) and OCTAVE 0 the rule asks for at most 6 %
+    of envelope movement, which is what a correcting shifter has always done and is
+    inside the ambiguity of the measurement above: at 1.0595x the compensated and
+    uncompensated renders agree to within a few Hz. OCTAVE changes that: it can ask
+    this stage for 0.5x or 2.0x, where the envelope moves much further, so the flag
+    is now an open measurement at both octave extremes rather than a settled
+    "not applicable". The stage still leaves it off, and tests/pitch measures what
+    it does claim: the pitch moves by the ratio it is given, the material keeps its
+    duration and its level, and the lookahead is the number the plugin reports to
+    the host.
 
     Everything allocated is allocated in prepare(): the library's own buffers,
     the two block rings. processFrame() allocates nothing and locks nothing, which
