@@ -2,11 +2,12 @@
 """Verify that denying Android microphone access keeps standalone audio output available.
 
 JUCE 9.0.5 no longer carries this repository's old explicit removal of the saved
-input channels. Its AudioDeviceManager still has the same fallback: the standalone
-holder asks for zero inputs when access is denied, and initialiseFromXML retries
-with those zero needed inputs if opening the saved setup fails. This checks that
-both halves of that path are present, so a JUCE update cannot silently leave
-Android without output when the microphone prompt is declined.
+input channels, and its output-only retry is not enough on its own: initialiseFromXML
+restores audioDeviceInChans from the saved setup and setAudioDeviceSetup overwrites
+numInputChansNeeded with that saved mask, so the retry asks for the microphone again.
+The plugin therefore removes the saved input mask before the holder reloads its
+device, while the holder's settings are already live in createPluginFilter(). This
+checks that project-side guard together with the upstream retry path.
 """
 from __future__ import annotations
 
@@ -19,6 +20,7 @@ STANDALONE_H = (
     ROOT / "JUCE" / "modules" / "juce_audio_plugin_client"
     / "Standalone" / "juce_StandaloneFilterWindow.h"
 )
+PROCESSOR_CPP = ROOT / "Source" / "PluginProcessor.cpp"
 DEVICE_MANAGER_CPP = (
     ROOT / "JUCE" / "modules" / "juce_audio_devices"
     / "audio_io" / "juce_AudioDeviceManager.cpp"
@@ -69,6 +71,10 @@ def main() -> None:
     if not re.search(r"numInputChansNeeded\s*=\s*numInputChannelsNeeded\s*;", initialise_body):
         fail("AudioDeviceManager does not carry the disabled input count into XML setup")
 
+    setup_body = method_body(device_manager, "String AudioDeviceManager::setAudioDeviceSetup (")
+    if not re.search(r"numInputChansNeeded\s*=\s*currentSetup\.inputChannels\.countNumberOfSetBits\s*\(\)", setup_body):
+        fail("the saved input mask is no longer known to override the disabled input count")
+
     xml_body = method_body(device_manager, "String AudioDeviceManager::initialiseFromXML (")
     if not re.search(
         r"if\s*\(\s*error\.isNotEmpty\(\)\s*&&\s*selectDefaultDeviceOnFailure\s*\)"
@@ -77,6 +83,22 @@ def main() -> None:
         xml_body,
     ):
         fail("XML setup failure does not retry with output-only initialization")
+
+    processor = PROCESSOR_CPP.read_text(encoding="utf-8")
+    filter_body = method_body(processor, "juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()")
+    if "dropSavedInputChannelsWithoutPermission()" not in filter_body:
+        fail("createPluginFilter does not drop the saved input mask without microphone access")
+
+    guard_body = method_body(processor, "void dropSavedInputChannelsWithoutPermission()")
+    if not re.search(r"RuntimePermissions::isGranted\s*\(\s*(?:juce::)?RuntimePermissions::recordAudio\s*\)",
+                     guard_body):
+        fail("the microphone permission is not checked before the saved mask is used")
+
+    if not re.search(r"StandalonePluginHolder::getInstance\s*\(\s*\)", guard_body):
+        fail("the project guard does not reach the live standalone settings")
+
+    if not re.search(r"removeAttribute\s*\(\s*\"audioDeviceInChans\"\s*\)", guard_body):
+        fail("the saved input-channel mask is not removed when microphone access is denied")
 
     print("Android audio permission fallback check passed (output remains enabled, input stays disabled)")
 

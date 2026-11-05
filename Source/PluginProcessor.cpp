@@ -27,6 +27,10 @@
 // Source/OscBall.h, included by the processor header.
 #include "ScaleDegrees.h"
 
+#if JUCE_ANDROID
+ #include <juce_audio_plugin_client/Standalone/juce_StandaloneFilterWindow.h>
+#endif
+
 // -----------------------------------------------------------------------------
 //  OSC, STAGED: compiled here and STARTED NOWHERE.
 //
@@ -1710,7 +1714,42 @@ void FirstAudioProcessor::setStateInformation (const void* data, int sizeInBytes
 }
 
 //==============================================================================
+#if JUCE_ANDROID
+namespace
+{
+    //  The standalone holder asks for zero inputs when the microphone permission
+    //  is denied, but a saved DEVICESETUP can still carry `audioDeviceInChans`.
+    //  AudioDeviceManager restores that mask before its output-only retry, so the
+    //  retry asks for the microphone again and the app stays silent. The holder's
+    //  settings are already loaded when createPluginFilter() runs, and this call
+    //  happens before the holder reloads the device, so drop the mask here when the
+    //  permission is not granted. If it is granted later, the default channel count
+    //  rebuilds the mask; nothing is lost but the stale disabled-input setup.
+    void dropSavedInputChannelsWithoutPermission()
+    {
+        if (juce::RuntimePermissions::isGranted (juce::RuntimePermissions::recordAudio))
+            return;
+
+        if (auto* holder = juce::StandalonePluginHolder::getInstance())
+        {
+            if (auto* settings = holder->settings.get())
+            {
+                if (auto savedState = settings->getXmlValue ("audioSetup"))
+                {
+                    savedState->removeAttribute ("audioDeviceInChans");
+                    settings->setValue ("audioSetup", savedState.get());
+                }
+            }
+        }
+    }
+}
+#endif
+
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
+   #if JUCE_ANDROID
+    dropSavedInputChannelsWithoutPermission();
+   #endif
+
     return new FirstAudioProcessor();
 }
