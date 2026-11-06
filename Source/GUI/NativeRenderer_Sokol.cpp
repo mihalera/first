@@ -22,24 +22,11 @@
  #include <mutex>
  #include <utility>
  #include <vector>
-  #include <chrono>
-  #include <string>
-  #include <unordered_map>
 
  namespace j37::render
  {
  namespace
  {
- // Enable Sokol validation layer in debug builds for API error detection.
- // SOKOL_VALIDATE enables the debug validation layer which checks all API calls
- // and reports errors through the debug callback.
- #if defined(JUCE_DEBUG) || defined(DEBUG)
-  #define SOKOL_VALIDATE
-  #define SOKOL_DEBUG
-  #define SOKOL_DEBUG_MAX_CALLS 512
-  #define SOKOL_DEBUG_TEXT_BUFFER_SIZE (64 * 1024)
- #endif
-
  #if defined (SOKOL_GLES3)
   #define J37_SOKOL_SHADER_VERSION "#version 300 es\nprecision highp float;\n"
  constexpr auto sceneDepthFormat = SG_PIXELFORMAT_DEPTH;
@@ -47,18 +34,6 @@
   #define J37_SOKOL_SHADER_VERSION "#version 330 core\n"
  constexpr auto sceneDepthFormat = SG_PIXELFORMAT_DEPTH_STENCIL;
  #endif
-
-namespace j37::render
-{
-namespace
-{
-#if defined (SOKOL_GLES3)
- #define J37_SOKOL_SHADER_VERSION "#version 300 es\nprecision highp float;\n"
-constexpr auto sceneDepthFormat = SG_PIXELFORMAT_DEPTH;
-#else
- #define J37_SOKOL_SHADER_VERSION "#version 330 core\n"
-constexpr auto sceneDepthFormat = SG_PIXELFORMAT_DEPTH_STENCIL;
-#endif
 
 //==============================================================================
 //  The deck's shader programs, ported to the Sokol GL dialect.
@@ -514,9 +489,6 @@ private:
     {
         deviceReady.store (false, std::memory_order_relaxed);
         deviceSetupFailed.store (false, std::memory_order_relaxed);
-            frameTimeMs = 0.0;
-            drawCallCount = 0;
-            vertexCount = 0;
 
             sg_desc desc {};
             desc.environment.defaults.color_format = SG_PIXELFORMAT_RGBA8;
@@ -549,26 +521,31 @@ private:
                 return;
             }
 
-        // Every handle below belonged to the previous context. GL objects die
-        // with it, so the cached ids must not outlive them.
-        shader = {};
-        mainPipeline = {};
-        glowPipeline = {};
-        gpuMeshes.clear();
-        uploadedFrom = nullptr;
-        {
-            const std::lock_guard<std::mutex> lock (frameMutex);
-            drawFailure.clear();
+            // Every handle below belonged to the previous context. GL objects die
+            // with it, so the cached ids must not outlive them.
+            shader = {};
+            mainPipeline = {};
+            glowPipeline = {};
+            gpuMeshes.clear();
+            uploadedFrom = nullptr;
+            {
+                const std::lock_guard<std::mutex> lock (frameMutex);
+                drawFailure.clear();
+            }
+            deviceReady.store (true, std::memory_order_release);
         }
-        deviceReady.store (true, std::memory_order_release);
-    }
+            {
+                const std::lock_guard<std::mutex> lock (frameMutex);
+                drawFailure.clear();
+            }
+            deviceReady.store (true, std::memory_order_release);
+                }
 
-    void renderOpenGL() override
-    {
-        if (! deviceReady.load (std::memory_order_acquire) || ! sg_isvalid())
-            return;
+                void renderOpenGL() override
+                {
+            if (! deviceReady.load (std::memory_order_acquire) || ! sg_isvalid())
+                return;
 
-            auto frameStart = std::chrono::high_resolution_clock::now();
             int logicalWidth = 1;
             int logicalHeight = 1;
             SceneFrame frame;
@@ -604,24 +581,10 @@ private:
                 return;
             }
 
-            // Track performance metrics
-            frameTimeMs = 0.0;
-            drawCallCount = 0;
-            vertexCount = 0;
-
-            const auto colour = juce::Colour::fromFloatRGBA (frame.backgroundColour[0],
-                                                              frame.backgroundColour[1],
-                                                              frame.backgroundColour[2],
-                                                              frame.backgroundColour[3]);
-
+            // Preserve the previous frame by not clearing - JUCE owns the surface.
             sg_pass_action action {};
-            action.colors[0].load_action = SG_LOADACTION_CLEAR;
-            action.colors[0].clear_value.r = colour.getFloatRed();
-            action.colors[0].clear_value.g = colour.getFloatGreen();
-            action.colors[0].clear_value.b = colour.getFloatBlue();
-            action.colors[0].clear_value.a = colour.getFloatAlpha();
-            action.depth.load_action = SG_LOADACTION_CLEAR;
-            action.depth.clear_value = 1.0f;
+            action.colors[0].load_action = SG_LOADACTION_DONTCARE;
+            action.depth.load_action = SG_LOADACTION_DONTCARE;
 
             // sokol_gfx has no windowing layer of its own: JUCE owns the surface.
             // Its framebuffer is not zero on iOS, and render scale converts logical
@@ -640,81 +603,11 @@ private:
 
             sg_begin_pass (&pass);
 
-            // Track frame timing and draw statistics
-            auto drawStart = std::chrono::high_resolution_clock::now();
-            drawFrame (frame);
-            auto drawEnd = std::chrono::high_resolution_clock::now();
-            frameTimeMs = std::chrono::duration_cast<std::chrono::milliseconds>(drawEnd - drawStart).count();
-            drawCallCount++;
-            vertexCount += frame.meshes->size();
+                        drawFrame (frame);
 
-        void renderOpenGL() override
-        {
-            if (! deviceReady.load (std::memory_order_acquire) || ! sg_isvalid())
-                return;
-
-            auto frameStart = std::chrono::high_resolution_clock::now();
-            int logicalWidth = 1;
-            int logicalHeight = 1;
-            SceneFrame frame;
-            {
-                const std::lock_guard<std::mutex> lock (frameMutex);
-                logicalWidth = width;
-                logicalHeight = height;
-
-                if (! hasPendingFrame)
-                    return;
-
-                frame = std::move (pendingFrame);
-                pendingFrame = SceneFrame {};
-                hasPendingFrame = false;
-            }
-            const auto renderingScale = context->getRenderingScale();
-            const auto framebufferWidth = juce::jmax (
-                1, static_cast<int> (std::lround (static_cast<double> (logicalWidth) * renderingScale)));
-            const auto framebufferHeight = juce::jmax (
-                1, static_cast<int> (std::lround (static_cast<double> (logicalHeight) * renderingScale)));
-
-                // Track performance metrics
-                frameTimeMs = 0.0;
-                drawCallCount = 0;
-                vertexCount = 0;
-
-        sg_pass_action action {};
-        action.colors[0].load_action = SG_LOADACTION_CLEAR;
-        action.colors[0].clear_value.r = colour.getFloatRed();
-        action.colors[0].clear_value.g = colour.getFloatGreen();
-        action.colors[0].clear_value.b = colour.getFloatBlue();
-        action.colors[0].clear_value.a = colour.getFloatAlpha();
-        action.depth.load_action = SG_LOADACTION_CLEAR;
-        action.depth.clear_value = 1.0f;
-
-        // sokol_gfx has no windowing layer of its own: JUCE owns the surface.
-        // Its framebuffer is not zero on iOS, and render scale converts logical
-        // component dimensions to physical pixels on high-DPI displays.
-        sg_swapchain swapchain {};
-        swapchain.width = framebufferWidth;
-        swapchain.height = framebufferHeight;
-        swapchain.sample_count = 1;
-        swapchain.color_format = SG_PIXELFORMAT_RGBA8;
-        swapchain.depth_format = sceneDepthFormat;
-        swapchain.gl.framebuffer = context->getFrameBufferID();
-
-        sg_pass pass {};
-        pass.action = action;
-        pass.swapchain = swapchain;
-
-        sg_begin_pass (&pass);
-
-                // Track statistics for performance monitoring
-                auto frameEnd = std::chrono::high_resolution_clock::now();
-                frameTimeMs = std::chrono::duration_cast<std::chrono::nanoseconds>(frameEnd - frameStart).count() / 1000000.0;
-        
-                drawFrame (frame);
-
-                sg_end_pass();
-                sg_commit();
-    }
+                        sg_end_pass();
+                        sg_commit();
+        }
 
     void openGLContextClosing() override
     {

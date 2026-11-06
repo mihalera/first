@@ -119,13 +119,53 @@ list(APPEND CMAKE_MODULE_PATH "${CMAKE_CURRENT_SOURCE_DIR}/cmake")
 #  This comes BEFORE the dependency file, because chowdsp_utils and
 #  foleys_gui_magic are JUCE modules and need JUCE on the CMake path.
 # ------------------------------------------------------------------------------
-if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/JUCE/CMakeLists.txt")
-    message(FATAL_ERROR
-        "JUCE submodule not found at ${CMAKE_CURRENT_SOURCE_DIR}/JUCE.\n"
-        "Run: git submodule update --init --recursive")
+option(J37_ENABLE_AAP "Build an Android Audio Plugin (AAP) module on Android" OFF)
+set(J37_AAP_JUCE_SOURCE_DIR "" CACHE PATH
+    "Separate writable JUCE 9.0.5 checkout for AAP compatibility preparation")
+set(J37_AAP_SOURCE_DIR "" CACHE PATH
+    "AAP-JUCE source directory (including its aap-core dependency)")
+
+if(J37_ENABLE_AAP)
+    if(NOT CMAKE_SYSTEM_NAME STREQUAL "Android")
+        message(FATAL_ERROR "J37_ENABLE_AAP is Android-only")
+    endif()
+    if(NOT J37_AAP_JUCE_SOURCE_DIR OR NOT EXISTS "${J37_AAP_JUCE_SOURCE_DIR}/CMakeLists.txt")
+        message(FATAL_ERROR
+            "J37_ENABLE_AAP requires a separate writable JUCE 9.0.5 source checkout.\n"
+            "The AAP bridge must not patch the repository's pinned JUCE submodule.")
+    endif()
+    if(NOT J37_AAP_SOURCE_DIR OR NOT EXISTS "${J37_AAP_SOURCE_DIR}/cmake/AAPJuce.cmake"
+       OR NOT EXISTS "${J37_AAP_SOURCE_DIR}/aap-core/CMakeLists.txt")
+        message(FATAL_ERROR
+            "J37_ENABLE_AAP requires an aap-juce checkout with its aap-core submodule initialized.")
+    endif()
+    file(REAL_PATH "${J37_AAP_JUCE_SOURCE_DIR}" _j37_aap_juce_real)
+    file(REAL_PATH "${CMAKE_CURRENT_SOURCE_DIR}/JUCE" _j37_pinned_juce_real)
+    if(_j37_aap_juce_real STREQUAL _j37_pinned_juce_real)
+        message(FATAL_ERROR "AAP preparation may not write into the pinned JUCE submodule")
+    endif()
+
+    set(JUCE_SOURCE_DIR "${J37_AAP_JUCE_SOURCE_DIR}" CACHE PATH "AAP-prepared JUCE source" FORCE)
+    set(AAP_JUCE_PREPARE_ONLY ON CACHE BOOL "Prepare JUCE for AAP before adding JUCE" FORCE)
+    include("${J37_AAP_SOURCE_DIR}/cmake/AAPJuce.cmake")
+    aap_juce_configure(
+        JUCE_SOURCE_DIR "${J37_AAP_JUCE_SOURCE_DIR}"
+        AAP_DIR "${J37_AAP_SOURCE_DIR}/aap-core"
+        MODE PLUGIN
+        JUCE_VERSION 9.0.5
+        APP_SOURCE_DIR "${CMAKE_CURRENT_SOURCE_DIR}/android-aap")
 endif()
 
-add_subdirectory(JUCE)
+if(NOT J37_ENABLE_AAP)
+    if(NOT EXISTS "${CMAKE_CURRENT_SOURCE_DIR}/JUCE/CMakeLists.txt")
+        message(FATAL_ERROR
+            "JUCE submodule not found at ${CMAKE_CURRENT_SOURCE_DIR}/JUCE.\n"
+            "Run: git submodule update --init --recursive")
+    endif()
+    add_subdirectory(JUCE)
+else()
+    add_subdirectory("${J37_AAP_JUCE_SOURCE_DIR}" "${CMAKE_BINARY_DIR}/JUCE")
+endif()
 
 # JUCE's Android Oboe target adds -Ofast for Release, which current Clang
 # deprecates and repeats for every translation unit. Keep the same optimization
