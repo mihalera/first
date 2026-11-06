@@ -174,7 +174,7 @@ require(panel_branch >= 0 and knob_branch >= 0 and key_branch >= 0
 render_callback = sokol[
     sokol.index("void renderOpenGL() override"):sokol.index("void openGLContextClosing() override")
 ]
-require("if (! hasPendingFrame)\n                return;" in render_callback,
+require("if (! hasPendingFrame)\n                    return;" in render_callback,
         "Sokol must not clear its scene surface between submitted frames")
 require("context->getRenderingScale()" in render_callback
         and "context->getFrameBufferID()" in render_callback,

@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "audio-numerics-review": {
+      "source": "kunitoki/sonic-skills",
+      "sourceType": "github",
+      "skillPath": "skills/audio-numerics-review/SKILL.md",
+      "computedHash": "d8e786c1d99d11a7c5b06a073e55d7ee118284e8ccd8fa896f05921fa230dd4a"
+    },
     "find-skills": {
       "source": "vercel-labs/skills",
       "sourceType": "github",
