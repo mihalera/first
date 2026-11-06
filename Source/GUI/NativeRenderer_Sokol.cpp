@@ -533,18 +533,9 @@ private:
                 drawFailure.clear();
             }
             deviceReady.store (true, std::memory_order_release);
-        }
-            {
-                const std::lock_guard<std::mutex> lock (frameMutex);
-                drawFailure.clear();
-            }
-            deviceReady.store (true, std::memory_order_release);
                 }
 
                 void renderOpenGL() override
-                {
-            if (! deviceReady.load (std::memory_order_acquire) || ! sg_isvalid())
-                return;
 
             int logicalWidth = 1;
             int logicalHeight = 1;
