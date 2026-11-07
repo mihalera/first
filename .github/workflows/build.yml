@@ -80,6 +80,15 @@ jobs:
       - name: Run the subharmonic harness
         run: bash tests/dsp/run.sh
 
+      # The effects rack: twenty-five creative stages between the machine and the
+      # protection chain, plus the multiband compressor the COMP page drives. Every
+      # stage's claim is a property of rendered audio - harmonics, a quantised grid,
+      # a held sample, a removed spike, band energy, level movement, an octave up and
+      # down - so this renders signal through the shipping headers rather than
+      # reading them. No JUCE, no host, no submodules.
+      - name: Run the effects rack harness
+        run: bash tests/fx/run.sh
+
       # The knob strip's geometry is arithmetic, not rendering: the editor layout
       # becomes a grid, the grid becomes a column count and a tile, and the tile
       # becomes the disc the LookAndFeel is handed. This harness cuts those five
