@@ -23,9 +23,9 @@ namespace j37panel
         PhoneLayoutRectangle pages;
     };
 
-    inline constexpr int phoneLayoutMaxWidth = 600;
-    inline constexpr int phoneLandscapeMaxWidth = 1100;
-    inline constexpr int phoneLandscapeMaxHeight = 520;
+    inline constexpr int phoneLayoutMaxWidth = 800;
+    inline constexpr int phoneLandscapeMaxWidth = 1440;
+    inline constexpr int phoneLandscapeMaxHeight = 720;
     inline constexpr int phoneLayoutInset = 8;
     inline constexpr int phoneHeaderHeight = 74;
     inline constexpr int phoneDeckHeight = 120;

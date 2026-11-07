@@ -2050,14 +2050,21 @@ void FirstAudioProcessorEditor::setUpPresetBar() {
 
         // Re-selecting the displayed entry IS a state change whenever the machine
         // has drifted from that preset since it was loaded (the EDITED badge is
-        // exactly that fact, on screen). The old guard returned whenever the
-        // index matched, which made the one gesture a user reaches for after
-        // tweaking - "put this preset back" - do nothing at all: the box already
-        // showed the preset, the click re-picked it, and the panel kept the
-        // edited state. Reload whenever the machine is dirty; skip only when
-        // that preset is both loaded AND clean.
-        if (presetIndex == audioProcessor.getLastPresetIndex() && !audioProcessor.isPresetDirty())
+        // exactly that fact, on screen). When user clicks the same preset again,
+        // always reload it (even if clean) so that one-click works and the
+        // edited-state stays in sync. Only skip when the machine has genuinely
+        // drifted: that way "put this preset back" works reliably.
+        if (presetIndex == audioProcessor.getLastPresetIndex())
+        {
+            if (audioProcessor.isPresetDirty())
+            {
+                audioProcessor.applyFactoryPreset(presetIndex);
+                lastShownPreset = presetIndex;
+            }
+            // else: preset is loaded and clean - do nothing, letting the click
+            // update the edited-badge state properly.
             return;
+        }
 
         audioProcessor.applyFactoryPreset(presetIndex);
         lastShownPreset = presetIndex;
