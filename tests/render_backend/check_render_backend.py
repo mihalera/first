@@ -151,8 +151,9 @@ uniform_metadata = sokol[sokol.index("auto& vsBlock"):sokol.index("shader = sg_m
 vertex_metadata = uniform_metadata[uniform_metadata.index("auto& vsBlock"):uniform_metadata.index("auto& fsBlock")]
 fragment_metadata = uniform_metadata[uniform_metadata.index("auto& fsBlock"):]
 for stage, block in (("vertex", vertex_metadata), ("fragment", fragment_metadata)):
+    shader_source = shader_sources.get(stage, "")
     shader_uniforms = set(
-        re.findall(r"\buniform\s+[A-Za-z_]\w*\s+([A-Za-z_]\w*)", shader_sources.get(stage, ""))
+        re.findall(r"\buniform\s+[A-Za-z_]\w*\s+([A-Za-z_]\w*)", shader_source)
     )
     bound_uniforms = set(
         re.findall(
@@ -162,6 +163,11 @@ for stage, block in (("vertex", vertex_metadata), ("fragment", fragment_metadata
     )
     require(shader_uniforms == bound_uniforms,
             f"Sokol {stage} shader uniforms and sokol_gfx bindings must match exactly")
+    uncommented_source = re.sub(r"/\*.*?\*/|//[^\n]*", " ", shader_source, flags=re.DOTALL)
+    used_uniforms = set(re.findall(r"\bu[A-Z]\w*\b", uncommented_source))
+    require(used_uniforms <= shader_uniforms,
+            f"Sokol {stage} shader uses undeclared uniforms: "
+            f"{sorted(used_uniforms - shader_uniforms)}")
 
 fragment_source = shader_sources.get("fragment", "")
 panel_branch = fragment_source.find("if (abs (uMode - 3.0) < 0.25)")
@@ -175,10 +181,20 @@ render_callback = sokol[
     sokol.index("void renderOpenGL() override"):sokol.index("void openGLContextClosing() override")
 ]
 require("if (! hasPendingFrame)\n                    return;" in render_callback,
-        "Sokol must not clear its scene surface between submitted frames")
+        "Sokol must render only when a new scene frame has been submitted")
+require("action.colors[0].load_action = SG_LOADACTION_CLEAR;" in render_callback
+        and all(f"frame.backgroundColour[{channel}]" in render_callback
+                for channel in range(4)),
+        "Sokol must clear the scene with SceneFrame's background colour")
+require("action.depth.load_action = SG_LOADACTION_CLEAR;" in render_callback
+        and "action.depth.clear_value = 1.0f;" in render_callback,
+        "Sokol must clear depth before drawing each submitted frame")
 require("context->getRenderingScale()" in render_callback
         and "context->getFrameBufferID()" in render_callback,
         "Sokol must target JUCE's physical-size framebuffer, including iOS and high-DPI displays")
+require("sokolContextClaimed.compare_exchange_strong" in sokol
+        and "releaseSokolContextLease();" in sokol,
+        "Sokol's process-global device must not be shared by independent plugin GL contexts")
 resize_body = sokol[
     sokol.index("void resize (Config config) override"):
     sokol.index("bool isPresentable() const noexcept override")

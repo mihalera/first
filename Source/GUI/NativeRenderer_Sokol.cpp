@@ -19,6 +19,7 @@
  #include <atomic>
  #include <cmath>
  #include <cstdint>
+ #include <limits>
  #include <mutex>
  #include <utility>
  #include <vector>
@@ -27,6 +28,8 @@
  {
  namespace
  {
+ std::atomic<bool> sokolContextClaimed { false };
+
  #if defined (SOKOL_GLES3)
   #define J37_SOKOL_SHADER_VERSION "#version 300 es\nprecision highp float;\n"
  constexpr auto sceneDepthFormat = SG_PIXELFORMAT_DEPTH;
@@ -85,7 +88,7 @@ void main()
     {
         float radius = mix (uPackInner, uPackOuter, aPosition.z);
         p = vec3 (aPosition.xy * radius, aPosition.w);
-        vDetail = aPosition.z;
+        vDetail = radius;
     }
     else if (uMode > 1.5 && uMode < 2.5)
     {
@@ -194,10 +197,8 @@ void main()
 
     if (abs (uMode - 1.0) < 0.25)
     {
-        // Pack detail uses the wound width interpolated between the supplied radii.
-        float packRadius = mix (uPackInner, uPackOuter, vDetail);
         float band = 0.88
-                     + 0.12 * smoothstep (0.18, 0.50, abs (fract (packRadius) - 0.5));
+                     + 0.12 * smoothstep (0.18, 0.50, abs (fract (vDetail) - 0.5));
         fragColor = vec4 (colour * band, 1.0);
         return;
     }
@@ -326,6 +327,11 @@ static_assert (sizeof (SceneVertex) == 28, "SceneVertex is the 4+3 float layout 
     crosses as a copied SceneFrame under a mutex - meshes are a shared immutable
     vector, so the copy is the draws list and a shared_ptr, not the geometry.
 
+    DEVICE SCOPE. This pinned sokol_gfx version has one process-global device,
+    not one device per JUCE context. A lease prevents two plugin editors from
+    reinitialising that global state against independent GL contexts; an editor
+    that cannot acquire it keeps the existing software scene.
+
     RESOURCE LIFETIME. Everything GL/sokol-owned is created and destroyed with
     the context: newOpenGLContextCreated() sets the device up, and
     openGLContextClosing() discards every handle before sg_shutdown() - which
@@ -340,6 +346,9 @@ public:
     {
         shutdown();
 
+        if (! acquireSokolContextLease())
+            return fail (
+                "sokol_gfx: only one active GL context is supported; using the software renderer");
         width = juce::jmax (1, config.width);
         height = juce::jmax (1, config.height);
 
@@ -443,6 +452,7 @@ public:
 
         deviceReady.store (false, std::memory_order_release);
         deviceSetupFailed.store (false, std::memory_order_relaxed);
+        releaseSokolContextLease();
         initialised = false;
     }
 
@@ -489,6 +499,12 @@ private:
     {
         deviceReady.store (false, std::memory_order_relaxed);
         deviceSetupFailed.store (false, std::memory_order_relaxed);
+
+        if (! acquireSokolContextLease())
+        {
+            deviceSetupFailed.store (true, std::memory_order_release);
+            return;
+        }
 
         sg_desc desc {};
         desc.environment.defaults.color_format = SG_PIXELFORMAT_RGBA8;
@@ -575,10 +591,14 @@ private:
             return;
         }
 
-        // Preserve the previous frame by not clearing - JUCE owns the surface.
         sg_pass_action action {};
-        action.colors[0].load_action = SG_LOADACTION_DONTCARE;
-        action.depth.load_action = SG_LOADACTION_DONTCARE;
+        action.colors[0].load_action = SG_LOADACTION_CLEAR;
+        action.colors[0].clear_value = { frame.backgroundColour[0],
+                                         frame.backgroundColour[1],
+                                         frame.backgroundColour[2],
+                                         frame.backgroundColour[3] };
+        action.depth.load_action = SG_LOADACTION_CLEAR;
+        action.depth.clear_value = 1.0f;
 
         // sokol_gfx has no windowing layer of its own: JUCE owns the surface.
         // Its framebuffer is not zero on iOS, and render scale converts logical
@@ -605,10 +625,10 @@ private:
     {
         releaseSceneResources();
 
-        if (sg_isvalid())
+        if (deviceReady.exchange (false, std::memory_order_acq_rel) && sg_isvalid())
             sg_shutdown();
 
-        deviceReady = false;
+        releaseSokolContextLease();
     }
 
     //==========================================================================
@@ -772,7 +792,23 @@ private:
 
             if (geometry.indices.empty() || geometry.vertices.empty())
             {
-                continue;
+                releaseMeshes();
+                const std::lock_guard<std::mutex> lock (frameMutex);
+                drawFailure = "sokol_gfx: scene mesh has no vertex or index data";
+                return false;
+            }
+
+            if (geometry.indices.size() > static_cast<std::size_t> (
+                                              std::numeric_limits<int>::max())
+                || geometry.vertices.size() > std::numeric_limits<std::size_t>::max()
+                                                   / sizeof (SceneVertex)
+                || geometry.indices.size() > std::numeric_limits<std::size_t>::max()
+                                                  / sizeof (std::uint32_t))
+            {
+                releaseMeshes();
+                const std::lock_guard<std::mutex> lock (frameMutex);
+                drawFailure = "sokol_gfx: scene mesh exceeds the supported buffer size";
+                return false;
             }
 
             sg_buffer_desc vertices {};
@@ -916,6 +952,26 @@ private:
         uploadedFrom = nullptr;
     }
 
+    void releaseSokolContextLease() noexcept
+    {
+        if (ownsSokolContextLease.exchange (false, std::memory_order_acq_rel))
+            sokolContextClaimed.store (false, std::memory_order_release);
+    }
+
+    bool acquireSokolContextLease() noexcept
+    {
+        if (ownsSokolContextLease.load (std::memory_order_acquire))
+            return true;
+
+        bool expected = false;
+        if (! sokolContextClaimed.compare_exchange_strong (
+                expected, true, std::memory_order_acq_rel, std::memory_order_acquire))
+            return false;
+
+        ownsSokolContextLease.store (true, std::memory_order_release);
+        return true;
+    }
+
     /** Discards everything GL-owned. Runs from openGLContextClosing(), with
         the context current, and from nowhere else: the handles are dead the
         moment the context is gone, so destroying them later would be GL calls
@@ -990,6 +1046,7 @@ private:
     int height = 1;
     std::atomic<bool> deviceReady { false };
     std::atomic<bool> deviceSetupFailed { false };
+    std::atomic<bool> ownsSokolContextLease { false };
     bool initialised = false;
 
     // The frame crossing from the message thread to the GL thread.

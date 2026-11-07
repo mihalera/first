@@ -1287,7 +1287,19 @@ claim that the native renderer is already linked.
 
 `sokol_gfx` and `bgfx` are **alternatives, not additions**: each owns a device, a
 surface and a frame, so a build selects one and the other is not compiled at all -
-the same rule `J37_RENDER_BACKEND` applies to Vulkan and Metal. `METAL` and `SOKOL` link their own backend libraries and drive them through a JUCE `OpenGLContext` attached to the peer, from inside JUCE's own render callback, because JUCE does not expose "make the context current" on the message thread. `Source/GUI/SokolGfxImpl.cpp` is the one translation unit that compiles sokol's implementation, and it is deliberately JUCE-free: JUCE wraps the platform GL headers in `namespace juce::gl` and sokol needs them at global scope, so a single TU cannot host both. The Metal adapter owns its own device path and is compiled in a separate TU (`Source/GUI/NativeRenderer_Metal.mm`), so the two drawn backends do not share an implementation file. `BGFX` downloads and links bgfx.cmake and
+the same rule `J37_RENDER_BACKEND` applies to Vulkan and Metal. The pinned
+`sokol_gfx` device is process-global, so the Sokol adapter permits one active
+plugin GL context; concurrent editors that cannot claim it keep the software
+scene instead of reinitialising Sokol against another context. `METAL` and
+`SOKOL` link their own backend libraries and drive them through a JUCE
+`OpenGLContext` attached to the peer, from inside JUCE's own render callback,
+because JUCE does not expose "make the context current" on the message thread.
+`Source/GUI/SokolGfxImpl.cpp` is the one translation unit that compiles sokol's
+implementation, and it is deliberately JUCE-free: JUCE wraps the platform GL
+headers in `namespace juce::gl` and sokol needs them at global scope, so a single
+TU cannot host both. The Metal adapter owns its own device path and is compiled
+in a separate TU (`Source/GUI/NativeRenderer_Metal.mm`), so the two drawn
+backends do not share an implementation file. `BGFX` downloads and links bgfx.cmake and
 presents into a CHILD surface it creates inside the host's peer - the same rule the
 D3D11 adapter follows - because presenting into the host's own window would paint
 over its UI. bgfx draws nothing without shader binaries, and those are compiled by
