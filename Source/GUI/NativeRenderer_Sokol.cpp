@@ -1,4 +1,4 @@
-#include "NativeRenderer_Sokol.h"
+﻿#include "NativeRenderer_Sokol.h"
 
 #if defined (J37_NATIVE_SOKOL)
  #include <JuceHeader.h>
