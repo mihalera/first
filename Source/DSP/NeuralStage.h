@@ -46,7 +46,6 @@
 #include <exception>
 #include <limits>
 #include <memory>
-#include <mutex>
 #include <stdexcept>
 #include <vector>
 
@@ -177,7 +176,7 @@ struct NeuralStage
     std::unique_ptr<InferenceModel> model;
     std::unique_ptr<InferenceModel> pendingModel;
     std::unique_ptr<InferenceModel> retiredModel;
-    std::mutex controlMutex;
+        std::atomic<bool> modelSwapRequested { false };
     std::atomic<InferenceModel*> activeModel { nullptr };
     std::atomic<bool> clearRequested { false };
     std::atomic<bool> audioQuiescent { true };
@@ -327,9 +326,9 @@ struct NeuralStage
 #if J37_HAS_RTNEURAL || J37_HAS_NAMCORE
         std::unique_ptr<InferenceModel> discard;
         {
-            std::lock_guard<std::mutex> lock (controlMutex);
-            discard = std::move (pendingModel);
-            clearRequested.store (true, std::memory_order_release);
+                discard = std::move (pendingModel);
+                clearRequested.store (true, std::memory_order_release);
+                modelSwapRequested.store (true, std::memory_order_release);
             activeModel.store (nullptr, std::memory_order_release);
         }
         modelInstalled.store (false, std::memory_order_release);
@@ -660,13 +659,13 @@ struct NeuralStage
     {
         std::unique_ptr<InferenceModel> displaced;
         {
-            std::lock_guard<std::mutex> lock (controlMutex);
-            displaced = std::move (pendingModel);
-            pendingModel = std::move (built);
-            modelInstalled.store (pendingModel != nullptr, std::memory_order_release);
-            clearRequested.store (false, std::memory_order_release);
-            resetRequested.store (false, std::memory_order_relaxed);
-        }
+                displaced = std::move (pendingModel);
+                pendingModel = std::move (built);
+                modelInstalled.store (pendingModel != nullptr, std::memory_order_release);
+                clearRequested.store (false, std::memory_order_release);
+                resetRequested.store (false, std::memory_order_relaxed);
+            }
+            modelSwapRequested.store (true, std::memory_order_release);
         displaced.reset();
         reclaimRetiredModel();
     }
@@ -676,11 +675,13 @@ struct NeuralStage
         code reclaims it only after observing the audio thread's quiescent epoch. */
     void adoptPendingModel()
     {
-        std::unique_ptr<InferenceModel> previous;
-        bool adopt = false;
-        bool clear = false;
-        {
-            std::lock_guard<std::mutex> lock (controlMutex);
+            if (! modelSwapRequested.exchange (false, std::memory_order_acq_rel))
+                return;
+
+            std::unique_ptr<InferenceModel> previous;
+            bool adopt = false;
+            bool clear = false;
+
             clear = clearRequested.load (std::memory_order_acquire);
             adopt = pendingModel != nullptr;
             if (! clear && ! adopt)
@@ -691,40 +692,33 @@ struct NeuralStage
             if (adopt)
                 model = std::move (pendingModel);
             clearRequested.store (false, std::memory_order_release);
-        }
 
-        if (adopt)
-        {
-            model->reset();
-            bridge.reset();
-            activeModel.store (model.get(), std::memory_order_release);
-        }
-        else
-        {
-            resetRequested.store (false, std::memory_order_relaxed);
-            bridge.reset();
-        }
+            if (adopt)
+            {
+                model->reset();
+                bridge.reset();
+                activeModel.store (model.get(), std::memory_order_release);
+            }
+            else
+            {
+                resetRequested.store (false, std::memory_order_relaxed);
+                bridge.reset();
+            }
 
-        if (previous != nullptr)
-        {
-            std::lock_guard<std::mutex> lock (controlMutex);
-            retiredModel = std::move (previous);
-        }
-    }
+            if (previous != nullptr)
+                            retiredModel = std::move (previous);
+                }
 
-    /** Whether a .nam document declares the one architecture the converter above
-        covers. Every other architecture is NAM Core's, and a build without NAM
-        Core refuses it. */
-    void reclaimRetiredModel() noexcept
-    {
-        std::unique_ptr<InferenceModel> retired;
-        {
-            std::lock_guard<std::mutex> lock (controlMutex);
-            if (! audioQuiescent.load (std::memory_order_seq_cst))
-                return;
-            retired = std::move (retiredModel);
-        }
-    }
+                /** Whether a .nam document declares the one architecture the converter above
+                    covers. Every other architecture is NAM Core's, and a build without NAM
+                    Core refuses it. */
+                void reclaimRetiredModel() noexcept
+                {
+                    std::unique_ptr<InferenceModel> retired;
+                    if (! audioQuiescent.load (std::memory_order_seq_cst))
+                        return;
+                    retired = std::move (retiredModel);
+                }
 
     static bool isLstm (const nlohmann::json& namJson)
     {

@@ -180,7 +180,7 @@ private:
             previous2 = 0.0f;
             windowCounter = 0;
 
-            lastMagnitude = std::sqrt (juce::jmax (0.0f, power))
+            lastMagnitude = std::sqrt (static_cast<float>(juce::jmax (0.0f, power)))
                           / static_cast<float> (samplesPerWindow);
             lastMagnitude = juce::jlimit (0.0f, 4.0f, lastMagnitude);
         }

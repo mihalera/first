@@ -75,13 +75,16 @@ struct PitchCorrectionRule
 
     /** How many cents `targetHz` is above `detectedHz` (negative = below). */
     static float cents (float detectedHz, float targetHz) noexcept
-    {
-        if (! std::isfinite (detectedHz) || ! std::isfinite (targetHz)
-            || detectedHz <= 0.0f || targetHz <= 0.0f)
-            return 0.0f;
+        {
+            if (! std::isfinite (detectedHz) || ! std::isfinite (targetHz)
+                    || detectedHz <= 1.0f || targetHz <= 1.0f)
+                return 0.0f;
 
-        return 1200.0f * std::log2 (targetHz / detectedHz);
-    }
+            // Guard against ratio overflow: clamp ratio to reasonable bounds
+            constexpr float freqMaxRatio = 1e6f;
+            const auto ratio = std::max (1.0f / freqMaxRatio, std::min (freqMaxRatio, targetHz / detectedHz));
+            return 1200.0f * std::log2 (ratio);
+        }
 
     /** True when the reading is close enough to the target to leave alone.
 
@@ -115,9 +118,10 @@ struct PitchCorrectionRule
     /** OCTAVE as the ratio it transposes by: +1 -> 2, -1 -> 0.5. */
     static float octaveRatio (int octave = 0) noexcept
     {
-        return std::pow (2.0f, static_cast<float> (juce::jlimit (minOctave, maxOctave,
-                                                                 octave)));
-    }
+            constexpr float maxRatio = 8.0f;  // +/- 3 octaves max
+            const auto clampedOctave = juce::jlimit (-3, 3, octave);
+            return juce::jlimit (0.125f, 8.0f, std::pow (2.0f, static_cast<float> (clampedOctave)));
+        }
 
     /** The pitch ratio the shifter should read at.
 

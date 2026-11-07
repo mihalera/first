@@ -171,7 +171,7 @@ private:
             energy += value * value;
         }
 
-        if (std::sqrt (energy / static_cast<float> (differenceSize)) < silentRms)
+        if (std::sqrt (std::max (0.0f, energy) / static_cast<float> (differenceSize)) < silentRms)
         {
             clearReading();
             return;

@@ -33,7 +33,7 @@ struct StandardCompressor
         const auto detectorCoefficient = detector > envelope
             ? coefficientForMs (attackMs) : coefficientForMs (releaseMs);
         envelope += (detector - envelope) * detectorCoefficient;
-        const auto envelopeDb = juce::Decibels::gainToDecibels (std::sqrt (juce::jmax (0.0f, envelope)), -100.0f);
+        const auto envelopeDb = juce::Decibels::gainToDecibels (std::sqrt (std::max (0.0f, envelope)), -100.0f);
         const auto safeRatio = juce::jmax (1.0f, ratio);
         const auto halfKnee = juce::jmax (0.01f, kneeDb * 0.5f);
         const auto over = envelopeDb - thresholdDb;

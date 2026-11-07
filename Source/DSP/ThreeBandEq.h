@@ -117,8 +117,8 @@ struct ThreeBandEq
         const auto rate = juce::jmax (1.0f, sampleRate);
         const auto omegaLow = juce::MathConstants<float>::twoPi * 200.0f / rate;
         const auto omegaHigh = juce::MathConstants<float>::twoPi * 4000.0f / rate;
-        lowCoefficient = juce::jlimit (0.0f, 1.0f, 1.0f - std::exp (-omegaLow));
-        highCoefficient = juce::jlimit (0.0f, 1.0f, 1.0f - std::exp (-omegaHigh));
+        lowCoefficient = juce::jlimit (0.0f, 1.0f, 1.0f - std::exp (-std::max (0.0f, omegaLow)));
+                highCoefficient = juce::jlimit (0.0f, 1.0f, 1.0f - std::exp (-std::max (0.0f, omegaHigh)));
     }
 
     /** The bell's own coefficient, derived from the split and the width. The mid
@@ -133,7 +133,7 @@ struct ThreeBandEq
         const float widthHz = 2000.0f + midWidth * 6000.0f;
         const auto omega = juce::MathConstants<float>::twoPi * widthHz
                          / juce::jmax (1.0f, sampleRate);
-        return juce::jlimit (0.0f, 1.0f, 1.0f - std::exp (-omega));
+                return juce::jlimit (0.0f, 1.0f, 1.0f - std::exp (-std::max (0.0f, omega)));
     }
 
     /** Rebuilds the two filter coefficients and the pole counts.
@@ -183,9 +183,9 @@ struct ThreeBandEq
         // so a Q of 0.7 is deliberately slightly under-damped rather than a
         // no-op - that is what a real one-pole corner looks like.
         hpCoefficient = juce::jlimit (0.0f, 1.0f,
-                                      (1.0f - std::exp (-hpOmega)) * hpQ);
+                                              (1.0f - std::exp (-std::max (0.0f, hpOmega))) * hpQ);
         lpCoefficient = juce::jlimit (0.0f, 1.0f,
-                                      (1.0f - std::exp (-lpOmega)) * lpQ);
+                                              (1.0f - std::exp (-std::max (0.0f, lpOmega))) * lpQ);
     }
 
     void reset() noexcept

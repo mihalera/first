@@ -184,7 +184,11 @@ public:
         for (auto& split : splits)
             split.prepare (lowCrossoverHz, highCrossoverHz, rate);
 
-        coefficient = 1.0f - std::exp (-1.0f / (envelopeSeconds * rate));
+            // Guard against zero or negative rate to prevent division overflow / Inf
+            if (rate <= 0.0f)
+                coefficient = 0.0f;
+            else
+                coefficient = 1.0f - std::exp (-1.0f / (envelopeSeconds * rate));
 
         reset();
     }
