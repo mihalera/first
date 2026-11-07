@@ -318,6 +318,7 @@ public:
         float ratio = 4.0f;
         float attackMs = 10.0f;
         float releaseMs = 120.0f;
+        float kneeDb = 6.0f;
         float makeupDb = 0.0f;
         float mix = 1.0f;
         float upward = 0.0f;      ///< 0..1, how much of the upward stage is in
@@ -396,13 +397,24 @@ public:
 
             const auto levelDb = 20.0f * std::log10 (std::max (state.detector.value(), 1.0e-9f));
             const auto over = levelDb - thresholdDb;
-            auto targetGain = 1.0f;
+            const auto halfKnee = std::max (0.0f, settings.kneeDb) * 0.5f;
+            const auto slope = 1.0f - 1.0f / ratio;
+            auto reductionDb = 0.0f;
 
-            if (over > 0.0f)
+            if (over > halfKnee)
             {
-                const auto reductionDb = over * (1.0f - 1.0f / ratio);
-                targetGain = std::pow (10.0f, -reductionDb * 0.05f);
+                reductionDb = over * slope;
             }
+            else if (halfKnee > 0.0f && over > -halfKnee)
+            {
+                // The same quadratic soft knee the single-band stage used: the
+                // ratio arrives gradually across the knee rather than switching on
+                // at the threshold.
+                const auto position = (over + halfKnee) / (2.0f * halfKnee);
+                reductionDb = slope * position * position * halfKnee;
+            }
+
+            const auto targetGain = std::pow (10.0f, -reductionDb * 0.05f);
 
             const auto coefficient = targetGain < state.gain ? attack : release;
             state.gain += (targetGain - state.gain) * coefficient;

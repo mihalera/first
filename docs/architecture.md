@@ -14,9 +14,9 @@ was measured, and the command that measures it is in
 
 `first` is a VST3 / AU / AUv3 / CLAP / Standalone audio effect: **one** `AudioProcessor`
 (`FirstAudioProcessor`) and **one** editor (`FirstAudioProcessorEditor`). The
-processor owns a parameter tree of **109** parameters, a tape-machine signal path
+processor owns a parameter tree of **147** parameters, a tape-machine signal path
 that runs entirely on the audio thread, and a saved state of its own format with
-a migration path. The editor owns a panel of **109** widgets, three themes, two
+a migration path. The editor owns a panel of **97** widgets, three themes, two
 renderers (OpenGL through JUCE, or a software path), a decorative 3D tape deck in
 box2d, and meters. Nothing in the audio path allocates, locks or touches the
 editor; the editor reads published numbers.
@@ -27,7 +27,7 @@ editor; the editor reads published numbers.
 | --- | --- |
 | `Source/PluginProcessor.h/.cpp` | the processor's lifecycle: the constructor, `prepareToPlay`, `processBlock`, the state save/load, and the declarations everything else in the tree needs |
 | `Source/ProcessorSignalPath.cpp` | the signal path itself: `processBlock`'s body, `processTapeEngine`, `processOneSample`, and the stages that run before and after the machine |
-| `Source/ParameterTable.cpp` | `createParameterLayout()` - 23 groups, 109 parameters, and the four range constants the table is built from |
+| `Source/ParameterTable.cpp` | `createParameterLayout()` - 24 groups, 147 parameters, and the four range constants the table is built from |
 | `Source/ProcessorPresets.h/.cpp` | the factory preset table, the user preset directory, A/B compare, whole-state undo/redo |
 | `Source/ProcessorStateFormat.h` | the saved-state format: its marker, its version, and the migration that reads an older file |
 | `Source/PluginEditor.h/.cpp` | the editor: the widget declarations, the constructor entry point, and the resource accessors |

@@ -210,6 +210,15 @@ inline juce::StringArray vinylTypeNameList()
 // tests/dsp/subfund_test.cpp, which includes the header directly.
 #include "DSP/TransientShaper.h"
 
+// The creative effects rack, and the multiband compressor that replaces the
+// conventional single-band one on the finished signal. The rack is one stage
+// holding twenty-five, each a header of its own under Source/DSP/Fx/; the
+// compressor is a single class because its three bands share one set of controls.
+// Neither names JUCE, which is what lets tests/fx render through them as they
+// ship.
+#include "DSP/FxRack.h"
+#include "DSP/Fx/FxDynamics.h"
+
 
 // The neural stage, and with it the rate bridge it HOLDS and the optional-library
 // probes it is compiled under: the header includes both itself, so this file no
@@ -271,7 +280,6 @@ inline juce::StringArray vinylTypeNameList()
 // The conventional feed-forward compressor on the finished signal, separate
 // from GlueCompressor down to its detector state. Moved out of this file, prose
 // and all.
-#include "DSP/StandardCompressor.h"
 
 // The K-weighted loudness meter. Moved out of this file; measured on signal by
 // tests/dsp/loudness_test.cpp, which includes the header directly.
@@ -426,6 +434,10 @@ public:
         float compressorAttack = 0.0f;
         float compressorMakeup = 0.0f;
         float compressorMixAmount = 0.0f;
+        // The multiband compressor's upward stage, 0..1. Read once per block with
+        // the rest of the COMP page and carried here so the per-sample call does
+        // not touch a parameter.
+        float compressorUpwardAmount = 0.0f;
         float compressorRatio = 0.0f;
         float compressorRelease = 0.0f;
         float compressorThreshold = 0.0f;
@@ -1433,6 +1445,38 @@ private:
     // The IR stage's wet/dry. Read once per block like every other control.
     std::atomic<float>* irMixParam = nullptr;
 
+    // The creative effects rack's twenty-five amounts, and the UPWARD stage of
+    // the multiband compressor. Read once per block into `fxTargets` (a plain
+    // struct) rather than once per sample: the per-sample loop branches on the
+    // rack's own smoothed copies, which is the same split every other control in
+    // this engine uses. See Source/DSP/FxRack.h for the order and the contract.
+    std::atomic<float>* fxWahParam = nullptr;
+    std::atomic<float>* fxAntiSpikeParam = nullptr;
+    std::atomic<float>* fxGateParam = nullptr;
+    std::atomic<float>* fxOverdriveParam = nullptr;
+    std::atomic<float>* fxFuzzParam = nullptr;
+    std::atomic<float>* fxWavefolderParam = nullptr;
+    std::atomic<float>* fxBitcrusherParam = nullptr;
+    std::atomic<float>* fxRateCrusherParam = nullptr;
+    std::atomic<float>* fxRingModParam = nullptr;
+    std::atomic<float>* fxOctaverParam = nullptr;
+    std::atomic<float>* fxPitchParam = nullptr;
+    std::atomic<float>* fxCombParam = nullptr;
+    std::atomic<float>* fxFormantParam = nullptr;
+    std::atomic<float>* fxDynamicEqParam = nullptr;
+    std::atomic<float>* fxDeEsserParam = nullptr;
+    std::atomic<float>* fxChorusParam = nullptr;
+    std::atomic<float>* fxFlangerParam = nullptr;
+    std::atomic<float>* fxPhaserParam = nullptr;
+    std::atomic<float>* fxTremoloParam = nullptr;
+    std::atomic<float>* fxVibratoParam = nullptr;
+    std::atomic<float>* fxRotaryParam = nullptr;
+    std::atomic<float>* fxVocoderParam = nullptr;
+    std::atomic<float>* fxGranularParam = nullptr;
+    std::atomic<float>* fxSpectralParam = nullptr;
+    std::atomic<float>* fxSpeedParam = nullptr;
+    std::atomic<float>* compUpwardParam = nullptr;
+
     float sampleRate = 44100.0f;
     // Every smoother below is advanced exactly once at the top of each sample frame.
     // The values are then reused for both channels, so a stereo block cannot advance
@@ -1737,7 +1781,10 @@ private:
     GlueCompressor outputCompressor;
     std::array<GlueCompressor, 2> inputCompressorChannels;
     std::array<GlueCompressor, 2> outputCompressorChannels;
-    std::array<StandardCompressor, 2> standardCompressors;
+    // The single-band compressor that used to live here has moved into the
+    // multiband stage: j37dsp::fx::MultibandCompressor is now what the COMP page
+    // drives, and Source/DSP/StandardCompressor.h remains the single-band reference
+    // its unit test (tests/unit) holds to.
     // The corrector's audio path. Two engines live behind it - see
     // Source/DSP/CorrectorStage.h - and which one this build has is decided by
     // OptionalLibraries.h, not here. It is prepared at the ENGINE's rate, since
@@ -2285,6 +2332,20 @@ private:
     // -----------------------------------------------------------------------
     TransientShaper transientL;
     TransientShaper transientR;
+
+    // -----------------------------------------------------------------------
+    //  The creative effects rack, and the multiband compressor.
+    //
+    //  The rack runs per sample, between the transient shaper and the
+    //  compressor, at the ENGINE rate - inside the oversampled region, which is
+    //  what gives the nonlinear stages their headroom. The compressor is not
+    //  part of it: it is the COMP page, it replaces the single-band stage that
+    //  used to sit at the same point, and the signal path calls it directly with
+    //  the settings the six existing COMP controls produce.
+    // -----------------------------------------------------------------------
+    j37dsp::FxRack fxRack;
+    j37dsp::fx::MultibandCompressor multibandCompressor;
+    j37dsp::FxTargets fxTargets;
 
     SampleSmoother transientAttackSmoothed { sampleClock };
     SampleSmoother transientSustainSmoothed { sampleClock };

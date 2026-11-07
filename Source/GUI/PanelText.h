@@ -17,7 +17,7 @@
 #include <JuceHeader.h>
 #include <array>
 
-// The panel's knob strip as ONE number: seventy-one controls. Declared here,
+// The panel's knob strip as ONE number: ninety-seven controls. Declared here,
 // above BOTH of its users, because they no longer live in the same scope: the
 // class below sizes its sliders, labels and attachments from it, and the control
 // table that NAMES those knobs is at file scope in this header (THE CONTROL
@@ -35,7 +35,7 @@
 // error (C2078) instead of a silent out-of-bounds read at run time, and the tab
 // table is checked against this count by a static_assert in setCurrentTab, so a
 // knob that no tab lists is a build error too.
-inline constexpr std::size_t controlCount = 71;
+inline constexpr std::size_t controlCount = 97;
 
 namespace j37panel
 {
@@ -172,7 +172,45 @@ namespace j37panel
         // The second head's feedback damper and the room's low cut. Both are
         // appended, like the controls above, so no tab index moves.
         { "delay_damp",      "DLY DAMP",   0.0,   "DELAY"     },
-        { "reverb_lowcut",   "RVB LOW",   120.0,  "REVERB"    }
+        { "reverb_lowcut",   "RVB LOW",   120.0,  "REVERB"    },
+
+        // -------------------------------------------------------------------
+        //  THE EFFECTS RACK - one row per stage, appended so every existing
+        //  index keeps its meaning (the tab table below refers to controls by
+        //  index, and the array is sized from controlCount).
+        //
+        //  One knob per stage, with SPEED the only non-zero default: it is a
+        //  three-position control (half / 1x / double) spread across a continuous
+        //  knob, so 0.5 is its neutral. Every other row resets to 0, which is out
+        //  of the path - see the note on addEffectsRackControls in
+        //  Source/ParameterTable.cpp.
+        // -------------------------------------------------------------------
+        { "fx_wah",          "WAH",       0.0,   "SHAPE"     },
+        { "fx_anti_spike",   "SPIKE",     0.0,   "DRIVE"     },
+        { "fx_gate",         "GATE",      0.0,   "DRIVE"     },
+        { "fx_overdrive",    "DRIVE",     0.0,   "DRIVE"     },
+        { "fx_fuzz",         "FUZZ",      0.0,   "DRIVE"     },
+        { "fx_wavefolder",   "FOLD",      0.0,   "DRIVE"     },
+        { "fx_bitcrusher",   "BITS",      0.0,   "DRIVE"     },
+        { "fx_rate_crusher", "RATE",      0.0,   "DRIVE"     },
+        { "fx_ring_mod",     "RING",      0.0,   "SHAPE"     },
+        { "fx_octaver",      "OCTAVE",    0.0,   "PITCH"     },
+        { "fx_pitch",        "PITCH",     0.0,   "PITCH"     },
+        { "fx_comb",         "COMB",      0.0,   "SHAPE"     },
+        { "fx_formant",      "FORMNT",    0.0,   "SHAPE"     },
+        { "fx_dynamic_eq",   "DYN EQ",    0.0,   "SHAPE"     },
+        { "fx_de_esser",     "DE-ESS",    0.0,   "SHAPE"     },
+        { "fx_chorus",       "CHORUS",    0.0,   "MOTION"    },
+        { "fx_flanger",      "FLANGER",   0.0,   "MOTION"    },
+        { "fx_phaser",       "PHASER",    0.0,   "MOTION"    },
+        { "fx_tremolo",      "TREM",      0.0,   "MOTION"    },
+        { "fx_vibrato",      "VIBRATO",   0.0,   "MOTION"    },
+        { "fx_rotary",       "ROTARY",    0.0,   "MOTION"    },
+        { "fx_vocoder",      "VOCODER",   0.0,   "MOTION"    },
+        { "fx_granular",     "GRAIN",     0.0,   "PITCH"     },
+        { "fx_spectral",     "SPECTRL",   0.0,   "SHAPE"     },
+        { "fx_speed",        "SPEED",     0.5,   "PITCH"     },
+        { "comp_upward",     "UPWARD",    0.0,   "COMP"      }
     } };
 
     // A tooltip for EVERY parameter - this is what shows when the user hovers.
@@ -878,6 +916,142 @@ namespace j37panel
                    "surface between every note, a dubplate is a fresh loud "
                    "lacquer, a half-speed master is nearly silent between the "
                    "grooves. The speed of the motor is VINYL SPEED.";
+        // -------------------------------------------------------------------
+        //  THE EFFECTS RACK. One sentence pair per stage, in the same shape as
+        //  the rest: what it does, then what the knob means. Every one of them
+        //  ends the same way because it is true of every one of them - 0 is out
+        //  of the path, not a bypass.
+        // -------------------------------------------------------------------
+        if (id == "fx_wah")
+            return "WAH - an envelope filter: a resonant band whose centre is "
+                   "pushed up by the signal's own level, so quiet playing stays "
+                   "dark and a harder note opens it. 0 takes it out of the path.";
+        if (id == "fx_anti_spike")
+            return "SPIKE - the guitarist's spike suppressor, for the clicks a "
+                   "pick, a jack or a knocked cable put into a take. It is a "
+                   "median of the last three samples plus a slew limit, so a "
+                   "one-sample burst cannot pass; it does not act on the envelope. "
+                   "0 takes it out of the path.";
+        if (id == "fx_gate")
+            return "GATE - a noise gate: below its threshold the stage closes. "
+                   "The threshold rises with the knob, from a gentle -60 dB floor "
+                   "to a firm -6 dB, with hysteresis so a signal near the line "
+                   "does not chatter. 0 takes it out of the path.";
+        if (id == "fx_overdrive")
+            return "DRIVE - an antialiased soft-clip stage, the symmetric one of "
+                   "the pair. Drive and make-up are tied together, so the knob "
+                   "changes how much break-up there is rather than the volume. "
+                   "0 takes it out of the path.";
+        if (id == "fx_fuzz")
+            return "FUZZ - the same antialiased curve with far more gain and an "
+                   "asymmetric bias, which is where its octave-ish edge comes "
+                   "from. The bias is subtracted back out so it does not put DC on "
+                   "the chain. 0 takes it out of the path.";
+        if (id == "fx_wavefolder")
+            return "FOLD - a wavefolder: sin(x) as a transfer curve, so past a "
+                   "quarter turn the curve turns back on itself. The harmonics it "
+                   "add are not the odd series a clip makes, which is why it is a "
+                   "different sound and not a stronger drive. 0 takes it out of "
+                   "the path.";
+        if (id == "fx_bitcrusher")
+            return "BITS - quantisation. Full travel is about 2 bits, the bottom "
+                   "of the knob is 16 and transparent enough to leave in the "
+                   "path. 0 takes it out of the path.";
+        if (id == "fx_rate_crusher")
+            return "RATE - sample-and-hold at a fraction of the engine rate: the "
+                   "alias-generating half of a bit-crush, kept separate because "
+                   "it is a different control. 0 takes it out of the path.";
+        if (id == "fx_ring_mod")
+            return "RING - a ring modulator. The carrier is mapped from 30 Hz to "
+                   "just under a kilohertz by this knob, and the knob also sets "
+                   "how much of the product is heard, so the stage fades in as a "
+                   "tremolo and arrives as a ring mod. 0 takes it out of the "
+                   "path.";
+        if (id == "fx_octaver")
+            return "OCTAVE - the octave below: the shifter at -12 semitones with "
+                   "its top taken off, so the sub is felt rather than heard as "
+                   "grain. It tracks polyphonically, which the classic divider "
+                   "does not. 0 takes it out of the path.";
+        if (id == "fx_pitch")
+            return "PITCH - a two-tap granular shifter, from unison at the bottom "
+                   "of the knob to an octave up at the top, crossfaded so the "
+                   "taps' travel is hidden. 0 takes it out of the path.";
+        if (id == "fx_comb")
+            return "COMB - a resonant comb at a fixed 4 ms delay (a 250 Hz "
+                   "fundamental) with a damping pole in its feedback. The knob is "
+                   "the RESONANCE, not the tuning - a comb that follows the knob "
+                   "is a flanger, and the rack has one. 0 takes it out of the "
+                   "path.";
+        if (id == "fx_formant")
+            return "FORMNT - three resonant peaks walked through the five "
+                   "cardinal vowels, a at the bottom of its travel and u at the "
+                   "top, with F2 and F3 carrying the vowel's identity. 0 takes it "
+                   "out of the path.";
+        if (id == "fx_dynamic_eq")
+            return "DYN EQ - one band at 150-600 Hz that is cut only while that "
+                   "band is loud. A static cut hollows out a mix that did not need "
+                   "it; this responds to the programme. 0 takes it out of the "
+                   "path.";
+        if (id == "fx_de_esser")
+            return "DE-ESS - a split-band compressor that only ever acts on the "
+                   "band above 5 kHz. Splitting first is what keeps the body of "
+                   "the word intact, which is what a broadband de-esser ruins. 0 "
+                   "takes it out of the path.";
+        if (id == "fx_chorus")
+            return "CHORUS - two taps around 12 ms, a quarter cycle apart across "
+                   "the sides, at 0.35 Hz. Depth and wet mix are both this knob. "
+                   "0 takes it out of the path.";
+        if (id == "fx_flanger")
+            return "FLANGER - the chorus at a tenth of the delay with feedback, "
+                   "which is what turns a comb into the jet. 0 takes it out of "
+                   "the path.";
+        if (id == "fx_phaser")
+            return "PHASER - six first-order allpass sections per side swept "
+                   "across the presence band, with feedback around the chain. 0 "
+                   "takes it out of the path.";
+        if (id == "fx_tremolo")
+            return "TREM - amplitude modulation at 4.5 Hz; the knob is the "
+                   "depth, so full travel swings the gain from unity to silence. "
+                   "0 takes it out of the path.";
+        if (id == "fx_vibrato")
+            return "VIBRATO - delay modulation at 5 Hz with no dry leg. The knob "
+                   "blends the dry signal back in at the bottom of its travel, so "
+                   "switching the stage on is a shallow vibrato rather than a "
+                   "delay jump. 0 takes it out of the path.";
+        if (id == "fx_rotary")
+            return "ROTARY - a rotary speaker: Doppler from a moving horn and its "
+                   "directivity on the same oscillator, the sides a quarter cycle "
+                   "apart as they are across a real cabinet. The knob sets the "
+                   "rotation from 0.8 Hz, slow rotor, to 3.3 Hz, fast, and the "
+                   "depth with it. 0 takes it out of the path.";
+        if (id == "fx_vocoder")
+            return "VOCODER - eight bands of the input's own spectrum imposed on "
+                   "a synthesised 110 Hz carrier, because an insert has no second "
+                   "input to take a carrier from. The knob replaces the direct "
+                   "signal with the vocoded one. 0 takes it out of the path.";
+        if (id == "fx_granular")
+            return "GRAIN - four overlapping grains of a shared history, each "
+                   "windowed so it fades rather than clicks. The knob sets the "
+                   "grain rate: a sparse cloud at the bottom, a continuous "
+                   "texture at the top. 0 takes it out of the path.";
+        if (id == "fx_spectral")
+            return "SPECTRL - a spectral gate: six log-spaced bands, each removed "
+                   "when it sits under the programme's own reference. The knob "
+                   "deepens the gate and lengthens its release, which is the blur. "
+                   "0 takes it out of the path.";
+        if (id == "fx_speed")
+            return "SPEED - the tape's own three-position switch, spread across a "
+                   "continuous knob: below a quarter is half speed, the middle is "
+                   "1x and above three quarters is double. Speed and pitch move "
+                   "together, as they do on a deck, and 1x is a bit-exact "
+                   "pass-through. Default 50 percent - 1x.";
+        if (id == "comp_upward")
+            return "UPWARD - the multiband compressor's upward stage. Where the "
+                   "downward stages turn the loud end down, this lifts what sits "
+                   "below -30 dBFS toward it, up to 18 dB. It is not a makeup "
+                   "gain: it changes the dynamic range at the BOTTOM of the "
+                   "programme. Default 0 percent.";
+
         return {};
     }
 }

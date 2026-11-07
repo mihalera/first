@@ -241,9 +241,17 @@ def main() -> int:
         if ui_tab_order != [f"tab.{slug(name)}" for name in tab_names]:
             problems.append("ui_icons tab glyphs must remain in PanelTabs.h order")
         ui_items = ui_atlas.get("items", [])
-        family_keys = [item.get("key") for item in ui_items[18:21]]
+        # The three family glyphs follow the tab glyphs, and the tab count grows
+        # whenever the panel gains a page - so this reads where the tabs end
+        # rather than the literal 18 the bar happened to have when the check was
+        # written. A hardcoded index here failed the moment four pages were
+        # appended, which is the check reporting its own staleness rather than a
+        # broken atlas.
+        family_start = len(tab_names)
+        family_keys = [item.get("key") for item in ui_items[family_start:family_start + 3]]
         if family_keys != ["family.tape", "family.fx", "family.setup"]:
-            problems.append("family icon cells 18-20 must remain TAPE, FX, SETUP")
+            problems.append("the three family icon cells must follow the tab glyphs and remain "
+                            "TAPE, FX, SETUP")
 
         control_block = re.search(r"controlSpecs\s*\{\s*\{(.*?)\}\s*\};",
                                   panel_text, re.DOTALL)
