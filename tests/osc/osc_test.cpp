@@ -304,7 +304,7 @@ void checkSurface()
            "an empty parameter ID is rejected");
     check (rejectsInvalid ({ ParameterSlot { "bad id", "bad-id", 0.0f, 1.0f } }),
            "an ID containing whitespace is rejected");
-    check (rejectsInvalid ({ ParameterSlot { "bad\\x01id", "control-id", 0.0f, 1.0f } }),
+    check (rejectsInvalid ({ ParameterSlot { "bad\x01id", "control-id", 0.0f, 1.0f } }),
            "an ID containing a control character is rejected");
     check (rejectsInvalid ({ ParameterSlot { "valid", "bad?path", 0.0f, 1.0f } }),
            "a path containing an OSC pattern character is rejected");
