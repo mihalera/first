@@ -340,7 +340,24 @@ public:
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
    #endif
 
-    // AudioProcessor declares BOTH a float and a double processBlock in the headless
+       juce::Vst::tresult setBusArrangements (juce::Vst::SpeakerArrangement* inputs, int32 numIns,
+                                               juce::Vst::SpeakerArrangement* outputs, int32 numOuts) override
+       {
+           if (numIns == 1 && numOuts == 1)
+           {
+               if (inputs != nullptr && outputs != nullptr &&
+                   juce::Vst::SpeakerArrangement::getChannelNumber (inputs[0]) <= 2 &&
+                   juce::Vst::SpeakerArrangement::getChannelNumber (outputs[0]) <= 2)
+               {
+                   inputs[0] = juce::Vst::SpeakerArrangement::createStereo (true);
+                   outputs[0] = juce::Vst::SpeakerArrangement::createStereo (true);
+                   return juce::Vst::kResultOk;
+               }
+           }
+           return juce::Vst::kResultFalse;
+       }
+
+       // AudioProcessor declares BOTH a float and a double processBlock in the headless
     // module. Overriding only the float one hid the double overload, which GCC reports
     // as -Woverloaded-virtual: the base virtual becomes unreachable by name. The using
     // declaration brings it back into scope; the double one is never called for a
@@ -348,7 +365,16 @@ public:
     using juce::AudioProcessor::processBlock;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
 
-    /** The OSC module's oscillator: the note the deck's ring landed on, mixed into
+        void setProcessing (bool isOffline) override
+        {
+            AudioProcessor::setProcessing (isOffline);
+            // Offline mode handling can be added here if needed for:
+            // - Denormal handling adjustments
+            // - Look-ahead latency changes
+            // - Different smoothing ramp times
+        }
+
+        /** The OSC module's oscillator: the note the deck's ring landed on, mixed into
         the machine's INPUT before any stage touches it - never onto the output, so
         it is the tape, the mix and the output trim the user dialled that shape it.
 
@@ -539,12 +565,18 @@ public:
 
     //==============================================================================
     juce::AudioProcessorEditor* createEditor() override;
-    bool hasEditor() const override;
+        bool hasEditor() const override;
 
-    //==============================================================================
-    const juce::String getName() const override;
+        AudioProcessorParameter* getBypassParameter() const noexcept override
+        {
+            if (auto* p = parameters.getParameter ("bypass"))
+                return const_cast<AudioProcessorParameter*> (static_cast<const AudioProcessorParameter*> (p));
+            return nullptr;
+        }
 
-    bool acceptsMidi() const override;
+        const juce::String getName() const override;
+
+        bool acceptsMidi() const override;
     bool producesMidi() const override;
     bool isMidiEffect() const override;
     double getTailLengthSeconds() const override;

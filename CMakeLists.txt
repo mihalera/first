@@ -160,7 +160,6 @@ if(J37_ENABLE_AAP)
         MODE PLUGIN
         JUCE_VERSION 9.0.5
         JUCE_PATCHES ${J37_AAP_PATCHES_9_0_5})
-    aap_juce_plugin(TARGET first)
 endif()
 
 if(J37_ENABLE_AAP)
@@ -370,7 +369,9 @@ juce_add_plugin(first
     AU_MAIN_TYPE                kAudioUnitType_Effect)
 
 if(J37_ENABLE_AAP)
-    target_link_libraries(first PRIVATE aap_audio_processors)
+    # Called after JUCE and this plugin target exist. Adds the AAP JUCE module,
+    # target-specific defines/include paths, and Android runtime dependencies.
+    aap_juce_plugin(TARGET first AAP_DIR "${J37_AAP_CORE_SOURCE_DIR}")
 endif()
 
 # ------------------------------------------------------------------------------
