@@ -12,6 +12,12 @@
       "sourceType": "github",
       "skillPath": "skills/find-skills/SKILL.md",
       "computedHash": "913b9d37d0d54047dd65222bb8c67b2bf04e3cb87dcad1729068d7a8b2c8c396"
+    },
+    "juce-review": {
+      "source": "kunitoki/sonic-skills",
+      "sourceType": "github",
+      "skillPath": "skills/juce-review/SKILL.md",
+      "computedHash": "dc5a3e30e6d32c86c20a0ed6c3e67530b55b7d52b347ca2d81dca548eb04d532"
     }
   }
 }
