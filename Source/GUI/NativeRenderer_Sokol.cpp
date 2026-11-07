@@ -135,12 +135,14 @@ out vec4 fragColor;
 uniform vec3 uBaseColour;
 uniform vec3 uHighlightColour;
 uniform vec3 uLightDirection;
+uniform vec3 uTextureWeights;
 uniform float uGlow;
 uniform float uDrive;
 uniform float uMode;
 uniform float uTime;
 uniform float uArcAngle;
 uniform float uKeyDown;
+uniform vec3 uPanelHalf;
 
 // Subtle procedural surface texture for the control bank.
 float hash (vec2 p)
