@@ -91,6 +91,31 @@ namespace
         return std::sqrt (std::max (0.0, power)) / static_cast<double> (std::max<std::size_t> (1, to - from));
     }
 
+    /** RMS of (signal - reference) over a window: the claim a unity-gain delay
+        modulator can make. A chorus and a vibrato move the signal's PHASE and leave
+        its level alone - one that changed the RMS would be changing the mix, not
+        the delay - so an RMS comparison against the dry signal measures nothing
+        here and the difference is the thing to read. */
+    double differenceFrom (const std::vector<float>& signal, const std::vector<float>& reference,
+                           std::size_t from)
+    {
+        from = std::min (from, std::min (signal.size(), reference.size()));
+        const auto to = std::min (signal.size(), reference.size());
+
+        if (to <= from)
+            return 0.0;
+
+        double sum = 0.0;
+
+        for (std::size_t i = from; i < to; ++i)
+        {
+            const auto delta = static_cast<double> (signal[i]) - static_cast<double> (reference[i]);
+            sum += delta * delta;
+        }
+
+        return std::sqrt (sum / static_cast<double> (to - from));
+    }
+
     std::size_t distinctValues (const std::vector<float>& signal, std::size_t from)
     {
         std::vector<float> copy (signal.begin() + static_cast<std::ptrdiff_t> (from), signal.end());
@@ -186,10 +211,15 @@ namespace
 
     void checkCrushers()
     {
-        const auto input = sine (1000.0f, 4800);
+        // Two seconds, measured over the second: the amount ramps in over 15 ms
+        // and the quantiser's step keeps shrinking with it, so a window opened
+        // while it is still settling counts the drifting step, not the crush.
+        // By the halfway mark the amount is at the float resolution of one and
+        // the output is the three levels a two-bit quantiser has.
+        const auto input = sine (1000.0f, 48000);
 
         const auto crushed = runRack (input, input, [] (j37dsp::FxTargets& t) { t.bitcrusher = 1.0f; });
-        check (distinctValues (crushed, 2400) < 200, "bitcrusher quantises to a small set of levels");
+        check (distinctValues (crushed, 24000) < 200, "bitcrusher quantises to a small set of levels");
 
         const auto held = runRack (input, input, [] (j37dsp::FxTargets& t) { t.rateCrusher = 1.0f; });
 
@@ -248,16 +278,22 @@ namespace
         check (goertzel (deessed, 7000.0, 4800) < goertzel (sibilant, 7000.0, 4800) * 0.9,
                "de-esser reduces the sibilance band");
 
-        // A quiet partial beside a loud one: the spectral gate must remove the
-        // quiet band's share of the level.
+        // A sibilant partial in the top band beside a body tone four octaves
+        // below it: the gate compares each band against the loudest band, so the
+        // top band - which holds nothing but the partial - must close, and the
+        // body, whose own band is the loudest, must come through untouched. The
+        // two claims are checked together because either alone is satisfiable by
+        // a stage that just filters.
         std::vector<float> partials (9600);
         for (std::size_t i = 0; i < partials.size(); ++i)
-            partials[i] = 0.40f * std::sin (6.28318530718f * 1000.0f * static_cast<float> (i) / 48000.0f)
-                        + 0.004f * std::sin (6.28318530718f * 4000.0f * static_cast<float> (i) / 48000.0f);
+            partials[i] = 0.40f * std::sin (6.28318530718f * 300.0f * static_cast<float> (i) / 48000.0f)
+                        + 0.004f * std::sin (6.28318530718f * 12000.0f * static_cast<float> (i) / 48000.0f);
 
         const auto gated = runRack (partials, partials, [] (j37dsp::FxTargets& t) { t.spectral = 1.0f; });
-        check (goertzel (gated, 4000.0, 4800) < goertzel (partials, 4000.0, 4800) * 0.8,
+        check (goertzel (gated, 12000.0, 4800) < goertzel (partials, 12000.0, 4800) * 0.5,
                "spectral gate removes a quiet partial");
+        check (goertzel (gated, 300.0, 4800) > goertzel (partials, 300.0, 4800) * 0.9,
+               "spectral gate leaves the loud body alone");
     }
 
     void checkModulation()
@@ -266,7 +302,7 @@ namespace
         const auto reference = rmsRange (input, 9600, 19200);
 
         const auto chorus = runRack (input, input, [] (j37dsp::FxTargets& t) { t.chorus = 1.0f; });
-        check (std::abs (rmsRange (chorus, 9600, 19200) - reference) > 0.001, "chorus changes the signal");
+        check (differenceFrom (chorus, input, 9600) > 0.01, "chorus changes the signal");
 
         const auto flanger = runRack (input, input, [] (j37dsp::FxTargets& t) { t.flanger = 1.0f; });
         check (std::abs (rmsRange (flanger, 9600, 19200) - reference) > 0.001, "flanger changes the signal");
@@ -278,7 +314,7 @@ namespace
         check (levelSwing (tremolo, 2400) > 2.0, "tremolo modulates the level");
 
         const auto vibrato = runRack (input, input, [] (j37dsp::FxTargets& t) { t.vibrato = 1.0f; });
-        check (std::abs (rmsRange (vibrato, 9600, 19200) - reference) > 0.001, "vibrato changes the signal");
+        check (differenceFrom (vibrato, input, 9600) > 0.01, "vibrato changes the signal");
 
         const auto rotary = runRack (input, input, [] (j37dsp::FxTargets& t) { t.rotary = 1.0f; });
         check (std::abs (rmsRange (rotary, 9600, 19200) - reference) > 0.001, "rotary changes the signal");
@@ -325,11 +361,15 @@ namespace
         const auto filled = sine (440.0f, 72000);
         const auto doubled = runRack (filled, filled, [] (j37dsp::FxTargets& t) { t.speed = 1.0f; });
 
-        check (goertzel (doubled, 880.0, 48000, 72000) > goertzel (filled, 880.0, 48000, 72000) * 2.0,
+        // Read against the neighbouring pitch rather than against the dry tone: a
+        // tape loop splices with a click, and a click has energy everywhere, so
+        // "more than the input had at 880" is a claim a splice can satisfy on its
+        // own. What the stage promises is which pitch DOMINATES.
+        check (goertzel (doubled, 880.0, 48000, 72000) > goertzel (doubled, 1320.0, 48000, 72000) * 3.0,
                "speed at 2x replays a 440 Hz tone at 880 Hz");
 
         const auto halved = runRack (filled, filled, [] (j37dsp::FxTargets& t) { t.speed = 0.0f; });
-        check (goertzel (halved, 220.0, 48000, 72000) > goertzel (filled, 220.0, 48000, 72000) * 2.0,
+        check (goertzel (halved, 220.0, 48000, 72000) > goertzel (halved, 440.0, 48000, 72000) * 3.0,
                "speed at half replays a 440 Hz tone at 220 Hz");
     }
 
