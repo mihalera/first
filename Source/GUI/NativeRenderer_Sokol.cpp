@@ -546,7 +546,7 @@ private:
                 logicalHeight = height;
 
                 if (! hasPendingFrame)
-                    return;
+                                return;
 
                 frame = std::move (pendingFrame);
                 pendingFrame = SceneFrame {};
