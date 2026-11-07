@@ -86,11 +86,11 @@
       "name": "parameter_glyphs",
       "file": "parameter_glyphs.png",
       "width": 512,
-      "height": 576,
+      "height": 832,
       "used_by": "Catalogued parameter icon library in controlSpecs order; Assets/asset_catalog.json",
       "catalog": "asset_catalog.json",
       "licence": "CC0-1.0",
-      "source": "Original 71-glyph atlas generated from Source/GUI/PanelText.h using Assets/generate_asset_pack.py.",
+      "source": "Original 97-glyph atlas generated from Source/GUI/PanelText.h using Assets/generate_asset_pack.py.",
       "author": "OpenAI Codex"
     },
     {

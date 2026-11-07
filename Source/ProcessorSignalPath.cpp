@@ -1183,6 +1183,49 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     state.compressorMakeup = compressorMakeupParam != nullptr ? compressorMakeupParam->load() : 0.0f;
     const auto compressorMix = compressorMixParam != nullptr ? compressorMixParam->load() : 0.0f;
     state.compressorMixAmount = juce::jlimit (0.0f, 1.0f, compressorMix);
+    state.compressorUpwardAmount = compUpwardParam != nullptr
+                                       ? juce::jlimit (0.0f, 1.0f, compUpwardParam->load()) : 0.0f;
+
+    // -------------------------------------------------------------------------
+    //  THE CREATIVE EFFECTS RACK: twenty-five amounts, read ONCE per block.
+    //
+    //  This is the same split every other control in the engine uses - block rate
+    //  sets up, sample rate consumes - and it is what keeps twenty-five atomics
+    //  out of the per-sample loop. The rack smooths each amount at audio rate from
+    //  here (Source/DSP/FxRack.h), so a host writing a parameter between two blocks
+    //  moves a fuzz's gain as a ramp rather than as a step.
+    //
+    //  A parameter with no value (a session saved before the rack existed) reads as
+    //  zero: every stage out of the path, which is exactly the plugin those
+    //  sessions were made with. SPEED is the one whose default is not zero - its
+    //  0.5 is 1x - and that comes from the table, not from this fallback.
+    // -------------------------------------------------------------------------
+    fxTargets.wah = fxWahParam != nullptr ? fxWahParam->load() : 0.0f;
+    fxTargets.antiSpike = fxAntiSpikeParam != nullptr ? fxAntiSpikeParam->load() : 0.0f;
+    fxTargets.gate = fxGateParam != nullptr ? fxGateParam->load() : 0.0f;
+    fxTargets.overdrive = fxOverdriveParam != nullptr ? fxOverdriveParam->load() : 0.0f;
+    fxTargets.fuzz = fxFuzzParam != nullptr ? fxFuzzParam->load() : 0.0f;
+    fxTargets.wavefolder = fxWavefolderParam != nullptr ? fxWavefolderParam->load() : 0.0f;
+    fxTargets.bitcrusher = fxBitcrusherParam != nullptr ? fxBitcrusherParam->load() : 0.0f;
+    fxTargets.rateCrusher = fxRateCrusherParam != nullptr ? fxRateCrusherParam->load() : 0.0f;
+    fxTargets.ringMod = fxRingModParam != nullptr ? fxRingModParam->load() : 0.0f;
+    fxTargets.octaver = fxOctaverParam != nullptr ? fxOctaverParam->load() : 0.0f;
+    fxTargets.pitch = fxPitchParam != nullptr ? fxPitchParam->load() : 0.0f;
+    fxTargets.comb = fxCombParam != nullptr ? fxCombParam->load() : 0.0f;
+    fxTargets.formant = fxFormantParam != nullptr ? fxFormantParam->load() : 0.0f;
+    fxTargets.dynamicEq = fxDynamicEqParam != nullptr ? fxDynamicEqParam->load() : 0.0f;
+    fxTargets.deEsser = fxDeEsserParam != nullptr ? fxDeEsserParam->load() : 0.0f;
+    fxTargets.chorus = fxChorusParam != nullptr ? fxChorusParam->load() : 0.0f;
+    fxTargets.flanger = fxFlangerParam != nullptr ? fxFlangerParam->load() : 0.0f;
+    fxTargets.phaser = fxPhaserParam != nullptr ? fxPhaserParam->load() : 0.0f;
+    fxTargets.tremolo = fxTremoloParam != nullptr ? fxTremoloParam->load() : 0.0f;
+    fxTargets.vibrato = fxVibratoParam != nullptr ? fxVibratoParam->load() : 0.0f;
+    fxTargets.rotary = fxRotaryParam != nullptr ? fxRotaryParam->load() : 0.0f;
+    fxTargets.vocoder = fxVocoderParam != nullptr ? fxVocoderParam->load() : 0.0f;
+    fxTargets.granular = fxGranularParam != nullptr ? fxGranularParam->load() : 0.0f;
+    fxTargets.spectral = fxSpectralParam != nullptr ? fxSpectralParam->load() : 0.0f;
+    fxTargets.speed = fxSpeedParam != nullptr ? fxSpeedParam->load() : 0.0f;
+    fxRack.setTargets (fxTargets);
     const auto autoTuneAmount = autoTuneAmountParam != nullptr ? autoTuneAmountParam->load() : 0.0f;
     state.autoTuneStrength = juce::jlimit (0.0f, 1.0f, autoTuneAmount);
 
@@ -3717,6 +3760,37 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     }
 
     // ------------------------------------------------------------------
+    // -------------------------------------------------------------------
+    //  THE CREATIVE EFFECTS RACK.
+    //
+    //  Twenty-five stages, in a pedalboard's order, at the ENGINE rate: the rack
+    //  sits inside the oversampled region, so the stages that make harmonics get
+    //  their headroom from the same factor the record head's own curvature does.
+    //  It is deliberately BEFORE the compressor and everything after it, so the
+    //  protection chain still sees what the rack produced rather than being asked
+    //  to clean up behind a fuzz it never heard.
+    //
+    //  An untouched rack - every amount at zero - is bit-for-bit the signal it was
+    //  handed: Source/DSP/FxRack.h does not call a stage whose smoothed amount is
+    //  zero. A rate change prepares the rack again in resetDspState, so a switch
+    //  between oversampling factors cannot leave a grain of the old one playing.
+    // -------------------------------------------------------------------
+    if (fxRack.isActive())
+    {
+        if (state.activeChannels >= 2)
+        {
+            fxRack.processSample (outputSignal[0], outputSignal[1]);
+        }
+        else
+        {
+            // Mono: the two-sample interface still needs a right leg, and there
+            // is nothing else to hand it than the same sample.
+            auto monoRight = outputSignal[0];
+            fxRack.processSample (outputSignal[0], monoRight);
+        }
+    }
+
+    // ------------------------------------------------------------------
     //  AUTOTUNE is no longer here.
     //
     //  It was the last per-frame stage in this loop, and the phase vocoder the
@@ -3742,20 +3816,43 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     //      is the rate every other block stage in that function is prepared at and
     //      the rate the tracker's period is already rescaled to here.
     // ------------------------------------------------------------------
-    // Conventional compressor: post-tape, pre-width, independent of both
-    // glue stages. It is a transparent bypass at MIX 0 and uses the same
-    // detector settings for both channels without linking their gain states.
+    // -------------------------------------------------------------------
+    //  Conventional compressor - now MULTIBAND, with an upward stage.
+    //
+    //  It is still post-tape, pre-width and independent of both glue stages, and
+    //  it is still a transparent bypass at MIX 0. What changed is that the
+    //  finished signal is split at 120 Hz and 1.2 kHz and each band is compressed
+    //  on its own, so a loud bass note no longer ducks the presence range with it
+    //  - the single-band stage's most audible fault on a full mix. UPWARD lifts
+    //  what sits below its own ceiling toward it, which is the other half of a
+    //  mastering compressor and the reason the quiet end of a programme can be
+    //  brought forward without the loud end being pushed down further.
+    //
+    //  The detector is linked across the two channels per band (see
+    //  MultibandCompressor::process): the sides must not compress at different
+    //  instants, which is the same rule the input and output glue stages state.
+    // -------------------------------------------------------------------
     if (state.compressorMixAmount > 1.0e-5f)
-        for (int channel = 0; channel < state.activeChannels; ++channel)
+    {
+        j37dsp::fx::MultibandCompressor::Settings compressorSettings;
+        compressorSettings.thresholdDb = state.compressorThreshold;
+        compressorSettings.ratio = state.compressorRatio;
+        compressorSettings.attackMs = state.compressorAttack;
+        compressorSettings.releaseMs = state.compressorRelease;
+        compressorSettings.makeupDb = state.compressorMakeup;
+        compressorSettings.mix = state.compressorMixAmount;
+        compressorSettings.upward = state.compressorUpwardAmount;
+
+        if (state.activeChannels >= 2)
         {
-            const auto index = static_cast<std::size_t> (channel);
-            const auto compressed = standardCompressors[index].process (
-                outputSignal[index], state.engineSampleRate, state.compressorThreshold,
-                state.compressorRatio, state.compressorAttack, state.compressorRelease, 6.0f,
-                state.compressorMakeup);
-            outputSignal[index] += (compressed - outputSignal[index])
-                                 * state.compressorMixAmount;
+            multibandCompressor.process (outputSignal[0], outputSignal[1], compressorSettings);
         }
+        else
+        {
+            auto monoRight = outputSignal[0];
+            multibandCompressor.process (outputSignal[0], monoRight, compressorSettings);
+        }
+    }
 
     if (state.activeChannels == 2)
     {

@@ -71,6 +71,10 @@ def ui_definitions() -> list[dict]:
         "DELAY": "echo", "REVERB": "room", "DYN": "envelope",
         "OUT EQ": "eq", "IN EQ": "eq", "MODELS": "chip",
         "SETTINGS": "gear", "AUTOTUNE": "note", "COMP": "compressor",
+        # The creative effects rack's four pages: harmonics, filters, modulators,
+        # pitch. Each borrows the glyph its subject already uses elsewhere rather
+        # than introducing four new drawings for a bar of navigation.
+        "DRIVE": "wave", "SHAPE": "filter", "MOTION": "sine", "PITCH": "note",
     }
     for tab in tab_names():
         if tab not in tab_shapes:
@@ -167,6 +171,16 @@ def parameter_definitions() -> list[dict]:
         "reverb_lowcut": "filter", "in_hp_freq": "filter", "in_lp_freq": "filter",
         "in_eq_q": "eq_mid", "out_hp_freq": "filter", "out_lp_freq": "filter",
         "out_eq_q": "eq_mid", "in_eq_order": "steps", "out_eq_order": "steps",
+        # The effects rack, one glyph per stage, in controlSpecs order.
+        "fx_wah": "filter", "fx_anti_spike": "pulse", "fx_gate": "silence",
+        "fx_overdrive": "wave", "fx_fuzz": "wave", "fx_wavefolder": "wave",
+        "fx_bitcrusher": "steps", "fx_rate_crusher": "pulse",
+        "fx_ring_mod": "sine", "fx_octaver": "octave", "fx_pitch": "note",
+        "fx_comb": "filter", "fx_formant": "eq_mid", "fx_dynamic_eq": "eq",
+        "fx_de_esser": "filter", "fx_chorus": "stereo", "fx_flanger": "wobble",
+        "fx_phaser": "phase", "fx_tremolo": "envelope", "fx_vibrato": "wobble",
+        "fx_rotary": "reel", "fx_vocoder": "chip", "fx_granular": "spark",
+        "fx_spectral": "eq_high", "fx_speed": "clock", "comp_upward": "compressor",
     }
     result = []
     for key in control_ids():

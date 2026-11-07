@@ -68,8 +68,8 @@ inline constexpr Slot slots[] = {
       "Ninety-nine named, alpha-masked navigation, control, workflow, file, "
       "status, audio and platform glyphs; indices are in asset_catalog.json." },
 
-    { "parameter_glyphs", "parameter_glyphs.png", "parameter_glyphs_png", 512, 576,
-      "Seventy-one alpha glyphs in controlSpecs order, one for every plugin control; "
+    { "parameter_glyphs", "parameter_glyphs.png", "parameter_glyphs_png", 512, 832,
+      "Ninety-seven alpha glyphs in controlSpecs order, one for every plugin control; "
       "all are tintable for active, disabled and high-contrast states." },
 
     { "machine_models", "machine_models.png", "machine_models_png", 512, 512,

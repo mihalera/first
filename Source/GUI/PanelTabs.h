@@ -106,7 +106,7 @@ namespace j37panel
     //  it: the table below, the subtitle list and the coverage check further
     //  down all size themselves from this constant, so adding a page cannot
     //  leave one of them behind.
-    inline constexpr std::size_t numTabPages = 18;
+    inline constexpr std::size_t numTabPages = 22;
     inline constexpr std::array<TabSpec, numTabPages> tabSpecs { {
         // ---- TAPE family (9 pages): the machine and everything feeding it ---
         //  input, tone (BRIGHT), character (TONE), mix, stereo_width, output
@@ -250,8 +250,25 @@ namespace j37panel
                                0, 2, {} },
              { "AUTOTUNE", "Pitch correction with safe realtime tracking, RANGE-limited scale quantisation and OCTAVE transposition.",
                                0, 1, {} },
-             { "COMP", "The conventional compressor: threshold, ratio, attack, release, makeup and mix. Independent of both glue stages.",
-                               0, 1, {} }
+        //  The multiband compressor: the six controls it has always had remain
+        //  on the page's own switch row, and UPWARD joins them as the one knob the
+        //  band split added.
+             { "COMP", "Three-band compressor with an upward stage: threshold, ratio, attack, release, makeup and mix are shared by the bands, and UPWARD lifts the quiet end toward the ceiling.",
+                               1, 1, { 96 } },
+
+        // ---- FX family: the creative effects rack, appended where the family's
+        //  bar ends. One knob per stage and one stage per pedal, grouped by what
+        //  they do rather than by the order the rack runs them: DRIVE is the
+        //  harmonics, SHAPE is the filters, MOTION is the modulators, PITCH is the
+        //  time-and-pitch stages. The rack's own order is in Source/DSP/FxRack.h.
+             { "DRIVE", "The rack's harmonics: SPIKE removes guitar clicks, GATE silences what is below its threshold, DRIVE and FUZZ are the two amplifier curves, FOLD is the wavefolder, BITS quantises and RATE holds samples. Each knob is how much of that stage is in the path; 0 is out.",
+                               7, 1, { 72, 73, 74, 75, 76, 77, 78 } },
+             { "SHAPE", "The rack's filters: WAH follows the envelope, COMB is a resonant delay, FORMNT walks the vowels, DYN EQ cuts its band only when it is loud, DE-ESS reduces the sibilance band, RING multiplies by a carrier and SPECTRL gates quiet bands. Each knob is how much of that stage is in the path.",
+                               7, 1, { 71, 82, 83, 84, 85, 79, 94 } },
+             { "MOTION", "The rack's modulators: CHORUS, FLANGER, PHASER, TREM, VIBRATO and ROTARY are the classic sweeps, each at its own rate and depth, and VOCODER imposes the bands of the input on a synthesised carrier. Each knob is how much of that stage is in the path.",
+                               7, 1, { 86, 87, 88, 89, 90, 91, 92 } },
+             { "PITCH", "The rack's time and pitch stages: PITCH shifts up to an octave, OCTAVE adds the octave below, GRAIN scatters the signal into grains and SPEED is the tape's own three-position switch - half below a quarter, 1x in the middle, double above three quarters.",
+                               4, 1, { 81, 80, 93, 95 } }
         } };
 
     // One SHORT subtitle per page, in tabSpecs' order: the sentence the section
@@ -283,7 +300,11 @@ namespace j37panel
         "the neural model and impulse response, each loaded beside its control",
         "the engine-level switches and interface preferences",
         "pitch correction and scale quantisation",
-        "the conventional compressor, independent of glue"
+        "the multiband compressor and its upward stage",
+        "the rack's harmonics: spike, gate, drive, fuzz, fold, bits, rate",
+        "the rack's filters: wah, comb, formant, dynamic EQ, de-esser, ring, spectral",
+        "the rack's modulators: chorus, flanger, phaser, trem, vibrato, rotary, vocoder",
+        "the rack's pitch stages: pitch, octave, grain, speed"
     } };
 
     // Where the divider under the knob-grid heading sits, in pixels from the top of the

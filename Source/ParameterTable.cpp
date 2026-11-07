@@ -1479,6 +1479,138 @@ namespace
                                                                 juce::AudioParameterFloatAttributes().withLabel ("%")));
     }
 
+    /** The creative effects rack: twenty-five pedals between the machine and the
+        protection chain, and the upward stage of the multiband compressor.
+
+        ONE CONTROL PER STAGE, and that is a design decision rather than a
+        shortcut. Every one of these effects is a musical gesture before it is a
+        parameter set - a chorus is a chorus at its own rate and depth, a fuzz is
+        not a fuzz with its bias exposed - so each stage owns its RATE, its
+        FEEDBACK and the shape of its mapping, and the register exposes the one
+        thing a player actually reaches for: how much of it. 0 is out of the path,
+        not "bypassed in code": Source/DSP/FxRack.h does not call a stage whose
+        amount is zero, so an untouched rack is bit-for-bit the signal it was
+        handed.
+
+        SPEED is the exception to the 0 default, and deliberately: it is a
+        three-position control (half / 1x / double) laid out across a continuous
+        knob, so 0.5 IS its neutral position. A preset that does not state it loads
+        to 1x, which is a bit-exact pass-through.
+
+        The multiband compressor keeps the six COMP controls it already had -
+        threshold, ratio, attack, release, makeup and mix are now three band
+        compressors' shared settings - and gains UPWARD here: how far the quiet end
+        of the programme is lifted toward the -30 dBFS ceiling stated in
+        Source/DSP/Fx/FxDynamics.h.
+    */
+    void addEffectsRackControls (ParamLayout& layout)
+    {
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_wah", 1 },
+                                                                "Wah",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_anti_spike", 1 },
+                                                                "Anti-Spike",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_gate", 1 },
+                                                                "Gate",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_overdrive", 1 },
+                                                                "Overdrive",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_fuzz", 1 },
+                                                                "Fuzz",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_wavefolder", 1 },
+                                                                "Wavefolder",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_bitcrusher", 1 },
+                                                                "Bitcrusher",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_rate_crusher", 1 },
+                                                                "Rate Crusher",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_ring_mod", 1 },
+                                                                "Ring Mod",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_octaver", 1 },
+                                                                "Octaver",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_pitch", 1 },
+                                                                "Pitch Shift",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_comb", 1 },
+                                                                "Comb",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_formant", 1 },
+                                                                "Formant",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_dynamic_eq", 1 },
+                                                                "Dynamic EQ",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_de_esser", 1 },
+                                                                "De-Esser",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_chorus", 1 },
+                                                                "Chorus",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_flanger", 1 },
+                                                                "Flanger",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_phaser", 1 },
+                                                                "Phaser",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_tremolo", 1 },
+                                                                "Tremolo",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_vibrato", 1 },
+                                                                "Vibrato",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_rotary", 1 },
+                                                                "Rotary",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_vocoder", 1 },
+                                                                "Vocoder",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_granular", 1 },
+                                                                "Granular",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_spectral", 1 },
+                                                                "Spectral Gate",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "fx_speed", 1 },
+                                                                "Speed",
+                                                                percentageRange (0.50f), 0.5f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+        layout.add (std::make_unique<juce::AudioParameterFloat> (juce::ParameterID { "comp_upward", 1 },
+                                                                "Upward",
+                                                                percentageRange (0.50f), 0.0f,
+                                                                juce::AudioParameterFloatAttributes().withLabel ("%")));
+    }
+
 } // namespace
 
 //==============================================================================
@@ -1512,6 +1644,7 @@ juce::AudioProcessorValueTreeState::ParameterLayout FirstAudioProcessor::createP
     addDelaySyncControls (layout);
     addTransientControls (layout);
     addModelMixControls (layout);
+    addEffectsRackControls (layout);
 
     return layout;
 }

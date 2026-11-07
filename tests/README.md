@@ -16,6 +16,7 @@ benchmarks.
 
 ```bash
 tests/dsp/run.sh          # subharmonics (SUBFUND), the loudness meter, the shaper's tanh seam, and the noise decoder
+tests/fx/run.sh           # the creative effects rack: 25 stages and the multiband compressor, on rendered signal
 tests/layout/run.sh       # knob geometry on every page, at four panel sizes
 tests/tooltip/run.sh      # the tooltip dwell, at exact millisecond boundaries
 tests/state/run.sh        # session state round trip, and older state files
@@ -94,6 +95,7 @@ shipping header* tests the code the plugin compiles.
 
 | Harness | What it compiles | How it gets it |
 | --- | --- | --- |
+| `fx` | `FxRack` and the five family headers under `Source/DSP/Fx/`: the 25 stages and `MultibandCompressor` | `#include`s the shipping headers with no extractor, no replica and no shim - none of them names JUCE - and renders signal through the same per-sample entry point the engine calls. Each stage's claim is measured on the audio: harmonics for the drives, a quantised grid for the bitcrusher, a held sample for the rate crusher, threshold behaviour for the gate, a removed spike for the anti-spike, band energy for the de-esser and the spectral gate, level movement for the tremolo, an octave down and up for the pitch stages, the tape loop for SPEED, and the upward lift for the compressor |
 | `dsp` | the subharmonic generator, the loudness meter, a reduced replica of the signal path, the noise decoder behind the vinyl print - plus `j37Tanh`, `SaturationCore` and the seven curves, built THREE ways | extracts spans through `tests/dsp/extract.py`, **and** `#include`s every stage that has moved to `Source/DSP/`; the tanh seam's three binaries are one file compiled with and without `J37_USE_SIMD_TANH` and with and without xsimd on the include path, and the noise decoder is one file compiled with and without `ThirdParty/dr_libs` |
 | `layout` | the knob strip arithmetic, the editor's constructor phase order, and the spectrum curve's level mapping | `tests/layout/extract.py` cuts the first two out of `Source/PluginEditor.cpp` + `Source/GUI/`, and `#include`s `Source/GUI/SpectrumMetrics.h` directly |
 | `tooltip` | `j37panel::TipDwell` - the rule that decides when a hint may be shown | `#include`s `Source/GUI/TipDwell.h` as it ships: no extractor, no shim, because the header includes nothing (the JUCE half is `Source/GUI/DwellTooltipWindow.h`) |

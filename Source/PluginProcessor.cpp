@@ -332,8 +332,35 @@ FirstAudioProcessor::FirstAudioProcessor()
     neuralMixParam = parameters.getRawParameterValue ("neural_mix");
     irMixParam = parameters.getRawParameterValue ("ir_mix");
 
-    for (auto& compressor : standardCompressors)
-        compressor.reset();
+    // The creative effects rack. One handle per stage, fetched by name here and
+    // read once per block into fxTargets; a misspelt id returns nullptr and the
+    // stage stays out of the path rather than taking the plugin down.
+    fxWahParam = parameters.getRawParameterValue ("fx_wah");
+    fxAntiSpikeParam = parameters.getRawParameterValue ("fx_anti_spike");
+    fxGateParam = parameters.getRawParameterValue ("fx_gate");
+    fxOverdriveParam = parameters.getRawParameterValue ("fx_overdrive");
+    fxFuzzParam = parameters.getRawParameterValue ("fx_fuzz");
+    fxWavefolderParam = parameters.getRawParameterValue ("fx_wavefolder");
+    fxBitcrusherParam = parameters.getRawParameterValue ("fx_bitcrusher");
+    fxRateCrusherParam = parameters.getRawParameterValue ("fx_rate_crusher");
+    fxRingModParam = parameters.getRawParameterValue ("fx_ring_mod");
+    fxOctaverParam = parameters.getRawParameterValue ("fx_octaver");
+    fxPitchParam = parameters.getRawParameterValue ("fx_pitch");
+    fxCombParam = parameters.getRawParameterValue ("fx_comb");
+    fxFormantParam = parameters.getRawParameterValue ("fx_formant");
+    fxDynamicEqParam = parameters.getRawParameterValue ("fx_dynamic_eq");
+    fxDeEsserParam = parameters.getRawParameterValue ("fx_de_esser");
+    fxChorusParam = parameters.getRawParameterValue ("fx_chorus");
+    fxFlangerParam = parameters.getRawParameterValue ("fx_flanger");
+    fxPhaserParam = parameters.getRawParameterValue ("fx_phaser");
+    fxTremoloParam = parameters.getRawParameterValue ("fx_tremolo");
+    fxVibratoParam = parameters.getRawParameterValue ("fx_vibrato");
+    fxRotaryParam = parameters.getRawParameterValue ("fx_rotary");
+    fxVocoderParam = parameters.getRawParameterValue ("fx_vocoder");
+    fxGranularParam = parameters.getRawParameterValue ("fx_granular");
+    fxSpectralParam = parameters.getRawParameterValue ("fx_spectral");
+    fxSpeedParam = parameters.getRawParameterValue ("fx_speed");
+    compUpwardParam = parameters.getRawParameterValue ("comp_upward");
 
     // Four fixed oversampling engines (off / 2x / 4x / 8x). Each owns its own filter
     // state, so switching between them is glitch-free even mid-render, and the
@@ -485,7 +512,20 @@ FirstAudioProcessor::FirstAudioProcessor()
             // rather than a property of a sound. A factory preset that switched the
             // note generator on would surprise every load, and no preset should have
             // to be rewritten to say "the oscillator stays off".
-            "osc_on"
+            "osc_on",
+            // The creative effects rack, and the compressor's upward stage. Every
+            // one of these defaults to 0, which is OUT of the path rather than a
+            // bypass, so a preset that does not state them loads to the plugin
+            // without the stage - which is exactly what every preset written before
+            // the rack existed intends. Stating twenty-six zeros in every factory
+            // preset would be the same churn the transient and neural exclusions
+            // above exist to avoid.
+            "fx_wah", "fx_anti_spike", "fx_gate", "fx_overdrive", "fx_fuzz",
+            "fx_wavefolder", "fx_bitcrusher", "fx_rate_crusher", "fx_ring_mod",
+            "fx_octaver", "fx_pitch", "fx_comb", "fx_formant", "fx_dynamic_eq",
+            "fx_de_esser", "fx_chorus", "fx_flanger", "fx_phaser", "fx_tremolo",
+            "fx_vibrato", "fx_rotary", "fx_vocoder", "fx_granular", "fx_spectral",
+            "fx_speed", "comp_upward"
         };
 
         for (const auto& id : registered)
@@ -1133,6 +1173,14 @@ void FirstAudioProcessor::resetSampleRateDependentState()
     transientFastCoefficient = onePoleCoefficient (2.0f, sampleRate);
     transientSlowCoefficient = onePoleCoefficient (120.0f, sampleRate);
     transientGainCoefficient = onePoleCoefficient (30.0f, sampleRate);
+
+    // The effects rack and the multiband compressor are prepared at the ENGINE
+    // rate, which is the rate the per-sample loop runs at and therefore the rate
+    // every delay length and filter corner in them is stated in. This is the only
+    // place their memory is allocated: prepare() runs from prepareToPlay (and on a
+    // rate change), never from the audio callback.
+    fxRack.prepare (sampleRate);
+    multibandCompressor.prepare (sampleRate);
 
     // The neural stage's recurrent state is let go of on a rate change for the same
     // reason the shaper's is: resuming a hidden state from a different rate would
