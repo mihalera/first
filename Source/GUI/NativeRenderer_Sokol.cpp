@@ -490,118 +490,116 @@ private:
         deviceReady.store (false, std::memory_order_relaxed);
         deviceSetupFailed.store (false, std::memory_order_relaxed);
 
-            sg_desc desc {};
-            desc.environment.defaults.color_format = SG_PIXELFORMAT_RGBA8;
-            desc.environment.defaults.depth_format = sceneDepthFormat;
-            desc.environment.defaults.sample_count = 1;
+        sg_desc desc {};
+        desc.environment.defaults.color_format = SG_PIXELFORMAT_RGBA8;
+        desc.environment.defaults.depth_format = sceneDepthFormat;
+        desc.environment.defaults.sample_count = 1;
 
-    #if defined(SOKOL_VALIDATE)
-            // Enable Sokol's validation layer in debug builds
-            desc.logger.func = sokol_debug_log;
-            desc.logger.user_data = this;
-    #endif
+#if defined (SOKOL_VALIDATE)
+        // Enable Sokol's validation layer in debug builds.
+        desc.logger.func = sokol_debug_log;
+        desc.logger.user_data = this;
+#endif
 
-            sg_setup (&desc);
-            if (! sg_isvalid())
-            {
-                deviceSetupFailed.store (true, std::memory_order_release);
-                return;
-            }
-
-    #if defined (SOKOL_GLES3)
-            if (sg_query_backend() != SG_BACKEND_GLES3)
-    #else
-            if (sg_query_backend() != SG_BACKEND_GLCORE)
-    #endif
-            {
-                // The context is current here, so release the device Sokol just set
-                // up before returning from an unsupported backend.
-                sg_shutdown();
-                deviceSetupFailed.store (true, std::memory_order_release);
-                return;
-            }
-
-            // Every handle below belonged to the previous context. GL objects die
-            // with it, so the cached ids must not outlive them.
-            shader = {};
-            mainPipeline = {};
-            glowPipeline = {};
-            gpuMeshes.clear();
-            uploadedFrom = nullptr;
-            {
-                const std::lock_guard<std::mutex> lock (frameMutex);
-                drawFailure.clear();
-            }
-            deviceReady.store (true, std::memory_order_release);
-                }
-
-                void renderOpenGL() override
-                {
-                    if (! deviceReady.load (std::memory_order_acquire) || ! sg_isvalid())
-                        return;
-
-                    int logicalWidth = 1;
-                    int logicalHeight = 1;
-                    SceneFrame frame;
-                    {
-                        const std::lock_guard<std::mutex> lock (frameMutex);
-                        logicalWidth = width;
-                        logicalHeight = height;
-
-                        if (! hasPendingFrame)
-                            return;
-
-                        frame = std::move (pendingFrame);
-                        pendingFrame = SceneFrame {};
-                        hasPendingFrame = false;
-                    }
-                    const auto renderingScale = context->getRenderingScale();
-                    const auto framebufferWidth = juce::jmax (
-                        1, static_cast<int> (std::lround (static_cast<double> (logicalWidth) * renderingScale)));
-                    const auto framebufferHeight = juce::jmax (
-                        1, static_cast<int> (std::lround (static_cast<double> (logicalHeight) * renderingScale)));
-
-                    // GPU resources are created here, never on the message thread: this is
-                    // the only callback where the context is current by construction.
-                    if (! (ensureShader() && ensurePipelines() && ensureMeshes (frame)))
-                    {
-                        // Keep the last presented frame rather than replacing it with an
-                        // empty clear. The reason is written under the same mutex drawScene()
-                        // and status() use, so the panel reads either the failure or a later
-                        // success - never a torn string.
-                        const std::lock_guard<std::mutex> lock (frameMutex);
-                        if (drawFailure.isEmpty())
-                            drawFailure = "sokol_gfx: the scene frame could not be drawn";
-                        return;
-                    }
-
-                    // Preserve the previous frame by not clearing - JUCE owns the surface.
-                    sg_pass_action action {};
-                    action.colors[0].load_action = SG_LOADACTION_DONTCARE;
-                    action.depth.load_action = SG_LOADACTION_DONTCARE;
-
-                    // sokol_gfx has no windowing layer of its own: JUCE owns the surface.
-                    // Its framebuffer is not zero on iOS, and render scale converts logical
-                    // component dimensions to physical pixels on high-DPI displays.
-                    sg_swapchain swapchain {};
-                    swapchain.width = framebufferWidth;
-                    swapchain.height = framebufferHeight;
-                    swapchain.sample_count = 1;
-                    swapchain.color_format = SG_PIXELFORMAT_RGBA8;
-            swapchain.depth_format = sceneDepthFormat;
-            swapchain.gl.framebuffer = context->getFrameBufferID();
-
-            sg_pass pass {};
-            pass.action = action;
-            pass.swapchain = swapchain;
-
-            sg_begin_pass (&pass);
-
-                        drawFrame (frame);
-
-                        sg_end_pass();
-                        sg_commit();
+        sg_setup (&desc);
+        if (! sg_isvalid())
+        {
+            deviceSetupFailed.store (true, std::memory_order_release);
+            return;
         }
+
+#if defined (SOKOL_GLES3)
+        if (sg_query_backend() != SG_BACKEND_GLES3)
+#else
+        if (sg_query_backend() != SG_BACKEND_GLCORE)
+#endif
+        {
+            // The context is current here, so release the device Sokol just set
+            // up before returning from an unsupported backend.
+            sg_shutdown();
+            deviceSetupFailed.store (true, std::memory_order_release);
+            return;
+        }
+
+        // Every handle below belonged to the previous context. GL objects die
+        // with it, so the cached ids must not outlive them.
+        shader = {};
+        mainPipeline = {};
+        glowPipeline = {};
+        gpuMeshes.clear();
+        uploadedFrom = nullptr;
+        {
+            const std::lock_guard<std::mutex> lock (frameMutex);
+            drawFailure.clear();
+        }
+        deviceReady.store (true, std::memory_order_release);
+    }
+
+    void renderOpenGL() override
+    {
+        if (! deviceReady.load (std::memory_order_acquire) || ! sg_isvalid())
+            return;
+
+        int logicalWidth = 1;
+        int logicalHeight = 1;
+        SceneFrame frame;
+        {
+            const std::lock_guard<std::mutex> lock (frameMutex);
+            logicalWidth = width;
+            logicalHeight = height;
+
+            if (! hasPendingFrame)
+                    return;
+
+            frame = std::move (pendingFrame);
+            pendingFrame = SceneFrame {};
+            hasPendingFrame = false;
+        }
+        const auto renderingScale = context->getRenderingScale();
+        const auto framebufferWidth = juce::jmax (
+            1, static_cast<int> (std::lround (static_cast<double> (logicalWidth) * renderingScale)));
+        const auto framebufferHeight = juce::jmax (
+            1, static_cast<int> (std::lround (static_cast<double> (logicalHeight) * renderingScale)));
+
+        // GPU resources are created here, never on the message thread: this is
+        // the only callback where the context is current by construction.
+        if (! (ensureShader() && ensurePipelines() && ensureMeshes (frame)))
+        {
+            // Keep the last presented frame rather than replacing it with an
+            // empty clear. The reason is written under the same mutex drawScene()
+            // and status() use, so the panel reads either the failure or a later
+            // success - never a torn string.
+            const std::lock_guard<std::mutex> lock (frameMutex);
+            if (drawFailure.isEmpty())
+                drawFailure = "sokol_gfx: the scene frame could not be drawn";
+            return;
+        }
+
+        // Preserve the previous frame by not clearing - JUCE owns the surface.
+        sg_pass_action action {};
+        action.colors[0].load_action = SG_LOADACTION_DONTCARE;
+        action.depth.load_action = SG_LOADACTION_DONTCARE;
+
+        // sokol_gfx has no windowing layer of its own: JUCE owns the surface.
+        // Its framebuffer is not zero on iOS, and render scale converts logical
+        // component dimensions to physical pixels on high-DPI displays.
+        sg_swapchain swapchain {};
+        swapchain.width = framebufferWidth;
+        swapchain.height = framebufferHeight;
+        swapchain.sample_count = 1;
+        swapchain.color_format = SG_PIXELFORMAT_RGBA8;
+        swapchain.depth_format = sceneDepthFormat;
+        swapchain.gl.framebuffer = context->getFrameBufferID();
+
+        sg_pass pass {};
+        pass.action = action;
+        pass.swapchain = swapchain;
+
+        sg_begin_pass (&pass);
+        drawFrame (frame);
+        sg_end_pass();
+        sg_commit();
+    }
 
     void openGLContextClosing() override
     {
@@ -714,16 +712,14 @@ private:
         desc.depth.write_enabled = true;
         desc.cull_mode = SG_CULLMODE_NONE;
         desc.sample_count = 1;
-            desc.blitter.enabled = true;  // Enable sokol_gfx blitter for optimized draws
 
-            // Debug labels for resource tracking (stripped in release builds)
-    #if defined(SOKOL_DEBUG)
-            desc.label = "tape_scene_main";
-            desc.colors[0].label = "main_color_target";
-            desc.depth.label = "depth_stencil";
-    #endif
+#if defined (SOKOL_DEBUG)
+        desc.label = "tape_scene_main";
+        desc.colors[0].label = "main_color_target";
+        desc.depth.label = "depth_stencil";
+#endif
 
-            mainPipeline = sg_make_pipeline (&desc);
+        mainPipeline = sg_make_pipeline (&desc);
 
         desc.colors[0].blend.enabled = true;
         desc.colors[0].blend.src_factor_rgb = SG_BLENDFACTOR_SRC_ALPHA;
@@ -773,56 +769,42 @@ private:
         for (const auto& geometry : *frame.meshes)
         {
             GpuMesh mesh;
-            
-                    // Debug label for mesh upload - track resource usage
-                    const char* meshLabel = "unknown_mesh";
-                    if (geometry.vertices.data() == reel.vertices.data()) meshLabel = "reel_mesh";
-                    else if (geometry.vertices.data() == tapePack.vertices.data()) meshLabel = "tape_pack_mesh";
-                    else if (geometry.vertices.data() == ribbon.vertices.data()) meshLabel = "ribbon_mesh";
-                    else if (geometry.vertices.data() == head.vertices.data()) meshLabel = "head_mesh";
-                    else if (geometry.vertices.data() == bankBody.vertices.data()) meshLabel = "bank_body_mesh";
-                    else if (geometry.vertices.data() == bankKnob.vertices.data()) meshLabel = "bank_knob_mesh";
-                    else if (geometry.vertices.data() == bankKey.vertices.data()) meshLabel = "bank_key_mesh";
-                    else if (geometry.vertices.data() == bankGlow.vertices.data()) meshLabel = "bank_glow_mesh";
 
-                    if (geometry.indices.empty() || geometry.vertices.empty())
-                    {
-                        if (meshLabel != "unknown_mesh")
-                            drawFailure = "sokol_gfx: mesh data empty for " + std::string(meshLabel);
-                        continue;
-                    }
+            if (geometry.indices.empty() || geometry.vertices.empty())
+            {
+                continue;
+            }
 
-                    sg_buffer_desc vertices {};
-                    vertices.size = geometry.vertices.size() * sizeof (SceneVertex);
-                    vertices.data.ptr = geometry.vertices.data();
-                    vertices.data.size = vertices.size;
-                    vertices.usage.vertex_buffer = true;
-                    vertices.usage.immutable = true;
-                    mesh.vertices = sg_make_buffer (&vertices);
+            sg_buffer_desc vertices {};
+            vertices.size = geometry.vertices.size() * sizeof (SceneVertex);
+            vertices.data.ptr = geometry.vertices.data();
+            vertices.data.size = vertices.size;
+            vertices.usage.vertex_buffer = true;
+            vertices.usage.immutable = true;
+            mesh.vertices = sg_make_buffer (&vertices);
 
-                sg_buffer_desc indices {};
-                indices.size = geometry.indices.size() * sizeof (std::uint32_t);
-                indices.data.ptr = geometry.indices.data();
-                indices.data.size = indices.size;
-                indices.usage.vertex_buffer = false;
-                indices.usage.index_buffer = true;
-                indices.usage.immutable = true;
-                mesh.indices = sg_make_buffer (&indices);
+            sg_buffer_desc indices {};
+            indices.size = geometry.indices.size() * sizeof (std::uint32_t);
+            indices.data.ptr = geometry.indices.data();
+            indices.data.size = indices.size;
+            indices.usage.vertex_buffer = false;
+            indices.usage.index_buffer = true;
+            indices.usage.immutable = true;
+            mesh.indices = sg_make_buffer (&indices);
 
-                mesh.indexCount = static_cast<int> (geometry.indices.size());
+            mesh.indexCount = static_cast<int> (geometry.indices.size());
 
-                if (mesh.vertices.id == 0 || mesh.indices.id == 0)
-                {
-                    if (mesh.vertices.id != 0)
-                        sg_destroy_buffer (mesh.vertices);
-                    if (mesh.indices.id != 0)
-                        sg_destroy_buffer (mesh.indices);
+            if (mesh.vertices.id == 0 || mesh.indices.id == 0)
+            {
+                if (mesh.vertices.id != 0)
+                    sg_destroy_buffer (mesh.vertices);
+                if (mesh.indices.id != 0)
+                    sg_destroy_buffer (mesh.indices);
 
-                    releaseMeshes();
-                    const std::lock_guard<std::mutex> lock (frameMutex);
-                    drawFailure = "sokol_gfx: mesh buffer allocation failed";
-                    return false;
-                }
+                releaseMeshes();
+                const std::lock_guard<std::mutex> lock (frameMutex);
+                drawFailure = "sokol_gfx: mesh buffer allocation failed";
+                return false;
             }
 
             gpuMeshes.push_back (mesh);
