@@ -7,10 +7,10 @@
  // Source/GUI/SokolGfxImpl.cpp, which is compiled without JUCE because JUCE wraps
  // the GL headers in a namespace and sokol wants them at global scope. The
  // backend choice is shared through SokolBackend.h so the two cannot disagree.
- //
+// 
  // sokol_gfx is a command recorder here, not a windowing layer: the surface this
  // adapter draws into is JUCE's OpenGLContext, attached to the scene component.
- // sokol_app.h is deliberately NOT used - it is sokol's own window and event
+// sokol_app.h is deliberately NOT used - it is sokol's own window and event
  // system, and JUCE already is one.
  #include "SokolBackend.h"
  #include <sokol_gfx.h>
@@ -19,47 +19,46 @@
  #include <atomic>
  #include <cmath>
  #include <cstdint>
+ #include <cstddef>
  #include <limits>
  #include <mutex>
  #include <utility>
  #include <vector>
 
- // Uniform dirty flag system: tracks which vertex and fragment shader
- // uniforms have changed so we only upload them when actually different,
- // reducing GL API calls per frame.
- struct UniformDirtyFlags
- {
-     uint32_t vsDirty = 0;  // bit i set = VS uniform i is dirty
-     uint32_t fsDirty = 0;  // bit i set = FS uniform i is dirty
- };
+// Uniform dirty flag system: tracks which vertex and fragment shader
+// uniforms have changed so we only upload them when actually different,
+// reducing GL API calls per frame.
+struct UniformDirtyFlags
+{
+    uint32_t vsDirty = 0;  // bit i set = VS uniform i is dirty
+    uint32_t fsDirty = 0;  // bit i set = FS uniform i is dirty
+};
 
- #define MARK_VS_DIRTY(n)  do { vsDirty |= (1u << (n)); } while(0)
- #define MARK_FS_DIRTY(n)  do { fsDirty |= (1u << (n)); } while(0)
- #define CLEAR_UNIFORM_DIRTY(n)  do { vsDirty &= ~(1u << (n)); fsDirty &= ~(1u << (n)); } while(0)
- #define CLEAR_ANY_DIRTY()  do { vsDirty = 0; fsDirty = 0; } while(0)
- #define VS_DIRTY_ANY()  (vsDirty != 0)
- #define FS_DIRTY_ANY()  (fsDirty != 0)
+#define MARK_VS_DIRTY(n)  do { vsDirty |= (1u << (n)); } while(0)
+#define MARK_FS_DIRTY(n)  do { fsDirty |= (1u << (n)); } while(0)
+#define CLEAR_UNIFORM_DIRTY(n)  do { vsDirty &= ~(1u << (n)); fsDirty &= ~(1u << (n)); } while(0)
+#define CLEAR_ANY_DIRTY()  do { vsDirty = 0; fsDirty = 0; } while(0)
+#define VS_DIRTY_ANY()  (vsDirty != 0)
+#define FS_DIRTY_ANY()  (fsDirty != 0)
 
- namespace j37::render
- {
- namespace
- {
- std::atomic<bool> sokolContextClaimed { false };
+namespace j37::render
+{
+namespace
+{
+std::atomic<bool> sokolContextClaimed { false };
 
- #if defined (SOKOL_GLES3)
-  #define J37_SOKOL_SHADER_VERSION "#version 300 es\nprecision highp float;\n"
+#if defined (SOKOL_GLES3)
+ #define J37_SOKOL_SHADER_VERSION "#version 300 es\nprecision highp float;\n"
  constexpr auto sceneDepthFormat = SG_PIXELFORMAT_DEPTH;
- #else
-  #define J37_SOKOL_SHADER_VERSION "#version 330 core\n"
+#else
+ #define J37_SOKOL_SHADER_VERSION "#version 330 core\n"
  constexpr auto sceneDepthFormat = SG_PIXELFORMAT_DEPTH_STENCIL;
- #endif
+#endif
 
 //==============================================================================
 //  The deck's shader programs, ported to the Sokol GL dialect.
-//
 //  These are TapeSceneShaders.h's vertex and fragment programs in sokol's
 //  dialect rather than JUCE's. Three things change and nothing else does:
-//
 //    * desktop GL uses GLSL 330 core (the GLCORE backend's baseline), while
 //      JUCE's Android/iOS ES context uses GLSL ES 300 with explicit precision.
 //      Both spellings use `in`/`out` and a declared fragment output.
@@ -70,12 +69,12 @@
 //      full 4x4 inverse transpose because a native backend's shader multiplies
 //      a float4 (see drawSceneFrameOpenGL's note), and mat3() of that takes the
 //      same upper-left 3x3 the GL path extracts by hand.
-//
 //  The raw string literals are deliberate: the previous spellings of this port
 //  used concatenated quoted lines, and one missing backslash silently put a
 //  newline INSIDE a string literal - textually plausible, and a compile error
 //  only in a SOKOL build.
 //==============================================================================
+
 constexpr const char vertexShaderSource[] = J37_SOKOL_SHADER_VERSION R"GLSL(
 
 in vec4 aPosition;
@@ -142,8 +141,6 @@ uniform float uMode;
 uniform float uTime;
 uniform float uArcAngle;
 uniform float uKeyDown;
-uniform vec3 uPanelHalf;
-uniform vec3 uTextureWeights;
 
 // Subtle procedural surface texture for the control bank.
 float hash (vec2 p)
@@ -158,7 +155,7 @@ float valueNoise (vec2 p)
     vec2 u = f * f * (3.0 - 2.0 * f);
 
     return mix (mix (hash (i), hash (i + vec2 (1.0, 0.0)), u.x),
-                mix (hash (i + vec2 (0.0, 1.0)), hash (i + vec2 (1.0, 1.0)), u.x), u.y);
+                mix (hash (i + vec2 (0.0, 1.0)), hash (i + vec2 (1.0, 1.0)), u.y);
 }
 
 // Procedural grain, tape shimmer and broad wear marks share local
@@ -283,13 +280,13 @@ void main()
 
 //==============================================================================
 //  The uniform blocks, tightly packed.
-//
 //  SG_UNIFORMLAYOUT_NATIVE is sokol's GL packing rule: members sit back to back
 //  with no padding, in declaration order, and the desc's glsl_uniforms[] names
 //  map each one to the GL uniform of the same name. The static_asserts below
 //  pin the sizes the validation layer recomputes (VALIDATE_SHADERDESC_UNIFORMBLOCK
 //  _SIZE_MISMATCH), so a reordered member fails the build rather than the frame.
 //==============================================================================
+
 struct VsUniforms
 {
     float viewProjection[16];
@@ -511,6 +508,7 @@ private:
     //==========================================================================
     //  juce::OpenGLRenderer
     //==========================================================================
+
     void newOpenGLContextCreated() override
     {
         deviceReady.store (false, std::memory_order_relaxed);
@@ -631,8 +629,16 @@ private:
         pass.action = action;
         pass.swapchain = swapchain;
 
+#if defined (SOKOL_DEBUG)
+        sg_push_debug_group ("tape_scene_frame");
+#endif
+
         sg_begin_pass (&pass);
         drawFrame (frame);
+#if defined (SOKOL_DEBUG)
+        sg_pop_debug_group ();
+#endif
+
         sg_end_pass();
         sg_commit();
     }
@@ -941,7 +947,7 @@ private:
 // Only apply uniforms if they've changed this frame - reduces GL API calls
             bool applyVS = VS_DIRTY_ANY();
             bool applyFS = FS_DIRTY_ANY();
-            
+
             if (applyVS)
             {
                 const sg_range vsRange { &vs, sizeof (vs) };
@@ -1104,11 +1110,11 @@ private:
 //==============================================================================
 //  Factory
 //==============================================================================
+
 std::unique_ptr<NativeRenderer> createSokolRenderer()
 {
     return std::make_unique<SokolRenderer>();
 }
-} // namespace j37::render
 #else
 namespace j37::render
 {
