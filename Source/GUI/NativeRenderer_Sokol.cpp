@@ -536,55 +536,58 @@ private:
                 }
 
                 void renderOpenGL() override
+                {
+                    if (! deviceReady.load (std::memory_order_acquire) || ! sg_isvalid())
+                        return;
 
-            int logicalWidth = 1;
-            int logicalHeight = 1;
-            SceneFrame frame;
-            {
-                const std::lock_guard<std::mutex> lock (frameMutex);
-                logicalWidth = width;
-                logicalHeight = height;
+                    int logicalWidth = 1;
+                    int logicalHeight = 1;
+                    SceneFrame frame;
+                    {
+                        const std::lock_guard<std::mutex> lock (frameMutex);
+                        logicalWidth = width;
+                        logicalHeight = height;
 
-                if (! hasPendingFrame)
-                                return;
+                        if (! hasPendingFrame)
+                            return;
 
-                frame = std::move (pendingFrame);
-                pendingFrame = SceneFrame {};
-                hasPendingFrame = false;
-            }
-            const auto renderingScale = context->getRenderingScale();
-            const auto framebufferWidth = juce::jmax (
-                1, static_cast<int> (std::lround (static_cast<double> (logicalWidth) * renderingScale)));
-            const auto framebufferHeight = juce::jmax (
-                1, static_cast<int> (std::lround (static_cast<double> (logicalHeight) * renderingScale)));
+                        frame = std::move (pendingFrame);
+                        pendingFrame = SceneFrame {};
+                        hasPendingFrame = false;
+                    }
+                    const auto renderingScale = context->getRenderingScale();
+                    const auto framebufferWidth = juce::jmax (
+                        1, static_cast<int> (std::lround (static_cast<double> (logicalWidth) * renderingScale)));
+                    const auto framebufferHeight = juce::jmax (
+                        1, static_cast<int> (std::lround (static_cast<double> (logicalHeight) * renderingScale)));
 
-            // GPU resources are created here, never on the message thread: this is
-            // the only callback where the context is current by construction.
-            if (! (ensureShader() && ensurePipelines() && ensureMeshes (frame)))
-            {
-                // Keep the last presented frame rather than replacing it with an
-                // empty clear. The reason is written under the same mutex drawScene()
-                // and status() use, so the panel reads either the failure or a later
-                // success - never a torn string.
-                const std::lock_guard<std::mutex> lock (frameMutex);
-                if (drawFailure.isEmpty())
-                    drawFailure = "sokol_gfx: the scene frame could not be drawn";
-                return;
-            }
+                    // GPU resources are created here, never on the message thread: this is
+                    // the only callback where the context is current by construction.
+                    if (! (ensureShader() && ensurePipelines() && ensureMeshes (frame)))
+                    {
+                        // Keep the last presented frame rather than replacing it with an
+                        // empty clear. The reason is written under the same mutex drawScene()
+                        // and status() use, so the panel reads either the failure or a later
+                        // success - never a torn string.
+                        const std::lock_guard<std::mutex> lock (frameMutex);
+                        if (drawFailure.isEmpty())
+                            drawFailure = "sokol_gfx: the scene frame could not be drawn";
+                        return;
+                    }
 
-            // Preserve the previous frame by not clearing - JUCE owns the surface.
-            sg_pass_action action {};
-            action.colors[0].load_action = SG_LOADACTION_DONTCARE;
-            action.depth.load_action = SG_LOADACTION_DONTCARE;
+                    // Preserve the previous frame by not clearing - JUCE owns the surface.
+                    sg_pass_action action {};
+                    action.colors[0].load_action = SG_LOADACTION_DONTCARE;
+                    action.depth.load_action = SG_LOADACTION_DONTCARE;
 
-            // sokol_gfx has no windowing layer of its own: JUCE owns the surface.
-            // Its framebuffer is not zero on iOS, and render scale converts logical
-            // component dimensions to physical pixels on high-DPI displays.
-            sg_swapchain swapchain {};
-            swapchain.width = framebufferWidth;
-            swapchain.height = framebufferHeight;
-            swapchain.sample_count = 1;
-            swapchain.color_format = SG_PIXELFORMAT_RGBA8;
+                    // sokol_gfx has no windowing layer of its own: JUCE owns the surface.
+                    // Its framebuffer is not zero on iOS, and render scale converts logical
+                    // component dimensions to physical pixels on high-DPI displays.
+                    sg_swapchain swapchain {};
+                    swapchain.width = framebufferWidth;
+                    swapchain.height = framebufferHeight;
+                    swapchain.sample_count = 1;
+                    swapchain.color_format = SG_PIXELFORMAT_RGBA8;
             swapchain.depth_format = sceneDepthFormat;
             swapchain.gl.framebuffer = context->getFrameBufferID();
 
