@@ -487,10 +487,11 @@ void FirstAudioProcessorEditor::setTabFamily (int newFamily)
         tabButtons[static_cast<std::size_t> (tab)]
             .setVisible (tabSpecs[static_cast<std::size_t> (tab)].family == family);
 
-    if (currentTab < firstOfFamily || currentTab >= lastOfFamily)
+    if (currentTab < firstOfFamily || currentTab >= lastOfFamily) {
         setCurrentTab (firstOfFamily);
-    else
+    } else {
         resized();
+    }
 }
 
 //==============================================================================

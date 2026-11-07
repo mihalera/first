@@ -24,6 +24,22 @@
  #include <utility>
  #include <vector>
 
+ // Uniform dirty flag system: tracks which vertex and fragment shader
+ // uniforms have changed so we only upload them when actually different,
+ // reducing GL API calls per frame.
+ struct UniformDirtyFlags
+ {
+     uint32_t vsDirty = 0;  // bit i set = VS uniform i is dirty
+     uint32_t fsDirty = 0;  // bit i set = FS uniform i is dirty
+ };
+
+ #define MARK_VS_DIRTY(n)  do { vsDirty |= (1u << (n)); } while(0)
+ #define MARK_FS_DIRTY(n)  do { fsDirty |= (1u << (n)); } while(0)
+ #define CLEAR_UNIFORM_DIRTY(n)  do { vsDirty &= ~(1u << (n)); fsDirty &= ~(1u << (n)); } while(0)
+ #define CLEAR_ANY_DIRTY()  do { vsDirty = 0; fsDirty = 0; } while(0)
+ #define VS_DIRTY_ANY()  (vsDirty != 0)
+ #define FS_DIRTY_ANY()  (fsDirty != 0)
+
  namespace j37::render
  {
  namespace
@@ -922,10 +938,31 @@ private:
             bindings.index_buffer = mesh.indices;
             sg_apply_bindings (&bindings);
 
-            const sg_range vsRange { &vs, sizeof (vs) };
-            const sg_range fsRange { &fs, sizeof (fs) };
-            sg_apply_uniforms (0, &vsRange);
-            sg_apply_uniforms (1, &fsRange);
+// Only apply uniforms if they've changed this frame - reduces GL API calls
+            bool applyVS = VS_DIRTY_ANY();
+            bool applyFS = FS_DIRTY_ANY();
+            
+            if (applyVS)
+            {
+                const sg_range vsRange { &vs, sizeof (vs) };
+                sg_apply_uniforms (0, &vsRange);
+                CLEAR_UNIFORM_DIRTY(0);
+                CLEAR_UNIFORM_DIRTY(1);
+                CLEAR_UNIFORM_DIRTY(2);
+                CLEAR_UNIFORM_DIRTY(3);
+            }
+            if (applyFS)
+            {
+                const sg_range fsRange { &fs, sizeof (fs) };
+                sg_apply_uniforms (1, &fsRange);
+                CLEAR_UNIFORM_DIRTY(4);
+                CLEAR_UNIFORM_DIRTY(5);
+                CLEAR_UNIFORM_DIRTY(6);
+                CLEAR_UNIFORM_DIRTY(7);
+                CLEAR_UNIFORM_DIRTY(8);
+                CLEAR_UNIFORM_DIRTY(9);
+                CLEAR_UNIFORM_DIRTY(10);
+            }
 
             sg_draw (0, mesh.indexCount, 1);
         }
