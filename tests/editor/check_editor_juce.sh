@@ -153,6 +153,10 @@ cat > "${BUILD}/stubs/JuceHeader.h" <<'EOF'
 #include <juce_gui_basics/juce_gui_basics.h>
 #include <juce_gui_extra/juce_gui_extra.h>
 #include <juce_opengl/juce_opengl.h>
+
+#if ! DONT_SET_USING_JUCE_NAMESPACE
+using namespace juce;
+#endif
 EOF
 
 # Every .cpp under Source/ that compiles the processor, the editor, or the panel's
