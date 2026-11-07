@@ -448,17 +448,22 @@ public:
         leftDelay.push (left);
         rightDelay.push (right);
 
-        // The read consumes history at the tape's own rate: the delay back from
-        // the write head falls by `selected` every sample, which is forward
-        // playback at that speed and pitch. When it reaches the head the buffer
-        // has been played out, and it wraps to the far end - a tape loop's
-        // splice, click and all.
-        readPosition -= selected;
+        // The read consumes history at the tape's own rate. The read position is
+        // a delay back from the write head, so playback at `selected` times the
+        // rate - the read head advancing `selected` samples through the history
+        // for every sample that arrives - means that delay changes by
+        // (1 - selected) per sample: it falls for a fast tape and rises for a
+        // slow one. When the delay runs off either end the buffer has been
+        // played out, and it wraps to the other - a tape loop's splice, click and
+        // all.
+        readPosition += 1.0f - selected;
 
         const auto maximum = static_cast<float> (leftDelay.maximumDelay() - 4);
 
         if (readPosition < 1.0f)
             readPosition += maximum;
+        else if (readPosition > maximum)
+            readPosition -= maximum;
 
         left = leftDelay.read (readPosition);
         right = rightDelay.read (readPosition);

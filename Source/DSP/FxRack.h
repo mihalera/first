@@ -35,6 +35,10 @@
 //  rate (the signal path reads its parameters once per block, like every other
 //  control it owns) and are smoothed here at audio rate, so a host writing a
 //  parameter between two blocks cannot step the gain of a fuzz.
+//
+//  The one exception is SPEED, which is a rate and not an amount: its middle is
+//  1x, so it is out of the path at the middle rather than at zero, and it reads
+//  its target directly. See the note at its call site.
 // =============================================================================
 #pragma once
 
@@ -95,7 +99,6 @@ public:
         float octaver = 0.0f, pitch = 0.0f, comb = 0.0f, formant = 0.0f, dynamicEq = 0.0f;
         float deEsser = 0.0f, chorus = 0.0f, flanger = 0.0f, phaser = 0.0f, tremolo = 0.0f;
         float vibrato = 0.0f, rotary = 0.0f, vocoder = 0.0f, granular = 0.0f, spectral = 0.0f;
-        float speed = 0.0f;
     };
 
     /** Called from prepareToPlay with the ENGINE rate - session rate times the
@@ -203,7 +206,6 @@ public:
         step (amounts.vocoder, targets.vocoder);
         step (amounts.granular, targets.granular);
         step (amounts.spectral, targets.spectral);
-        step (amounts.speed, targets.speed);
 
         if (amounts.wah > threshold)             wah.process (left, right, amounts.wah);
         if (amounts.antiSpike > threshold)       antiSpike.process (left, right, amounts.antiSpike);
@@ -235,7 +237,15 @@ public:
         if (amounts.vocoder > threshold)         vocoder.process (left, right, amounts.vocoder);
         if (amounts.granular > threshold)        granular.process (left, right, amounts.granular);
         if (amounts.spectral > threshold)        spectralGate.process (left, right, amounts.spectral);
-        if (amounts.speed > threshold)           speed.process (left, right, amounts.speed);
+
+        // SPEED is the one control on this panel that is a RATE, not an amount:
+        // its middle is the identity (1x) and its zero is half speed, not
+        // silence. So it is read from the target rather than from a smoothed
+        // amount - a tape does not fade between two speeds, it jumps, and the
+        // splice is the sound of the knob - and it is called whenever the switch
+        // sits away from the middle, including at zero.
+        if (std::abs (targets.speed - 0.5f) > threshold)
+            speed.process (left, right, targets.speed);
     }
 
     /** True while any stage is in the path. The signal path uses it to skip the
@@ -254,7 +264,7 @@ public:
             || amounts.tremolo > threshold || amounts.vibrato > threshold
             || amounts.rotary > threshold || amounts.vocoder > threshold
             || amounts.granular > threshold || amounts.spectral > threshold
-            || amounts.speed > threshold;
+            || std::abs (targets.speed - 0.5f) > threshold;
     }
 
 private:

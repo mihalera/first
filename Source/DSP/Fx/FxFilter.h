@@ -227,98 +227,154 @@ private:
 //
 //  The engine drives every stage one sample at a time, so an STFT - which needs
 //  a window of samples before it can decide anything - cannot live here without
-//  a wrapper pretending a block is a frame. What CAN live here is the same
-//  decision made by a filterbank: six log-spaced bands, each band's envelope
-//  compared against the programme's own, and each band faded out when it sits
-//  below that reference. That is a spectral gate in the sense the effect means -
-//  quiet partials are removed, loud ones survive - and it keeps the stage's cost
-//  and latency stated (none on either count) rather than hiding a block.
+//  a wrapper pretending a block is a frame, and a spectral effect that delayed
+//  the signal by a window would have to be reported to the host as latency the
+//  rack does not have. What CAN live here is the same decision made by a
+//  filterbank, and it can be made to reconstruct exactly:
 //
-//  The BLUR half is the gate's release: at the top of the knob a band's gain
-//  falls slowly, so what is left smears across the silence instead of being
+//    * six log-spaced low passes, all fed the same sample, at 200 Hz to 6.2 kHz;
+//    * seven bands, each the difference between two neighbouring low passes -
+//      the sub band, five bands between them, and a top band that is whatever the
+//      last low pass left behind. The differences telescope, so with every band
+//      open the sum IS the input, sample for sample: an idle gate cannot colour
+//      the signal, only remove from it.
+//    * each band's envelope is compared against the loudest band of the same
+//      sample, and a band below that share is faded out. Sharing against the
+//      loudest band is what makes it spectral: the reference moves with the
+//      programme instead of sitting at a level the user has to keep resetting.
+//
+//  The BLUR half is the fade's release: at the top of the knob a band closes over
+//  20 ms instead of 2, so what is left smears across the silence instead of being
 //  chopped, which is the difference between a gate and a blur.
 // =============================================================================
 class SpectralGate
 {
 public:
-    static constexpr int bands = 6;
+    /** Six crossovers, so seven bands: the sub, the five between them, and the
+        top one, which is everything the last crossover left behind. */
+    static constexpr int crossovers = 6;
+    static constexpr int bands = crossovers + 1;
 
     void prepare (double sampleRate) noexcept
     {
         rate = sampleRate > 0.0 ? sampleRate : 48000.0;
 
-        for (int band = 0; band < bands; ++band)
+        for (int band = 0; band < crossovers; ++band)
         {
+            const auto index = static_cast<std::size_t> (band);
             const auto hertz = bandFrequency (band);
 
-            leftFilters[static_cast<std::size_t> (band)].setCutoff (hertz, 3.0f, rate);
-            rightFilters[static_cast<std::size_t> (band)].setCutoff (hertz, 3.0f, rate);
-            leftEnvelopes[static_cast<std::size_t> (band)].setTimes (2.0f, 120.0f, rate);
-            rightEnvelopes[static_cast<std::size_t> (band)].setTimes (2.0f, 120.0f, rate);
+            leftFilters[index].setCutoff (hertz, 0.707f, rate);
+            rightFilters[index].setCutoff (hertz, 0.707f, rate);
         }
 
-        totalEnvelope.setTimes (2.0f, 120.0f, rate);
+        for (int band = 0; band < bands; ++band)
+        {
+            const auto index = static_cast<std::size_t> (band);
+
+            leftEnvelopes[index].setTimes (2.0f, 120.0f, rate);
+            rightEnvelopes[index].setTimes (2.0f, 120.0f, rate);
+        }
+
         reset();
     }
 
     void reset() noexcept
     {
-        for (int band = 0; band < bands; ++band)
+        for (int band = 0; band < crossovers; ++band)
         {
-            leftFilters[static_cast<std::size_t> (band)].reset();
-            rightFilters[static_cast<std::size_t> (band)].reset();
-            leftEnvelopes[static_cast<std::size_t> (band)].reset();
-            rightEnvelopes[static_cast<std::size_t> (band)].reset();
-            gains[static_cast<std::size_t> (band)] = 1.0f;
+            const auto index = static_cast<std::size_t> (band);
+            leftFilters[index].reset();
+            rightFilters[index].reset();
         }
 
-        totalEnvelope.reset();
+        for (int band = 0; band < bands; ++band)
+        {
+            const auto index = static_cast<std::size_t> (band);
+            leftEnvelopes[index].reset();
+            rightEnvelopes[index].reset();
+            gains[index] = 1.0f;
+        }
     }
 
     void process (float& left, float& right, float amount) noexcept
     {
         const auto depth = clamp01 (amount);
-        const auto threshold = 0.5f - 0.45f * depth;
-        const auto blurCoefficient = 0.002f - 0.0019f * depth;
 
-        totalEnvelope.process (std::max (std::abs (left), std::abs (right)));
-        const auto reference = std::max (totalEnvelope.value() * 0.02f, 1.0e-6f);
+        // The share of the loudest band a band has to reach to stay open: half of
+        // it at a touch of the control (-6 dB), a fiftieth at full (-34 dB), and
+        // the fade's release lengthening with the same control - the blur.
+        const auto share = 0.5f - 0.45f * depth;
+        const auto close = 0.01f - 0.009f * depth;
 
-        float wetLeft = 0.0f, wetRight = 0.0f;
+        std::array<float, bands> bandLeft {};
+        std::array<float, bands> bandRight {};
+
+        float previousLeft = 0.0f;
+        float previousRight = 0.0f;
+
+        for (int band = 0; band < crossovers; ++band)
+        {
+            const auto index = static_cast<std::size_t> (band);
+            const auto lowLeft = leftFilters[index].process (left, StateVariableFilter::Output::low);
+            const auto lowRight = rightFilters[index].process (right, StateVariableFilter::Output::low);
+
+            bandLeft[index] = lowLeft - previousLeft;
+            bandRight[index] = lowRight - previousRight;
+            previousLeft = lowLeft;
+            previousRight = lowRight;
+        }
+
+        bandLeft[crossovers] = left - previousLeft;
+        bandRight[crossovers] = right - previousRight;
+
+        std::array<float, bands> energy {};
+        auto loudest = 0.0f;
 
         for (int band = 0; band < bands; ++band)
         {
             const auto index = static_cast<std::size_t> (band);
-            const auto bandLeft = leftFilters[index].process (left, StateVariableFilter::Output::band);
-            const auto bandRight = rightFilters[index].process (right, StateVariableFilter::Output::band);
 
-            const auto energy = std::max (leftEnvelopes[index].process (bandLeft),
-                                          rightEnvelopes[index].process (bandRight));
-
-            const auto target = energy > reference * threshold ? 1.0f : 0.0f;
-            auto& gain = gains[index];
-            gain += (target - gain) * (target > gain ? 0.05f : blurCoefficient);
-            gain = flushDenormal (gain);
-
-            wetLeft += bandLeft * gain;
-            wetRight += bandRight * gain;
+            energy[index] = std::max (leftEnvelopes[index].process (bandLeft[index]),
+                                      rightEnvelopes[index].process (bandRight[index]));
+            loudest = std::max (loudest, energy[index]);
         }
 
-        left += (wetLeft * 2.5f - left) * depth;
-        right += (wetRight * 2.5f - right) * depth;
+        const auto level = std::max (loudest, 1.0e-6f) * share;
+
+        auto wetLeft = 0.0f;
+        auto wetRight = 0.0f;
+
+        for (int band = 0; band < bands; ++band)
+        {
+            const auto index = static_cast<std::size_t> (band);
+            const auto target = energy[index] > level ? 1.0f : 0.0f;
+            auto& gain = gains[index];
+
+            gain += (target - gain) * (target > gain ? openingCoefficient : close);
+            gain = flushDenormal (gain);
+
+            wetLeft += bandLeft[index] * gain;
+            wetRight += bandRight[index] * gain;
+        }
+
+        left += (wetLeft - left) * depth;
+        right += (wetRight - right) * depth;
     }
 
 private:
     static float bandFrequency (int band) noexcept
     {
-        // 200 Hz to 6 kHz, log-spaced across the six bands.
-        return 200.0f * std::pow (30.0f, static_cast<float> (band) / 5.0f);
+        // 200 Hz to 6.2 kHz, log-spaced across the six crossovers.
+        return 200.0f * std::pow (30.0f, static_cast<float> (band)
+                                             / static_cast<float> (crossovers - 1));
     }
 
-    std::array<StateVariableFilter, bands> leftFilters, rightFilters;
+    static constexpr float openingCoefficient = 0.05f;
+
+    std::array<StateVariableFilter, crossovers> leftFilters, rightFilters;
     std::array<EnvelopeFollower, bands> leftEnvelopes, rightEnvelopes;
     std::array<float, bands> gains {};
-    EnvelopeFollower totalEnvelope;
     double rate = 48000.0;
 };
 
