@@ -340,39 +340,13 @@ public:
     bool isBusesLayoutSupported (const BusesLayout& layouts) const override;
    #endif
 
-       juce::Vst::tresult setBusArrangements (juce::Vst::SpeakerArrangement* inputs, int32 numIns,
-                                               juce::Vst::SpeakerArrangement* outputs, int32 numOuts) override
-       {
-           if (numIns == 1 && numOuts == 1)
-           {
-               if (inputs != nullptr && outputs != nullptr &&
-                   juce::Vst::SpeakerArrangement::getChannelNumber (inputs[0]) <= 2 &&
-                   juce::Vst::SpeakerArrangement::getChannelNumber (outputs[0]) <= 2)
-               {
-                   inputs[0] = juce::Vst::SpeakerArrangement::createStereo (true);
-                   outputs[0] = juce::Vst::SpeakerArrangement::createStereo (true);
-                   return juce::Vst::kResultOk;
-               }
-           }
-           return juce::Vst::kResultFalse;
-       }
-
-       // AudioProcessor declares BOTH a float and a double processBlock in the headless
+    // AudioProcessor declares BOTH a float and a double processBlock in the headless
     // module. Overriding only the float one hid the double overload, which GCC reports
     // as -Woverloaded-virtual: the base virtual becomes unreachable by name. The using
     // declaration brings it back into scope; the double one is never called for a
     // float-only plugin, but hiding it is still a real interface change.
     using juce::AudioProcessor::processBlock;
     void processBlock (juce::AudioBuffer<float>&, juce::MidiBuffer&) override;
-
-        void setProcessing (bool isOffline) override
-        {
-            AudioProcessor::setProcessing (isOffline);
-            // Offline mode handling can be added here if needed for:
-            // - Denormal handling adjustments
-            // - Look-ahead latency changes
-            // - Different smoothing ramp times
-        }
 
         /** The OSC module's oscillator: the note the deck's ring landed on, mixed into
         the machine's INPUT before any stage touches it - never onto the output, so
