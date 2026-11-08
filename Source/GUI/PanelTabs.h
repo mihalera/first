@@ -54,8 +54,8 @@ namespace j37panel
         std::size_t controls[16];
     };
 
-    // Eleven pages under three large families - TAPE, FX, SETUP - because the
-    // panel carries sixty-nine knobs and no single subject should own a crowded
+    // Twenty-two pages under three large families - TAPE, FX, SETUP - because
+    // the panel carries ninety-seven knobs and no single subject should own a crowded
     // page. Walking the bar left to right inside a family still walks the signal:
     //
     // Index map, for reading the table below:
@@ -96,7 +96,7 @@ namespace j37panel
     // SETTINGS, and the delay TYPE / RATE / SYNC trio shows on DELAY. They are
     // not knobs - the grid below cannot place them - so their visibility is
     // managed in setCurrentTab beside the knobs'.
-    // The eighteen pages are grouped into THREE FAMILIES - TAPE, FX, SETUP -
+    // The twenty-two pages are grouped into THREE FAMILIES - TAPE, FX, SETUP -
     // and no page carries more than one subject, or more than one row of seven
     // knobs. The families are the three large buttons ABOVE this bar (see
     // setTabFamily); the column in each row below is the page's family, and it
@@ -187,7 +187,7 @@ namespace j37panel
                      "point, SAG lets its supply yield under load, and SUBFUND "
                      "generates the octave below what plays.",
                      3, 0, { 17, 18, 25 } },
-        // ---- FX family (the first four of its six pages): the second head,
+        // ---- FX family (the first four of its ten pages): the second head,
         //  the room, the envelope, the output equaliser. AUTOTUNE and COMP are
         //  FX too and sit at the END of the table, where they were appended;
         //  the bar filters the table, so that order is the order they show in.

@@ -590,7 +590,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         bool compressorTab = false;
     };
 
-    // Sixty-nine controls, split across eighteen tab pages of at most one row
+    // Ninety-seven controls, split across twenty-two tab pages of at most one row
     // of seven, in signal-flow order: consecutive slices of one chain, read
     // left to right. The page map lives in tabSpecs in the .cpp, and the three
     // large family buttons above the bar (TAPE / FX / SETUP) group those
@@ -611,8 +611,8 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // and a fixed four columns made every page with six or seven knobs a pair of
     // half-height rows and half-size knobs.
     static constexpr int tabColumns = 4;
-    // Eighteen pages under three large families (TAPE / FX / SETUP).
-    static constexpr int numTabs = 18;
+    // Twenty-two pages under three large families (TAPE / FX / SETUP).
+    static constexpr int numTabs = 22;
     static constexpr std::size_t decorativeOrbCount = 6;
 
     // Header grid dimensions for the two engine-switch rows and language selector.

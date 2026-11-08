@@ -427,15 +427,6 @@ void TapeScene::setControlValues(const float *values, int count) noexcept {
         knobValues[static_cast<std::size_t>(i)].store(i < usable ? values[i] : 0.5f,
                                                       std::memory_order_relaxed);
 
-// Mark uniforms as dirty so they'll be updated on next render
-MARK_FS_DIRTY(0); // uBaseColour - will be updated from palette later
-MARK_FS_DIRTY(5); // uGlow
-MARK_FS_DIRTY(6); // uDrive
-MARK_FS_DIRTY(7); // uMode
-MARK_FS_DIRTY(8); // uTime
-MARK_FS_DIRTY(9); // uArcAngle
-MARK_FS_DIRTY(10); // uKeyDown
-
     repaint();
 }
 
@@ -451,11 +442,6 @@ void TapeScene::setPalette(juce::Colour background,
     bodyColour.store(body.getARGB(), std::memory_order_relaxed);
     highlightColour.store(highlight.getARGB(), std::memory_order_relaxed);
     tapeColour.store(tape.getARGB(), std::memory_order_relaxed);
-
-MARK_FS_DIRTY(0); // uBaseColour
-MARK_FS_DIRTY(1); // uHighlightColour
-MARK_FS_DIRTY(2); // uLightDirection
-MARK_FS_DIRTY(3); // uTextureWeights
 
     repaint();
 }

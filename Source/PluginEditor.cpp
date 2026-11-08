@@ -462,8 +462,8 @@ void FirstAudioProcessorEditor::setTabFamily (int newFamily)
                 return false;
             ++familyCounts[static_cast<std::size_t> (tab.family)];
         }
-        return familyCounts[0] == 9 && familyCounts[1] == 6 && familyCounts[2] == 3;
-    }(), "tab families must contain 9 TAPE, 6 FX and 3 SETUP pages");
+        return familyCounts[0] == 9 && familyCounts[1] == 10 && familyCounts[2] == 3;
+    }(), "tab families must contain 9 TAPE, 10 FX and 3 SETUP pages");
 
     // A family change only filters the tab bar's visibility and jumps to the
     // family's first page: currentTab is set through setCurrentTab so the

@@ -2,7 +2,7 @@
 //  The parameter sheet: every parameter the plugin exposes, in one scrollable
 //  list, built by foleys_gui_magic from the processor's own parameter tree.
 //
-//  The panel is 18 pages of hand-placed controls and 109 parameters. That is the
+//  The panel is 22 pages of hand-placed controls and 147 parameters. That is the
 //  right shape for playing the machine and the wrong shape for finding one
 //  control by name, for automating something that lives three pages away, or for
 //  a screen reader walking the plugin. This sheet is the other view: grouped by

@@ -1562,7 +1562,7 @@ void FirstAudioProcessorEditor::setUpSettingsSwitches() {
            j37panel::ParameterSheet::available
                ? "PARAMETERS - opens the sheet: every parameter the plugin "
                  "exposes, grouped by the processor's own parameter tree, in one "
-                 "scrollable list. The panel shows eighteen pages of hand-placed "
+                 "scrollable list. The panel shows twenty-two pages of hand-placed "
                  "controls for playing the machine; the sheet is for finding a "
                  "control by name, and every row is a live attachment rather "
                  "than a copy of the value. Escape or CLOSE returns to the panel."
@@ -1667,7 +1667,7 @@ void FirstAudioProcessorEditor::toggleParameterSheet() {
     if (!j37panel::ParameterSheet::available)
         return;
 
-    // Built on first use and kept: creating 109 parameter attachments is a
+    // Built on first use and kept: creating 147 parameter attachments is a
     // message-thread job worth doing once, not on every open.
     if (parameterSheet == nullptr) {
         parameterSheet = std::make_unique<j37panel::ParameterSheet>(

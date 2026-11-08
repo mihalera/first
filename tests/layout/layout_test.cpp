@@ -4,7 +4,7 @@
 // becomes a grid, the grid becomes a column count and a tile, and the tile
 // becomes the disc drawRotarySlider is handed. Every one of those steps is a
 // pure function of the panel size, so every one of them can be run and measured
-// here - on the panel's four corner sizes, on all eighteen pages, against the
+// here - on the panel's four corner sizes, on all twenty-two pages, against the
 // toolkit's own geometry - without a window, a GPU or a JUCE.
 //
 // What it checks is what the panel actually shows: that every knob gets a tile
