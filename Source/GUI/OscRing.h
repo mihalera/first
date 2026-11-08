@@ -497,10 +497,18 @@ public:
         meridian.addCentredArc (ballCentre.x, ballCentre.y,
                                 drawnRadius * 0.34f, drawnRadius * 0.86f,
                                 ball.angle, 0.0f, juce::MathConstants<float>::twoPi, true);
-        g.setColour (palette.knobEdge.withAlpha (running ? 0.72f : 0.48f));
+        // The meridian belongs to the BALL, so its ink is the ball's own body:
+        // a darker shade of the cap for the edge and a lifted one for the
+        // highlight. Drawing it in knobEdge was the grey hoop across the dome -
+        // on IVORY that edge colour happens to sit close to the cap, so it read
+        // as shading, and on every other skin it read as a ring lying on top of
+        // the ball rather than as a line turning with it.
+        const auto meridianInk = ballBody.darker (0.55f);
+        const auto meridianGlint = ballBody.brighter (0.55f);
+        g.setColour (meridianInk.withAlpha (running ? 0.85f : 0.55f));
         g.strokePath (meridian, juce::PathStrokeType (0.8f, juce::PathStrokeType::curved,
                                                        juce::PathStrokeType::rounded));
-        g.setColour (palette.knobHighlight.withAlpha (running ? 0.70f : 0.38f));
+        g.setColour (meridianGlint.withAlpha (running ? 0.75f : 0.40f));
         g.strokePath (meridian, juce::PathStrokeType (0.35f, juce::PathStrokeType::curved,
                                                        juce::PathStrokeType::rounded));
 
@@ -509,7 +517,9 @@ public:
                        ballCentre.y - drawnRadius * 0.56f,
                        drawnRadius * 0.42f, drawnRadius * 0.26f);
 
-        g.setColour (palette.knobEdge.withAlpha (running ? 0.72f : 0.48f));
+        // The cap's rim is the same ink as the meridian, so the ball closes on
+        // itself instead of ending in a panel-coloured outline.
+        g.setColour (meridianInk.withAlpha (running ? 0.80f : 0.52f));
         g.drawEllipse (ballCentre.x - drawnRadius, ballCentre.y - drawnRadius,
                        drawnRadius * 2.0f, drawnRadius * 2.0f, 0.65f);
     }
