@@ -925,13 +925,22 @@ void FirstAudioProcessorEditor::timerCallback() {
     // open is an invalidation of the panel BEHIND it, which the popup's own
     // window then has to repaint over; that is the same class of problem as the
     // whole-panel repaint noted above, one rectangle at a time. The frame after
-#if defined (__ANDROID__)
-    constexpr int animationPaintIntervalTicks = j37panel::androidAnimationPaintIntervalTicks;
-#else
-    constexpr int animationPaintIntervalTicks = j37panel::desktopAnimationPaintIntervalTicks;
-#endif
-    // Desktop repaints at 30 Hz to keep the textured panel affordable; Android
-    // repaints at 60 Hz, where the compact layout does not draw the full deck.
+    // The paint rate follows the machine rather than the platform. Something is
+    // moving when the transport is engaged, when the spindown is held, when a
+    // START is waiting for the host, or when the panel's own activity and drift
+    // are still breathing - and those are the frames where a 30 Hz panel was
+    // visibly a slideshow. A panel at rest (the common case, and every idle
+    // phone) repaints on every third tick instead of sixty times a second.
+    //
+    //  This is also the answer to the phone's frame budget: the knob halos, the
+    //  switch lamps and the deck particles all invalidate on this call, so a
+    //  still page now costs a third of the paints it used to while a moving one
+    //  gets the full rate it needs.
+    const auto animationMoving = transportNow != 0 || spindownNow || waitingForHost
+                                 || activity > 0.02f || driftAmount > 0.02f;
+    const auto animationPaintIntervalTicks = animationMoving
+                                                ? j37panel::activeAnimationPaintIntervalTicks
+                                                : j37panel::idleAnimationPaintIntervalTicks;
     if (!popupIsOpen && !panelCovered
         && ++animationPaintTick >= animationPaintIntervalTicks) {
         animationPaintTick = 0;
