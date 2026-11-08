@@ -169,6 +169,8 @@ namespace
 
     void checkBypass()
     {
+        // A default FxTargets is the rack's neutral position: every amount at zero,
+        // and SPEED - a rate, not an amount - at the 1x that its middle means.
         const auto left = sine (440.0f, 4096);
         const auto right = sine (660.0f, 4096);
         const auto output = runRack (left, right, [] (j37dsp::FxTargets&) {});
@@ -178,7 +180,7 @@ namespace
         for (std::size_t i = 0; i < left.size(); ++i)
             identical = identical && output[i] == left[i];
 
-        check (identical, "rack at every amount zero is bit-exact");
+        check (identical, "rack at its neutral position is bit-exact");
     }
 
     bool addsHarmonics (const std::vector<float>& input, float amount,

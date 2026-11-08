@@ -83,7 +83,11 @@ struct FxTargets
     float vocoder = 0.0f;
     float granular = 0.0f;
     float spectral = 0.0f;
-    float speed = 0.0f;
+
+    /** SPEED is a rate rather than an amount: half speed, the tape's own speed at
+        the middle, twice at the top. Its neutral position is therefore the middle
+        and not zero, which is why the default is not the default of the rest. */
+    float speed = 0.5f;
 };
 
 class FxRack

@@ -230,14 +230,18 @@ private:
 //  a wrapper pretending a block is a frame, and a spectral effect that delayed
 //  the signal by a window would have to be reported to the host as latency the
 //  rack does not have. What CAN live here is the same decision made by a
-//  filterbank, and it can be made to reconstruct exactly:
+//  filterbank, and it can be made to recombine without changing the level:
 //
 //    * six log-spaced low passes, all fed the same sample, at 200 Hz to 6.2 kHz;
 //    * seven bands, each the difference between two neighbouring low passes -
-//      the sub band, five bands between them, and a top band that is whatever the
-//      last low pass left behind. The differences telescope, so with every band
-//      open the sum IS the input, sample for sample: an idle gate cannot colour
-//      the signal, only remove from it.
+//      the sub band, five bands between them, and a top band that is the high
+//      side of the last crossover. Every section is fourth order, two cascaded
+//      second-order filters, and the top band is a high pass rather than what
+//      the last low pass left behind: that remainder is only the low pass's
+//      phase error, so it carries as much of a loud body as the top band holds
+//      of a quiet partial, and a gate that closes it takes the body with it.
+//      The low side and the high side of a crossover like this recombine flat in
+//      magnitude, so with every band open the gate changes phase, not level.
 //    * each band's envelope is compared against the loudest band of the same
 //      sample, and a band below that share is faded out. Sharing against the
 //      loudest band is what makes it spectral: the reference moves with the
@@ -251,7 +255,7 @@ class SpectralGate
 {
 public:
     /** Six crossovers, so seven bands: the sub, the five between them, and the
-        top one, which is everything the last crossover left behind. */
+        top one, which is the high side of the last crossover. */
     static constexpr int crossovers = 6;
     static constexpr int bands = crossovers + 1;
 
@@ -264,8 +268,19 @@ public:
             const auto index = static_cast<std::size_t> (band);
             const auto hertz = bandFrequency (band);
 
-            leftFilters[index].setCutoff (hertz, 0.707f, rate);
-            rightFilters[index].setCutoff (hertz, 0.707f, rate);
+            for (std::size_t stage = 0; stage < stages; ++stage)
+            {
+                leftFilters[index][stage].setCutoff (hertz, 0.707f, rate);
+                rightFilters[index][stage].setCutoff (hertz, 0.707f, rate);
+            }
+        }
+
+        for (std::size_t stage = 0; stage < stages; ++stage)
+        {
+            const auto hertz = bandFrequency (crossovers - 1);
+
+            leftTop[stage].setCutoff (hertz, 0.707f, rate);
+            rightTop[stage].setCutoff (hertz, 0.707f, rate);
         }
 
         for (int band = 0; band < bands; ++band)
@@ -284,8 +299,18 @@ public:
         for (int band = 0; band < crossovers; ++band)
         {
             const auto index = static_cast<std::size_t> (band);
-            leftFilters[index].reset();
-            rightFilters[index].reset();
+
+            for (std::size_t stage = 0; stage < stages; ++stage)
+            {
+                leftFilters[index][stage].reset();
+                rightFilters[index][stage].reset();
+            }
+        }
+
+        for (std::size_t stage = 0; stage < stages; ++stage)
+        {
+            leftTop[stage].reset();
+            rightTop[stage].reset();
         }
 
         for (int band = 0; band < bands; ++band)
@@ -316,8 +341,9 @@ public:
         for (int band = 0; band < crossovers; ++band)
         {
             const auto index = static_cast<std::size_t> (band);
-            const auto lowLeft = leftFilters[index].process (left, StateVariableFilter::Output::low);
-            const auto lowRight = rightFilters[index].process (right, StateVariableFilter::Output::low);
+
+            const auto lowLeft = cascade (leftFilters[index], left, Output::low);
+            const auto lowRight = cascade (rightFilters[index], right, Output::low);
 
             bandLeft[index] = lowLeft - previousLeft;
             bandRight[index] = lowRight - previousRight;
@@ -325,8 +351,8 @@ public:
             previousRight = lowRight;
         }
 
-        bandLeft[crossovers] = left - previousLeft;
-        bandRight[crossovers] = right - previousRight;
+        bandLeft[crossovers] = cascade (leftTop, left, Output::high);
+        bandRight[crossovers] = cascade (rightTop, right, Output::high);
 
         std::array<float, bands> energy {};
         auto loudest = 0.0f;
@@ -363,6 +389,23 @@ public:
     }
 
 private:
+    /** Each crossover is fourth order - two cascaded second-order sections.
+        That order is what makes the top band a real high pass: at the fourth
+        order it holds under a ten-thousandth of a body four octaves below it,
+        so closing it takes the sibilance and leaves the body alone. */
+    static constexpr std::size_t stages = 2;
+
+    using Output = StateVariableFilter::Output;
+    using Chain = std::array<StateVariableFilter, stages>;
+
+    static float cascade (const Chain& chain, float sample, Output output) noexcept
+    {
+        for (std::size_t stage = 0; stage < stages; ++stage)
+            sample = chain[stage].process (sample, output);
+
+        return sample;
+    }
+
     static float bandFrequency (int band) noexcept
     {
         // 200 Hz to 6.2 kHz, log-spaced across the six crossovers.
@@ -372,7 +415,8 @@ private:
 
     static constexpr float openingCoefficient = 0.05f;
 
-    std::array<StateVariableFilter, crossovers> leftFilters, rightFilters;
+    std::array<Chain, crossovers> leftFilters, rightFilters;
+    Chain leftTop, rightTop;
     std::array<EnvelopeFollower, bands> leftEnvelopes, rightEnvelopes;
     std::array<float, bands> gains {};
     double rate = 48000.0;
