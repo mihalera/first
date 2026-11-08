@@ -1020,13 +1020,14 @@ void FirstAudioProcessor::mixOscillatorIntoInput (juce::dsp::AudioBlock<float>& 
                                                   float engineSampleRate, int channels)
 {
     const bool running = oscOnParam != nullptr && oscOnParam->load() >= 0.5f;
-    const bool panelOpen = oscPanelOpen.load (std::memory_order_relaxed);
 
-    // With no editor the engine is the ball's clock - the module must keep
-    // playing when the window closes. While an editor is on screen its timer is
-    // the clock, from the state it took at open; this one only reads the note the
-    // editor hands over, so the two never step the same bounce at once.
-    if (running && ! panelOpen)
+    // The engine is the ball's clock, always - with or without an editor. It used
+    // to step only while no window existed, and to read the note an open editor
+    // handed over; that made the module's rhythm a property of the panel's frame
+    // rate, so a slow phone quantised every contact to a frame. Stepping here
+    // puts every contact on the audio thread's own clock: the same bounce at 20
+    // and at 60 fps. An editor now MIRRORS this state (OscRing::follow).
+    if (running)
     {
         const auto blockSeconds = static_cast<double> (block.getNumSamples())
                                 / static_cast<double> (juce::jmax (1.0f, engineSampleRate));

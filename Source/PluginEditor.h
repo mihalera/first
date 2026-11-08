@@ -1507,6 +1507,10 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // -1 means "nothing applied yet".
     int appliedSwapInterval = -1;
 
+    // The OSC sector the wire was last told about: the engine dispatches the
+    // notes, so the panel publishes on a sector change rather than per frame.
+    int lastPublishedOscSector = -1;
+
 
 
     // =====================================================================
