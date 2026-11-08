@@ -483,14 +483,22 @@ void checkPhoneLayout()
            "360 px portrait uses the phone layout", "PHONE", 360, 800);
     check (j37panel::usesPhoneLayout (600, 800),
            "600 px portrait uses the phone layout", "PHONE", 600, 800);
-    check (! j37panel::usesPhoneLayout (601, 800),
-           "601 px portrait keeps the desktop layout", "PHONE", 601, 800);
+    check (j37panel::usesPhoneLayout (800, 800),
+           "800 px portrait is the widest phone page", "PHONE", 800, 800);
+    check (! j37panel::usesPhoneLayout (801, 800),
+           "801 px portrait keeps the desktop layout", "PHONE", 801, 800);
     check (j37panel::usesPhoneLayout (800, 360),
            "800 x 360 landscape uses the phone layout", "PHONE", 800, 360);
     check (j37panel::usesPhoneLayout (915, 412),
            "915 x 412 landscape uses the phone layout", "PHONE", 915, 412);
-    check (! j37panel::usesPhoneLayout (1280, 720),
-           "1280 x 720 keeps the desktop layout", "PHONE", 1280, 720);
+    check (j37panel::usesPhoneLayout (1280, 720),
+           "1280 x 720 is still a phone landscape", "PHONE", 1280, 720);
+    check (j37panel::usesPhoneLayout (1440, 720),
+           "1440 x 720 is the widest phone landscape", "PHONE", 1440, 720);
+    check (! j37panel::usesPhoneLayout (1441, 720),
+           "1441 x 720 keeps the desktop layout", "PHONE", 1441, 720);
+    check (! j37panel::usesPhoneLayout (1280, 800),
+           "a landscape window taller than 720 px keeps the desktop layout", "PHONE", 1280, 800);
     check (j37panel::editorTimerHz == 60
                && j37panel::editorTimerHz
                       / j37panel::desktopAnimationPaintIntervalTicks == 30
