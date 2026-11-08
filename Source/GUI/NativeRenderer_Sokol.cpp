@@ -12,6 +12,7 @@
  // adapter draws into is JUCE's OpenGLContext, attached to the scene component.
 // sokol_app.h is deliberately NOT used - it is sokol's own window and event
  // system, and JUCE already is one.
+ #include "SceneUniforms.h"
  #include "SokolBackend.h"
  #include <sokol_gfx.h>
 
@@ -273,35 +274,10 @@ void main()
 //  _SIZE_MISMATCH), so a reordered member fails the build rather than the frame.
 //==============================================================================
 
-struct VsUniforms
-{
-    float viewProjection[16];
-    float model[16];
-    float normalMatrix[16];
-    float mode;
-    float packInner;
-    float packOuter;
-    float time;
-    float flutter;
-};
-
-struct FsUniforms
-{
-    float baseColour[3];
-    float highlightColour[3];
-    float lightDirection[3];
-    float textureWeights[3];
-    float panelHalf[3];
-    float glow;
-    float drive;
-    float mode;
-    float time;
-    float arcAngle;
-    float keyDown;
-};
-
-static_assert (sizeof (VsUniforms) == 3 * 64 + 5 * 4, "VS uniform block size drifted");
-static_assert (sizeof (FsUniforms) == 5 * 12 + 6 * 4, "FS uniform block size drifted");
+// The two uniform blocks and the draw-to-block mapping live in SceneUniforms.h,
+// with the cache that decides which of them still has to be uploaded. They are
+// there rather than here because none of it needs sokol, a device or JUCE - and
+// a mapping that cannot be compiled without a GPU is a mapping nobody tests.
 static_assert (sizeof (SceneVertex) == 28, "SceneVertex is the 4+3 float layout the pipeline declares");
 
 /**
@@ -690,6 +666,10 @@ private:
 
         shader = sg_make_shader (&desc);
 
+        // A freshly created program holds zeroed uniforms, whatever the cache
+        // remembers of the program it replaces.
+        uniformCache.reset();
+
         if (shader.id == 0)
         {
             const std::lock_guard<std::mutex> lock (frameMutex);
@@ -859,9 +839,11 @@ private:
     }
 
     /** Records every draw of a validated frame. Called inside the frame's
-        pass; pipeline, bindings and both uniform blocks are re-applied per
-        draw because that is what differs - the meshes are indexed and the
-        material constants change with every draw. */
+        pass; the pipeline and the bindings are re-applied per draw because the
+        mesh is. The two uniform blocks go through the cache, so a draw that
+        repeats the block the program already holds - the fragment block of two
+        knobs with the same angle, the vertex block of a frame that did not
+        move - costs no upload at all. */
     void drawFrame (const SceneFrame& frame) noexcept
     {
         for (const auto& draw : frame.draws)
@@ -873,54 +855,9 @@ private:
             if (mesh.vertices.id == 0 || mesh.indices.id == 0 || mesh.indexCount <= 0)
                 continue;
 
-            VsUniforms vs {};
-            std::copy_n (frame.viewProjection.data(), 16, vs.viewProjection);
-            std::copy_n (draw.model.data(), 16, vs.model);
-            std::copy_n (draw.normalMatrix.data(), 16, vs.normalMatrix);
-            vs.mode = static_cast<float> (draw.material);
-            vs.time = frame.timeSeconds;
-
-            FsUniforms fs {};
-            std::copy_n (draw.baseColour.data(), 3, fs.baseColour);
-            std::copy_n (draw.highlightColour.data(), 3, fs.highlightColour);
-            std::copy_n (frame.lightDirection.data(), 3, fs.lightDirection);
-            std::copy_n (frame.textureWeights.data(), 3, fs.textureWeights);
-            fs.mode = vs.mode;
-            fs.time = vs.time;
-            fs.drive = frame.drive;
-            fs.glow = frame.glow;
-
-            // The parameters array means something different per material -
-            // the same switch drawSceneFrameOpenGL() makes on the OpenGL path.
-            switch (draw.material)
-            {
-                case SceneMaterial::tapePack:
-                    vs.packInner = draw.parameters[0];
-                    vs.packOuter = draw.parameters[1];
-                    break;
-                case SceneMaterial::ribbon:
-                    vs.flutter = draw.parameters[0];
-                    break;
-                case SceneMaterial::controlPanel:
-                    fs.panelHalf[0] = draw.parameters[0];
-                    fs.panelHalf[1] = draw.parameters[1];
-                    fs.panelHalf[2] = draw.parameters[2];
-                    break;
-                case SceneMaterial::knob:
-                    fs.arcAngle = draw.parameters[0];
-                    break;
-                case SceneMaterial::key:
-                    fs.keyDown = draw.parameters[1];
-                    break;
-                case SceneMaterial::glow:
-                    // A lit disc is light ON the face, so it is added rather
-                    // than composited - and uGlow here is the disc's own
-                    // amount, not the machine's.
-                    fs.glow = draw.parameters[0];
-                    break;
-                case SceneMaterial::solid:
-                    break;
-            }
+            const auto uniforms = makeDrawUniforms (frame, draw);
+            const auto& vs = uniforms.vertex;
+            const auto& fs = uniforms.fragment;
 
             sg_apply_pipeline (draw.material == SceneMaterial::glow ? glowPipeline
                                                                     : mainPipeline);
@@ -930,19 +867,26 @@ private:
             bindings.index_buffer = mesh.indices;
             sg_apply_bindings (&bindings);
 
-            // Both blocks are filled from this frame's draw command just above,
-            // so they are uploaded here rather than cached: a cache would need
-            // every writer of the scene's atomics to reach the renderer's flags,
-            // and the two that exist (the setters below) have no such path.
-            const sg_range vsRange { &vs, sizeof (vs) };
-            sg_apply_uniforms (0, &vsRange);
+            if (uniformCache.take (vs))
+            {
+                const sg_range vsRange { &vs, sizeof (vs) };
+                sg_apply_uniforms (0, &vsRange);
+            }
 
-            const sg_range fsRange { &fs, sizeof (fs) };
-            sg_apply_uniforms (1, &fsRange);
+            if (uniformCache.take (fs))
+            {
+                const sg_range fsRange { &fs, sizeof (fs) };
+                sg_apply_uniforms (1, &fsRange);
+            }
 
             sg_draw (0, mesh.indexCount, 1);
         }
     }
+
+    /** The scene's lever on the cache. A palette or a control bank can move
+        without changing a byte of the blocks it produces, and this is how the
+        editor says so instead of hoping the comparison notices. */
+    void invalidateUniforms() noexcept override { uniformCache.invalidate(); }
 
     void releaseMeshes() noexcept
     {
@@ -1067,6 +1011,12 @@ private:
     SceneFrame pendingFrame;
     bool hasPendingFrame = false;
     juce::String drawFailure;
+
+    /** Which of the two stage blocks the program is holding, and the generation
+        the scene last marked. The bytes belong to the recording thread like the
+        resources below; the generation is the one field the message thread
+        writes, which is why it is atomic. */
+    UniformCache uniformCache;
 
     // GL-thread-only scene resources.
     sg_shader shader {};

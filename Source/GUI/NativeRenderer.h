@@ -74,6 +74,16 @@ class NativeRenderer {
     virtual bool isInitialised() const noexcept = 0;
     virtual juce::String status() const = 0;
 
+    /** Reports that what the frame's uniforms are built from has changed.
+
+        Adapters that upload every block on every draw need nothing here. An
+        adapter that caches uploads owns that cache, and this is the scene's
+        declared lever on it: a palette or a control bank that moved can produce
+        bytes the GPU already holds, so the change is reported rather than
+        inferred. Called from the thread that submits frames; an adapter whose
+        caching state belongs to another thread must make the mark safe to set. */
+    virtual void invalidateUniforms() noexcept {}
+
     /** Draws a validated scene frame into the surface begun by beginFrame().
 
         Adapters that only create, clear and present a surface keep this
