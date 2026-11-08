@@ -1085,6 +1085,7 @@ std::unique_ptr<NativeRenderer> createSokolRenderer()
 {
     return std::make_unique<SokolRenderer>();
 }
+} // namespace j37::render
 #else
 namespace j37::render
 {
