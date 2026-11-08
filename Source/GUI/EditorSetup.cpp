@@ -833,7 +833,9 @@ void FirstAudioProcessorEditor::setUpTabButtons() {
         auto &button = *familyButtons[f];
         button.setComponentID ("mibox.family." + juce::String (static_cast<int> (f)));
         button.setLookAndFeel(&customLookAndFeel);
-        button.onClick = [this, f] { setTabFamily(static_cast<int>(f)); };
+        // A family press OPENS the family (see setTabFamily's second argument):
+        // the range rule it used to rely on could leave the old page selected.
+        button.onClick = [this, f] { setTabFamily(static_cast<int>(f), true); };
         addAndMakeVisible(button);
     }
 

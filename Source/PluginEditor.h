@@ -861,7 +861,12 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void setCurrentTab(int newTab);
 
     // The three tab families select the visible page range and its first page.
-    void setTabFamily(int newFamily);
+    /** Filters the tab bar to one family, and optionally opens that family's
+        first page. A click on the family button passes `openFirstPage`, because
+        a family press means "take me there": the page range test alone left the
+        old page selected whenever it happened to sit inside the new family's
+        index span, which is how SETUP stayed lit after pressing FX. */
+    void setTabFamily (int newFamily, bool openFirstPage = false);
     void styleTabButtons();
 
     void refreshPresetList();

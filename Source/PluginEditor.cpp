@@ -435,7 +435,7 @@ void FirstAudioProcessorEditor::applyLanguage (int languageIndex)
     updateTooltips();
 }
 
-void FirstAudioProcessorEditor::setTabFamily (int newFamily)
+void FirstAudioProcessorEditor::setTabFamily (int newFamily, bool openFirstPage)
 {
     // The tab table's family column is the single source of truth: each page
     // states which family hosts it, and this strip reads the column rather
@@ -487,7 +487,16 @@ void FirstAudioProcessorEditor::setTabFamily (int newFamily)
         tabButtons[static_cast<std::size_t> (tab)]
             .setVisible (tabSpecs[static_cast<std::size_t> (tab)].family == family);
 
-    if (currentTab < firstOfFamily || currentTab >= lastOfFamily) {
+    // A family PRESS always lands on that family's first page. Range membership
+    // was the only rule here, and it is the wrong one for a press: the FX family
+    // straddles the tail of the table (AUTOTUNE and COMP are appended after the
+    // SETUP pages), so its index span reaches past them and a SETUP page inside
+    // that span counted as "already in the family" - the bar said FX, the page
+    // and its tab kept saying SETUP, and nothing was opened. Every other caller
+    // (setCurrentTab following a page into its own family) passes the default,
+    // where the range test is the right rule because the page is by definition
+    // already inside it.
+    if (openFirstPage || currentTab < firstOfFamily || currentTab >= lastOfFamily) {
         setCurrentTab (firstOfFamily);
     } else {
         resized();
@@ -1267,6 +1276,20 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
                                utilityWidth, 25);
         oscButton.setVisible (true);
         themeButton.setVisible (true);
+
+        // The machine-state readout is a header citizen on the phone as well.
+        // It used to be left with whatever rectangle the desktop grid gave it,
+        // which on a 400 px phone is a grid edge that no longer exists - the
+        // STEREO / REAL TIME line hanging crooked under the switches, outside
+        // the row it belongs to. It shares row two with the two utility keys
+        // instead, same height, centred in what the keys leave.
+        const auto statusLeft = header.getX() + 2 * utilityWidth + 12;
+        statusLabel.setBounds (statusLeft, rowTwoY,
+                               juce::jmax (1, header.getRight() - statusLeft - 4), 25);
+        statusLabel.setJustificationType (juce::Justification::centred);
+        statusLabel.setFont (statusLabel.getFont().withHeight (uiFontSize (8.5f)));
+        statusLabel.setBorderSize (juce::BorderSize<int> (0));
+        statusLabel.setVisible (true);
         return;
     }
 
