@@ -71,9 +71,37 @@ if(NOT EXISTS "${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
             "${CMAKE_BINARY_DIR}/cmake/CPM.cmake.\n"
             "Run one online configure first, or copy CPM.cmake there by hand.")
     endif()
-    file(DOWNLOAD
-         "https://github.com/cpm-cmake/CPM.cmake/releases/download/v${CPM_DOWNLOAD_VERSION}/CPM.cmake"
-         "${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
+    # A failed file(DOWNLOAD) leaves a file behind, often a zero-length one, and
+    # include() of that succeeds with an empty script: the first CPMAddPackage
+    # below then dies with 'Unknown CMake command "CPMAddPackage"', which reads
+    # as a broken project rather than as the dropped connection it is. So the
+    # status is checked, a partial file is removed, and the fetch is retried
+    # before giving up with a message that says what actually happened.
+    file(REMOVE "${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
+
+    foreach(attempt RANGE 1 3)
+        file(DOWNLOAD
+             "https://github.com/cpm-cmake/CPM.cmake/releases/download/v${CPM_DOWNLOAD_VERSION}/CPM.cmake"
+             "${CMAKE_BINARY_DIR}/cmake/CPM.cmake"
+             STATUS cpmDownloadStatus
+             TIMEOUT 60)
+
+        list(GET cpmDownloadStatus 0 cpmDownloadCode)
+
+        if(cpmDownloadCode EQUAL 0)
+            break()
+        endif()
+
+        message(STATUS "CPM.cmake download attempt ${attempt} failed: ${cpmDownloadStatus}")
+        file(REMOVE "${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
+    endforeach()
+
+    if(NOT EXISTS "${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
+        message(FATAL_ERROR
+            "could not download CPM.cmake v${CPM_DOWNLOAD_VERSION}.\n"
+            "The configure step needs it before any CPMAddPackage call. Retry the "
+            "configure, or put the file at ${CMAKE_BINARY_DIR}/cmake/CPM.cmake.")
+    endif()
 endif()
 include("${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
 

@@ -398,7 +398,7 @@ private:
     using Output = StateVariableFilter::Output;
     using Chain = std::array<StateVariableFilter, stages>;
 
-    static float cascade (const Chain& chain, float sample, Output output) noexcept
+    static float cascade (Chain& chain, float sample, Output output) noexcept
     {
         for (std::size_t stage = 0; stage < stages; ++stage)
             sample = chain[stage].process (sample, output);
