@@ -333,7 +333,7 @@ inline juce::StringArray vinylTypeNameList()
 */
 class FirstAudioProcessor  : public juce::AudioProcessor,
                              private juce::AudioProcessorValueTreeState::Listener,
-                             private juce::AsyncUpdater
+                             private juce::Timer
 {
 public:
     //==============================================================================
@@ -1169,8 +1169,8 @@ private:
         is safe from processBlock. */
     void setOversamplingFactor (OversamplingFactor factor, int samplesPerBlock);
 
-    /** Message-thread callback for realtime-safe latency changes. */
-    void handleAsyncUpdate() override;
+    /** Message-thread timer applies latency changes published by the audio thread. */
+    void timerCallback() override;
 
     /** Pure function of the parameter snapshot - the factory preset table. */
     static std::map<juce::String, float> factoryPresetValues (int index);

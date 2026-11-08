@@ -21,6 +21,7 @@
 #include <array>
 #include <cmath>
 #include <cstdio>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -307,6 +308,32 @@ void testGuardUnwinds()
 }
 
 // =============================================================================
+//  Non-finite and extreme input handling
+// =============================================================================
+void testInvalidAndExtremeInputs()
+{
+    j37dsp::MultibandPhaseGuard guard;
+    guard.prepare (kRate);
+
+    auto left = std::numeric_limits<float>::quiet_NaN();
+    auto right = std::numeric_limits<float>::infinity();
+    check (! guard.process (left, right, 1.0f) && left == 0.0f && right == 0.0f,
+           "non-finite channel samples are silenced and reset guard state");
+
+    left = 1.0e30f;
+    right = -1.0e30f;
+    auto finite = true;
+    for (int i = 0; i < kRate; ++i)
+    {
+        left = 1.0e30f;
+        right = -1.0e30f;
+        guard.process (left, right, 1.0f);
+        finite = finite && std::isfinite (left) && std::isfinite (right);
+    }
+    check (finite, "extreme finite samples stay bounded through accumulated guard state");
+}
+
+// =============================================================================
 //  Nothing in, nothing out - and no NaN on a silent frame at full engagement.
 // =============================================================================
 void testSilenceStaysSilent()
@@ -338,6 +365,7 @@ int main()
     testHealthyFrameIsUntouched();
     testOppositionIsFixedPerBand();
     testGuardUnwinds();
+    testInvalidAndExtremeInputs();
     testSilenceStaysSilent();
 
     std::printf ("\n%s (%d failure%s)\n", gFailures == 0 ? "PHASE CHECK PASSED" : "FAILURES PRESENT",

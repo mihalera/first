@@ -117,6 +117,7 @@ SOURCE_HEADERS = [
     "DSP/VinylStage.h",
     "DSP/SubharmonicGenerator.h",
     "DSP/LoudnessMeter.h",
+    "DSP/HarmonicAnalyser.h",
     "DSP/TransientShaper.h",
     "DSP/GlueCompressor.h",
     "DSP/RateBridge.h",

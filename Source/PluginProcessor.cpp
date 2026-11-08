@@ -83,7 +83,7 @@ namespace
             "character", "delta", "delay_time", "delay_feedback",
             "delay_pingpong", "delay_tone", "delay_lowcut", "delay_damp",
             "st_offset", "noise", "noise_lvl", "transport", "spindown",
-            "ui_sounds", "language", "anti_phase_guard",
+            "ui_sounds", "language", "anti_phase_guard", "osc_on", "osc_note",
             "tape_source", "vinyl_source", "cassette_source", "digital_source",
             "amp_source", "valve_source", "transformer_source",
             "sag", "presence", "cabinet", "amp_bias",
@@ -188,6 +188,8 @@ FirstAudioProcessor::FirstAudioProcessor()
        parameters (*this, nullptr, "TAPE_NONLIN", createParameterLayout())
 #endif
 {
+    startTimer (50);
+
     inputDbParam  = parameters.getRawParameterValue ("input");
     driveParam    = parameters.getRawParameterValue ("drive");
     biasParam     = parameters.getRawParameterValue ("bias");
@@ -596,7 +598,7 @@ FirstAudioProcessor::FirstAudioProcessor()
 
 FirstAudioProcessor::~FirstAudioProcessor()
 {
-    cancelPendingUpdate();
+    stopTimer();
     for (const auto* parameterID : parametersTrackedForDirtyBadge())
         parameters.removeParameterListener (parameterID, this);
 }
@@ -1207,10 +1209,9 @@ void FirstAudioProcessor::publishReportedLatency()
 {
     const auto total = oversamplerLatencySamples + publishedCorrectorLatencySamples;
     requestedLatencySamples.store (total, std::memory_order_release);
-    triggerAsyncUpdate();
 }
 
-void FirstAudioProcessor::handleAsyncUpdate()
+void FirstAudioProcessor::timerCallback()
 {
     const auto total = requestedLatencySamples.load (std::memory_order_acquire);
     if (getLatencySamples() != total)
@@ -1246,8 +1247,8 @@ void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int 
         oversampler->reset();
 
         // The dummy stage adds no delay; the real ones report their filter latency
-        // so every DAW can compensate sample-accurately. setLatencySamples is the
-        // inherited non-virtual host-notification setter.
+        // so every DAW can compensate sample-accurately. The message-thread timer
+        // publishes the combined latency to the host.
         oversamplerLatencySamples = (clamped == OversamplingFactor::off)
                                         ? 0
                                         : juce::roundToInt (oversampler->getLatencyInSamples());
