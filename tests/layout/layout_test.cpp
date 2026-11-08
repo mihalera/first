@@ -499,12 +499,15 @@ void checkPhoneLayout()
            "1441 x 720 keeps the desktop layout", "PHONE", 1441, 720);
     check (! j37panel::usesPhoneLayout (1280, 800),
            "a landscape window taller than 720 px keeps the desktop layout", "PHONE", 1280, 800);
+    // The paint interval is chosen per frame from the machine's state, so the
+    // promise is a pair of rates rather than a rate per platform: a moving panel
+    // is painted on every tick and a resting one on every third.
     check (j37panel::editorTimerHz == 60
                && j37panel::editorTimerHz
-                      / j37panel::desktopAnimationPaintIntervalTicks == 30
+                      / j37panel::activeAnimationPaintIntervalTicks == 60
                && j37panel::editorTimerHz
-                      / j37panel::androidAnimationPaintIntervalTicks == 60,
-           "desktop and Android animation rates are 30 and 60 Hz", "ANIMATION", 60, 1);
+                      / j37panel::idleAnimationPaintIntervalTicks == 20,
+           "a moving panel paints at 60 Hz and a resting one at 20 Hz", "ANIMATION", 60, 1);
 
     for (const auto& size : { std::array<int, 2> { 360, 800 },
                               std::array<int, 2> { 412, 915 },
