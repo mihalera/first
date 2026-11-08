@@ -79,21 +79,37 @@ if(NOT EXISTS "${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
     # before giving up with a message that says what actually happened.
     file(REMOVE "${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
 
+    # Two addresses for the same file: the release asset, which is served by the
+    # release CDN, and the repository's own copy at the same tag, which is not.
+    # The CDN has answered 504 here while the tag itself was fine, so one address
+    # failing is not the file being unavailable.
+    set(cpmSources
+        "https://github.com/cpm-cmake/CPM.cmake/releases/download/v${CPM_DOWNLOAD_VERSION}/CPM.cmake"
+        "https://raw.githubusercontent.com/cpm-cmake/CPM.cmake/v${CPM_DOWNLOAD_VERSION}/cmake/CPM.cmake")
+
     foreach(attempt RANGE 1 3)
-        file(DOWNLOAD
-             "https://github.com/cpm-cmake/CPM.cmake/releases/download/v${CPM_DOWNLOAD_VERSION}/CPM.cmake"
-             "${CMAKE_BINARY_DIR}/cmake/CPM.cmake"
-             STATUS cpmDownloadStatus
-             TIMEOUT 60)
+        foreach(cpmSource IN LISTS cpmSources)
+            file(DOWNLOAD
+                 "${cpmSource}"
+                 "${CMAKE_BINARY_DIR}/cmake/CPM.cmake"
+                 STATUS cpmDownloadStatus
+                 TIMEOUT 60)
 
-        list(GET cpmDownloadStatus 0 cpmDownloadCode)
+            list(GET cpmDownloadStatus 0 cpmDownloadCode)
 
-        if(cpmDownloadCode EQUAL 0)
+            if(cpmDownloadCode EQUAL 0)
+                break()
+            endif()
+
+            message(STATUS "CPM.cmake from ${cpmSource} failed: ${cpmDownloadStatus}")
+            file(REMOVE "${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
+        endforeach()
+
+        if(EXISTS "${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
             break()
         endif()
 
-        message(STATUS "CPM.cmake download attempt ${attempt} failed: ${cpmDownloadStatus}")
-        file(REMOVE "${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
+        message(STATUS "CPM.cmake download attempt ${attempt} failed on every address")
     endforeach()
 
     if(NOT EXISTS "${CMAKE_BINARY_DIR}/cmake/CPM.cmake")
