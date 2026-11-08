@@ -374,6 +374,10 @@ TapeScene::TapeScene() {
     // the 2D panel, and this one draws the transport into this component only.
     openGLContext.setComponentPaintingEnabled(false);
     openGLContext.setContinuousRepainting(false);
+    // The deck's own surface is display-locked: one swap per frame the transport
+    // actually changes, never a multiple of the refresh. That is what v-sync
+    // wants and what G-Sync / FreeSync / Adaptive-Sync vary the panel around.
+    openGLContext.setSwapInterval(1);
 }
 
 TapeScene::~TapeScene() {

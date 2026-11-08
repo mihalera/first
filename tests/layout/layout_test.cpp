@@ -509,6 +509,27 @@ void checkPhoneLayout()
                       / j37panel::idleAnimationPaintIntervalTicks == 20,
            "a moving panel paints at 60 Hz and a resting one at 20 Hz", "ANIMATION", 60, 1);
 
+    // The swap interval is the other half of the same decision. 1 is v-sync, and
+    // it is also what adaptive sync (G-Sync / FreeSync / Adaptive-Sync) paces
+    // around; 0 is a resting panel that presents nothing rather than blocking on
+    // a swap of an unchanged frame. A larger interval must never be chosen: it
+    // locks the swap to a multiple of the refresh and takes the panel off the
+    // variable-refresh range.
+    check (j37panel::swapIntervalFor (true) == 1
+               && j37panel::swapIntervalFor (false) == 0
+               && j37panel::paintIntervalTicksFor (true)
+                      == j37panel::activeAnimationPaintIntervalTicks
+               && j37panel::paintIntervalTicksFor (false)
+                      == j37panel::idleAnimationPaintIntervalTicks,
+           "a moving panel is display-locked and a resting one presents nothing",
+           "ANIMATION", 60, 1);
+    check (j37panel::panelIsAnimating (false, false, false, 0.0f, 0.0f) == false
+               && j37panel::panelIsAnimating (true, false, false, 0.0f, 0.0f)
+               && j37panel::panelIsAnimating (false, false, true, 0.0f, 0.0f)
+               && j37panel::panelIsAnimating (false, false, false, 0.5f, 0.0f),
+           "the transport, an armed START, and live activity all count as moving",
+           "ANIMATION", 60, 1);
+
     for (const auto& size : { std::array<int, 2> { 360, 800 },
                               std::array<int, 2> { 412, 915 },
                               std::array<int, 2> { 320, 480 } })

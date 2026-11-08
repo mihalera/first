@@ -2312,7 +2312,7 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
         // whose component painting is off would show a blank panel.
         openGLContext.setComponentPaintingEnabled(true);
         openGLContext.setContinuousRepainting(false);
-        openGLContext.setSwapInterval(1);
+        openGLContext.setSwapInterval(j37panel::swapIntervalFor(true));
         openGLContext.attachTo(*this);
         // attachTo() returns void, so the documented way to find out whether the
         // context came up is to ask afterwards - and to keep the bounded retry
@@ -2386,7 +2386,7 @@ void FirstAudioProcessorEditor::setUpOpenGlRendering() {
 
     openGLContext.setComponentPaintingEnabled(true);
     openGLContext.setContinuousRepainting(false);
-    openGLContext.setSwapInterval(1);
+    openGLContext.setSwapInterval(j37panel::swapIntervalFor(true));
     openGLContext.attachTo(*this);
     openGLAttachAttemptsLeft = openGLContext.isAttached() ? 0 : 90;
     renderSetupComplete = true;
@@ -2412,7 +2412,9 @@ FirstAudioProcessorEditor::nativeSceneConfig() const {
     // sokol adapter ignores it and attaches to tapeScene itself.
     config.positionX = tapeScene.getX();
     config.positionY = tapeScene.getY();
-    config.vsyncInterval = 1;
+    // Display-locked: v-sync with the display's refresh, which is also what
+    // G-Sync / FreeSync / Adaptive-Sync pace around (see AnimationTiming.h).
+    config.vsyncInterval = j37panel::swapIntervalFor(true);
     return config;
 }
 

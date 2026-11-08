@@ -1502,6 +1502,11 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // bank - and a bump is what tells the adapter its cached uploads are stale.
     juce::uint64 lastSceneUniformRevision = 0;
 
+    // The swap interval the panel's context is currently asking for, so the
+    // per-frame sync policy only touches the context when its answer changes.
+    // -1 means "nothing applied yet".
+    int appliedSwapInterval = -1;
+
 
 
     // =====================================================================

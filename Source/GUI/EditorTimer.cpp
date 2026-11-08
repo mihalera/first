@@ -936,11 +936,22 @@ void FirstAudioProcessorEditor::timerCallback() {
     //  switch lamps and the deck particles all invalidate on this call, so a
     //  still page now costs a third of the paints it used to while a moving one
     //  gets the full rate it needs.
-    const auto animationMoving = transportNow != 0 || spindownNow || waitingForHost
-                                 || activity > 0.02f || driftAmount > 0.02f;
-    const auto animationPaintIntervalTicks = animationMoving
-                                                ? j37panel::activeAnimationPaintIntervalTicks
-                                                : j37panel::idleAnimationPaintIntervalTicks;
+    const auto animationMoving = j37panel::panelIsAnimating (transportNow != 0, spindownNow,
+                                                            waitingForHost, activity,
+                                                            driftAmount);
+    const auto animationPaintIntervalTicks = j37panel::paintIntervalTicksFor (animationMoving);
+
+    // The swap follows the same decision (see AnimationTiming.h): display-locked
+    // while anything moves, which is what v-sync needs and what adaptive sync
+    // varies the refresh around, and off while nothing does, so an idle panel
+    // never pins the message thread to a swap of an unchanged frame.
+    if (openGLContext.isAttached()) {
+        const auto interval = j37panel::swapIntervalFor (animationMoving);
+        if (interval != appliedSwapInterval) {
+            appliedSwapInterval = interval;
+            openGLContext.setSwapInterval (interval);
+        }
+    }
     if (!popupIsOpen && !panelCovered
         && ++animationPaintTick >= animationPaintIntervalTicks) {
         animationPaintTick = 0;

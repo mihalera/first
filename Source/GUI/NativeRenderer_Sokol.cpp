@@ -330,6 +330,10 @@ public:
         context = std::make_unique<juce::OpenGLContext>();
         context->setComponentPaintingEnabled (false);
         context->setContinuousRepainting (false);
+        // Display-locked, from the adapter's config: 1 is v-sync, which is also
+        // the interval adaptive sync paces around, and never 2+ (a multiple of
+        // the refresh defeats the variable-refresh range).
+        context->setSwapInterval (juce::jlimit (0, 4, config.vsyncInterval));
 #if defined (SOKOL_GLES3)
         context->setPreferredVersion ({ 3, 0 });
 #else
