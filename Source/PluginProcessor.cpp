@@ -1790,7 +1790,6 @@ namespace
                 // Also set a flag to indicate permission was denied, so the UI can
                 // show an appropriate message if needed
                 settings->setValue ("microphonePermissionDenied", true);
-                }
             }
         }
     }
