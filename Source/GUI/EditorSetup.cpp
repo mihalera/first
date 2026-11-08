@@ -2297,7 +2297,7 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
     // The phone layout does not show the 3D deck. Keep its GPU surfaces detached
     // while narrow, then attach the selected renderer when the editor grows past
     // the phone breakpoint.
-    if (j37panel::usesPhoneLayout (getWidth(), getHeight())) {
+    if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight())) {
         openGLContext.detach();
         tapeScene.setSceneEnabled(false);
         shutDownNativeScene();
@@ -2348,7 +2348,7 @@ void FirstAudioProcessorEditor::setUpOpenGlRendering() {
     const auto running = j37::render::runningBackend(renderBackendChoice);
     nativeSceneAttachAttemptsLeft = 0;
 
-    if (j37panel::usesPhoneLayout (getWidth(), getHeight())) {
+    if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight())) {
         tapeScene.setSceneEnabled(false);
         shutDownNativeScene();
         openGLContext.detach();
@@ -2429,7 +2429,7 @@ void FirstAudioProcessorEditor::setUpNativeScene() {
 
     // The phone layout intentionally has no 3D deck. Delay adapter creation
     // until the editor is wide enough to show it, avoiding an unused GPU surface.
-    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
+    if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
         return;
 
     shutDownNativeScene();

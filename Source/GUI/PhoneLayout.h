@@ -40,6 +40,29 @@ namespace j37panel
                        && height <= phoneLandscapeMaxHeight));
     }
 
+    /** Whether this build runs on a handheld. */
+#if defined (JUCE_ANDROID) || defined (JUCE_IOS)
+    inline constexpr bool phoneLayoutPlatform = true;
+#else
+    inline constexpr bool phoneLayoutPlatform = false;
+#endif
+
+    /** What the EDITOR asks: the phone bands are for a phone. A desktop window
+        dragged narrow used to fall into them - a 700 px window on Windows got the
+        phone header, the phone deck and a page selector, with no way back except
+        resizing - which is not what the compact layout is for. A desktop window
+        answers a small size with the resizable grid instead. */
+    constexpr bool usesPhoneLayoutOnThisPlatform (int width, int height) noexcept
+    {
+        return phoneLayoutPlatform && usesPhoneLayout (width, height);
+    }
+
+    /** Landscape is a phone in landscape, not merely a window wider than it is
+        tall. The width limit here is the LANDSCAPE limit; it used to be the
+        portrait one (800), so a 915 x 412 phone, a 1280 x 720 tablet and every
+        landscape phone wider than 800 px fell through to the PORTRAIT bands -
+        header on top, deck under it, controls under that - which is exactly what
+        a crooked Android landscape looked like. */
     constexpr bool isPhoneLandscape (int width, int height) noexcept
     {
         return width > height && height <= phoneLandscapeMaxHeight

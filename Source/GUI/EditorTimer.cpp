@@ -294,10 +294,10 @@ void FirstAudioProcessorEditor::repaintAnimatedSurfaces() {
             toggle->repaint();
 
     // The status lamp and the deck's own transport, both drawn by paint().
-    if (!j37panel::usesPhoneLayout (getWidth(), getHeight()))
+    if (!j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
         repaint(statusPillBounds());
 
-    if (!j37panel::usesPhoneLayout (getWidth(), getHeight()) && !tapeScene.isSceneLive())
+    if (!j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()) && !tapeScene.isSceneLive())
         repaint(deckAnimationBounds());
 }
 
@@ -316,7 +316,7 @@ void FirstAudioProcessorEditor::timerCallback() {
     // phone layout omits the large meters; its compact OSC ring remains active
     // and is redrawn only while visible.
     const auto panelCovered = parameterSheet != nullptr && parameterSheet->isOpen();
-    const auto phoneLayout = j37panel::usesPhoneLayout (getWidth(), getHeight());
+    const auto phoneLayout = j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight());
     const auto metersVisible = ! panelCovered && ! phoneLayout;
     inputMeter.setActive(metersVisible);
     outputMeter.setActive(metersVisible);
@@ -690,7 +690,22 @@ void FirstAudioProcessorEditor::timerCallback() {
     // the ring has no listener to unregister when the editor closes.
     oscRing.setKey(audioProcessor.getTuningTonic(), audioProcessor.getTuningMode());
 
-    oscRing.tick(animationDelta);
+    // The ENGINE is the ball's clock, whether or not this window exists: it
+    // steps the same physics on the audio thread and dispatches the note there,
+    // so the module no longer plays in time with the panel. The ring mirrors the
+    // published state and ages its trail; it never chooses a note. That is what
+    // makes an impact at 20 frames a second land where it lands at 60.
+    oscRing.follow (audioProcessor.getOscBallState(), audioProcessor.getOscSector(),
+                    animationDelta);
+
+    // The /mibox/osc/ note packet follows the sector rather than the frame: the
+    // engine can hit the same sector twice, and only a CHANGE is news a client
+    // can use.
+    const auto oscSectorNow = audioProcessor.getOscSector();
+    if (oscSectorNow != lastPublishedOscSector) {
+        lastPublishedOscSector = oscSectorNow;
+        audioProcessor.publishOscState(true);
+    }
 
     // ------------------------------------------------------------------
     //  Interface sounds.

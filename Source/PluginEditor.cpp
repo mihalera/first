@@ -941,10 +941,17 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     stopTimer();
 
     // The native scene adapter holds an OpenGLContext attached to tapeScene;
-    // release it before anything it points at is torn down.
+    // release it before anything it points at is torn down. The deck's own
+    // context goes next and explicitly: leaving it to TapeScene's destructor
+    // meant it was destroyed while this editor's children were being torn down,
+    // after the panel's context had already gone - and a host closing the project
+    // then waited on a GL thread whose context was mid-teardown. Both contexts
+    // are now detached here, in the one order this object controls.
     shutDownNativeScene();
+    tapeScene.setSceneEnabled(false);
 
     openGLContext.detach();
+    appliedSwapInterval = -1;
 
     // A FileChooser owns its asynchronous operation. Releasing it here cancels
     // the picker and discards its callback before the editor or processor refs
@@ -1060,7 +1067,7 @@ bool FirstAudioProcessorEditor::keyPressed (const juce::KeyPress& key)
 
 FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayout() const
 {
-    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
+    if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
     {
         // Phones trade the desktop meter bank for a compact deck and a touch-sized
         // control workspace; the helper stacks them in portrait and places them
@@ -1188,7 +1195,7 @@ void FirstAudioProcessorEditor::resized()
     // stretched over a size it was not built for.
     rebuildPanelTextureLayers();
 
-    const auto phoneLayout = j37panel::usesPhoneLayout (getWidth(), getHeight());
+    const auto phoneLayout = j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight());
     const auto phoneLayoutChanged = phoneLayout != phoneLayoutActive;
     phoneLayoutActive = phoneLayout;
     const auto parameterSheetWasOpen = parameterSheet != nullptr && parameterSheet->isOpen();
@@ -1247,7 +1254,7 @@ void FirstAudioProcessorEditor::resized()
 //==============================================================================
 void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
 {
-    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
+    if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
     {
         const auto rowOneY = header.getY() + 5;
         const auto titleWidth = juce::jmin (82, juce::jmax (0, header.getWidth() / 4));
@@ -1422,7 +1429,7 @@ void FirstAudioProcessorEditor::placeHeader (juce::Rectangle<int> header)
 //==============================================================================
 void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
 {
-    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
+    if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
     {
         presetArtworkBadge.setVisible (false);
         const auto landscape = j37panel::isPhoneLandscape (getWidth(), getHeight());
@@ -2030,7 +2037,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
 //==============================================================================
 void FirstAudioProcessorEditor::placeControls (const EditorLayout& layout)
 {
-    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
+    if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
     {
         controlsHeadingLabel.setBounds (layout.controls.getX() + 12,
                                         layout.controls.getY() + 7,
@@ -2072,7 +2079,7 @@ void FirstAudioProcessorEditor::placeControls (const EditorLayout& layout)
 //==============================================================================
 void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& controlsPanel)
 {
-    if (j37panel::usesPhoneLayout (getWidth(), getHeight())
+    if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight())
         && ! j37panel::isPhoneLandscape (getWidth(), getHeight()))
     {
         for (auto& button : tabButtons)
