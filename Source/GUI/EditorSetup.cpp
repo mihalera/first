@@ -2458,6 +2458,17 @@ void FirstAudioProcessorEditor::submitNativeSceneFrame() {
     if (width <= 0 || height <= 0)
         return;
 
+    // The frame is the adapter's whole view of the scene, but a palette or a
+    // control bank can change what the uniforms MEAN without changing a byte of
+    // them; the scene counts those writes so the adapter is told rather than
+    // left to compare. Adapters that upload every block ignore the notice.
+    const auto revision = tapeScene.uniformRevision();
+
+    if (revision != lastSceneUniformRevision) {
+        nativeRenderer->invalidateUniforms();
+        lastSceneUniformRevision = revision;
+    }
+
     // One call advances the deck's reels and lagged readouts and returns the
     // frame every backend draws from; submitSceneFrame validates it, hands the
     // adapter the copy and asks for the repaint that records it.

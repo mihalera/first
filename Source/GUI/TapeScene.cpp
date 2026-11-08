@@ -418,7 +418,13 @@ void TapeScene::setAudioState(float newOutputLevel,
         openGLContext.triggerRepaint();
 }
 
+juce::uint64 TapeScene::uniformRevision() const noexcept {
+    return uniformRevisionCount.load(std::memory_order_relaxed);
+}
+
 void TapeScene::setControlValues(const float *values, int count) noexcept {
+    uniformRevisionCount.fetch_add(1, std::memory_order_relaxed);
+
     // A caller that hands over fewer values than the bank holds leaves the rest
     // at the panel's rest position rather than retaining a stale angle.
     const auto usable = values != nullptr ? juce::jlimit(0, bankKnobCount, count) : 0;
@@ -438,6 +444,8 @@ void TapeScene::setPalette(juce::Colour background,
     // the packed form they already are rather than as a Colour - which holds a
     // pointer into JUCE's named-colour table and must not be copied between
     // threads.
+    uniformRevisionCount.fetch_add(1, std::memory_order_relaxed);
+
     backgroundColour.store(background.getARGB(), std::memory_order_relaxed);
     bodyColour.store(body.getARGB(), std::memory_order_relaxed);
     highlightColour.store(highlight.getARGB(), std::memory_order_relaxed);

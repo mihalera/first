@@ -92,6 +92,12 @@ public:
         to 0..1. Missing values retain their neutral position. */
     void setControlValues (const float* values, int count) noexcept;
 
+    /** How many appearance writes this scene has taken: the palette and the
+        control bank. Those are the two setters whose inputs can produce uniform
+        bytes the GPU already holds, so a renderer that caches uploads is told
+        about them rather than left to infer the change from the frame. */
+    juce::uint64 uniformRevision() const noexcept;
+
     /** Which control a point in this component falls on, or -1 for none.
 
         The editor owns the mouse: this component is set not to intercept clicks,
@@ -287,6 +293,10 @@ private:
     std::atomic<float> gainReduction { 0.0f };
     std::atomic<float> wowFlutter { 0.0f };
     std::atomic<float> transportSpeed { 0.0f };
+
+    /** Bumped by setPalette() and setControlValues(), the two writers a uniform
+        block cannot see move when their inputs round to the same floats. */
+    std::atomic<juce::uint64> uniformRevisionCount { 0 };
 
     std::atomic<juce::uint32> backgroundColour { 0xff101216 };
     std::atomic<juce::uint32> bodyColour { 0xff3a4048 };

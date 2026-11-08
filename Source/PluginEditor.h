@@ -1492,6 +1492,11 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // adapter, which is every build today except -DJ37_RENDER_BACKEND=SOKOL.
     std::unique_ptr<j37::render::NativeRenderer> nativeRenderer;
 
+    // The scene's appearance count at the last submitted frame. The scene bumps
+    // it for the writes a uniform block cannot show - the palette and the control
+    // bank - and a bump is what tells the adapter its cached uploads are stale.
+    juce::uint64 lastSceneUniformRevision = 0;
+
 
 
     // =====================================================================
