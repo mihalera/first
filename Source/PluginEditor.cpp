@@ -817,6 +817,11 @@ void FirstAudioProcessorEditor::loadNoisePrintFile (const juce::File& file)
 FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     : AudioProcessorEditor (&p), audioProcessor (p), presetArtworkBadge (p)
 {
+    // The two ends of the window's construction. On Android a start that ends in a
+    // black window and then a vanishing process is either "never got here" or
+    // "got here and never returned", and only these two lines tell them apart.
+    j37diag::note ("editor: constructor begin");
+
     // The panel the desk was left on, read BEFORE the build phases and before the
     // applyTheme() at the end of them, so the first frame is already on it. A host
     // destroys and re-creates an editor every time its window is closed, which is why
@@ -868,6 +873,8 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
     setUpSceneAndMeters();
     setUpOpenGlRendering();
     finishConstruction();
+
+    j37diag::note ("editor: constructor end, the window is ready to paint");
 }
 
 

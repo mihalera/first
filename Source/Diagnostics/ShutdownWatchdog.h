@@ -15,6 +15,10 @@
 */
 #pragma once
 
+// The phase lines the watchdog writes and the thread table it reads on a stall
+// are DiagCore's; the two are always used together, so one include reaches both.
+#include "DiagCore.h"
+
 #include <atomic>
 #include <chrono>
 #include <string>
