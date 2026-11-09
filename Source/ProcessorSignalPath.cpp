@@ -198,19 +198,8 @@ void FirstAudioProcessor::flushPendingTransportHostSync()
 
 void FirstAudioProcessor::setSpindownHeld (bool shouldHold)
 {
-    // Two things have to happen, and both are cheap:
-    //
-    //   1. The atomic the engine reads every block. That is what actually runs the
-    //      platter down, and it is the only path that touches the audio thread -
-    //      a relaxed store, no lock, no allocation.
-    //   2. The `spindown` parameter, so a host that records automation sees the
-    //      gesture and a saved session can hold it. It is written through the
-    //      parameter rather than through the attachment in the editor so a button
-    //      press and an automation lane are the same event.
-    //
-    // The engine treats a held spindown as a running transport, so a hold started
-    // from STOP brings the platter up and then cuts it: the gesture always has
-    // something to act on.
+    // This is called by the editor's button on the message thread. Update the host
+    // parameter here; the audio thread reads its cached raw atomic once per block.
     spindownHeld.store (shouldHold, std::memory_order_relaxed);
 
     if (auto* parameter = parameters.getParameter ("spindown"))
@@ -1118,6 +1107,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
     const int numSamples = static_cast<int> (block.getNumSamples());
     const auto engineSampleRate = juce::jmax (1.0f, sampleRate * oversamplingRateFactor);
+
+    // Host automation and editor gestures both update this cached raw parameter;
+    // sample it once at the block boundary for the transport engine.
+    if (spindownParam != nullptr)
+        spindownHeld.store (spindownParam->load (std::memory_order_relaxed) >= 0.5f,
+                            std::memory_order_relaxed);
 
     // processBlock has already expanded oversampled blocks. Build all DSP time
     // constants against the rate of this block, not the host/base rate.

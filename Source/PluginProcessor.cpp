@@ -245,6 +245,8 @@ FirstAudioProcessor::FirstAudioProcessor()
     noiseLvlParam = parameters.getRawParameterValue ("noise_lvl");
     transportParam = parameters.getRawParameterValue ("transport");
     spindownParam = parameters.getRawParameterValue ("spindown");
+    spindownHeld.store (spindownParam != nullptr && spindownParam->load() >= 0.5f,
+                        std::memory_order_relaxed);
     uiSoundsParam = parameters.getRawParameterValue ("ui_sounds");
     antiPhaseGuardParam = parameters.getRawParameterValue ("anti_phase_guard");
     tuningTonicParam = parameters.getRawParameterValue ("tuning_tonic");
@@ -380,18 +382,20 @@ FirstAudioProcessor::FirstAudioProcessor()
     compareSlots[0] = parameters.copyState().createCopy();
     compareSlots[1] = compareSlots[0].createCopy();
 
-    // Preset dirty tracking: any parameter change while a preset is loaded lights the
-    // edited badge in the editor. Host automation ALSO flows through here, which is
-    // fine - the badge is advisory and matches what the DAW's own "plugin modified"
-    // indication would say.
-    //
-    // One list, used by both the constructor and the destructor. It used to be two
-    // hand-copied spellings of the same 45 ids, so a parameter added to one and not
-    // the other left a listener that was never removed - harmless while the object
-    // lives, a dangling callback the moment it does not. parametersTrackedForDirtyBadge()
-    // below is the single source of truth for both.
-    for (const auto* parameterID : parametersTrackedForDirtyBadge())
-        parameters.addParameterListener (parameterID, this);
+    // Cache the raw atomics used by the message-thread dirty-badge poll. APVTS
+    // listeners may execute under its parameter lock, so host automation must not
+    // invoke processor callbacks from the audio thread.
+    const auto& dirtyParameterIDs = parametersTrackedForDirtyBadge();
+    dirtyBadgeParameters.reserve (dirtyParameterIDs.size());
+    presetParameterSnapshot.reserve (dirtyParameterIDs.size());
+    for (const auto* parameterID : dirtyParameterIDs)
+    {
+        if (auto* value = parameters.getRawParameterValue (parameterID))
+        {
+            dirtyBadgeParameters.push_back (value);
+            presetParameterSnapshot.push_back (value->load (std::memory_order_relaxed));
+        }
+    }
 
 #if DEBUG
     // =======================================================================
@@ -599,8 +603,6 @@ FirstAudioProcessor::FirstAudioProcessor()
 FirstAudioProcessor::~FirstAudioProcessor()
 {
     stopTimer();
-    for (const auto* parameterID : parametersTrackedForDirtyBadge())
-        parameters.removeParameterListener (parameterID, this);
 }
 
 //==============================================================================
@@ -716,7 +718,11 @@ bool FirstAudioProcessor::isMidiEffect() const
 
 double FirstAudioProcessor::getTailLengthSeconds() const
 {
-    return 0.0;
+    // The longest measured reverb T60 is 4.9 s, with up to 100 ms of pre-delay.
+    // The tape head can also feed its delayed signal back at unity, so use a
+    // conservative finite host-render allowance rather than claiming no tail.
+    // Keep this finite: JUCE's AUv2 silence timeout converts the duration to frames.
+    return 30.0;
 }
 
 int FirstAudioProcessor::getNumPrograms()
@@ -958,9 +964,6 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // rig is: it advances once per engine frame, so its seconds and its samples
     // belong to the oversampled rate, not the host's. All four slots were
     // prepared above; the active one was reset when the factor was selected.
-
-    if (spindownParam != nullptr)
-        spindownHeld.store (spindownParam->load() >= 0.5f, std::memory_order_relaxed);
 
     // The delay's damping is tied to the machine's own low-pass so a dark tape
     // gives dark repeats without a second control to keep in sync.
@@ -1216,6 +1219,24 @@ void FirstAudioProcessor::timerCallback()
     const auto total = requestedLatencySamples.load (std::memory_order_acquire);
     if (getLatencySamples() != total)
         AudioProcessor::setLatencySamples (total);
+
+    updatePresetDirty();
+}
+
+void FirstAudioProcessor::updatePresetDirty() noexcept
+{
+    if (currentPresetName.isEmpty())
+        return;
+
+    for (std::size_t i = 0; i < dirtyBadgeParameters.size(); ++i)
+    {
+        const auto current = dirtyBadgeParameters[i]->load (std::memory_order_relaxed);
+        if (std::abs (current - presetParameterSnapshot[i]) > 1.0e-6f)
+        {
+            presetDirty.store (true, std::memory_order_relaxed);
+            return;
+        }
+    }
 }
 
 void FirstAudioProcessor::setOversamplingFactor (OversamplingFactor factor, int samplesPerBlock)
@@ -1752,9 +1773,8 @@ void FirstAudioProcessor::setStateInformation (const void* data, int sizeInBytes
     copyToCompareSlot (1);
     activeSlot.store (0, std::memory_order_relaxed);
 
-    // The engine's own copy of the momentary spindown is synced by
-    // parameterChanged(), which replaceState() above drives for every restored
-    // parameter - so there is nothing to do here for it.
+    // The audio block reads the momentary spindown parameter directly, so no
+    // mirrored state needs synchronising after the session restore.
 
     // A session load restores the parameters, not the preset that produced them:
     // the badge starts clean and unnamed, exactly like a freshly opened plugin.
