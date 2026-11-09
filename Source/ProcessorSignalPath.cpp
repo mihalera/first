@@ -1220,7 +1220,11 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     fxTargets.vocoder = fxVocoderParam != nullptr ? fxVocoderParam->load() : 0.0f;
     fxTargets.granular = fxGranularParam != nullptr ? fxGranularParam->load() : 0.0f;
     fxTargets.spectral = fxSpectralParam != nullptr ? fxSpectralParam->load() : 0.0f;
-    fxTargets.speed = fxSpeedParam != nullptr ? fxSpeedParam->load() : 0.0f;
+    // SPEED's neutral is 0.5 (1x), not zero, so a missing parameter has to fall
+    // back to the middle: zero here would mean half speed - a session that never
+    // stated the control would come back an octave down, and the rack would never
+    // close, because isActive() reads this target as off-centre.
+    fxTargets.speed = fxSpeedParam != nullptr ? fxSpeedParam->load() : 0.5f;
     fxRack.setTargets (fxTargets);
     const auto autoTuneAmount = autoTuneAmountParam != nullptr ? autoTuneAmountParam->load() : 0.0f;
     state.autoTuneStrength = juce::jlimit (0.0f, 1.0f, autoTuneAmount);

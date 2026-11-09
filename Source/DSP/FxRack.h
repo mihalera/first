@@ -253,26 +253,53 @@ public:
     }
 
     /** True while any stage is in the path. The signal path uses it to skip the
-        loop's own bookkeeping when the rack is untouched. */
+        loop's own bookkeeping when the rack is untouched.
+
+        It reads the TARGETS as well as the smoothed amounts, and that is not a
+        detail: the smoothing happens in processSample(), so an amount can only
+        leave zero if processSample() has run - and the signal path only runs it
+        when this returns true. Asked of the amounts alone, a rack that had never
+        been reached could never be entered, and every one of the twenty-five
+        controls was silent while its parameter read whatever the host wrote. The
+        target is what the parameter says, so that is what has to open the door. */
     bool isActive() const noexcept
     {
-        return amounts.wah > threshold || amounts.antiSpike > threshold
-            || amounts.gate > threshold || amounts.overdrive > threshold
-            || amounts.fuzz > threshold || amounts.wavefolder > threshold
-            || amounts.bitcrusher > threshold || amounts.rateCrusher > threshold
-            || amounts.ringMod > threshold || amounts.octaver > threshold
-            || amounts.pitch > threshold || amounts.comb > threshold
-            || amounts.formant > threshold || amounts.dynamicEq > threshold
-            || amounts.deEsser > threshold || amounts.chorus > threshold
-            || amounts.flanger > threshold || amounts.phaser > threshold
-            || amounts.tremolo > threshold || amounts.vibrato > threshold
-            || amounts.rotary > threshold || amounts.vocoder > threshold
-            || amounts.granular > threshold || amounts.spectral > threshold
+        return stageIsActive (amounts.wah, targets.wah)
+            || stageIsActive (amounts.antiSpike, targets.antiSpike)
+            || stageIsActive (amounts.gate, targets.gate)
+            || stageIsActive (amounts.overdrive, targets.overdrive)
+            || stageIsActive (amounts.fuzz, targets.fuzz)
+            || stageIsActive (amounts.wavefolder, targets.wavefolder)
+            || stageIsActive (amounts.bitcrusher, targets.bitcrusher)
+            || stageIsActive (amounts.rateCrusher, targets.rateCrusher)
+            || stageIsActive (amounts.ringMod, targets.ringMod)
+            || stageIsActive (amounts.octaver, targets.octaver)
+            || stageIsActive (amounts.pitch, targets.pitch)
+            || stageIsActive (amounts.comb, targets.comb)
+            || stageIsActive (amounts.formant, targets.formant)
+            || stageIsActive (amounts.dynamicEq, targets.dynamicEq)
+            || stageIsActive (amounts.deEsser, targets.deEsser)
+            || stageIsActive (amounts.chorus, targets.chorus)
+            || stageIsActive (amounts.flanger, targets.flanger)
+            || stageIsActive (amounts.phaser, targets.phaser)
+            || stageIsActive (amounts.tremolo, targets.tremolo)
+            || stageIsActive (amounts.vibrato, targets.vibrato)
+            || stageIsActive (amounts.rotary, targets.rotary)
+            || stageIsActive (amounts.vocoder, targets.vocoder)
+            || stageIsActive (amounts.granular, targets.granular)
+            || stageIsActive (amounts.spectral, targets.spectral)
             || std::abs (targets.speed - 0.5f) > threshold;
     }
 
 private:
     static constexpr float threshold = 1.0e-4f;
+
+    /** A stage is in the path when it is moving toward a non-zero amount as well
+        as when it has arrived at one. See isActive(). */
+    static bool stageIsActive (float amount, float target) noexcept
+    {
+        return amount > threshold || target > threshold;
+    }
 
     void step (float& value, float target) noexcept
     {
