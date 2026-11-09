@@ -40,14 +40,20 @@ namespace j37panel
         view.tilt = juce::jlimit (0.0f, 1.0f,
                                   std::sqrt (dx * dx + dy * dy) * 0.70710678f);
 
-        // Horizontal position changes the light-facing lean, not the physical
-        // size: knobs in the same row must not widen or shrink across the panel.
-        view.squashY = juce::jlimit (0.58f, 1.0f,
-                                     0.88f - 0.30f * juce::jmax (0.0f, dy));
-        view.squashX = juce::jlimit (0.74f, 1.0f,
-                                     0.90f - 0.06f * juce::jmax (0.0f, dy));
-        view.wall = juce::jlimit (0.0f, 1.0f,
-                                  0.08f + 0.34f * juce::jmax (0.0f, dy));
+        // Foreshortening is the ANGLE a knob is seen at, and on a panel looked at
+        // from in front that angle is how far the knob stands from the centre - not
+        // how far down it stands. Measured down the panel alone, the bottom row of
+        // a tall page came out 1.45 times as wide as it was tall with a cap a fifth
+        // smaller than the row above it, which is the shape that reads as "the
+        // lower knobs are wider": a strip of beads pressed flat rather than the
+        // same hardware further away. Tilt carries both axes, and the two squashes
+        // are kept within a fifth of each other, so a knob further from the eye is
+        // a SMALLER knob - foreshortened, still round enough to be a knob - and two
+        // knobs the same distance from the centre are seen at the same angle
+        // whichever side of it they are on.
+        view.squashY = juce::jlimit (0.74f, 1.0f, 0.92f - 0.20f * view.tilt);
+        view.squashX = juce::jlimit (0.80f, 1.0f, 0.95f - 0.10f * view.tilt);
+        view.wall = juce::jlimit (0.0f, 1.0f, 0.08f + 0.28f * view.tilt);
         view.lean = dx;
         return view;
     }
