@@ -7,7 +7,9 @@
 // =============================================================================
 #pragma once
 
+#include <algorithm>
 #include <cmath>
+#include <limits>
 
 //==============================================================================
 /**
@@ -58,6 +60,21 @@ struct HarmonicAnalyser
     */
     bool analyse (float shaperInput, float shaperOutput, float sampleRate)
     {
+        if (! std::isfinite (shaperInput) || ! std::isfinite (shaperOutput)
+            || ! std::isfinite (sampleRate) || sampleRate <= 0.0f)
+        {
+            resetMeasurementWindow();
+            samplesSinceCrossing = 1;
+            sampleCounter = 0;
+            previousPositive = true;
+            return false;
+        }
+
+        constexpr float maxInputMagnitude = 1.0e6f;
+        shaperInput = std::clamp (shaperInput, -maxInputMagnitude, maxInputMagnitude);
+        shaperOutput = std::clamp (shaperOutput, -maxInputMagnitude, maxInputMagnitude);
+        sampleRate = std::clamp (sampleRate, 8000.0f, 768000.0f);
+
         // The fundamental is taken from the zero-crossing rate of the input, which is cheap
         // and needs no FFT. The estimate is heavily smoothed because it only has to be in
         // the right region for the harmonic bins to line up.
@@ -79,7 +96,8 @@ struct HarmonicAnalyser
         }
 
         previousPositive = shaperInput >= 0.0f;
-        ++samplesSinceCrossing;
+        if (samplesSinceCrossing < std::numeric_limits<int>::max())
+            ++samplesSinceCrossing;
 
         // Only measure while there is real signal, and only occasionally.
         if (absInput < 1.0e-3f)
@@ -149,6 +167,14 @@ private:
         independent of the block size. Used instead of an FFT because only a couple of bins
         are needed and this costs a fraction of a full transform.
     */
+    void resetMeasurementWindow() noexcept
+    {
+        previous1 = 0.0f;
+        previous2 = 0.0f;
+        lastMagnitude = 0.0f;
+        windowCounter = 0;
+    }
+
     float goertzel (float sample, float frequency, float sampleRate) noexcept
     {
         const auto omega = juce::MathConstants<float>::twoPi * frequency / sampleRate;
@@ -165,6 +191,11 @@ private:
         const auto samplesPerWindow = juce::jmax (64, juce::roundToInt (0.0116 * sampleRate));
 
         const auto current = sample + coefficient * previous1 - previous2;
+        if (! std::isfinite (current))
+        {
+            resetMeasurementWindow();
+            return 0.0f;
+        }
         previous2 = previous1;
         previous1 = current;
 
@@ -180,8 +211,10 @@ private:
             previous2 = 0.0f;
             windowCounter = 0;
 
-            lastMagnitude = std::sqrt (static_cast<float>(juce::jmax (0.0f, power)))
-                          / static_cast<float> (samplesPerWindow);
+            lastMagnitude = std::isfinite (power)
+                                ? std::sqrt (static_cast<float> (juce::jmax (0.0f, power)))
+                                      / static_cast<float> (samplesPerWindow)
+                                : 0.0f;
             lastMagnitude = juce::jlimit (0.0f, 4.0f, lastMagnitude);
         }
 

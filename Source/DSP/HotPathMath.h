@@ -127,7 +127,8 @@ REMOVED, not merely superseded.
 inline float onePoleCoefficient (float milliseconds, float sampleRate)
 {
     const float seconds = juce::jmax (0.01f, milliseconds) * 0.001f;
-    return 1.0f - std::exp (-1.0f / (seconds * juce::jmax (1.0f, sampleRate)));
+    const auto exponent = -1.0f / (seconds * juce::jmax (1.0f, sampleRate));
+    return -std::expm1 (exponent);
 }
 
 /**
@@ -146,7 +147,7 @@ inline float onePoleCoefficientHz (float cornerHz, float sampleRate)
     const float omega = juce::MathConstants<float>::twoPi
                       * juce::jmax (1.0f, cornerHz)
                       / juce::jmax (1.0f, sampleRate);
-    return juce::jlimit (0.0f, 1.0f, 1.0f - std::exp (-omega));
+    return juce::jlimit (0.0f, 1.0f, -std::expm1 (-omega));
 }
 
 /**

@@ -198,19 +198,8 @@ void FirstAudioProcessor::flushPendingTransportHostSync()
 
 void FirstAudioProcessor::setSpindownHeld (bool shouldHold)
 {
-    // Two things have to happen, and both are cheap:
-    //
-    //   1. The atomic the engine reads every block. That is what actually runs the
-    //      platter down, and it is the only path that touches the audio thread -
-    //      a relaxed store, no lock, no allocation.
-    //   2. The `spindown` parameter, so a host that records automation sees the
-    //      gesture and a saved session can hold it. It is written through the
-    //      parameter rather than through the attachment in the editor so a button
-    //      press and an automation lane are the same event.
-    //
-    // The engine treats a held spindown as a running transport, so a hold started
-    // from STOP brings the platter up and then cuts it: the gesture always has
-    // something to act on.
+    // This is called by the editor's button on the message thread. Update the host
+    // parameter here; the audio thread reads its cached raw atomic once per block.
     spindownHeld.store (shouldHold, std::memory_order_relaxed);
 
     if (auto* parameter = parameters.getParameter ("spindown"))
@@ -1020,13 +1009,14 @@ void FirstAudioProcessor::mixOscillatorIntoInput (juce::dsp::AudioBlock<float>& 
                                                   float engineSampleRate, int channels)
 {
     const bool running = oscOnParam != nullptr && oscOnParam->load() >= 0.5f;
-    const bool panelOpen = oscPanelOpen.load (std::memory_order_relaxed);
 
-    // With no editor the engine is the ball's clock - the module must keep
-    // playing when the window closes. While an editor is on screen its timer is
-    // the clock, from the state it took at open; this one only reads the note the
-    // editor hands over, so the two never step the same bounce at once.
-    if (running && ! panelOpen)
+    // The engine is the ball's clock, always - with or without an editor. It used
+    // to step only while no window existed, and to read the note an open editor
+    // handed over; that made the module's rhythm a property of the panel's frame
+    // rate, so a slow phone quantised every contact to a frame. Stepping here
+    // puts every contact on the audio thread's own clock: the same bounce at 20
+    // and at 60 fps. An editor now MIRRORS this state (OscRing::follow).
+    if (running)
     {
         const auto blockSeconds = static_cast<double> (block.getNumSamples())
                                 / static_cast<double> (juce::jmax (1.0f, engineSampleRate));
@@ -1117,6 +1107,12 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
     const int numSamples = static_cast<int> (block.getNumSamples());
     const auto engineSampleRate = juce::jmax (1.0f, sampleRate * oversamplingRateFactor);
+
+    // Host automation and editor gestures both update this cached raw parameter;
+    // sample it once at the block boundary for the transport engine.
+    if (spindownParam != nullptr)
+        spindownHeld.store (spindownParam->load (std::memory_order_relaxed) >= 0.5f,
+                            std::memory_order_relaxed);
 
     // processBlock has already expanded oversampled blocks. Build all DSP time
     // constants against the rate of this block, not the host/base rate.

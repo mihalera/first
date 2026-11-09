@@ -1,11 +1,23 @@
 {
   "version": 1,
   "skills": {
+    "au-review": {
+      "source": "kunitoki/sonic-skills",
+      "sourceType": "github",
+      "skillPath": "skills/au-review/SKILL.md",
+      "computedHash": "1b36f8c439fdfbc0149770fa9a6c55adf8cce1d341d220f2b3ee7462b9315a2a"
+    },
     "audio-numerics-review": {
       "source": "kunitoki/sonic-skills",
       "sourceType": "github",
       "skillPath": "skills/audio-numerics-review/SKILL.md",
       "computedHash": "d8e786c1d99d11a7c5b06a073e55d7ee118284e8ccd8fa896f05921fa230dd4a"
+    },
+    "clap-review": {
+      "source": "kunitoki/sonic-skills",
+      "sourceType": "github",
+      "skillPath": "skills/clap-review/SKILL.md",
+      "computedHash": "88b9f5fd2eb8191bdc14c790325a179f2fb4812e529c1b663b77b8bdd24c730e"
     },
     "find-skills": {
       "source": "vercel-labs/skills",
@@ -13,11 +25,29 @@
       "skillPath": "skills/find-skills/SKILL.md",
       "computedHash": "913b9d37d0d54047dd65222bb8c67b2bf04e3cb87dcad1729068d7a8b2c8c396"
     },
+    "game-audio-review": {
+      "source": "kunitoki/sonic-skills",
+      "sourceType": "github",
+      "skillPath": "skills/game-audio-review/SKILL.md",
+      "computedHash": "1be70398d622416d8050f428291a36ad9a1fe3070093ae0801d46e22c60c27e2"
+    },
     "juce-review": {
       "source": "kunitoki/sonic-skills",
       "sourceType": "github",
       "skillPath": "skills/juce-review/SKILL.md",
       "computedHash": "dc5a3e30e6d32c86c20a0ed6c3e67530b55b7d52b347ca2d81dca548eb04d532"
+    },
+    "webaudio-review": {
+      "source": "kunitoki/sonic-skills",
+      "sourceType": "github",
+      "skillPath": "skills/webaudio-review/SKILL.md",
+      "computedHash": "ae0c48bb8fc0c91bd5a3f24c944855cb460cabb218e2bfa35b1e2de3bd7ed48a"
+    },
+    "yup-review": {
+      "source": "kunitoki/sonic-skills",
+      "sourceType": "github",
+      "skillPath": "skills/yup-review/SKILL.md",
+      "computedHash": "87a8d73d0a1ee1983a572ea7a32a3f7032af8371027afb543f6c470ca9bb0b0e"
     }
   }
 }

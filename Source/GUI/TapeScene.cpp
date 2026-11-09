@@ -374,6 +374,10 @@ TapeScene::TapeScene() {
     // the 2D panel, and this one draws the transport into this component only.
     openGLContext.setComponentPaintingEnabled(false);
     openGLContext.setContinuousRepainting(false);
+    // The deck's own surface is display-locked: one swap per frame the transport
+    // actually changes, never a multiple of the refresh. That is what v-sync
+    // wants and what G-Sync / FreeSync / Adaptive-Sync vary the panel around.
+    openGLContext.setSwapInterval(1);
 }
 
 TapeScene::~TapeScene() {
@@ -418,7 +422,13 @@ void TapeScene::setAudioState(float newOutputLevel,
         openGLContext.triggerRepaint();
 }
 
+juce::uint64 TapeScene::uniformRevision() const noexcept {
+    return uniformRevisionCount.load(std::memory_order_relaxed);
+}
+
 void TapeScene::setControlValues(const float *values, int count) noexcept {
+    uniformRevisionCount.fetch_add(1, std::memory_order_relaxed);
+
     // A caller that hands over fewer values than the bank holds leaves the rest
     // at the panel's rest position rather than retaining a stale angle.
     const auto usable = values != nullptr ? juce::jlimit(0, bankKnobCount, count) : 0;
@@ -438,6 +448,8 @@ void TapeScene::setPalette(juce::Colour background,
     // the packed form they already are rather than as a Colour - which holds a
     // pointer into JUCE's named-colour table and must not be copied between
     // threads.
+    uniformRevisionCount.fetch_add(1, std::memory_order_relaxed);
+
     backgroundColour.store(background.getARGB(), std::memory_order_relaxed);
     bodyColour.store(body.getARGB(), std::memory_order_relaxed);
     highlightColour.store(highlight.getARGB(), std::memory_order_relaxed);

@@ -42,6 +42,7 @@
 // =============================================================================
 #pragma once
 
+#include <algorithm>
 #include <array>
 #include <cmath>
 
@@ -214,6 +215,21 @@ public:
     */
     bool process (float& left, float& right, float engagement) noexcept
     {
+        if (! std::isfinite (left) || ! std::isfinite (right) || ! std::isfinite (engagement))
+        {
+            reset();
+            left = std::isfinite (left) ? left : 0.0f;
+            right = std::isfinite (right) ? right : 0.0f;
+            return false;
+        }
+
+        if (engagement <= 1.0e-6f)
+            return false;
+
+        constexpr float maxInputMagnitude = 1.0e6f;
+        left = std::clamp (left, -maxInputMagnitude, maxInputMagnitude);
+        right = std::clamp (right, -maxInputMagnitude, maxInputMagnitude);
+        engagement = std::clamp (engagement, 0.0f, 1.0f);
         if (engagement <= 1.0e-6f)
             return false;
 
@@ -237,8 +253,10 @@ public:
             // the mid/side energy difference is the sign of the correlation, and
             // the normaliser makes it a ratio rather than a level.
             auto& band = bands[i];
-            band.product += ((mid * mid - side * side) - band.product) * coefficient;
-            band.magnitude += ((mid * mid + side * side) - band.magnitude) * coefficient;
+            const auto product = mid * mid - side * side;
+            const auto magnitude = mid * mid + side * side;
+            band.product += (product - band.product) * coefficient;
+            band.magnitude += (magnitude - band.magnitude) * coefficient;
             band.magnitude = juce::jmax (1.0e-9f, band.magnitude);
 
             const auto opposition = band.product < 0.0f

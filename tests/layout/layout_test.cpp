@@ -330,6 +330,35 @@ void checkHorizontalKnobConsistency()
            "CAMERA", 1280, 800);
 }
 
+// A knob strip is one row of the same hardware at different distances, so what
+// depth changes is the SIZE of a knob, never its shape. The camera used to read
+// foreshortening from the vertical distance alone, which made the bottom row of a
+// tall page 1.45 times as wide as it was tall with a cap a fifth smaller than the
+// row above - the shape a user reports as "the lower knobs are wider".
+void checkCameraDepth()
+{
+    const auto below = j37panel::computeKnobPerspective (0.0f, 0.8f);
+    const auto right = j37panel::computeKnobPerspective (0.8f, 0.0f);
+
+    check (std::abs (below.squashY - right.squashY) < 1.0e-5f
+               && std::abs (below.wall - right.wall) < 1.0e-5f,
+           "a knob as far below the centre as another is to the side is seen at the same angle",
+           "CAMERA", 1280, 800);
+
+    auto widest = 0.0f;
+    for (auto depth = 0.0f; depth <= 1.0f; depth += 0.05f)
+    {
+        const auto view = j37panel::computeKnobPerspective (0.0f, depth);
+        const auto aspect = view.squashX / view.squashY;
+        if (aspect > widest)
+            widest = aspect;
+    }
+
+    check (widest <= 1.2f,
+           "no knob in the strip is drawn more than a fifth wider than it is tall",
+           "CAMERA", 1280, 800);
+}
+
 // The strip the page used to ride: four fixed columns of the grid's full rows.
 // Kept here to print what the solve bought, page by page - not asserted on.
 struct Old { int rows; std::vector<juce::Rectangle<int>> cells; };
@@ -499,12 +528,36 @@ void checkPhoneLayout()
            "1441 x 720 keeps the desktop layout", "PHONE", 1441, 720);
     check (! j37panel::usesPhoneLayout (1280, 800),
            "a landscape window taller than 720 px keeps the desktop layout", "PHONE", 1280, 800);
+    // The paint interval is chosen per frame from the machine's state, so the
+    // promise is a pair of rates rather than a rate per platform: a moving panel
+    // is painted on every tick and a resting one on every third.
     check (j37panel::editorTimerHz == 60
                && j37panel::editorTimerHz
-                      / j37panel::desktopAnimationPaintIntervalTicks == 30
+                      / j37panel::activeAnimationPaintIntervalTicks == 60
                && j37panel::editorTimerHz
-                      / j37panel::androidAnimationPaintIntervalTicks == 60,
-           "desktop and Android animation rates are 30 and 60 Hz", "ANIMATION", 60, 1);
+                      / j37panel::idleAnimationPaintIntervalTicks == 20,
+           "a moving panel paints at 60 Hz and a resting one at 20 Hz", "ANIMATION", 60, 1);
+
+    // The swap interval is the other half of the same decision. 1 is v-sync, and
+    // it is also what adaptive sync (G-Sync / FreeSync / Adaptive-Sync) paces
+    // around; 0 is a resting panel that presents nothing rather than blocking on
+    // a swap of an unchanged frame. A larger interval must never be chosen: it
+    // locks the swap to a multiple of the refresh and takes the panel off the
+    // variable-refresh range.
+    check (j37panel::swapIntervalFor (true) == 1
+               && j37panel::swapIntervalFor (false) == 0
+               && j37panel::paintIntervalTicksFor (true)
+                      == j37panel::activeAnimationPaintIntervalTicks
+               && j37panel::paintIntervalTicksFor (false)
+                      == j37panel::idleAnimationPaintIntervalTicks,
+           "a moving panel is display-locked and a resting one presents nothing",
+           "ANIMATION", 60, 1);
+    check (j37panel::panelIsAnimating (false, false, false, 0.0f, 0.0f) == false
+               && j37panel::panelIsAnimating (true, false, false, 0.0f, 0.0f)
+               && j37panel::panelIsAnimating (false, false, true, 0.0f, 0.0f)
+               && j37panel::panelIsAnimating (false, false, false, 0.5f, 0.0f),
+           "the transport, an armed START, and live activity all count as moving",
+           "ANIMATION", 60, 1);
 
     for (const auto& size : { std::array<int, 2> { 360, 800 },
                               std::array<int, 2> { 412, 915 },
@@ -631,6 +684,7 @@ int main()
 {
     checkDeckBands();
     checkHorizontalKnobConsistency();
+    checkCameraDepth();
     checkPhoneLayout();
 
     // The editor's own resize limits, and two sizes inside them a session is

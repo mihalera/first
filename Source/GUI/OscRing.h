@@ -145,41 +145,7 @@ public:
                             ? static_cast<float> (std::min (seconds, maximumCatchUpSeconds)) : 0.0f;
         const auto result = j37::oscball::advance (ball, step);
 
-        // The trail is sampled at the editor's frame rate, not at the physics
-        // rate: it is a drawing of the last half-second of the ball's path, and
-        // twenty-four points are plenty at thirty frames a second. Aging it
-        // before the new point is added keeps the newest point at age zero.
-        for (int point = 0; point < trailCount; )
-        {
-            trail[static_cast<std::size_t> (point)].age += step;
-
-            if (trail[static_cast<std::size_t> (point)].age > trailLife)
-            {
-                for (int move = point; move + 1 < trailCount; ++move)
-                    trail[static_cast<std::size_t> (move)] = trail[static_cast<std::size_t> (move + 1)];
-
-                --trailCount;
-            }
-            else
-            {
-                ++point;
-            }
-        }
-
-        if (step > 0.0f)
-        {
-            if (trailCount == trailLength)
-            {
-                for (int move = 0; move + 1 < trailLength; ++move)
-                    trail[static_cast<std::size_t> (move)] = trail[static_cast<std::size_t> (move + 1)];
-
-                --trailCount;
-            }
-
-            trail[static_cast<std::size_t> (trailCount++)] = { ball.x, ball.y, 0.0f };
-        }
-
-        impactAge = juce::jmin (impactLife, impactAge + step);
+        ageVisuals (step);
 
         for (int impact = 0; impact < result.impactCount; ++impact)
         {
@@ -197,6 +163,49 @@ public:
         // only the invalidation stops. That keeps /mibox/osc/on honest and the
         // note under the ball current, and makes opening the parameter sheet a
         // pause in drawing rather than a pause in playing.
+        if (redrawEnabled)
+            repaint();
+    }
+
+    /** Follows the ball the ENGINE is stepping while the panel is open.
+
+        The engine owns the ball's clock in both cases now (see
+        mixOscillatorIntoInput): it steps the same physics on the audio thread and
+        dispatches the note there, so the module's rhythm is the machine's rather
+        than the panel's. This is the mirror - the state, the sector the engine
+        last hit, and the visual ageing of the trail and the impact flash, which
+        are drawings and belong to the frame rate.
+
+        It deliberately does not announce the note back to the engine: that would
+        be a second dispatch of an impact the engine has already played. */
+    void follow (const j37::oscball::State& state, int sector, double seconds)
+    {
+        if (! running)
+            return;
+
+        const auto step = (std::isfinite (seconds) && seconds > 0.0)
+                            ? static_cast<float> (std::min (seconds, 0.1)) : 0.0f;
+
+        ball = state;
+        j37::oscball::sanitise (ball);
+
+        const auto engineSector = juce::jlimit (0, juce::jmax (0, noteTotal - 1), sector);
+
+        if (engineSector != currentSector)
+        {
+            currentSector = engineSector;
+
+            // The flash sits on the rim in the ball's own direction: at the
+            // moment of a contact the ball IS at the wall, which is why the
+            // engine's sector alone is enough to draw the hit.
+            const auto distance = std::sqrt (ball.x * ball.x + ball.y * ball.y);
+            impactX = distance > 1.0e-6f ? ball.x / distance : 0.0f;
+            impactY = distance > 1.0e-6f ? ball.y / distance : -1.0f;
+            impactAge = 0.0f;
+        }
+
+        ageVisuals (step);
+
         if (redrawEnabled)
             repaint();
     }
@@ -497,10 +506,18 @@ public:
         meridian.addCentredArc (ballCentre.x, ballCentre.y,
                                 drawnRadius * 0.34f, drawnRadius * 0.86f,
                                 ball.angle, 0.0f, juce::MathConstants<float>::twoPi, true);
-        g.setColour (palette.knobEdge.withAlpha (running ? 0.72f : 0.48f));
+        // The meridian belongs to the BALL, so its ink is the ball's own body:
+        // a darker shade of the cap for the edge and a lifted one for the
+        // highlight. Drawing it in knobEdge was the grey hoop across the dome -
+        // on IVORY that edge colour happens to sit close to the cap, so it read
+        // as shading, and on every other skin it read as a ring lying on top of
+        // the ball rather than as a line turning with it.
+        const auto meridianInk = ballBody.darker (0.55f);
+        const auto meridianGlint = ballBody.brighter (0.55f);
+        g.setColour (meridianInk.withAlpha (running ? 0.85f : 0.55f));
         g.strokePath (meridian, juce::PathStrokeType (0.8f, juce::PathStrokeType::curved,
                                                        juce::PathStrokeType::rounded));
-        g.setColour (palette.knobHighlight.withAlpha (running ? 0.70f : 0.38f));
+        g.setColour (meridianGlint.withAlpha (running ? 0.75f : 0.40f));
         g.strokePath (meridian, juce::PathStrokeType (0.35f, juce::PathStrokeType::curved,
                                                        juce::PathStrokeType::rounded));
 
@@ -509,7 +526,9 @@ public:
                        ballCentre.y - drawnRadius * 0.56f,
                        drawnRadius * 0.42f, drawnRadius * 0.26f);
 
-        g.setColour (palette.knobEdge.withAlpha (running ? 0.72f : 0.48f));
+        // The cap's rim is the same ink as the meridian, so the ball closes on
+        // itself instead of ending in a panel-coloured outline.
+        g.setColour (meridianInk.withAlpha (running ? 0.80f : 0.52f));
         g.drawEllipse (ballCentre.x - drawnRadius, ballCentre.y - drawnRadius,
                        drawnRadius * 2.0f, drawnRadius * 2.0f, 0.65f);
     }
@@ -564,6 +583,50 @@ private:
 
         for (int sector = 0; sector < noteTotal; ++sector)
             notes[static_cast<std::size_t> (sector)] = j37::scale::ringNoteAt (tonic, mode, sector);
+    }
+
+    /** The ring's own clock: ages the trail and the impact flash by `step` and
+        samples a new trail point. Shared by tick() (the editor stepping its own
+        copy of the physics) and follow() (the editor mirroring the engine), so a
+        handover cannot change how the trail looks.
+
+        The trail is sampled at the frame rate, not at the physics rate: it is a
+        drawing of the last half-second of the ball's path, and twenty-four points
+        are plenty at thirty frames a second. Aging it before the new point is
+        added keeps the newest point at age zero. */
+    void ageVisuals (float step) noexcept
+    {
+        for (int point = 0; point < trailCount; )
+        {
+            trail[static_cast<std::size_t> (point)].age += step;
+
+            if (trail[static_cast<std::size_t> (point)].age > trailLife)
+            {
+                for (int move = point; move + 1 < trailCount; ++move)
+                    trail[static_cast<std::size_t> (move)] = trail[static_cast<std::size_t> (move + 1)];
+
+                --trailCount;
+            }
+            else
+            {
+                ++point;
+            }
+        }
+
+        if (step > 0.0f)
+        {
+            if (trailCount == trailLength)
+            {
+                for (int move = 0; move + 1 < trailLength; ++move)
+                    trail[static_cast<std::size_t> (move)] = trail[static_cast<std::size_t> (move + 1)];
+
+                --trailCount;
+            }
+
+            trail[static_cast<std::size_t> (trailCount++)] = { ball.x, ball.y, 0.0f };
+        }
+
+        impactAge = juce::jmin (impactLife, impactAge + step);
     }
 
     // Radians, sector 0 at the top, increasing clockwise - the direction the

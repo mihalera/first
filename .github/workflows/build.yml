@@ -89,6 +89,16 @@ jobs:
       - name: Run the effects rack harness
         run: bash tests/fx/run.sh
 
+      # The sokol adapter's uniform uploads. Source/GUI/SceneUniforms.h turns one
+      # draw into the two blocks the shaders declare and remembers which of them
+      # the GPU already holds, so a draw that repeats a block uploads nothing.
+      # Both halves are arithmetic on plain floats - no JUCE, no sokol, no device -
+      # and this is the only place they run on a machine without a GPU: the
+      # per-stage granularity, the byte comparison, the scene's mark and the
+      # re-upload after a new program are all read here rather than trusted.
+      - name: Run the scene uniform harness
+        run: bash tests/uniforms/run.sh
+
       # The knob strip's geometry is arithmetic, not rendering: the editor layout
       # becomes a grid, the grid becomes a column count and a tile, and the tile
       # becomes the disc the LookAndFeel is handed. This harness cuts those five

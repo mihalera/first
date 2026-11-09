@@ -833,7 +833,9 @@ void FirstAudioProcessorEditor::setUpTabButtons() {
         auto &button = *familyButtons[f];
         button.setComponentID ("mibox.family." + juce::String (static_cast<int> (f)));
         button.setLookAndFeel(&customLookAndFeel);
-        button.onClick = [this, f] { setTabFamily(static_cast<int>(f)); };
+        // A family press OPENS the family (see setTabFamily's second argument):
+        // the range rule it used to rely on could leave the old page selected.
+        button.onClick = [this, f] { setTabFamily(static_cast<int>(f), true); };
         addAndMakeVisible(button);
     }
 
@@ -2295,7 +2297,7 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
     // The phone layout does not show the 3D deck. Keep its GPU surfaces detached
     // while narrow, then attach the selected renderer when the editor grows past
     // the phone breakpoint.
-    if (j37panel::usesPhoneLayout (getWidth(), getHeight())) {
+    if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight())) {
         openGLContext.detach();
         tapeScene.setSceneEnabled(false);
         shutDownNativeScene();
@@ -2310,7 +2312,7 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
         // whose component painting is off would show a blank panel.
         openGLContext.setComponentPaintingEnabled(true);
         openGLContext.setContinuousRepainting(false);
-        openGLContext.setSwapInterval(1);
+        openGLContext.setSwapInterval(j37panel::swapIntervalFor(true));
         openGLContext.attachTo(*this);
         // attachTo() returns void, so the documented way to find out whether the
         // context came up is to ask afterwards - and to keep the bounded retry
@@ -2346,7 +2348,7 @@ void FirstAudioProcessorEditor::setUpOpenGlRendering() {
     const auto running = j37::render::runningBackend(renderBackendChoice);
     nativeSceneAttachAttemptsLeft = 0;
 
-    if (j37panel::usesPhoneLayout (getWidth(), getHeight())) {
+    if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight())) {
         tapeScene.setSceneEnabled(false);
         shutDownNativeScene();
         openGLContext.detach();
@@ -2384,7 +2386,7 @@ void FirstAudioProcessorEditor::setUpOpenGlRendering() {
 
     openGLContext.setComponentPaintingEnabled(true);
     openGLContext.setContinuousRepainting(false);
-    openGLContext.setSwapInterval(1);
+    openGLContext.setSwapInterval(j37panel::swapIntervalFor(true));
     openGLContext.attachTo(*this);
     openGLAttachAttemptsLeft = openGLContext.isAttached() ? 0 : 90;
     renderSetupComplete = true;
@@ -2410,7 +2412,9 @@ FirstAudioProcessorEditor::nativeSceneConfig() const {
     // sokol adapter ignores it and attaches to tapeScene itself.
     config.positionX = tapeScene.getX();
     config.positionY = tapeScene.getY();
-    config.vsyncInterval = 1;
+    // Display-locked: v-sync with the display's refresh, which is also what
+    // G-Sync / FreeSync / Adaptive-Sync pace around (see AnimationTiming.h).
+    config.vsyncInterval = j37panel::swapIntervalFor(true);
     return config;
 }
 
@@ -2425,7 +2429,7 @@ void FirstAudioProcessorEditor::setUpNativeScene() {
 
     // The phone layout intentionally has no 3D deck. Delay adapter creation
     // until the editor is wide enough to show it, avoiding an unused GPU surface.
-    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
+    if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
         return;
 
     shutDownNativeScene();
@@ -2457,6 +2461,17 @@ void FirstAudioProcessorEditor::submitNativeSceneFrame() {
 
     if (width <= 0 || height <= 0)
         return;
+
+    // The frame is the adapter's whole view of the scene, but a palette or a
+    // control bank can change what the uniforms MEAN without changing a byte of
+    // them; the scene counts those writes so the adapter is told rather than
+    // left to compare. Adapters that upload every block ignore the notice.
+    const auto revision = tapeScene.uniformRevision();
+
+    if (revision != lastSceneUniformRevision) {
+        nativeRenderer->invalidateUniforms();
+        lastSceneUniformRevision = revision;
+    }
 
     // One call advances the deck's reels and lagged readouts and returns the
     // frame every backend draws from; submitSceneFrame validates it, hands the

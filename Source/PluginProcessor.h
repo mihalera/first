@@ -332,8 +332,7 @@ inline juce::StringArray vinylTypeNameList()
       -> output trim -> stereo width
 */
 class FirstAudioProcessor  : public juce::AudioProcessor,
-                             private juce::AudioProcessorValueTreeState::Listener,
-                             private juce::AsyncUpdater
+                             private juce::Timer
 {
 public:
     //==============================================================================
@@ -1169,8 +1168,9 @@ private:
         is safe from processBlock. */
     void setOversamplingFactor (OversamplingFactor factor, int samplesPerBlock);
 
-    /** Message-thread callback for realtime-safe latency changes. */
-    void handleAsyncUpdate() override;
+    /** Message-thread timer applies latency changes and polls the preset dirty badge. */
+    void timerCallback() override;
+    void updatePresetDirty() noexcept;
 
     /** Pure function of the parameter snapshot - the factory preset table. */
     static std::map<juce::String, float> factoryPresetValues (int index);
@@ -1185,31 +1185,13 @@ private:
     /** The directory user presets are read from and written to (created on demand). */
     static juce::File getUserPresetDirectory();
 
-    /** Restores the badge to a clean, named preset state (used after a preset load). */
+    /** Restores the badge to a clean, named preset state and snapshots parameters. */
     void markPresetClean (const juce::String& name)
     {
         currentPresetName = name;
-        presetNameNonEmpty.store (! name.isEmpty(), std::memory_order_relaxed);
+        for (std::size_t i = 0; i < dirtyBadgeParameters.size(); ++i)
+            presetParameterSnapshot[i] = dirtyBadgeParameters[i]->load (std::memory_order_relaxed);
         presetDirty.store (false, std::memory_order_relaxed);
-    }
-
-    /** AudioProcessorValueTreeState::Listener: any parameter change dirties the
-        badge, and a change to `spindown` syncs the engine's momentary flag. */
-    void parameterChanged (const juce::String& parameterID, float newValue) override
-    {
-        // Reads and writes only atomics: APVTS forwards host automation here from the
-        // audio thread, and the badge is advisory state, never control state.
-        if (presetNameNonEmpty.load (std::memory_order_relaxed))
-            presetDirty.store (true, std::memory_order_relaxed);
-
-        // `spindown` is the one parameter whose value the engine keeps a second
-        // copy of (the atomic it reads every block). Keeping it in step here means
-        // a preset load, an undo/redo or an automation pass that moves the
-        // parameter also moves the platter - without a second code path that could
-        // drift from this one. The comparison first means the common case of the
-        // button writing the parameter is a no-op rather than a redundant store.
-        if (parameterID == "spindown")
-            spindownHeld.store (newValue >= 0.5f, std::memory_order_relaxed);
     }
 
     /** Rebuilds the A/B dirty flag from the two stored slot states. */
@@ -1602,13 +1584,13 @@ private:
     // its display after a preset or session change.
     std::atomic<int> lastPresetIndex { -1 };
 
-    // User-preset bookkeeping: the name of the preset currently loaded (empty when
-    // none is), and whether the live state has drifted away from it since. The flag
-    // is re-armable cheaply because it is only advisory (a UI badge) - the true state
-    // is the parameters themselves.
+    // User-preset bookkeeping. The message-thread timer compares cached raw
+    // parameter atomics with the clean snapshot, avoiding APVTS listeners on the
+    // host's parameter-automation path.
     juce::String currentPresetName;
+    std::vector<std::atomic<float>*> dirtyBadgeParameters;
+    std::vector<float> presetParameterSnapshot;
     std::atomic<bool> presetDirty { false };
-    std::atomic<bool> presetNameNonEmpty { false };
 
     // Per-channel tape state: 3-element hysteresis memory (current, previous, older)
     // plus a 3-element high-frequency memory holding the tape-medium pole, the

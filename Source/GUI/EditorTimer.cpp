@@ -294,10 +294,10 @@ void FirstAudioProcessorEditor::repaintAnimatedSurfaces() {
             toggle->repaint();
 
     // The status lamp and the deck's own transport, both drawn by paint().
-    if (!j37panel::usesPhoneLayout (getWidth(), getHeight()))
+    if (!j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
         repaint(statusPillBounds());
 
-    if (!j37panel::usesPhoneLayout (getWidth(), getHeight()) && !tapeScene.isSceneLive())
+    if (!j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()) && !tapeScene.isSceneLive())
         repaint(deckAnimationBounds());
 }
 
@@ -316,7 +316,7 @@ void FirstAudioProcessorEditor::timerCallback() {
     // phone layout omits the large meters; its compact OSC ring remains active
     // and is redrawn only while visible.
     const auto panelCovered = parameterSheet != nullptr && parameterSheet->isOpen();
-    const auto phoneLayout = j37panel::usesPhoneLayout (getWidth(), getHeight());
+    const auto phoneLayout = j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight());
     const auto metersVisible = ! panelCovered && ! phoneLayout;
     inputMeter.setActive(metersVisible);
     outputMeter.setActive(metersVisible);
@@ -690,7 +690,22 @@ void FirstAudioProcessorEditor::timerCallback() {
     // the ring has no listener to unregister when the editor closes.
     oscRing.setKey(audioProcessor.getTuningTonic(), audioProcessor.getTuningMode());
 
-    oscRing.tick(animationDelta);
+    // The ENGINE is the ball's clock, whether or not this window exists: it
+    // steps the same physics on the audio thread and dispatches the note there,
+    // so the module no longer plays in time with the panel. The ring mirrors the
+    // published state and ages its trail; it never chooses a note. That is what
+    // makes an impact at 20 frames a second land where it lands at 60.
+    oscRing.follow (audioProcessor.getOscBallState(), audioProcessor.getOscSector(),
+                    animationDelta);
+
+    // The /mibox/osc/ note packet follows the sector rather than the frame: the
+    // engine can hit the same sector twice, and only a CHANGE is news a client
+    // can use.
+    const auto oscSectorNow = audioProcessor.getOscSector();
+    if (oscSectorNow != lastPublishedOscSector) {
+        lastPublishedOscSector = oscSectorNow;
+        audioProcessor.publishOscState(true);
+    }
 
     // ------------------------------------------------------------------
     //  Interface sounds.
@@ -925,13 +940,33 @@ void FirstAudioProcessorEditor::timerCallback() {
     // open is an invalidation of the panel BEHIND it, which the popup's own
     // window then has to repaint over; that is the same class of problem as the
     // whole-panel repaint noted above, one rectangle at a time. The frame after
-#if defined (__ANDROID__)
-    constexpr int animationPaintIntervalTicks = j37panel::androidAnimationPaintIntervalTicks;
-#else
-    constexpr int animationPaintIntervalTicks = j37panel::desktopAnimationPaintIntervalTicks;
-#endif
-    // Desktop repaints at 30 Hz to keep the textured panel affordable; Android
-    // repaints at 60 Hz, where the compact layout does not draw the full deck.
+    // The paint rate follows the machine rather than the platform. Something is
+    // moving when the transport is engaged, when the spindown is held, when a
+    // START is waiting for the host, or when the panel's own activity and drift
+    // are still breathing - and those are the frames where a 30 Hz panel was
+    // visibly a slideshow. A panel at rest (the common case, and every idle
+    // phone) repaints on every third tick instead of sixty times a second.
+    //
+    //  This is also the answer to the phone's frame budget: the knob halos, the
+    //  switch lamps and the deck particles all invalidate on this call, so a
+    //  still page now costs a third of the paints it used to while a moving one
+    //  gets the full rate it needs.
+    const auto animationMoving = j37panel::panelIsAnimating (transportNow != 0, spindownNow,
+                                                            waitingForHost, activity,
+                                                            driftAmount);
+    const auto animationPaintIntervalTicks = j37panel::paintIntervalTicksFor (animationMoving);
+
+    // The swap follows the same decision (see AnimationTiming.h): display-locked
+    // while anything moves, which is what v-sync needs and what adaptive sync
+    // varies the refresh around, and off while nothing does, so an idle panel
+    // never pins the message thread to a swap of an unchanged frame.
+    if (openGLContext.isAttached()) {
+        const auto interval = j37panel::swapIntervalFor (animationMoving);
+        if (interval != appliedSwapInterval) {
+            appliedSwapInterval = interval;
+            openGLContext.setSwapInterval (interval);
+        }
+    }
     if (!popupIsOpen && !panelCovered
         && ++animationPaintTick >= animationPaintIntervalTicks) {
         animationPaintTick = 0;

@@ -861,7 +861,12 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     void setCurrentTab(int newTab);
 
     // The three tab families select the visible page range and its first page.
-    void setTabFamily(int newFamily);
+    /** Filters the tab bar to one family, and optionally opens that family's
+        first page. A click on the family button passes `openFirstPage`, because
+        a family press means "take me there": the page range test alone left the
+        old page selected whenever it happened to sit inside the new family's
+        index span, which is how SETUP stayed lit after pressing FX. */
+    void setTabFamily (int newFamily, bool openFirstPage = false);
     void styleTabButtons();
 
     void refreshPresetList();
@@ -1491,6 +1496,20 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // one SceneFrame per timer tick. Null on every build without a scene-capable
     // adapter, which is every build today except -DJ37_RENDER_BACKEND=SOKOL.
     std::unique_ptr<j37::render::NativeRenderer> nativeRenderer;
+
+    // The scene's appearance count at the last submitted frame. The scene bumps
+    // it for the writes a uniform block cannot show - the palette and the control
+    // bank - and a bump is what tells the adapter its cached uploads are stale.
+    juce::uint64 lastSceneUniformRevision = 0;
+
+    // The swap interval the panel's context is currently asking for, so the
+    // per-frame sync policy only touches the context when its answer changes.
+    // -1 means "nothing applied yet".
+    int appliedSwapInterval = -1;
+
+    // The OSC sector the wire was last told about: the engine dispatches the
+    // notes, so the panel publishes on a sector change rather than per frame.
+    int lastPublishedOscSector = -1;
 
 
 

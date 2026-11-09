@@ -34,6 +34,7 @@
 #include <cstddef>
 #include <cstdio>
 #include <iterator>
+#include <limits>
 #include <string>
 #include <vector>
 
@@ -1462,6 +1463,28 @@ bool testStereoWidthMatrix()
         && std::abs (wide[0] - mid) > std::abs (normal[0] - mid);
 }
 
+void testNumericalInputGuards()
+{
+    HarmonicAnalyser analyser;
+    const auto rejected = ! analyser.analyse (std::numeric_limits<float>::infinity(), 0.0f, 48000.0f)
+                       && ! analyser.analyse (0.0f, 0.0f, std::numeric_limits<float>::quiet_NaN());
+    check (rejected && std::isfinite (analyser.getEvenRatio())
+           && std::isfinite (analyser.getOddRatio())
+           && std::isfinite (analyser.getFundamentalLevel()),
+           "the harmonic analyser rejects invalid samples and rates without poisoning readings");
+
+    for (int i = 0; i < 48000; ++i)
+        analyser.analyse (1.0e30f, -1.0e30f, 48000.0f);
+    check (std::isfinite (analyser.getEvenRatio())
+           && std::isfinite (analyser.getOddRatio())
+           && std::isfinite (analyser.getFundamentalLevel()),
+           "extreme finite analyser input keeps recurrence and readings finite");
+
+    const auto smallTimeCoefficient = onePoleCoefficient (1000000.0f, 1.0e12f);
+    check (smallTimeCoefficient > 0.0f && std::isfinite (smallTimeCoefficient),
+           "one-pole coefficient retains precision for a very small exponent");
+}
+
 void printChainSpectrum()
 {
     std::printf ("\n   Diagnostic: the plugin's own output spectrum for a 500 Hz tone with\n"
@@ -1492,6 +1515,7 @@ int main()
     testTapeCouplings();
     testGlueOperatingPoints();
     testDelayTime();
+    testNumericalInputGuards();
     showOldArrangement();
     printChainSpectrum();
 
