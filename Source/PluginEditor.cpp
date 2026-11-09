@@ -920,6 +920,20 @@ FirstAudioProcessorEditor::FirstAudioProcessorEditor (FirstAudioProcessor& p)
 
 FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
 {
+    // The watchdog is armed for the whole of this destruction and disarmed by
+    // teardownTrace once the last member is gone, so a step that never returns
+    // leaves a trace naming the step and a report naming what the threads were
+    // doing. When the switch is off every line below is a no-op.
+    teardownTrace.begin();
+
+    auto& guard = j37diag::shutdownWatchdog();
+
+    if (j37diag::enabled())
+    {
+        j37diag::recordThread (j37diag::ThreadSlot::message);
+        j37diag::note ("editor dtor: begin");
+    }
+
     // The host destroys this editor when its window is closed and rebuilds it at
     // the layout's preferred size, so the user's last drag has to be written down
     // here or it is lost. See rememberedEditorSize() in EditorPreferences.h.
@@ -938,6 +952,7 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     audioProcessor.setOscBallState (oscRing.ballState());
     audioProcessor.setOscPanelOpen (false);
 
+    guard.phase ("editor dtor: stop the timer");
     stopTimer();
 
     // The native scene adapter holds an OpenGLContext attached to tapeScene;
@@ -947,15 +962,21 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     // after the panel's context had already gone - and a host closing the project
     // then waited on a GL thread whose context was mid-teardown. Both contexts
     // are now detached here, in the one order this object controls.
+    guard.phase ("editor dtor: shut down the native scene");
     shutDownNativeScene();
+
+    guard.phase ("editor dtor: detach the deck's context");
     tapeScene.setSceneEnabled(false);
 
+    guard.phase ("editor dtor: detach the panel's context");
     openGLContext.detach();
     appliedSwapInterval = -1;
+    guard.phase ("editor dtor: contexts released");
 
     // A FileChooser owns its asynchronous operation. Releasing it here cancels
     // the picker and discards its callback before the editor or processor refs
     // can be accessed by a later completion.
+    guard.phase ("editor dtor: release the file choosers");
     neuralFileChooser.reset();
     irFileChooser.reset();
     noiseFileChooser.reset();
@@ -965,6 +986,8 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     neuralFileChooser = {};
     irFileChooser = {};
     noiseFileChooser = {};
+
+    guard.phase ("editor dtor: clear the look-and-feels");
 
     for (auto& slider : controls)
         slider.setLookAndFeel (nullptr);

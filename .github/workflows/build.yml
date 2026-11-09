@@ -486,6 +486,34 @@ jobs:
   #  like every other harness here, it is seconds of work on any machine with a
   #  C++17 compiler.
   # ============================================================================
+  #  The diagnostic harness: the switch, the trace sink and the shutdown watchdog.
+  #  These exist to produce evidence from machines we cannot reach, and a report
+  #  that silently writes nothing is worse than no report - so the three states
+  #  are run here (off, on and finished, on and stalled) and both legs must agree.
+  #  The Windows leg is the one that also walks real stacks, through DbgHelp.
+  diagnostics:
+    name: diagnostics (${{ matrix.os }})
+    runs-on: ${{ matrix.os }}
+    timeout-minutes: 10
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-24.04, windows-latest]
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+
+      - name: Run the diagnostics harness
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [ "${{ matrix.os }}" = "windows-latest" ]; then
+            # The image ships MSYS2's mingw-w64 toolchain, but not on PATH.
+            export PATH="/c/msys64/mingw64/bin:${PATH}"
+          fi
+          bash tests/diagnostics/run.sh
+
   dsp-unit:
     name: DSP unit tests
     runs-on: ubuntu-24.04

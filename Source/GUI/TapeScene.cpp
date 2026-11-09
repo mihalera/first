@@ -5,6 +5,12 @@
 */
 
 #include "TapeScene.h"
+
+// The shutdown report asks for the GL thread by id; this is the thread that has
+// it, so it is named here the first time a frame is drawn - that is what tells
+// "the scene never started" apart from "the scene started and then stalled".
+#include "Diagnostics/DiagCore.h"
+
 #include "RenderBackend.h"
 #include "SceneLayout.h"
 #include "TapeSceneShaders.h"
@@ -1330,6 +1336,13 @@ j37::render::SceneFrame TapeScene::advanceAndBuildFrame(int width, int height) {
 }
 
 void TapeScene::renderOpenGL() {
+    // The GL thread names itself on its first frame. A relaxed load and, once, a
+    // single store: nothing here allocates, locks or touches the message thread.
+    if (j37diag::enabled() && j37diag::recordedThreadId(j37diag::ThreadSlot::gl) == 0) {
+        j37diag::recordThread(j37diag::ThreadSlot::gl);
+        j37diag::note("gl: the deck drew its first frame");
+    }
+
     if (programLinked.load() == 0 || shaderProgram == nullptr)
         return;
 

@@ -33,6 +33,10 @@
 // it comes after the paint kit it reads its palette through.
 #include "GUI/OscRing.h"
 
+// The diagnostic switch and the teardown watchdog, which the editor owns for the
+// whole of its destruction - see teardownTrace below.
+#include "Diagnostics/ShutdownWatchdog.h"
+
 // The renderer boundary: SETTINGS offers the backends this build can actually
 // switch to, and the header's caption reads the one that is running.
 #include "GUI/RenderBackend.h"
@@ -878,6 +882,12 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         the constructor's phases: nothing in the panel is built from it, and the
         layout harness checks that the phase block and the constructor agree. */
     void toggleParameterSheet();
+
+    // Declared FIRST so it is destroyed LAST, after every other member below has
+    // gone: the teardown trace then covers the window's children, look-and-feels
+    // and GL contexts, not only the destructor body. `begin()` is called at the
+    // top of that body; nothing is armed before the editor starts being destroyed.
+    j37diag::TeardownScope teardownTrace;
 
     FirstAudioProcessor &audioProcessor;
     PresetArtworkBadge presetArtworkBadge;

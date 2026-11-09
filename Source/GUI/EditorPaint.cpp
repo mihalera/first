@@ -168,6 +168,11 @@ void FirstAudioProcessorEditor::rebuildPanelTextureLayers() {
 
 //==============================================================================
 void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
+    // One line, once, when the diagnostic switch is on: it is the difference
+    // between "the window never appeared" and "the window appeared but nothing
+    // after it did", which is the whole question a black screen asks.
+    j37diag::noteFirstFrame("editor: first frame painted");
+
     const auto &palette = paletteFor(darkTheme);
     // The band this paint actually has to cover. The panel is repainted in bands
     // (see timerCallback) and most of what this function draws never changes, so

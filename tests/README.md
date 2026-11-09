@@ -32,6 +32,7 @@ tests/reverb/run.sh       # the room reverb: T60 in seconds, at 44.1, 48 and 96 
 tests/scene_frame/run.sh  # the frame a native backend receives: validity, shared meshes, the deck's layout
 tests/osc/run.sh          # the staged OSC codec (bytes, padding, bundles), its address surface, the ring's ball and the modal voice
 tests/scale/run.sh        # scale degree membership, all tonic/mode ring notes and note-sector round trips
+tests/diagnostics/run.sh  # the diagnostic switch, the trace sink and the shutdown watchdog (real thread stacks on Windows)
 tests/fuzz/run.sh         # the WAV decoder fed mutated bytes, under ASan/UBSan and (where clang is) libFuzzer
 tests/unit/run.sh         # the equaliser, the compressor and the transient shaper, as units
 

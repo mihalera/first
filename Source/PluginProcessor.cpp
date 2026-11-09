@@ -48,6 +48,13 @@
 // -----------------------------------------------------------------------------
 #include "Net/OscSurface.h"
 
+// The switch, the trace and the shutdown watchdog. Everything they do is behind
+// one check of one flag, so a build nobody turned the switch on for behaves and
+// costs what it did before - the flag is read once, and every call site is a
+// no-op after that. See docs/diagnostics.md for where the files land.
+#include "Diagnostics/Platform.h"
+#include "Diagnostics/ShutdownWatchdog.h"
+
 #include <array>
 #include <cstdint>
 #include <limits>
@@ -603,7 +610,20 @@ FirstAudioProcessor::FirstAudioProcessor()
 
 FirstAudioProcessor::~FirstAudioProcessor()
 {
+    // The second half of the teardown window: a host that closes a project
+    // destroys the editor and then this object, and either one can be where it
+    // stops. The watchdog is shared, so one already armed by the editor is not
+    // restarted here - it just keeps its clock.
+    auto& guard = j37diag::shutdownWatchdog();
+
+    if (j37diag::enabled())
+        j37diag::recordThread (j37diag::ThreadSlot::message);
+
+    guard.arm();
+    guard.phase ("processor dtor: stop the timer");
     stopTimer();
+    guard.phase ("processor dtor: done");
+    guard.disarm();
 }
 
 //==============================================================================
@@ -1798,7 +1818,12 @@ namespace
     void dropSavedInputChannelsWithoutPermission()
     {
         if (juce::RuntimePermissions::isGranted (juce::RuntimePermissions::recordAudio))
+        {
+            j37diag::note ("android: microphone permission granted before the device opened");
             return;
+        }
+
+        j37diag::note ("android: microphone permission not granted, dropping saved input channels");
 
         if (auto* holder = juce::StandalonePluginHolder::getInstance())
         {
@@ -1820,9 +1845,16 @@ namespace
 
 juce::AudioProcessor* JUCE_CALLTYPE createPluginFilter()
 {
+    // The earliest point the native half is reached, and on Android the earliest
+    // the diagnostic file can be named: the Java half has already written its
+    // lifecycle lines by the time this runs, so the two halves share one file.
+    j37diag::beginRunForThisPlatform ("createPluginFilter");
+
    #if JUCE_ANDROID
     dropSavedInputChannelsWithoutPermission();
    #endif
 
-    return new FirstAudioProcessor();
+    auto* processor = new FirstAudioProcessor();
+    j37diag::note ("native: plugin instance created");
+    return processor;
 }

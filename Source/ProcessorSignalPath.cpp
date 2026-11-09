@@ -48,6 +48,10 @@
 // =============================================================================
 #include "PluginProcessor.h"
 
+// The thread table the shutdown report reads: the audio thread names itself in
+// processBlock below.
+#include "Diagnostics/DiagCore.h"
+
 #include "DSP/AutoGainCompensator.h"
 #include "DSP/BlockRateCoefficients.h"
 #include "DSP/DelayTime.h"
@@ -130,6 +134,13 @@ inline void initialiseBlockMeasurements (FirstAudioProcessor::TapeBlockState& st
 
 void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
+    // The shutdown report asks for the audio thread by id, and this is the thread
+    // that has it. Two relaxed loads and, once, one store - no lock, no
+    // allocation, nothing that could block the callback, and nothing at all when
+    // the diagnostic switch is off.
+    if (j37diag::enabled() && j37diag::recordedThreadId (j37diag::ThreadSlot::audio) == 0)
+        j37diag::recordThread (j37diag::ThreadSlot::audio);
+
     juce::ScopedNoDenormals noDenormals;
 
     // The oversampling switch is a host parameter; a change requires rebuilding

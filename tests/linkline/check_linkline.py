@@ -74,6 +74,10 @@ SPELLINGS = {
     # the build through namcore's INTERFACE include path, and no file under
     # Source/ includes it by name.
     "namcore": ("NAM/dsp.h", "NAM/get_dsp.h"),
+    # The shutdown report walks thread stacks with DbgHelp, and the file that does
+    # it includes the header by the name the platform SDK publishes. Windows only,
+    # beside the rest of the backend SDKs, but it has a real caller and says so.
+    "dbghelp": ("dbghelp.h",),
 }
 
 # -----------------------------------------------------------------------------

@@ -2447,7 +2447,13 @@ void FirstAudioProcessorEditor::setUpNativeScene() {
 
 void FirstAudioProcessorEditor::shutDownNativeScene() {
     if (nativeRenderer != nullptr) {
+        // Two lines, because this is the one step that waits on another thread:
+        // the adapter's shutdown detaches the context and the GL thread's
+        // closing callback runs before it returns. If a report ever names this
+        // phase and nothing after it, that wait is the one to look at.
+        j37diag::shutdownWatchdog().phase("native scene: shutdown begin");
         nativeRenderer->shutdown();
+        j37diag::shutdownWatchdog().phase("native scene: shutdown returned");
         nativeRenderer.reset();
     }
 }

@@ -519,6 +519,9 @@ target_sources(first PRIVATE
     Source/ProcessorPresets.cpp
     Source/ProcessorSignalPath.cpp
     Source/DSP/NoiseDecoder.cpp
+    Source/Diagnostics/DiagCore.cpp
+    Source/Diagnostics/ShutdownWatchdog.cpp
+    Source/Diagnostics/Platform.cpp
     Source/PluginEditor.cpp
     Source/GUI/EditorSetup.cpp
     Source/GUI/EditorTheme.cpp
@@ -545,6 +548,11 @@ if(APPLE)
     target_sources(first PRIVATE Source/GUI/NativeRenderer_Metal.mm)
 endif()
 
+if(WIN32)
+    # The shutdown report walks the stacks of the message, GL and audio threads,
+    # which is DbgHelp's StackWalk64 and its symbol handler.
+    target_link_libraries(first PRIVATE dbghelp)
+endif()
 if(TARGET Vulkan::Vulkan)
     target_link_libraries(first PRIVATE Vulkan::Vulkan)
 endif()
