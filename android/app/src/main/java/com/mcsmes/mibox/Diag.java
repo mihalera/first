@@ -25,21 +25,22 @@ import java.util.Locale;
 //      adb shell am start -n com.mcsmes.mibox/.MainActivity --ez miboxDiag true
 //
 //  Everything lands in mibox-start.log in the app's own external files
-//  directory - the same file the native half appends to (see
-//  Source/Diagnostics/Platform.cpp) - and the absolute path is printed to logcat
-//  under the tag MiBoXDiag so it can be found without guessing:
+//  directory, and the absolute path is printed to logcat under the tag MiBoXDiag
+//  so it can be found without guessing:
 //
 //      adb pull /sdcard/Android/data/com.mcsmes.mibox/files/mibox-start.log
 //
-//  The marker file mibox-diag.on in that directory is how the native side learns
-//  the switch is on: it is created here at enable time and removed on a launch
-//  without the extra, so an ordinary start leaves no trace behind.
+//  The native half appends to the same file: setLogPath() below is the one call
+//  Java makes into it, and it is also what turns the native lines on. A launch
+//  without the extra calls nothing and writes nothing.
 // ============================================================================
 public final class Diag
 {
     private static final String TAG = "MiBoXDiag";
     private static final String LOG_NAME = "mibox-start.log";
-    private static final String MARKER_NAME = "mibox-diag.on";
+
+    /** Implemented in Source/Diagnostics/AndroidBridge.cpp. */
+    private static native void setLogPath (String path);
 
     private static final Object lock = new Object();
     private static final long startedAt = System.currentTimeMillis();
@@ -67,17 +68,8 @@ public final class Diag
                 return false;
             }
 
-            final File marker = new File (directory, MARKER_NAME);
-
             if (! requested)
-            {
-                // A normal launch turns the trace off again, so a file from an
-                // earlier diagnostic run is never mistaken for this one.
-                if (marker.exists() && ! marker.delete())
-                    Log.w (TAG, "could not remove " + marker.getAbsolutePath());
-
                 return false;
-            }
 
             synchronized (lock)
             {
@@ -85,7 +77,19 @@ public final class Diag
                 enabled = true;
             }
 
-            write (marker, "on");
+            try
+            {
+                // The library is already loaded: com.rmsl.juce.Java's static
+                // initialiser runs from JuceApp.onCreate, before this activity.
+                setLogPath (logFile.getAbsolutePath());
+            }
+            catch (Throwable error)
+            {
+                // No native half is still a Java half: the lifecycle lines are
+                // what says whether the window was ever reached.
+                Log.w (TAG, "the native trace could not be attached", error);
+            }
+
             installCrashHandler();
 
             note ("==============================");
@@ -175,15 +179,4 @@ public final class Diag
         }
     }
 
-    private static void write (File file, String text)
-    {
-        try (FileOutputStream out = new FileOutputStream (file, false))
-        {
-            out.write ((text + "\n").getBytes ("UTF-8"));
-        }
-        catch (IOException error)
-        {
-            Log.w (TAG, "could not write " + file.getAbsolutePath(), error);
-        }
-    }
 }

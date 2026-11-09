@@ -548,6 +548,11 @@ if(APPLE)
     target_sources(first PRIVATE Source/GUI/NativeRenderer_Metal.mm)
 endif()
 
+if(ANDROID)
+    # The one exported JNI method the launcher half of the diagnostic trace calls.
+    target_sources(first PRIVATE Source/Diagnostics/AndroidBridge.cpp)
+endif()
+
 if(WIN32)
     # The shutdown report walks the stacks of the message, GL and audio threads,
     # which is DbgHelp's StackWalk64 and its symbol handler.
