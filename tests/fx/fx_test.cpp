@@ -442,8 +442,48 @@ namespace
     }
 }
 
+// The signal path only calls processSample() while the rack reports itself active
+// (see the call site in ProcessorSignalPath.cpp). That makes the gate the one
+// thing standing between a parameter and the audio: asked of the SMOOTHED amounts
+// alone - which can only move inside processSample() - a rack that has never been
+// reached could never be entered, and all twenty-five controls were silent while
+// their parameters read whatever the host wrote.
+void checkRackGate()
+{
+    j37dsp::FxRack rack;
+    rack.prepare (sampleRate);
+
+    check (! rack.isActive(), "an untouched rack stays out of the path");
+
+    j37dsp::FxTargets targets;
+    targets.chorus = 0.4f;
+    rack.setTargets (targets);
+
+    check (rack.isActive(),
+           "a rack whose parameter moved is reachable before a single sample has run");
+
+    float left = 0.3f;
+    float right = 0.3f;
+    rack.processSample (left, right);
+
+    check (rack.currentAmounts().chorus > 0.0f,
+           "the first frame the gate lets through starts smoothing the amount");
+
+    j37dsp::FxTargets off;
+    rack.setTargets (off);
+
+    for (int i = 0; i < 48000; ++i)
+    {
+        left = right = 0.0f;
+        rack.processSample (left, right);
+    }
+
+    check (! rack.isActive(), "the rack closes again when every amount is back at zero");
+}
+
 int main()
 {
+    checkRackGate();
     checkBypass();
     checkDrivesAddHarmonics();
     checkCrushers();
