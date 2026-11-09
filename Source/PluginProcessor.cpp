@@ -532,7 +532,8 @@ FirstAudioProcessor::FirstAudioProcessor()
             "fx_de_esser", "fx_chorus", "fx_flanger", "fx_phaser", "fx_tremolo",
             "fx_vibrato", "fx_rotary", "fx_vocoder", "fx_granular", "fx_spectral",
             "fx_speed", "comp_upward"
-        };
+            "osc_note",
+    };
 
         for (const auto& id : registered)
             jassert (covered.count (id) != 0
