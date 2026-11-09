@@ -7,93 +7,21 @@
 namespace j37diag
 {
 #if JUCE_ANDROID
-namespace
-{
-    /** The app's own external files directory, asked of the context JUCE already
-        holds. Same place Diag.java writes to, computed the same way, so the two
-        halves of the startup trace end up in one file without either telling the
-        other where it is. */
-    juce::File externalFilesDirectory()
-    {
-        auto* env = juce::getEnv();
-
-        if (env == nullptr)
-            return {};
-
-        auto context = juce::getAppContext();
-
-        if (context.get() == nullptr)
-            return {};
-
-        auto* contextClass = env->GetObjectClass (context.get());
-        auto* getDirectory = env->GetMethodID (contextClass, "getExternalFilesDir",
-                                               "(Ljava/lang/String;)Ljava/io/File;");
-
-        if (getDirectory == nullptr)
-        {
-            env->ExceptionClear();
-            return {};
-        }
-
-        auto directory = juce::LocalRef<jobject> (
-            env->CallObjectMethod (context.get(), getDirectory, static_cast<jstring> (nullptr)));
-
-        if (directory.get() == nullptr)
-        {
-            env->ExceptionClear();
-            return {};
-        }
-
-        auto* fileClass = env->GetObjectClass (directory.get());
-        auto* getPath = env->GetMethodID (fileClass, "getAbsolutePath", "()Ljava/lang/String;");
-
-        if (getPath == nullptr)
-        {
-            env->ExceptionClear();
-            return {};
-        }
-
-        auto path = juce::LocalRef<jstring> (
-            static_cast<jstring> (env->CallObjectMethod (directory.get(), getPath)));
-
-        if (path.get() == nullptr)
-        {
-            env->ExceptionClear();
-            return {};
-        }
-
-        const auto* characters = env->GetStringUTFChars (path.get(), nullptr);
-
-        if (characters == nullptr)
-            return {};
-
-        const juce::String text (juce::CharPointer_UTF8 (characters));
-        env->ReleaseStringUTFChars (path.get(), characters);
-        return juce::File (text);
-    }
-} // namespace
-
 std::string diagnosticsFilePath()
 {
-    return externalFilesDirectory().getChildFile ("mibox-start.log").getFullPathName().toStdString();
+    // The launcher owns the path and has already passed it in - see
+    // Source/Diagnostics/AndroidBridge.cpp - so there is nothing to resolve here.
+    return logPath();
 }
 
 void beginRunForThisPlatform (const char* where)
 {
-    const auto directory = externalFilesDirectory();
-
-    // The marker is the switch Java can turn on without the app being rebuilt: it
-    // is created when the launcher sees `--ez miboxDiag true` and removed when it
-    // is launched without it. The environment variable still works, for a build
-    // whose Java half is older than this file.
-    const auto markerOn = directory != juce::File()
-                          && directory.getChildFile ("mibox-diag.on").existsAsFile();
-
-    if (! markerOn && ! enabled())
+    // Java is the only half that can see the switch on this platform: it reads the
+    // launch extra and, when it is on, calls setLogPath(), which is what enables
+    // the native lines below. Until that call this does nothing at all.
+    if (! enabled())
         return;
 
-    setEnabled (true);
-    setLogPath (diagnosticsFilePath());
     beginRun (where);
 
     const auto microphoneRequired =
@@ -101,9 +29,7 @@ void beginRunForThisPlatform (const char* where)
     const auto microphoneGranted =
         juce::RuntimePermissions::isGranted (juce::RuntimePermissions::recordAudio);
 
-    std::string text = "android: diagnostics file ";
-    text += diagnosticsFilePath();
-    text += ", mic permission required=";
+    std::string text = "android: native startup, mic permission required=";
     text += microphoneRequired ? "yes" : "no";
     text += " granted=";
     text += microphoneGranted ? "yes" : "no";

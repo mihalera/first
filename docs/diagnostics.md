@@ -19,9 +19,10 @@ switch is the launch extra `adb shell am start -n com.mcsmes.mibox/.MainActivity
 Java exception and the native startup steps — lands in `mibox-start.log` in the
 app's own external files directory (`/sdcard/Android/data/com.mcsmes.mibox/files/`,
 pulled with `adb pull`), whose absolute path is printed to logcat under the tag
-`MiBoXDiag`; a launch without the extra deletes the marker file that switched the
-native half on (`mibox-diag.on`, in the same directory) so an ordinary start
-leaves no trace behind, and with the switch off every call site is one cached flag
+`MiBoXDiag`; the launcher hands that path to the native half once, through
+`Diag.setLogPath()` in `Source/Diagnostics/AndroidBridge.cpp`, which is also what
+turns the native lines on, so a launch without the extra calls nothing and writes
+nothing, and with the switch off every call site is one cached flag
 check and no file, no thread and no timing change; `tests/diagnostics/run.sh`
 compiles `Source/Diagnostics/DiagCore.cpp` and `ShutdownWatchdog.cpp` as they ship
 and runs the three states — off, on-and-finished, on-and-stalled — asserting the

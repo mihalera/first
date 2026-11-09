@@ -14,7 +14,8 @@
  #include <process.h>
  #include <windows.h>
 #else
- #include <pthread.h>
+ #include <functional>
+ #include <thread>
  #include <unistd.h>
 #endif
 
@@ -76,7 +77,11 @@ namespace
        #if defined(_WIN32)
         return static_cast<unsigned long long> (GetCurrentThreadId());
        #else
-        return static_cast<unsigned long long> (reinterpret_cast<size_t> (pthread_self()));
+        // pthread_t is an integer on Linux and a pointer on macOS, so casting it
+        // is not portable; the hash of the C++ thread id is a number that is
+        // stable for a thread on both, and that is all the report needs.
+        return static_cast<unsigned long long> (
+            std::hash<std::thread::id> {} (std::this_thread::get_id()));
        #endif
     }
 
