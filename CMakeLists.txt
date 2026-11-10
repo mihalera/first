@@ -639,7 +639,13 @@ set(FACTORY_PRESET_FILES
     ${FACTORY_PRESET_DIR}/shellac_radio.json
     ${FACTORY_PRESET_DIR}/transient_punch.json
     ${FACTORY_PRESET_DIR}/soft_touch.json
-    ${FACTORY_PRESET_DIR}/tight_bus.json)
+    ${FACTORY_PRESET_DIR}/tight_bus.json
+    ${FACTORY_PRESET_DIR}/fuzz_stack.json
+    ${FACTORY_PRESET_DIR}/broken_bits.json
+    ${FACTORY_PRESET_DIR}/wide_chorus.json
+    ${FACTORY_PRESET_DIR}/dub_echo.json
+    ${FACTORY_PRESET_DIR}/vocal_presence.json
+    ${FACTORY_PRESET_DIR}/bass_console.json)
 
 # A guard, not a convention: a path that does not exist is a typo, and CMake
 # would otherwise pass it to the binary-data builder and fail with a message
