@@ -42,6 +42,13 @@ What it checks now, against the JSON rather than a C++ table:
     turn into the sentinel, and the debug audit would then fail on it)
   * every registered parameter is either set by some preset or listed in the
     C++ intentionallyNotPresettable set, and the two lists are compared
+  * the two extremes mean what their names say. MAXIMUM is the ceiling of every
+    other preset - no preset drives a parameter past it, which is what makes it
+    "everything turned up" - and MINIMUM is a passthrough: the machine lists at
+    their Off entry, every source down, the saturation mix and every effect at
+    zero. Both drifted before: MAXIMUM left the reverb, the vinyl print, the IR
+    and the whole rack at zero while other presets used them, and MINIMUM ran
+    the J37 at full saturation with the mix at zero, so its own name was a lie.
 """
 import json
 import os
@@ -127,6 +134,7 @@ if re.search(r'"[a-z0-9_]+"\s*\r?\n?\s*"[a-z0-9_]+"', exclusions):
 # ---------------------------------------------------------------------------
 covered = set()
 names = []
+values = {}
 
 for name in listed:
     path = os.path.join(PRESET_DIR, name + ".json")
@@ -137,6 +145,8 @@ for name in listed:
     except ValueError as error:
         problems.append("%s.json does not parse: %s" % (name, error))
         continue
+
+    values[name] = preset
 
     label = preset.get("name")
     if not isinstance(label, str) or not label.strip():
@@ -168,11 +178,63 @@ for key in stale_exclusions:
     problems.append("intentionallyNotPresettable names \"%s\", which is not a parameter" % key)
 
 # ---------------------------------------------------------------------------
+# 4. The two extremes.
+# ---------------------------------------------------------------------------
+# Which parameters are lists rather than amounts, read from the table: a choice
+# value is an index, and the last entry of a machine list is "Off", so index
+# order is not amount order and those keys cannot be compared across presets.
+choice_ids = set(re.findall(
+    r"AudioParameterChoice> \(juce::ParameterID \{ \"([a-z0-9_]+)\"", table))
+
+# A switch is not an amount either: "maximum" for BYPASS, DELTA or POLARITY is not
+# "switched on harder", the transport is a play state and the UI sounds are not
+# the sound. Rack SPEED is a rate whose neutral is its centre, not zero.
+not_amounts = choice_ids | {
+    "bypass", "delta", "polarity", "transport", "spindown", "ui_sounds", "language",
+    "fx_speed",
+}
+
+top = values.get("maximum", {})
+for other_name, other in values.items():
+    if other_name == "maximum":
+        continue
+    for key, value in other.items():
+        if key == "name" or key in not_amounts or key not in top:
+            continue
+        if top[key] < value:
+            problems.append("maximum.json leaves \"%s\" at %s, below %s.json's %s - it is "
+                            "the ceiling, not a second preset" % (key, top[key], other_name, value))
+
+floor = values.get("minimum", {})
+for key, value in floor.items():
+    if key == "name":
+        continue
+    if key.startswith("fx_") and key != "fx_speed" and value != 0.0:
+        problems.append("minimum.json runs the rack effect \"%s\" at %s" % (key, value))
+
+passthrough = {
+    "mix": 0.0,
+    "tape_source": 0.0,
+    "vinyl_source": 0.0,
+    "cassette_source": 0.0,
+    "digital_source": 0.0,
+    "amp_source": 0.0,
+    "valve_source": 0.0,
+    "transformer_source": 0.0,
+}
+for key, expected in passthrough.items():
+    if key in floor and floor[key] != expected:
+        problems.append("minimum.json sets \"%s\" to %s; a passthrough needs %s"
+                        % (key, floor[key], expected))
+
+# ---------------------------------------------------------------------------
 if problems:
     for problem in problems:
         print("check_presets: " + problem)
     sys.exit(1)
 
+print("check_presets: minimum is a passthrough, maximum is the ceiling of the other %d"
+      % (len(listed) - 1))
 print("check_presets: %d presets consistent, %d of %d parameters set, %d excluded"
       % (len(listed), len(covered), len(ids), len(excluded)))
 print("check_presets: %d registered in ParameterTable.cpp, %d watched by the dirty badge in "

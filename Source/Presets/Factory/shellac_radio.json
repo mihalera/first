@@ -65,7 +65,7 @@
   "out_eq_q": 0.7,
   "out_hp_on": 1,
   "out_lp_on": 1,
-  "noise_lvl": 1.1,
+  "noise_lvl": 1.0,
   "st_link": 1.0,
   "tracks": 0,
   "lofi_mode": 1,
