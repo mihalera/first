@@ -816,8 +816,19 @@ void FirstAudioProcessorEditor::setUpTabButtons() {
     }
 
     phonePageBox.setLookAndFeel (&customLookAndFeel);
-    for (int tab = 0; tab < numTabs; ++tab)
-        phonePageBox.addItem (tabSpecs[static_cast<std::size_t> (tab)].name, tab + 1);
+
+    // The phone's page list is the table ORDERED BY FAMILY, which the bar does by
+    // filtering and the table cannot do without moving its rows: the ui_icons
+    // atlas pairs a glyph with each page by position. So the list is built here,
+    // family by family - TAPE, FX, RACK, SETUP - and SETUP is its last section
+    // because SETUP is the last family, which is the rule the bar follows too.
+    // The ID stays the page's own index + 1, so the selection and setCurrentTab
+    // keep addressing pages by where they are in the table.
+    for (int family = 0; family < tabFamilyCount; ++family)
+        for (int tab = 0; tab < numTabs; ++tab)
+            if (tabSpecs[static_cast<std::size_t> (tab)].family == family)
+                phonePageBox.addItem (tabSpecs[static_cast<std::size_t> (tab)].name, tab + 1);
+
     phonePageBox.onChange = [this]
     {
         const auto selectedTab = phonePageBox.getSelectedId() - 1;
