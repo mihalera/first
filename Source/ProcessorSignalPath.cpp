@@ -150,8 +150,9 @@ namespace
     class BlockProbe
     {
     public:
-        BlockProbe (const juce::AudioBuffer<float>& bufferIn, bool shouldMeasure) noexcept
-            : buffer (bufferIn), measuring (shouldMeasure)
+        BlockProbe (const juce::AudioBuffer<float>& bufferIn, double sampleRateIn,
+                    bool shouldMeasure) noexcept
+            : buffer (bufferIn), sampleRate (sampleRateIn), measuring (shouldMeasure)
         {
             if (measuring)
                 started = std::chrono::steady_clock::now();
@@ -167,10 +168,9 @@ namespace
 
             // The block's own duration is the budget it had: a callback that used
             // more than that is the definition of an overrun, and it is the number
-            // the host's own dropout relies on. A buffer with no rate yet (the very
-            // first block of some hosts) is reported as no load rather than as a
-            // division by zero.
-            const auto sampleRate = buffer.getSampleRate();
+            // the host's own dropout relies on. A processor with no rate yet (the
+            // very first block of some hosts) is reported as no load rather than as
+            // a division by zero.
             const auto budget = sampleRate > 0.0 && buffer.getNumSamples() > 0
                                     ? static_cast<double> (buffer.getNumSamples()) / sampleRate
                                     : 0.0;
@@ -194,6 +194,7 @@ namespace
         }
 
         const juce::AudioBuffer<float>& buffer;
+        double sampleRate = 0.0;
         bool measuring = false;
         std::chrono::steady_clock::time_point started {};
     };
@@ -215,7 +216,7 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
     // what makes a click, a NaN and a runaway gain distinguishable after the
     // fact, and the second reading is what says whether the block overran the
     // time it was given. This is measurement, never behaviour.
-    const BlockProbe probe (buffer, j37diag::enabled());
+    const BlockProbe probe (buffer, getSampleRate(), j37diag::enabled());
 
     // The oversampling switch is a host parameter; a change requires rebuilding
     // nothing (three fixed engines exist side by side) - only the routing picks
