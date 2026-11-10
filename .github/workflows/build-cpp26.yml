@@ -1,0 +1,45 @@
+name: Build C++26 (manual)
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+env:
+  BUILD_TYPE: Release
+  J37_BUILD_JOBS: 2
+
+jobs:
+  build-cpp26:
+    name: build-cpp26
+    runs-on: ubuntu-24.04
+    timeout-minutes: 30
+
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@v7
+        with:
+          submodules: recursive
+
+      - name: Install Linux audio and GUI dependencies
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y \
+            libasound2-dev libjack-jackd2-dev libfreetype6-dev \
+            libfontconfig1-dev libcurl4-openssl-dev libx11-dev \
+            libxcomposite-dev libxcursor-dev libxext-dev libxinerama-dev \
+            libxrandr-dev libxrender-dev libgl1-mesa-dev libglu1-mesa-dev \
+            libgtk-3-dev libwebkit2gtk-4.1-dev
+
+      - name: Configure CMake (C++26)
+        run: |
+          cmake -S . -B build-cpp26 \
+            -DCMAKE_BUILD_TYPE=Release \
+            -DCMAKE_CXX_STANDARD=26 \
+            -DCMAKE_CXX_STANDARD_REQUIRED=ON \
+            -DCMAKE_CXX_EXTENSIONS=OFF
+
+      - name: Build (C++26)
+        run: |
+          cmake --build build-cpp26 --config Release --parallel "$J37_BUILD_JOBS"
