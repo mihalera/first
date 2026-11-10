@@ -143,7 +143,6 @@ inline float autoTuneTargetFrequency (float detected, int tonic, int mode)
 }
 
 inline void initialiseBlockMeasurements (FirstAudioProcessor::TapeBlockState& state,
-مكتمل
                                          juce::dsp::AudioBlock<float>& block,
                                          int activeInputChannels) noexcept
 {
