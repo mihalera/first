@@ -1,6 +1,6 @@
 // =============================================================================
 //  The panel's page table: what each tab is called, which control ids it holds
-//  and which of the three families hosts it - the table, and the three lookups
+//  and which of the FOUR families hosts it - the table, and the three lookups
 //  built on it (controlIsInTab, index_of_tab_named, tabsCoverAllControls).
 //
 //  Moved out of PluginEditor.cpp with the paint kit and split from it on purpose:
@@ -96,11 +96,21 @@ namespace j37panel
     // SETTINGS, and the delay TYPE / RATE / SYNC trio shows on DELAY. They are
     // not knobs - the grid below cannot place them - so their visibility is
     // managed in setCurrentTab beside the knobs'.
-    // The twenty-two pages are grouped into THREE FAMILIES - TAPE, FX, SETUP -
-    // and no page carries more than one subject, or more than one row of seven
-    // knobs. The families are the three large buttons ABOVE this bar (see
+    // The twenty-two pages are grouped into FOUR FAMILIES - TAPE, FX, RACK,
+    // SETUP - and no page carries more than one subject, or more than one row of
+    // seven knobs. The families are the four large buttons ABOVE this bar (see
     // setTabFamily); the column in each row below is the page's family, and it
-    // is the single source the strip reads. AUTOTUNE and COMP are part of FX.
+    // is the single source the strip reads. AUTOTUNE and COMP are part of FX,
+    // the effects RACK is a family of its own, and SETUP is the last one.
+    //
+    // TABLE ORDER IS NOT BAR ORDER: the bar FILTERS this table, so a family's
+    // pages show in the order they appear here, and SETUP stays the last button
+    // however the rows are arranged. The rows are deliberately left as they
+    // were - SETTINGS above AUTOTUNE, COMP and the rack - because the ui_icons
+    // atlas pairs a glyph with every page BY POSITION
+    // (tests/assets/check_assets.py), so moving a row puts another page's icon
+    // on that tab. The phone's page list, which does walk the table, is sorted
+    // by family when it is built.
     //
     //  The page count is written ONCE, here, ABOVE the first array that needs
     //  it: the table below, the subtitle list and the coverage check further
@@ -236,18 +246,18 @@ namespace j37panel
                    "balance. LOW is a shelf at 200 Hz, MID a bell at 1 kHz, HIGH "
                    "a shelf above 4 kHz; all three are transparent at 0 dB, and "
                    "the ORDER and corner switches ride the row below.",
-                     6, 2, { 43, 44, 45, 52, 53, 54 } },
+                     6, 3, { 43, 44, 45, 52, 53, 54 } },
         //  neural_mix, ir_mix - the two file-fed stages, each with its own
         //  loader in the band under the row.
         { "MODELS", "The two file-fed stages: NEURAL blends in a learned model "
                      "and IR MIX an impulse response - a cabinet or a room - "
                      "each loaded from a file through the loader under its own "
                      "knob.",
-                     2, 2, { 62, 63 } },
+                     2, 3, { 62, 63 } },
         //  No knobs of its own: SETTINGS holds the engine and interface
         //  preferences, shown by setCurrentTab rather than by the knob grid.
              { "SETTINGS", "The engine-level switches and interface preferences: rate, language, renderer and UI sounds.",
-                               0, 2, {} },
+                               0, 3, {} },
              { "AUTOTUNE", "Pitch correction with safe realtime tracking, RANGE-limited scale quantisation and OCTAVE transposition.",
                                0, 1, {} },
         //  The multiband compressor: the six controls it has always had remain
@@ -261,14 +271,26 @@ namespace j37panel
         //  they do rather than by the order the rack runs them: DRIVE is the
         //  harmonics, SHAPE is the filters, MOTION is the modulators, PITCH is the
         //  time-and-pitch stages. The rack's own order is in Source/DSP/FxRack.h.
+        // ---- RACK family (4 pages): the creative effects rack ----------------
+        //  Twenty-five pedals behind one switch each, which shared the FX family
+        //  with the echo, the room, the envelope, the equaliser, the tuner and the
+        //  compressor: ten names on one 22 px row, and that is where "AUTOT..." and
+        //  a squeezed COMP came from. A pedalboard in front of the machine's own
+        //  time stages is a different subject, so it gets its own family: RACK,
+        //  four pages, seven knobs each.
+        //
+        //  One knob per stage and one stage per pedal, grouped by what they do
+        //  rather than by the order the rack runs them: DRIVE is the harmonics,
+        //  SHAPE the filters, MOTION the modulators, PITCH the time-and-pitch
+        //  stages. The rack's own order is in Source/DSP/FxRack.h.
              { "DRIVE", "The rack's harmonics: SPIKE removes guitar clicks, GATE silences what is below its threshold, DRIVE and FUZZ are the two amplifier curves, FOLD is the wavefolder, BITS quantises and RATE holds samples. Each knob is how much of that stage is in the path; 0 is out.",
-                               7, 1, { 72, 73, 74, 75, 76, 77, 78 } },
+                               7, 2, { 72, 73, 74, 75, 76, 77, 78 } },
              { "SHAPE", "The rack's filters: WAH follows the envelope, COMB is a resonant delay, FORMNT walks the vowels, DYN EQ cuts its band only when it is loud, DE-ESS reduces the sibilance band, RING multiplies by a carrier and SPECTRL gates quiet bands. Each knob is how much of that stage is in the path.",
-                               7, 1, { 71, 82, 83, 84, 85, 79, 94 } },
+                               7, 2, { 71, 82, 83, 84, 85, 79, 94 } },
              { "MOTION", "The rack's modulators: CHORUS, FLANGER, PHASER, TREM, VIBRATO and ROTARY are the classic sweeps, each at its own rate and depth, and VOCODER imposes the bands of the input on a synthesised carrier. Each knob is how much of that stage is in the path.",
-                               7, 1, { 86, 87, 88, 89, 90, 91, 92 } },
+                               7, 2, { 86, 87, 88, 89, 90, 91, 92 } },
              { "PITCH", "The rack's time and pitch stages: PITCH shifts up to an octave, OCTAVE adds the octave below, GRAIN scatters the signal into grains and SPEED is the tape's own three-position switch - half below a quarter, 1x in the middle, double above three quarters.",
-                               4, 1, { 81, 80, 93, 95 } }
+                               4, 2, { 81, 80, 93, 95 } }
         } };
 
     // One SHORT subtitle per page, in tabSpecs' order: the sentence the section

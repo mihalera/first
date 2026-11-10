@@ -28,3 +28,9 @@ compiles `Source/Diagnostics/DiagCore.cpp` and `ShutdownWatchdog.cpp` as they sh
 and runs the three states — off, on-and-finished, on-and-stalled — asserting the
 files that are promised appear and that the stalled teardown produces a phase
 trace naming the step it stopped at.
+
+Every phase line also carries the milliseconds elapsed since the watchdog was
+armed (`phase: editor dtor: detach the deck's context (+1830ms)`), which
+separates the two reports this file exists for: a teardown that never returns -
+the last line names the step - and one that returns but holds the host's window
+for seconds, where the timings say which step cost them.

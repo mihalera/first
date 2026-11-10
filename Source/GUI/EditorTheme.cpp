@@ -533,7 +533,8 @@ void FirstAudioProcessorEditor::styleTabButtons() {
     // Called from styleTabButtons rather than from setTabFamily, so a THEME cycle
     // repaints them too.
     const std::array<juce::TextButton *, tabFamilyCount> familyButtons{
-        &tabFamilyTapeButton, &tabFamilyFxButton, &tabFamilySetupButton};
+        &tabFamilyTapeButton, &tabFamilyFxButton, &tabFamilyRackButton,
+        &tabFamilySetupButton};
     for (std::size_t f = 0; f < familyButtons.size(); ++f) {
         const auto isOn = static_cast<int>(f) == currentTabFamily;
         familyButtons[f]->setColour(juce::TextButton::buttonColourId,

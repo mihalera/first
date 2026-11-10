@@ -60,7 +60,7 @@ inline constexpr Slot slots[] = {
       "Seven monochrome alpha glyphs for the MIX bar, ordered TAPE, VALVE, "
       "CASSETTE, VINYL, AMP, TRANSFORMER, DIGITAL. Tinted by the active palette." },
 
-    { "factory_preset_art", "factory_preset_art.png", "factory_preset_art_png", 1856, 64,
+    { "factory_preset_art", "factory_preset_art.png", "factory_preset_art_png", 2240, 64,
       "Twenty-nine 64 px preset artwork tiles in the exact FACTORY_PRESET_FILES "
       "order from CMakeLists.txt; selected in the deck's current-preset badge." },
 

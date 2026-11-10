@@ -2,6 +2,7 @@
 
 #include <atomic>
 #include <chrono>
+#include <cmath>
 #include <cstdio>
 #include <cstdlib>
 #include <cstring>
@@ -41,6 +42,11 @@ namespace
     std::atomic<bool> switchedOn { false };
     std::atomic<bool> switchRead { false };
     std::atomic<bool> headerWritten { false };
+
+    std::atomic<unsigned long long> audioBlocks { 0 };
+    std::atomic<unsigned long long> audioOverBudget { 0 };
+    std::atomic<unsigned long long> audioNonFinite { 0 };
+    std::atomic<float> audioLoudest { 0.0f };
 
     std::atomic<unsigned long long>& slotWord (ThreadSlot slot) noexcept
     {
@@ -264,6 +270,61 @@ unsigned long long recordedThreadId (ThreadSlot slot) noexcept
         return 0;
 
     return slotWord (slot).load (std::memory_order_relaxed);
+}
+
+void noteAudioBlock (double loadFraction, float peak) noexcept
+{
+    audioBlocks.fetch_add (1, std::memory_order_relaxed);
+
+    // Written as a NEGATED comparison so a NaN load counts as an overrun rather
+    // than silently passing: a callback that timed out is exactly the case where
+    // the arithmetic downstream of the clock is least trustworthy.
+    if (! (loadFraction <= 1.0))
+        audioOverBudget.fetch_add (1, std::memory_order_relaxed);
+
+    if (! std::isfinite (peak))
+    {
+        audioNonFinite.fetch_add (1, std::memory_order_relaxed);
+        return;
+    }
+
+    auto current = audioLoudest.load (std::memory_order_relaxed);
+
+    while (peak > current
+           && ! audioLoudest.compare_exchange_weak (current, peak,
+                                                    std::memory_order_relaxed,
+                                                    std::memory_order_relaxed))
+    {
+    }
+}
+
+AudioReport audioReport() noexcept
+{
+    AudioReport report;
+    report.blocks = audioBlocks.load (std::memory_order_relaxed);
+    report.overBudget = audioOverBudget.load (std::memory_order_relaxed);
+    report.nonFinitePeaks = audioNonFinite.load (std::memory_order_relaxed);
+    report.loudestPeak = audioLoudest.load (std::memory_order_relaxed);
+    return report;
+}
+
+std::string audioReportText() noexcept
+{
+    const auto report = audioReport();
+
+    if (report.blocks == 0)
+        return {};
+
+    const auto peakDb = report.loudestPeak > 0.0f
+                            ? 20.0 * std::log10 (static_cast<double> (report.loudestPeak))
+                            : -240.0;
+
+    char text[192] {};
+    std::snprintf (text, sizeof (text),
+                   "audio: %llu blocks, %llu over budget, %llu non-finite peak(s), "
+                   "loudest %.1f dBFS",
+                   report.blocks, report.overBudget, report.nonFinitePeaks, peakDb);
+    return text;
 }
 
 const char* threadSlotName (ThreadSlot slot) noexcept

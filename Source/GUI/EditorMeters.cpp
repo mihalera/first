@@ -362,9 +362,26 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     {
         const auto rowTop = juce::roundToInt (readoutTop) + row * rowHeight;
         const auto rowArea = juce::Rectangle<int> (rowInset, rowTop, rowWidth, rowHeight);
+
+        // The name and the number are TWO COLUMNS, not two alignments of one
+        // rectangle. Sharing it meant each printed over the other the moment the
+        // meter narrowed: on a 240 px face "PEAK dB" and "-70.0 dB" met in the
+        // middle, and the report was a meter whose label read "PEAK d" with a
+        // number pasted onto it. The name gets the share its own text needs and
+        // the number takes the rest, right-aligned, so neither can reach the other
+        // however the panel is sized.
+        auto nameArea = rowArea;
+        auto valueArea = rowArea;
+        const auto measuredName = juce::roundToInt (juce::GlyphArrangement::getStringWidth (
+            j37panel::panelFont (9.0f * textScale), label));
+        const auto nameWidth = juce::jmin (rowArea.getWidth() * 3 / 5,
+                                           measuredName + juce::roundToInt (6.0f * textScale));
+        nameArea.setWidth (juce::jmax (1, nameWidth));
+        valueArea.setLeft (nameArea.getRight());
+
         g.setColour (palette.secondary);
         g.setFont (j37panel::panelFont (9.0f * textScale));
-        g.drawText (label, rowArea, juce::Justification::centredLeft, false);
+        g.drawFittedText (label, nameArea, juce::Justification::centredLeft, 1);
 
         // The value column uses a monospaced face so digits are all the same width:
         // with a proportional font the right-aligned numbers kept shifting sideways
@@ -373,7 +390,9 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
         g.setColour (valueColour);
         g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
                                                   8.5f * textScale, juce::Font::bold)));
-        g.drawText (formatDb (value), rowArea, juce::Justification::centredRight, false);
+        // Fitted rather than clipped: a value column narrow enough to truncate
+        // "-70.0 dB" into "-70.0 d" is the same defect one column over.
+        g.drawFittedText (formatDb (value), valueArea, juce::Justification::centredRight, 1);
     };
 
     // The clipping lamp: only the peak view can clip, so it is flagged next to that row.

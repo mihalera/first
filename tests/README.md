@@ -16,7 +16,7 @@ benchmarks.
 
 ```bash
 tests/dsp/run.sh          # subharmonics (SUBFUND), the loudness meter, the shaper's tanh seam, and the noise decoder
-tests/fx/run.sh           # the creative effects rack: 25 stages and the multiband compressor, on rendered signal
+tests/fx/run.sh           # the creative effects rack: 25 stages, the multiband compressor, and every rack CONTROL swept one at a time
 tests/layout/run.sh       # knob geometry on every page, at four panel sizes
 tests/tooltip/run.sh      # the tooltip dwell, at exact millisecond boundaries
 tests/state/run.sh        # session state round trip, and older state files
@@ -46,6 +46,7 @@ python3 tests/presets/check_presets.py           # the factory preset table
 python3 tests/theme/check_theme_wiring.py        # theme re-inking coverage
 python3 tests/translations/check_translations.py # the shipped translation tables
 python3 tests/parameters/check_parameters.py     # the table and the code that reads it
+python3 tests/parameters/check_tabs.py           # the page table: every knob on one page, the four families, SETUP last
 python3 tests/shaders/check_shaders.py           # the GLSL and the uniforms it is fed
 python3 tests/definitions/check_definitions.py   # the macros the build defines, and who reads them
 python3 tests/linkline/check_linkline.py         # the link line, against the includes under Source/
@@ -96,7 +97,7 @@ shipping header* tests the code the plugin compiles.
 
 | Harness | What it compiles | How it gets it |
 | --- | --- | --- |
-| `fx` | `FxRack` and the five family headers under `Source/DSP/Fx/`: the 25 stages and `MultibandCompressor` | `#include`s the shipping headers with no extractor, no replica and no shim - none of them names JUCE - and renders signal through the same per-sample entry point the engine calls. Each stage's claim is measured on the audio: harmonics for the drives, a quantised grid for the bitcrusher, a held sample for the rate crusher, threshold behaviour for the gate, a removed spike for the anti-spike, band energy for the de-esser and the spectral gate, level movement for the tremolo, an octave down and up for the pitch stages, the tape loop for SPEED, and the upward lift for the compressor |
+| `fx` | `FxRack` and the five family headers under `Source/DSP/Fx/`: the 25 stages and `MultibandCompressor` | `#include`s the shipping headers with no extractor, no replica and no shim - none of them names JUCE - and renders signal through the same per-sample entry point the engine calls. Each stage's claim is measured on the audio: harmonics for the drives, a quantised grid for the bitcrusher, a held sample for the rate crusher, threshold behaviour for the gate, a removed spike for the anti-spike, band energy for the de-esser and the spectral gate, level movement for the tremolo, an octave down and up for the pitch stages, the tape loop for SPEED, and the upward lift for the compressor. A SECOND binary, `per_parameter_test.cpp`, asks the panel's own question and asks it once per control: neutral is bit-exact, a control that is moved changes the signal, every amount in the sweep stays finite and under a ceiling, and none of them drops the signal into inaudibility - it is what found the vocoder's fixed 14x makeup and the formant filter's Q-gain |
 | `dsp` | the subharmonic generator, the loudness meter, a reduced replica of the signal path, the noise decoder behind the vinyl print - plus `j37Tanh`, `SaturationCore` and the seven curves, built THREE ways | extracts spans through `tests/dsp/extract.py`, **and** `#include`s every stage that has moved to `Source/DSP/`; the tanh seam's three binaries are one file compiled with and without `J37_USE_SIMD_TANH` and with and without xsimd on the include path, and the noise decoder is one file compiled with and without `ThirdParty/dr_libs` |
 | `layout` | the knob strip arithmetic, the editor's constructor phase order, and the spectrum curve's level mapping | `tests/layout/extract.py` cuts the first two out of `Source/PluginEditor.cpp` + `Source/GUI/`, and `#include`s `Source/GUI/SpectrumMetrics.h` directly |
 | `tooltip` | `j37panel::TipDwell` - the rule that decides when a hint may be shown | `#include`s `Source/GUI/TipDwell.h` as it ships: no extractor, no shim, because the header includes nothing (the JUCE half is `Source/GUI/DwellTooltipWindow.h`) |

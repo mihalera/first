@@ -372,6 +372,14 @@ jobs:
       - name: Check the parameter table wiring
         run: python3 tests/parameters/check_parameters.py
 
+      # The page table is a constexpr array whose own static_asserts only run
+      # in a build, and the four-family split put a page's family next to its
+      # name for the first time - a column that is easy to type wrong and
+      # impossible to see. This reads the table and the editor's counts and
+      # checks them against each other without a compiler.
+      - name: Check the panel page table
+        run: python3 tests/parameters/check_tabs.py
+
       # The panel's GLSL is the one piece of the UI nothing else here can see: it
       # is a string literal until a driver compiles it at run time, so a shader
       # that does not compile is a hole where the scene should be, with nothing in

@@ -2307,10 +2307,10 @@
     },
     {
       "file": "factory_preset_art.png",
-      "columns": 29,
+      "columns": 35,
       "rows": 1,
       "tile_size": 64,
-      "width": 1856,
+      "width": 2240,
       "height": 64,
       "items": [
         {
@@ -2486,6 +2486,42 @@
           "label": "Tight Bus",
           "family": "factory_preset",
           "tile": 28
+        },
+        {
+          "key": "preset.fuzz_stack",
+          "label": "Fuzz Stack",
+          "family": "factory_preset",
+          "tile": 29
+        },
+        {
+          "key": "preset.broken_bits",
+          "label": "Broken Bits",
+          "family": "factory_preset",
+          "tile": 30
+        },
+        {
+          "key": "preset.wide_chorus",
+          "label": "Wide Chorus",
+          "family": "factory_preset",
+          "tile": 31
+        },
+        {
+          "key": "preset.dub_echo",
+          "label": "Dub Echo",
+          "family": "factory_preset",
+          "tile": 32
+        },
+        {
+          "key": "preset.vocal_presence",
+          "label": "Vocal Presence",
+          "family": "factory_preset",
+          "tile": 33
+        },
+        {
+          "key": "preset.bass_console",
+          "label": "Bass Console",
+          "family": "factory_preset",
+          "tile": 34
         }
       ],
       "tintable": false,
@@ -2518,7 +2554,13 @@
         "shellac_radio",
         "transient_punch",
         "soft_touch",
-        "tight_bus"
+        "tight_bus",
+        "fuzz_stack",
+        "broken_bits",
+        "wide_chorus",
+        "dub_echo",
+        "vocal_presence",
+        "bass_console"
       ]
     },
     {

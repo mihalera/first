@@ -55,7 +55,7 @@
     {
       "name": "factory_preset_art",
       "file": "factory_preset_art.png",
-      "width": 1856,
+      "width": 2240,
       "height": 64,
       "used_by": "Source/GUI/EditorMeters.cpp (PresetArtworkBadge; selected tile follows FACTORY_PRESET_FILES order)",
       "tile_size": 64,
@@ -65,10 +65,11 @@
         "wobbly_cassette", "bright_air_tape", "mix_saturation", "master_bounce", "vocal_rail",
         "drum_room_warm", "bass_weight", "master_safety", "lo_fi_radio", "ferric_master",
         "british_valve", "plexi_bite", "iron_bloom", "twelve_bit_bounce", "dubplate_dub",
-        "shellac_radio", "transient_punch", "soft_touch", "tight_bus"
+        "shellac_radio", "transient_punch", "soft_touch", "tight_bus", "fuzz_stack",
+        "broken_bits", "wide_chorus", "dub_echo", "vocal_presence", "bass_console"
       ],
       "licence": "CC0-1.0",
-      "source": "Original 29-tile artwork atlas created for MiBoX; procedurally drawn with Python and Pillow, with preset parameters used to vary the illustrations.",
+      "source": "Original 35-tile artwork atlas created for MiBoX; procedurally drawn with Python and Pillow, with preset parameters used to vary the illustrations.",
       "author": "OpenAI Codex"
     },
     {

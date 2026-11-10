@@ -809,13 +809,26 @@ void FirstAudioProcessorEditor::setUpTabButtons() {
         button.setButtonText(spec.name);
         setTip(button, spec.hint);
         button.setLookAndFeel(&customLookAndFeel);
-        button.onClick = [this, tab] { setCurrentTab(tab); };
+        // handleTabPress(), not setCurrentTab(): a second press on the page that is
+        // already showing freezes it instead of doing nothing.
+        button.onClick = [this, tab] { handleTabPress(tab); };
         addAndMakeVisible(button);
     }
 
     phonePageBox.setLookAndFeel (&customLookAndFeel);
-    for (int tab = 0; tab < numTabs; ++tab)
-        phonePageBox.addItem (tabSpecs[static_cast<std::size_t> (tab)].name, tab + 1);
+
+    // The phone's page list is the table ORDERED BY FAMILY, which the bar does by
+    // filtering and the table cannot do without moving its rows: the ui_icons
+    // atlas pairs a glyph with each page by position. So the list is built here,
+    // family by family - TAPE, FX, RACK, SETUP - and SETUP is its last section
+    // because SETUP is the last family, which is the rule the bar follows too.
+    // The ID stays the page's own index + 1, so the selection and setCurrentTab
+    // keep addressing pages by where they are in the table.
+    for (int family = 0; family < tabFamilyCount; ++family)
+        for (int tab = 0; tab < numTabs; ++tab)
+            if (tabSpecs[static_cast<std::size_t> (tab)].family == family)
+                phonePageBox.addItem (tabSpecs[static_cast<std::size_t> (tab)].name, tab + 1);
+
     phonePageBox.onChange = [this]
     {
         const auto selectedTab = phonePageBox.getSelectedId() - 1;
@@ -825,10 +838,11 @@ void FirstAudioProcessorEditor::setUpTabButtons() {
     addAndMakeVisible (phonePageBox);
     phonePageBox.setVisible (false);
 
-    // The three tab families share one row above the page buttons. The grid
+    // The four tab families share one row above the page buttons. The grid
     // below reflows to accommodate them.
     const std::array<juce::TextButton *, tabFamilyCount> familyButtons{
-        &tabFamilyTapeButton, &tabFamilyFxButton, &tabFamilySetupButton};
+        &tabFamilyTapeButton, &tabFamilyFxButton, &tabFamilyRackButton,
+        &tabFamilySetupButton};
     for (std::size_t f = 0; f < familyButtons.size(); ++f) {
         auto &button = *familyButtons[f];
         button.setComponentID ("mibox.family." + juce::String (static_cast<int> (f)));
