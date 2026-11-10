@@ -205,27 +205,30 @@ for other_name, other in values.items():
             problems.append("maximum.json leaves \"%s\" at %s, below %s.json's %s - it is "
                             "the ceiling, not a second preset" % (key, top[key], other_name, value))
 
+# MINIMUM is a null test, not the bottom of every range: -60 dB of compression is
+# the loudest threshold there is and a 2 kHz lowpass is a sound, so its knobs sit
+# where the signal passes untouched. Anything not listed below is transparent at
+# zero, which is what makes this check catch a "minimum" that quietly processes.
+transparent = {
+    "tone": 0.5, "character": 0.5, "stereo_width": 0.5, "fx_speed": 0.5,
+    "in_hp_freq": 20.0, "out_hp_freq": 20.0,
+    "in_lp_freq": 20000.0, "out_lp_freq": 20000.0,
+    "in_eq_order": 0, "out_eq_order": 0, "in_eq_q": 0.7, "out_eq_q": 0.7,
+    "comp_threshold": 0.0, "comp_ratio": 1.0, "comp_attack": 0.1, "comp_release": 10.0,
+    "tape_type": 12, "valve_type": 6, "amp_type": 6, "transformer_type": 5,
+    "digital_type": 5, "vinyl_type": 6, "speed": 1, "delay_type": 0,
+    "transport": 1, "st_link": 1.0, "anti_phase_guard": 1, "auto_gain": 0,
+}
+
 floor = values.get("minimum", {})
 for key, value in floor.items():
     if key == "name":
         continue
-    if key.startswith("fx_") and key != "fx_speed" and value != 0.0:
-        problems.append("minimum.json runs the rack effect \"%s\" at %s" % (key, value))
-
-passthrough = {
-    "mix": 0.0,
-    "tape_source": 0.0,
-    "vinyl_source": 0.0,
-    "cassette_source": 0.0,
-    "digital_source": 0.0,
-    "amp_source": 0.0,
-    "valve_source": 0.0,
-    "transformer_source": 0.0,
-}
-for key, expected in passthrough.items():
-    if key in floor and floor[key] != expected:
-        problems.append("minimum.json sets \"%s\" to %s; a passthrough needs %s"
-                        % (key, floor[key], expected))
+    expected = transparent.get(key, 0.0)
+    if value != expected:
+        problems.append("minimum.json sets \"%s\" to %s where a transparent signal needs "
+                        "%s - it is a null test, not the bottom of the range"
+                        % (key, value, expected))
 
 # ---------------------------------------------------------------------------
 if problems:
