@@ -185,17 +185,31 @@ public:
 
         float wetLeft = 0.0f, wetRight = 0.0f;
 
+        // A bandpass's peak gain IS its Q, and these three run at Q = 6 - so the
+        // three bands summed to about +20 dB on a tone sitting at a vowel's first
+        // formant, and the old 3x makeup on top of that made the stage a resonator
+        // with a gain knob instead of a vowel. The measurement that found it is
+        // tests/fx/per_parameter_test.cpp: a 440 Hz sine at -6 dBFS left this stage
+        // at +3 dBFS peak and -1 dBFS RMS, which is the "very strange sound" from
+        // the panel report. Dividing each band by its own Q puts the peak back at
+        // unity, and the summed bands then sit at the level of the signal they are
+        // imposing a shape on - which is what a formant filter is for.
+        constexpr float bandQ = 6.0f;
+        constexpr float bandNormalisation = 1.0f / bandQ;
+
         for (std::size_t band = 0; band < 3; ++band)
         {
-            leftBands[band].setCutoff (frequencies[band], 6.0f, rate);
-            rightBands[band].setCutoff (frequencies[band], 6.0f, rate);
+            leftBands[band].setCutoff (frequencies[band], bandQ, rate);
+            rightBands[band].setCutoff (frequencies[band], bandQ, rate);
 
-            wetLeft += leftBands[band].process (left, StateVariableFilter::Output::band) * gains[band];
-            wetRight += rightBands[band].process (right, StateVariableFilter::Output::band) * gains[band];
+            wetLeft += leftBands[band].process (left, StateVariableFilter::Output::band)
+                       * gains[band] * bandNormalisation;
+            wetRight += rightBands[band].process (right, StateVariableFilter::Output::band)
+                        * gains[band] * bandNormalisation;
         }
 
-        left += (wetLeft * 3.0f - left) * mix;
-        right += (wetRight * 3.0f - right) * mix;
+        left += (wetLeft - left) * mix;
+        right += (wetRight - right) * mix;
     }
 
 private:

@@ -199,6 +199,8 @@ public:
         }
 
         carrierPhase = 0.0f;
+        inputEnvelope = 0.0f;
+        wetEnvelope = 0.0f;
     }
 
     void process (float& left, float& right, float amount) noexcept
@@ -232,8 +234,30 @@ public:
             wetRight += rightEnvelope[index].process (analysedRight) * carrierBandSample;
         }
 
-        left += (wetLeft * 14.0f - left) * mix;
-        right += (wetRight * 14.0f - right) * mix;
+        // The makeup gain is MATCHED, not fixed. The band sum's own level depends
+        // on how many of the eight bands the input excites and on where the
+        // carrier's partials land inside them, so no constant can hold it: the 14x
+        // that used to be here put a -6 dBFS sine out at +35 dBFS with the knob at
+        // full, and a quiet, bass-heavy signal at a fifth of that. tests/fx/
+        // per_parameter_test.cpp measures both ends of that spread.
+        //
+        // Two envelope followers - the input's and the band sum's - and the ratio
+        // between them, clamped: the vocoder keeps the input's level whatever
+        // comes out of the bands, and the clamp means a period where the band sum
+        // is near zero (silence in, or a vowel the carrier does not excite) cannot
+        // ask for an infinite gain. One-pole, so the match moves with the
+        // programme rather than inside it.
+        const auto inputLevel = 0.5f * (std::abs (left) + std::abs (right));
+        const auto wetLevel = 0.5f * (std::abs (wetLeft) + std::abs (wetRight));
+        inputEnvelope += (inputLevel - inputEnvelope) * makeupCoefficient;
+        wetEnvelope += (wetLevel - wetEnvelope) * makeupCoefficient;
+
+        const auto makeup = wetEnvelope > 1.0e-5f
+                                ? std::clamp (inputEnvelope / wetEnvelope, 0.0f, 8.0f)
+                                : 1.0f;
+
+        left += (wetLeft * makeup - left) * mix;
+        right += (wetRight * makeup - right) * mix;
     }
 
 private:
@@ -246,6 +270,13 @@ private:
     std::array<EnvelopeFollower, bands> leftEnvelope, rightEnvelope;
     double rate = 48000.0;
     float carrierPhase = 0.0f;
+
+    /** The matched makeup gain's two poles: ~20 ms, which follows a phrase rather
+        than a cycle. Solved in prepare() from the engine rate, like every other
+        time constant on this path. */
+    float makeupCoefficient = 0.001f;
+    float inputEnvelope = 0.0f;
+    float wetEnvelope = 0.0f;
 };
 
 // =============================================================================
