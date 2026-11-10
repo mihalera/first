@@ -3956,8 +3956,11 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         const float bleedToLeft  = tracksBleedBuffer[1][static_cast<std::size_t> (bleedReadPosition)];
         const float bleedToRight = tracksBleedBuffer[0][static_cast<std::size_t> (bleedReadPosition)];
 
-        outputSignal[0] += (bleedToLeft  - outputSignal[0]) * state.trackCrosstalk;
-        outputSignal[1] += (bleedToRight - outputSignal[1]) * state.trackCrosstalk;
+        if (mixNow > 1.0e-5f)
+        {
+            outputSignal[0] += (bleedToLeft  - outputSignal[0]) * state.trackCrosstalk;
+            outputSignal[1] += (bleedToRight - outputSignal[1]) * state.trackCrosstalk;
+        }
 
         // Keep the transport's inter-track bleed here. The user WIDTH control
         // is applied once at the final output stage, after the anti-phase guard.
@@ -4042,7 +4045,7 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         antiPhaseAmount.store (state.antiPhaseGuardOn ? antiPhaseCorrection : 0.0f,
                                std::memory_order_relaxed);
 
-        if (antiPhaseCorrection > 1.0e-5f)
+        if (antiPhaseCorrection > 1.0e-5f && mixNow > 1.0e-5f)
         {
             // The correction above is the FRAME's, and it is what gates the
             // guard. The rotation itself happens per BAND, in
