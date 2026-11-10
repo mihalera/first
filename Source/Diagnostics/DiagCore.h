@@ -62,4 +62,37 @@ namespace j37diag
 
     /** Wall-clock stamp with milliseconds, for lines nobody is watching live. */
     std::string timestamp();
+
+    //==========================================================================
+    /** What the audio thread saw, counted rather than traced.
+
+        The two reports this answers are "the sound is wrong" and "the machine
+        stalled": a plugin that overruns its own blocks, or one that puts a
+        non-finite sample into the host's buffer, sounds broken in ways no single
+        log line describes, and neither is visible from the message thread. These
+        are counters, not lines - a line per block would be a file per second and
+        a lock on the audio thread - so the numbers are read once, when the
+        processor is destroyed, and written to the trace as one sentence.
+
+        Every call here is a few relaxed atomic adds: no allocation, no lock, no
+        file, nothing that can block. Called from the callback on purpose. */
+    struct AudioReport
+    {
+        unsigned long long blocks = 0;
+        unsigned long long overBudget = 0;
+        unsigned long long nonFinitePeaks = 0;
+        float loudestPeak = 0.0f;
+    };
+
+    /** One finished block: how much of the block's own duration it used (above
+        1.0 is an overrun) and the peak of its output. A NaN or an infinity in the
+        peak is counted and kept out of the loudest-peak figure, which is what
+        makes "it clicked, then went silent" show up as one of the two. */
+    void noteAudioBlock (double loadFraction, float peak) noexcept;
+
+    AudioReport audioReport() noexcept;
+
+    /** Message-thread reporting: one line describing the audio report, or an empty
+        string when the callback never ran in this process. */
+    std::string audioReportText() noexcept;
 } // namespace j37diag

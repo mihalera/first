@@ -48,6 +48,8 @@
 // =============================================================================
 #include "PluginProcessor.h"
 
+#include <chrono>
+
 // The thread table the shutdown report reads: the audio thread names itself in
 // processBlock below.
 #include "Diagnostics/DiagCore.h"
@@ -132,6 +134,71 @@ inline void initialiseBlockMeasurements (FirstAudioProcessor::TapeBlockState& st
 }
 
 
+namespace
+{
+    /** The block probe the diagnostics trace reads.
+
+        A destructor rather than two calls at the ends of processBlock, because
+        processBlock has more than one way out (the oversampled path returns early)
+        and a probe that only counted the common exit would report a session's
+        load from whichever path nobody uses.
+
+        With the switch off this is one bool and nothing else: no clock, no scan of
+        the buffer, no counter. With it on it adds one steady_clock reading and one
+        magnitude pass per block, which is why it is gated rather than always live.
+    */
+    class BlockProbe
+    {
+    public:
+        BlockProbe (const juce::AudioBuffer<float>& bufferIn, bool shouldMeasure) noexcept
+            : buffer (bufferIn), measuring (shouldMeasure)
+        {
+            if (measuring)
+                started = std::chrono::steady_clock::now();
+        }
+
+        ~BlockProbe()
+        {
+            if (! measuring)
+                return;
+
+            const auto elapsed = std::chrono::duration<double> (
+                std::chrono::steady_clock::now() - started).count();
+
+            // The block's own duration is the budget it had: a callback that used
+            // more than that is the definition of an overrun, and it is the number
+            // the host's own dropout relies on. A buffer with no rate yet (the very
+            // first block of some hosts) is reported as no load rather than as a
+            // division by zero.
+            const auto sampleRate = buffer.getSampleRate();
+            const auto budget = sampleRate > 0.0 && buffer.getNumSamples() > 0
+                                    ? static_cast<double> (buffer.getNumSamples()) / sampleRate
+                                    : 0.0;
+
+            j37diag::noteAudioBlock (budget > 0.0 ? elapsed / budget : 0.0, peak());
+        }
+
+        BlockProbe (const BlockProbe&) = delete;
+        BlockProbe& operator= (const BlockProbe&) = delete;
+
+    private:
+        float peak() const noexcept
+        {
+            auto loudest = 0.0f;
+
+            for (int channel = 0; channel < buffer.getNumChannels(); ++channel)
+                loudest = juce::jmax (loudest, buffer.getMagnitude (channel, 0,
+                                                                    buffer.getNumSamples()));
+
+            return loudest;
+        }
+
+        const juce::AudioBuffer<float>& buffer;
+        bool measuring = false;
+        std::chrono::steady_clock::time_point started {};
+    };
+} // namespace
+
 void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::MidiBuffer& midiMessages)
 {
     // The shutdown report asks for the audio thread by id, and this is the thread
@@ -142,6 +209,13 @@ void FirstAudioProcessor::processBlock (juce::AudioBuffer<float>& buffer, juce::
         j37diag::recordThread (j37diag::ThreadSlot::audio);
 
     juce::ScopedNoDenormals noDenormals;
+
+    // The block probe: off with the switch, and then not even a clock read. With
+    // it on, one steady_clock reading and one peak scan per block - the peak is
+    // what makes a click, a NaN and a runaway gain distinguishable after the
+    // fact, and the second reading is what says whether the block overran the
+    // time it was given. This is measurement, never behaviour.
+    const BlockProbe probe (buffer, j37diag::enabled());
 
     // The oversampling switch is a host parameter; a change requires rebuilding
     // nothing (three fixed engines exist side by side) - only the routing picks

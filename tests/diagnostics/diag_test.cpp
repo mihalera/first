@@ -151,6 +151,14 @@ int main (int argc, char** argv)
         check (contains (log, "phase: teardown: stop the clock"),
                "switch on: each phase is recorded");
         check (contains (log, "shutdown: complete"), "switch on: the end of the teardown is recorded");
+
+        // The elapsed figure on every phase line is the half of this report that
+        // answers "closing takes forever" rather than "closing never returns": a
+        // trace of the right length with no timings says nothing about which step
+        // cost the host its window.
+        check (contains (log, "teardown: stop the clock (+"),
+               "switch on: every phase line carries its elapsed time");
+        check (contains (log, "ms)"), "switch on: the elapsed time is in milliseconds");
         check (! guard.hasFired(), "switch on: a teardown that finishes does not fire the watchdog");
         check (! exists (guard.stacksPath()), "switch on: no stacks report for a clean teardown");
     }

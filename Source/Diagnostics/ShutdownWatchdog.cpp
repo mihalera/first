@@ -205,7 +205,22 @@ void ShutdownWatchdog::phase (const char* what) noexcept
     if (what == nullptr)
         return;
 
-    note ((std::string ("phase: ") + what).c_str());
+    // Every line carries the time since the watch was armed, because the two
+    // reports this exists for are different problems: a teardown that NEVER
+    // returns (the last line names the step) and one that returns but takes the
+    // host's window with it for four seconds (the line after a slow step dates
+    // it). Without the elapsed figure the second report is a trace of the right
+    // length that says nothing, and "the project takes ages to close" has no way
+    // to become a step anybody can work on.
+    const auto elapsed = std::chrono::duration_cast<std::chrono::milliseconds> (
+                             std::chrono::steady_clock::now() - began)
+                             .count();
+
+    //  The "phase: " prefix is load-bearing: tests/diagnostics asserts on it, and
+    //  so does anyone grepping a report. The time goes at the END so the line
+    //  still starts with the step it names.
+    note ((std::string ("phase: ") + what + " (+" + std::to_string (elapsed)
+           + "ms)").c_str());
 }
 
 void ShutdownWatchdog::disarm() noexcept
