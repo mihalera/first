@@ -524,7 +524,13 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     // The reel is now a real transport indicator rather than decoration: its hub
     // dims as the platter slows, so a STOP empties it and a held SPINDOWN is
     // visible as the ring going grey before the spokes stop.
-    if (!tapeScene.isSceneLive()) {
+    // NOT on a phone. The reel is placed against the deck's top-right corner, which
+    // on the desktop deck is the heading band and nothing else - but the phone deck
+    // is a column whose first row IS its transport keys, so the reel and its ribbon
+    // landed on top of SPINDOWN. There is no free corner to move it to in a 240 px
+    // column, and the deck is the transport there: the keys are the readout.
+    if (!tapeScene.isSceneLive()
+        && ! j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight())) {
         const auto reelCentre = juce::Point<float>(static_cast<float>(layout.deck.getRight() - 42),
                                                    static_cast<float>(layout.deck.getY() + 14));
         const auto platterNow = juce::jlimit(0.0f, 1.0f, smoothedMachineSpeed);
