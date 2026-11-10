@@ -1210,7 +1210,7 @@ target_link_libraries(q_dsp INTERFACE cycfi_infra)
 CPMAddPackage(
     NAME sokol_gfx
     GITHUB_REPOSITORY floooh/sokol
-    GIT_TAG 2e75443dbd4940b5aa8d76a8e479f8e4b270b9a3
+    GIT_TAG 93aa187b5d387cc24b7290b3ca3f13f61e139e7c
     DOWNLOAD_ONLY YES)
 
 j37_declare_header_only_library(sokol_gfx "${sokol_gfx_SOURCE_DIR}")
