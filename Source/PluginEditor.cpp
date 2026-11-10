@@ -2271,8 +2271,8 @@ void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& control
           &tabFamilyRackButton, &tabFamilySetupButton } };
     for (int family = 0; family < tabFamilyCount; ++family)
         familyButtons[static_cast<std::size_t> (family)]
-            .setBounds (familyRow.getX() + family * (familyButtonWidth + 6),
-                        familyRow.getY(), familyButtonWidth, familyRow.getHeight());
+            ->setBounds (familyRow.getX() + family * (familyButtonWidth + 6),
+                         familyRow.getY(), familyButtonWidth, familyRow.getHeight());
 
     const auto tabBarTop = tabStrip.pages.y;
     constexpr int tabBarHeight = 22;
