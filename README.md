@@ -18,6 +18,7 @@
 | --- | --- |
 | know what the plugin does and how it sounds | this file - start at [Overview](#overview) |
 | build it | [Getting the source](#getting-the-source) and [Build](#build) |
+| hear what each factory preset is for | [docs/presets.md](docs/presets.md) - all thirty-five, what each one sets and what a preset cannot carry |
 | change the code and know what will catch you | [docs/architecture.md](docs/architecture.md) and [tests/README.md](tests/README.md) |
 | follow one sample through the plugin | [docs/signal-path.md](docs/signal-path.md) - every stage, in order, with its rate domain and its controls |
 | see what a proposed roadmap would actually cost | [docs/requested-roadmap-status.md](docs/requested-roadmap-status.md) - each item vs. what the tree already does |
@@ -1060,11 +1061,15 @@ selects an already-prepared slot and allocates nothing on the audio thread.
 
 ## Presets, A/B compare and undo
 
-Twenty-nine factory presets cover the machine's range from gentle bus warmth to slammed drum
+Thirty-five factory presets cover the machine's range from gentle bus warmth to slammed drum
 tape, including vocal, bass and mastering-safety starting points. Three of them - **Transient
 Punch**, **Soft Touch** and **Tight Bus** - are built around the transient shaper on the DYN
 tab, so the two directions of both ATK and SUS are demonstrated by a preset rather than only
-by a tooltip. A preset replaces the whole machine state in a single undoable transaction -
+by a tooltip. **Minimum** is the null test - every machine Off, every amount at zero, the
+filters open - and **Maximum** is the ceiling of the bank, every parameter at the top of its
+range. [docs/presets.md](docs/presets.md) names each of the thirty-five and what it sets.
+
+A preset replaces the whole machine state in a single undoable transaction -
 Ctrl+Z brings back exactly what was on screen before.
 
 A preset **does not** carry a neural model. A model is a file the user loads, not a setting,
@@ -1967,7 +1972,7 @@ JUCE/            JUCE 9.0.5, pinned as a git submodule
 ThirdParty/      the vendored libraries, at the versions CMake would otherwise fetch
 .github/         CI: the harnesses, and builds for Windows, macOS, Linux and Android
 tests/           what checks what, and what it does not - see tests/README.md
-docs/            architecture, the code analysis, the improvement plan, saturation notes
+docs/            architecture, the signal path, the preset guide, the code analysis, saturation notes
 SPLITTING-BIG-FILES.md   how far the long files can be split, and what it costs
 THIRD_PARTY_NOTICES.md   every component the build uses, and its licence
 ```

@@ -42,6 +42,8 @@ What it checks now, against the JSON rather than a C++ table:
     turn into the sentinel, and the debug audit would then fail on it)
   * every registered parameter is either set by some preset or listed in the
     C++ intentionallyNotPresettable set, and the two lists are compared
+  * the guide in docs/presets.md has exactly one row per preset, so a preset that
+    ships without an explanation fails here
   * the two extremes mean what their names say. MAXIMUM is the ceiling of every
     other preset - no preset drives a parameter past it, which is what makes it
     "everything turned up" - and MINIMUM is a passthrough: the machine lists at
@@ -229,6 +231,21 @@ for key, value in floor.items():
         problems.append("minimum.json sets \"%s\" to %s where a transparent signal needs "
                         "%s - it is a null test, not the bottom of the range"
                         % (key, value, expected))
+
+# ---------------------------------------------------------------------------
+# 5. The guide that explains them.
+# ---------------------------------------------------------------------------
+# A preset nobody can explain is a preset nobody uses, and the doc is the only
+# place that says what each one is FOR - the JSON can only say what it sets.
+GUIDE = os.path.join(ROOT, "docs", "presets.md")
+if not os.path.exists(GUIDE):
+    problems.append("docs/presets.md is missing; it explains what every factory preset is for")
+else:
+    guide = read(GUIDE)
+    for label in names:
+        if guide.count("| **%s** |" % label) != 1:
+            problems.append("docs/presets.md explains \"%s\" %d time(s); it needs exactly one row"
+                            % (label, guide.count("| **%s** |" % label)))
 
 # ---------------------------------------------------------------------------
 if problems:
