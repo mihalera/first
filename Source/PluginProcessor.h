@@ -29,6 +29,7 @@
 #include "DSP/AutoGainCompensator.h"
 #include "DSP/MultibandPhaseGuard.h"
 #include "DSP/SafetyLimiter.h"
+#include "DSP/StereoOffsetBuffer.h"
 #include "DSP/OptionalLibraries.h"
 
 // The OSC codec and its address map (Source/Net). They are JUCE-free headers, so
@@ -1152,6 +1153,9 @@ public:
     }
 
 private:
+#if DEBUG
+    void auditFactoryPresets();
+#endif
     static juce::AudioProcessorValueTreeState::ParameterLayout createParameterLayout();
 
     /** Rebuilds every time-domain constant from the current sample rate. */
@@ -1890,18 +1894,17 @@ private:
     // -----------------------------------------------------------------------
     //  Stereo tape offset.
     //
-    //  A one-sample-capable fractional delay on the right channel only, driven by
-    //  ST OFFSET. It is deliberately tiny - a few tens of microseconds - and it is
-    //  what makes a tape bounce sit wide instead of merely being equalised wide.
+    //  A one-sample-capable fractional delay on one channel, driven by ST OFFSET.
+    //  Separate histories keep either side correct when the control changes which
+    //  channel is delayed. It is deliberately tiny - a few tens of microseconds -
+    //  and it is what makes a tape bounce sit wide instead of merely being equalised wide.
     //
     //  A short linear-interpolating buffer rather than an all-pass: an all-pass
     //  would give the same group delay with less memory but would colour the
     //  phase differently across the band, and the whole point here is that the two
     //  channels differ by TIME, not by filter shape.
     // -----------------------------------------------------------------------
-    static constexpr int stOffsetBufferLength = 64;
-    std::array<float, stOffsetBufferLength> stOffsetBuffer {};
-    int stOffsetWritePosition = 0;
+    StereoOffsetBuffer stOffsetBuffer;
     SampleSmoother stOffsetSamplesSmoothed { sampleClock };
 
     // -----------------------------------------------------------------------

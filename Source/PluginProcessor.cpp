@@ -405,6 +405,13 @@ FirstAudioProcessor::FirstAudioProcessor()
     }
 
 #if DEBUG
+    auditFactoryPresets();
+#endif
+}
+
+#if DEBUG
+void FirstAudioProcessor::auditFactoryPresets()
+{
     // =======================================================================
     //  The preset audit, run once at construction in debug builds.
     //
@@ -434,8 +441,7 @@ FirstAudioProcessor::FirstAudioProcessor()
     //  which is nothing to pay for while developing and nothing to pay for at
     //  all in a shipping build.
     // =======================================================================
-    {
-        const auto names = getPresetNames();
+    const auto names = getPresetNames();
         jassert (names.size() == FactoryPresets::count());
 
         // A name that is empty, or the same as another, is the same class of bug
@@ -606,10 +612,8 @@ FirstAudioProcessor::FirstAudioProcessor()
             markPresetClean ({});
             undoManager.clearUndoHistory();
         }
-    }
-#endif
 }
-
+#endif
 FirstAudioProcessor::~FirstAudioProcessor()
 {
     // The second half of the teardown window: a host that closes a project
@@ -986,8 +990,7 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     // The offset buffer is a fixed short window - a few hundred microseconds is far
     // more than the tens the control asks for - so it is a plain array, not an
     // allocation.
-    stOffsetBuffer.fill (0.0f);
-    stOffsetWritePosition = 0;
+    stOffsetBuffer.reset();
 
     // The transport starts at speed and lets the first block decide what it should
     // actually be doing: the rig re-arms on its first beginBlock() (it keeps

@@ -217,6 +217,9 @@ transparent = {
     "in_lp_freq": 20000.0, "out_lp_freq": 20000.0,
     "in_eq_order": 0, "out_eq_order": 0, "in_eq_q": 0.7, "out_eq_q": 0.7,
     "comp_threshold": 0.0, "comp_ratio": 1.0, "comp_attack": 0.1, "comp_release": 10.0,
+    # Corners whose bottom is already above zero, so zero is out of range rather
+    # than quieter: an echo and a room that cut nothing, and a one-semitone range.
+    "delay_lowcut": 20.0, "reverb_lowcut": 20.0, "autotune_range": 1.0,
     "tape_type": 12, "valve_type": 6, "amp_type": 6, "transformer_type": 5,
     "digital_type": 5, "vinyl_type": 6, "speed": 1, "delay_type": 0,
     "transport": 1, "st_link": 1.0, "anti_phase_guard": 1, "auto_gain": 0,

@@ -179,6 +179,106 @@ void checkRoundTrips()
           "the hand-built packet's address and 0.5f are read");
 }
 
+void checkArgumentReader()
+{
+    std::printf("\nargument reader\n");
+
+    using j37::osc::Argument;
+    using j37::osc::detail::readArgument;
+
+    Argument argument = Argument::ofString("unchanged");
+    std::size_t position = 0;
+    const std::string intMinimum("\x80\x00\x00\x00", 4);
+    check(readArgument('i', intMinimum, position, argument, nullptr),
+          "an int32 argument reads without a reason sink");
+    check(position == 4 && argument.type == Argument::Type::int32
+              && argument.integer == (-2147483647 - 1),
+          "int32 reads consume four bytes and preserve the sign bit");
+
+    position = 0;
+    const std::string intMaximum("\x7f\xff\xff\xff", 4);
+    check(readArgument('i', intMaximum, position, argument, nullptr)
+              && position == 4 && argument.integer == 2147483647,
+          "the largest positive int32 is decoded");
+
+    position = 0;
+    const std::string oneFloat("\x3f\x80\x00\x00", 4);
+    check(readArgument('f', oneFloat, position, argument, nullptr)
+              && position == 4 && argument.type == Argument::Type::float32
+              && argument.real == 1.0f,
+          "a big-endian float reads as 1.0 and consumes four bytes");
+
+    position = 0;
+    const std::string negativeZero("\x80\x00\x00\x00", 4);
+    check(readArgument('f', negativeZero, position, argument, nullptr)
+              && argument.real == 0.0f && std::signbit(argument.real),
+          "a float's negative-zero bit is preserved");
+
+    position = 0;
+    const std::string infinity("\x7f\x80\x00\x00", 4);
+    check(readArgument('f', infinity, position, argument, nullptr)
+              && std::isinf(argument.real) && argument.real > 0.0f,
+          "an IEEE positive-infinity float is decoded");
+
+    position = 0;
+    const std::string paddedText("abc\0", 4);
+    check(readArgument('s', paddedText, position, argument, nullptr)
+              && position == 4 && argument.type == Argument::Type::string
+              && argument.text == "abc",
+          "a padded string reads and advances to the next field");
+
+    position = 0;
+    const std::string emptyText(4, '\0');
+    check(readArgument('s', emptyText, position, argument, nullptr)
+              && position == 4 && argument.text.empty(),
+          "an empty string occupies one four-byte word");
+
+    position = 0;
+    const std::string exactBoundary("abcd\0\0\0\0", 8);
+    check(readArgument('s', exactBoundary, position, argument, nullptr)
+              && position == 8 && argument.text == "abcd",
+          "a string ending exactly on a word boundary consumes no extra word");
+
+    const auto checkRejected = [&] (char tag, std::string_view bytes,
+                                    std::size_t start, const char* expectedReason,
+                                    const char* description)
+    {
+        Argument untouched = Argument::ofString("unchanged");
+        auto cursor = start;
+        std::string reason;
+        const auto rejected = ! readArgument(tag, bytes, cursor, untouched, &reason);
+        check(rejected && reason.find(expectedReason) != std::string::npos,
+              description);
+        check(cursor == start && untouched.type == Argument::Type::string
+                  && untouched.text == "unchanged",
+              "a rejected argument leaves the cursor and destination unchanged");
+    };
+
+    checkRejected('i', std::string_view("\x00\x00\x00", 3), 0, "promises",
+                  "a truncated int32 is refused with a useful reason");
+    checkRejected('f', std::string_view("\x3f\x80\x00", 3), 0, "promises",
+                  "a truncated float32 is refused with a useful reason");
+    checkRejected('s', "abcd", 0, "not terminated",
+                  "an unterminated string is refused");
+    checkRejected('s', std::string_view("\0", 1), 0, "padding",
+                  "a string whose padding exceeds the packet is refused");
+    checkRejected('?', {}, 0, "unsupported",
+                  "an unsupported argument tag is refused");
+
+    position = 2;
+    argument = Argument::ofString("unchanged");
+    std::string reason;
+    check(! readArgument('i', oneFloat, position, argument, &reason)
+              && reason.find("promises") != std::string::npos,
+          "an argument beginning too near the end is refused");
+    check(position == 2 && argument.text == "unchanged",
+          "an out-of-range argument start does not partially mutate state");
+
+    position = 0;
+    check(! readArgument('?', {}, position, argument, nullptr),
+          "a refusal is safe when the caller omits the reason sink");
+}
+
 void checkRefusals()
 {
     std::printf("\nrefusals\n");
@@ -536,6 +636,7 @@ int main()
     checkAddressGrammar();
     checkEncoding();
     checkRoundTrips();
+    checkArgumentReader();
     checkRefusals();
     checkBundles();
     checkSurface();

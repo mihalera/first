@@ -104,7 +104,46 @@ inline float configureTrackGeometry (FirstAudioProcessor::TapeBlockState& state,
     return tracksNoiseScale[tracksIndex];
 }
 
+inline bool autoTuneReadingIsUsable (bool& gateOpen, float confidence,
+                                    float gateThreshold, float detected) noexcept
+{
+    if (confidence >= gateThreshold)
+        gateOpen = true;
+    else if (confidence < gateThreshold - 0.05f)
+        gateOpen = false;
+
+    return gateOpen && detected >= 45.0f && detected <= 1400.0f;
+}
+
+inline float autoTuneTargetFrequency (float detected, int tonic, int mode)
+{
+    const auto& offsets = j37::scale::offsets (mode);
+    const auto midi = 69.0f + 12.0f * std::log2 (juce::jmax (1.0f, detected) / 440.0f);
+    const auto nearest = juce::jlimit (-128, 255, juce::roundToInt (midi));
+    auto target = nearest;
+
+    if (mode != 0)
+    {
+        auto best = std::numeric_limits<int>::max();
+
+        for (int candidate = nearest - 12; candidate <= nearest + 12; ++candidate)
+        {
+            const auto pitchClass = ((candidate - tonic) % 12 + 12) % 12;
+
+            if (std::find (offsets.begin(), offsets.end(), pitchClass) != offsets.end()
+                && std::abs (candidate - nearest) < best)
+            {
+                target = candidate;
+                best = std::abs (candidate - nearest);
+            }
+        }
+    }
+
+    return 440.0f * std::pow (2.0f, (static_cast<float> (target) - 69.0f) / 12.0f);
+}
+
 inline void initialiseBlockMeasurements (FirstAudioProcessor::TapeBlockState& state,
+مكتمل
                                          juce::dsp::AudioBlock<float>& block,
                                          int activeInputChannels) noexcept
 {
@@ -458,11 +497,6 @@ bool FirstAudioProcessor::processIrStage (juce::dsp::AudioBlock<float>& block,
             // that boundary and nothing else - -Wsign-conversion on both compilers.
             postFxScratch.copyFrom (c, 0, block.getChannelPointer (static_cast<std::size_t> (c)),
                                     samples);
-    // AudioBlock::getChannelPointer takes a size_t channel index; loops and stage
-    // APIs use int, so keep that conversion at the boundary.
-    for (int c = 0; c < channels; ++c)
-        postFxScratch.copyFrom (c, 0, block.getChannelPointer (static_cast<std::size_t> (c)), samples);
-
     // Process only this block's samples; unused scratch capacity contains old frames.
     irStage.process (postFxScratch, channels, samples, true);
     return true;
@@ -620,7 +654,6 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
     const auto tonicValue = tuningTonicParam != nullptr ? static_cast<int> (tuningTonicParam->load()) : 0;
     const auto tonic = ((tonicValue % 12) + 12) % 12;
     const auto mode = tuningModeParam != nullptr ? static_cast<int> (tuningModeParam->load()) : 0;
-    const auto& offsets = scaleOffsetsForMode (mode);
     const auto stageRate = rate > 1.0f ? rate : 48000.0f;
 
     // SPEED is the correction's time constant, separate from its depth. The
@@ -687,12 +720,7 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
         // release gesture, not the retune glide.
         auto& gateOpen = autoTuneGateOpen[i];
 
-        if (confidence >= gateThreshold)
-            gateOpen = true;
-        else if (confidence < gateThreshold - 0.05f)
-            gateOpen = false;
-
-        if (! gateOpen || detected < 45.0f || detected > 1400.0f)
+        if (! autoTuneReadingIsUsable (gateOpen, confidence, gateThreshold, detected))
         {
             autoTuneCorrectionSmoothed[i] += (1.0f - autoTuneCorrectionSmoothed[i])
                                                * releaseGlide;
@@ -706,31 +734,9 @@ void FirstAudioProcessor::processAutoTuneSample (float* samples, int channels, f
             continue;
         }
 
-        // The note the reading lands closest to, and then the nearest note the
-        // chosen key actually contains. CHROMATIC is every semitone, so the
-        // second step is a no-op there and the first one is the whole of it.
-        const auto midi = 69.0f + 12.0f * std::log2 (juce::jmax (1.0f, detected) / 440.0f);
-        const auto nearest = juce::jlimit (-128, 255, juce::roundToInt (midi));
-        auto target = nearest;
-
-        if (mode != 0)
-        {
-            auto best = std::numeric_limits<int>::max();
-
-            for (int candidate = nearest - 12; candidate <= nearest + 12; ++candidate)
-            {
-                const auto pitchClass = ((candidate - tonic) % 12 + 12) % 12;
-
-                if (std::find (offsets.begin(), offsets.end(), pitchClass) != offsets.end()
-                    && std::abs (candidate - nearest) < best)
-                {
-                    target = candidate;
-                    best = std::abs (candidate - nearest);
-                }
-            }
-        }
-
-        const auto targetHz = 440.0f * std::pow (2.0f, (static_cast<float> (target) - 69.0f) / 12.0f);
+        // The target is the closest note in the selected scale, or the nearest
+        // semitone in chromatic mode. Keep that mapping separate from frame state.
+        const auto targetHz = autoTuneTargetFrequency (detected, tonic, mode);
 
         // The pull itself, with the rules that make it a corrector rather than a
         // quantiser: a reading within TOLERANCE of the target is left ALONE (the
@@ -1527,7 +1533,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // a negative value lags the left channel instead of the right.
     const float stOffsetSamples = std::abs (stOffsetUs) * 1.0e-6f * state.engineSampleRate;
     stOffsetSamplesSmoothed.setTargetValue (
-        juce::jlimit (0.0f, static_cast<float> (stOffsetBufferLength - 2), stOffsetSamples));
+        juce::jlimit (0.0f, static_cast<float> (StereoOffsetBuffer::length - 2), stOffsetSamples));
     state.offsetRightChannel = stOffsetUs >= 0.0f;
 
     // -----------------------------------------------------------------------
@@ -3421,9 +3427,10 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         // -------------------------------------------------------------------
         //  Stereo tape offset.
         //
-        //  A fractional-sample delay on ONE channel, set by ST OFFSET. It is
-        //  deliberately tiny - a few tens of microseconds - and it is what makes
-        //  a tape bounce sit wide instead of merely being equalised wide.
+        //  A fractional-sample delay on ONE channel, set by ST OFFSET. Each side
+        //  has its own history, so changing the control's sign never substitutes the
+        //  other channel's signal. It is deliberately tiny - a few tens of microseconds -
+        //  and it is what makes a tape bounce sit wide instead of merely being equalised wide.
         //
         //  A linear-interpolating buffer rather than an all-pass: an all-pass
         //  gives the same group delay for less memory but colours the phase
@@ -3431,33 +3438,11 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         //  channels differ by TIME, not by filter shape.
         // -------------------------------------------------------------------
         float aligned = withDelay;
+        stOffsetBuffer.write (channel, withDelay);
         const bool offsetThisChannel = (channel == 1) == state.offsetRightChannel;
         if (offsetThisChannel && state.activeChannels > 1)
-        {
-            const float offsetSamples = juce::jlimit (
-                0.0f, static_cast<float> (stOffsetBufferLength - 2),
-                stOffsetSamplesSmoothed.getCurrentValue());
-
-            float readPosition = static_cast<float> (stOffsetWritePosition) - offsetSamples;
-            while (readPosition < 0.0f)
-                readPosition += static_cast<float> (stOffsetBufferLength);
-
-            const int readIndex = static_cast<int> (readPosition);
-            const float fraction = readPosition - static_cast<float> (readIndex);
-            const int nextIndex = (readIndex + 1) % stOffsetBufferLength;
-
-            aligned = stOffsetBuffer[static_cast<std::size_t> (readIndex)]
-                    + (stOffsetBuffer[static_cast<std::size_t> (nextIndex)]
-                       - stOffsetBuffer[static_cast<std::size_t> (readIndex)]) * fraction;
-        }
-
-        // The offset buffer is written for the channel being delayed AND for the
-        // other one, so whichever side the control points at has a current sample
-        // to read. Both writes happen every frame, so the buffer never holds a
-        // stale side.
-        if (channel == 1)
-            stOffsetBuffer[static_cast<std::size_t> (stOffsetWritePosition)] = withDelay;
-
+            aligned = stOffsetBuffer.readInterpolated (
+                channel, stOffsetSamplesSmoothed.getCurrentValue());
         // Raised-cosine crossfade between the DRY INPUT and the fully processed
         // tape signal, driven by the smoothed MIX. 0 % is a transparent dry signal
         // and 100 % is all tape, both at unity, with the level held across the
@@ -3561,7 +3546,7 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     // apart. The ST OFFSET buffer advances with it so the two stay aligned.
     if (delayBufferLength > 0)
         delayWritePosition = (delayWritePosition + 1) % delayBufferLength;
-    stOffsetWritePosition = (stOffsetWritePosition + 1) % stOffsetBufferLength;
+    stOffsetBuffer.advanceFrame();
 
     // The track-bleed ring advances once per FRAME for the same reason the
     // other two do: advancing it per channel would move it twice per stereo

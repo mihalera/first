@@ -190,6 +190,58 @@ inline bool isReservedAddressCharacter (char c) noexcept
     }
 }
 
+inline bool readArgument (char tag, std::string_view bytes, std::size_t& position,
+                          Argument& argument, std::string* reason)
+{
+    switch (tag)
+    {
+        case 'i':
+        {
+            std::uint32_t raw = 0;
+            if (! readUint32 (bytes, position, raw))
+            {
+                if (reason != nullptr)
+                    *reason = "the type tag string promises more arguments than the packet holds";
+                return false;
+            }
+
+            argument = Argument::ofInt (static_cast<std::int32_t> (raw));
+            return true;
+        }
+
+        case 'f':
+        {
+            std::uint32_t raw = 0;
+            if (! readUint32 (bytes, position, raw))
+            {
+                if (reason != nullptr)
+                    *reason = "the type tag string promises more arguments than the packet holds";
+                return false;
+            }
+
+            float value = 0.0f;
+            std::memcpy (&value, &raw, sizeof (value));
+            argument = Argument::ofFloat (value);
+            return true;
+        }
+
+        case 's':
+        {
+            std::string text;
+            if (! readString (bytes, position, text, reason))
+                return false;
+
+            argument = Argument::ofString (std::move (text));
+            return true;
+        }
+
+        default:
+            if (reason != nullptr)
+                *reason = std::string ("unsupported type tag '") + tag + "'";
+            return false;
+    }
+}
+
 } // namespace detail
 
 inline bool addressesAreValid (std::string_view address)
@@ -311,53 +363,11 @@ inline bool decode (std::string_view bytes, Message& out, std::string* reason)
 
     for (std::size_t index = 1; index < tags.size(); ++index)
     {
-        switch (tags[index])
-        {
-            case 'i':
-            {
-                std::uint32_t raw = 0;
-                if (! detail::readUint32 (bytes, position, raw))
-                {
-                    if (reason != nullptr)
-                        *reason = "the type tag string promises more arguments than the packet holds";
-                    return false;
-                }
+        Argument argument;
+        if (! detail::readArgument (tags[index], bytes, position, argument, reason))
+            return false;
 
-                out.arguments.push_back (Argument::ofInt (static_cast<std::int32_t> (raw)));
-                break;
-            }
-
-            case 'f':
-            {
-                std::uint32_t raw = 0;
-                if (! detail::readUint32 (bytes, position, raw))
-                {
-                    if (reason != nullptr)
-                        *reason = "the type tag string promises more arguments than the packet holds";
-                    return false;
-                }
-
-                float value = 0.0f;
-                std::memcpy (&value, &raw, sizeof (value));
-                out.arguments.push_back (Argument::ofFloat (value));
-                break;
-            }
-
-            case 's':
-            {
-                std::string text;
-                if (! detail::readString (bytes, position, text, reason))
-                    return false;
-
-                out.arguments.push_back (Argument::ofString (std::move (text)));
-                break;
-            }
-
-            default:
-                if (reason != nullptr)
-                    *reason = std::string ("unsupported type tag '") + tags[index] + "'";
-                return false;
-        }
+        out.arguments.push_back (std::move (argument));
     }
 
     if (position != bytes.size())
