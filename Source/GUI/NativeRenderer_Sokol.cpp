@@ -489,7 +489,7 @@ private:
         sg_desc desc {};
         desc.environment.defaults.color_format = SG_PIXELFORMAT_RGBA8;
         desc.environment.defaults.depth_format = sceneDepthFormat;
-        desc.environment.defaults.sample_count = 1;
+        desc.environment.defaults.sample_count = 4;
 
 #if defined (SOKOL_VALIDATE)
         // Enable Sokol's validation layer in debug builds.
@@ -586,7 +586,7 @@ private:
         sg_swapchain swapchain {};
         swapchain.width = framebufferWidth;
         swapchain.height = framebufferHeight;
-        swapchain.sample_count = 1;
+        swapchain.sample_count = 4;
         swapchain.color_format = SG_PIXELFORMAT_RGBA8;
         swapchain.depth_format = sceneDepthFormat;
         swapchain.gl.framebuffer = context->getFrameBufferID();
@@ -723,7 +723,7 @@ private:
         desc.depth.compare = SG_COMPAREFUNC_LESS_EQUAL;
         desc.depth.write_enabled = true;
         desc.cull_mode = SG_CULLMODE_NONE;
-        desc.sample_count = 1;
+        desc.sample_count = 4;
 
 #if defined (SOKOL_DEBUG)
         desc.label = "tape_scene_main";
