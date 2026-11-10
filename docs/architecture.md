@@ -108,7 +108,7 @@ that is quietly missing a control.
 | --- | --- | --- |
 | parameters | the APVTS | host session |
 | the machine's extra state | `getStateInformation` / `setStateInformation` | this plugin's own marker + version, migrated in `ProcessorStateFormat.h` |
-| factory presets | `Source/Presets/Factory/*.json`, 29 of them | JSON, embedded as a binary resource |
+| factory presets | `Source/Presets/Factory/*.json`, 31 of them | JSON, embedded as a binary resource |
 | user presets | `<user app data>/MiBoX/Presets` | `.miboxpreset` |
 | A/B slots and undo history | in memory, per instance | whole-state strings |
 

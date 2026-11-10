@@ -321,7 +321,7 @@ each one says what it would be built out of.
 | **Mid/side drive and glue** | process the side channel with its own DRIVE and glue amount | the engine already has a stereo width stage and a stereo tape offset; M/S is the natural next stereo control and it is what the bus use case asks for |
 | **Print / commit to the DAW** | render the machine's output into the host's audio in one action | every parameter is automatable and every stage is deterministic; a commit function is mostly bookkeeping, and it is what mastering users actually reach for |
 | **Loudness-matched A/B** | match the level between the A and B slots before comparing | the plugin has A/B slots and a real loudness meter; unmatched A/B is the oldest mistake in audio |
-| **Preset browser** | tag, search and preview the 29 factory presets and the user's own | the preset table is JSON and already consistent with the parameter table, so this is UI over data that exists |
+| **Preset browser** | tag, search and preview the 31 factory presets and the user's own | the preset table is JSON and already consistent with the parameter table, so this is UI over data that exists |
 | **Per-band drive** | three-band saturation on the existing three-band EQ split | `ThreeBandEq.h` already splits the signal; the shaper is per-sample and stateless |
 | **Spectrum / harmonic view** | draw the harmonic analyser as a curve instead of a number | `HarmonicAnalyser.h` measures the shaper's own input and output today |
 | **Tape-stop as automation** | make the transport keys automatable parameters | `TransportRig` is deterministic and driven frame by frame; the host-facing half is exposing the keys |

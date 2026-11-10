@@ -22,6 +22,13 @@ release build to say why:
      error: the loader records it, applyFactoryPreset()'s getParameter() guard
      drops it, and the parameter silently keeps the session's value.
 
+  4. TWO LITERALS IN THE C++ EXCLUSION LIST TOUCHED. A missing comma between two
+     entries does not fail to compile - C++ concatenates adjacent string
+     literals - so the list held one name that is not a parameter and neither of
+     the two keys it was meant to hold. The debug audit asserted on both, and
+     this file read the two quoted halves as two entries, so nothing was caught.
+     It catches the shape now: an adjacent pair of literals is a failure.
+
 None of these can fail at runtime, which is why C++ cannot catch them and why
 this reads the source and the data instead.
 
@@ -105,7 +112,15 @@ excluded_block = re.search(
     r"intentionallyNotPresettable\s*\{(.*?)\};", processor, re.S)
 if not excluded_block:
     sys.exit("check_presets: intentionallyNotPresettable not found in PluginProcessor.cpp")
-excluded = set(re.findall(r'"([a-z0-9_]+)"', excluded_block.group(1)))
+exclusions = excluded_block.group(1)
+excluded = set(re.findall(r'"([a-z0-9_]+)"', exclusions))
+
+# Adjacent string literals concatenate, so `"a" "b"` is one name in C++ and two in
+# a regex. That is exactly the bug this grew a check for: a dropped comma in the
+# list above hid two keys from the audit and no check could see it.
+if re.search(r'"[a-z0-9_]+"\s*\r?\n?\s*"[a-z0-9_]+"', exclusions):
+    problems.append("intentionallyNotPresettable has two adjacent string literals - "
+                    "a missing comma between two keys")
 
 # ---------------------------------------------------------------------------
 # 3. The data itself.

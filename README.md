@@ -8,7 +8,7 @@
 | **Platforms** | Windows x64 + arm64, macOS universal (arm64 + x86_64), Linux x64 + arm64, Android arm64-v8a |
 | **Framework** | JUCE `9.0.5`, pinned as a git submodule |
 | **Build** | CMake 3.22+, MSVC on Windows, Xcode on macOS |
-| **Parameters** | 109, in 23 groups, with 29 factory presets |
+| **Parameters** | 147, in 23 groups, with 31 factory presets |
 | **Checked by** | thirteen harnesses and seven text checks that need no JUCE, on every pull request |
 | **Licence** | MIT for this repository's own source; a *binary* also links JUCE (AGPLv3 or commercial) and the third-party libraries listed below - see [Licensing, and what ships in a binary](#licensing-and-what-ships-in-a-binary) |
 
@@ -810,7 +810,7 @@ rest stays silent.
 | Clear IR | - | Releases the loaded impulse response, returning the IR stage to its pass-through |
 | Load Print | file (WAV) | Reads a surface-noise print - a WAV recording of a real record's surface - and plays it as the VINYL stage's own surface, replacing the synthesised groove hiss. CRACKLE, DUST, CLICKS, SCRATCH, WARP and ELECTRICAL keep working over it; the file's own level is kept, so NOISE and VINYL MIX set how much of it is heard. The decode runs on a background thread, the readout says `LOADING PRINT` while it does, and a refusal is reported as `INVALID PRINT (reason)`. The picker reopens in the folder the last print came from, and a WAV can be dropped on the key. Not saved with the session |
 | Clear Print | - | Releases the loaded print, and the VINYL stage goes back to synthesising its own surface |
-| Presets | 29 factory | Loaded from the preset box; each application is one undoable step |
+| Presets | 31 factory | Loaded from the preset box; each application is one undoable step |
 | User presets | unlimited | SAVE stores the whole machine state as a `.miboxpreset` file in the user's application-data directory; DEL removes the selected file; recall is one undoable step |
 | A/B compare | two slots | COPY A / COPY B store states, A/B swaps them live; an EDITED badge shows when the sides differ |
 | Undo / Redo | full state | Ctrl+Z / Ctrl+Y (or the panel buttons) step through preset and A/B history |

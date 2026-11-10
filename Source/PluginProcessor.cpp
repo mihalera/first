@@ -526,19 +526,21 @@ FirstAudioProcessor::FirstAudioProcessor()
             // note generator on would surprise every load, and no preset should have
             // to be rewritten to say "the oscillator stays off".
             "osc_on",
-            // The creative effects rack, and the compressor's upward stage. Every
-            // one of these defaults to 0, which is OUT of the path rather than a
-            // bypass, so a preset that does not state them loads to the plugin
-            // without the stage - which is exactly what every preset written before
-            // the rack existed intends. Stating twenty-six zeros in every factory
-            // preset would be the same churn the transient and neural exclusions
-            // above exist to avoid.
-            "fx_wah", "fx_anti_spike", "fx_gate", "fx_overdrive", "fx_fuzz",
-            "fx_wavefolder", "fx_bitcrusher", "fx_rate_crusher", "fx_ring_mod",
-            "fx_octaver", "fx_pitch", "fx_comb", "fx_formant", "fx_dynamic_eq",
-            "fx_de_esser", "fx_chorus", "fx_flanger", "fx_phaser", "fx_tremolo",
-            "fx_vibrato", "fx_rotary", "fx_vocoder", "fx_granular", "fx_spectral",
-            "fx_speed", "comp_upward"
+            // The rack is NOT excluded, and this is the entry that used to be
+            // here. Its 26 controls default to 0 - out of the path rather than a
+            // bypass - so leaving them out of a preset is harmless on a fresh
+            // session and wrong on every other one: applying such a preset over a
+            // session that had FUZZ at 0.8 left FUZZ at 0.8, because no key in the
+            // file disagreed. A factory preset has to be deterministic, so every
+            // file states the whole rack (all zeros for the presets that do not
+            // use it) and check_presets.py keeps them doing it.
+            //
+            // The same block also held comp_upward with no comma after it, so the
+            // two literals either side of it concatenated into one name that is not
+            // a parameter: neither key was ever excluded, and the debug audit
+            // asserted on them instead. One line, two keys, and the difference
+            // between a table that says what it means and one that merely reads
+            // right in a diff.
             "osc_note",
     };
 
@@ -622,6 +624,20 @@ FirstAudioProcessor::~FirstAudioProcessor()
     guard.arm();
     guard.phase ("processor dtor: stop the timer");
     stopTimer();
+
+    // What the callback did while it ran. Written here, once, on the message
+    // thread, from counters the audio thread only ever incremented: a session
+    // whose sound was wrong can now say whether the engine was overrunning its
+    // own blocks or handing the host non-finite samples, and neither answer was
+    // available anywhere before.
+    if (j37diag::enabled())
+    {
+        const auto audio = j37diag::audioReportText();
+
+        if (! audio.empty())
+            j37diag::note (audio);
+    }
+
     guard.phase ("processor dtor: done");
     guard.disarm();
 }
@@ -1420,6 +1436,12 @@ void FirstAudioProcessor::updateToneCoefficients (float toneValue, float engineS
 
 void FirstAudioProcessor::releaseResources()
 {
+    // The host calls this when it stops using the plugin: on a device change, on a
+    // project close, and before it destroys it. It does nothing to the engine - the
+    // stages are prepared again on the next prepareToPlay - but it is the last
+    // message-thread moment before the teardown in some hosts, so it is where the
+    // shutdown trace says which of the two it was.
+    j37diag::note ("releaseResources: the host stopped the stream");
 }
 
 #ifndef JucePlugin_PreferredChannelConfigurations

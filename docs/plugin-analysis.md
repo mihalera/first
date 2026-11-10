@@ -397,7 +397,7 @@ Everything quoted above, in one place, with the command that produces it.
 | parameters outside every preset | 12 | `python3 tests/presets/check_presets.py` |
 | parameters set by the presets | 101 | `python3 tests/presets/check_presets.py` |
 | parameters watched by the dirty badge | 104 | `python3 tests/presets/check_presets.py` |
-| factory presets | 29 | `ls Source/Presets/Factory/*.json \| wc -l` |
+| factory presets | 31 | `ls Source/Presets/Factory/*.json \| wc -l` |
 | panel widgets | 109 | `python3 tests/theme/check_theme_wiring.py` |
 | look-and-feels | 2 | `python3 tests/theme/check_theme_wiring.py` |
 | translation entries | 153 | `python3 tests/translations/check_translations.py` |

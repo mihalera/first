@@ -416,7 +416,15 @@ if(CMAKE_SYSTEM_NAME STREQUAL "Android" AND TARGET first_Standalone)
     #  future JUCE rename into a link error rather than a launch-time one.
     target_link_options(first_Standalone PRIVATE
         "-Wl,--undefined=juce_CreateApplication"
-        "-Wl,--undefined=JNI_OnLoad")
+        "-Wl,--undefined=JNI_OnLoad"
+        # The third entry point, and the one that was missing: Diag.setLogPath is
+        # called by Diag.java through JNI and by NOTHING inside the image, so the
+        # archive member holding Source/Diagnostics/AndroidBridge.cpp was never
+        # pulled in and the symbol was absent from libjuce_jni.so. The APK
+        # installed and launched, and the trace stopped at exactly that call with
+        # UnsatisfiedLinkError - which is the report that showed the flag is
+        # needed, not optional.
+        "-Wl,--undefined=Java_com_mcsmes_mibox_Diag_setLogPath")
 endif()
 
 # ------------------------------------------------------------------------------
@@ -631,7 +639,9 @@ set(FACTORY_PRESET_FILES
     ${FACTORY_PRESET_DIR}/shellac_radio.json
     ${FACTORY_PRESET_DIR}/transient_punch.json
     ${FACTORY_PRESET_DIR}/soft_touch.json
-    ${FACTORY_PRESET_DIR}/tight_bus.json)
+    ${FACTORY_PRESET_DIR}/tight_bus.json
+    ${FACTORY_PRESET_DIR}/fuzz_stack.json
+    ${FACTORY_PRESET_DIR}/broken_bits.json)
 
 # A guard, not a convention: a path that does not exist is a typo, and CMake
 # would otherwise pass it to the binary-data builder and fail with a message
