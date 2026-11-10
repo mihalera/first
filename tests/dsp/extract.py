@@ -511,6 +511,14 @@ def check_mono_delay_feedback(impl: str) -> list[str]:
         problems.append("zero delay is not treated as a disengaged playback head, or an active head "
                         "can read from its current write slot")
 
+    # The delay feedback may be routed through the StereoDelayFeedback helper
+    # instead of being inlined; in that case the helper owns the mono/stereo
+    # distinction and the checks below do not apply to this site.
+    if "StereoDelayFeedback::accumulate" in block:
+        if re.search(r"StereoDelayFeedback::accumulate\s*\([^)]*delayEnabled\s*\)", block) is None:
+            problems.append("the tape delay feedback helper is not gated on delayEnabled")
+        return problems
+
     if "const bool stereo = state.activeChannels > 1;" not in block:
         problems.append("the tape delay feedback does not distinguish mono from stereo, so mono "
                         "may write to a delay channel that does not exist")
