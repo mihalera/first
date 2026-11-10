@@ -2514,6 +2514,9 @@ FirstAudioProcessor::SampleInputContext FirstAudioProcessor::prepareSampleInput 
 
 void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) noexcept
 {
+    std::array<float, 2> delayFeedbackWriteFrame {};
+    std::array<float, 2> delayWriteFrame {};
+
     // -----------------------------------------------------------------
     //  SAMPLE-LEVEL CONTROL READS.
     //
@@ -2528,6 +2531,7 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     //  their individual ramps lazily for this same frame.
     const float inputGain = inputGainSmoothed.getNextValue();
     const float outputGain = outputGainSmoothed.getCurrentValue();
+    const bool loFiModeForFrame = lofiMode;
     const float currentWidth = widthSmoothed.getCurrentValue();
     // MIX is the equal-power dry/wet crossfade and Source/DSP/MixCrossfader.h is
     // the law: the gain pair, the endpoint behaviour and the transport gate both
@@ -3396,41 +3400,27 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
 
             const float feedbackAmount = delayAmount * feedbackSignal;
             const float pingPongNow = pingPongSmoothed.getCurrentValue();
-            const bool stereo = state.activeChannels > 1;
-
-            auto* delayWrite = delayBuffer.getWritePointer (channel);
-
-            // The dry-ish wet signal always goes into its OWN line: the head
-            // is recording what it hears, and that does not move when the
-            // feedback is re-routed.
-            delayWrite[delayWritePosition] = dcBlocked;
-
-            if (delayEnabled)
-            {
-                // Stereo splits feedback between this channel and the other one.
-                // Mono has nowhere else to send it, so keep the full feedback in
-                // its only delay line.
-                delayWrite[delayWritePosition] += feedbackAmount
-                    * (stereo ? (1.0f - pingPongNow) : 1.0f);
-
-                if (stereo)
-                {
-                    const int feedbackChannel = 1 - channel;
-                    delayBuffer.getWritePointer (feedbackChannel)[delayWritePosition]
-                        += feedbackAmount * pingPongNow;
-                }
-            }
+            StereoDelayFeedback::accumulate (delayFeedbackWriteFrame, channel,
+                                             state.activeChannels, feedbackAmount,
+                                             pingPongNow, delayEnabled);
         }
 
         const float withDelay = dcBlocked + delayTap;
+
+        delayWriteFrame[static_cast<std::size_t> (channel)] = dcBlocked
+            + delayFeedbackWriteFrame[static_cast<std::size_t> (channel)];
+        if (channel + 1 == state.activeChannels && delayBufferLength > 0)
+            for (int writeChannel = 0; writeChannel < state.activeChannels; ++writeChannel)
+                delayBuffer.getWritePointer (writeChannel)[delayWritePosition] =
+                    delayWriteFrame[static_cast<std::size_t> (writeChannel)];
 
         // -------------------------------------------------------------------
         //  Stereo tape offset.
         //
         //  A fractional-sample delay on ONE channel, set by ST OFFSET. Each side
-        //  has its own history, so changing the control's sign never substitutes the
-        //  other channel's signal. It is deliberately tiny - a few tens of microseconds -
-        //  and it is what makes a tape bounce sit wide instead of merely being equalised wide.
+        //  keeps its own history so a left delay can never read the right channel.
+        //  It is deliberately tiny - a few tens of microseconds - and it is what
+        //  makes a tape bounce sit wide instead of merely being equalised wide.
         //
         //  A linear-interpolating buffer rather than an all-pass: an all-pass
         //  gives the same group delay for less memory but colours the phase
@@ -4127,6 +4117,9 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     for (int channel = 0; channel < state.activeChannels; ++channel)
         outputSignal[static_cast<std::size_t> (channel)] *= limiterGain;
 
+    const bool captureLofiSample = loFiModeForFrame
+                                && loFiHoldClock.beginFrame (lofiHoldSamples);
+
     for (int channel = 0; channel < state.activeChannels; ++channel)
     {
         const auto index = static_cast<std::size_t> (channel);
@@ -4196,13 +4189,9 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
             // the aliasing that gives the mode its edge. The hold counter is
             // advanced once per frame by the caller, so both channels hold the
             // same instants and the image does not smear.
-            // The counter is shared so both channels hold on the SAME instants -
-            // per-channel counters would sample the two sides at different times
-            // and smear the image. Each channel keeps its own held VALUE.
-            if (channel == 0 && --lofiCounter <= 0)
-                lofiCounter = juce::jmax (1, lofiHoldSamples);
-
-            if (lofiCounter >= lofiHoldSamples || channel == 0)
+            // One frame-level capture decision is shared by both channels, keeping
+            // the sample-and-hold clocks synchronized without favoring the left.
+            if (captureLofiSample)
                 lofiHold = lofiLow;
 
             modeProcessed = lofiHold;

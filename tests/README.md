@@ -25,6 +25,7 @@ tests/pitch/run.sh        # the pitch tracker, the corrector stage, and BOTH of 
 tests/phase/run.sh        # the three-band output anti-phase guard, band by band
 tests/gain/run.sh         # the AUTO GAIN compensator, on generated signal
 tests/limiter/run.sh      # the output safety limiter, catch and release
+tests/stereo_offset/run.ps1 # stereo tape offset, LO-FI hold sync, and ping-pong delay routing
 tests/mix_crossfader/run.sh  # the MIX crossfade, its law and its two gated legs
 tests/neural/run.sh       # the rate bridge, the stage with RTNeural stubbed, and the .nam fixtures through BOTH engines
 tests/spectrum/run.sh     # the spectrum analyser: pocketfft in, out, and the ArmPL branch through a stand-in FFTW

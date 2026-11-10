@@ -1039,7 +1039,7 @@ void FirstAudioProcessor::prepareToPlay (double sampleRateToUse, int samplesPerB
     bbdLowL = bbdLowR = 0.0f;
     lofiLowL = lofiLowR = 0.0f;
     lofiHoldL = lofiHoldR = 0.0f;
-    lofiCounter = 0;
+    loFiHoldClock.reset();
     wearModulation = 0.0f;
 
     // The room starts empty. Its tank runs at the rate its own delay lengths were

@@ -27,7 +27,9 @@
 // It is included at exactly this point because Source/DSP/J37Math.h below reads the
 // first of them and Source/DSP/NeuralStage.h reads the third.
 #include "DSP/AutoGainCompensator.h"
+#include "DSP/LoFiHoldClock.h"
 #include "DSP/MultibandPhaseGuard.h"
+#include "DSP/StereoDelayFeedback.h"
 #include "DSP/SafetyLimiter.h"
 #include "DSP/StereoOffsetBuffer.h"
 #include "DSP/OptionalLibraries.h"
@@ -2280,14 +2282,13 @@ private:
     int bbdCoefficientCountdown = 1;
     static constexpr int bbdCoefficientStride = 32;
 
-    // The LO-FI mode's quantisation and bandwidth state, per channel. The hold
-    // counter is shared so both channels sample on the same instants; the held
-    // VALUES are per channel so the image is preserved.
+    // The LO-FI mode's quantisation and bandwidth state, per channel. Its clock
+    // produces one capture decision per frame for both channels.
     float lofiLowL = 0.0f;
     float lofiLowR = 0.0f;
     float lofiHoldL = 0.0f;
     float lofiHoldR = 0.0f;
-    int lofiCounter = 0;
+    LofiHoldClock loFiHoldClock;
 
     // The LO-FI band limit and its sample-and-hold length, built once per block
     // from the rate so the mode sounds the same at 44.1 and 192 kHz.
