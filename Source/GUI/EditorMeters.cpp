@@ -372,10 +372,10 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
         // however the panel is sized.
         auto nameArea = rowArea;
         auto valueArea = rowArea;
+        const auto measuredName = juce::roundToInt (juce::GlyphArrangement::getStringWidth (
+            j37panel::panelFont (9.0f * textScale), label));
         const auto nameWidth = juce::jmin (rowArea.getWidth() * 3 / 5,
-                                           juce::GlyphArrangement::getStringWidth (
-                                               j37panel::panelFont (9.0f * textScale), label)
-                                               + juce::roundToInt (6.0f * textScale));
+                                           measuredName + juce::roundToInt (6.0f * textScale));
         nameArea.setWidth (juce::jmax (1, nameWidth));
         valueArea.setLeft (nameArea.getRight());
 
