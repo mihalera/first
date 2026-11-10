@@ -458,8 +458,12 @@ public:
         // goes back on.
         // A small inset plate makes it read like a live instrument readout; it is
         // drawn before the ball so the ball always wins the overlap.
-        const auto displayWidth = juce::jmin (radius * 1.48f, 48.0f);
-        const auto displayHeight = juce::jmin (radius * 0.90f, 24.0f);
+        // The plate scales with the ring above the size the desk ring uses, so a
+        // ring that fills a landscape deck is not a large dial around a small
+        // label: 48 x 24 was the cap and stays the floor. Below it - which is
+        // every desktop layout - these read exactly as they did.
+        const auto displayWidth = juce::jmax (48.0f, radius * 1.23f);
+        const auto displayHeight = juce::jmax (24.0f, radius * 0.62f);
         const auto display = juce::Rectangle<float> (displayWidth, displayHeight)
                                  .withCentre (centre);
         g.setColour (palette.panel.withAlpha (running ? 0.94f : 0.82f));
@@ -471,13 +475,14 @@ public:
         const auto statusBand = displayText.removeFromBottom (displayHeight * 0.25f);
         g.setFont (juce::Font (juce::FontOptions (
             juce::Font::getDefaultMonospacedFontName(),
-            juce::jmax (7.0f, juce::jmin (11.0f, radius * 0.32f)),
+            juce::jlimit (7.0f, juce::jmax (11.0f, radius * 0.28f), radius * 0.32f),
             juce::Font::bold)));
         g.setColour (running ? palette.readout : palette.secondary);
         g.drawText (noteName (noteAt (currentSector)),
                     displayText,
                     juce::Justification::centred, false);
-        g.setFont (panelFont (juce::jlimit (5.0f, 6.5f, displayHeight * 0.27f),
+        g.setFont (panelFont (juce::jlimit (5.0f, juce::jmax (6.5f, displayHeight * 0.27f),
+                                          displayHeight * 0.27f),
                               juce::Font::bold));
         g.setColour ((running ? palette.accent : palette.secondary).withAlpha (0.9f));
         g.drawText (running ? "LIVE" : "HOLD", statusBand,

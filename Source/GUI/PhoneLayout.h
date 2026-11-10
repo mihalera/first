@@ -32,6 +32,15 @@ namespace j37panel
     inline constexpr int phoneLandscapeDeckWidth = 240;
     inline constexpr int phoneBandGap = 4;
 
+    /** Where the landscape deck's own rows end, measured from the deck's top.
+
+        The column is as tall as the window and the rows are not: transport,
+        the two selectors and the preset workflow are ~130 px together at any
+        landscape height. Everything below this line belongs to the OSC ring,
+        which is why the ring is solved from the deck's height instead of being
+        pinned to its foot at a fixed 78 px. */
+    inline constexpr int phoneLandscapeDeckRowsBottom = 130;
+
     constexpr bool usesPhoneLayout (int width, int height) noexcept
     {
         return width > 0 && height > 0
@@ -93,11 +102,18 @@ namespace j37panel
     {
         if (landscape)
         {
-            const auto size = deck.height > 132
-                                ? (deck.height - 132 < 78 ? deck.height - 132 : 78)
-                                : 0;
+            // The ring owns everything the rows leave, centred in that band
+            // rather than hanging off the deck's foot: a 1097 x 617 phone
+            // handed the ring 78 px and left three hundred pixels of empty
+            // panel above it. It is square and width-limited by the 240 px
+            // deck, so the height only decides the band it is centred in.
+            const auto bandTop = deck.y + phoneLandscapeDeckRowsBottom + 8;
+            const auto bandBottom = deck.y + deck.height - 8;
+            const auto bandHeight = nonNegative (bandBottom - bandTop);
+            const auto widthLimit = nonNegative (deck.width - 16);
+            const auto size = bandHeight < widthLimit ? bandHeight : widthLimit;
             return { deck.x + (deck.width - size) / 2,
-                     deck.y + deck.height - size - 8, size, size };
+                     bandTop + (bandHeight - size) / 2, size, size };
         }
 
         const auto size = deck.height > 4

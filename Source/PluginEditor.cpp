@@ -1473,8 +1473,14 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         const auto contentRight = landscape ? deck.getRight() - 6 : ringBounds.x - 8;
         const auto contentWidth = juce::jmax (0, contentRight - buttonLeft);
         const auto buttonWidth = juce::jmax (1, (contentWidth - 3 * buttonGap) / 4);
-        const auto buttonY = deck.getY() + 3;
-        const auto buttonHeight = 30;
+
+        //  Landscape gives the deck the whole window height, so its three rows
+        //  are solved for a thumb rather than for the 120 px portrait band: 36 px
+        //  keys, 34 px selectors. Portrait keeps the compact 30/30 it shipped
+        //  with. The rows end at phoneLandscapeDeckRowsBottom (see
+        //  PhoneLayout.h), and the ring below is what fills the rest.
+        const auto buttonY = deck.getY() + (landscape ? 5 : 3);
+        const auto buttonHeight = landscape ? 36 : 30;
         const std::array<juce::Component*, 4> transportButtons {
             &transportStopButton, &transportPlayButton, &transportStartButton, &spindownButton
         };
@@ -1489,9 +1495,9 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         const auto selectorGap = 4;
         const auto selectorLeft = deck.getX() + 6;
         const auto selectorWidth = juce::jmax (1, (contentWidth - 2 * selectorGap) / 3);
-        const auto captionY = deck.getY() + 37;
-        const auto selectorY = deck.getY() + 49;
-        const auto selectorHeight = 30;
+        const auto captionY = deck.getY() + (landscape ? 46 : 37);
+        const auto selectorY = deck.getY() + (landscape ? 58 : 49);
+        const auto selectorHeight = landscape ? 34 : 30;
         const auto placeSelector = [&] (juce::Label& label, juce::Component& selector,
                                         int column)
         {
@@ -1505,13 +1511,13 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         placeSelector (speedLabel, speedBox, 1);
         placeSelector (instrumentLabel, instrumentBox, 2);
 
-        const auto workflowY = deck.getY() + 83;
+        const auto workflowY = deck.getY() + (landscape ? 96 : 83);
         const auto workflowWidth = juce::jmax (1, (contentWidth - 2 * selectorGap) / 3);
-        presetBox.setBounds (selectorLeft, workflowY, workflowWidth, 30);
+        presetBox.setBounds (selectorLeft, workflowY, workflowWidth, selectorHeight);
         userPresetBox.setBounds (selectorLeft + workflowWidth + selectorGap,
-                                 workflowY, workflowWidth, 30);
+                                 workflowY, workflowWidth, selectorHeight);
         phoneActionsButton.setBounds (selectorLeft + 2 * (workflowWidth + selectorGap),
-                                      workflowY, workflowWidth, 30);
+                                      workflowY, workflowWidth, selectorHeight);
         presetBox.setVisible (true);
         userPresetBox.setVisible (true);
         phoneActionsButton.setVisible (true);
