@@ -333,9 +333,17 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
         }
     }
 
-    g.setColour(palette.accent.withAlpha(0.85f));
-    g.fillRect(layout.header.getX() + 17, layout.header.getY() + 14, 3,
-               layout.header.getHeight() - 28);
+    // The brand's copper rule: a 3 px accent bar to the LEFT of the brand strip and
+    // the title, which start 26 px and 25 px in on the desktop header. The phone
+    // header has no brand strip and starts the title 4 px in, so the same bar ran
+    // straight down through the letters of MiBoX. A rule with nothing to rule is
+    // not decoration, it is a line across the logo.
+    if (! j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
+    {
+        g.setColour(palette.accent.withAlpha(0.85f));
+        g.fillRect(layout.header.getX() + 17, layout.header.getY() + 14, 3,
+                   layout.header.getHeight() - 28);
+    }
 
     g.setColour(palette.border.withAlpha(0.75f));
     // Under the tab bar, not through it: the divider used to sit 42 px down, which is
