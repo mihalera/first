@@ -956,8 +956,19 @@ void J37LookAndFeel::drawLabel (juce::Graphics& g, juce::Label& label)
                    : label.getFont());
 
     auto area = label.getLocalBounds().toFloat();
-    const auto maxLines = juce::jmax (1,
-                                       static_cast<int> (area.getHeight() / g.getCurrentFont().getHeight()));
+
+    // A list's value is a FIELD, not a paragraph. The deck's boxes are 30-36 px tall,
+    // and once the landscape rows grew past one line's worth of height "Master Bus"
+    // in the instrument field wrapped onto a second line, which is a value the box
+    // clips rather than shows. Fitted text that ellipsises is what a field wants;
+    // a wrapped value is what a caption wants, and a caption never shares this
+    // parent.
+    const auto isComboValue =
+        dynamic_cast<juce::ComboBox*> (label.getParentComponent()) != nullptr;
+    const auto maxLines =
+        isComboValue ? 1
+                     : juce::jmax (1, static_cast<int> (area.getHeight()
+                                                       / g.getCurrentFont().getHeight()));
 
     // ENGRAVED, not printed. A caption milled into a plate has its upper-left
     // wall in shadow and its lower-right wall catching the lamp, so the text
@@ -1146,9 +1157,18 @@ void J37InlineLookAndFeel::drawLabel (juce::Graphics& g, juce::Label& label)
     if (! label.isEnabled())
         g.setOpacity (0.45f);
 
+    // A list's value stays on one line here for the same reason as in the deck's own
+    // drawLabel: a field shows its value, it does not wrap it.
+    const auto isComboValue =
+        dynamic_cast<juce::ComboBox*> (label.getParentComponent()) != nullptr;
+    const auto maxLines =
+        isComboValue ? 1
+                     : juce::jmax (1, static_cast<int> (area.getHeight()
+                                                       / g.getCurrentFont().getHeight()));
+
     g.drawFittedText (label.getText(), area.toNearestInt(),
                       label.getJustificationType(),
-                      juce::jmax (1, static_cast<int> (area.getHeight() / g.getCurrentFont().getHeight())),
+                      maxLines,
                       label.getMinimumHorizontalScale());
 }
 
