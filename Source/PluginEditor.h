@@ -864,6 +864,23 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     // and each group has a whole grid to itself.
     void setCurrentTab(int newTab);
 
+    /** A press on a tab button. A press on the page that is ALREADY showing
+        freezes it instead of re-selecting it: see frozenTab. */
+    void handleTabPress(int tab);
+
+    /** True while the page on screen is frozen - its controls are disabled until
+        the same tab is pressed again or another page is opened. */
+    [[nodiscard]] bool isCurrentPageFrozen() const noexcept { return frozenTab == currentTab; }
+
+    /** Re-applies the freeze to the page's controls, its switches and its caption.
+        Called by setCurrentTab (which thaws first) and by handleTabPress. */
+    void applyFrozenPage();
+
+    /** The page members that are not knobs - the deck's selectors, the equaliser
+        switches, the engine preferences and the three file loaders - in the same
+        set updateTabVisibility() shows and hides. */
+    std::vector<juce::Component*> tabMemberComponents();
+
     // The three tab families select the visible page range and its first page.
     /** Filters the tab bar to one family, and optionally opens that family's
         first page. A click on the family button passes `openFirstPage`, because
@@ -1334,21 +1351,31 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::Label sectionCaptionLabel;
     // The knob-grid tab pages, in the order tabSpecs lists them. Clicking one shows
     // that page's controls and hides every other knob. Only the active family's
-    // buttons are on screen: the families themselves are the three buttons below,
+    // buttons are on screen: the families themselves are the four buttons below,
     // so nine pages of tabs never fight for one row's width.
     std::array<juce::TextButton, numTabs> tabButtons;
     juce::ComboBox phonePageBox;
     int currentTab = 0;
     int currentTabFamily = 0;
+
+    // A page whose tab is CLICKED WHILE IT IS ALREADY SELECTED is frozen: its knobs
+    // are disabled on the spot, so a touch on the panel cannot move a parameter the
+    // user has just parked. One page at a time - a second click on the same tab
+    // thaws it, and switching pages thaws the one being left, because a frozen page
+    // you can no longer see is a trap rather than a lock. Not part of the saved
+    // state: it is a momentary panel affordance, like a held key.
+    int frozenTab = -1;
     juce::TextButton tabFamilyTapeButton{"TAPE"};
     juce::TextButton tabFamilyFxButton{"FX"};
+    juce::TextButton tabFamilyRackButton{"RACK"};
     juce::TextButton tabFamilySetupButton{"SETUP"};
-    // Sixteen pages under three large families (TAPE / FX / SETUP) - the page
-    // is one subject and at most one row of seven knobs: IN EQ alone carried
+    // Twenty-two pages under four large families (TAPE / FX / RACK / SETUP) - the
+    // page is one subject and at most one row of seven knobs: IN EQ alone carried
     // six band knobs and three corner controls, DRIVE GAIN seven plus the DI
-    // pad, and a page that scrolls is a page nobody dials.
-    static constexpr int tabFamilyCount = 3;
-    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount{9, 6, 3};
+    // pad, and a page that scrolls is a page nobody dials. SETUP is always the
+    // last family, because the engine switches are not part of the sound.
+    static constexpr int tabFamilyCount = 4;
+    static constexpr std::array<int, tabFamilyCount> tabFamilyTabCount{9, 6, 4, 3};
     juce::Label metersHeadingLabel;
     juce::Label metersHintLabel;
     juce::Label compressorLabel;

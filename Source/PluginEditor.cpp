@@ -185,7 +185,8 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
     for (auto& tab : tabButtons)
         attachVoice (tab, UiSoundEngine::Voice::click);
 
-    for (auto* button : { &tabFamilyTapeButton, &tabFamilyFxButton, &tabFamilySetupButton })
+    for (auto* button : { &tabFamilyTapeButton, &tabFamilyFxButton,
+                          &tabFamilyRackButton, &tabFamilySetupButton })
         attachVoice (*button, UiSoundEngine::Voice::click);
 
     // The rest of the panel's keys: the SETTINGS preferences, the four EQ corner
@@ -261,6 +262,68 @@ void FirstAudioProcessorEditor::attachInterfaceSounds()
 
 
 
+void FirstAudioProcessorEditor::handleTabPress (int tab)
+{
+    // A tab is a page selector AND the page's own lock. Pressing the page that is
+    // already showing freezes it - every control on it stops responding - and
+    // pressing it again thaws it. The alternative, re-selecting the page that is
+    // already open, did nothing at all: a user reaching for the tab bar to stop a
+    // knob from being nudged had no gesture for it.
+    if (tab == currentTab)
+    {
+        frozenTab = isCurrentPageFrozen() ? -1 : juce::jlimit (0, numTabs - 1, currentTab);
+        applyFrozenPage();
+        return;
+    }
+
+    setCurrentTab (tab);
+}
+
+void FirstAudioProcessorEditor::applyFrozenPage()
+{
+    const auto frozen = isCurrentPageFrozen();
+
+    // All of them, not only the current page's: switching pages has to be able to
+    // UNDO a freeze that was left on another page's widgets.
+    for (std::size_t i = 0; i < controlCount; ++i)
+    {
+        controls[i].setEnabled (! frozen);
+        controlLabels[i].setEnabled (! frozen);
+    }
+
+    // The page's non-knob furniture follows the knobs. Only the ones on screen are
+    // touched - a hidden widget's enabled flag belongs to the page it will be shown
+    // on - which is exactly the rule updateTabVisibility() uses for visibility.
+    for (auto* member : tabMemberComponents())
+        if (member != nullptr && member->isVisible())
+            member->setEnabled (! frozen);
+
+    // The auto-tune and compressor pages keep their controls in their own arrays.
+    for (std::size_t i = 0; i < autoTuneControls.size(); ++i)
+    {
+        autoTuneControls[i].setEnabled (! frozen);
+        autoTuneControlLabels[i].setEnabled (! frozen);
+    }
+
+    for (std::size_t i = 0; i < compressorControls.size(); ++i)
+    {
+        compressorControls[i].setEnabled (! frozen);
+        compressorControlLabels[i].setEnabled (! frozen);
+    }
+
+    // The caption is the only place a frozen page says so, so it says it in words
+    // rather than by a subtler shade of grey: a dimmed panel with no label reads as
+    // a broken panel, which is the one thing this affordance must not look like.
+    const auto page = static_cast<std::size_t> (juce::jlimit (0, numTabs - 1, currentTab));
+    sectionCaptionLabel.setText (frozen
+                                     ? juce::String ("FROZEN - click the tab again to unlock  |  ")
+                                           + tabSubtitles[page]
+                                     : juce::String (tabSubtitles[page]),
+                                 juce::dontSendNotification);
+
+    repaint (getEditorLayout().controls);
+}
+
 void FirstAudioProcessorEditor::setCurrentTab (int newTab)
 {
     // The tab table and the control list are two views of one set of knobs, and this is
@@ -278,9 +341,15 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
     // invalidated with the page (see the repaint at the foot of this function).
     const auto previousTab = currentTab;
     currentTab = juce::jlimit (0, numTabs - 1, newTab);
+
+    // Opening another page THAWS the one being left. A frozen page you can no
+    // longer see is a trap: the next visit would find a page that ignores every
+    // knob and no visible reason why.
+    frozenTab = -1;
     phonePageBox.setSelectedId (currentTab + 1, juce::dontSendNotification);
     // The section caption: the active page's own one-line subject, from the same
     // index the page itself came from, so the two can never name different pages.
+    // applyFrozenPage() re-states it with the frozen marker when there is one.
     sectionCaptionLabel.setText (tabSubtitles[static_cast<std::size_t> (currentTab)],
                                  juce::dontSendNotification);
     // paint() gates page furniture on this, looked up by NAME, not by index: a
@@ -313,6 +382,11 @@ void FirstAudioProcessorEditor::setCurrentTab (int newTab)
     // styleTabButtons() the selected tab never took its selected colours.
     styleTabButtons();
     resized();
+
+    // Every path into this function arrives with the page thawed, so this is the
+    // one place that puts the page's widgets back into a live state - including
+    // after the page was frozen and the user opened another one.
+    applyFrozenPage();
 
     // A page's own painted furniture has to leave with the page. The MODELS
     // card behind the model picker is drawn by THIS component's paint(), not by
@@ -440,9 +514,9 @@ void FirstAudioProcessorEditor::setTabFamily (int newFamily, bool openFirstPage)
     // The tab table's family column is the single source of truth: each page
     // states which family hosts it, and this strip reads the column rather
     // than a parallel count array that could drift from the table. The assert
-    // pins the CABINET of pages - nine TAPE, six FX, three SETUP - so a page
-    // moved between families is a build error rather than a button that lights
-    // wrong, and the totals cannot drift from the family buttons' labels.
+    // pins the CABINET of pages - nine TAPE, six FX, four RACK, three SETUP - so
+    // a page moved between families is a build error rather than a button that
+    // lights wrong, and the totals cannot drift from the family buttons' labels.
     //
     // Table ORDER is deliberately not asserted. The bar is a FILTER: it walks
     // the table once and shows the pages whose family matches, so AUTOTUNE and
@@ -462,8 +536,9 @@ void FirstAudioProcessorEditor::setTabFamily (int newFamily, bool openFirstPage)
                 return false;
             ++familyCounts[static_cast<std::size_t> (tab.family)];
         }
-        return familyCounts[0] == 9 && familyCounts[1] == 10 && familyCounts[2] == 3;
-    }(), "tab families must contain 9 TAPE, 10 FX and 3 SETUP pages");
+        return familyCounts[0] == 9 && familyCounts[1] == 6
+            && familyCounts[2] == 4 && familyCounts[3] == 3;
+    }(), "tab families must contain 9 TAPE, 6 FX, 4 RACK and 3 SETUP pages");
 
     // A family change only filters the tab bar's visibility and jumps to the
     // family's first page: currentTab is set through setCurrentTab so the
@@ -983,10 +1058,17 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     // A FileChooser owns its asynchronous operation. Releasing it here cancels
     // the picker and discards its callback before the editor or processor refs
     // can be accessed by a later completion.
-    guard.phase ("editor dtor: release the file choosers");
+    // The pickers go NEXT, and each step is named: a native file dialog that is
+    // still open owns a modal loop on the message thread, and closing one from
+    // inside a host's teardown is the step most likely to wait for something that
+    // is no longer there.
+    guard.phase ("editor dtor: release the neural picker");
     neuralFileChooser.reset();
+    guard.phase ("editor dtor: neural picker released");
+    guard.phase ("editor dtor: release the IR picker");
     irFileChooser.reset();
     noiseFileChooser.reset();
+    guard.phase ("editor dtor: file choosers released");
 
     // FileChooser callbacks use SafePointer, so clearing these handles prevents
     // teardown from retaining a native dialog beyond the editor's lifetime.
@@ -995,6 +1077,11 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     noiseFileChooser = {};
 
     guard.phase ("editor dtor: clear the look-and-feels");
+    // 43 components are detached from two look-and-feels one by one below. Each
+    // call is cheap, but the pair that matters is at the end: a LookAndFeel
+    // destroyed while a component still points at it is the crash this block
+    // exists to prevent, and the two phases around it are what tells a crash
+    // report from a hang report.
 
     for (auto& slider : controls)
         slider.setLookAndFeel (nullptr);
@@ -1040,14 +1127,20 @@ FirstAudioProcessorEditor::~FirstAudioProcessorEditor()
     savePresetButton.setLookAndFeel (nullptr);
     deletePresetButton.setLookAndFeel (nullptr);
 
+    guard.phase ("editor dtor: look-and-feels cleared");
+
+    // A save dialog left open is a modal loop the host's close has to unwind: it
+    // is asked to leave first, and the phase says whether that returned.
     if (savePresetWindow != nullptr)
         savePresetWindow->exitModalState (0);
     savePresetWindow.reset();
+    guard.phase ("editor dtor: preset window released");
 #if JUCE_DEBUG
     // Release the inspector before the components it watches are destroyed.
     inspector.reset();
 #endif
 
+    guard.phase ("editor dtor: body done, members follow");
 }
 
 
@@ -2125,6 +2218,7 @@ void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& control
         }
         tabFamilyTapeButton.setVisible (false);
         tabFamilyFxButton.setVisible (false);
+        tabFamilyRackButton.setVisible (false);
         tabFamilySetupButton.setVisible (false);
         phonePageBox.setBounds (controlsPanel.getX() + 12,
                                 controlsPanel.getY() + 33,
@@ -2171,15 +2265,14 @@ void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& control
                                                  tabStrip.families.y,
                                                  tabStrip.families.width,
                                                  tabStrip.families.height);
-    const auto familyButtonWidth = (familyRow.getWidth() - 2 * 6) / tabFamilyCount;
-    tabFamilyTapeButton.setBounds (familyRow.getX(), familyRow.getY(),
-                                   familyButtonWidth, familyRow.getHeight());
-    tabFamilyFxButton.setBounds (familyRow.getX() + familyButtonWidth + 6,
-                                 familyRow.getY(), familyButtonWidth,
-                                 familyRow.getHeight());
-    tabFamilySetupButton.setBounds (familyRow.getX() + 2 * (familyButtonWidth + 6),
-                                    familyRow.getY(), familyButtonWidth,
-                                    familyRow.getHeight());
+    const auto familyButtonWidth = (familyRow.getWidth() - 3 * 6) / tabFamilyCount;
+    const std::array<juce::TextButton*, tabFamilyCount> familyButtons {
+        { &tabFamilyTapeButton, &tabFamilyFxButton,
+          &tabFamilyRackButton, &tabFamilySetupButton } };
+    for (int family = 0; family < tabFamilyCount; ++family)
+        familyButtons[static_cast<std::size_t> (family)]
+            .setBounds (familyRow.getX() + family * (familyButtonWidth + 6),
+                        familyRow.getY(), familyButtonWidth, familyRow.getHeight());
 
     const auto tabBarTop = tabStrip.pages.y;
     constexpr int tabBarHeight = 22;
@@ -2218,6 +2311,7 @@ void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& control
     // a plain always-on strip.
     tabFamilyTapeButton.setVisible (true);
     tabFamilyFxButton.setVisible (true);
+    tabFamilyRackButton.setVisible (true);
     tabFamilySetupButton.setVisible (true);
 }
 
@@ -2566,6 +2660,37 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
 //  widgets had a parent, and a show/hide decision made only at tab-switch time left
 //  them permanently visible on tabs that were not theirs.
 //==============================================================================
+std::vector<juce::Component*> FirstAudioProcessorEditor::tabMemberComponents()
+{
+    // Every control that belongs to a PAGE without being one of the knobs the grid
+    // places: the deck's selectors, the equaliser switches, the engine preferences
+    // and the three file loaders. updateTabVisibility() decides which of them are on
+    // screen; this is the same set, and it is rewritten here rather than read from
+    // there because the two questions are different - "may this be seen" and "may
+    // this be moved" - and a table that answers both would have to say which pages
+    // each entry is on, which the geometry flags already do.
+    return { &diPadLabel, &diPadBox,
+             &tracksLabel, &tracksBox,
+             &inputEqOrderLabel, &inputEqOrderBox,
+             &outputEqOrderLabel, &outputEqOrderBox,
+             &inputEqHpButton, &inputEqLpButton,
+             &outputEqHpButton, &outputEqLpButton,
+             &oversamplingLabel, &oversamplingBox,
+             &languageLabel, &languageBox,
+             &uiSoundsButton, &uiSoundsLabel,
+             &antiPhaseGuardLabel, &antiPhaseGuardButton,
+             &parameterSheetButton, &parameterSheetLabel,
+             &uiScaleLabel, &uiScaleBox,
+             &userThemeButton, &userThemeLabel,
+             &backendLabel, &backendBox,
+             &delayTypeLabel, &delayTypeBox,
+             &delayRateLabel, &delayRateBox,
+             &delaySyncLabel, &delaySyncButton,
+             &loadNeuralButton, &clearNeuralButton, &neuralStatusLabel,
+             &loadIrButton, &clearIrButton, &irStatusLabel,
+             &loadNoiseButton, &clearNoiseButton, &noiseStatusLabel };
+}
+
 void FirstAudioProcessorEditor::updateTabVisibility (const ControlGeometry& geometry)
 {
     for (std::size_t i = 0; i < controlCount; ++i)

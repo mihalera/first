@@ -836,11 +836,37 @@ void J37LookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& bu
     g.setColour (palette.knobEdge.withAlpha (0.85f));
     g.drawRoundedRectangle (thumb, thumb.getHeight() * 0.5f, 1.0f);
 
-    // State text on the thumb, fitted to the thumb. The thumb is the authoritative
-    // state readout, so its text must never be the thing that gets clipped.
-    g.setColour (isOn ? palette.gaugeInk.withAlpha (0.95f) : palette.secondary);
-    g.setFont (shrinkingFont (isOn ? "ON" : "OFF", 7.0f, juce::Font::bold, thumb.getWidth()));
-    g.drawText (isOn ? "ON" : "OFF", thumb, juce::Justification::centred, true);
+    // State text. It rides the THUMB while the thumb can hold it, and the track's
+    // free half when it cannot - which is the header's 22 px switch on a phone,
+    // where the thumb is 9 px wide and "OFF" at the face's floor of 7 px is
+    // thirteen: the word spilled out of the thumb and onto the groove, and that
+    // was the text over the pill's outline in the phone report. A state word that
+    // does not fit anywhere is dropped rather than printed through the edge -
+    // the lamp still shows the state.
+    const auto stateWord = isOn ? "ON" : "OFF";
+    const auto thumbFont = shrinkingFont (stateWord, 7.0f, juce::Font::bold, thumb.getWidth());
+    const auto freeHalf = juce::Rectangle<float> (glide < 0.5f ? track.getCentreX() : track.getX(),
+                                                  track.getY(), track.getWidth() * 0.5f,
+                                                  track.getHeight()).reduced (1.5f, 0.0f);
+    const auto trackFont = shrinkingFont (stateWord, 6.0f, juce::Font::bold, freeHalf.getWidth());
+
+    const auto wordFitsThumb = juce::GlyphArrangement::getStringWidth (thumbFont, stateWord)
+                               <= thumb.getWidth() - 1.0f;
+    const auto wordFitsTrack = juce::GlyphArrangement::getStringWidth (trackFont, stateWord)
+                               <= freeHalf.getWidth() - 1.0f;
+
+    if (wordFitsThumb)
+    {
+        g.setColour (isOn ? palette.gaugeInk.withAlpha (0.95f) : palette.secondary);
+        g.setFont (thumbFont);
+        g.drawText (stateWord, thumb, juce::Justification::centred, true);
+    }
+    else if (wordFitsTrack)
+    {
+        g.setColour (isOn ? palette.gaugeInk.withAlpha (0.95f) : palette.secondary);
+        g.setFont (trackFont);
+        g.drawText (stateWord, freeHalf, juce::Justification::centred, true);
+    }
 
     // Hover ring for mouse/keyboard focus feedback.
     if (shouldDrawButtonAsHighlighted || button.hasKeyboardFocus (false))

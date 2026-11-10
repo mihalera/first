@@ -809,7 +809,9 @@ void FirstAudioProcessorEditor::setUpTabButtons() {
         button.setButtonText(spec.name);
         setTip(button, spec.hint);
         button.setLookAndFeel(&customLookAndFeel);
-        button.onClick = [this, tab] { setCurrentTab(tab); };
+        // handleTabPress(), not setCurrentTab(): a second press on the page that is
+        // already showing freezes it instead of doing nothing.
+        button.onClick = [this, tab] { handleTabPress(tab); };
         addAndMakeVisible(button);
     }
 
@@ -825,10 +827,11 @@ void FirstAudioProcessorEditor::setUpTabButtons() {
     addAndMakeVisible (phonePageBox);
     phonePageBox.setVisible (false);
 
-    // The three tab families share one row above the page buttons. The grid
+    // The four tab families share one row above the page buttons. The grid
     // below reflows to accommodate them.
     const std::array<juce::TextButton *, tabFamilyCount> familyButtons{
-        &tabFamilyTapeButton, &tabFamilyFxButton, &tabFamilySetupButton};
+        &tabFamilyTapeButton, &tabFamilyFxButton, &tabFamilyRackButton,
+        &tabFamilySetupButton};
     for (std::size_t f = 0; f < familyButtons.size(); ++f) {
         auto &button = *familyButtons[f];
         button.setComponentID ("mibox.family." + juce::String (static_cast<int> (f)));
