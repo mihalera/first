@@ -26,6 +26,7 @@
 #include "Net/OscSurface.h"
 #include "OscBall.h"
 #include "DSP/ModalVoice.h"
+#include "GUI/OscRingMetrics.h"
 
 #include <cmath>
 #include <cstdint>
@@ -627,6 +628,75 @@ void checkModalVoice()
     check(voice.isSilent(), "reset leaves no tail behind");
 }
 
+// The ring's note plate, at every dial size. The plate is what says which note
+// the ball just struck, and it used to be floored at 48 x 24 px regardless of
+// the ring: on the deck's ~66 px ring that is a card three quarters of the dial
+// wide with the note set at 12 px on it, which is the "the note table is too
+// large" report from Windows. Nothing here draws, so the arithmetic is pinned on
+// its own: the card is a share of the radius at every size, its caps only bind
+// on the desk ring, its floors only on the smallest deck ring, and the note's
+// type is solved from the card rather than from the dial.
+void checkRingDisplayPlate()
+{
+    using j37panel::computeOscDisplayPlate;
+    using j37panel::oscNoteFontHeight;
+    using j37panel::oscNoteTextHeight;
+
+    bool insideDial = true;
+    bool proportional = true;
+    bool floorsHold = true;
+    bool capsHold = true;
+    bool monotonic = true;
+    bool noteFits = true;
+
+    j37panel::OscDisplayPlate previous = computeOscDisplayPlate (0.0f);
+
+    for (float ringRadius = 12.0f; ringRadius <= 240.0f; ringRadius += 0.25f)
+    {
+        const auto plate = computeOscDisplayPlate (ringRadius);
+
+        // Below ~30 px of radius the plate's own floors bind, and a floor is by
+        // definition larger than the dial is wide there; those two properties are
+        // only meaningful where the proportional term is what decides the size.
+        const auto proportionalBinds = ringRadius * 1.05f >= j37panel::oscPlateMinWidth;
+        insideDial = insideDial && (! proportionalBinds
+                                    || (plate.width <= ringRadius * 2.0f
+                                        && plate.height <= ringRadius * 2.0f));
+        proportional = proportional && (! proportionalBinds
+                                        || plate.width <= ringRadius * 1.06f + 1.0e-4f);
+        floorsHold = floorsHold && plate.width >= j37panel::oscPlateMinWidth
+                                && plate.height >= j37panel::oscPlateMinHeight;
+        capsHold = capsHold && plate.width <= j37panel::oscPlateMaxWidth + 1.0e-4f
+                            && plate.height <= j37panel::oscPlateMaxHeight + 1.0e-4f;
+        monotonic = monotonic && plate.width >= previous.width - 1.0e-4f
+                              && plate.height >= previous.height - 1.0e-4f;
+        noteFits = noteFits && oscNoteFontHeight (plate) >= 7.0f
+                            && oscNoteFontHeight (plate) <= oscNoteTextHeight (plate);
+
+        previous = plate;
+    }
+
+    check(insideDial, "the note plate fits inside the ring at every size");
+    check(proportional, "the plate is a share of the radius, not a fixed size");
+    check(floorsHold, "the plate keeps its legibility floors");
+    check(capsHold, "the plate stops growing at its ceiling");
+    check(monotonic, "a bigger ring never carries a smaller plate");
+    check(noteFits, "the note's type always fits the plate it is printed on");
+
+    // The two sizes the panel actually asks for: a desktop deck ring and the
+    // landscape deck's. Both used to come out at the 48 x 24 floor.
+    const auto deck = computeOscDisplayPlate (33.0f);
+    const auto desk = computeOscDisplayPlate (39.0f);
+    std::printf ("  deck ring 66 px: plate %.1f x %.1f, note %.1f px \\n",
+                 deck.width, deck.height, oscNoteFontHeight (deck));
+    std::printf ("  desk ring 78 px: plate %.1f x %.1f, note %.1f px \\n",
+                 desk.width, desk.height, oscNoteFontHeight (desk));
+    check(deck.width < 40.0f && deck.height < 21.0f,
+          "a 66 px deck ring no longer carries a 48 x 24 card");
+    check(oscNoteFontHeight (deck) < 11.0f,
+          "and its note is no longer set at 12 px");
+}
+
 } // namespace
 
 int main()
@@ -642,6 +712,7 @@ int main()
     checkSurface();
     checkBallPhysics();
     checkModalVoice();
+    checkRingDisplayPlate();
 
     std::printf("\n%d check(s), %d failed\n", checks, failures);
     return failures == 0 ? 0 : 1;
