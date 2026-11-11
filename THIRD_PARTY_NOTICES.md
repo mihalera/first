@@ -38,7 +38,7 @@ column names the file in the tree that carries the text.
 | **nlohmann/json** - Niels Lohmann | `v3.12.0` | MIT, Copyright (c) 2013-2025 Niels Lohmann | `ThirdParty/nlohmann_json/LICENSE.MIT` |
 | **pocketfft** - Max-Planck-Society | `c90e55b3` | BSD 3-Clause, Copyright (C) 2010-2018 Max-Planck-Society | `ThirdParty/pocketfft/LICENSE.md` |
 | **signalsmith-stretch** - Signalsmith Audio | `1.4.0` | MIT, Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd. | `ThirdParty/signalsmith-stretch/LICENSE.txt` |
-| **signalsmith-linear** (inside the stretch checkout) | `0.6.6` | MIT, Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd. | `ThirdParty/signalsmith-stretch/signalsmith-linear/LICENSE.txt` |
+| **signalsmith-linear** | `0.6.6` | MIT, Copyright (c) 2022 Geraint Luff / Signalsmith Audio Ltd. | `ThirdParty/signalsmith-linear/LICENSE.txt` |
 | **xsimd** - xtensor-stack | `14.3.0` | BSD 3-Clause, Copyright (c) 2016 Johan Mabille, Sylvain Corlay, Wolf Vollprecht, Martin Renou; 2016 QuantStack; 2018 Serge Guelton | `ThirdParty/xsimd/LICENSE` |
 
 **Eigen is the one MPL-2.0 component here**, and MPL is file-level copyleft rather than
@@ -116,8 +116,8 @@ the binary just as JUCE's does.
 ### Optional renderer backends
 
 Fetched only when `J37_RENDER_BACKEND` selects one of them. None of these is in
-the default build. `sokol_gfx` in the table above is fetched by every configure
-(it is a header-only checkout in a single directory) but linked only when `SOKOL`
+the default build. `sokol_gfx` in the table above is a submodule at `ThirdParty/sokol`
+(a header-only checkout in a single directory) but linked only when `SOKOL`
 selects it, which is the same rule the row below states for bgfx.
 
 | Component | Pin | Licence | Upstream |
