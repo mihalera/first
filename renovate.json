@@ -8,7 +8,9 @@
     "custom.regex",
     "devcontainer",
     "gradle",
-    "dockerfile"
+    "dockerfile",
+    "github-actions",
+    "gitsubmodule"
   ],
   "schedule": [
     "before 6am on monday"
