@@ -1340,7 +1340,7 @@ function(j37_setup_graphics_backend target)
         CPMAddPackage(
             NAME wgpu_native_source
             GITHUB_REPOSITORY gfx-rs/wgpu-native
-            GIT_TAG 250eeb67f8d091bf7dbc4fc253293d10900cff64
+            GIT_TAG 589e6caa4e9fa5596f601e82ca5d3937a1afc829
             GIT_SUBMODULES_RECURSE YES
             DOWNLOAD_ONLY YES)
 
