@@ -53,7 +53,7 @@ jobs:
         qemu-riscv64-static --version
         riscv64-linux-gnu-gcc --version | head -1
     - name: Checkout xsimd
-      uses: actions/checkout@v6
+      uses: actions/checkout@v7
     - name: Setup
       run: >
         cmake -S . -B _build

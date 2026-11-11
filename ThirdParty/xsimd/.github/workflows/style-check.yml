@@ -8,7 +8,7 @@ jobs:
     name: Format check
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - run: sudo apt install clang-format
     - run: |
         git fetch origin ${{ github.event.pull_request.base.sha }}
@@ -19,7 +19,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Check inline keyword usage
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - run: sudo apt install clang-tools
     - run: sh ./test/check_inline_specifier.sh .
 
@@ -27,7 +27,7 @@ jobs:
     runs-on: ubuntu-latest
     name: Check unused standard includes
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - run: pip install diskarzhan
     - run: diskarzhan `find -name '*.[ch]pp'`
 
@@ -35,7 +35,7 @@ jobs:
     name: Clang-tidy check (x86_64)
     runs-on: ubuntu-latest
     steps:
-    - uses: actions/checkout@v6
+    - uses: actions/checkout@v7
     - run: sudo apt install clang-tidy
     - name: Configure
       run: cmake -B _build
