@@ -46,7 +46,7 @@
       ],
       "datasourceTemplate": "git-refs",
       "depNameTemplate": "https://github.com/{{{depName}}}.git",
-      "currentValueTemplate": ""
+      "currentValueTemplate": "HEAD"
     },
     {
       "customType": "regex",
