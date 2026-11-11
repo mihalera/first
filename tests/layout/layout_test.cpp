@@ -782,6 +782,21 @@ int main()
                     check (disjoint, "no two tiles overlap", page.name, W, H);
                 }
 
+            // 1b. ONE size for the whole page. A page whose tiles differ is a knob
+            //     drawn larger than the ones beside it - the panel's most visible
+            //     layout defect, and one every check above misses: a bigger tile is
+            //     still a legal, non-overlapping, drawable tile. The report that
+            //     started this was a single knob (ST LINK) standing visibly larger
+            //     than its six neighbours, and this is the arithmetic that says
+            //     whether the GRID did it or the widget did.
+            {
+                bool uniform = true;
+                for (const auto& cell : built.cells)
+                    uniform = uniform && cell.getWidth() == tileW && cell.getHeight() == tileH;
+
+                check (uniform, "every knob on a page gets the same tile", page.name, W, H);
+            }
+
             // 2. The tile's height is the SOLVED one: the smallest at which the
             //    cap stops growing, or the most the row can give. Never wasteful,
             //    never a pixel short of what the row was offering.
