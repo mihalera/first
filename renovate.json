@@ -42,10 +42,11 @@
         "/^cmake/J37Tests.cmake$/"
       ],
       "matchStrings": [
-        "CPMAddPackage\\([^)]*?GITHUB_REPOSITORY\\s+(?<depName>[\\w.-]+/[\\w.-]+)[^)]*?GIT_TAG\\s+(?<currentValue>[0-9a-f]{7,40})\\b"
+        "CPMAddPackage\\([^)]*?GITHUB_REPOSITORY\\s+(?<depName>[\\w.-]+/[\\w.-]+)[^)]*?GIT_TAG\\s+(?<currentDigest>[0-9a-f]{7,40})\\b"
       ],
-      "datasourceTemplate": "github-commits",
-      "versioningTemplate": "git"
+      "datasourceTemplate": "git-refs",
+      "depNameTemplate": "https://github.com/{{{depName}}}.git",
+      "currentValueTemplate": ""
     },
     {
       "customType": "regex",
