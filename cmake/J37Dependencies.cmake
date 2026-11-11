@@ -614,7 +614,7 @@ if(NOT TARGET farbot)
 CPMAddPackage(
     NAME farbot
     GITHUB_REPOSITORY hogliux/farbot
-    GIT_TAG d8f132c2e2ac44b379632e452700abe71ca3a92e
+    GIT_TAG 7a4c5d6199768bfc9c2fa5a4f53dfdbbedfbfcd7
     DOWNLOAD_ONLY YES)
 
 j37_declare_header_only_library(farbot "${farbot_SOURCE_DIR}/include")
