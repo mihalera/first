@@ -520,7 +520,7 @@ if(J37_NAMCORE)
         CPMAddPackage(
             NAME namcore
             GITHUB_REPOSITORY sdatkinson/NeuralAmpModelerCore
-            GIT_TAG 0b3d3c97b0859a3a8c92a8628c4dd89a25eb5842   # the v0.6.0 tag
+            GIT_TAG d3189ed482ded880c128bf312941266c4fa5ceec   # the v0.6.0 tag
             DOWNLOAD_ONLY YES)
         set(J37_NAMCORE_ROOT "${namcore_SOURCE_DIR}")
     endif()
