@@ -2,3 +2,33 @@
 	path = JUCE
 	url = https://github.com/juce-framework/JUCE.git
 	branch = 9.0.5
+[submodule "ThirdParty/farbot"]
+	path = ThirdParty/farbot
+	url = https://github.com/hogliux/farbot.git
+[submodule "ThirdParty/pocketfft"]
+	path = ThirdParty/pocketfft
+	url = https://github.com/mreineck/pocketfft.git
+[submodule "ThirdParty/nlohmann_json"]
+	path = ThirdParty/nlohmann_json
+	url = https://github.com/nlohmann/json.git
+[submodule "ThirdParty/xsimd"]
+	path = ThirdParty/xsimd
+	url = https://github.com/xtensor-stack/xsimd.git
+[submodule "ThirdParty/glm"]
+	path = ThirdParty/glm
+	url = https://github.com/g-truc/glm.git
+[submodule "ThirdParty/RTNeural"]
+	path = ThirdParty/RTNeural
+	url = https://github.com/jatinchowdhury18/RTNeural.git
+[submodule "ThirdParty/namcore"]
+	path = ThirdParty/namcore
+	url = https://github.com/sdatkinson/NeuralAmpModelerCore.git
+[submodule "ThirdParty/eigen"]
+	path = ThirdParty/eigen
+	url = https://gitlab.com/libeigen/eigen.git
+[submodule "ThirdParty/dattorro-verb"]
+	path = ThirdParty/dattorro-verb
+	url = https://github.com/el-visio/dattorro-verb.git
+[submodule "ThirdParty/dr_libs"]
+	path = ThirdParty/dr_libs
+	url = https://github.com/mackron/dr_libs.git
