@@ -5,6 +5,8 @@
   "enabledManagers": [
     "custom.regex",
     "devcontainer",
+    "github-actions",
+    "gitsubmodule",
     "gradle",
     "dockerfile"
   ],
@@ -12,6 +14,13 @@
   "timezone": "Etc/UTC",
   "prConcurrentLimit": 10,
   "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["minor", "patch"],
+      "matchManagers": ["github-actions"],
+      "automerge": true
+    }
+  ],
   "customManagers": [
     {
       "customType": "regex",
@@ -65,4 +74,4 @@
       "versioningTemplate": "gradle"
     }
   ]
-}
+}
