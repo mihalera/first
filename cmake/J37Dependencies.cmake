@@ -154,7 +154,12 @@ endfunction()
 #    ThirdParty/farbot/              hogliux/farbot  @ d8f132c2 (include/)
 #    ThirdParty/pocketfft/           mreineck/pocketfft @ c90e55b3 (root header)
 #    ThirdParty/signalsmith-stretch/ Signalsmith-Audio/signalsmith-stretch @ 1.4.0
-#                                    + sibling signalsmith-linear @ 0.6.6 inside
+#    ThirdParty/signalsmith-linear/  Signalsmith-Audio/linear @ 0.6.6 - the
+#                                    stretch header does #include
+#                                    "signalsmith-linear/stft.h", and ThirdParty/
+#                                    on the include path is what answers it when
+#                                    the two are sibling CHECKOUTS
+#    ThirdParty/sokol/               floooh/sokol @ 93aa187b (sokol_gfx.h)
 #    ThirdParty/nlohmann_json/       nlohmann/json @ v3.12.0 (single_include/)
 #    ThirdParty/xsimd/               xtensor-stack/xsimd @ 14.3.0 (include/)
 #    ThirdParty/glm/                 g-truc/glm @ 1.0.3 (repo root)
@@ -184,6 +189,17 @@ endif()
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/signalsmith-stretch/include/signalsmith-stretch/signalsmith-stretch.h")
     j37_declare_header_only_library(signalsmith-stretch
         "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/signalsmith-stretch/include")
+
+    # The stretch root header does #include "signalsmith-linear/stft.h". A quoted
+    # include resolves against the includING file's own directory first, so the
+    # sibling has to be reachable BY THAT NAME: ThirdParty/ on the include path
+    # makes ThirdParty/signalsmith-linear/stft.h answer it. The CPM fallback
+    # clones linear INSIDE the stretch checkout instead (see its SOURCE_DIR),
+    # which is why only this branch needs the second include directory.
+    if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/signalsmith-linear/stft.h")
+        target_include_directories(signalsmith-stretch SYSTEM INTERFACE
+            "${CMAKE_CURRENT_LIST_DIR}/..")
+    endif()
 endif()
 
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/nlohmann_json/single_include/nlohmann/json.hpp")
@@ -199,6 +215,14 @@ endif()
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/glm/glm/glm.hpp")
     j37_declare_header_only_library(glm
         "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/glm")
+endif()
+
+if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/sokol/sokol_gfx.h")
+    # sokol_gfx.h with sokol_glue.h, sokol_log.h and sokol_time.h beside it, from
+    # the submodule at ThirdParty/sokol - the same commit the CPM fallback below
+    # pins. Header-only, so the include path is the whole integration.
+    j37_declare_header_only_library(sokol_gfx
+        "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/sokol")
 endif()
 
 if(EXISTS "${CMAKE_CURRENT_LIST_DIR}/../ThirdParty/RTNeural/RTNeural/RTNeural.h")
@@ -1207,6 +1231,8 @@ target_link_libraries(q_dsp INTERFACE cycfi_infra)
 #  changes, not versions - so this is pinned to the master head, the same
 #  choice dattorro_verb makes.
 # ------------------------------------------------------------------------------
+#  Vendored copy wins (block at the top of this file); CPM is the fallback.
+if(NOT TARGET sokol_gfx)
 CPMAddPackage(
     NAME sokol_gfx
     GITHUB_REPOSITORY floooh/sokol
@@ -1214,6 +1240,7 @@ CPMAddPackage(
     DOWNLOAD_ONLY YES)
 
 j37_declare_header_only_library(sokol_gfx "${sokol_gfx_SOURCE_DIR}")
+endif()
 
 # ------------------------------------------------------------------------------
 #  GLM - g-truc/glm, OpenGL Mathematics (MIT): the header-only C++ maths

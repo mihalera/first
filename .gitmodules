@@ -46,3 +46,15 @@
 	path = ThirdParty/libebur128
 	url = https://github.com/jiixyj/libebur128.git
 	branch = master
+[submodule "ThirdParty/sokol"]
+	path = ThirdParty/sokol
+	url = https://github.com/floooh/sokol.git
+	branch = master
+[submodule "ThirdParty/signalsmith-stretch"]
+	path = ThirdParty/signalsmith-stretch
+	url = https://github.com/Signalsmith-Audio/signalsmith-stretch.git
+	branch = main
+[submodule "ThirdParty/signalsmith-linear"]
+	path = ThirdParty/signalsmith-linear
+	url = https://github.com/Signalsmith-Audio/linear.git
+	branch = main

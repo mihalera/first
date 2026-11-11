@@ -420,12 +420,18 @@ EOF
 # Source/DSP/NoiseDecoder.h declares its decode inline, so with dr_wav present this
 # script instantiates it against the library - a shape tests/dsp's noise_library
 # binary checks arithmetically and no JUCE build compiles otherwise.
+# ThirdParty/ itself is on the list for the sibling signalsmith-linear
+# checkout: the stretch ROOT header includes "signalsmith-linear/stft.h" by
+# that NAME, and a quoted include resolves against the includING file's
+# directory first - so the name resolves through ThirdParty/ now that linear
+# is its own checkout rather than a directory inside the stretch one.
 "${CXX}" -std=c++17 -fsyntax-only -Wall -Wextra -Wno-unused-parameter \
     -I "${REPO}/Source" -I "${JUCE_MODULES}" \
     -I "${REPO}/ThirdParty/pocketfft" \
     -I "${REPO}/ThirdParty/dattorro-verb" \
     -I "${REPO}/ThirdParty/dr_libs" \
     -I "${REPO}/ThirdParty/signalsmith-stretch/include" \
+    -I "${REPO}/ThirdParty" \
     -DJ37_CORRECTOR_USE_STRETCH=1 \
     -DJUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1 \
     -DJUCE_MODULE_AVAILABLE_juce_core=1 \

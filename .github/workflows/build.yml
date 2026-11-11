@@ -441,6 +441,14 @@ jobs:
       - name: Check the link line against the code
         run: python3 tests/linkline/check_linkline.py
 
+      # Every third-party library is a submodule pinned by a gitlink - no
+      # vendored copies, no "the CPM block says 1.4.0 and the checked-in tree is
+      # whatever someone copied in". This checks both directions (a directory
+      # without a declaration, a declaration without a directory) and compares
+      # every full-commit CPM pin with the gitlink the superproject records.
+      - name: Check every third-party library is a submodule
+        run: python3 tests/dependencies/check_submodules.py
+
       - name: Check configure-time dependency fetches
         run: python3 tests/dependencies/check_unused_rack_fetch.py
 

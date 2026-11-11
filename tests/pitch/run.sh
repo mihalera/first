@@ -55,6 +55,12 @@ fi
 # rather than described - the numbers behind the option's OFF default are printed
 # by this run.
 STRETCH="${REPO}/ThirdParty/signalsmith-stretch/include"
+# The stretch ROOT header does #include "signalsmith-linear/stft.h", and a
+# quoted include resolves against the includING file's directory first - which
+# is the stretch checkout, not an include directory. signalsmith-linear is its
+# own checkout beside it, so ThirdParty/ has to be on the include path for that
+# name to resolve; the plugin's CMake does the same for the same reason.
+LINEAR="${REPO}/ThirdParty"
 
 if [ -f "${STRETCH}/signalsmith-stretch/signalsmith-stretch.h" ]; then
     echo
@@ -62,7 +68,7 @@ if [ -f "${STRETCH}/signalsmith-stretch/signalsmith-stretch.h" ]; then
 
     "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
         "${sanitize_flags[@]}" -DJ37_CORRECTOR_USE_STRETCH=1 \
-        -I "${HERE}" -I "${BUILD}" -I "${SOURCE}" -I "${STRETCH}" \
+        -I "${HERE}" -I "${BUILD}" -I "${SOURCE}" -I "${STRETCH}" -I "${LINEAR}" \
         "${HERE}/pitch_test.cpp" -o "${BUILD}/pitch_test_stretch"
 
     "${BUILD}/pitch_test_stretch"
