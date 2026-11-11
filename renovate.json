@@ -10,7 +10,7 @@
     "gradle",
     "dockerfile",
     "github-actions",
-    "gitsubmodule"
+    "git-submodules"
   ],
   "schedule": [
     "before 6am on monday"
