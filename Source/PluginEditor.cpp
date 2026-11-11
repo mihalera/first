@@ -30,6 +30,7 @@
 // from (Source/GUI/PanelTabs.h), and the knob table with the sentence every
 // parameter shows (Source/GUI/PanelText.h). The using block below is what every
 // call site in this file already reads through.
+#include "GUI/ChipCaption.h"
 #include "GUI/PanelTabs.h"
 #include "GUI/PanelPaint.h"
 #include "GUI/PanelText.h"
@@ -2299,6 +2300,13 @@ void FirstAudioProcessorEditor::placeTabBar (const juce::Rectangle<int>& control
             tabButtons[static_cast<std::size_t> (tab)].setVisible (false);
             continue;
         }
+        // Tagged so the paint routine can tell a page chip from every other key on
+        // the panel: a chip's caption is fitted to its own button (see
+        // Source/GUI/ChipCaption.h), and the size has to be solved where the text
+        // bounds are known. JUCE 9's TextButton carries no font of its own, so the
+        // tag is how the two ends agree.
+        tabButtons[static_cast<std::size_t> (tab)]
+            .setComponentID (j37panel::chipCaptionComponentId);
         tabButtons[static_cast<std::size_t> (tab)]
             .setBounds (tabBarLeft + placedTabIndex * (tabButtonWidth + tabGap),
                         tabBarTop, tabButtonWidth, tabBarHeight);

@@ -11,6 +11,7 @@
 #include "PluginEditor.h"
 #include <cmath>
 #include <cstring>
+#include "GUI/ChipCaption.h"
 #include "GUI/PanelPaint.h"
 #include "GUI/PanelAssets.h"
 
@@ -1078,7 +1079,17 @@ void J37LookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button
         }
     }
 
-    g.setFont (shrinkingFont (text, 12.0f, juce::Font::bold, bounds.getWidth()));
+    // A page chip is fitted to its own button before it is drawn (see
+    // Source/GUI/ChipCaption.h); every other key keeps the deck's own size. The
+    // ellipsis stays ON either way: a caption that cannot fit is shortened
+    // visibly, never clipped at the button's edge - which is what the clamped
+    // shrink used to do to the nine-page bar's longer names.
+    const auto asked = button.getComponentID() == j37panel::chipCaptionComponentId
+                           ? j37panel::fittedChipCaptionHeight (text.toRawUTF8(), 12.0f,
+                                                                j37panel::chipCaptionMinHeight,
+                                                                bounds.getWidth())
+                           : 12.0f;
+    g.setFont (shrinkingFont (text, asked, juce::Font::bold, bounds.getWidth()));
     g.drawText (text, bounds, juce::Justification::centred, true);
 
     if (button.hasKeyboardFocus (false))
@@ -1279,8 +1290,16 @@ void J37InlineLookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& 
         ink = ink.brighter (0.10f);
 
     g.setColour (ink);
-    g.setFont (shrinkingFont (text, 11.0f, juce::Font::bold, bounds.getWidth()));
-    g.drawText (text, bounds, juce::Justification::centred, false);
+    // Same rule as the deck's keys above: a tagged page chip is fitted to its
+    // own button, everything else keeps this look and feel's size, and a caption
+    // that still does not fit is ellipsised rather than silently clipped.
+    const auto asked = button.getComponentID() == j37panel::chipCaptionComponentId
+                           ? j37panel::fittedChipCaptionHeight (text.toRawUTF8(), 11.0f,
+                                                                j37panel::chipCaptionMinHeight,
+                                                                bounds.getWidth())
+                           : 11.0f;
+    g.setFont (shrinkingFont (text, asked, juce::Font::bold, bounds.getWidth()));
+    g.drawText (text, bounds, juce::Justification::centred, true);
 }
 
 void J37InlineLookAndFeel::drawToggleButton (juce::Graphics& g, juce::ToggleButton& button,
