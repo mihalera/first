@@ -2,30 +2,58 @@
   "$schema": "https://docs.renovatebot.com/renovate-schema.json",
   "extends": ["config:recommended"],
   "branchPrefix": "renovate-bot/",
-  "enabledManagers": ["custom.regex", "devcontainer"],
+  "enabledManagers": [
+    "custom.regex",
+    "devcontainer",
+    "github-actions",
+    "gitsubmodule",
+    "gradle",
+    "dockerfile"
+  ],
   "schedule": ["before 6am on monday"],
   "timezone": "Etc/UTC",
-  "prConcurrentLimit": 5,
+  "prConcurrentLimit": 10,
+  "labels": ["dependencies"],
+  "packageRules": [
+    {
+      "matchUpdateTypes": ["minor", "patch"],
+      "matchManagers": ["github-actions"],
+      "automerge": true
+    }
+  ],
   "customManagers": [
     {
       "customType": "regex",
       "description": "Update version-tagged CPM dependencies",
       "managerFilePatterns": [
-        "/^cmake\\/J37Dependencies\\.cmake$/",
-        "/^cmake\\/J37Tests\\.cmake$/"
+        "/^cmake\\\\/J37Dependencies\\\\.cmake$/",
+        "/^cmake\\\\/J37Tests\\\\.cmake$/"
       ],
       "matchStrings": [
-        "CPMAddPackage\\([^)]*?GITHUB_REPOSITORY\\s+(?<depName>[\\w.-]+/[\\w.-]+)[^)]*?GIT_TAG\\s+(?<currentValue>v?\\d+\\.\\d+(?:\\.\\d+)?(?:-[\\w.-]+)?(?:\\+[\\w.-]+)?)"
+        "CPMAddPackage\\\\([^)]*?GITHUB_REPOSITORY\\\\s+(?<depName>[\\\\w.-]+/[\\\\w.-]+)[^)]*?GIT_TAG\\\\s+(?<currentValue>v?\\\\d+\\\\.\\\\d+(?:\\\\.\\\\d+)?(?:-[\\\\w.-]+)?(?:\\\\+[\\\\w.-]+)?)"
       ],
       "datasourceTemplate": "github-tags",
       "versioningTemplate": "semver-coerced"
     },
     {
       "customType": "regex",
-      "description": "Update the pinned CPM.cmake release",
-      "managerFilePatterns": ["/^cmake\\/J37Dependencies\\.cmake$/"],
+      "description": "Update commit-pinned CPM dependencies",
+      "managerFilePatterns": [
+        "/^cmake\\\\/J37Dependencies\\\\.cmake$/",
+        "/^cmake\\\\/J37Tests\\\\.cmake$/"
+      ],
       "matchStrings": [
-        "set\\(CPM_DOWNLOAD_VERSION\\s+(?<currentValue>\\d+\\.\\d+\\.\\d+)\\)"
+        "CPMAddPackage\\\\([^)]*?GITHUB_REPOSITORY\\\\s+(?<depName>[\\\\w.-]+/[\\\\w.-]+)[^)]*?GIT_TAG\\\\s+(?<currentValue>[0-9a-f]{7,40})\\\\b"
+      ],
+      "datasourceTemplate": "github-commits",
+      "versioningTemplate": "git"
+    },
+    {
+      "customType": "regex",
+      "description": "Update the pinned CPM.cmake release",
+      "managerFilePatterns": ["/^cmake\\\\/J37Dependencies\\\\.cmake$/"],
+      "matchStrings": [
+        "set\\\\(CPM_DOWNLOAD_VERSION\\\\s+(?<currentValue>\\\\d+\\\\.\\\\d+\\\\.\\\\d+)\\\\)"
       ],
       "depNameTemplate": "CPM.cmake",
       "packageNameTemplate": "cpm-cmake/CPM.cmake",
@@ -36,14 +64,14 @@
     {
       "customType": "regex",
       "description": "Update the Gradle distribution used by Android CI",
-      "managerFilePatterns": ["/^\\.github\\/workflows\\/build\\.yml$/"],
+      "managerFilePatterns": ["/^\\\\.github\\\\/workflows\\\\/build\\\\.yml$/"],
       "matchStrings": [
-        "gradle-(?<currentValue>\\d+[.]\\d+([.]\\d+)?)",
-        "--gradle-version\\s+(?<currentValue>\\d+[.]\\d+([.]\\d+)?)"
+        "gradle-(?<currentValue>\\\\d+[.]\\\\d+([.]\\\\d+)?)",
+        "--gradle-version\\\\s+(?<currentValue>\\\\d+[.]\\\\d+([.]\\\\d+)?)"
       ],
       "depNameTemplate": "gradle",
       "datasourceTemplate": "gradle-version",
       "versioningTemplate": "gradle"
     }
   ]
-}
+}
