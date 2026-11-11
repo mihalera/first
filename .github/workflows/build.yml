@@ -2072,7 +2072,7 @@ jobs:
         with:
           # Current stable Gradle. AGP 9.5 in android/build.gradle requires
           # Gradle 9.6.0 or newer.
-          gradle-version: '9.8.2'
+          gradle-version: '9.9.1'
 
       - name: Build the Android APK
         run: |
