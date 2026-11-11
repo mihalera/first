@@ -767,7 +767,7 @@ CPMAddPackage(
 CPMAddPackage(
     NAME pffft
     GITHUB_REPOSITORY marton78/pffft
-    GIT_TAG e1dbebc9fbf74247d12f094accbbc470aaee8715
+    GIT_TAG efc1dd2de6c3562fc464f905d37d9281f08a20dd
     EXCLUDE_FROM_ALL YES
     SYSTEM YES
     OPTIONS
