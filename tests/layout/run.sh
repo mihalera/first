@@ -42,3 +42,30 @@ fi
     "${HERE}/layout_test.cpp" -o "${BUILD}/layout_test"
 
 "${BUILD}/layout_test"
+
+# ---------------------------------------------------------------------------
+#  The page chips' captions. The knob harness above measures the grid; this one
+#  measures the bar above it: for every page and every supported panel width, the
+#  caption has to fit the button the bar gives it. It exists because the paint
+#  routine clamped its shrink and then clipped the overflow, which no check could
+#  see - a clipped caption is neither a crash nor a warning.
+# ---------------------------------------------------------------------------
+SRC="${HERE}/../../Source"
+"${CXX}" -std=c++17 -O1 -Wall -Wextra -I "${SRC}"     "${HERE}/chip_captions.cpp" -o "${BUILD}/chip_captions"
+"${BUILD}/chip_captions"
+
+# A geometry check cannot see which font a button carries, so the two lines that
+# make the geometry true are pinned too: the bar sizes each caption, and the paint
+# ellipsises instead of clipping. Removing either one puts the cut captions back.
+grep -q "fittedChipCaptionHeight" "${SRC}/GUI/J37LookAndFeel.cpp" || {
+    echo "the paint no longer fits a chip caption to its button (see Source/GUI/ChipCaption.h)" >&2
+    exit 1
+}
+grep -q "chipCaptionComponentId" "${SRC}/PluginEditor.cpp" || {
+    echo "the page bar no longer tags its chips, so their captions are not fitted" >&2
+    exit 1
+}
+if grep -q "Justification::centred, false" "${SRC}/GUI/J37LookAndFeel.cpp"; then
+    echo "a button caption can be clipped again: an ellipsise-if-too-big is off" >&2
+    exit 1
+fi
