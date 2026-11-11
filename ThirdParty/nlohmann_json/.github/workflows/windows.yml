@@ -18,7 +18,7 @@ concurrency:
 
 jobs:
   mingw:
-    runs-on: windows-2019
+    runs-on: windows-2025
     strategy:
       matrix:
         architecture: [x64, x86]
@@ -38,7 +38,7 @@ jobs:
         run: cd build ; ctest -j 10 -C Debug --output-on-failure
 
   msvc2019:
-    runs-on: windows-2019
+    runs-on: windows-2025
     strategy:
       matrix:
         build_type: [Debug, Release]
@@ -58,7 +58,7 @@ jobs:
       run: cd build ; ctest -j 10 -C ${{ matrix.build_type }} --output-on-failure
 
   msvc2019_latest:
-    runs-on: windows-2019
+    runs-on: windows-2025
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -70,7 +70,7 @@ jobs:
       run: cd build ; ctest -j 10 -C Release --output-on-failure
 
   msvc2022:
-    runs-on: windows-2022
+    runs-on: windows-2025
     strategy:
       matrix:
         build_type: [Debug, Release]
@@ -90,7 +90,7 @@ jobs:
       run: cd build ; ctest -j 10 -C ${{ matrix.build_type }} --output-on-failure
 
   msvc2022_latest:
-    runs-on: windows-2022
+    runs-on: windows-2025
 
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
@@ -102,7 +102,7 @@ jobs:
       run: cd build ; ctest -j 10 -C Release --output-on-failure
 
   clang:
-    runs-on: windows-2019
+    runs-on: windows-2025
     strategy:
       matrix:
         version: [11, 12, 13, 14, 15]
@@ -119,7 +119,7 @@ jobs:
         run: cd build ; ctest -j 10 -C Debug --exclude-regex "test-unicode" --output-on-failure
 
   clang-cl-11:
-    runs-on: windows-2019
+    runs-on: windows-2025
     strategy:
       matrix:
         architecture: [Win32, x64]
