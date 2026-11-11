@@ -81,7 +81,7 @@ binary - see
 | **RTNeural** (fallback) | `95c3c0f9` | BSD 3-Clause | <https://github.com/jatinchowdhury18/RTNeural> |
 | **NeuralAmpModelerCore** (fallback) | `0b3d3c97` (`v0.6.0`) | MIT | <https://github.com/sdatkinson/NeuralAmpModelerCore> |
 | **Eigen** (fallback) | `bc3b3987` (`3.5.0`) | MPL-2.0 | <https://gitlab.com/libeigen/eigen> |
-| **sokol_gfx** | `2e75443d` | zlib | <https://github.com/floooh/sokol> |
+| **sokol_gfx** | `93aa187b` | zlib | <https://github.com/floooh/sokol> |
 | **q_dsp** (cycfi/q) | `v1.5.4` | MIT | <https://github.com/cycfi/q> |
 | **cycfi_infra** | `2024_MAY` | **no licence file upstream** - see the note below | <https://github.com/cycfi/infra> |
 | **AudioFFT** | `0893b532` | MIT | <https://github.com/HiFi-LoFi/AudioFFT> |

@@ -808,7 +808,6 @@ private:
             vertices.data.ptr = geometry.vertices.data();
             vertices.data.size = vertices.size;
             vertices.usage.vertex_buffer = true;
-            vertices.usage.immutable = true;
             mesh.vertices = sg_make_buffer (&vertices);
 
             sg_buffer_desc indices {};
@@ -817,7 +816,6 @@ private:
             indices.data.size = indices.size;
             indices.usage.vertex_buffer = false;
             indices.usage.index_buffer = true;
-            indices.usage.immutable = true;
             mesh.indices = sg_make_buffer (&indices);
 
             mesh.indexCount = static_cast<int> (geometry.indices.size());
