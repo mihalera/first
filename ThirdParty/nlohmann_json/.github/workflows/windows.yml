@@ -26,7 +26,7 @@ jobs:
     steps:
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       - name: Set up MinGW
-        uses: egor-tensin/setup-mingw@84c781b557efd538dec66bde06988d81cd3138cf # v2.2.0
+        uses: egor-tensin/setup-mingw@d54f5ef0ce585bd3fbb1f8a71b5b254f59dbf931 # v3.0.4
         with:
           platform: ${{ matrix.architecture }}
           version: 12.2.0 # https://github.com/egor-tensin/setup-mingw/issues/14
