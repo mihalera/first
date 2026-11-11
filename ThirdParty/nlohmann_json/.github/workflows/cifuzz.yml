@@ -15,13 +15,13 @@ jobs:
 
     - name: Build Fuzzers
       id: build
-      uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@57fe4475324c5506adbfecdcdd2917f65c86ee9e # master
+      uses: google/oss-fuzz/infra/cifuzz/actions/build_fuzzers@ca4e629320f9937481494c0789cc46f238f274fd # master
       with:
         oss-fuzz-project-name: 'json'
         dry-run: false
         language: c++
     - name: Run Fuzzers
-      uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@57fe4475324c5506adbfecdcdd2917f65c86ee9e # master
+      uses: google/oss-fuzz/infra/cifuzz/actions/run_fuzzers@ca4e629320f9937481494c0789cc46f238f274fd # master
       with:
         oss-fuzz-project-name: 'json'
         fuzz-seconds: 300
