@@ -225,6 +225,36 @@ int main (int argc, char** argv)
         }
     }
 
+    // The stereo counters. "The sound is strange" and "it is only on one side"
+    // are different reports and one peak cannot tell them apart, so the per-side
+    // numbers are checked here: a healthy pair, a 12 dB imbalance, and a block
+    // with one side non-finite.
+    j37diag::noteStereoBlock (0.10, 0.5f, 0.5f);
+    j37diag::noteStereoBlock (0.10, 0.25f, 1.0f);
+    j37diag::noteStereoBlock (0.10, std::numeric_limits<float>::quiet_NaN(), 0.25f);
+
+    const auto stereo = j37diag::audioReport();
+    check (stereo.stereoBlocks == 3, "stereo: every stereo block is counted");
+    check (std::abs (stereo.leftPeak - 0.5f) < 1.0e-6f,
+           "stereo: the left peak is the loudest finite left peak");
+    check (std::abs (stereo.rightPeak - 1.0f) < 1.0e-6f,
+           "stereo: the right peak is the loudest finite right peak");
+    check (stereo.nonFiniteSides == 1,
+           "stereo: a block with one non-finite side is counted once");
+    check (std::abs (stereo.widestImbalance - 0.75f) < 1.0e-6f,
+           "stereo: the widest L/R imbalance is the widest pair, not the last");
+    // The one-sided failure is invisible to the peak counter, and that is the
+    // point: the block's peak is the FINITE side, so the old report would have
+    // called this block healthy. Only the side counter says one channel broke.
+    check (stereo.nonFinitePeaks == 0,
+           "stereo: a one-sided NaN is not reported as a broken block peak");
+
+    const auto stereoText = j37diag::audioReportText();
+    check (stereoText.find ("stereo block") != std::string::npos,
+           "stereo: the report names the stereo counters");
+    check (stereoText.find ("/ R ") != std::string::npos,
+           "stereo: the report carries both sides' peaks");
+
     std::printf ("\n%s\n", failures == 0 ? "diagnostics harness passed"
                                          : "diagnostics harness FAILED");
     return failures == 0 ? 0 : 1;

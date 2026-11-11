@@ -47,6 +47,11 @@ namespace
     std::atomic<unsigned long long> audioOverBudget { 0 };
     std::atomic<unsigned long long> audioNonFinite { 0 };
     std::atomic<float> audioLoudest { 0.0f };
+    std::atomic<unsigned long long> audioStereoBlocks { 0 };
+    std::atomic<unsigned long long> audioNonFiniteSides { 0 };
+    std::atomic<float> audioLeftPeak { 0.0f };
+    std::atomic<float> audioRightPeak { 0.0f };
+    std::atomic<float> audioImbalance { 0.0f };
 
     std::atomic<unsigned long long>& slotWord (ThreadSlot slot) noexcept
     {
@@ -272,6 +277,24 @@ unsigned long long recordedThreadId (ThreadSlot slot) noexcept
     return slotWord (slot).load (std::memory_order_relaxed);
 }
 
+namespace
+{
+    // A relaxed "raise to this value" for the peak counters: the same loop
+    // noteAudioBlock has always used for its own, factored so the two sides and
+    // the loudest overall cannot drift apart in how they treat a NaN.
+    void raiseTo (std::atomic<float>& target, float value) noexcept
+    {
+        auto current = target.load (std::memory_order_relaxed);
+
+        while (value > current
+               && ! target.compare_exchange_weak (current, value,
+                                                  std::memory_order_relaxed,
+                                                  std::memory_order_relaxed))
+        {
+        }
+    }
+}
+
 void noteAudioBlock (double loadFraction, float peak) noexcept
 {
     audioBlocks.fetch_add (1, std::memory_order_relaxed);
@@ -298,6 +321,42 @@ void noteAudioBlock (double loadFraction, float peak) noexcept
     }
 }
 
+void noteStereoBlock (double loadFraction, float peakLeft, float peakRight) noexcept
+{
+    const auto leftFinite = std::isfinite (peakLeft);
+    const auto rightFinite = std::isfinite (peakRight);
+
+    // The peak the existing report keeps is the louder of the two sides, so a
+    // stereo block is still counted exactly the way a mono one always was and
+    // the two numbers stay comparable.
+    noteAudioBlock (loadFraction,
+                    leftFinite && rightFinite ? (peakLeft > peakRight ? peakLeft : peakRight)
+                                              : (leftFinite ? peakLeft : peakRight));
+
+    audioStereoBlocks.fetch_add (1, std::memory_order_relaxed);
+
+    // The case this exists for: one side non-finite, the other not. Both broken
+    // is the peak counter's business; one is a channel that stopped carrying
+    // signal while its neighbour kept going.
+    if (leftFinite != rightFinite)
+        audioNonFiniteSides.fetch_add (1, std::memory_order_relaxed);
+
+    if (leftFinite)
+        raiseTo (audioLeftPeak, peakLeft);
+    if (rightFinite)
+        raiseTo (audioRightPeak, peakRight);
+
+    // Imbalance only means something when both sides carry something: a silent
+    // channel is the other counter's report, not a 100 % imbalance on every
+    // block of a quiet passage.
+    if (leftFinite && rightFinite && peakLeft > 0.0f && peakRight > 0.0f)
+    {
+        const auto louder = peakLeft > peakRight ? peakLeft : peakRight;
+        const auto quieter = peakLeft > peakRight ? peakRight : peakLeft;
+        raiseTo (audioImbalance, (louder - quieter) / louder);
+    }
+}
+
 AudioReport audioReport() noexcept
 {
     AudioReport report;
@@ -305,6 +364,11 @@ AudioReport audioReport() noexcept
     report.overBudget = audioOverBudget.load (std::memory_order_relaxed);
     report.nonFinitePeaks = audioNonFinite.load (std::memory_order_relaxed);
     report.loudestPeak = audioLoudest.load (std::memory_order_relaxed);
+    report.stereoBlocks = audioStereoBlocks.load (std::memory_order_relaxed);
+    report.nonFiniteSides = audioNonFiniteSides.load (std::memory_order_relaxed);
+    report.leftPeak = audioLeftPeak.load (std::memory_order_relaxed);
+    report.rightPeak = audioRightPeak.load (std::memory_order_relaxed);
+    report.widestImbalance = audioImbalance.load (std::memory_order_relaxed);
     return report;
 }
 
@@ -315,15 +379,34 @@ std::string audioReportText() noexcept
     if (report.blocks == 0)
         return {};
 
-    const auto peakDb = report.loudestPeak > 0.0f
-                            ? 20.0 * std::log10 (static_cast<double> (report.loudestPeak))
-                            : -240.0;
+    const auto asDb = [] (float peak)
+    {
+        return peak > 0.0f ? 20.0 * std::log10 (static_cast<double> (peak)) : -240.0;
+    };
 
-    char text[192] {};
+    const auto peakDb = asDb (report.loudestPeak);
+
+    char text[320] {};
     std::snprintf (text, sizeof (text),
                    "audio: %llu blocks, %llu over budget, %llu non-finite peak(s), "
                    "loudest %.1f dBFS",
                    report.blocks, report.overBudget, report.nonFinitePeaks, peakDb);
+
+    // The stereo half is only written when stereo blocks were actually counted,
+    // so a mono host's line reads exactly as it always did.
+    if (report.stereoBlocks > 0)
+    {
+        char stereo[224] {};
+        std::snprintf (stereo, sizeof (stereo),
+                       "; %llu stereo block(s), L %.1f / R %.1f dBFS, "
+                       "widest L/R imbalance %.0f %%, %llu one-sided non-finite",
+                       report.stereoBlocks, asDb (report.leftPeak),
+                       asDb (report.rightPeak),
+                       static_cast<double> (report.widestImbalance) * 100.0,
+                       report.nonFiniteSides);
+        strncat (text, stereo, sizeof (text) - std::strlen (text) - 1);
+    }
+
     return text;
 }
 

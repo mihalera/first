@@ -213,13 +213,29 @@ namespace
                                     ? static_cast<double> (buffer.getNumSamples()) / sampleRate
                                     : 0.0;
 
-            j37diag::noteAudioBlock (budget > 0.0 ? elapsed / budget : 0.0, peak());
+            const auto load = budget > 0.0 ? elapsed / budget : 0.0;
+
+            // Two channels is what every host hands an insert, and it is the pair
+            // a "the sound is strange" report is about. The per-side peaks are
+            // what say whether the output, ONE side of it, or the image between
+            // the two is what broke - a single peak looks healthy for all three.
+            if (buffer.getNumChannels() >= 2)
+                j37diag::noteStereoBlock (load, sidePeak (0), sidePeak (1));
+            else
+                j37diag::noteAudioBlock (load, peak());
         }
 
         BlockProbe (const BlockProbe&) = delete;
         BlockProbe& operator= (const BlockProbe&) = delete;
 
     private:
+        float sidePeak (int channel) const noexcept
+        {
+            return channel < buffer.getNumChannels()
+                       ? buffer.getMagnitude (channel, 0, buffer.getNumSamples())
+                       : 0.0f;
+        }
+
         float peak() const noexcept
         {
             auto loudest = 0.0f;
