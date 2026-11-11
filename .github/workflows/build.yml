@@ -76,6 +76,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Run the subharmonic harness
         run: bash tests/dsp/run.sh
@@ -532,6 +533,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Install Linux audio and GUI dependencies
         run: |
@@ -582,6 +584,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Install Linux audio and GUI dependencies
         run: |
@@ -658,6 +661,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Install Linux audio and GUI dependencies
         run: |
@@ -813,6 +817,7 @@ jobs:
           # the same source that the macOS job builds, so neither platform can
           # drift onto a different JUCE revision.
           submodules: recursive
+          fetch-depth: 0
 
       - name: Set up Python
         uses: actions/setup-python@v7
@@ -980,6 +985,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+          fetch-depth: 0
 
       # The MSI is the documented non-interactive form on Windows; winget would
       # depend on a package source the ARM image may not have configured. The
@@ -1122,6 +1128,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Verify JUCE submodule is present
         run: |
@@ -1484,6 +1491,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Verify JUCE submodule is present
         run: |
@@ -1574,6 +1582,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Verify JUCE submodule is present
         run: |
@@ -1779,6 +1788,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Verify JUCE submodule is present
         run: |
@@ -1953,6 +1963,7 @@ jobs:
         uses: actions/checkout@v7
         with:
           submodules: recursive
+          fetch-depth: 0
 
       - name: Verify JUCE submodule is present
         run: |
