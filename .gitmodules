@@ -46,7 +46,3 @@
 	path = ThirdParty/libebur128
 	url = https://github.com/jiixyj/libebur128.git
 	branch = master
-[submodule "ThirdParty/signalsmith-stretch/signalsmith-linear"]
-	path = ThirdParty/signalsmith-stretch/signalsmith-linear
-	url = https://github.com/Signalsmith-Audio/linear.git
-	branch = main
