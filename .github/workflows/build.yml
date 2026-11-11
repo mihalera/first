@@ -332,6 +332,19 @@ jobs:
       - name: Check the factory preset table
         run: python3 tests/presets/check_presets.py
 
+      # The presets against the ranges the shipping table declares. check_presets.py
+      # proves the KEYS are real; nothing proved the VALUES fit, and a value the
+      # parameter clamps is a preset that loads as a different sound than the file
+      # describes - 0.7705 stored against a 0.001 step, or a 0 Hz echo low-cut on a
+      # row that starts at 20. The ranges are built through named locals, helpers
+      # and constants, so they are read out of the table itself rather than
+      # restated here: the harness cuts createParameterLayout() out of
+      # ParameterTable.cpp, compiles it against the state harness's stub toolkit
+      # and prints one line per parameter, which is what the Python half compares
+      # every preset value with. It found three on its first run, all in MINIMUM.
+      - name: Check the preset values against their parameter ranges
+        run: bash tests/presets/check_ranges.sh
+
       # The theme is one palette read through one funnel, and every failure it
       # has produced on this panel was the same shape: a widget inked once in the
       # constructor with paletteFor (false) - the IVORY panel's colours - and

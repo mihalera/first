@@ -40,6 +40,9 @@ What it checks now, against the JSON rather than a C++ table:
   * every key is a real, registered parameter id
   * every value is a number (a string or an object is a typo the loader would
     turn into the sentinel, and the debug audit would then fail on it)
+  * every preset sets the same columns - an omitted key is not a bad value, it is
+    a key that keeps the session's value (see section 3), so the presets agreeing
+    on everything but one key is the same bug one level down
   * every registered parameter is either set by some preset or listed in the
     C++ intentionallyNotPresettable set, and the two lists are compared
   * the guide in docs/presets.md has exactly one row per preset, so a preset that
@@ -166,6 +169,19 @@ for name in listed:
             problems.append("%s.json: \"%s\" is %s, not a number" % (name, key, type(value).__name__))
             continue
         covered.add(key)
+
+# Every preset carries the same columns. An omitted key is not a wrong value and
+# not a typo: applyFactoryPreset() guards each set with getParameter(), so the
+# missing one keeps whatever the session already had. That is the defect the
+# column check above was added for, one level down - a preset that sounds
+# different depending on what was loaded before it.
+key_sets = {name: set(preset) - {"name"} for name, preset in values.items()}
+everything = set().union(*key_sets.values()) if key_sets else set()
+for name in sorted(key_sets):
+    absent = everything - key_sets[name]
+    if absent:
+        problems.append("%s.json leaves out %d key(s) every other preset sets: %s"
+                        % (name, len(absent), ", ".join(sorted(absent))))
 
 duplicates = {n for n in names if names.count(n) > 1}
 for name in sorted(duplicates):
