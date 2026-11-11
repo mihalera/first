@@ -935,7 +935,7 @@ endif()
 CPMAddPackage(
     NAME sndfile
     GITHUB_REPOSITORY libsndfile/libsndfile
-    GIT_TAG b9103bd48b6c8fb517ae737fe3baee0c718b804c
+    GIT_TAG 396a715daeae7316f047ee220b364ab983b66df4
     EXCLUDE_FROM_ALL YES
     SYSTEM YES
     OPTIONS
