@@ -79,5 +79,8 @@
     }
   ],
   "automerge": true,
-  "automergeType": "pr"
+  "automergeType": "pr",
+  "git-submodules": {
+    "enabled": true
+  }
 }

@@ -5,36 +5,48 @@
 [submodule "ThirdParty/farbot"]
 	path = ThirdParty/farbot
 	url = https://github.com/hogliux/farbot.git
+	branch = master
 [submodule "ThirdParty/pocketfft"]
 	path = ThirdParty/pocketfft
 	url = https://github.com/mreineck/pocketfft.git
+	branch = cpp
 [submodule "ThirdParty/nlohmann_json"]
 	path = ThirdParty/nlohmann_json
 	url = https://github.com/nlohmann/json.git
+	branch = develop
 [submodule "ThirdParty/xsimd"]
 	path = ThirdParty/xsimd
 	url = https://github.com/xtensor-stack/xsimd.git
+	branch = master
 [submodule "ThirdParty/glm"]
 	path = ThirdParty/glm
 	url = https://github.com/g-truc/glm.git
+	branch = master
 [submodule "ThirdParty/RTNeural"]
 	path = ThirdParty/RTNeural
 	url = https://github.com/jatinchowdhury18/RTNeural.git
+	branch = main
 [submodule "ThirdParty/namcore"]
 	path = ThirdParty/namcore
 	url = https://github.com/sdatkinson/NeuralAmpModelerCore.git
+	branch = main
 [submodule "ThirdParty/eigen"]
 	path = ThirdParty/eigen
 	url = https://gitlab.com/libeigen/eigen.git
+	branch = master
 [submodule "ThirdParty/dattorro-verb"]
 	path = ThirdParty/dattorro-verb
 	url = https://github.com/el-visio/dattorro-verb.git
+	branch = main
 [submodule "ThirdParty/dr_libs"]
 	path = ThirdParty/dr_libs
 	url = https://github.com/mackron/dr_libs.git
+	branch = master
 [submodule "ThirdParty/libebur128"]
 	path = ThirdParty/libebur128
 	url = https://github.com/jiixyj/libebur128.git
+	branch = master
 [submodule "ThirdParty/signalsmith-stretch/signalsmith-linear"]
 	path = ThirdParty/signalsmith-stretch/signalsmith-linear
 	url = https://github.com/Signalsmith-Audio/linear.git
+	branch = master
