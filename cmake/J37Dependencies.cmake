@@ -410,7 +410,7 @@ if(NOT TARGET pocketfft)
 CPMAddPackage(
     NAME pocketfft
     GITHUB_REPOSITORY mreineck/pocketfft
-    GIT_TAG c90e55b3d529f8efa40ed01a20de22405f45fc65
+    GIT_TAG 4d865cba24359b05b37da4e75aee24498c3b78e7
     DOWNLOAD_ONLY YES)
 
 j37_declare_header_only_library(pocketfft "${pocketfft_SOURCE_DIR}")
