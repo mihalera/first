@@ -64,7 +64,7 @@ jobs:
     #  arm64 job has always been pinned for the same reason (ubuntu-24.04-arm),
     #  and pinning also silences the runner-image migration annotation every job
     #  was collecting. Move the pin deliberately, not by flag day.
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     # 20, not 10: tests/neural compiles NeuralAmpModelerCore's sixteen Eigen
     # translation units for its fixture binaries, and the sanitizer step below
     # pays that again with ASan + UBSan instrumentation. That is roughly a minute
@@ -524,7 +524,7 @@ jobs:
 
   dsp-unit:
     name: DSP unit tests
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 20
 
     steps:
@@ -573,7 +573,7 @@ jobs:
   # ============================================================================
   dsp-bench:
     name: DSP micro-benchmarks (informational)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 15
     continue-on-error: true
 
@@ -650,7 +650,7 @@ jobs:
   # ============================================================================
   build-linux-debug:
     name: build-linux-debug (Melatonin inspector)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
     timeout-minutes: 25
 
     steps:
@@ -1567,7 +1567,7 @@ jobs:
   #  Linux - VST3
   # ============================================================================
   build-linux:
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     steps:
       - name: Checkout repository
@@ -1771,7 +1771,7 @@ jobs:
   # ============================================================================
   build-linux-arm64:
     name: build-linux-arm64 (ArmPL)
-    runs-on: ubuntu-24.04-arm
+    runs-on: ubuntu-26.04-arm
     timeout-minutes: 45
 
     steps:
@@ -1946,7 +1946,7 @@ jobs:
   # ============================================================================
   build-android:
     name: build-android (Standalone, arm64-v8a)
-    runs-on: ubuntu-24.04
+    runs-on: ubuntu-26.04
 
     steps:
       - name: Checkout repository

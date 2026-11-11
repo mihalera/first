@@ -79,7 +79,7 @@ jobs:
 
   ci_cmake_options:
     runs-on: ubuntu-latest
-    container: ubuntu:focal
+    container: ubuntu:resolute
     strategy:
       matrix:
         target: [ci_cmake_flags, ci_test_diagnostics, ci_test_diagnostic_positions, ci_test_noexceptions, ci_test_noimplicitconversions, ci_test_legacycomparison, ci_test_noglobaludls]
