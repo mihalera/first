@@ -82,6 +82,16 @@ namespace j37diag
         unsigned long long overBudget = 0;
         unsigned long long nonFinitePeaks = 0;
         float loudestPeak = 0.0f;
+
+        // The stereo half. "The sound is strange" and "it is only on one side"
+        // are different reports, and one peak cannot tell them apart: a plugin
+        // that writes one channel, or writes the same channel twice, has a
+        // perfectly healthy peak.
+        unsigned long long stereoBlocks = 0;
+        unsigned long long nonFiniteSides = 0;   // exactly one side broke
+        float leftPeak = 0.0f;
+        float rightPeak = 0.0f;
+        float widestImbalance = 0.0f;            // |L - R| / max(L, R), 0 if a side is silent
     };
 
     /** One finished block: how much of the block's own duration it used (above
@@ -89,6 +99,13 @@ namespace j37diag
         peak is counted and kept out of the loudest-peak figure, which is what
         makes "it clicked, then went silent" show up as one of the two. */
     void noteAudioBlock (double loadFraction, float peak) noexcept;
+
+    /** One finished STEREO block: the same report as above, plus each side's own
+        peak. This is what separates "the output is broken" from "the LEFT
+        output is broken": a stage that stops writing one channel, writes both
+        from one, or collapses the pair into mono leaves a single peak looking
+        healthy, and the per-side numbers show which of the three it is. */
+    void noteStereoBlock (double loadFraction, float peakLeft, float peakRight) noexcept;
 
     AudioReport audioReport() noexcept;
 
