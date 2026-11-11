@@ -426,6 +426,10 @@ EOF
     -I "${REPO}/ThirdParty/dattorro-verb" \
     -I "${REPO}/ThirdParty/dr_libs" \
     -I "${REPO}/ThirdParty/signalsmith-stretch/include" \
+    # The stretch root header includes "signalsmith-linear/stft.h" by that NAME,
+    # resolved against the includING file's directory first, so the sibling
+    # checkout is reachable through ThirdParty/ and nowhere else.
+    -I "${REPO}/ThirdParty" \
     -DJ37_CORRECTOR_USE_STRETCH=1 \
     -DJUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1 \
     -DJUCE_MODULE_AVAILABLE_juce_core=1 \

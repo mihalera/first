@@ -230,6 +230,10 @@ INCLUDES=(
     -I "${REPO}/ThirdParty/xsimd/include"
     -I "${REPO}/ThirdParty/farbot/include"
     -I "${REPO}/ThirdParty/signalsmith-stretch/include"
+    # The stretch root header includes "signalsmith-linear/stft.h" by that NAME,
+    # resolved against the includING file's directory first - so the sibling
+    # checkout is reachable through ThirdParty/ and nowhere else.
+    -I "${REPO}/ThirdParty"
     -I "${REPO}/ThirdParty/pocketfft"
     # The room's library. Unlike the rest of this list it is not header-only -
     # verb.c is compiled into the plugin by cmake/J37Dependencies.cmake - but the
