@@ -2,5 +2,5 @@
 // same source tree a year from now. AGP 9.5 needs Gradle 9.6 or newer; CI pins
 // Gradle 9.8.2 and JDK 21 for it, while a local build needs JDK 17 or newer.
 plugins {
-    id 'com.android.application' version '9.5.0' apply false
+    id 'com.android.application' version '9.5.1' apply false
 }
