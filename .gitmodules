@@ -32,3 +32,6 @@
 [submodule "ThirdParty/dr_libs"]
 	path = ThirdParty/dr_libs
 	url = https://github.com/mackron/dr_libs.git
+[submodule "ThirdParty/libebur128"]
+	path = ThirdParty/libebur128
+	url = https://github.com/jiixyj/libebur128.git

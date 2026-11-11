@@ -76,18 +76,18 @@ fi
 # -----------------------------------------------------------------------------
 ORACLE_SOURCE="${HERE}/../../ThirdParty/libebur128"
 
-if [ -f "${ORACLE_SOURCE}/ebur128.c" ] \
+if [ -f "${ORACLE_SOURCE}/ebur128/ebur128.c" ] \
    && printf '#include <sys/queue.h>\n' | "${CXX}" -E -x c - > /dev/null 2>&1; then
     # gnu99, not c99: the library uses M_PI, which glibc only declares under a
     # non-strict dialect (or _GNU_SOURCE). It is C either way; the extensions are
     # the header's, which is why the upstream file carries the MSVC note about
     # _USE_MATH_DEFINES next to its own includes.
     "${CXX}" -std=gnu99 -O2 "${sanitize_flags[@]}" -x c -c \
-        "${ORACLE_SOURCE}/ebur128.c" -o "${BUILD}/ebur128.o"
+        "${ORACLE_SOURCE}/ebur128/ebur128.c" -o "${BUILD}/ebur128.o"
 
     "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
         "${sanitize_flags[@]}" \
-        -I "${HERE}" -I "${SOURCE}" -I "${ORACLE_SOURCE}" \
+        -I "${HERE}" -I "${SOURCE}" -I "${ORACLE_SOURCE}/ebur128" \
         "${HERE}/loudness_oracle_test.cpp" "${BUILD}/ebur128.o" -lm \
         -o "${BUILD}/loudness_oracle_test"
 
