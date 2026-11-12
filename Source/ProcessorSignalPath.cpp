@@ -71,6 +71,7 @@
 #include "DSP/TapeCouplings.h"
 #include "DSP/TapeModulation.h"
 #include "DSP/TapeModulationDepth.h"
+#include "DSP/TapeModulationFrame.h"
 #include "DSP/TapeVoicing.h"
 #include "HotPathProbe.h"
 #include "ScaleDegrees.h"
@@ -2861,19 +2862,23 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         //   - headGapModulationMask, the dark-head damping that softens the
         //     pitch shimmer at the top of the TONE travel before it softens
         //     anything else. Both are block-rate constants.
-        const float irregularDepth = state.wowDepth
-                                   + mechanicsNow * 0.006f
-                                   + wearNowMod * 0.003f
-                                   + state.wearWowCoupling;
-        const float irregularOffset = (channel == 0 ? tapeConditionL : tapeConditionR).driftState
-                                    * mechanicsNow * 0.010f;
+        // The depth the two irregularity mechanisms add, the drift's own offset,
+        // and the shaping the head-gap mask and the transport put on it - all in
+        // Source/DSP/TapeModulationFrame.h, where each literal is named and
+        // explained.
+        const float irregularDepth = j37mod::irregularDepth (state.wowDepth, mechanicsNow,
+                                                             wearNowMod,
+                                                             state.wearWowCoupling);
+        const float irregularOffset = j37mod::irregularOffset (
+            (channel == 0 ? tapeConditionL : tapeConditionR).driftState, mechanicsNow);
 
-        const float wowMod = (1.0f + wowLfo * irregularDepth + irregularOffset)
-                             * state.headGapModulationMask * speedError;
-        const float flutterMod = (1.0f + flutterLfo * state.flutterDepth
-                                    * flutterScaleSmoothed.getCurrentValue())
-                                 * state.headGapModulationMask * speedError;
-        const float grainMod = 1.0f + state.tapeHiss * 0.10f * state.transportActivityGate * grainLfo;
+        const float wowMod = j37mod::wowModulation (wowLfo, irregularDepth, irregularOffset,
+                                                    state.headGapModulationMask, speedError);
+        const float flutterMod = j37mod::flutterModulation (
+            flutterLfo, state.flutterDepth, flutterScaleSmoothed.getCurrentValue(),
+            state.headGapModulationMask, speedError);
+        const float grainMod = j37mod::grainModulation (state.tapeHiss,
+                                                        state.transportActivityGate, grainLfo);
 
         // Record head: pre-emphasis, tape bias offset and drive. With DRIVE at zero
         // this is exactly unity, so the saturator sees the signal at the level the
