@@ -354,6 +354,10 @@ CPMAddPackage(
     EXCLUDE_FROM_ALL YES
     SYSTEM YES)
 
+if (TARGET clap-juce-extensions OR EXISTS "${clap-juce-extensions_SOURCE_DIR}/cmake/ClapTargetHelpers.cmake")
+    include ("${clap-juce-extensions_SOURCE_DIR}/cmake/ClapTargetHelpers.cmake")
+endif ()
+
 # xsimd: header-only portable SIMD. Pinned by tag like everything else.
 # BUILD_TESTS is already OFF by default upstream, but it is stated here anyway:
 # it pulls in xsimd's own test suite, and a plugin build must not pay for that.
