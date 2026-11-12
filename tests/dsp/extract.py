@@ -100,6 +100,7 @@ SOURCE_HEADERS = [
     # numbers. It names `juce::jlimit` and `juce::MathConstants`, which the shim
     # declares for the builder above it already.
     "DSP/TapeModulation.h",
+    "DSP/TapeModulationDepth.h",
     # The three further stages out of processTapeEngine(): the tape formula and
     # instrument voicing (a pure function of the TONE macro, the formula and the
     # instrument choice), the two glue stages' operating points (a pure function of

@@ -70,6 +70,7 @@
 #include "DSP/StereoWidth.h"
 #include "DSP/TapeCouplings.h"
 #include "DSP/TapeModulation.h"
+#include "DSP/TapeModulationDepth.h"
 #include "DSP/TapeVoicing.h"
 #include "HotPathProbe.h"
 #include "ScaleDegrees.h"
@@ -2193,11 +2194,17 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // 12 % floor and the dry side was never fully removed, so MIX could not reach a
     // clean bypass or a fully saturated signal and its travel felt dead at the ends.
     // The gains themselves are derived per sample further down, from the smoothed MIX.
-    state.wowDepth = wowCurve * (0.05f + speedScale * 0.08f)
-                           * instrumentTransportScale;
-    state.flutterDepth = flutterCurve * (0.08f + speedScale * 0.09f)
-                               * instrumentTransportScale;
-    state.speedBias = 0.84f + speedScale * 0.30f;
+    // The three depths those curves are turned into - the wander each LFO is
+    // multiplied by, and how far the bias follows the speed. The floors and the
+    // slopes per unit of speed, and why they have those values, are
+    // Source/DSP/TapeModulationDepth.h; the instrument's own transport scale comes
+    // from the voicing above.
+    const auto modulationDepths = j37mod::makeModulationDepths (wowCurve, flutterCurve,
+                                                                speedScale,
+                                                                instrumentTransportScale);
+    state.wowDepth = modulationDepths.wowDepth;
+    state.flutterDepth = modulationDepths.flutterDepth;
+    state.speedBias = modulationDepths.speedBias;
 
     // The device couplings, as one stage: where one control changes what another one
     // MEANS - a worn capstan deepens the wow, a hot head hisses louder, a dark gap
