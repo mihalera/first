@@ -163,17 +163,12 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
 {
     const auto& palette = paletteFor (darkTheme);
     const auto bounds = getLocalBounds().toFloat().reduced (2.0f);
-    g.setColour (palette.raised.darker (0.12f));
-    g.fillRoundedRectangle (bounds, 5.0f);
-    g.setColour (palette.border.withAlpha (0.9f));
-    g.drawRoundedRectangle (bounds.reduced (0.5f), 5.0f, 1.0f);
 
-    g.setColour (palette.text);
     // A local text scale derived from the meter's own size (not from the display), so
     // the labels grow with the dial instead of staying at a fixed 8-10 px and becoming
     // unreadable in a large cell or oversized in a small one.
-    const auto textScale = juce::jlimit (0.85f, 1.6f,
-                                         static_cast<float> (getWidth()) / 190.0f * 1.0f);
+    const auto textScale = juce::jlimit (0.90f, 1.6f,
+                                         static_cast<float> (getWidth()) / 175.0f * 1.0f);
 
     // The title and subtitle get two NON-OVERLAPPING bands carved out of one
     // proportional top block. The old code removed 20*scale for the title, then
@@ -185,14 +180,6 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     auto localBounds = getLocalBounds();
     const auto titleBand = localBounds.removeFromTop (titleHeight);
     const auto subtitleBand = localBounds.removeFromTop (topBlock - titleHeight);
-
-    g.setColour (palette.text);
-    g.setFont (j37panel::panelFont (10.5f * textScale, juce::Font::bold));
-    g.drawText (title, titleBand, juce::Justification::centred, false);
-
-    g.setColour (palette.secondary);
-    g.setFont (j37panel::panelFont (9.0f * textScale));
-    g.drawText (subtitle, subtitleBand, juce::Justification::centred, false);
 
     // Everything below is derived from this component's own bounds rather than from
     // fixed pixel offsets, so the dial stays centred and correctly scaled whether the
@@ -217,7 +204,7 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // Taking the row height from the space that actually remains below the dial keeps
     // the dial, the rows and the border from fighting over the same pixels.
     const auto bodyHeight = juce::jmax (72, getHeight() - topBlock);
-    const auto faceHeight = juce::roundToInt (static_cast<float> (bodyHeight) * 0.48f);
+    const auto faceHeight = juce::roundToInt (static_cast<float> (bodyHeight) * 0.46f);
     const auto face = juce::Rectangle<float> (bounds.getX(),
                                               bounds.getY() + static_cast<float> (topBlock),
                                               bounds.getWidth(), static_cast<float> (faceHeight));
@@ -238,6 +225,26 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
                                         bounds.getBottom() - static_cast<float> (usedReadout)
                                           - rowBottomMargin);
     const auto rowHeight = readoutRowHeight;
+
+    // The frame now encloses only the caption and the dial. The loudness readout rows
+    // below are drawn on the panel, clearly UNDER the meter rather than crammed inside
+    // its border - which is what made PEAK dB nearly unreadable and crooked.
+    const auto frameBottom = juce::jmax (bounds.getY() + static_cast<float> (topBlock),
+                                         rowsTop - rowGapAbove * 0.5f);
+    const auto frameBounds = juce::Rectangle<float> (bounds.getX(), bounds.getY(),
+                                                     bounds.getWidth(),
+                                                     frameBottom - bounds.getY());
+    g.setColour (palette.raised.darker (0.12f));
+    g.fillRoundedRectangle (frameBounds, 5.0f);
+    g.setColour (palette.border.withAlpha (0.9f));
+    g.drawRoundedRectangle (frameBounds.reduced (0.5f), 5.0f, 1.0f);
+
+    g.setColour (palette.text);
+    g.setFont (j37panel::panelFont (10.5f * textScale, juce::Font::bold));
+    g.drawText (title, titleBand, juce::Justification::centred, false);
+    g.setColour (palette.secondary);
+    g.setFont (j37panel::panelFont (9.0f * textScale));
+    g.drawText (subtitle, subtitleBand, juce::Justification::centred, false);
 
     const auto centreX = face.getCentreX();
     // The dial is a half circle sitting on the lower edge of the face area.
@@ -374,8 +381,8 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
         auto valueArea = rowArea;
         const auto measuredName = juce::roundToInt (juce::GlyphArrangement::getStringWidth (
             j37panel::panelFont (9.0f * textScale), label));
-        const auto nameWidth = juce::jmin (rowArea.getWidth() * 3 / 5,
-                                           measuredName + juce::roundToInt (6.0f * textScale));
+        const auto nameWidth = juce::jmin (rowArea.getWidth() * 7 / 10,
+                                           measuredName + juce::roundToInt (8.0f * textScale));
         nameArea.setWidth (juce::jmax (1, nameWidth));
         valueArea.setLeft (nameArea.getRight());
 
