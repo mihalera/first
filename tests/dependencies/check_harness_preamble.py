@@ -47,7 +47,9 @@ if not known:
 FORBIDDEN = [
     (re.compile(r'CXX="\$\{CXX:-'), 'defaults the compiler instead of using the preamble'),
     (re.compile(r'^\s*sanitize_flags=\(\)', re.M), 'builds its own sanitizer_flags array'),
-    (re.compile(r'-std=c\+\+[0-9]+'), 'picks the C++ standard itself'),
+    # A per-harness override is the documented way to say "this one runs at a
+    # different standard"; writing it into a compile line is not.
+    (re.compile(r'(?<!J37_CXX_STD=")-std=c\+\+[0-9]+'), 'picks the C++ standard itself'),
     (re.compile(r'\s-Wall'), 'picks the warning set itself'),
 ]
 
