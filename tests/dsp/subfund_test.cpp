@@ -1268,6 +1268,44 @@ void testTapeModulation()
     check (j37mod::makeModulationDepths (1.0f, 1.0f, 1.0f, 1.0f).wowDepth
                > j37mod::makeModulationDepths (1.0f, 1.0f, 0.76f, 1.0f).wowDepth,
            "a faster machine wanders deeper, and never the other way round");
+
+    // The per-frame multipliers (Source/DSP/TapeModulationFrame.h): what each LFO
+    // is actually multiplied by this sample, and the irregularity the two mechanisms
+    // add on top of the control's own depth.
+    check (std::fabs (j37mod::irregularDepth (0.1f, 0.0f, 0.0f, 0.0f) - 0.1f) < 1.0e-6f,
+           "the wander depth is the control's own when MECHANICS, WEAR and the coupling are closed");
+    check (std::fabs (j37mod::irregularDepth (0.1f, 1.0f, 1.0f, 0.02f) - 0.129f) < 1.0e-6f,
+           "MECHANICS adds 0.006 and WEAR 0.003 to the depth, and the medium's coupling rides on top");
+    check (std::fabs (j37mod::irregularOffset (0.5f, 1.0f) - 0.005f) < 1.0e-6f,
+           "the mechanical drift moves the wow by 0.010 of its state per unit of MECHANICS");
+    check (std::fabs (j37mod::irregularOffset (0.5f, 0.0f)) < 1.0e-6f,
+           "a machine with no MECHANICS has no drift offset either");
+
+    // The wow multiplier: unity with a still LFO, 1.05 at half of a 0.1 depth, and
+    // the mask and the transport's speed error scale it together (1.05 * 0.5 * 0.5).
+    check (std::fabs (j37mod::wowModulation (0.0f, 0.1f, 0.0f, 1.0f, 1.0f) - 1.0f) < 1.0e-6f,
+           "a still wow LFO leaves the head's rate exactly where it was");
+    check (std::fabs (j37mod::wowModulation (0.5f, 0.1f, 0.0f, 1.0f, 1.0f) - 1.05f) < 1.0e-6f,
+           "half of a 0.1 depth moves the rate by 1.05");
+    check (std::fabs (j37mod::wowModulation (0.5f, 0.1f, 0.0f, 0.5f, 0.5f) - 0.2625f) < 1.0e-6f,
+           "the head-gap mask and the transport's speed error both scale the wobble");
+
+    // The flutter multiplier: its depth, its own head-gap scale, and the same pair.
+    check (std::fabs (j37mod::flutterModulation (0.5f, 0.2f, 0.5f, 1.0f, 1.0f) - 1.05f) < 1.0e-6f,
+           "half of a 0.2 flutter depth at half scale moves the rate by 1.05");
+    check (std::fabs (j37mod::flutterModulation (0.0f, 0.2f, 0.5f, 1.0f, 1.0f) - 1.0f) < 1.0e-6f,
+           "a still flutter LFO is the identity");
+
+    // The grain: the hiss at a tenth, gated by the transport.
+    check (std::fabs (j37mod::grainModulation (0.1f, 1.0f, 1.0f) - 1.01f) < 1.0e-6f,
+           "a 0.1 hiss at full grain moves the rate by 1.01");
+    check (std::fabs (j37mod::grainModulation (0.1f, 0.0f, 1.0f) - 1.0f) < 1.0e-6f,
+           "a stopped transport adds no grain, whatever the hiss and the LFO say");
+
+    // Monotone in the mechanism, so a worn machine wobbles more rather than less.
+    check (j37mod::irregularDepth (0.1f, 1.0f, 0.0f, 0.0f)
+               > j37mod::irregularDepth (0.1f, 0.0f, 0.0f, 0.0f),
+           "more MECHANICS is more wander, never the other way round");
 }
 
 // -----------------------------------------------------------------------------
