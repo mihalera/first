@@ -62,7 +62,9 @@
 #include "DSP/MixCrossfader.h"
 #include "DSP/MultibandPhaseGuard.h"
 #include "DSP/PitchCorrectionRule.h"
+#include "DSP/TapeSaturationDrive.h"
 #include "DSP/TapeTransportFrame.h"
+#include "DSP/TrackBleed.h"
 #include "DSP/SafetyLimiter.h"
 #include "DSP/TapeCouplings.h"
 #include "DSP/TapeModulation.h"
@@ -93,15 +95,14 @@ inline float configureTrackGeometry (FirstAudioProcessor::TapeBlockState& state,
                                      int tracksIndex, int bleedBufferLength) noexcept
 {
     static constexpr float tracksWidthScale[3] { 1.00f, 0.94f, 0.82f };
-    static constexpr float tracksCrosstalk[3]  { 0.020f, 0.010f, 0.055f };
-    static constexpr float tracksSpacingMs[3]  { 0.018f, 0.042f, 0.009f };
     static constexpr float tracksNoiseScale[3] { 1.00f, 1.06f, 1.22f };
 
     state.trackWidthScale = tracksWidthScale[tracksIndex];
-    state.trackCrosstalk = tracksCrosstalk[tracksIndex];
+    state.trackCrosstalk = j37dsp::kTrackCrosstalk[static_cast<std::size_t> (tracksIndex)];
     state.trackBleedDelaySamples = juce::jlimit (
         1, bleedBufferLength - 2,
-        juce::roundToInt (tracksSpacingMs[tracksIndex] * 0.001f * state.engineSampleRate));
+        juce::roundToInt (j37dsp::kTrackSpacingMs[static_cast<std::size_t> (tracksIndex)]
+                          * 0.001f * state.engineSampleRate));
     return tracksNoiseScale[tracksIndex];
 }
 
@@ -2180,7 +2181,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // once per block, see the end of processBlock) adds drive on top of the DRIVE
     // control. The harder the compressors work, the hotter the record head is run and
     // the harder the tape saturates - how a compressed signal hits a real machine.
-    const float driveAmount = state.driveCurve * 1.9f + squeezeSaturationDrive * 1.15f;
+    const float driveAmount = j37dsp::tapeDriveAmount (state.driveCurve,
+                                                       squeezeSaturationDrive);
     const float biasAmount = 0.18f + biasCurve * 1.55f;
 
     // Dry/wet blend. MIX is a genuine crossfade: at 0 % the signal is untouched dry
@@ -2230,8 +2232,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
 
     // The magnetic curve's own two arguments ramp for the same reason: BIAS shifts the
     // whole transfer curve, so a per-block step is a hard discontinuity, not a zipper.
-    const auto shaperDriveTarget = state.driveCurve * state.tapeCurve + hysteresis * 0.25f
-                                     + squeezeSaturationDrive * 0.30f;
+    const auto shaperDriveTarget = j37dsp::tapeShaperDrive (state.driveCurve,
+                                                            state.tapeCurve, hysteresis,
+                                                            squeezeSaturationDrive);
     const auto shaperAsymmetryTarget = tapeAsymmetry * (biasAmount * 0.42f);
     shaperDriveSmoothed.setTargetValue (shaperDriveTarget);
     shaperAsymmetrySmoothed.setTargetValue (shaperAsymmetryTarget);
@@ -2385,7 +2388,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // saturated at every setting, so they were fighting a permanent loss; now that the
     // shaper is near-unity at zero drive and only compresses when pushed, the static trim
     // has to be close to unity as well or the plugin ends up quiet instead of clean.
-    const float driveGainCompensation = 1.0f - state.driveCurve * 0.16f;
+    const float driveGainCompensation = j37dsp::tapeDriveGainCompensation (state.driveCurve);
 
     // -----------------------------------------------------------------------
     //  Compressor-coupled saturation.
@@ -2481,9 +2484,9 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // density rather than individual transients. Zero squeeze leaves the shaper
     // exactly as the DRIVE control set it; a slammed programme grows it smoothly.
     {
-        const auto totalSqueezeDb = juce::jlimit (0.0f, 12.0f,
-                                                  -(state.inputPeakReductionDb + state.peakReductionDb));
-        const auto targetSqueeze = 1.0f - std::exp (-totalSqueezeDb * 0.20f);
+        const auto totalSqueezeDb = j37dsp::tapeSqueezeDb (state.inputPeakReductionDb,
+                                                           state.peakReductionDb);
+        const auto targetSqueeze = j37dsp::tapeSqueezeTarget (totalSqueezeDb);
         squeezeSaturationDrive += (targetSqueeze - squeezeSaturationDrive)
                                 * squeezeDriveSmoothing;
     }
@@ -2867,8 +2870,9 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         // user dialled in rather than a pre-boosted version of it. The TONE macro
         // adds the slow-machine pre-bias on top, scaled by the speed's own bias so
         // the two controls multiply naturally instead of fighting.
-        const float preDrive = x * (1.0f + driveAmountSmoothed.getCurrentValue() * 1.2f
-                                      * state.speedBias * preDriveGainSmoothed.getCurrentValue());
+        const float preDrive = j37dsp::tapePreDrive (x, driveAmountSmoothed.getCurrentValue(),
+                                                     state.speedBias,
+                                                     preDriveGainSmoothed.getCurrentValue());
         // Magnetic hysteresis with memory - the core of the tape sound. The
         // squeeze term in the slope is the compressor coupling: dense, compressed
         // programme literally thickens the magnetic curve, not just its level.
@@ -2934,8 +2938,7 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         const float sagCoefficient = demand > amp.sagEnvelope ? sagAttackCoefficient
                                                               : sagReleaseCoefficient;
         amp.sagEnvelope += (demand - amp.sagEnvelope) * sagCoefficient;
-        amp.sagGain = 1.0f - sagAmountNow * 0.35f
-                          * juce::jlimit (0.0f, 1.0f, amp.sagEnvelope * 3.0f);
+        amp.sagGain = j37dsp::tapeSagGain (sagAmountNow, amp.sagEnvelope);
 
         const float driveWithSag = driveNow * amp.sagGain;
 
@@ -3954,8 +3957,11 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
 
         if (mixNow > 1.0e-5f)
         {
-            outputSignal[0] += (bleedToLeft  - outputSignal[0]) * state.trackCrosstalk;
-            outputSignal[1] += (bleedToRight - outputSignal[1]) * state.trackCrosstalk;
+            const auto bleed = j37dsp::trackBleedFrame (outputSignal[0], outputSignal[1],
+                                                        bleedToLeft, bleedToRight,
+                                                        state.trackCrosstalk);
+            outputSignal[0] = bleed.left;
+            outputSignal[1] = bleed.right;
         }
 
         // Keep the transport's inter-track bleed here. The user WIDTH control
