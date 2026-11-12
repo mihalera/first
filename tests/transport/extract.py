@@ -39,7 +39,8 @@ IMPL = REPO / "Source" / "PluginProcessor.cpp"
 # that goes on passing because the text it reads moved away is the failure mode this
 # arrangement rules out - and a fact that ends up in BOTH files stops the harness
 # instead of matching whichever one it read first.
-IMPL_SOURCES = [IMPL, REPO / "Source" / "ProcessorSignalPath.cpp"]
+IMPL_SOURCES = [IMPL, REPO / "Source" / "ProcessorSignalPath.cpp",
+                REPO / "Source" / "DSP" / "TapeTransportFrame.h"]
 IMPL_NAMES = " + ".join(path.name for path in IMPL_SOURCES)
 
 # The gate's exponent is written by makeTapeCouplings() in this header since the
@@ -167,7 +168,11 @@ GATE_LEGS = [
 # read through the state the sample loop is handed since the TapeBlockState split
 # (`state.platterGateExponent`). The qualification is optional in the pattern: what this
 # reads back is the SHAPE, and which object the number hangs off is not the shape.
-GATE_DEFINITION = re.compile(r"const float (\w+) = std::pow \(platterSpeed, (?:state\.)?(\w+)\)")
+# The gate's own arithmetic moved into Source/DSP/TapeTransportFrame.h, where the
+# harness can call it; the shape is still one named exponent, so the pattern accepts
+# both the inline form and the header's (`const auto ... = std::pow (platterSpeed, ...)`).
+GATE_DEFINITION = re.compile(
+    r"const (?:float|auto) (\w+) = std::pow \(platterSpeed, (?:state\.)?(\w+)\)")
 
 
 def check_engine_gate() -> list[str]:

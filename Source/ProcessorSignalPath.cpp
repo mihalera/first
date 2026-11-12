@@ -62,6 +62,7 @@
 #include "DSP/MixCrossfader.h"
 #include "DSP/MultibandPhaseGuard.h"
 #include "DSP/PitchCorrectionRule.h"
+#include "DSP/TapeTransportFrame.h"
 #include "DSP/SafetyLimiter.h"
 #include "DSP/TapeCouplings.h"
 #include "DSP/TapeModulation.h"
@@ -2588,45 +2589,25 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     // ------------------------------------------------------------------
     transport.advanceFrame();
 
-    // The platter's actual speed, which is what the machine's level, its
-    // modulation depth and its reels all follow. It is the PRODUCT of the
-    // capstan ramp and the run-down, which is what makes a spindown from a
-    // stopped transport and a stop during a spindown land in the same place.
-    const float platterSpeed = transport.platter();
-
-    // How much of the machine's own motion reaches the signal: a transport
-    // below speed runs flat, which is what makes the ramp read as a machine
-    // engaging rather than as a fade-in. A spindown drives the same term the
-    // other way, so the machine goes slack as the platter coasts.
-    //
-    // The curve is raised to platterPitchExponent so the term holds near speed
-    // until the platter is genuinely slow, then falls away quickly. That is what
-    // makes a coast read as a machine losing its drive rather than as a
-    // fade-out, and it is why the exponent has to be ABOVE 1: below 1 the
-    // machine would go slack the instant the button went down.
-    //
-    // What this deliberately does NOT do is move the programme's PITCH. That is
-    // not this block's job and never was: everything here is a GAIN on one
-    // number, the platter's speed, and a multiplier cannot bend a pitch - it
-    // can only make the signal smaller. The bend belongs to the repitch stage
-    // at the end of the chain, which reads the finished frame back at that
-    // same number and is the one place the FORMAT of the output changes rather
-    // than its level. Keeping the two apart is what lets this gate stop the
-    // sound outright without the bend having to be undone first.
-    const float pitchedPlatter = std::pow (platterSpeed, state.platterPitchExponent);
-    const float speedError = (1.0f - (1.0f - pitchedPlatter) * 0.7f)
-                           * (1.0f - state.loadInducedSpeedError);
-
-    // What the machine passes while it is turning, 0 at rest. See
-    // platterGateExponent: this is the multiplier the output stage's two legs
-    // are both gated by, and it is why STOP is silence rather than a fade.
-    const float platterGate = std::pow (platterSpeed, state.platterGateExponent);
+    // The transport's frame: what the platter is doing, how much of the
+    // machine's own motion reaches the signal, and what the output gate passes.
+    // The arithmetic and the numbers behind it live in
+    // Source/DSP/TapeTransportFrame.h, where tests/transport can reach them;
+    // what stays here is the frame's place in the chain.
+    const auto transportFrame = j37dsp::tapeTransportFrame (transport.platter(),
+                                                            transport.spindown,
+                                                            state.platterPitchExponent,
+                                                            state.platterGateExponent,
+                                                            state.loadInducedSpeedError);
+    const float platterSpeed = transportFrame.platterSpeed;
+    const float speedError = transportFrame.speedError;
+    const float platterGate = transportFrame.platterGate;
 
     // Publish the platter speed and the run-down alone for the editor's reels
     // and momentary button. Relaxed stores: these are advisory UI values, and
     // the UI reads them with relaxed loads, so there is nothing to synchronise.
     transportRampPublished.store (platterSpeed, std::memory_order_relaxed);
-    spindownRampPublished.store (transport.spindown, std::memory_order_relaxed);
+    spindownRampPublished.store (transportFrame.spindown, std::memory_order_relaxed);
 
     std::array<float, 2> tapeOutput {};
 
