@@ -46,6 +46,8 @@
 
 #include "extracted_transport.inc"
 
+#include "DSP/TapeTransportFrame.h"
+
 namespace
 {
 constexpr double kRate = 48000.0;
@@ -1346,6 +1348,78 @@ void testRepitchReturnsToSyncAfterAGesture()
            "with no pitch of its own left: " + std::to_string (settledCrossings.hz()) + " Hz");
 }
 
+// The transport's frame arithmetic, which used to live inline in the middle of
+// processOneSample: three numbers with no name inside a 1,700-line function. It
+// is a pure function now, so its promises are checked directly instead of being
+// inferred from a rendered buffer.
+void testTheTransportFrame()
+{
+    // At speed with no load the machine is exactly itself: full pass, no error.
+    {
+        const auto frame = j37dsp::tapeTransportFrame (1.0f, 0.0f, 2.0f, 3.0f, 0.0f);
+        check (std::abs (frame.platterSpeed - 1.0f) < kEpsilon,
+               "transport frame: at speed the platter IS the speed");
+        check (std::abs (frame.speedError - 1.0f) < kEpsilon,
+               "transport frame: at speed with no load the tape is not running slow");
+        check (std::abs (frame.platterGate - 1.0f) < kEpsilon,
+               "transport frame: at speed the gate passes everything");
+    }
+
+    // At rest the gate is shut - that is what makes STOP silence rather than a
+    // fade - and the machine term keeps kTransportLoadReach of its travel, so a
+    // coast loses its drive instead of falling off a cliff.
+    {
+        const auto frame = j37dsp::tapeTransportFrame (0.0f, 0.5f, 2.0f, 3.0f, 0.0f);
+        check (std::abs (frame.platterGate) < kEpsilon,
+               "transport frame: at rest the gate is shut");
+        // 0.3 is the number the machine's report was tuned around, written out rather
+        // than read back from the constant: a test that derives its expectation from
+        // the value under test cannot notice that value changing.
+        check (std::abs (frame.speedError - 0.3f) < kEpsilon,
+               "transport frame: at rest the machine keeps only its load reach");
+        check (std::abs (frame.spindown - 0.5f) < kEpsilon,
+               "transport frame: the run-down is published as it was handed in");
+    }
+
+    // The load term multiplies the error: a loaded transport runs slower than an
+    // unloaded one at the same platter speed.
+    {
+        const auto unloaded = j37dsp::tapeTransportFrame (1.0f, 0.0f, 2.0f, 3.0f, 0.0f);
+        const auto loaded = j37dsp::tapeTransportFrame (1.0f, 0.0f, 2.0f, 3.0f, 0.1f);
+        check (loaded.speedError < unloaded.speedError,
+               "transport frame: load makes the tape run slower");
+        check (std::abs (loaded.speedError - 0.9f) < kEpsilon,
+               "transport frame: load scales the error by 1 - load");
+    }
+
+    // Half speed with the shipping exponents: the gate follows the platter
+    // raised to its own exponent, and the machine term the pitch exponent.
+    {
+        const auto frame = j37dsp::tapeTransportFrame (0.5f, 0.0f, 2.0f, 3.0f, 0.0f);
+        check (std::abs (frame.platterGate - 0.125f) < kEpsilon,
+               "transport frame: the gate is the platter to the gate exponent");
+        check (std::abs (frame.speedError - 0.475f) < kEpsilon,
+               "transport frame: the machine term follows the pitch exponent");
+    }
+
+    // Monotone: faster platter, more sound through the gate. A gate that dipped
+    // in the middle would be heard as a wobble during any gesture.
+    {
+        float previous = -1.0f;
+        bool monotone = true;
+
+        for (int step = 0; step <= 20; ++step)
+        {
+            const auto speed = static_cast<float> (step) / 20.0f;
+            const auto gate = j37dsp::tapeTransportFrame (speed, 0.0f, 2.0f, 3.0f, 0.0f).platterGate;
+            monotone = monotone && gate >= previous;
+            previous = gate;
+        }
+
+        check (monotone, "transport frame: the gate never falls while the platter speeds up");
+    }
+}
+
 int run()
 {
     testPlayIsSteady();
@@ -1371,6 +1445,8 @@ int run()
     testRepitchBendsByThePlatter();
     testRepitchSpindownBendsDeep();
     testRepitchReturnsToSyncAfterAGesture();
+
+    testTheTransportFrame();
 
     if (failures == 0)
         std::printf ("TRANSPORT CHECK PASSED (0 failures)\n");

@@ -82,7 +82,7 @@ Numbers are the order; "per" is the rate domain.
 | 13 | Playback DC blocker | sample | About an 8 Hz one-pole high-pass, removing the offset the deliberately asymmetric curve creates. Without it a hard-driven mix walks off centre. | - |
 | 14 | Playback head delay | sample | The spare head: a single interpolated read of one buffer per channel, with its own repeat character. The repeat is taken from the DC-blocked wet signal, so it inherits the machine's bandwidth and saturation. | DELAY, DLY LVL, DELAY TYPE, RATE/SYNC/PINGPONG |
 | 15 | Stereo tape offset | sample | A fractional-sample delay on ONE channel - the two tracks' heads are not in the same place. | ST OFFSET |
-| 16 | Platter gate and MIX crossfade | sample | The dry and wet legs are crossfaded by MIX, and BOTH legs carry the platter gate: a stopped machine passes nothing, whatever MIX says. | MIX, transport |
+| 16 | Platter gate and MIX crossfade | sample | The dry and wet legs are crossfaded by MIX, and BOTH legs carry the platter gate: a stopped machine passes nothing, whatever MIX says. The gate, the machine's speed error and the run-down are one small function over the platter's speed (`Source/DSP/TapeTransportFrame.h`), so the shape of a coast is checked directly rather than inferred from audio. | MIX, transport |
 | 17 | Repitch | sample | The finished frame is read back at the platter's speed, which is what turns the transport into a pitch bend. It sits after the crossfade and before every gain that follows. | transport, SPEED |
 | 18 | Sub-fund anti-phase guard | frame | Pulls the 1/2 and 1/4 undertone stages back into phase when their energy would otherwise cancel or reinforce the programme. | - |
 | 19 | Output glue compressor | frame (detector), sample (gain) | The second always-on compressor, immediately before the output trim; its makeup is driven by OUTPUT. | OUTPUT, ST LINK |
@@ -130,7 +130,7 @@ machine produced.
 | the three-band EQ's neutral point, slopes and band independence | `tests/unit` (`ThreeBandEq`) |
 | the conventional compressor's ratio, knee and makeup | `tests/unit` (`StandardCompressor`) |
 | the transient shaper's ATTACK and SUSTAIN signs | `tests/unit` (`TransientShaper`) |
-| the transport rig and the repitch stage | `tests/transport` |
+| the transport rig, its frame arithmetic and the repitch stage | `tests/transport` |
 | the pitch tracker, the granular shifter, and the corrector stage in BOTH of its engines | `tests/pitch` |
 | the rate bridge and the guarded neural stage | `tests/neural` |
 | the room's tail length in seconds at three rates, its stereo width, and its silence at MIX 0 | `tests/reverb` |
