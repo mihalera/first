@@ -194,37 +194,24 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // bunched against the bottom edge while the dial sat high - the lopsided look that
     // made the input/output meters read as crooked next to the compressor bars.
     constexpr int readoutRowCount = 5;
-
-    // The dial takes a fixed share of the body, and the readout rows then take
-    // whatever is genuinely LEFT below it. The old code computed the row block from a
-    // fixed share of the body and only afterwards clamped it upwards to fit, which had
-    // two consequences: the clamp pushed the first row back up against the dial, and
-    // the last row still ended up ONE pixel from the rounded bottom border at every
-    // editor size - the loudness numbers were literally touching the panel edge.
-    // Taking the row height from the space that actually remains below the dial keeps
-    // the dial, the rows and the border from fighting over the same pixels.
-    const auto bodyHeight = juce::jmax (72, getHeight() - topBlock);
-    const auto faceHeight = juce::roundToInt (static_cast<float> (bodyHeight) * 0.46f);
-    const auto face = juce::Rectangle<float> (bounds.getX(),
-                                              bounds.getY() + static_cast<float> (topBlock),
-                                              bounds.getWidth(), static_cast<float> (faceHeight));
-
     constexpr float rowGapAbove = 4.0f;
     constexpr float rowBottomMargin = 3.0f;
+
+    // The readout block is RESERVED FIRST and the dial takes whatever is left. Doing it
+    // the other way round - give the dial a share, let the rows take the remainder - let
+    // a short cell clamp the rows back up over the gauge, so the numbers printed on top
+    // of the dial. Reserving the rows first guarantees they always sit below the dial
+    // with the gap above and the margin below, at every cell size.
+    const auto bodyTop = bounds.getY() + static_cast<float> (topBlock);
+    const auto bodyBottom = bounds.getBottom() - rowBottomMargin;
+    const auto rowHeight = juce::jlimit (11, 20, juce::roundToInt (13.0f * textScale));
+    const auto readoutBlockHeight = static_cast<float> (rowHeight * readoutRowCount);
+    const auto faceHeight = juce::jmax (24.0f, bodyBottom - bodyTop - readoutBlockHeight
+                                                  - rowGapAbove);
+    const auto face = juce::Rectangle<float> (bounds.getX(), bodyTop,
+                                              bounds.getWidth(), faceHeight);
     const auto rowsTop = face.getBottom() + rowGapAbove;
-    const auto availableForRows = juce::jmax (static_cast<float> (readoutRowCount * 10),
-                                              bounds.getBottom() - rowsTop - rowBottomMargin);
-    // floor, not round: rounding UP would make the block taller than the space that
-    // was actually measured, and the clamp below would then drag the whole block back
-    // up on top of the dial. Flooring guarantees the rows start below the dial and
-    // still leave the bottom margin.
-    const auto readoutRowHeight = juce::jmax (10, static_cast<int> (availableForRows
-                                                                    / readoutRowCount));
-    const auto usedReadout = readoutRowHeight * readoutRowCount;
-    const auto readoutTop = juce::jmin (rowsTop,
-                                        bounds.getBottom() - static_cast<float> (usedReadout)
-                                          - rowBottomMargin);
-    const auto rowHeight = readoutRowHeight;
+    const auto readoutTop = rowsTop;
 
     // The frame now encloses only the caption and the dial. The loudness readout rows
     // below are drawn on the panel, clearly UNDER the meter rather than crammed inside
