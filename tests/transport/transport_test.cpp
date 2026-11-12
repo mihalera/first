@@ -46,7 +46,9 @@
 
 #include "extracted_transport.inc"
 
+#include "DSP/TapeSaturationDrive.h"
 #include "DSP/TapeTransportFrame.h"
+#include "DSP/TrackBleed.h"
 
 namespace
 {
@@ -1420,6 +1422,143 @@ void testTheTransportFrame()
     }
 }
 
+// The drive arithmetic between the controls and the saturation curve: the numbers
+// that decide how hard the head is run, which used to be six literals in the middle
+// of a 1,400-line function. Literal expectations, not the constants under test.
+void testTheSaturationDrive()
+{
+    // DRIVE at zero is unity into the head: the machine is clean at rest.
+    check (std::abs (j37dsp::tapeDriveAmount (0.0f, 0.0f)) < kEpsilon,
+           "saturation drive: DRIVE at zero and no squeeze is no drive at all");
+
+    // Half DRIVE is 0.95 of head drive (0.5 * 1.9), a squeeze of 0.4 is 0.46
+    // (0.4 * 1.15), and the two add.
+    check (std::abs (j37dsp::tapeDriveAmount (0.5f, 0.0f) - 0.95f) < kEpsilon,
+           "saturation drive: DRIVE scales the head by 1.9");
+    check (std::abs (j37dsp::tapeDriveAmount (0.0f, 0.4f) - 0.46f) < kEpsilon,
+           "saturation drive: the compressors' squeeze adds 1.15 per unit");
+    check (std::abs (j37dsp::tapeDriveAmount (0.5f, 0.4f) - 1.41f) < kEpsilon,
+           "saturation drive: the squeeze rides on top of DRIVE");
+
+    // The curve's own drive: tape character, hysteresis at a quarter, squeeze at
+    // three tenths - smaller than the head's share on purpose.
+    check (std::abs (j37dsp::tapeShaperDrive (0.5f, 1.0f, 0.0f, 0.0f) - 0.5f) < kEpsilon,
+           "saturation drive: the shaper takes the tape curve at face value");
+    check (std::abs (j37dsp::tapeShaperDrive (0.0f, 1.0f, 0.5f, 0.0f) - 0.125f) < kEpsilon,
+           "saturation drive: hysteresis reaches the curve at a quarter");
+    check (std::abs (j37dsp::tapeShaperDrive (0.0f, 1.0f, 0.0f, 0.5f) - 0.15f) < kEpsilon,
+           "saturation drive: the squeeze reaches the curve at three tenths");
+
+    // The static trim: unity with DRIVE down, 0.84 with it fully up.
+    check (std::abs (j37dsp::tapeDriveGainCompensation (0.0f) - 1.0f) < kEpsilon,
+           "saturation drive: no DRIVE is no compensation");
+    check (std::abs (j37dsp::tapeDriveGainCompensation (1.0f) - 0.84f) < kEpsilon,
+           "saturation drive: full DRIVE trims 16 percent");
+
+    // Pre-emphasis: unity at zero drive, and 1 + 0.5*1.2*0.84 = 1.504 at half.
+    check (std::abs (j37dsp::tapePreDrive (1.0f, 0.0f, 1.0f, 1.0f) - 1.0f) < kEpsilon,
+           "saturation drive: zero drive leaves the sample untouched");
+    check (std::abs (j37dsp::tapePreDrive (1.0f, 0.5f, 0.84f, 1.0f) - 1.504f) < kEpsilon,
+           "saturation drive: pre-emphasis scales the sample by 1.2 per unit of drive");
+
+    // Sag: full gain with no envelope, 0.825 at full demand (1 - 0.5*0.35), and the
+    // demand saturates at 1/3 of the envelope rather than ramping without end.
+    check (std::abs (j37dsp::tapeSagGain (0.5f, 0.0f) - 1.0f) < kEpsilon,
+           "saturation drive: an idle supply does not droop");
+    check (std::abs (j37dsp::tapeSagGain (0.5f, 1.0f / 3.0f) - 0.825f) < kEpsilon,
+           "saturation drive: full demand droops the gain by 0.175");
+    check (std::abs (j37dsp::tapeSagGain (0.5f, 10.0f) - 0.825f) < kEpsilon,
+           "saturation drive: the demand saturates instead of running away");
+    check (std::abs (j37dsp::tapeSagGain (0.5f, -1.0f) - 1.0f) < kEpsilon,
+           "saturation drive: a negative envelope cannot add gain");
+
+    // The squeeze term: zero at no reduction, 6 dB for two 3 dB stages, capped at
+    // 12, and a block that GAINED instead of reducing reads zero.
+    check (std::abs (j37dsp::tapeSqueezeDb (0.0f, 0.0f)) < kEpsilon,
+           "saturation drive: no gain reduction is no squeeze");
+    check (std::abs (j37dsp::tapeSqueezeDb (-3.0f, -3.0f) - 6.0f) < kEpsilon,
+           "saturation drive: the two glue stages' reductions add up");
+    check (std::abs (j37dsp::tapeSqueezeDb (-20.0f, -20.0f) - 12.0f) < kEpsilon,
+           "saturation drive: the squeeze is capped at 12 dB");
+    check (std::abs (j37dsp::tapeSqueezeDb (2.0f, 0.0f)) < kEpsilon,
+           "saturation drive: a stage that gained asks for no squeeze");
+
+    // 1 - exp(-6 * 0.20) = 0.6988: a sixth of the way from clean toward fully hot
+    // at 6 dB, monotone from there.
+    check (std::abs (j37dsp::tapeSqueezeTarget (0.0f)) < kEpsilon,
+           "saturation drive: the squeeze target starts at zero");
+    check (std::abs (j37dsp::tapeSqueezeTarget (6.0f) - 0.6988f) < kEpsilon,
+           "saturation drive: 6 dB of reduction asks for 0.6988 of squeeze");
+    check (j37dsp::tapeSqueezeTarget (12.0f) > j37dsp::tapeSqueezeTarget (6.0f),
+           "saturation drive: more reduction asks for more squeeze");
+}
+
+// The inter-track bleed: each channel pulled a fraction of the way toward the
+// other track's delayed sample, plus the layout tables that set how much and how
+// late. Also literal, and also checked in both directions.
+void testTheTrackBleed()
+{
+    // No crosstalk is the identity - what a mono layout gets.
+    {
+        const auto frame = j37dsp::trackBleedFrame (0.5f, -0.25f, 0.9f, 0.9f, 0.0f);
+        check (std::abs (frame.left - 0.5f) < kEpsilon && std::abs (frame.right + 0.25f) < kEpsilon,
+               "track bleed: no crosstalk leaves both channels exactly as they were");
+    }
+
+    // 2-track at the shipping 0.020: a silent pair takes 1 % of what the other
+    // track wrote, and each side takes the OTHER side's sample - the crossing.
+    {
+        const auto frame = j37dsp::trackBleedFrame (0.5f, -0.5f, 0.0f, 0.0f, 0.020f);
+        check (std::abs (frame.left - 0.49f) < kEpsilon,
+               "track bleed: the left channel moves toward the right track's level");
+        check (std::abs (frame.right + 0.49f) < kEpsilon,
+               "track bleed: the right channel moves toward the left track's level");
+    }
+
+    // 3-track leaks most (0.055): a neighbour at 1.0 on one side only.
+    {
+        const auto frame = j37dsp::trackBleedFrame (0.0f, 0.0f, 1.0f, 0.0f, 0.055f);
+        check (std::abs (frame.left - 0.055f) < kEpsilon,
+               "track bleed: the 3-track layout leaks 0.055 into the left channel");
+        check (std::abs (frame.right) < kEpsilon,
+               "track bleed: a silent neighbour contributes nothing to its own side");
+    }
+
+    // Symmetric: equal magnitudes in, equal magnitudes out - the image narrows
+    // without either side gaining on the other.
+    {
+        const auto frame = j37dsp::trackBleedFrame (0.4f, -0.4f, -0.4f, 0.4f, 0.055f);
+        check (std::abs (frame.left - (-frame.right)) < kEpsilon,
+               "track bleed: the cross-feed is symmetric, so the image only narrows");
+    }
+
+    // A convex step: the extreme neighbour is approached, never overshot, so a
+    // loud track cannot make the quiet one run away.
+    {
+        const auto frame = j37dsp::trackBleedFrame (0.0f, 0.0f, 1000.0f, -1000.0f, 0.055f);
+        check (frame.left > 0.0f && frame.left < 1000.0f,
+               "track bleed: the left channel lands between itself and its neighbour");
+        check (frame.right < 0.0f && frame.right > -1000.0f,
+               "track bleed: the right channel lands between itself and its neighbour");
+        check (std::abs (frame.left - 55.0f) < 1.0e-2f,
+               "track bleed: 5.5 percent of a 1000 neighbour is 55");
+    }
+
+    // The layout table itself, read back as numbers: three layouts, and the 2+3
+    // deck is the one that leaks least because a whole track sits between.
+    check (std::abs (j37dsp::kTrackCrosstalk[static_cast<std::size_t> (0)] - 0.020f) < kEpsilon
+               && std::abs (j37dsp::kTrackCrosstalk[static_cast<std::size_t> (1)] - 0.010f) < kEpsilon
+               && std::abs (j37dsp::kTrackCrosstalk[static_cast<std::size_t> (2)] - 0.055f) < kEpsilon,
+           "track bleed: the crosstalk table is 0.020 / 0.010 / 0.055 by layout");
+    check (j37dsp::kTrackCrosstalk[static_cast<std::size_t> (1)]
+               < j37dsp::kTrackCrosstalk[static_cast<std::size_t> (0)]
+               && j37dsp::kTrackCrosstalk[static_cast<std::size_t> (0)]
+                      < j37dsp::kTrackCrosstalk[static_cast<std::size_t> (2)],
+           "track bleed: the layout with a track between its channels leaks least");
+    check (std::abs (j37dsp::kTrackSpacingMs[static_cast<std::size_t> (1)] - 0.042f) < kEpsilon,
+           "track bleed: the 2+3 layout's leak arrives 0.042 ms late");
+}
+
 int run()
 {
     testPlayIsSteady();
@@ -1447,6 +1586,9 @@ int run()
     testRepitchReturnsToSyncAfterAGesture();
 
     testTheTransportFrame();
+
+    testTheSaturationDrive();
+    testTheTrackBleed();
 
     if (failures == 0)
         std::printf ("TRANSPORT CHECK PASSED (0 failures)\n");
