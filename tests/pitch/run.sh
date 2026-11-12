@@ -17,28 +17,20 @@
 # J37_SANITIZE=address,undefined builds the harness with those sanitizers and
 # turns them loose on the whole run; see build-linux-debug in the workflow.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="$(cd "${HERE}/../.." && pwd)"
-BUILD="${TMPDIR:-/tmp}/j37-pitch-test"
-CXX="${CXX:-g++}"
+BUILD="$(j37_build j37-pitch-test)"
 
 # The generated include names the stages as `#include "DSP/..."`, so the compiler
 # needs Source/ on its include path - the same reason tests/dsp/run.sh puts it there.
 # Source/ is part of the checkout, so this is the plugin's own header being
 # compiled, not a copy of it.
-SOURCE="${REPO}/Source"
+SOURCE="$(j37_path source)"
 
 mkdir -p "${BUILD}"
 
 python3 "${HERE}/extract.py" "${BUILD}/extracted_pitch.inc"
-
-sanitize_flags=()
-if [ -n "${J37_SANITIZE:-}" ]; then
-    sanitize_flags=("-fsanitize=${J37_SANITIZE}" "-fno-sanitize-recover=all"
-                    "-fno-omit-frame-pointer" "-g")
-    echo "sanitizers: ${J37_SANITIZE}"
-fi
 
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
@@ -54,13 +46,13 @@ fi
 # are run because the two make different promises, and both promises are asserted
 # rather than described - the numbers behind the option's OFF default are printed
 # by this run.
-STRETCH="${REPO}/ThirdParty/signalsmith-stretch/include"
+STRETCH="$(j37_path signalsmith-stretch)"
 # The stretch ROOT header does #include "signalsmith-linear/stft.h", and a
 # quoted include resolves against the includING file's directory first - which
 # is the stretch checkout, not an include directory. signalsmith-linear is its
 # own checkout beside it, so ThirdParty/ has to be on the include path for that
 # name to resolve; the plugin's CMake does the same for the same reason.
-LINEAR="${REPO}/ThirdParty"
+LINEAR="$(j37_path thirdparty)"
 
 if [ -f "${STRETCH}/signalsmith-stretch/signalsmith-stretch.h" ]; then
     echo

@@ -54,6 +54,7 @@ python3 tests/definitions/check_definitions.py   # the macros the build defines,
 python3 tests/linkline/check_linkline.py         # the link line, against the includes under Source/
 python3 tests/dependencies/check_unused_rack_fetch.py  # no unused Rack fetch with its unreliable GitLab submodule
 python3 tests/dependencies/check_submodules.py           # every ThirdParty tree is a submodule, pins agree
+python3 tests/dependencies/check_harness_preamble.py     # every harness uses tests/lib/harness.sh, by name
 python3 tests/render_backend/check_render_backend.py  # renderer selection and adapter contracts
                                                    # Sokol GL/GLES surfaces, resize/threading
 bash tests/render_backend/run.sh                 # backend choice IDs and AUTO, OPENGL, SOKOL routing
@@ -91,6 +92,32 @@ amalgamated sources, looks for the checkout in the CPM cache and takes
 `CATCH2_DIR` as an override. Unlike the benchmarks it IS a gate, because every
 number in it is a property of a function rather than of the machine - there is
 nothing in it that a busier runner could make flaky.
+
+## The shared preamble
+
+Every harness sources [`tests/lib/harness.sh`](lib/harness.sh) - never runs it -
+and that file owns the five facts the scripts used to repeat by hand: the
+repository root, the compiler defaults, the sanitizer flags, a scratch build
+directory, and where each dependency's headers live.
+
+Includes are asked for by name:
+
+    -I "$(j37_path pocketfft)" -I "$(j37_path source)"
+
+rather than spelled out, because spelling them out is how a one-line dependency
+change became three edits in three syntaxes, one of which failed silently: a
+comment inside a backslash-continued argument list ended the compiler command
+and the harness died with "no input files".
+
+The preamble is deliberately *additive*. It will not put `dr_libs` or `xsimd` on
+the include path for you, because several harnesses compile the same source
+twice - once with the library and once without - to pin both branches of a
+`J37_HAS_*` decision. A fixed include list would collapse those pairs.
+
+`tests/dependencies/check_harness_preamble.py` keeps the seam honest: every
+harness sources the preamble, none defaults the compiler itself, none builds its
+own sanitizer array, and no include flag names `Source/`, `ThirdParty/` or
+`JUCE/` by path.
 
 ## What each harness compiles
 

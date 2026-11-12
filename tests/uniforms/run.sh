@@ -13,15 +13,15 @@
 # and that a block is uploaded exactly when it differs, after a scene mark, or
 # after a new program.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD="${TMPDIR:-/tmp}/j37-uniforms-test"
-CXX="${CXX:-g++}"
+BUILD="$(j37_build j37-uniforms-test)"
 
 mkdir -p "${BUILD}"
 
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
-    -I "${HERE}/../../Source" \
+    -I "$(j37_path source)" \
     "${HERE}/uniform_cache_test.cpp" -o "${BUILD}/uniform_cache_test"
 
 "${BUILD}/uniform_cache_test"

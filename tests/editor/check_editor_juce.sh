@@ -56,6 +56,7 @@
 # file the editor is split into therefore joins the check by existing, and the
 # guard below fails if one of them is missing from the run.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 # Four passes, and the whole check is about three minutes on a single-core machine
 # (thirteen translation units, twelve headers and one opt-in shape, each a full JUCE
@@ -82,10 +83,8 @@ case "${1:-}" in
 esac
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="${HERE}/../.."
-JUCE_MODULES="${REPO}/JUCE/modules"
-BUILD="${TMPDIR:-/tmp}/j37-editor-check"
-CXX="${CXX:-g++}"
+JUCE_MODULES="$(j37_path juce)"
+BUILD="$(j37_build j37-editor-check)"
 
 if [ ! -d "${JUCE_MODULES}/juce_gui_basics" ]; then
     echo "check_editor_juce: ${JUCE_MODULES} is empty - the JUCE submodule is not" \
@@ -220,27 +219,27 @@ PY
 # The include paths, in the order the compiler is given them. The vendored
 # third-party checkouts are the ones CMakeLists.txt declares as header-only.
 INCLUDES=(
-    -I "${REPO}/Source"
-    -I "${REPO}/JUCE/modules"
+    -I "$(j37_path source)"
+    -I "$(j37_path juce)"
     -I "${BUILD}/stubs"
-    -I "${REPO}/ThirdParty/glm"
-    -I "${REPO}/ThirdParty/RTNeural"
-    -I "${REPO}/ThirdParty/RTNeural/modules/json"
-    -I "${REPO}/ThirdParty/nlohmann_json/single_include"
-    -I "${REPO}/ThirdParty/xsimd/include"
-    -I "${REPO}/ThirdParty/farbot/include"
-    -I "${REPO}/ThirdParty/signalsmith-stretch/include"
+    -I "$(j37_path glm)"
+    -I "$(j37_path rtneural)"
+    -I "$(j37_path nlohmann_json/embedded)"
+    -I "$(j37_path nlohmann_json)"
+    -I "$(j37_path xsimd)"
+    -I "$(j37_path farbot)"
+    -I "$(j37_path signalsmith-stretch)"
     # The stretch root header includes "signalsmith-linear/stft.h" by that NAME,
     # resolved against the includING file's directory first - so the sibling
     # checkout is reachable through ThirdParty/ and nowhere else.
-    -I "${REPO}/ThirdParty"
-    -I "${REPO}/ThirdParty/pocketfft"
+    -I "$(j37_path thirdparty)"
+    -I "$(j37_path pocketfft)"
     # The room's library. Unlike the rest of this list it is not header-only -
     # verb.c is compiled into the plugin by cmake/J37Dependencies.cmake - but the
     # stage's include of <verb.h> is a fact about compiling the plugin, and a pass
     # that could not find it would fail every translation unit the processor is
     # split into. The link is tests/reverb's job.
-    -I "${REPO}/ThirdParty/dattorro-verb"
+    -I "$(j37_path dattorro)"
 )
 # pocketfft was already in this list because cmake/J37Dependencies.cmake declares it
 # header-only and CMakeLists.txt therefore puts its directory on the plugin's include
@@ -386,7 +385,7 @@ fi
 # compiled neither. The saved-state header is the one that would have hurt - two
 # translation units with nothing else in common include it, which is exactly when a
 # hidden dependency stops being theoretical.
-mapfile -t OWN_HEADERS < <(python3 - "${REPO}/Source" <<'PY'
+mapfile -t OWN_HEADERS < <(python3 - "$(j37_path source)" <<'PY'
 import pathlib
 import sys
 
@@ -449,14 +448,14 @@ fi
 #  pass-through and reports success for a shape it never built.
 # -----------------------------------------------------------------------------
 NAM_INCLUDES=(
-    -isystem "${REPO}/ThirdParty/namcore"
-    -isystem "${REPO}/ThirdParty/eigen"
-    -isystem "${REPO}/ThirdParty/nlohmann_json/single_include/nlohmann"
+    -isystem "$(j37_path namcore)"
+    -isystem "$(j37_path eigen)"
+    -isystem "$(j37_path nlohmann_json/json)"
 )
 
 if [ "${RUN_NAMCORE}" -eq 1 ]; then
-    if [ ! -f "${REPO}/ThirdParty/namcore/NAM/get_dsp.h" ] \
-       || [ ! -f "${REPO}/ThirdParty/eigen/Eigen/Dense" ]; then
+    if [ ! -f "$(j37_path namcore)/NAM/get_dsp.h" ] \
+       || [ ! -f "$(j37_path eigen)/Eigen/Dense" ]; then
         echo "check_editor_juce: ThirdParty/namcore or ThirdParty/eigen is missing -" \
              "the NAM Core pass cannot compile the shape it exists for" >&2
         exit 1

@@ -26,23 +26,16 @@
 # the DSP ones: the decoder reads lengths out of a packet, which is the shape of code
 # an address sanitizer is for.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD="${TMPDIR:-/tmp}/j37-osc-test"
-CXX="${CXX:-g++}"
+BUILD="$(j37_build j37-osc-test)"
 
 # The headers are included as `Net/Osc.h`, the way the plugin includes them, so
 # Source/ is on the path.
-SOURCE="${HERE}/../../Source"
+SOURCE="$(j37_path source)"
 
 mkdir -p "${BUILD}"
-
-sanitize_flags=()
-if [ -n "${J37_SANITIZE:-}" ]; then
-    sanitize_flags=("-fsanitize=${J37_SANITIZE}" "-fno-sanitize-recover=all"
-                    "-fno-omit-frame-pointer" "-g")
-    echo "sanitizers: ${J37_SANITIZE}"
-fi
 
 "${CXX}" -std=c++20 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \

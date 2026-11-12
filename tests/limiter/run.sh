@@ -15,10 +15,10 @@
 # stand-in is tests/dsp/shim.h, for the juce:: helpers the coefficient builder
 # names - the limiter itself names nothing of JUCE.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD="${TMPDIR:-/tmp}/j37-limiter-test"
-CXX="${CXX:-g++}"
+BUILD="$(j37_build j37-limiter-test)"
 
 mkdir -p "${BUILD}"
 
@@ -26,16 +26,10 @@ mkdir -p "${BUILD}"
 # switch the other harnesses take. The stage runs per sample with two floats of
 # state, so what they would catch here is an out-of-range read in the harness
 # rather than in the header.
-sanitize_flags=()
-if [ -n "${J37_SANITIZE:-}" ]; then
-    sanitize_flags=("-fsanitize=${J37_SANITIZE}" "-fno-sanitize-recover=all"
-                    "-fno-omit-frame-pointer" "-g")
-    echo "sanitizers: ${J37_SANITIZE}"
-fi
 
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
-    -I "${HERE}" -I "${HERE}/../../Source" \
+    -I "${HERE}" -I "$(j37_path source)" \
     "${HERE}/limiter_test.cpp" -o "${BUILD}/limiter_test"
 
 "${BUILD}/limiter_test"

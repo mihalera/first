@@ -41,22 +41,14 @@
 # J37_SANITIZE=address,undefined rides along with the debug build in the workflow,
 # the same way the other harnesses do.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="$(cd "${HERE}/../.." && pwd)"
-BUILD="${TMPDIR:-/tmp}/j37-spectrum-test"
-CXX="${CXX:-g++}"
-SOURCE="${REPO}/Source"
-POCKETFFT="${REPO}/ThirdParty/pocketfft"
+BUILD="$(j37_build j37-spectrum-test)"
+SOURCE="$(j37_path source)"
+POCKETFFT="$(j37_path pocketfft)"
 
 mkdir -p "${BUILD}"
-
-sanitize_flags=()
-if [ -n "${J37_SANITIZE:-}" ]; then
-    sanitize_flags=("-fsanitize=${J37_SANITIZE}" "-fno-sanitize-recover=all"
-                    "-fno-omit-frame-pointer" "-g")
-    echo "sanitizers: ${J37_SANITIZE}"
-fi
 
 # The library build. ThirdParty/pocketfft is where the header is vendored, and
 # cmake/J37Dependencies.cmake declares that same directory as the target's include

@@ -449,6 +449,13 @@ jobs:
       - name: Check every third-party library is a submodule
         run: python3 tests/dependencies/check_submodules.py
 
+      # Every harness sources one preamble for the repository root, the
+      # compiler, the sanitizer flags and each dependency's include path. That
+      # is the fact that, when it changed, had to be corrected in three scripts
+      # in three syntaxes - and one of those corrections failed silently.
+      - name: Check every harness uses the shared preamble
+        run: python3 tests/dependencies/check_harness_preamble.py
+
       - name: Check configure-time dependency fetches
         run: python3 tests/dependencies/check_unused_rack_fetch.py
 

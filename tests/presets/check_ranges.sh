@@ -15,11 +15,10 @@
 # defect that cannot fail at runtime - a preset asking for a value the parameter
 # clamps, which loads as a different sound than the file describes.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="$(cd "${HERE}/../.." && pwd)"
-BUILD="${TMPDIR:-/tmp}/j37-preset-ranges"
-CXX="${CXX:-g++}"
+BUILD="$(j37_build j37-preset-ranges)"
 
 mkdir -p "${BUILD}"
 

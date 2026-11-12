@@ -13,26 +13,19 @@
 # The contract file and the frame builder must agree on the per-material
 # meaning of `draw.parameters[0..2]`. When they disagree, this harness fails.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="${HERE}/../.."
-BUILD="${TMPDIR:-/tmp}/j37-scene-frame-pack-contract"
-CXX="${CXX:-g++}"
+BUILD="$(j37_build j37-scene-frame-pack-contract)"
 
 mkdir -p "${BUILD}"
 
 # Sanitizers mirror the other scene_frame harness so the shared-mesh and
 # pointer-to-shared-data invariants are still under the same tooling.
-sanitize_flags=()
-if [ -n "${J37_SANITIZE:-}" ]; then
-    sanitize_flags=("-fsanitize=${J37_SANITIZE}" "-fno-sanitize-recover=all"
-                    "-fno-omit-frame-pointer" "-g")
-    echo "sanitizers: ${J37_SANITIZE}"
-fi
 
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
-    -I "${REPO}/Source" \
+    -I "$(j37_path source)" \
     "${HERE}/pack_contract.cpp" \
     "${REPO}/Source/GUI/SceneFrame.cpp" \
     -o "${BUILD}/pack_contract"

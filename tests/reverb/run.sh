@@ -14,13 +14,11 @@
 # The library is not copied: ThirdParty/dattorro-verb/ is the vendored pin the
 # CMake build compiles, so the test and the plugin measure the same verb.c.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="${HERE}/../.."
-LIBRARY="${REPO}/ThirdParty/dattorro-verb"
-BUILD="${TMPDIR:-/tmp}/j37-reverb-test"
-CXX="${CXX:-g++}"
-CC="${CC:-cc}"
+LIBRARY="$(j37_path dattorro)"
+BUILD="$(j37_build j37-reverb-test)"
 
 if [ ! -f "${LIBRARY}/verb.c" ]; then
     echo "reverb harness: ${LIBRARY}/verb.c is missing - the vendored library is not" \
@@ -33,12 +31,6 @@ mkdir -p "${BUILD}"
 # J37_SANITIZE=address,undefined puts the harness under those sanitizers, the same
 # switch the other harnesses take. A feedback network with a ring of doubles behind
 # it is exactly the shape an out-of-bounds read hides in.
-sanitize_flags=()
-if [ -n "${J37_SANITIZE:-}" ]; then
-    sanitize_flags=("-fsanitize=${J37_SANITIZE}" "-fno-sanitize-recover=all"
-                    "-fno-omit-frame-pointer" "-g")
-    echo "sanitizers: ${J37_SANITIZE}"
-fi
 
 # verb.c as C, with the warnings the plugin's build does not suppress: the vendor
 # code is not ours to change, but a compiler that starts objecting to it is worth
@@ -50,7 +42,7 @@ fi
 
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
-    -I "${HERE}" -I "${REPO}/Source" -I "${LIBRARY}" \
+    -I "${HERE}" -I "$(j37_path source)" -I "${LIBRARY}" \
     "${HERE}/reverb_test.cpp" "${BUILD}/verb.o" -o "${BUILD}/reverb_test" -lm
 
 "${BUILD}/reverb_test"

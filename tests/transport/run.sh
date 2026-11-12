@@ -19,26 +19,19 @@
 # J37_SANITIZE=address,undefined rides along with the debug build in the workflow,
 # the same way the other three harnesses do.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD="${TMPDIR:-/tmp}/j37-transport-test"
-CXX="${CXX:-g++}"
+BUILD="$(j37_build j37-transport-test)"
 
 # The generated include names the two stages as `#include "DSP/..."`, so Source/ has
 # to be on the include path - the same reason tests/dsp/run.sh puts it there. Source/
 # is part of the checkout, so this is the plugin's own headers being compiled.
-SOURCE="${HERE}/../../Source"
+SOURCE="$(j37_path source)"
 
 mkdir -p "${BUILD}"
 
 python3 "${HERE}/extract.py" "${BUILD}/extracted_transport.inc"
-
-sanitize_flags=()
-if [ -n "${J37_SANITIZE:-}" ]; then
-    sanitize_flags=("-fsanitize=${J37_SANITIZE}" "-fno-sanitize-recover=all"
-                    "-fno-omit-frame-pointer" "-g")
-    echo "sanitizers: ${J37_SANITIZE}"
-fi
 
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
