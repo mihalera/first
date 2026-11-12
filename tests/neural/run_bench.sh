@@ -22,17 +22,16 @@
 # statics that an archive would prune (see cmake/J37Dependencies.cmake for the
 # long version). Keep the two scripts' build blocks in step.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="$(cd "${HERE}/../.." && pwd)"
-SOURCE="${REPO}/Source"
-BUILD="${TMPDIR:-/tmp}/j37-neural-bench"
-CXX="${CXX:-g++}"
+SOURCE="$(j37_path source)"
+BUILD="$(j37_build j37-neural-bench)"
 
-RTNEURAL_ROOT="${REPO}/ThirdParty/RTNeural"
-NAM_ROOT="${REPO}/ThirdParty/namcore"
-EIGEN_ROOT="${REPO}/ThirdParty/eigen"
-NLOHMANN_ROOT="${REPO}/ThirdParty/nlohmann_json/single_include"
+RTNEURAL_ROOT="$(j37_path rtneural)"
+NAM_ROOT="$(j37_path namcore)"
+EIGEN_ROOT="$(j37_path eigen)"
+NLOHMANN_ROOT="$(j37_path nlohmann_json)"
 NAM_JSON_INCLUDE="${NLOHMANN_ROOT}/nlohmann"
 
 for required in "${RTNEURAL_ROOT}" "${NAM_ROOT}/NAM/get_dsp.h" \

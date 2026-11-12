@@ -17,10 +17,10 @@
 # halves of a split whose failure is a control that quietly never gets built - see
 # the note in extract.py - and this is the only job that sees it.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD="${TMPDIR:-/tmp}/j37-layout-test"
-CXX="${CXX:-g++}"
+BUILD="$(j37_build j37-layout-test)"
 
 mkdir -p "${BUILD}"
 
@@ -29,16 +29,10 @@ python3 "${HERE}/extract.py" "${BUILD}"
 # J37_SANITIZE=address,undefined puts the harness, and the layout arithmetic it
 # compiles out of Source/, under those sanitizers - see the sanitizer step in
 # build-linux-debug.
-sanitize_flags=()
-if [ -n "${J37_SANITIZE:-}" ]; then
-    sanitize_flags=("-fsanitize=${J37_SANITIZE}" "-fno-sanitize-recover=all"
-                    "-fno-omit-frame-pointer" "-g")
-    echo "sanitizers: ${J37_SANITIZE}"
-fi
 
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
-    -I "${HERE}" -I "${HERE}/../../Source" -I "${BUILD}" \
+    -I "${HERE}" -I "$(j37_path source)" -I "${BUILD}" \
     "${HERE}/layout_test.cpp" -o "${BUILD}/layout_test"
 
 "${BUILD}/layout_test"
@@ -50,7 +44,7 @@ fi
 #  routine clamped its shrink and then clipped the overflow, which no check could
 #  see - a clipped caption is neither a crash nor a warning.
 # ---------------------------------------------------------------------------
-SRC="${HERE}/../../Source"
+SRC="$(j37_path source)"
 "${CXX}" -std=c++17 -O1 -Wall -Wextra -I "${SRC}"     "${HERE}/chip_captions.cpp" -o "${BUILD}/chip_captions"
 "${BUILD}/chip_captions"
 

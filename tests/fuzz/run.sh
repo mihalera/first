@@ -28,12 +28,12 @@
 # Neither half links into the plugin, and neither is a runtime dependency: this is
 # dev-and-CI evidence, like Catch2's suite and the libebur128 oracle next door.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD="${TMPDIR:-/tmp}/j37-fuzz-noise"
-CXX="${CXX:-g++}"
-SOURCE="${HERE}/../../Source"
-DR_LIBS="${HERE}/../../ThirdParty/dr_libs"
+BUILD="$(j37_build j37-fuzz-noise)"
+SOURCE="$(j37_path source)"
+DR_LIBS="$(j37_path dr_libs)"
 
 mkdir -p "${BUILD}"
 

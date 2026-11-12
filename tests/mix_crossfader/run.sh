@@ -15,10 +15,10 @@
 # No extractor, no replica and no shim: the header names nothing of JUCE, so it is
 # compiled as it ships with nothing but Source/ on the include path.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD="${TMPDIR:-/tmp}/j37-mix-crossfader-test"
-CXX="${CXX:-g++}"
+BUILD="$(j37_build j37-mix-crossfader-test)"
 
 mkdir -p "${BUILD}"
 
@@ -26,16 +26,10 @@ mkdir -p "${BUILD}"
 # switch the other harnesses take. The stage is arithmetic on floats with no state,
 # so what they would catch here is an out-of-range read in the harness rather than
 # in the header.
-sanitize_flags=()
-if [ -n "${J37_SANITIZE:-}" ]; then
-    sanitize_flags=("-fsanitize=${J37_SANITIZE}" "-fno-sanitize-recover=all"
-                    "-fno-omit-frame-pointer" "-g")
-    echo "sanitizers: ${J37_SANITIZE}"
-fi
 
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
-    -I "${HERE}/../../Source" \
+    -I "$(j37_path source)" \
     "${HERE}/mix_crossfader_test.cpp" -o "${BUILD}/mix_crossfader_test"
 
 "${BUILD}/mix_crossfader_test"

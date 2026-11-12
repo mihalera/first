@@ -15,11 +15,10 @@
 # invoke CMake, so it looks for the header in the usual CPM cache locations and
 # says plainly what to do when it cannot find it.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="$(cd "${HERE}/../.." && pwd)"
-BUILD="${TMPDIR:-/tmp}/nonlin-dsp-bench"
-CXX="${CXX:-g++}"
+BUILD="$(j37_build nonlin-dsp-bench)"
 
 mkdir -p "${BUILD}"
 
@@ -62,7 +61,7 @@ echo
 # DSP/J37Math.h - which is exactly what the DSP micro-benchmarks job did until
 # this line was here.
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
-    -I "${HERE}" -I "${BUILD}" -I "${NANOBENCH_INC}" -I "${REPO}/Source" \
+    -I "${HERE}" -I "${BUILD}" -I "${NANOBENCH_INC}" -I "$(j37_path source)" \
     "${HERE}/bench.cpp" -o "${BUILD}/bench"
 
 "${BUILD}/bench"
@@ -88,8 +87,8 @@ echo "(compare the SaturationCore::process and std::tanh rows with the log above
 echo
 
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
-    -I "${HERE}" -I "${BUILD}" -I "${NANOBENCH_INC}" -I "${REPO}/Source" \
-    -I "${REPO}/ThirdParty/xsimd/include" -DJ37_USE_SIMD_TANH=1 \
+    -I "${HERE}" -I "${BUILD}" -I "${NANOBENCH_INC}" -I "$(j37_path source)" \
+    -I "$(j37_path xsimd)" -DJ37_USE_SIMD_TANH=1 \
     "${HERE}/bench.cpp" -o "${BUILD}/bench_simd"
 
 "${BUILD}/bench_simd"

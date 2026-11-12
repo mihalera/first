@@ -14,10 +14,10 @@
 #
 # No extractor and no replica: the header is compiled as it ships.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD="${TMPDIR:-/tmp}/j37-gain-test"
-CXX="${CXX:-g++}"
+BUILD="$(j37_build j37-gain-test)"
 
 mkdir -p "${BUILD}"
 
@@ -26,16 +26,10 @@ mkdir -p "${BUILD}"
 # state, so what they would catch here is an out-of-range read in the harness
 # rather than in the header - which is why this rides along with the others'
 # sanitizer step rather than waiting for one of its own.
-sanitize_flags=()
-if [ -n "${J37_SANITIZE:-}" ]; then
-    sanitize_flags=("-fsanitize=${J37_SANITIZE}" "-fno-sanitize-recover=all"
-                    "-fno-omit-frame-pointer" "-g")
-    echo "sanitizers: ${J37_SANITIZE}"
-fi
 
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
-    -I "${HERE}/../../Source" \
+    -I "$(j37_path source)" \
     "${HERE}/gain_test.cpp" -o "${BUILD}/gain_test"
 
 "${BUILD}/gain_test"

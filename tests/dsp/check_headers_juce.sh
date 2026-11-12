@@ -46,12 +46,11 @@
 # anywhere, and the probe below is what turns parsing into USE for the stages it has a
 # line for.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="${HERE}/../.."
-JUCE_MODULES="${REPO}/JUCE/modules"
-BUILD="${TMPDIR:-/tmp}/j37-juce-header-check"
-CXX="${CXX:-g++}"
+JUCE_MODULES="$(j37_path juce)"
+BUILD="$(j37_build j37-juce-header-check)"
 
 if [ ! -d "${JUCE_MODULES}/juce_audio_basics" ]; then
     echo "check_headers_juce: ${JUCE_MODULES} is empty - the JUCE submodule is not" \
@@ -263,7 +262,6 @@ TU="${BUILD}/header_check.cpp"
     x += compensator.getSmoothedDb() + compensator.getGain();
     compensator.reset();
 
-
     PitchTracker tracker;
     tracker.prepare (48000.0);
 
@@ -426,12 +424,12 @@ EOF
 # directory first - so the name resolves through ThirdParty/ now that linear
 # is its own checkout rather than a directory inside the stretch one.
 "${CXX}" -std=c++17 -fsyntax-only -Wall -Wextra -Wno-unused-parameter \
-    -I "${REPO}/Source" -I "${JUCE_MODULES}" \
-    -I "${REPO}/ThirdParty/pocketfft" \
-    -I "${REPO}/ThirdParty/dattorro-verb" \
-    -I "${REPO}/ThirdParty/dr_libs" \
-    -I "${REPO}/ThirdParty/signalsmith-stretch/include" \
-    -I "${REPO}/ThirdParty" \
+    -I "$(j37_path source)" -I "${JUCE_MODULES}" \
+    -I "$(j37_path pocketfft)" \
+    -I "$(j37_path dattorro)" \
+    -I "$(j37_path dr_libs)" \
+    -I "$(j37_path signalsmith-stretch)" \
+    -I "$(j37_path thirdparty)" \
     -DJ37_CORRECTOR_USE_STRETCH=1 \
     -DJUCE_GLOBAL_MODULE_SETTINGS_INCLUDED=1 \
     -DJUCE_MODULE_AVAILABLE_juce_core=1 \

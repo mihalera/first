@@ -30,11 +30,10 @@
 # system, and the same assertions whether it came from CPM or from the release
 # tarball.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="$(cd "${HERE}/../.." && pwd)"
-BUILD="${TMPDIR:-/tmp}/j37-unit-tests"
-CXX="${CXX:-g++}"
+BUILD="$(j37_build j37-unit-tests)"
 
 mkdir -p "${BUILD}"
 
@@ -90,12 +89,6 @@ echo "catch2: ${CATCH2_SRC}"
 # J37_SANITIZE=address,undefined, the same switch tests/dsp/run.sh honours: the
 # unit tests are where a one-function numerical mistake is cheapest to see, and
 # they run in the sanitizer pass for the same reason the harnesses do.
-sanitize_flags=()
-if [ -n "${J37_SANITIZE:-}" ]; then
-    sanitize_flags=("-fsanitize=${J37_SANITIZE}" "-fno-sanitize-recover=all"
-                    "-fno-omit-frame-pointer" "-g")
-    echo "sanitizers: ${J37_SANITIZE}"
-fi
 
 # -I tests/dsp for the same shim.h the regression harness compiles against: these
 # tests include the SHIPPING headers from Source/DSP/, and the shim is what lets
@@ -103,7 +96,7 @@ fi
 # those headers are found by the name the plugin uses for them.
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
-    -I "${HERE}" -I "${REPO}/tests/dsp" -I "${REPO}/Source" -I "${CATCH2_INC}" \
+    -I "${HERE}" -I "${REPO}/tests/dsp" -I "$(j37_path source)" -I "${CATCH2_INC}" \
     "${HERE}"/*_test.cpp "${CATCH2_INC}/catch_amalgamated.cpp" \
     -o "${BUILD}/unit_tests"
 

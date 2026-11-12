@@ -10,16 +10,16 @@
 # of work on any machine with a C++17 compiler, which is why it can run on every
 # pull request instead of only where the plugin is built.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD="${TMPDIR:-/tmp}/subfund-dsp-test"
-CXX="${CXX:-g++}"
+BUILD="$(j37_build subfund-dsp-test)"
 
 # The stages that have moved into Source/DSP/ are INCLUDED by the generated header
 # (see extract.py's SOURCE_HEADERS) rather than cut out of PluginProcessor.h, so
 # the compiler needs Source/ on its include path. Source/ and tests/ are both part
 # of the checkout, so this is the plugin's own header being compiled, not a copy.
-SOURCE="${HERE}/../../Source"
+SOURCE="$(j37_path source)"
 
 mkdir -p "${BUILD}"
 
@@ -29,12 +29,6 @@ python3 "${HERE}/extract.py" "${BUILD}/extracted_dsp.inc"
 # renders, under those sanitizers. The harness is seconds of work, so the
 # sanitizer pass rides along with the debug build in the workflow rather than
 # waiting for a separate sanitized build of the plugin.
-sanitize_flags=()
-if [ -n "${J37_SANITIZE:-}" ]; then
-    sanitize_flags=("-fsanitize=${J37_SANITIZE}" "-fno-sanitize-recover=all"
-                    "-fno-omit-frame-pointer" "-g")
-    echo "sanitizers: ${J37_SANITIZE}"
-fi
 
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
@@ -74,7 +68,7 @@ fi
 #  compiler whose C library has no <sys/queue.h> (MSVC's does not), SKIPS it and
 #  says so rather than failing a build for a tool that does not ship.
 # -----------------------------------------------------------------------------
-ORACLE_SOURCE="${HERE}/../../ThirdParty/libebur128"
+ORACLE_SOURCE="$(j37_path ebur128)"
 
 if [ -f "${ORACLE_SOURCE}/ebur128/ebur128.c" ] \
    && printf '#include <sys/queue.h>\n' | "${CXX}" -E -x c - > /dev/null 2>&1; then
@@ -122,7 +116,7 @@ fi
 #  build with the flag and the library must render different audio by the amount
 #  the header quotes - that is the pair this block exists to keep true.
 # -----------------------------------------------------------------------------
-XSIMD_INCLUDE="${HERE}/../../ThirdParty/xsimd/include"
+XSIMD_INCLUDE="$(j37_path xsimd)"
 
 build_seam() {                     # name, then that build's extra flags
     local name="$1"; shift
@@ -216,7 +210,7 @@ PY
 #  that owns dr_wav's implementation. The absent build compiles the same file and
 #  gets the header's absent branch, which is what a pruned ThirdParty/ would.
 # -----------------------------------------------------------------------------
-DR_LIBS_INCLUDE="${HERE}/../../ThirdParty/dr_libs"
+DR_LIBS_INCLUDE="$(j37_path dr_libs)"
 
 build_noise() {                     # name, then that build's extra flags
     local name="$1"; shift

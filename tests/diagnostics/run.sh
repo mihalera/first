@@ -12,10 +12,10 @@
 # themselves are Windows-only in this build; on other platforms the report says
 # so and the rest is checked the same way.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD="${TMPDIR:-/tmp}/j37-diagnostics-test"
-CXX="${CXX:-g++}"
+BUILD="$(j37_build j37-diagnostics-test)"
 
 mkdir -p "${BUILD}"
 
@@ -25,16 +25,9 @@ case "$(uname -s)" in
     *)                    platform_flags=("-pthread") ;;
 esac
 
-sanitize_flags=()
-if [ -n "${J37_SANITIZE:-}" ]; then
-    sanitize_flags=("-fsanitize=${J37_SANITIZE}" "-fno-sanitize-recover=all"
-                    "-fno-omit-frame-pointer" "-g")
-    echo "sanitizers: ${J37_SANITIZE}"
-fi
-
 "${CXX}" -std=c++17 -O1 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
-    -I "${HERE}/../../Source" \
+    -I "$(j37_path source)" \
     "${HERE}/diag_test.cpp" \
     "${HERE}/../../Source/Diagnostics/DiagCore.cpp" \
     "${HERE}/../../Source/Diagnostics/ShutdownWatchdog.cpp" \

@@ -13,27 +13,20 @@
 # The header is compiled exactly as it ships, and so is its implementation:
 # there is no extractor and no replica here.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-REPO="${HERE}/../.."
-BUILD="${TMPDIR:-/tmp}/j37-scene-frame-test"
-CXX="${CXX:-g++}"
+BUILD="$(j37_build j37-scene-frame-test)"
 
 mkdir -p "${BUILD}"
 
 # J37_SANITIZE=address,undefined puts the harness under the same sanitizers the
 # other harnesses take. A frame is a pointer to shared mesh data plus a draw
 # list, so a null or dangling share is exactly what they catch.
-sanitize_flags=()
-if [ -n "${J37_SANITIZE:-}" ]; then
-    sanitize_flags=("-fsanitize=${J37_SANITIZE}" "-fno-sanitize-recover=all"
-                    "-fno-omit-frame-pointer" "-g")
-    echo "sanitizers: ${J37_SANITIZE}"
-fi
 
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
-    -I "${REPO}/Source" \
+    -I "$(j37_path source)" \
     "${HERE}/scene_frame_test.cpp" "${REPO}/Source/GUI/SceneFrame.cpp" \
     -o "${BUILD}/scene_frame_test"
 

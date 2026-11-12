@@ -45,25 +45,25 @@
 # J37_SANITIZE=address,undefined rides along with the debug build in the workflow,
 # the same way the other harnesses do.
 set -euo pipefail
+source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
 HERE="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-BUILD="${TMPDIR:-/tmp}/j37-neural-test"
-CXX="${CXX:-g++}"
+BUILD="$(j37_build j37-neural-test)"
 
 # The stages extracted by the DSP harness that already live in their own headers
 # under Source/DSP/ are included from there rather than cut out of
 # PluginProcessor.h, so Source/ has to be on the include path - the same reason
 # tests/dsp/run.sh puts it there.
-SOURCE="${HERE}/../../Source"
+SOURCE="$(j37_path source)"
 
 # The two inference engines, vendored under ThirdParty/ (see
 # cmake/J37Dependencies.cmake for the pins and the licences). NAM Core needs all
 # three: its own headers, Eigen, and a directory holding json.hpp by that bare
 # name - which is the nlohmann target's include directory one level down.
-RTNEURAL_ROOT="${HERE}/../../ThirdParty/RTNeural"
-NAM_ROOT="${HERE}/../../ThirdParty/namcore"
-EIGEN_ROOT="${HERE}/../../ThirdParty/eigen"
-NLOHMANN_ROOT="${HERE}/../../ThirdParty/nlohmann_json/single_include"
+RTNEURAL_ROOT="$(j37_path rtneural)"
+NAM_ROOT="$(j37_path namcore)"
+EIGEN_ROOT="$(j37_path eigen)"
+NLOHMANN_ROOT="$(j37_path nlohmann_json)"
 NAM_JSON_INCLUDE="${NLOHMANN_ROOT}/nlohmann"
 
 mkdir -p "${BUILD}"
@@ -72,13 +72,6 @@ mkdir -p "${BUILD}"
 # engine's stages and runs its own checks on the way past. A second extractor for
 # one struct would be a second thing to keep in step.
 python3 "${HERE}/../dsp/extract.py" "${BUILD}/extracted_dsp.inc"
-
-sanitize_flags=()
-if [ -n "${J37_SANITIZE:-}" ]; then
-    sanitize_flags=("-fsanitize=${J37_SANITIZE}" "-fno-sanitize-recover=all"
-                    "-fno-omit-frame-pointer" "-g")
-    echo "sanitizers: ${J37_SANITIZE}"
-fi
 
 "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
     "${sanitize_flags[@]}" \
