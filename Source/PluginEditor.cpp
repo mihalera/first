@@ -2550,7 +2550,7 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
             }
         }
 
-        if (disc > knobScore * 1.04f)
+        if (disc > knobScore)
         {
             knobScore = disc;
             knobColumns = columns;

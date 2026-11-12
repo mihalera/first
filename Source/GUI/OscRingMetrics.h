@@ -37,16 +37,16 @@ namespace j37panel
     // caps are where the desk plate stops growing - past a 96 x 44 card the note
     // reads as a label that happens to have a ring around it, not as an inset in
     // one - and the floors keep a small deck ring's plate legible at all.
-    inline constexpr float oscPlateMaxWidth = 96.0f;
-    inline constexpr float oscPlateMaxHeight = 44.0f;
-    inline constexpr float oscPlateMinWidth = 32.0f;
+    inline constexpr float oscPlateMaxWidth = 72.0f;
+    inline constexpr float oscPlateMaxHeight = 32.0f;
+    inline constexpr float oscPlateMinWidth = 24.0f;
     inline constexpr float oscPlateMinHeight = 16.0f;
 
     inline constexpr OscDisplayPlate computeOscDisplayPlate (float radius) noexcept
     {
         OscDisplayPlate plate;
-        plate.width = std::clamp (radius * 1.05f, oscPlateMinWidth, oscPlateMaxWidth);
-        plate.height = std::clamp (radius * 0.52f, oscPlateMinHeight, oscPlateMaxHeight);
+        plate.width = std::clamp (radius * 0.85f, oscPlateMinWidth, oscPlateMaxWidth);
+        plate.height = std::clamp (radius * 0.42f, oscPlateMinHeight, oscPlateMaxHeight);
         return plate;
     }
 
