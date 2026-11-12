@@ -27,7 +27,7 @@ python3 "${HERE}/extract.py" "${BUILD}"
 
 "${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
-    -I "${HERE}" -I "${BUILD}" \
+    -I "${HERE}" -I "${BUILD}" -I "$(j37_path source)" \
     "${HERE}/juce_stub.cpp" "${HERE}/state_test.cpp" -o "${BUILD}/state_test"
 
 "${BUILD}/state_test"
