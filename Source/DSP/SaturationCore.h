@@ -20,6 +20,7 @@
 #include <cmath>
 
 #include "HotPathMath.h"
+#include "ModelTypeList.h"
 
 //==============================================================================
 /*
@@ -45,24 +46,10 @@ inline constexpr std::array<const char*, valveTypeCount> valveTypeNames
     "Off"   // see the note on tapeStockNames: OFF is appended, never inserted
 };
 
-inline constexpr bool valveTypeNamesAreComplete()
-{
-    for (const auto* name : valveTypeNames)
-        if (name == nullptr)
-            return false;
-    return true;
-}
-
-static_assert (valveTypeNamesAreComplete(),
+static_assert (j37model::namesAreComplete (valveTypeNames),
                "valveTypeCount and valveTypeNames must describe the same number of valve types");
 
-inline juce::StringArray valveTypeNameList()
-{
-    juce::StringArray names;
-    for (const auto* name : valveTypeNames)
-        names.add (juce::String (name));
-    return names;
-}
+inline juce::StringArray valveTypeNameList() { return j37model::toStringArray (valveTypeNames); }
 
 // -- AMP ---------------------------------------------------------------------
 inline constexpr int ampTypeCount = 7;
@@ -73,24 +60,10 @@ inline constexpr std::array<const char*, ampTypeCount> ampTypeNames
     "Off"   // see the note on tapeStockNames: OFF is appended, never inserted
 };
 
-inline constexpr bool ampTypeNamesAreComplete()
-{
-    for (const auto* name : ampTypeNames)
-        if (name == nullptr)
-            return false;
-    return true;
-}
-
-static_assert (ampTypeNamesAreComplete(),
+static_assert (j37model::namesAreComplete (ampTypeNames),
                "ampTypeCount and ampTypeNames must describe the same number of amp types");
 
-inline juce::StringArray ampTypeNameList()
-{
-    juce::StringArray names;
-    for (const auto* name : ampTypeNames)
-        names.add (juce::String (name));
-    return names;
-}
+inline juce::StringArray ampTypeNameList() { return j37model::toStringArray (ampTypeNames); }
 
 // -- TRANSFORMER ---------------------------------------------------------------
 inline constexpr int transformerTypeCount = 6;
@@ -101,24 +74,10 @@ inline constexpr std::array<const char*, transformerTypeCount> transformerTypeNa
     "Off"   // see the note on tapeStockNames: OFF is appended, never inserted
 };
 
-inline constexpr bool transformerTypeNamesAreComplete()
-{
-    for (const auto* name : transformerTypeNames)
-        if (name == nullptr)
-            return false;
-    return true;
-}
-
-static_assert (transformerTypeNamesAreComplete(),
+static_assert (j37model::namesAreComplete (transformerTypeNames),
                "transformerTypeCount and transformerTypeNames must describe the same number of transformer types");
 
-inline juce::StringArray transformerTypeNameList()
-{
-    juce::StringArray names;
-    for (const auto* name : transformerTypeNames)
-        names.add (juce::String (name));
-    return names;
-}
+inline juce::StringArray transformerTypeNameList() { return j37model::toStringArray (transformerTypeNames); }
 
 // -- DIGITAL -------------------------------------------------------------------
 inline constexpr int digitalTypeCount = 6;
@@ -129,24 +88,10 @@ inline constexpr std::array<const char*, digitalTypeCount> digitalTypeNames
     "Off"   // see the note on tapeStockNames: OFF is appended, never inserted
 };
 
-inline constexpr bool digitalTypeNamesAreComplete()
-{
-    for (const auto* name : digitalTypeNames)
-        if (name == nullptr)
-            return false;
-    return true;
-}
-
-static_assert (digitalTypeNamesAreComplete(),
+static_assert (j37model::namesAreComplete (digitalTypeNames),
                "digitalTypeCount and digitalTypeNames must describe the same number of digital types");
 
-inline juce::StringArray digitalTypeNameList()
-{
-    juce::StringArray names;
-    for (const auto* name : digitalTypeNames)
-        names.add (juce::String (name));
-    return names;
-}
+inline juce::StringArray digitalTypeNameList() { return j37model::toStringArray (digitalTypeNames); }
 
 //==============================================================================
 /**

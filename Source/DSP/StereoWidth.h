@@ -1,5 +1,7 @@
 #pragma once
 
+#include <algorithm>
+
 /*
     Width, in both senses the machine has one.
 
@@ -39,7 +41,7 @@ inline float stereoWidthFromControl (float widthControl) noexcept
 {
     const float width = widthControl * kStereoWidthTravel;
 
-    return width < 0.0f ? 0.0f : (width > kStereoWidthTravel ? kStereoWidthTravel : width);
+    return std::clamp (width, 0.0f, kStereoWidthTravel);
 }
 
 /** One frame of the width matrix, after the extension has been applied. */
@@ -95,8 +97,7 @@ inline float trackWidthTilt (float trackWidthScale) noexcept
 {
     const float tilt = 1.0f + (trackWidthScale - 1.0f) * kTrackWidthTiltDepth;
 
-    return tilt < kTrackWidthTiltMin ? kTrackWidthTiltMin
-                                     : (tilt > kTrackWidthTiltMax ? kTrackWidthTiltMax : tilt);
+    return std::clamp (tilt, kTrackWidthTiltMin, kTrackWidthTiltMax);
 }
 
 } // namespace j37dsp

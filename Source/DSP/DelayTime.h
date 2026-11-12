@@ -21,6 +21,9 @@
 // =============================================================================
 #pragma once
 
+#include <cstddef>
+#include <iterator>
+
 namespace j37delay
 {
 
@@ -41,7 +44,7 @@ inline float effectiveDelayMs (float freeMs, bool syncOn, int delayRateIndex, do
                                           0.25f * 2.0f / 3.0f,
                                           0.125f * 2.0f / 3.0f,
                                           0.25f * 1.5f };
-    constexpr int numNoteRatios = static_cast<int> (sizeof (noteRatios) / sizeof (noteRatios[0]));
+    constexpr int numNoteRatios = static_cast<int> (std::size (noteRatios));
 
     const auto ratio = noteRatios[juce::jlimit (0, numNoteRatios - 1, delayRateIndex)];
 

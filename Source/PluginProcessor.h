@@ -29,6 +29,7 @@
 #include "DSP/AutoGainCompensator.h"
 #include "DSP/LoFiHoldClock.h"
 #include "DSP/MultibandPhaseGuard.h"
+#include "DSP/ModelTypeList.h"
 #include "DSP/StereoDelayFeedback.h"
 #include "DSP/SafetyLimiter.h"
 #include "DSP/StereoOffsetBuffer.h"
@@ -122,26 +123,7 @@ inline constexpr std::array<const char*, tapeStockCount> tapeStockNames
     that silently stops being right the moment a model is appended. */
 inline constexpr int modelOffIndex = tapeStockCount - 1;
 
-/**
-    Whether every slot of tapeStockNames was actually given a name.
-
-    std::array catches the count being too SMALL for the names - too many
-    initialisers is a hard error. It does not catch it being too LARGE: elements
-    past the initialiser list are value-initialised, so raising tapeStockCount
-    without adding a name compiles clean and quietly hands the list a null pointer
-    to hand to StringArray. This is that half, and it is the half that turns into a
-    crash rather than a diagnostic.
-*/
-inline constexpr bool tapeStockNamesAreComplete()
-{
-    for (const auto* name : tapeStockNames)
-        if (name == nullptr)
-            return false;
-
-    return true;
-}
-
-static_assert (tapeStockNamesAreComplete(),
+static_assert (j37model::namesAreComplete (tapeStockNames),
                "tapeStockCount and tapeStockNames must describe the same number of tape stocks");
 
 /**
@@ -153,15 +135,7 @@ static_assert (tapeStockNamesAreComplete(),
     either .cpp because the parameter is built in the processor and the combo box in
     the editor, and the whole point is that neither of them owns a copy.
 */
-inline juce::StringArray tapeStockNameList()
-{
-    juce::StringArray names;
-
-    for (const auto* name : tapeStockNames)
-        names.add (name);
-
-    return names;
-}
+inline juce::StringArray tapeStockNameList() { return j37model::toStringArray (tapeStockNames); }
 
 
 // The saturation core and the four type lists that voice its non-tape principles.
@@ -184,24 +158,10 @@ inline constexpr std::array<const char*, vinylTypeCount> vinylTypeNames
     "Off"   // see the note on tapeStockNames: OFF is appended, never inserted
 };
 
-inline constexpr bool vinylTypeNamesAreComplete()
-{
-    for (const auto* name : vinylTypeNames)
-        if (name == nullptr)
-            return false;
-    return true;
-}
-
-static_assert (vinylTypeNamesAreComplete(),
+static_assert (j37model::namesAreComplete (vinylTypeNames),
                "vinylTypeCount and vinylTypeNames must describe the same number of vinyl types");
 
-inline juce::StringArray vinylTypeNameList()
-{
-    juce::StringArray names;
-    for (const auto* name : vinylTypeNames)
-        names.add (juce::String (name));
-    return names;
-}
+inline juce::StringArray vinylTypeNameList() { return j37model::toStringArray (vinylTypeNames); }
 
 
 // The amplifier's behaviour around the clipping curve - sag, presence, the

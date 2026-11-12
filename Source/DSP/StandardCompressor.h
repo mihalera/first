@@ -21,19 +21,41 @@ struct StandardCompressor
 
     void reset() noexcept { envelope = 0.0f; gain = 1.0f; }
 
-    float process (float input, float sampleRate, float thresholdDb, float ratio,
-                   float attackMs, float releaseMs, float kneeDb, float makeupDb) noexcept
+    /** Block-rate coefficients, so the per-sample loop does no std::exp work.
+        The two coefficients are functions of the sample rate, the attack and the
+        release durations - none of which move within a block - so evaluating them
+        per sample was two std::exp calls per sample per channel for values that
+        change once per block. The same discipline GlueCompressor and SafetyLimiter
+        already follow. */
+    struct Coefficients
     {
-        const auto detector = input * input;
-        const auto coefficientForMs = [sampleRate] (float milliseconds)
+        float attack = 0.0f;
+        float release = 0.0f;
+    };
+
+    static Coefficients makeCoefficients (float sampleRate, float attackMs,
+                                          float releaseMs) noexcept
+    {
+        const auto coefficientForMs = [] (float sRate, float milliseconds)
         {
             const auto seconds = juce::jmax (0.001f, milliseconds * 0.001f);
-            return 1.0f - std::exp (-1.0f / (juce::jmax (1.0f, sampleRate) * seconds));
+            return 1.0f - std::exp (-1.0f / (juce::jmax (1.0f, sRate) * seconds));
         };
+
+        return { coefficientForMs (sampleRate, attackMs),
+                 coefficientForMs (sampleRate, releaseMs) };
+    }
+
+    float process (float input, float thresholdDb, float ratio,
+                   float kneeDb, float makeupDb,
+                   const Coefficients& coefficients) noexcept
+    {
+        const auto detector = input * input;
         const auto detectorCoefficient = detector > envelope
-            ? coefficientForMs (attackMs) : coefficientForMs (releaseMs);
+            ? coefficients.attack : coefficients.release;
         envelope += (detector - envelope) * detectorCoefficient;
-        const auto envelopeDb = juce::Decibels::gainToDecibels (std::sqrt (std::max (0.0f, envelope)), -100.0f);
+        const auto envelopeDb = juce::Decibels::gainToDecibels (
+            std::sqrt (std::max (0.0f, envelope)), -100.0f);
         const auto safeRatio = juce::jmax (1.0f, ratio);
         const auto halfKnee = juce::jmax (0.01f, kneeDb * 0.5f);
         const auto over = envelopeDb - thresholdDb;
@@ -48,7 +70,7 @@ struct StandardCompressor
         }
         const auto targetGain = juce::Decibels::decibelsToGain (reductionDb + makeupDb);
         const auto gainCoefficient = targetGain < gain
-            ? coefficientForMs (attackMs) : coefficientForMs (releaseMs);
+            ? coefficients.attack : coefficients.release;
         gain += (targetGain - gain) * gainCoefficient;
         return input * gain;
     }
