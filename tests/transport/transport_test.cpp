@@ -46,6 +46,8 @@
 
 #include "extracted_transport.inc"
 
+#include "DSP/AntiPhaseDetector.h"
+#include "DSP/StereoWidth.h"
 #include "DSP/TapeSaturationDrive.h"
 #include "DSP/TapeTransportFrame.h"
 #include "DSP/TrackBleed.h"
@@ -1559,6 +1561,138 @@ void testTheTrackBleed()
            "track bleed: the 2+3 layout's leak arrives 0.042 ms late");
 }
 
+// The frame half of the anti-phase guard: the correlation envelope, the normaliser
+// and the bounded engagement. Literal expectations, and the bound checked at both
+// ends - a guard that let an inverted pair through is the bug this stage exists for.
+void testTheAntiPhaseGuard()
+{
+    // Energy in the sum is positive, energy in the difference is negative, and a
+    // pair split equally between them is zero.
+    check (std::abs (j37dsp::antiPhaseFrameEnergy (1.0f, 0.0f) - 1.0f) < kEpsilon,
+           "anti-phase: an in-phase pair puts its energy in the sum");
+    check (std::abs (j37dsp::antiPhaseFrameEnergy (0.0f, 1.0f) + 1.0f) < kEpsilon,
+           "anti-phase: an inverted pair puts its energy in the difference");
+    check (std::abs (j37dsp::antiPhaseFrameEnergy (0.5f, 0.5f)) < kEpsilon,
+           "anti-phase: a pair split evenly reads as no correlation either way");
+
+    // The normaliser is the total energy: 1 for a full-scale in-phase pair, 0.5 for
+    // a pair of two halves.
+    check (std::abs (j37dsp::antiPhaseFrameMagnitude (1.0f, 0.0f) - 1.0f) < kEpsilon,
+           "anti-phase: the normaliser is the frame's total energy");
+    check (std::abs (j37dsp::antiPhaseFrameMagnitude (0.5f, 0.5f) - 0.5f) < kEpsilon,
+           "anti-phase: half-scale sides carry half the magnitude");
+
+    // Opposition: nothing for a healthy frame, all of it for a fully inverted pair,
+    // 0.6 for three fifths (3 of 5), and the bound at both ends.
+    check (std::abs (j37dsp::antiPhaseOpposition (1.0f, 1.0f)) < kEpsilon,
+           "anti-phase: a frame with energy in the sum is not opposed at all");
+    check (std::abs (j37dsp::antiPhaseOpposition (-1.0f, 1.0f) - 1.0f) < kEpsilon,
+           "anti-phase: a fully inverted pair is opposed by 1");
+    check (std::abs (j37dsp::antiPhaseOpposition (-3.0f, 5.0f) - 0.6f) < kEpsilon,
+           "anti-phase: opposition is the ratio of difference energy to total");
+    check (std::abs (j37dsp::antiPhaseOpposition (-20.0f, 1.0f) - 1.0f) < kEpsilon,
+           "anti-phase: the opposition stops at 1, so the guard cannot over-rotate");
+    check (std::abs (j37dsp::antiPhaseOpposition (0.0f, 0.0f)) < kEpsilon,
+           "anti-phase: a silent frame is not opposed");
+    check (std::abs (j37dsp::antiPhaseOpposition (-1.0f, 0.0f) - 1.0f) < kEpsilon,
+           "anti-phase: the magnitude floor keeps a division by nothing out");
+
+    // The one-poles, on a coefficient of 0.5: half the distance per frame.
+    check (std::abs (j37dsp::antiPhaseTrackEnergy (0.0f, 1.0f, 0.5f) - 0.5f) < kEpsilon,
+           "anti-phase: the energy envelope moves half way in one frame");
+    check (std::abs (j37dsp::antiPhaseTrackEnergy (0.5f, 1.0f, 0.5f) - 0.75f) < kEpsilon,
+           "anti-phase: the envelope is a one-pole, not a jump");
+    check (std::abs (j37dsp::antiPhaseTrackMagnitude (0.0f, 1.0f, 0.5f) - 0.5f) < kEpsilon,
+           "anti-phase: the normaliser smooths on the same pole");
+
+    // ... and its floor: a frame of negative magnitude cannot drag the normaliser
+    // to zero or below.
+    {
+        const float floored = j37dsp::antiPhaseTrackMagnitude (0.0f, -5.0f, 0.5f);
+        check (floored > 0.0f && floored <= 1.0e-9f,
+               "anti-phase: the normaliser is floored above zero");
+    }
+
+    // Engagement: on, it walks toward the opposition; off, it unwinds through the
+    // same pole rather than switching (0.8 toward 1 is 0.9; 0.8 toward 0 is 0.4).
+    check (std::abs (j37dsp::antiPhaseEngage (0.8f, 1.0f, 0.5f, true) - 0.9f) < kEpsilon,
+           "anti-phase: the guard engages over its pole");
+    check (std::abs (j37dsp::antiPhaseEngage (0.8f, 1.0f, 0.5f, false) - 0.4f) < kEpsilon,
+           "anti-phase: switching the guard off unwinds it over the same pole");
+    check (std::abs (j37dsp::antiPhaseEngage (0.0f, 0.0f, 0.5f, true)) < kEpsilon,
+           "anti-phase: a clean frame is left exactly where it is");
+
+    // The threshold: below 1e-5 the rotation is skipped, so a clean frame is bit
+    // for bit the frame that arrived.
+    check (! j37dsp::antiPhaseIsEngaged (1.0e-6f),
+           "anti-phase: a correction of 1e-6 does not engage the bands");
+    check (j37dsp::antiPhaseIsEngaged (1.0e-2f),
+           "anti-phase: a real correction engages the bands");
+}
+
+// The width matrix and the track-width tilt that the medium imposes. Both pure, both
+// literal, and both checked at their clamps.
+void testTheStereoWidth()
+{
+    // The control's travel: 50 % is unity side, 100 % is twice it, and the end
+    // stops clamp rather than running past the parameter's range.
+    check (std::abs (j37dsp::stereoWidthFromControl (0.5f) - 1.0f) < kEpsilon,
+           "width: 50 percent of the control is unity side");
+    check (std::abs (j37dsp::stereoWidthFromControl (1.0f) - 2.0f) < kEpsilon,
+           "width: full control is twice the side");
+    check (std::abs (j37dsp::stereoWidthFromControl (1.5f) - 2.0f) < kEpsilon,
+           "width: the control clamps at twice the side");
+    check (std::abs (j37dsp::stereoWidthFromControl (-0.2f)) < kEpsilon,
+           "width: a negative control clamps to mono");
+
+    // Unity is the identity - the frame the tape produced, width untouched.
+    {
+        const auto frame = j37dsp::stereoWidthFrame (0.75f, -0.25f, 1.0f);
+        check (std::abs (frame.left - 0.75f) < kEpsilon
+                   && std::abs (frame.right + 0.25f) < kEpsilon,
+               "width: a coefficient of 1 leaves the pair exactly as it was");
+    }
+
+    // Zero folds both sides onto the mid signal, which is 0.5 of the sum.
+    {
+        const auto frame = j37dsp::stereoWidthFrame (1.0f, 0.0f, 0.0f);
+        check (std::abs (frame.left - 0.5f) < kEpsilon
+                   && std::abs (frame.right - 0.5f) < kEpsilon,
+               "width: a coefficient of 0 folds the pair to mono at 0.5 of the sum");
+    }
+
+    // Twice the side: a hard-left frame becomes 1.5 / -0.5 - the mid stays put and
+    // the difference doubles.
+    {
+        const auto frame = j37dsp::stereoWidthFrame (1.0f, 0.0f, 2.0f);
+        check (std::abs (frame.left - 1.5f) < kEpsilon
+                   && std::abs (frame.right + 0.5f) < kEpsilon,
+               "width: a coefficient of 2 doubles the side around the same mid");
+    }
+
+    // A fully inverted pair at unity stays inverted but finite: the matrix is not a
+    // guard and must not quietly repair one.
+    {
+        const auto frame = j37dsp::stereoWidthFrame (1.0f, -1.0f, 1.0f);
+        check (std::abs (frame.left - 1.0f) < kEpsilon
+                   && std::abs (frame.right + 1.0f) < kEpsilon,
+               "width: the matrix does not touch opposition - that is the guard's job");
+    }
+
+    // The track-width tilt: the reference layout is exactly 1.0, a three-track deck
+    // (0.82) lands at 0.883, and both ends clamp.
+    check (std::abs (j37dsp::trackWidthTilt (1.0f) - 1.0f) < kEpsilon,
+           "width: the two-track reference layout tilts the bottom end by nothing");
+    check (std::abs (j37dsp::trackWidthTilt (0.82f) - 0.883f) < kEpsilon,
+           "width: a three-track deck tilts 0.883, not the full 0.82");
+    check (std::abs (j37dsp::trackWidthTilt (0.5f) - 0.75f) < kEpsilon,
+           "width: the narrowest tilt clamps at 0.75");
+    check (std::abs (j37dsp::trackWidthTilt (2.0f) - 1.15f) < kEpsilon,
+           "width: the widest tilt clamps at 1.15");
+    check (j37dsp::trackWidthTilt (1.00f) > j37dsp::trackWidthTilt (0.82f),
+           "width: a narrower track tilts the bottom end down");
+}
+
 int run()
 {
     testPlayIsSteady();
@@ -1589,6 +1723,9 @@ int run()
 
     testTheSaturationDrive();
     testTheTrackBleed();
+
+    testTheAntiPhaseGuard();
+    testTheStereoWidth();
 
     if (failures == 0)
         std::printf ("TRANSPORT CHECK PASSED (0 failures)\n");

@@ -54,6 +54,7 @@
 // processBlock below.
 #include "Diagnostics/DiagCore.h"
 
+#include "DSP/AntiPhaseDetector.h"
 #include "DSP/AutoGainCompensator.h"
 #include "DSP/BlockRateCoefficients.h"
 #include "DSP/DelayTime.h"
@@ -66,6 +67,7 @@
 #include "DSP/TapeTransportFrame.h"
 #include "DSP/TrackBleed.h"
 #include "DSP/SafetyLimiter.h"
+#include "DSP/StereoWidth.h"
 #include "DSP/TapeCouplings.h"
 #include "DSP/TapeModulation.h"
 #include "DSP/TapeVoicing.h"
@@ -1280,7 +1282,7 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     const auto inputDb = inputDbParam->load();
     // WIDTH is centred at 50%: 0 is mono, 50 is natural, 100 doubles SIDE.
     const auto stereoWidth = widthParam != nullptr
-        ? juce::jlimit (0.0f, 2.0f, widthParam->load() * 2.0f) : 1.0f;
+        ? j37dsp::stereoWidthFromControl (widthParam->load()) : 1.0f;
     state.compressorThreshold = compressorThresholdParam != nullptr ? compressorThresholdParam->load() : -18.0f;
     state.compressorRatio = compressorRatioParam != nullptr ? compressorRatioParam->load() : 2.0f;
     state.compressorAttack = compressorAttackParam != nullptr ? compressorAttackParam->load() : 10.0f;
@@ -2030,7 +2032,8 @@ void FirstAudioProcessor::processTapeEngine (juce::dsp::AudioBlock<float> block,
     // than an absolute number that would depend on the programme's level. It is
     // seeded here and tracked per frame inside the loop; the floor keeps a silent
     // passage from dividing by nothing.
-    antiPhaseProductMagnitude = juce::jmax (1.0e-3f, antiPhaseProductMagnitude);
+    antiPhaseProductMagnitude = juce::jmax (j37dsp::kAntiPhaseSeedMagnitude,
+                                            antiPhaseProductMagnitude);
 
     // -------------------------------------------------------------------------
     //  Transport: handed to the rig.
@@ -3072,8 +3075,7 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         // two-track default the scale is exactly 1.0, so the machine is
         // bit-for-bit what it always was.
         // ------------------------------------------------------------------
-        const float widthTilt = juce::jlimit (0.75f, 1.15f,
-                                              1.0f + (state.trackWidthScale - 1.0f) * 0.65f);
+        const float widthTilt = j37dsp::trackWidthTilt (state.trackWidthScale);
 
         // Scale compensation, gentle level-dependent bias compression and the
         // tape noise floor ride on the modulated signal.
@@ -4021,25 +4023,25 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         // the mid power and the side power. Positive means the frame's energy
         // sits in the SUM (the sides agree - normal stereo), negative means it
         // sits in the DIFFERENCE (the sides oppose - the fault).
-        const float frameEnergy = frameMid * frameMid - frameSide * frameSide;
-        antiPhaseProduct += (frameEnergy - antiPhaseProduct) * antiPhaseCoefficient;
+        antiPhaseProduct = j37dsp::antiPhaseTrackEnergy (
+            antiPhaseProduct, j37dsp::antiPhaseFrameEnergy (frameMid, frameSide),
+            antiPhaseCoefficient);
 
         // The normaliser tracks the frame's total energy on the same pole, so
         // the guard measures a RATIO and cannot be fooled by the programme
         // simply being louder or quieter.
-        const float frameMagnitude = frameMid * frameMid + frameSide * frameSide;
-        antiPhaseProductMagnitude += (frameMagnitude - antiPhaseProductMagnitude)
-                                   * antiPhaseCoefficient;
-        antiPhaseProductMagnitude = juce::jmax (1.0e-9f, antiPhaseProductMagnitude);
+        antiPhaseProductMagnitude = j37dsp::antiPhaseTrackMagnitude (
+            antiPhaseProductMagnitude, j37dsp::antiPhaseFrameMagnitude (frameMid, frameSide),
+            antiPhaseCoefficient);
 
         // A bounded correction: only an actual negative correlation pulls the
         // guard into action, and it can only ever REDUCE the opposition, never
         // invert a healthy image.
-        const float opposition = antiPhaseProduct < 0.0f
-            ? juce::jlimit (0.0f, 1.0f, -antiPhaseProduct / antiPhaseProductMagnitude)
-            : 0.0f;
-        antiPhaseCorrection += ((state.antiPhaseGuardOn ? opposition : 0.0f) - antiPhaseCorrection)
-                             * antiPhaseCoefficient;
+        const float opposition = j37dsp::antiPhaseOpposition (antiPhaseProduct,
+                                                              antiPhaseProductMagnitude);
+        antiPhaseCorrection = j37dsp::antiPhaseEngage (antiPhaseCorrection, opposition,
+                                                       antiPhaseCoefficient,
+                                                       state.antiPhaseGuardOn);
 
         // What the panel shows: the amount the guard is actually working by,
         // so a switch that is off reads as 0 rather than as the detector's
@@ -4047,7 +4049,7 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
         antiPhaseAmount.store (state.antiPhaseGuardOn ? antiPhaseCorrection : 0.0f,
                                std::memory_order_relaxed);
 
-        if (antiPhaseCorrection > 1.0e-5f && mixNow > 1.0e-5f)
+        if (j37dsp::antiPhaseIsEngaged (antiPhaseCorrection) && mixNow > 1.0e-5f)
         {
             // The correction above is the FRAME's, and it is what gates the
             // guard. The rotation itself happens per BAND, in
@@ -4084,10 +4086,10 @@ void FirstAudioProcessor::processOneSample (TapeBlockState& state, int sample) n
     // 100% is 2x Side; the Mid component remains unchanged.
     if (state.activeChannels == 2)
     {
-        const float mid = 0.5f * (outputSignal[0] + outputSignal[1]);
-        const float side = 0.5f * (outputSignal[0] - outputSignal[1]);
-        outputSignal[0] = mid + side * currentWidth;
-        outputSignal[1] = mid - side * currentWidth;
+        const auto widened = j37dsp::stereoWidthFrame (outputSignal[0], outputSignal[1],
+                                                       currentWidth);
+        outputSignal[0] = widened.left;
+        outputSignal[1] = widened.right;
     }
 
     // Apply output trim before the limiter so boosts remain protected.
