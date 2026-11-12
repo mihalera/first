@@ -1273,7 +1273,7 @@ FirstAudioProcessorEditor::EditorLayout FirstAudioProcessorEditor::getEditorLayo
     // The meters panel has to hold a 2 x 2 grid of dials, so it claims a share of the
     // width rather than a fixed pixel count. That keeps both rows legible whether the
     // editor is at its minimum size or opened large.
-    const auto metersWidth = juce::jlimit (320, 460, juce::roundToInt (static_cast<float> (remaining.getWidth()) * 0.30f));
+    const auto metersWidth = juce::jlimit (280, 380, juce::roundToInt (static_cast<float> (remaining.getWidth()) * 0.26f));
     layout.meters = remaining.removeFromRight (metersWidth);
     remaining.removeFromRight (14);
     layout.controls = remaining;
