@@ -9,7 +9,7 @@ trap 'rm -rf "$TEMP_DIR"' EXIT
 build_and_run() {
     local name="$1"
     shift
-    "$CXX" -std=c++17 -Wall -Wextra -Werror \
+    "$CXX" "${J37_CXX_STD}" "${J37_WARNINGS[@]}" -Werror \
         -I "$ROOT/tests/render_backend/juce_stub" \
         -I "$ROOT/Source" \
         "$ROOT/tests/render_backend/backend_choice_test.cpp" \

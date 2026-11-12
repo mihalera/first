@@ -60,7 +60,7 @@ echo
 # copy of them. Without it the benchmark fails to build with a missing
 # DSP/J37Math.h - which is exactly what the DSP micro-benchmarks job did until
 # this line was here.
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     -I "${HERE}" -I "${BUILD}" -I "${NANOBENCH_INC}" -I "$(j37_path source)" \
     "${HERE}/bench.cpp" -o "${BUILD}/bench"
 
@@ -86,7 +86,7 @@ echo "J37_USE_SIMD_TANH=ON (the default) - the shaper's tanh through xsimd's ker
 echo "(compare the SaturationCore::process and std::tanh rows with the log above)"
 echo
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     -I "${HERE}" -I "${BUILD}" -I "${NANOBENCH_INC}" -I "$(j37_path source)" \
     -I "$(j37_path xsimd)" -DJ37_USE_SIMD_TANH=1 \
     "${HERE}/bench.cpp" -o "${BUILD}/bench_simd"

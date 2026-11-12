@@ -45,6 +45,13 @@ if [ -n "${J37_SANITIZE:-}" ]; then
     echo "sanitizers: ${J37_SANITIZE}"
 fi
 
+# The standard and the warning set every harness compiles with. C++20 is what
+# the plugin itself builds with (CMakeLists.txt), so a header that needs a C++20
+# facility fails here, in seconds, rather than in the plugin build. A harness may
+# override either: J37_CXX_STD=-std=c++17 ./tests/x/run.sh.
+J37_CXX_STD="${J37_CXX_STD:--std=c++20}"
+J37_WARNINGS=(-Wall -Wextra -Wno-unused-parameter)
+
 # j37_path <name> - the directory holding that dependency's headers, which is the
 # one fact that used to be spelled out per harness. An unknown name is an error
 # rather than an empty string, so a typo fails the harness instead of dropping an

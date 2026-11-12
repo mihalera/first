@@ -33,7 +33,7 @@ mkdir -p "${BUILD}"
 
 python3 "${HERE}/extract.py" "${BUILD}/extracted_transport.inc"
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "${HERE}" -I "${BUILD}" -I "${SOURCE}" \
     "${HERE}/transport_test.cpp" -o "${BUILD}/transport_test"

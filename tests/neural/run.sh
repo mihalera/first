@@ -73,7 +73,7 @@ mkdir -p "${BUILD}"
 # one struct would be a second thing to keep in step.
 python3 "${HERE}/../dsp/extract.py" "${BUILD}/extracted_dsp.inc"
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "${HERE}/../dsp" -I "${BUILD}" -I "${SOURCE}" \
     "${HERE}/rate_test.cpp" -o "${BUILD}/rate_test"
@@ -86,7 +86,7 @@ python3 "${HERE}/../dsp/extract.py" "${BUILD}/extracted_dsp.inc"
 # lives - is compiled and driven rather than merely written. nlohmann/json is the
 # real one, straight out of ThirdParty/; only RTNeural's two-method API surface and
 # its one-function loader are stood in for.
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -DJ37_HAS_RTNEURAL=1 \
     -I "${HERE}/../dsp" -I "${BUILD}" -I "${SOURCE}" \
@@ -155,7 +155,7 @@ for source in "${NAM_ROOT}"/NAM/*.cpp "${NAM_ROOT}"/NAM/*/*.cpp; do
     object="${NAM_BUILD}/$(basename "${source}" .cpp).o"
     nam_objects+=("${object}")
 
-    "${CXX}" -std=c++20 -O2 "${sanitize_flags[@]}" -w \
+    "${CXX}" "${J37_CXX_STD}" -O2 "${sanitize_flags[@]}" -w \
         -isystem "${NAM_ROOT}" -isystem "${EIGEN_ROOT}" -isystem "${NAM_JSON_INCLUDE}" \
         -c "${source}" -o "${object}" &
     nam_wave+=("$!")
@@ -192,7 +192,7 @@ wait_for_wave
 #  from the one this TU calls. Source/DSP/OptionalLibraries.h includes the
 #  vendored header ahead of model_loader.h for the same reason.
 # -----------------------------------------------------------------------------
-"${CXX}" -std=c++20 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-cpp \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" -Wno-cpp \
     "${sanitize_flags[@]}" \
     -DJ37_NAMCORE=1 \
     -I "${HERE}/../dsp" -I "${SOURCE}" -I "${SOURCE}/DSP" \
@@ -203,7 +203,7 @@ wait_for_wave
 
 "${BUILD}/fixture_test" "${HERE}/fixtures"
 
-"${CXX}" -std=c++20 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-cpp \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" -Wno-cpp \
     "${sanitize_flags[@]}" \
     -I "${HERE}/../dsp" -I "${SOURCE}" -I "${SOURCE}/DSP" \
     -isystem "${RTNEURAL_ROOT}" \
@@ -220,7 +220,7 @@ wait_for_wave
 #  not exist. Source/DSP/OptionalLibraries.h honours a macro that is already
 #  defined, which is what makes that possible without moving ThirdParty/RTNeural.
 # -----------------------------------------------------------------------------
-"${CXX}" -std=c++20 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-cpp \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" -Wno-cpp \
     "${sanitize_flags[@]}" \
     -DJ37_HAS_RTNEURAL=0 -DJ37_NAMCORE=1 \
     -I "${HERE}/../dsp" -I "${SOURCE}" -I "${SOURCE}/DSP" \

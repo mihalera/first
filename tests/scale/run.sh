@@ -8,7 +8,7 @@ BUILD="$(j37_build j37-scale-test)"
 
 mkdir -p "${BUILD}"
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Werror \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" -Werror \
     "${sanitize_flags[@]}" \
     -I "${ROOT}/Source" \
     "${HERE}/scale_test.cpp" -o "${BUILD}/scale_test"

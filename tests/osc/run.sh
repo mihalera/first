@@ -37,7 +37,7 @@ SOURCE="$(j37_path source)"
 
 mkdir -p "${BUILD}"
 
-"${CXX}" -std=c++20 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "${SOURCE}" \
     "${HERE}/osc_test.cpp" -o "${BUILD}/osc_test"

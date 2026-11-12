@@ -30,7 +30,7 @@ python3 "${HERE}/extract.py" "${BUILD}/extracted_dsp.inc"
 # sanitizer pass rides along with the debug build in the workflow rather than
 # waiting for a separate sanitized build of the plugin.
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "${HERE}" -I "${BUILD}" -I "${SOURCE}" \
     "${HERE}/subfund_test.cpp" -o "${BUILD}/subfund_test"
@@ -44,7 +44,7 @@ python3 "${HERE}/extract.py" "${BUILD}/extracted_dsp.inc"
 # compensator measures block power on the signal itself.) Separate binary rather
 # than one more section of the harness above so a failure names the meter in the
 # log line that carries the exit code.
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "${HERE}" -I "${BUILD}" -I "${SOURCE}" \
     "${HERE}/loudness_test.cpp" -o "${BUILD}/loudness_test"
@@ -79,7 +79,7 @@ if [ -f "${ORACLE_SOURCE}/ebur128/ebur128.c" ] \
     "${CXX}" -std=gnu99 -O2 "${sanitize_flags[@]}" -x c -c \
         "${ORACLE_SOURCE}/ebur128/ebur128.c" -o "${BUILD}/ebur128.o"
 
-    "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+    "${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
         "${sanitize_flags[@]}" \
         -I "${HERE}" -I "${SOURCE}" -I "${ORACLE_SOURCE}/ebur128" \
         "${HERE}/loudness_oracle_test.cpp" "${BUILD}/ebur128.o" -lm \
@@ -121,7 +121,7 @@ XSIMD_INCLUDE="$(j37_path xsimd)"
 build_seam() {                     # name, then that build's extra flags
     local name="$1"; shift
 
-    "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+    "${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
         "${sanitize_flags[@]}" \
         -I "${HERE}" -I "${SOURCE}" "$@" \
         "${HERE}/simd_tanh_test.cpp" -o "${BUILD}/${name}"
@@ -215,7 +215,7 @@ DR_LIBS_INCLUDE="$(j37_path dr_libs)"
 build_noise() {                     # name, then that build's extra flags
     local name="$1"; shift
 
-    "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+    "${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
         "${sanitize_flags[@]}" \
         -I "${HERE}" -I "${SOURCE}" "$@" \
         "${HERE}/noise_loader_test.cpp" "${SOURCE}/DSP/NoiseDecoder.cpp" \

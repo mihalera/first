@@ -23,7 +23,7 @@ mkdir -p "${BUILD}"
 # same switch the other harnesses take; the guard runs per sample, so a stale
 # filter state or a read past a band is exactly what they catch.
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "${HERE}" -I "$(j37_path source)" \
     "${HERE}/phase_test.cpp" -o "${BUILD}/phase_test"

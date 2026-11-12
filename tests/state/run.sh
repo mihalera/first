@@ -25,7 +25,7 @@ mkdir -p "${BUILD}"
 
 python3 "${HERE}/extract.py" "${BUILD}"
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "${HERE}" -I "${BUILD}" \
     "${HERE}/juce_stub.cpp" "${HERE}/state_test.cpp" -o "${BUILD}/state_test"

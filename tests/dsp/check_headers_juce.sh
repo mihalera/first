@@ -423,7 +423,7 @@ EOF
 # that NAME, and a quoted include resolves against the includING file's
 # directory first - so the name resolves through ThirdParty/ now that linear
 # is its own checkout rather than a directory inside the stretch one.
-"${CXX}" -std=c++17 -fsyntax-only -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -fsyntax-only "${J37_WARNINGS[@]}" \
     -I "$(j37_path source)" -I "${JUCE_MODULES}" \
     -I "$(j37_path pocketfft)" \
     -I "$(j37_path dattorro)" \

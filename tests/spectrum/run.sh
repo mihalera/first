@@ -62,7 +62,7 @@ if [ ! -f "${POCKETFFT}/pocketfft_hdronly.h" ]; then
 fi
 
 echo "== with pocketfft (J37_HAS_POCKETFFT=1) =="
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "${SOURCE}" -I "${POCKETFFT}" \
     "${HERE}/spectrum_test.cpp" -o "${BUILD}/spectrum_with_library"
@@ -71,7 +71,7 @@ echo "== with pocketfft (J37_HAS_POCKETFFT=1) =="
 
 echo
 echo "== without pocketfft (J37_HAS_POCKETFFT=0) =="
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "${SOURCE}" \
     "${HERE}/spectrum_test.cpp" -o "${BUILD}/spectrum_without_library"
@@ -80,7 +80,7 @@ echo "== without pocketfft (J37_HAS_POCKETFFT=0) =="
 
 echo
 echo "== with the ArmPL branch (J37_HAS_ARMPL=1, stand-in FFTW) =="
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "${SOURCE}" -I "${POCKETFFT}" -I "${HERE}/fftw_stub" \
     -DJ37_HAS_ARMPL=1 \

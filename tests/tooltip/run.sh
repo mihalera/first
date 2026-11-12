@@ -24,7 +24,7 @@ mkdir -p "${BUILD}"
 # J37_SANITIZE=address,undefined puts the harness under those sanitizers, the
 # same switch the other harnesses take.
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "$(j37_path source)" \
     "${HERE}/dwell_test.cpp" -o "${BUILD}/dwell_test"

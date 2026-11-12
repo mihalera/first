@@ -94,7 +94,7 @@ echo "catch2: ${CATCH2_SRC}"
 # tests include the SHIPPING headers from Source/DSP/, and the shim is what lets
 # them do that with no JUCE, no audio device and no host. -I Source is where
 # those headers are found by the name the plugin uses for them.
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "${HERE}" -I "${REPO}/tests/dsp" -I "$(j37_path source)" -I "${CATCH2_INC}" \
     "${HERE}"/*_test.cpp "${CATCH2_INC}/catch_amalgamated.cpp" \

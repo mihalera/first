@@ -27,7 +27,7 @@ mkdir -p "${BUILD}"
 # rather than in the header - which is why this rides along with the others'
 # sanitizer step rather than waiting for one of its own.
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "$(j37_path source)" \
     "${HERE}/gain_test.cpp" -o "${BUILD}/gain_test"
