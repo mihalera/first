@@ -63,6 +63,7 @@ std::vector<float> render (float amplitude, float seconds, const Parameters& p,
                            float rate = kRate)
 {
     StandardCompressor compressor;
+    const auto coefficients = StandardCompressor::makeCoefficients (rate, p.attackMs, p.releaseMs);
     const auto samples = static_cast<int> (seconds * rate);
     std::vector<float> out;
     out.reserve (static_cast<std::size_t> (samples));
@@ -71,8 +72,8 @@ std::vector<float> render (float amplitude, float seconds, const Parameters& p,
     {
         const auto x = amplitude * std::sin (juce::MathConstants<float>::twoPi * kToneHz
                                              * static_cast<float> (i) / rate);
-        out.push_back (compressor.process (x, rate, p.thresholdDb, p.ratio,
-                                          p.attackMs, p.releaseMs, p.kneeDb, p.makeupDb));
+        out.push_back (compressor.process (x, p.thresholdDb, p.ratio,
+                                          p.kneeDb, p.makeupDb, coefficients));
     }
 
     return out;
@@ -256,6 +257,7 @@ TEST_CASE ("StandardCompressor: RELEASE recovers the gain instead of parking it"
     const auto quietLevel = sineLevelDb (quiet);
 
     StandardCompressor compressor;
+    const auto coefficients = StandardCompressor::makeCoefficients (kRate, p.attackMs, p.releaseMs);
     std::vector<float> out;
 
     const auto push = [&] (float amplitude, int samples)
@@ -264,8 +266,8 @@ TEST_CASE ("StandardCompressor: RELEASE recovers the gain instead of parking it"
         {
             const auto x = amplitude * std::sin (juce::MathConstants<float>::twoPi * kToneHz
                                                  * static_cast<float> (out.size()) / kRate);
-            out.push_back (compressor.process (x, kRate, p.thresholdDb, p.ratio,
-                                               p.attackMs, p.releaseMs, p.kneeDb, p.makeupDb));
+            out.push_back (compressor.process (x, p.thresholdDb, p.ratio,
+                                               p.kneeDb, p.makeupDb, coefficients));
         }
     };
 
@@ -299,10 +301,11 @@ TEST_CASE ("StandardCompressor: RELEASE recovers the gain instead of parking it"
 TEST_CASE ("StandardCompressor: silence stays silent and the parameter extremes stay finite")
 {
     StandardCompressor compressor;
+    const auto coefficients = StandardCompressor::makeCoefficients (kRate, 10.0f, 100.0f);
 
     float out = 1.0f;
     for (int i = 0; i < 4800; ++i)
-        out = compressor.process (0.0f, kRate, -20.0f, 4.0f, 10.0f, 100.0f, 6.0f, 0.0f);
+        out = compressor.process (0.0f, -20.0f, 4.0f, 6.0f, 0.0f, coefficients);
 
     CHECK (out == 0.0f);
 
@@ -311,11 +314,12 @@ TEST_CASE ("StandardCompressor: silence stays silent and the parameter extremes 
     for (const auto rate : { 0.0f, 1.0f, kRate, 192000.0f })
     {
         StandardCompressor extreme;
+        const auto extremeCoefficients = StandardCompressor::makeCoefficients (rate, 0.0f, 0.0f);
 
         for (int i = 0; i < 512; ++i)
         {
             const auto x = (i % 2 == 0 ? 1.0f : -1.0f);
-            const auto y = extreme.process (x, rate, -1000.0f, 0.0f, 0.0f, 0.0f, 0.0f, 100.0f);
+            const auto y = extreme.process (x, -1000.0f, 0.0f, 0.0f, 100.0f, extremeCoefficients);
             REQUIRE (std::isfinite (y));
         }
     }
@@ -332,11 +336,13 @@ TEST_CASE ("StandardCompressor: instances keep their own detector state")
     p.kneeDb = 0.0f;
 
     StandardCompressor driven;
+    const auto coefficients = StandardCompressor::makeCoefficients (kRate, p.attackMs, p.releaseMs);
+
     for (int i = 0; i < static_cast<int> (kRate); ++i)
     {
         const auto x = 0.8f * std::sin (juce::MathConstants<float>::twoPi * kToneHz
                                         * static_cast<float> (i) / kRate);
-        driven.process (x, kRate, p.thresholdDb, p.ratio, p.attackMs, p.releaseMs, p.kneeDb, p.makeupDb);
+        driven.process (x, p.thresholdDb, p.ratio, p.kneeDb, p.makeupDb, coefficients);
     }
 
     const auto quietLevel = sineLevelDb (0.03f);
@@ -348,7 +354,7 @@ TEST_CASE ("StandardCompressor: instances keep their own detector state")
     {
         const auto x = 0.03f * std::sin (juce::MathConstants<float>::twoPi * kToneHz
                                          * static_cast<float> (i) / kRate);
-        const auto y = fresh.process (x, kRate, p.thresholdDb, p.ratio, p.attackMs, p.releaseMs, p.kneeDb, p.makeupDb);
+        const auto y = fresh.process (x, p.thresholdDb, p.ratio, p.kneeDb, p.makeupDb, coefficients);
         sum += y * y;
     }
 

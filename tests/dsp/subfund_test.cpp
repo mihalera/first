@@ -1215,6 +1215,59 @@ void testTapeModulation()
 
     check (insaneTempo.wowFreq > atOneTwenty.wowFreq,
            "and above the clamp the wander still grows, so the clamp is a floor and a ceiling rather than a constant");
+
+    // The depths those curves are turned into (Source/DSP/TapeModulationDepth.h):
+    // the wander each LFO is multiplied by, and how far the bias follows the speed.
+    // A curve at 1 and a platter at speed give 0.13 of wow (0.05 + 0.08), 0.17 of
+    // flutter (0.08 + 0.09) and a bias scale of 1.14 (0.84 + 0.30).
+    {
+        const auto depths = j37mod::makeModulationDepths (1.0f, 1.0f, kAtSpeed, 1.0f);
+        check (std::fabs (depths.wowDepth - 0.13f) < 1.0e-6f,
+               "a full WOW at speed wanders by 0.13 - its 0.05 floor plus 0.08 per unit of speed");
+        check (std::fabs (depths.flutterDepth - 0.17f) < 1.0e-6f,
+               "a full FLUTTER at speed is 0.17 - the capstan's own 0.08 plus 0.09");
+        check (std::fabs (depths.speedBias - 1.14f) < 1.0e-6f,
+               "the bias scale at speed is 1.14, the machine's own calibration");
+    }
+
+    // The speed term: half speed keeps the floor and halves only the slope
+    // (0.05 + 0.04, 0.08 + 0.045), and the bias follows the speed down to 0.99.
+    {
+        const auto depths = j37mod::makeModulationDepths (1.0f, 1.0f, 0.5f, 1.0f);
+        check (std::fabs (depths.wowDepth - 0.09f) < 1.0e-6f,
+               "half speed keeps the wow floor and halves the slope: 0.09");
+        check (std::fabs (depths.flutterDepth - 0.125f) < 1.0e-6f,
+               "half speed keeps the flutter floor and halves the slope: 0.125");
+        check (std::fabs (depths.speedBias - 0.99f) < 1.0e-6f,
+               "a coasting machine biases down as it slows: 0.99");
+    }
+
+    // A closed control is no depth at all, but the bias is the machine's and does
+    // not move with the curves.
+    {
+        const auto closed = j37mod::makeModulationDepths (0.0f, 0.0f, kAtSpeed, 1.0f);
+        check (std::fabs (closed.wowDepth) < 1.0e-6f && std::fabs (closed.flutterDepth) < 1.0e-6f,
+               "WOW and FLUTTER closed give no depth at all");
+        check (std::fabs (closed.speedBias - 1.14f) < 1.0e-6f,
+               "the bias scale follows the speed, not the two wander controls");
+    }
+
+    // The instrument's transport scale scales BOTH depths and nothing else: an
+    // instrument at 0.5 wanders half as far and still biases at 1.14.
+    {
+        const auto half = j37mod::makeModulationDepths (1.0f, 1.0f, kAtSpeed, 0.5f);
+        check (std::fabs (half.wowDepth - 0.065f) < 1.0e-6f
+                   && std::fabs (half.flutterDepth - 0.085f) < 1.0e-6f,
+               "the instrument's transport scale halves both depths");
+        check (std::fabs (half.speedBias - 1.14f) < 1.0e-6f,
+               "the instrument's transport scale leaves the machine's bias alone");
+    }
+
+    // Monotone in the speed, which is what makes a coast a deepening wander rather
+    // than a step: the depth never falls while the machine speeds up.
+    check (j37mod::makeModulationDepths (1.0f, 1.0f, 1.0f, 1.0f).wowDepth
+               > j37mod::makeModulationDepths (1.0f, 1.0f, 0.76f, 1.0f).wowDepth,
+           "a faster machine wanders deeper, and never the other way round");
 }
 
 // -----------------------------------------------------------------------------

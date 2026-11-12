@@ -254,6 +254,11 @@ def main() -> int:
     # ------------------------------------------------------------------
     preamble = ["// GENERATED FILE - do not edit. Cut verbatim out of Source/ by tests/state/extract.py.",
                 "",
+                "// The helper the model lists convert through, from the shipping header - the",
+                "// lists below are cut out of Source/, so their bodies name the same helper the",
+                "// plugin compiles rather than a copy of it.",
+                "#include \"DSP/ModelTypeList.h\"",
+                "",
                 "// ---- the range constants the parameter table is built from "
                 f"({source_of('constexpr float minTrack =')}) ----",
                 "namespace",

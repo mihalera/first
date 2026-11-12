@@ -56,16 +56,16 @@ struct GlueCompressor
     /** 0 = sustained programme, 1 = sharp transient. Used by the UI to show activity. */
     float getTransientAmount() const noexcept
     {
-            constexpr float transientFloor = 1.0e-12f;
-            const auto envFloor = juce::jmax (transientFloor, envelope);
-            const auto slowEnvFloor = juce::jmax (transientFloor, slowEnvelope);
-            const auto fast = std::sqrt (envFloor);
-            const auto slow = std::sqrt (slowEnvFloor);
-            if (slow <= transientFloor)
-                return 0.0f;
+        constexpr float transientFloor = 1.0e-12f;
+        const auto envFloor = juce::jmax (transientFloor, envelope);
+        const auto slowEnvFloor = juce::jmax (transientFloor, slowEnvelope);
+        const auto fast = std::sqrt (envFloor);
+        const auto slow = std::sqrt (slowEnvFloor);
+        if (slow <= transientFloor)
+            return 0.0f;
 
-            return juce::jlimit (0.0f, 1.0f, (fast - slow) / slow * 1.6f);
-        }
+        return juce::jlimit (0.0f, 1.0f, (fast - slow) / slow * 1.6f);
+    }
 
     /**
         Pushes signal power through the detector; call once per sample.

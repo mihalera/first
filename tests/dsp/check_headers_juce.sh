@@ -310,7 +310,8 @@ TU="${BUILD}/header_check.cpp"
     smoother.skip (8);
 
     StandardCompressor compressor;
-    x = compressor.process (x, 48000.0f, -12.0f, 4.0f, 10.0f, 100.0f, 6.0f, 3.0f);
+    const auto compressorCoefficients = StandardCompressor::makeCoefficients (48000.0f, 10.0f, 100.0f);
+    x = compressor.process (x, -12.0f, 4.0f, 6.0f, 3.0f, compressorCoefficients);
     compressor.reset();
 
     // The machine's block-rate coefficients - the first stage taken out of

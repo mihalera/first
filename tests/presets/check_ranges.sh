@@ -24,7 +24,7 @@ mkdir -p "${BUILD}"
 
 python3 "${REPO}/tests/state/extract.py" "${BUILD}" > /dev/null
 
-"${CXX}" "${J37_CXX_STD}" -O1 -I "${REPO}/tests/state" -I "${BUILD}" \
+"${CXX}" "${J37_CXX_STD}" -O1 -I "${REPO}/tests/state" -I "${BUILD}" -I "$(j37_path source)" \
     "${HERE}/range_dump.cpp" "${REPO}/tests/state/juce_stub.cpp" \
     -o "${BUILD}/range_dump"
 
