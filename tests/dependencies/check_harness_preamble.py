@@ -47,6 +47,8 @@ if not known:
 FORBIDDEN = [
     (re.compile(r'CXX="\$\{CXX:-'), 'defaults the compiler instead of using the preamble'),
     (re.compile(r'^\s*sanitize_flags=\(\)', re.M), 'builds its own sanitizer_flags array'),
+    (re.compile(r'-std=c\+\+[0-9]+'), 'picks the C++ standard itself'),
+    (re.compile(r'\s-Wall'), 'picks the warning set itself'),
 ]
 
 # The shipping include roots. A harness may still add a directory of its own -

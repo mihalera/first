@@ -23,7 +23,7 @@ mkdir -p "${BUILD}"
 # Sanitizers mirror the other scene_frame harness so the shared-mesh and
 # pointer-to-shared-data invariants are still under the same tooling.
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "$(j37_path source)" \
     "${HERE}/pack_contract.cpp" \

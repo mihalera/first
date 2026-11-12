@@ -30,7 +30,7 @@ python3 "${HERE}/extract.py" "${BUILD}"
 # compiles out of Source/, under those sanitizers - see the sanitizer step in
 # build-linux-debug.
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "${HERE}" -I "$(j37_path source)" -I "${BUILD}" \
     "${HERE}/layout_test.cpp" -o "${BUILD}/layout_test"
@@ -45,7 +45,7 @@ python3 "${HERE}/extract.py" "${BUILD}"
 #  see - a clipped caption is neither a crash nor a warning.
 # ---------------------------------------------------------------------------
 SRC="$(j37_path source)"
-"${CXX}" -std=c++17 -O1 -Wall -Wextra -I "${SRC}"     "${HERE}/chip_captions.cpp" -o "${BUILD}/chip_captions"
+"${CXX}" "${J37_CXX_STD}" -O1 "${J37_WARNINGS[@]}" -I "${SRC}"     "${HERE}/chip_captions.cpp" -o "${BUILD}/chip_captions"
 "${BUILD}/chip_captions"
 
 # A geometry check cannot see which font a button carries, so the two lines that

@@ -333,7 +333,7 @@ run_in_batches() {
 # with warnings as errors by the platform builds; that is their job, not this
 # one's - this one answers "does it still parse".
 compile_translation_unit() {
-    "${CXX}" -std=c++20 -fsyntax-only -Wno-cpp \
+    "${CXX}" "${J37_CXX_STD}" -fsyntax-only -Wno-cpp \
         "${INCLUDES[@]}" "${DEFINES[@]}" "${REPO}/$1" \
         && echo "  ok  $1"
 }
@@ -361,7 +361,7 @@ PY
 )
 
 compile_probe_unit() {
-    "${CXX}" -std=c++20 -fsyntax-only -Wno-cpp \
+    "${CXX}" "${J37_CXX_STD}" -fsyntax-only -Wno-cpp \
         "${INCLUDES[@]}" "${DEFINES[@]}" -DJ37_ENABLE_HOTPATH_PROBE=1 "${REPO}/$1" \
         && echo "  ok  $1 (hot-path probe on)"
 }
@@ -421,7 +421,7 @@ compile_header_alone() {
     local unit="${BUILD}/header_alone.$(printf '%s' "$1" | tr '/' '_').cpp"
     printf '#include <JuceHeader.h>\n#include "%s"\n' "$1" > "${unit}"
 
-    "${CXX}" -std=c++20 -fsyntax-only -Wno-cpp \
+    "${CXX}" "${J37_CXX_STD}" -fsyntax-only -Wno-cpp \
         "${INCLUDES[@]}" "${DEFINES[@]}" "${unit}" \
         && echo "  ok  $1 (on its own)"
 }
@@ -462,10 +462,10 @@ if [ "${RUN_NAMCORE}" -eq 1 ]; then
     fi
 
     printf '#include "DSP/OptionalLibraries.h"\n#if ! J37_HAS_NAMCORE\n#error "J37_HAS_NAMCORE did not come on"\n#endif\n' \
-        | "${CXX}" -std=c++20 -fsyntax-only -Wno-cpp -x c++ - \
+        | "${CXX}" "${J37_CXX_STD}" -fsyntax-only -Wno-cpp -x c++ - \
             "${INCLUDES[@]}" "${NAM_INCLUDES[@]}" "${DEFINES[@]}" -DJ37_NAMCORE=1
 
-    "${CXX}" -std=c++20 -fsyntax-only -Wno-cpp \
+    "${CXX}" "${J37_CXX_STD}" -fsyntax-only -Wno-cpp \
         "${INCLUDES[@]}" "${NAM_INCLUDES[@]}" "${DEFINES[@]}" -DJ37_NAMCORE=1 \
         "${REPO}/Source/PluginProcessor.cpp" \
         && echo "  ok  Source/PluginProcessor.cpp (NAM Core on)"

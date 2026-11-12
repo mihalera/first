@@ -25,7 +25,7 @@ case "$(uname -s)" in
     *)                    platform_flags=("-pthread") ;;
 esac
 
-"${CXX}" -std=c++17 -O1 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O1 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "$(j37_path source)" \
     "${HERE}/diag_test.cpp" \

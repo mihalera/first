@@ -32,7 +32,7 @@ mkdir -p "${BUILD}"
 
 python3 "${HERE}/extract.py" "${BUILD}/extracted_pitch.inc"
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "${HERE}" -I "${BUILD}" -I "${SOURCE}" \
     "${HERE}/pitch_test.cpp" -o "${BUILD}/pitch_test"
@@ -58,7 +58,7 @@ if [ -f "${STRETCH}/signalsmith-stretch/signalsmith-stretch.h" ]; then
     echo
     echo "--- the same harness with the corrector's vocoder engine (J37_CORRECTOR_USE_STRETCH) ---"
 
-    "${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+    "${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
         "${sanitize_flags[@]}" -DJ37_CORRECTOR_USE_STRETCH=1 \
         -I "${HERE}" -I "${BUILD}" -I "${SOURCE}" -I "${STRETCH}" -I "${LINEAR}" \
         "${HERE}/pitch_test.cpp" -o "${BUILD}/pitch_test_stretch"

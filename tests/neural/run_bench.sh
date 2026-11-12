@@ -74,7 +74,7 @@ for source in "${NAM_ROOT}"/NAM/*.cpp "${NAM_ROOT}"/NAM/*/*.cpp; do
     object="${BUILD}/namcore/$(basename "${source}" .cpp).o"
     nam_objects+=("${object}")
 
-    "${CXX}" -std=c++20 -O2 -w \
+    "${CXX}" "${J37_CXX_STD}" -O2 -w \
         -isystem "${NAM_ROOT}" -isystem "${EIGEN_ROOT}" -isystem "${NAM_JSON_INCLUDE}" \
         -c "${source}" -o "${object}" &
     nam_wave+=("$!")
@@ -91,7 +91,7 @@ wait_for_wave
 # silences too. RTNeural's own modules/json is deliberately NOT on the include
 # path - two copies of nlohmann in one translation unit are two types, and NAM
 # Core's `const nlohmann::json&` parameters would mangle differently.
-"${CXX}" -std=c++20 -O2 -Wall -Wextra -Wno-unused-parameter -Wno-cpp \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" -Wno-cpp \
     -DJ37_NAMCORE=1 \
     -I "${HERE}/../dsp" -I "${SOURCE}" -I "${SOURCE}/DSP" \
     -isystem "${RTNEURAL_ROOT}" \

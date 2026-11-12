@@ -27,7 +27,7 @@ mkdir -p "${BUILD}"
 # state, so what they would catch here is an out-of-range read in the harness
 # rather than in the header.
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "${HERE}" -I "$(j37_path source)" \
     "${HERE}/limiter_test.cpp" -o "${BUILD}/limiter_test"

@@ -24,7 +24,7 @@ mkdir -p "${BUILD}"
 # other harnesses take. A frame is a pointer to shared mesh data plus a draw
 # list, so a null or dangling share is exactly what they catch.
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "$(j37_path source)" \
     "${HERE}/scene_frame_test.cpp" "${REPO}/Source/GUI/SceneFrame.cpp" \

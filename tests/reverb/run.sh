@@ -40,7 +40,7 @@ mkdir -p "${BUILD}"
 # the code that calls the network and not the code that runs it.
 "${CC}" -std=c99 -O2 "${sanitize_flags[@]}" -c "${LIBRARY}/verb.c" -o "${BUILD}/verb.o"
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "${HERE}" -I "$(j37_path source)" -I "${LIBRARY}" \
     "${HERE}/reverb_test.cpp" "${BUILD}/verb.o" -o "${BUILD}/reverb_test" -lm

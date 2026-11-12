@@ -54,7 +54,7 @@ INCLUDES=(-I "${HERE}" -I "${SOURCE}" -I "${DR_LIBS}")
 
 echo ""
 echo "== the fixed sweep (g++/CXX, ${CXX})"
-"${CXX}" -std=c++17 -O1 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O1 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" "${INCLUDES[@]}" \
     "${HERE}/fuzz_noise_decoder.cpp" "${SOURCE}/DSP/NoiseDecoder.cpp" \
     -o "${BUILD}/fuzz_noise_decoder"
@@ -98,7 +98,7 @@ elif [ -n "${CLANG}" ] \
     echo ""
     echo "== the coverage-guided run (${CLANG}, ${SECONDS_TO_FUZZ}s)"
 
-    "${CLANG}" -std=c++17 -O1 -g -DJ37_FUZZ_LIBFUZZER \
+    "${CLANG}" "${J37_CXX_STD}" -O1 -g -DJ37_FUZZ_LIBFUZZER \
         -fsanitize=fuzzer,address -fno-omit-frame-pointer \
         "${INCLUDES[@]}" \
         "${HERE}/fuzz_noise_decoder.cpp" "${SOURCE}/DSP/NoiseDecoder.cpp" \

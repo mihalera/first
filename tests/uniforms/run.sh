@@ -20,7 +20,7 @@ BUILD="$(j37_build j37-uniforms-test)"
 
 mkdir -p "${BUILD}"
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     -I "$(j37_path source)" \
     "${HERE}/uniform_cache_test.cpp" -o "${BUILD}/uniform_cache_test"
 

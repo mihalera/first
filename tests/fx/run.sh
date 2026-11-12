@@ -24,7 +24,7 @@ BUILD="$(j37_build j37-fx-test)"
 
 mkdir -p "${BUILD}"
 
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter \
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "$(j37_path source)" \
     "${HERE}/fx_test.cpp" -o "${BUILD}/fx_test"
@@ -36,6 +36,6 @@ mkdir -p "${BUILD}"
 # vocoder's 14x makeup and the formant's Q-gain, neither of which fx_test above
 # could see - that one asks whether a stage does its job, this one asks whether
 # its knob can be turned anywhere without the output leaving the rails.
-"${CXX}" -std=c++17 -O2 -Wall -Wextra -Wno-unused-parameter     "${sanitize_flags[@]}"     -I "$(j37_path source)"     "${HERE}/per_parameter_test.cpp" -o "${BUILD}/per_parameter_test"
+"${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}"     "${sanitize_flags[@]}"     -I "$(j37_path source)"     "${HERE}/per_parameter_test.cpp" -o "${BUILD}/per_parameter_test"
 
 "${BUILD}/per_parameter_test"

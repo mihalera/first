@@ -114,10 +114,16 @@ the include path for you, because several harnesses compile the same source
 twice - once with the library and once without - to pin both branches of a
 `J37_HAS_*` decision. A fixed include list would collapse those pairs.
 
+It also owns the C++ standard (`J37_CXX_STD`, default `-std=c++20` - the same
+standard the plugin builds with) and the warning set (`J37_WARNINGS`), so a
+header that needs a C++20 facility fails here in seconds instead of in the plugin
+build. Both can be overridden for one run:
+`J37_CXX_STD=-std=c++17 tests/fx/run.sh`.
+
 `tests/dependencies/check_harness_preamble.py` keeps the seam honest: every
 harness sources the preamble, none defaults the compiler itself, none builds its
-own sanitizer array, and no include flag names `Source/`, `ThirdParty/` or
-`JUCE/` by path.
+own sanitizer array, no include flag names `Source/`, `ThirdParty/` or `JUCE/` by path, and
+none picks its own `-std=` or `-Wall`.
 
 ## What each harness compiles
 
