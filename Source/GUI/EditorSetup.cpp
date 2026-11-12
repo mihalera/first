@@ -626,7 +626,7 @@ void FirstAudioProcessorEditor::stylePanelLabels() {
                juce::Justification::centredLeft);
     styleLabel(metersHeadingLabel, "LEVELS", 10.0f, paletteFor(false).accent, true,
                juce::Justification::left);
-    styleLabel(metersHintLabel, "dBFS / PEAK + RMS", 8.0f, paletteFor(false).secondary, true,
+    styleLabel(metersHintLabel, "dBFS / RMS + LUFS + VU", 8.0f, paletteFor(false).secondary, true,
                juce::Justification::left);
     styleLabel(compressorLabel, "GLUE x2", 10.0f, paletteFor(false).accent, true,
                juce::Justification::right);

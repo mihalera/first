@@ -206,7 +206,7 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // per-row heights that scaled with textScale, so on short, narrow cells the rows
     // bunched against the bottom edge while the dial sat high - the lopsided look that
     // made the input/output meters read as crooked next to the compressor bars.
-    constexpr int readoutRowCount = 5;
+    constexpr int readoutRowCount = 4;
 
     // The dial takes a fixed share of the body, and the readout rows then take
     // whatever is genuinely LEFT below it. The old code computed the row block from a
@@ -395,25 +395,28 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
         g.drawFittedText (formatDb (value), valueArea, juce::Justification::centredRight, 1);
     };
 
-    // The clipping lamp: only the peak view can clip, so it is flagged next to that row.
+    // PEAK dB is no longer drawn inside the meter: the peak is already carried by
+    // the dial's needle/hold, and the loudness indicators live in the LEVELS panel
+    // under the METERS heading instead of inside each meter cell.
+    // The clipping lamp: only the peak view can clip, so it is flagged on the first
+    // measurement row (RMS) that now leads the list.
     const auto peakColour = clipping ? juce::Colour::fromRGB (208, 82, 58) : palette.text;
-    drawReadoutRow ("PEAK dB", peakHoldDb, peakColour, 0);
-    drawReadoutRow ("RMS", displayedRms, palette.text, 1);
-    drawReadoutRow ("LUFS", displayedLufs, palette.accent, 2);
-    drawReadoutRow ("VU", displayedVu, palette.text, 3);
+    drawReadoutRow ("RMS", displayedRms, peakColour, 0);
+    drawReadoutRow ("LUFS", displayedLufs, palette.accent, 1);
+    drawReadoutRow ("VU", displayedVu, palette.text, 2);
 
-    // Hairline on the exact boundary between the four measurement rows and the
+    // Hairline on the exact boundary between the three measurement rows and the
     // summary row (neither row's centred text reaches its own edge), so the average
     // reads as a summary.
     g.setColour (palette.border.withAlpha (0.45f));
-    g.drawHorizontalLine (juce::roundToInt (readoutTop) + 4 * rowHeight,
+    g.drawHorizontalLine (juce::roundToInt (readoutTop) + 3 * rowHeight,
                           static_cast<float> (rowInset),
                           static_cast<float> (getWidth() - rowInset));
 
-    // The summary row drives the needle: it is the equal-weighted average of the four
+    // The summary row drives the needle: it is the equal-weighted average of the
     // views above (the old "MIX 25%" caption wrongly suggested it had something to do
     // with the MIX control).
-    drawReadoutRow ("AVG", displayedCombined, palette.accent, 4);
+    drawReadoutRow ("AVG", displayedCombined, palette.accent, 3);
 }
 //==============================================================================
 FirstAudioProcessorEditor::CompressorMeter::CompressorMeter (juce::String meterTitle,
