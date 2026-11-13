@@ -82,7 +82,7 @@ if [ -f "${ORACLE_SOURCE}/ebur128/ebur128.c" ] \
     "${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
         "${sanitize_flags[@]}" \
         -I "${HERE}" -I "${SOURCE}" -I "${ORACLE_SOURCE}/ebur128" \
-        "${HERE}/loudness_oracle_test.cpp" "${BUILD}/ebur128.o" -lm \
+        "${HERE}/loudness_oracle_test.cpp" "${BUILD}/ebur128.o" "${J37_MATH_LIB[@]}" \
         -o "${BUILD}/loudness_oracle_test"
 
     "${BUILD}/loudness_oracle_test"
