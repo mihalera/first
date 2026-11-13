@@ -27,6 +27,14 @@
 #
 # Neither half links into the plugin, and neither is a runtime dependency: this is
 # dev-and-CI evidence, like Catch2's suite and the libebur128 oracle next door.
+#
+# The sanitizers are on by default and are never turned off silently. Before the
+# sweep is built, a tiny probe is compiled and RUN with the same flags: a host
+# that can compile an ASan binary but cannot load its runtime (a Windows box with
+# no clang_rt.asan_dynamic-*.dll on PATH) gets one line naming the reason and an
+# unsanitized sweep, because the sweep is the half that must run everywhere. A
+# host where the probe starts - Linux and CI - keeps the sanitizers exactly as
+# before. The sweep's non-zero exit still fails the gate in both modes.
 set -euo pipefail
 source "$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)/../lib/harness.sh"
 
@@ -45,10 +53,38 @@ if [ ! -f "${DR_LIBS}/dr_wav.h" ]; then
     exit 0
 fi
 
-SANITIZE="${J37_SANITIZE:-address,undefined}"
-sanitize_flags=("-fsanitize=${SANITIZE}" "-fno-sanitize-recover=all"
-                "-fno-omit-frame-pointer" "-g")
-echo "sanitizers: ${SANITIZE}"
+# The default is the pair CI runs. An explicitly EMPTY J37_SANITIZE turns the
+# sanitizers off (the dash-only default does that; `:-` would have refused an
+# empty value), which is the manual escape hatch for a host whose sanitizer
+# runtime cannot load. The probe below takes that decision automatically.
+SANITIZE="${J37_SANITIZE-address,undefined}"
+sanitize_flags=()
+if [ -n "${SANITIZE}" ]; then
+    sanitize_flags=("-fsanitize=${SANITIZE}" "-fno-sanitize-recover=all"
+                    "-fno-omit-frame-pointer" "-g")
+fi
+
+# Does a sanitizer build actually START here? Linux and CI answer yes, and the
+# flags stay. A Windows host can compile with -fsanitize=address and still fail at
+# LOAD time because clang_rt.asan_dynamic-x86_64.dll is not on PATH - a property
+# of the machine, not of the decoder. The probe runs the sanitizer runtime itself,
+# so a host where ASan works never takes the degraded path; where it does not, the
+# sweep still runs (unsanitized) and says why in one line. The sweep is the half
+# that must run everywhere, so losing its sanitizers is a downgrade, not a skip.
+sanitizer_available=1
+if [ ${#sanitize_flags[@]} -gt 0 ]; then
+    if printf 'int main() { return 0; }\n' \
+        | "${CXX}" "${sanitize_flags[@]}" -x c++ -o "${BUILD}/sanitizer_probe" - \
+          >/dev/null 2>&1 \
+       && "${BUILD}/sanitizer_probe" >/dev/null 2>&1; then
+        echo "sanitizers: ${SANITIZE}"
+    else
+        sanitizer_available=0
+        echo "  note  ${SANITIZE} build does not start on this host (sanitizer runtime missing from PATH); running the sweep without sanitizers"
+        sanitize_flags=()
+    fi
+    rm -f "${BUILD}/sanitizer_probe" "${BUILD}/sanitizer_probe.exe"
+fi
 
 INCLUDES=(-I "${HERE}" -I "${SOURCE}" -I "${DR_LIBS}")
 
@@ -87,7 +123,10 @@ CLANG="$(command -v clang++ || true)"
 SECONDS_TO_FUZZ="${J37_FUZZ_SECONDS:-20}"
 FUZZ_COVERAGE="${J37_FUZZ_COVERAGE:-1}"
 
-if [ "${FUZZ_COVERAGE}" = "0" ]; then
+if [ "${sanitizer_available}" = "0" ]; then
+    echo ""
+    echo "  skip  coverage-guided run: the sanitizer runtime does not load on this host"
+elif [ "${FUZZ_COVERAGE}" = "0" ]; then
     echo ""
     echo "  skip  coverage-guided run: J37_FUZZ_COVERAGE=0 (the sweep above is the sanitizer pass)"
 elif [ -n "${CLANG}" ] \
