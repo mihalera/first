@@ -58,11 +58,16 @@ fi
 # empty value), which is the manual escape hatch for a host whose sanitizer
 # runtime cannot load. The probe below takes that decision automatically.
 SANITIZE="${J37_SANITIZE-address,undefined}"
-sanitize_flags=()
 if [ -n "${SANITIZE}" ]; then
     sanitize_flags=("-fsanitize=${SANITIZE}" "-fno-sanitize-recover=all"
                     "-fno-omit-frame-pointer" "-g")
 fi
+
+# The flags the SWEEP is built with, copied from the preamble's shared array
+# (harness.sh) so the degraded path below can drop them without touching the
+# shared value that video. sweep_* rather than sanitize_flags because the preamble
+# owns that name and tests/dependencies/check_harness_preamble.py enforces it.
+sweep_sanitize=("${sanitize_flags[@]}")
 
 # Does a sanitizer build actually START here? Linux and CI answer yes, and the
 # flags stay. A Windows host can compile with -fsanitize=address and still fail at
@@ -81,7 +86,7 @@ if [ ${#sanitize_flags[@]} -gt 0 ]; then
     else
         sanitizer_available=0
         echo "  note  ${SANITIZE} build does not start on this host (sanitizer runtime missing from PATH); running the sweep without sanitizers"
-        sanitize_flags=()
+        sweep_sanitize=()
     fi
     rm -f "${BUILD}/sanitizer_probe" "${BUILD}/sanitizer_probe.exe"
 fi
@@ -91,7 +96,7 @@ INCLUDES=(-I "${HERE}" -I "${SOURCE}" -I "${DR_LIBS}")
 echo ""
 echo "== the fixed sweep (g++/CXX, ${CXX})"
 "${CXX}" "${J37_CXX_STD}" -O1 "${J37_WARNINGS[@]}" \
-    "${sanitize_flags[@]}" "${INCLUDES[@]}" \
+    "${sweep_sanitize[@]}" "${INCLUDES[@]}" \
     "${HERE}/fuzz_noise_decoder.cpp" "${SOURCE}/DSP/NoiseDecoder.cpp" \
     -o "${BUILD}/fuzz_noise_decoder"
 
