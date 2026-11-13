@@ -174,8 +174,6 @@ else()
     endif()
     add_subdirectory(JUCE)
 endif()
-=======
-add_subdirectory(JUCE)
 
 # JUCE's Android Oboe target adds -Ofast for Release, which current Clang
 # deprecates and repeats for every translation unit. Keep the same optimization
@@ -239,21 +237,6 @@ option(COPY_PLUGIN_AFTER_BUILD "Copy plugins to the user plugin folders after bu
 # SokolBackend.h selects the platform graphics API, and NativeRenderer_Sokol.cpp
 # provides matching shader sources for desktop and GLES contexts.
 set(J37_RENDER_BACKEND "SOKOL" CACHE STRING
-=======
-# The default is platform-specific on purpose. Sokol's scene shaders are written
-# as desktop GLSL 410, while SokolBackend.h selects SOKOL_GLES3 on Android - the
-# driver there rejects the shaders and sg_setup cannot produce a pipeline, so
-# Sokol is not a usable Android backend on its own (the launcher crash that also
-# stopped every APK is fixed in android/.../MainActivity.java, not here). OPENGL
-# was Android's working path before SOKOL became the desktop default, so Android
-# keeps it. Desktop builds are unchanged.
-if(CMAKE_SYSTEM_NAME STREQUAL "Android")
-    set(J37_DEFAULT_RENDER_BACKEND "OPENGL")
-else()
-    set(J37_DEFAULT_RENDER_BACKEND "SOKOL")
-endif()
-set(J37_RENDER_BACKEND "${J37_DEFAULT_RENDER_BACKEND}" CACHE STRING
-=======
     "Editor renderer: AUTO, OPENGL, VULKAN, METAL, D3D11, D3D12, SOKOL, BGFX, CPU")
 set_property(CACHE J37_RENDER_BACKEND PROPERTY STRINGS
     AUTO OPENGL VULKAN METAL D3D11 D3D12 SOKOL BGFX CPU)
@@ -286,18 +269,6 @@ elseif(J37_RENDER_BACKEND STREQUAL "D3D12")
     # Staged; see D3D11 above.
 elseif(J37_RENDER_BACKEND STREQUAL "SOKOL")
     # Use the platform-matched shader dialect (desktop GLSL or GLSL ES).
-=======
-    # Refuse at configure time rather than ship an APK whose editor cannot create
-    # a pipeline: the Sokol scene shaders are GLSL 410, and its Android backend
-    # compiles GLES3 shaders. Android's supported path is OPENGL (the default
-    # above).
-    if(CMAKE_SYSTEM_NAME STREQUAL "Android")
-        message(FATAL_ERROR
-            "J37_RENDER_BACKEND=SOKOL is not supported on Android: the Sokol scene "
-            "shaders are desktop GLSL 410 and the Android build selects GLES3. "
-            "Use -DJ37_RENDER_BACKEND=OPENGL (the Android default).")
-    endif()
-=======
     list(APPEND J37_RENDER_DEFINITIONS J37_RENDER_BACKEND_SOKOL=1)
     list(APPEND J37_NATIVE_RENDER_DEFINITIONS J37_NATIVE_SOKOL=1)
 elseif(J37_RENDER_BACKEND STREQUAL "BGFX")
@@ -708,15 +679,6 @@ endforeach()
 #  glyphs, preset tiles, brand marks and help illustrations, named by
 #  Source/GUI/PanelAssetSlots.h and loaded through Source/GUI/PanelAssets.h.
 #  Nothing here is required: when the glob is empty the
-=======
-#  below are the additive layer: theme materials, saturation glyphs, brand marks
-#  and window/app icons, named by
-#  named by Source/GUI/PanelAssetSlots.h and loaded through
-=======
-#  below are the additive layer: theme materials, saturation glyphs, preset tiles,
-#  brand marks and window/app icons, named by Source/GUI/PanelAssetSlots.h and loaded through
-#  Source/GUI/PanelAssets.h. Nothing here is required: when the glob is empty the
-=======
 #  plugin builds and behaves exactly as before, and every draw site falls back to
 #  its own drawn panel. Drop a file in Assets/ and reconfigure; that is the whole
 #  install step, because the bytes are embedded in the plugin rather than shipped
@@ -912,17 +874,6 @@ j37_apply_vendor_libraries(first)
 if(J37_NAMCORE)
     target_link_libraries(first PRIVATE namcore)
     target_compile_definitions(first PRIVATE J37_NAMCORE=1)
-
-    #  The one source that has to exist because of HOW the plugin is linked, not
-    #  because of what it does. `first` is a STATIC library (libMiBoX_SharedCode.a)
-    #  and the VST3/CLAP/AU wrappers scan that archive, so every NAM Core object
-    #  that only carries a file-scope registration - no symbol anyone names - is
-    #  pruned before its initialiser can run. This translation unit takes the
-    #  address of each architecture's config parser, which gives the linker a
-    #  reference to resolve and keeps the registry populated. See the file's own
-    #  header comment and keepNamCoreArchitecturesLinked() in Source/DSP/
-    #  NamBackend.h; without it every valid .nam loads as INVALID MODEL.
-    target_sources(first PRIVATE Source/DSP/NamCoreRegistration.cpp)
 endif()
 
 # ------------------------------------------------------------------------------

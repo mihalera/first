@@ -165,14 +165,11 @@
           "tile": 21
         },
         {
-=======
           "key": "family.tape",
           "label": "Tape family",
           "family": "navigation",
           "shape": "reel",
           "tile": 22
-=======
-          "tile": 18
         },
         {
           "key": "family.fx",
@@ -180,8 +177,6 @@
           "family": "navigation",
           "shape": "echo",
           "tile": 23
-=======
-          "tile": 19
         },
         {
           "key": "family.setup",
@@ -189,8 +184,6 @@
           "family": "navigation",
           "shape": "gear",
           "tile": 24
-=======
-          "tile": 20
         },
         {
           "key": "family.menu",
@@ -198,8 +191,6 @@
           "family": "navigation",
           "shape": "menu",
           "tile": 25
-=======
-          "tile": 21
         },
         {
           "key": "family.back",
@@ -207,8 +198,6 @@
           "family": "navigation",
           "shape": "back",
           "tile": 26
-=======
-          "tile": 22
         },
         {
           "key": "family.close",
@@ -216,8 +205,6 @@
           "family": "navigation",
           "shape": "close",
           "tile": 27
-=======
-          "tile": 23
         },
         {
           "key": "family.expand",
@@ -225,8 +212,6 @@
           "family": "navigation",
           "shape": "expand",
           "tile": 28
-=======
-          "tile": 24
         },
         {
           "key": "family.collapse",
@@ -234,8 +219,6 @@
           "family": "navigation",
           "shape": "collapse",
           "tile": 29
-=======
-          "tile": 25
         },
         {
           "key": "switch.bypass",
@@ -243,8 +226,6 @@
           "family": "controls",
           "shape": "switch",
           "tile": 30
-=======
-          "tile": 26
         },
         {
           "key": "switch.delta",
@@ -252,8 +233,6 @@
           "family": "controls",
           "shape": "delta",
           "tile": 31
-=======
-          "tile": 27
         },
         {
           "key": "switch.polarity",
@@ -261,8 +240,6 @@
           "family": "controls",
           "shape": "phase",
           "tile": 32
-=======
-          "tile": 28
         },
         {
           "key": "switch.auto_gain",
@@ -270,8 +247,6 @@
           "family": "controls",
           "shape": "level",
           "tile": 33
-=======
-          "tile": 29
         },
         {
           "key": "switch.sync",
@@ -279,8 +254,6 @@
           "family": "controls",
           "shape": "sync",
           "tile": 34
-=======
-          "tile": 30
         },
         {
           "key": "switch.tempo",
@@ -288,8 +261,6 @@
           "family": "controls",
           "shape": "metronome",
           "tile": 35
-=======
-          "tile": 31
         },
         {
           "key": "switch.oversampling",
@@ -297,8 +268,6 @@
           "family": "controls",
           "shape": "steps",
           "tile": 36
-=======
-          "tile": 32
         },
         {
           "key": "switch.lofi",
@@ -306,8 +275,6 @@
           "family": "controls",
           "shape": "cassette",
           "tile": 37
-=======
-          "tile": 33
         },
         {
           "key": "switch.modern",
@@ -315,8 +282,6 @@
           "family": "controls",
           "shape": "digital",
           "tile": 38
-=======
-          "tile": 34
         },
         {
           "key": "switch.theme",
@@ -324,8 +289,6 @@
           "family": "controls",
           "shape": "sunmoon",
           "tile": 39
-=======
-          "tile": 35
         },
         {
           "key": "switch.language",
@@ -333,8 +296,6 @@
           "family": "controls",
           "shape": "globe",
           "tile": 40
-=======
-          "tile": 36
         },
         {
           "key": "switch.renderer",
@@ -342,8 +303,6 @@
           "family": "controls",
           "shape": "screen",
           "tile": 41
-=======
-          "tile": 37
         },
         {
           "key": "workflow.preset",
@@ -351,8 +310,6 @@
           "family": "presets",
           "shape": "file",
           "tile": 42
-=======
-          "tile": 38
         },
         {
           "key": "workflow.save",
@@ -360,8 +317,6 @@
           "family": "presets",
           "shape": "save",
           "tile": 43
-=======
-          "tile": 39
         },
         {
           "key": "workflow.delete",
@@ -369,8 +324,6 @@
           "family": "presets",
           "shape": "trash",
           "tile": 44
-=======
-          "tile": 40
         },
         {
           "key": "workflow.import",
@@ -378,8 +331,6 @@
           "family": "presets",
           "shape": "import",
           "tile": 45
-=======
-          "tile": 41
         },
         {
           "key": "workflow.export",
@@ -387,8 +338,6 @@
           "family": "presets",
           "shape": "export",
           "tile": 46
-=======
-          "tile": 42
         },
         {
           "key": "workflow.undo",
@@ -396,8 +345,6 @@
           "family": "presets",
           "shape": "undo",
           "tile": 47
-=======
-          "tile": 43
         },
         {
           "key": "workflow.redo",
@@ -405,8 +352,6 @@
           "family": "presets",
           "shape": "redo",
           "tile": 48
-=======
-          "tile": 44
         },
         {
           "key": "workflow.compare",
@@ -414,8 +359,6 @@
           "family": "presets",
           "shape": "compare",
           "tile": 49
-=======
-          "tile": 45
         },
         {
           "key": "workflow.copy_a",
@@ -423,8 +366,6 @@
           "family": "presets",
           "shape": "copy",
           "tile": 50
-=======
-          "tile": 46
         },
         {
           "key": "workflow.copy_b",
@@ -432,8 +373,6 @@
           "family": "presets",
           "shape": "copy",
           "tile": 51
-=======
-          "tile": 47
         },
         {
           "key": "workflow.slot_a",
@@ -441,8 +380,6 @@
           "family": "presets",
           "shape": "slot_a",
           "tile": 52
-=======
-          "tile": 48
         },
         {
           "key": "workflow.slot_b",
@@ -450,8 +387,6 @@
           "family": "presets",
           "shape": "slot_b",
           "tile": 53
-=======
-          "tile": 49
         },
         {
           "key": "workflow.favorite",
@@ -459,8 +394,6 @@
           "family": "presets",
           "shape": "star",
           "tile": 54
-=======
-          "tile": 50
         },
         {
           "key": "workflow.search",
@@ -468,8 +401,6 @@
           "family": "presets",
           "shape": "search",
           "tile": 55
-=======
-          "tile": 51
         },
         {
           "key": "workflow.randomize",
@@ -477,8 +408,6 @@
           "family": "presets",
           "shape": "dice",
           "tile": 56
-=======
-          "tile": 52
         },
         {
           "key": "workflow.reset",
@@ -486,8 +415,6 @@
           "family": "presets",
           "shape": "reset",
           "tile": 57
-=======
-          "tile": 53
         },
         {
           "key": "files.model",
@@ -495,8 +422,6 @@
           "family": "files",
           "shape": "chip",
           "tile": 58
-=======
-          "tile": 54
         },
         {
           "key": "files.impulse",
@@ -504,8 +429,6 @@
           "family": "files",
           "shape": "wave_file",
           "tile": 59
-=======
-          "tile": 55
         },
         {
           "key": "files.browse",
@@ -513,8 +436,6 @@
           "family": "files",
           "shape": "folder",
           "tile": 60
-=======
-          "tile": 56
         },
         {
           "key": "files.load",
@@ -522,8 +443,6 @@
           "family": "files",
           "shape": "import",
           "tile": 61
-=======
-          "tile": 57
         },
         {
           "key": "files.unload",
@@ -531,8 +450,6 @@
           "family": "files",
           "shape": "eject",
           "tile": 62
-=======
-          "tile": 58
         },
         {
           "key": "files.drop",
@@ -540,8 +457,6 @@
           "family": "files",
           "shape": "download",
           "tile": 63
-=======
-          "tile": 59
         },
         {
           "key": "files.ready",
@@ -549,8 +464,6 @@
           "family": "files",
           "shape": "check",
           "tile": 64
-=======
-          "tile": 60
         },
         {
           "key": "files.missing",
@@ -558,8 +471,6 @@
           "family": "files",
           "shape": "missing",
           "tile": 65
-=======
-          "tile": 61
         },
         {
           "key": "status.active",
@@ -567,8 +478,6 @@
           "family": "status",
           "shape": "check",
           "tile": 66
-=======
-          "tile": 62
         },
         {
           "key": "status.inactive",
@@ -576,8 +485,6 @@
           "family": "status",
           "shape": "circle",
           "tile": 67
-=======
-          "tile": 63
         },
         {
           "key": "status.warning",
@@ -585,8 +492,6 @@
           "family": "status",
           "shape": "warning",
           "tile": 68
-=======
-          "tile": 64
         },
         {
           "key": "status.error",
@@ -594,8 +499,6 @@
           "family": "status",
           "shape": "error",
           "tile": 69
-=======
-          "tile": 65
         },
         {
           "key": "status.success",
@@ -603,8 +506,6 @@
           "family": "status",
           "shape": "check",
           "tile": 70
-=======
-          "tile": 66
         },
         {
           "key": "status.clipped",
@@ -612,8 +513,6 @@
           "family": "status",
           "shape": "clip",
           "tile": 71
-=======
-          "tile": 67
         },
         {
           "key": "status.silence",
@@ -621,8 +520,6 @@
           "family": "status",
           "shape": "silence",
           "tile": 72
-=======
-          "tile": 68
         },
         {
           "key": "status.signal",
@@ -630,8 +527,6 @@
           "family": "status",
           "shape": "wave",
           "tile": 73
-=======
-          "tile": 69
         },
         {
           "key": "status.automation",
@@ -639,8 +534,6 @@
           "family": "status",
           "shape": "automation",
           "tile": 74
-=======
-          "tile": 70
         },
         {
           "key": "status.modified",
@@ -648,8 +541,6 @@
           "family": "status",
           "shape": "asterisk",
           "tile": 75
-=======
-          "tile": 71
         },
         {
           "key": "status.default",
@@ -657,8 +548,6 @@
           "family": "status",
           "shape": "reset",
           "tile": 76
-=======
-          "tile": 72
         },
         {
           "key": "status.locked",
@@ -666,8 +555,6 @@
           "family": "status",
           "shape": "lock",
           "tile": 77
-=======
-          "tile": 73
         },
         {
           "key": "status.cpu",
@@ -675,8 +562,6 @@
           "family": "status",
           "shape": "cpu",
           "tile": 78
-=======
-          "tile": 74
         },
         {
           "key": "status.latency",
@@ -684,8 +569,6 @@
           "family": "status",
           "shape": "latency",
           "tile": 79
-=======
-          "tile": 75
         },
         {
           "key": "status.mono",
@@ -693,8 +576,6 @@
           "family": "status",
           "shape": "mono",
           "tile": 80
-=======
-          "tile": 76
         },
         {
           "key": "status.stereo",
@@ -702,8 +583,6 @@
           "family": "status",
           "shape": "stereo",
           "tile": 81
-=======
-          "tile": 77
         },
         {
           "key": "audio.input",
@@ -711,8 +590,6 @@
           "family": "audio",
           "shape": "input",
           "tile": 82
-=======
-          "tile": 78
         },
         {
           "key": "audio.output",
@@ -720,8 +597,6 @@
           "family": "audio",
           "shape": "output",
           "tile": 83
-=======
-          "tile": 79
         },
         {
           "key": "audio.left",
@@ -729,8 +604,6 @@
           "family": "audio",
           "shape": "left",
           "tile": 84
-=======
-          "tile": 80
         },
         {
           "key": "audio.right",
@@ -738,8 +611,6 @@
           "family": "audio",
           "shape": "right",
           "tile": 85
-=======
-          "tile": 81
         },
         {
           "key": "audio.phase_normal",
@@ -747,8 +618,6 @@
           "family": "audio",
           "shape": "phase",
           "tile": 86
-=======
-          "tile": 82
         },
         {
           "key": "audio.phase_inverted",
@@ -756,8 +625,6 @@
           "family": "audio",
           "shape": "phase_inverted",
           "tile": 87
-=======
-          "tile": 83
         },
         {
           "key": "audio.peak",
@@ -765,8 +632,6 @@
           "family": "audio",
           "shape": "peak",
           "tile": 88
-=======
-          "tile": 84
         },
         {
           "key": "audio.rms",
@@ -774,8 +639,6 @@
           "family": "audio",
           "shape": "rms",
           "tile": 89
-=======
-          "tile": 85
         },
         {
           "key": "audio.lufs",
@@ -783,8 +646,6 @@
           "family": "audio",
           "shape": "lufs",
           "tile": 90
-=======
-          "tile": 86
         },
         {
           "key": "audio.vu",
@@ -792,8 +653,6 @@
           "family": "audio",
           "shape": "vu",
           "tile": 91
-=======
-          "tile": 87
         },
         {
           "key": "audio.limiter",
@@ -801,8 +660,6 @@
           "family": "audio",
           "shape": "limiter",
           "tile": 92
-=======
-          "tile": 88
         },
         {
           "key": "audio.width",
@@ -810,8 +667,6 @@
           "family": "audio",
           "shape": "stereo",
           "tile": 93
-=======
-          "tile": 89
         },
         {
           "key": "platform.windows",
@@ -819,8 +674,6 @@
           "family": "platform",
           "shape": "windows",
           "tile": 94
-=======
-          "tile": 90
         },
         {
           "key": "platform.macos",
@@ -828,8 +681,6 @@
           "family": "platform",
           "shape": "macos",
           "tile": 95
-=======
-          "tile": 91
         },
         {
           "key": "platform.linux",
@@ -837,8 +688,6 @@
           "family": "platform",
           "shape": "linux",
           "tile": 96
-=======
-          "tile": 92
         },
         {
           "key": "platform.android",
@@ -846,8 +695,6 @@
           "family": "platform",
           "shape": "android",
           "tile": 97
-=======
-          "tile": 93
         },
         {
           "key": "platform.vst3",
@@ -855,8 +702,6 @@
           "family": "platform",
           "shape": "plugin",
           "tile": 98
-=======
-          "tile": 94
         },
         {
           "key": "platform.au",
@@ -864,8 +709,6 @@
           "family": "platform",
           "shape": "plugin",
           "tile": 99
-=======
-          "tile": 95
         },
         {
           "key": "platform.auv3",
@@ -873,8 +716,6 @@
           "family": "platform",
           "shape": "plugin",
           "tile": 100
-=======
-          "tile": 96
         },
         {
           "key": "platform.standalone",
@@ -882,8 +723,6 @@
           "family": "platform",
           "shape": "screen",
           "tile": 101
-=======
-          "tile": 97
         },
         {
           "key": "platform.help",
@@ -891,8 +730,6 @@
           "family": "platform",
           "shape": "help",
           "tile": 102
-=======
-          "tile": 98
         }
       ],
       "tintable": true
@@ -904,11 +741,6 @@
       "tile_size": 64,
       "width": 512,
       "height": 832,
-=======
-      "rows": 9,
-      "tile_size": 64,
-      "width": 512,
-      "height": 576,
       "items": [
         {
           "key": "parameter.input",
@@ -1588,7 +1420,6 @@
           "family": "parameter",
           "shape": "compressor",
           "tile": 96
-=======
         }
       ],
       "tintable": true
@@ -2480,11 +2311,6 @@
       "rows": 1,
       "tile_size": 64,
       "width": 2240,
-=======
-      "columns": 29,
-      "rows": 1,
-      "tile_size": 64,
-      "width": 1856,
       "height": 64,
       "items": [
         {
@@ -2696,7 +2522,6 @@
           "label": "Bass Console",
           "family": "factory_preset",
           "tile": 34
-=======
         }
       ],
       "tintable": false,
@@ -2736,8 +2561,6 @@
         "dub_echo",
         "vocal_presence",
         "bass_console"
-=======
-        "tight_bus"
       ]
     },
     {

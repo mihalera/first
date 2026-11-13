@@ -258,8 +258,6 @@ namespace j37panel
         //  preferences, shown by setCurrentTab rather than by the knob grid.
              { "SETTINGS", "The engine-level switches and interface preferences: rate, language, renderer and UI sounds.",
                                0, 3, {} },
-=======
-                               0, 2, {} },
              { "AUTOTUNE", "Pitch correction with safe realtime tracking, RANGE-limited scale quantisation and OCTAVE transposition.",
                                0, 1, {} },
         //  The multiband compressor: the six controls it has always had remain

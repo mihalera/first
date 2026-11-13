@@ -1,10 +1,5 @@
 {
   "about": "Optional MiBoX artwork: theme materials, brand marks, 320 named atlas tiles, signal-flow and help illustrations, plus Android launcher assets. Atlas names and order are documented in asset_catalog.json; every slot is licensed original CC0 artwork.",
-=======
-  "about": "Optional MiBoX artwork: six theme-mapped material surfaces, product marks and seven saturation-machine glyphs. Every slot is optional; a missing file falls back to the panel's own drawing. See Assets/README.md for dimensions, licences and integration.",
-=======
-  "about": "Optional MiBoX artwork: six theme-mapped material surfaces, product marks, seven saturation-machine glyphs and 29 factory-preset illustrations. Every slot is optional; a missing file falls back to the panel's own drawing. See Assets/README.md for dimensions, licences and integration.",
-=======
   "licence_policy": "CC0-1.0 or another public-domain dedication. Do not commit a file whose licence is missing, non-commercial, or unclear. Fill in licence, source and author when a file is added.",
   "slots": [
     {
@@ -13,22 +8,6 @@
       "width": 1024,
       "height": 512,
       "used_by": "Source/GUI/EditorPaint.cpp (generic texture fallback when panel_materials is absent)",
-      "licence": "CC0-1.0",
-      "source": "Original artwork created for the MiBoX project; drawn procedurally with Python and Pillow.",
-      "author": "OpenAI Codex"
-    },
-    {
-      "name": "panel_materials",
-      "file": "panel_materials.png",
-      "width": 3072,
-      "height": 256,
-      "used_by": "Source/GUI/EditorPaint.cpp (rebuildPanelTextureLayers; ThemeChoice-selected atlas tile)",
-      "licence": "CC0-1.0",
-      "source": "Original six-surface atlas created for MiBoX; procedurally drawn with Python and Pillow.",
-      "author": "OpenAI Codex"
-=======
-      "used_by": "Source/GUI/EditorPaint.cpp (rebuildPanelTextureLayers)",
-=======
       "licence": "CC0-1.0",
       "source": "Original artwork created for the MiBoX project; drawn procedurally with Python and Pillow.",
       "author": "OpenAI Codex"
@@ -77,8 +56,6 @@
       "name": "factory_preset_art",
       "file": "factory_preset_art.png",
       "width": 2240,
-=======
-      "width": 1856,
       "height": 64,
       "used_by": "Source/GUI/EditorMeters.cpp (PresetArtworkBadge; selected tile follows FACTORY_PRESET_FILES order)",
       "tile_size": 64,
@@ -115,112 +92,6 @@
       "catalog": "asset_catalog.json",
       "licence": "CC0-1.0",
       "source": "Original 97-glyph atlas generated from Source/GUI/PanelText.h using Assets/generate_asset_pack.py.",
-      "author": "OpenAI Codex"
-    },
-    {
-      "name": "machine_models",
-      "file": "machine_models.png",
-      "width": 512,
-      "height": 512,
-      "used_by": "Catalogued machine and model icon library; Assets/asset_catalog.json",
-      "catalog": "asset_catalog.json",
-      "licence": "CC0-1.0",
-      "source": "Original 57-glyph atlas generated from the processor's model name tables using Assets/generate_asset_pack.py.",
-      "author": "OpenAI Codex"
-    },
-    {
-      "name": "meter_status",
-      "file": "meter_status.png",
-      "width": 512,
-      "height": 256,
-      "used_by": "Catalogued meter and signal-state icon library; Assets/asset_catalog.json",
-      "catalog": "asset_catalog.json",
-      "licence": "CC0-1.0",
-      "source": "Original 32-glyph meter, signal, phase and health-state atlas generated for MiBoX.",
-      "author": "OpenAI Codex"
-    },
-    {
-      "name": "preset_categories",
-      "file": "preset_categories.png",
-      "width": 512,
-      "height": 64,
-      "used_by": "Catalogued preset category glyphs; Assets/asset_catalog.json",
-      "catalog": "asset_catalog.json",
-      "licence": "CC0-1.0",
-      "source": "Original eight-category preset atlas generated for MiBoX using Assets/generate_asset_pack.py.",
-      "author": "OpenAI Codex"
-    },
-    {
-      "name": "hardware_details",
-      "file": "hardware_details.png",
-      "width": 256,
-      "height": 256,
-      "used_by": "Catalogued panel-detail icon library; Assets/asset_catalog.json",
-      "catalog": "asset_catalog.json",
-      "licence": "CC0-1.0",
-      "source": "Original 16-glyph panel hardware atlas generated for MiBoX using Assets/generate_asset_pack.py.",
-      "author": "OpenAI Codex"
-    },
-    {
-      "name": "brand_lockups",
-      "file": "brand_lockups.png",
-      "width": 512,
-      "height": 128,
-      "used_by": "Catalogued brand lockups for product windows and documentation; Assets/asset_catalog.json",
-      "catalog": "asset_catalog.json",
-      "licence": "CC0-1.0",
-      "source": "Four original MiBoX mark arrangements derived from the project's CC0 brand_mark.png artwork.",
-      "author": "OpenAI Codex"
-    },
-    {
-      "name": "help_illustrations",
-      "file": "help_illustrations.png",
-      "width": 1024,
-      "height": 576,
-      "used_by": "Four help scenes for docs/signal-path.md and the quick-start guide; tile names in Assets/asset_catalog.json",
-      "catalog": "asset_catalog.json",
-      "licence": "CC0-1.0",
-      "source": "Original four-panel help atlas drawn procedurally with Pillow by Assets/generate_asset_pack.py.",
-      "author": "OpenAI Codex"
-    },
-    {
-      "name": "signal_path",
-      "file": "signal_path.png",
-      "width": 1600,
-      "height": 500,
-      "used_by": "docs/signal-path.md (full signal-flow illustration)",
-      "licence": "CC0-1.0",
-      "source": "Original signal-flow diagram generated by Assets/generate_asset_pack.py from MiBoX's documented processing stages.",
-      "author": "OpenAI Codex"
-=======
-=======
-=======
-        "shellac_radio", "transient_punch", "soft_touch", "tight_bus"
-      ],
-      "licence": "CC0-1.0",
-      "source": "Original 29-tile artwork atlas created for MiBoX; procedurally drawn with Python and Pillow, with preset parameters used to vary the illustrations.",
-      "author": "OpenAI Codex"
-    },
-    {
-      "name": "ui_icons",
-      "file": "ui_icons.png",
-      "width": 512,
-      "height": 832,
-      "used_by": "Source/GUI/J37LookAndFeel.cpp (TAPE / FX / SETUP family icons) and the catalogued UI glyph library in Assets/asset_catalog.json",
-      "catalog": "asset_catalog.json",
-      "licence": "CC0-1.0",
-      "source": "Original 99-glyph monochrome and accent icon atlas generated from MiBoX interface vocabulary using Assets/generate_asset_pack.py.",
-      "author": "OpenAI Codex"
-    },
-    {
-      "name": "parameter_glyphs",
-      "file": "parameter_glyphs.png",
-      "width": 512,
-      "height": 576,
-      "used_by": "Catalogued parameter icon library in controlSpecs order; Assets/asset_catalog.json",
-      "catalog": "asset_catalog.json",
-      "licence": "CC0-1.0",
-      "source": "Original 71-glyph atlas generated from Source/GUI/PanelText.h using Assets/generate_asset_pack.py.",
       "author": "OpenAI Codex"
     },
     {
