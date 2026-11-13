@@ -2511,12 +2511,7 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     auto knobTileHeight = 0;
     auto knobScore = 0.0f;
     auto scoredRows = 0;
-    // A tall page with six or seven knobs is split into rows rather than drawn as one
-    // cramped line: past five across, the discs shrink faster than a second row costs.
-    // On a short (phone-landscape) grid the single row is still the only drawable
-    // arrangement, so the cap only applies when there is height to spend.
-    const auto columnCap = (knobAreaHeight >= 200 && knobCount > 5) ? 4 : knobCount;
-    for (int columns = 1; columns <= columnCap; ++columns)
+    for (int columns = 1; columns <= knobCount; ++columns)
     {
         const auto rows = rowsForColumns (columns);
         if (rows == scoredRows)
@@ -2562,6 +2557,59 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
             knobRows = rows;
             knobTileWidth = slotWidth;
             knobTileHeight = tileHeight;
+        }
+    }
+    // Pages with more than five knobs prefer TWO rows even when a single wide row
+    // would draw a hair larger disc: six or seven knobs strung across one line read as
+    // a strip of beads. A two-row arrangement only replaces the solved one when it is
+    // actually drawable, so a short phone-landscape grid keeps its single row.
+    if (knobCount > 5 && knobRows == 1)
+    {
+        auto bestColumns = 0;
+        auto bestTileWidth = 0;
+        auto bestTileHeight = 0;
+        auto bestDisc = 0.0f;
+        for (int columns = 1; columns < knobCount; ++columns)
+        {
+            const auto rows = rowsForColumns (columns);
+            if (rows != 2)
+                continue;
+            const auto slotWidth = grid.getWidth() / columns;
+            const auto rowHeight = (knobAreaHeight - (rows - 1) * knobRowGap) / rows;
+            const auto paintWidth = slotWidth - 22;
+            if (paintWidth < 4 || rowHeight <= knobTileChrome)
+                continue;
+            auto tileHeight = knobTileChrome + 1;
+            auto disc = 0.0f;
+            for (int candidate = knobTileChrome + 1; candidate <= rowHeight; ++candidate)
+            {
+                const auto radius = computeKnobMetrics (
+                    static_cast<float> (paintWidth),
+                    static_cast<float> (candidate - knobTileChrome), knobScoringWall).radius;
+                if (radius > disc)
+                {
+                    disc = radius;
+                    tileHeight = candidate;
+                }
+            }
+            if (disc > bestDisc)
+            {
+                bestDisc = disc;
+                bestColumns = columns;
+                bestTileWidth = slotWidth;
+                bestTileHeight = tileHeight;
+            }
+        }
+        // Only take the two-row split when it draws a decent disc, not a row of
+        // beads: a phone-landscape grid can technically fit two rows but at a
+        // radius a few pixels across, and it must keep its single readable row.
+        if (bestColumns > 0 && bestDisc >= 10.0f && bestDisc >= knobScore * 0.5f)
+        {
+            knobScore = bestDisc;
+            knobColumns = bestColumns;
+            knobRows = 2;
+            knobTileWidth = bestTileWidth;
+            knobTileHeight = bestTileHeight;
         }
     }
     // Nothing a panel at its own minimum size allows can make this zero, but a

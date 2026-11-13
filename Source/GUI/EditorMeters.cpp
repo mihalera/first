@@ -343,48 +343,42 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // border, which is what made the numbers look pasted onto the panel edge and the
     // column read as crooked.
     const auto rowInset = juce::jmax (5, juce::roundToInt (static_cast<float> (getWidth()) * 0.055f));
-    const auto rowWidth = juce::jmax (1, getWidth() - 2 * rowInset);
-    // One label column, measured from the widest label ("PEAK dB"), shared by every row:
-    // values line up at the same x, right after their name, with just a small gap.
-    const auto labelColumnWidth = juce::roundToInt (juce::GlyphArrangement::getStringWidth (
-        j37panel::panelFont (9.0f * textScale), "PEAK dB"))
-        + juce::roundToInt (6.0f * textScale);
+    // One label column, measured from the widest label ("PEAK dB"), and one value column
+    // measured from the widest reading: together they form one block that is CENTRED in
+    // the meter, so every name and its number sit evenly inside the frame instead of
+    // hugging the left edge.
+    const auto labelFont = j37panel::panelFont (9.0f * textScale);
+    const auto valueFont = juce::Font (juce::FontOptions (
+        juce::Font::getDefaultMonospacedFontName(), 8.5f * textScale, juce::Font::bold));
+    const auto labelColumnWidth = juce::roundToInt (
+        juce::GlyphArrangement::getStringWidth (labelFont, "PEAK dB"))
+        + juce::roundToInt (5.0f * textScale);
+    const auto valueColumnWidth = juce::jmax (1, juce::roundToInt (
+        juce::GlyphArrangement::getStringWidth (valueFont, "-70.0 dB")));
+    const auto readoutBlockWidth = labelColumnWidth + valueColumnWidth;
+    const auto readoutLeft = juce::jmax (rowInset, (getWidth() - readoutBlockWidth) / 2);
 
     const auto drawReadoutRow = [&] (const juce::String& label, float value,
                                      juce::Colour valueColour, int row)
     {
         const auto rowTop = juce::roundToInt (readoutTop) + row * rowHeight;
-        const auto rowArea = juce::Rectangle<int> (rowInset, rowTop, rowWidth, rowHeight);
 
-        // The name and the number are TWO COLUMNS, not two alignments of one
-        // rectangle. Sharing it meant each printed over the other the moment the
-        // meter narrowed: on a 240 px face "PEAK dB" and "-70.0 dB" met in the
-        // middle, and the report was a meter whose label read "PEAK d" with a
-        // number pasted onto it. The name gets the share its own text needs and
-        // the number takes the rest, right-aligned, so neither can reach the other
-        // however the panel is sized.
-        auto nameArea = rowArea;
-        auto valueArea = rowArea;
-        // A SHARED label column, sized to the widest label, so every value starts at the
-        // same x and sits right next to its name instead of being pushed to the far
-        // right of the cell with a wide gap in between.
-        const auto nameWidth = juce::jmin (rowArea.getWidth() * 3 / 5, labelColumnWidth);
-        nameArea.setWidth (juce::jmax (1, nameWidth));
-        valueArea.setLeft (nameArea.getRight());
+        // The name and the number are two fixed columns of one centred block, so the
+        // pair reads as a unit inside the frame and every value lines up at the same x.
+        auto nameArea = juce::Rectangle<int> (readoutLeft, rowTop,
+                                              labelColumnWidth, rowHeight);
+        auto valueArea = juce::Rectangle<int> (readoutLeft + labelColumnWidth, rowTop,
+                                               valueColumnWidth, rowHeight);
 
         g.setColour (palette.secondary);
-        g.setFont (j37panel::panelFont (9.0f * textScale));
+        g.setFont (labelFont);
         g.drawFittedText (label, nameArea, juce::Justification::centredLeft, 1);
 
-        // The value column uses a monospaced face so digits are all the same width:
-        // with a proportional font the right-aligned numbers kept shifting sideways
-        // frame to frame ("1" is narrower than "8"), which read as the meter being
-        // crooked. With fixed-width digits the column has a clean, stable left edge.
+        // The value column uses a monospaced face so digits are all the same width: with
+        // a proportional font the numbers kept shifting sideways frame to frame ("1" is
+        // narrower than "8"), which read as the meter being crooked.
         g.setColour (valueColour);
-        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
-                                                  8.5f * textScale, juce::Font::bold)));
-        // Left-aligned immediately after the name, so the gap between a reading and its
-        // value is small; fitted rather than clipped so a narrow cell cannot truncate it.
+        g.setFont (valueFont);
         g.drawFittedText (formatDb (value), valueArea, juce::Justification::centredLeft, 1);
     };
 
