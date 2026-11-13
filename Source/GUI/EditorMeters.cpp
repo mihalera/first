@@ -213,18 +213,12 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     const auto rowsTop = face.getBottom() + rowGapAbove;
     const auto readoutTop = rowsTop;
 
-    // The frame now encloses only the caption and the dial. The loudness readout rows
-    // below are drawn on the panel, clearly UNDER the meter rather than crammed inside
-    // its border - which is what made PEAK dB nearly unreadable and crooked.
-    const auto frameBottom = juce::jmax (bounds.getY() + static_cast<float> (topBlock),
-                                         rowsTop - rowGapAbove * 0.5f);
-    const auto frameBounds = juce::Rectangle<float> (bounds.getX(), bounds.getY(),
-                                                     bounds.getWidth(),
-                                                     frameBottom - bounds.getY());
+    // The frame encloses the whole meter - caption, dial and the readout rows - so the
+    // loudness indicators live in the SAME box as the gauge they belong to.
     g.setColour (palette.raised.darker (0.12f));
-    g.fillRoundedRectangle (frameBounds, 5.0f);
+    g.fillRoundedRectangle (bounds, 5.0f);
     g.setColour (palette.border.withAlpha (0.9f));
-    g.drawRoundedRectangle (frameBounds.reduced (0.5f), 5.0f, 1.0f);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), 5.0f, 1.0f);
 
     g.setColour (palette.text);
     g.setFont (j37panel::panelFont (10.5f * textScale, juce::Font::bold));
@@ -350,6 +344,11 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // column read as crooked.
     const auto rowInset = juce::jmax (5, juce::roundToInt (static_cast<float> (getWidth()) * 0.055f));
     const auto rowWidth = juce::jmax (1, getWidth() - 2 * rowInset);
+    // One label column, measured from the widest label ("PEAK dB"), shared by every row:
+    // values line up at the same x, right after their name, with just a small gap.
+    const auto labelColumnWidth = juce::roundToInt (juce::GlyphArrangement::getStringWidth (
+        j37panel::panelFont (9.0f * textScale), "PEAK dB"))
+        + juce::roundToInt (6.0f * textScale);
 
     const auto drawReadoutRow = [&] (const juce::String& label, float value,
                                      juce::Colour valueColour, int row)
@@ -366,10 +365,10 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
         // however the panel is sized.
         auto nameArea = rowArea;
         auto valueArea = rowArea;
-        const auto measuredName = juce::roundToInt (juce::GlyphArrangement::getStringWidth (
-            j37panel::panelFont (9.0f * textScale), label));
-        const auto nameWidth = juce::jmin (rowArea.getWidth() * 7 / 10,
-                                           measuredName + juce::roundToInt (8.0f * textScale));
+        // A SHARED label column, sized to the widest label, so every value starts at the
+        // same x and sits right next to its name instead of being pushed to the far
+        // right of the cell with a wide gap in between.
+        const auto nameWidth = juce::jmin (rowArea.getWidth() * 3 / 5, labelColumnWidth);
         nameArea.setWidth (juce::jmax (1, nameWidth));
         valueArea.setLeft (nameArea.getRight());
 
@@ -380,13 +379,13 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
         // The value column uses a monospaced face so digits are all the same width:
         // with a proportional font the right-aligned numbers kept shifting sideways
         // frame to frame ("1" is narrower than "8"), which read as the meter being
-        // crooked. With fixed-width digits the column has a clean, stable right edge.
+        // crooked. With fixed-width digits the column has a clean, stable left edge.
         g.setColour (valueColour);
         g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
                                                   8.5f * textScale, juce::Font::bold)));
-        // Fitted rather than clipped: a value column narrow enough to truncate
-        // "-70.0 dB" into "-70.0 d" is the same defect one column over.
-        g.drawFittedText (formatDb (value), valueArea, juce::Justification::centredRight, 1);
+        // Left-aligned immediately after the name, so the gap between a reading and its
+        // value is small; fitted rather than clipped so a narrow cell cannot truncate it.
+        g.drawFittedText (formatDb (value), valueArea, juce::Justification::centredLeft, 1);
     };
 
     // The clipping lamp: only the peak view can clip, so it is flagged next to that row.

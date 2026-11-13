@@ -2515,7 +2515,7 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     // cramped line: past five across, the discs shrink faster than a second row costs.
     // On a short (phone-landscape) grid the single row is still the only drawable
     // arrangement, so the cap only applies when there is height to spend.
-    const auto columnCap = (knobAreaHeight >= 220 && knobCount > 5) ? 4 : knobCount;
+    const auto columnCap = (knobAreaHeight >= 200 && knobCount > 5) ? 4 : knobCount;
     for (int columns = 1; columns <= columnCap; ++columns)
     {
         const auto rows = rowsForColumns (columns);
