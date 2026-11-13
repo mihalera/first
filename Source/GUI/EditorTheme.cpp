@@ -354,6 +354,7 @@ void FirstAudioProcessorEditor::applyTheme() {
     oversamplingLabel.setColour(juce::Label::textColourId, palette.secondary);
     instrumentLabel.setColour(juce::Label::textColourId, palette.secondary);
     transportLabel.setColour(juce::Label::textColourId, palette.secondary);
+    spindownLabel.setColour(juce::Label::textColourId, palette.secondary);
     delayTypeLabel.setColour(juce::Label::textColourId, palette.secondary);
     delayRateLabel.setColour(juce::Label::textColourId, palette.secondary);
     compareBadgeLabel.setColour(juce::Label::textColourId, audioProcessor.isCompareDirty()

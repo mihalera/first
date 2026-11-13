@@ -1670,12 +1670,6 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
     const auto bands = j37panel::DeckBands::solve (deck.getHeight());
     const auto captionHeight = bands.captionHeight;
     const auto controlHeight = bands.controlHeight;
-    // The left gutter that holds each functional group's heading (SOURCE, CHARACTER,
-    // VOICE - painted in EditorPaint.cpp). The three rows that started flush at the
-    // deck inset shift right by it so their heading has a column of its own; TRANSPORT
-    // and PRESET keep their existing headings. The ring corridor on the right is
-    // unchanged, so the rows only lose width, never room they did not have.
-    constexpr int deckGroupGutter = 56;
 
     const auto deckTop = [&] (int band)
     {
@@ -1896,7 +1890,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
             { &tuningModeBox,      0, -1, captionHeight, controlHeight, true  }
         };
 
-        placeDeckRow (row, deck.getX() + 18 + deckGroupGutter, deck.getRight() - reelCorridor,
+        placeDeckRow (row, deck.getX() + 18, deck.getRight() - reelCorridor,
                       deckTop (j37panel::DeckBands::model), 14);
     }
 
@@ -1920,7 +1914,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
             { &antiPhaseReadout,   0, -1, captionHeight, captionHeight - 2, true  }
         };
 
-        placeDeckRow (row, deck.getX() + 18 + deckGroupGutter,
+        placeDeckRow (row, deck.getX() + 18,
                       deck.getRight() - deckRightInset,
                       deckTop (j37panel::DeckBands::switches), 12);
 
@@ -1974,7 +1968,7 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         constexpr int ringGap = 10;
         oscRing.setBounds (typesRight - ringSize, typesTop, ringSize, ringSize);
 
-        const auto rowLeft = deck.getX() + 18 + deckGroupGutter;
+        const auto rowLeft = deck.getX() + 18;
         const auto rowRight = typesRight - ringSize - ringGap;
         const auto typeColumnWidth = juce::jmax (60, juce::jmin (108, (rowRight - rowLeft - 5 * 14) / 6));
 
@@ -2014,24 +2008,24 @@ void FirstAudioProcessorEditor::placeDeck (juce::Rectangle<int> deck)
         placeDeckRow (row, deck.getX() + 18, deck.getRight() - deckRightInset,
                       transportRowY, 14);
 
-        // The transport caption sits ABOVE the key bank rather than beside its
-        // own key, so it cannot be a column of the row - it is placed from the
-        // buttons the row just gave it. Reading the placed bounds back is what
-        // keeps it correct at every width: written as `keyWidth * 3 + gap * 2`
-        // it would name a span three keys wider than the bank actually is once
-        // the row starts growing them.
-        //
-        //  The per-key SPINDOWN caption is gone: the key already says SPINDOWN,
-        //  so the caption only repeated the button beside it. (The row's own
-        //  deckHintLabel stays - it is not a static hint, EditorTimer writes the
-        //  live machine state into it.)
+        // The two transport captions sit ABOVE the key bank rather than beside
+        // their own key, so they cannot be a column of the row - they are placed
+        // from the buttons the row just gave them. Reading the placed bounds
+        // back is what keeps them correct at every width: written as
+        // `keyWidth * 3 + gap * 2` they would name a span three keys wider than
+        // the bank actually is once the row starts growing them.
         transportLabel.setBounds (transportStopButton.getX(), transportRowY - captionHeight,
                                   transportStartButton.getRight() - transportStopButton.getX(),
                                   captionHeight - 2);
+        spindownLabel.setBounds (spindownButton.getX(), transportRowY - captionHeight,
+                                 spindownButton.getWidth(), captionHeight - 2);
 
         transportLabel.setFont (shrinkingFont (transportLabel.getText(), 7.0f,
                                               juce::Font::plain,
                                               static_cast<float> (transportLabel.getWidth()) - 3.0f));
+        spindownLabel.setFont (shrinkingFont (spindownLabel.getText(), 7.0f,
+                                              juce::Font::plain,
+                                              static_cast<float> (spindownLabel.getWidth()) - 3.0f));
     }
 
     // The preset workflow chain is eleven items and it did not fit: written as
@@ -3364,6 +3358,7 @@ void FirstAudioProcessorEditor::verifyPanelHasNoOverlaps() const
             { "digitalTypeBox",     &digitalTypeBox },
             { "oscRing",            &oscRing },
             { "transportLabel",     &transportLabel },
+            { "spindownLabel",      &spindownLabel },
             { "stop",               &transportStopButton },
             { "play",               &transportPlayButton },
             { "start",              &transportStartButton },

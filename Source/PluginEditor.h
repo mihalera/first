@@ -1202,6 +1202,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
         }
     };
     SpindownButton spindownButton{"SPINDOWN"};
+    juce::Label spindownLabel;
     juce::ToggleButton bypassButton{"BYPASS"};
     juce::ToggleButton deltaButton{"DELTA"};
     juce::TextButton themeButton{"DARK THEME"};
@@ -1331,7 +1332,6 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::Label deckHeadingLabel;
     /** The commit this binary was built from, shown at the top of the deck. */
     juce::Label buildLabel;
-    juce::Label deckHintLabel;
     juce::Label tapeTypeLabel;
     juce::Label valveTypeLabel;
     juce::Label ampTypeLabel;
@@ -1341,6 +1341,7 @@ class FirstAudioProcessorEditor final : public juce::AudioProcessorEditor, priva
     juce::Label vinylSpeedLabel;
     juce::Label speedLabel;
     juce::Label instrumentLabel;
+    juce::Label deckHintLabel;
     juce::Label controlsHeadingLabel;
     juce::Label controlsHintLabel;
     /** The active page's own subject, set from the page's subtitle in tabSubtitles
