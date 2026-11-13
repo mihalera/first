@@ -689,7 +689,11 @@ int main()
 
     // The editor's own resize limits, and two sizes inside them a session is
     // likely to sit at - wide, tall, and the two extremes of the floor.
-    const int sizes[][2] = { { 780, 664 }, { 1060, 916 }, { 1200, 823 }, { 1500, 1180 } };
+    // 935 x 812 is a real CLAP window a user reported, between the floor and the
+    // next corner: the size where six- and seven-knob pages used to collapse back
+    // to one row, so it is checked beside the four corners.
+    const int sizes[][2] = { { 780, 664 }, { 935, 812 }, { 1060, 916 }, { 1200, 823 },
+                             { 1500, 1180 } };
 
     for (const auto& size : sizes)
     {

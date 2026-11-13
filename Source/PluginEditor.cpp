@@ -2600,10 +2600,17 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
                 bestTileHeight = tileHeight;
             }
         }
-        // Only take the two-row split when it draws a decent disc, not a row of
-        // beads: a phone-landscape grid can technically fit two rows but at a
-        // radius a few pixels across, and it must keep its single readable row.
-        if (bestColumns > 0 && bestDisc >= 9.0f && bestDisc >= knobScore * 0.3f)
+        // Take the two-row split whenever it is both DRAWN and readable: some
+        // split passed the tile-chrome test (bestColumns > 0) and its disc is not
+        // a dot (9 px). The fractional comparison against the one-row score that
+        // used to sit here is gone: a page wide enough for seven big discs in one
+        // line could refuse a perfectly drawable split for measuring a little
+        // smaller, and that is how six- and seven-knob pages collapsed back to a
+        // strip of beads at the user's window. The 9 px floor stays because below
+        // it the split is not drawable: phone landscape keeps its one row, and the
+        // 780 x 664 floor still has no two-row arrangement that clears the tile
+        // chrome, so both fall through to the one-row layout untouched.
+        if (bestColumns > 0 && bestDisc >= 9.0f)
         {
             knobScore = bestDisc;
             knobColumns = bestColumns;
