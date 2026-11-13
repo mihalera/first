@@ -2559,6 +2559,59 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
             knobTileHeight = tileHeight;
         }
     }
+    // Pages with more than five knobs prefer TWO rows even when a single wide row
+    // would draw a hair larger disc: six or seven knobs strung across one line read as
+    // a strip of beads. A two-row arrangement only replaces the solved one when it is
+    // actually drawable, so a short phone-landscape grid keeps its single row.
+    if (knobCount > 5 && knobRows == 1)
+    {
+        auto bestColumns = 0;
+        auto bestTileWidth = 0;
+        auto bestTileHeight = 0;
+        auto bestDisc = 0.0f;
+        for (int columns = 1; columns < knobCount; ++columns)
+        {
+            const auto rows = rowsForColumns (columns);
+            if (rows != 2)
+                continue;
+            const auto slotWidth = grid.getWidth() / columns;
+            const auto rowHeight = (knobAreaHeight - (rows - 1) * knobRowGap) / rows;
+            const auto paintWidth = slotWidth - 22;
+            if (paintWidth < 4 || rowHeight <= knobTileChrome)
+                continue;
+            auto tileHeight = knobTileChrome + 1;
+            auto disc = 0.0f;
+            for (int candidate = knobTileChrome + 1; candidate <= rowHeight; ++candidate)
+            {
+                const auto radius = computeKnobMetrics (
+                    static_cast<float> (paintWidth),
+                    static_cast<float> (candidate - knobTileChrome), knobScoringWall).radius;
+                if (radius > disc)
+                {
+                    disc = radius;
+                    tileHeight = candidate;
+                }
+            }
+            if (disc > bestDisc)
+            {
+                bestDisc = disc;
+                bestColumns = columns;
+                bestTileWidth = slotWidth;
+                bestTileHeight = tileHeight;
+            }
+        }
+        // Only take the two-row split when it draws a decent disc, not a row of
+        // beads: a phone-landscape grid can technically fit two rows but at a
+        // radius a few pixels across, and it must keep its single readable row.
+        if (bestColumns > 0 && bestDisc >= 10.0f && bestDisc >= knobScore * 0.5f)
+        {
+            knobScore = bestDisc;
+            knobColumns = bestColumns;
+            knobRows = 2;
+            knobTileWidth = bestTileWidth;
+            knobTileHeight = bestTileHeight;
+        }
+    }
     // Nothing a panel at its own minimum size allows can make this zero, but a
     // strip with no tile would place its knobs at negative coordinates: fall back
     // to one row of the widest slots the grid's width alone can give.
@@ -3190,20 +3243,24 @@ void FirstAudioProcessorEditor::placeMeters (const EditorLayout& layout)
     const auto rowGap = 8;
     const auto columnWidth = (meterArea.getWidth() - columnGap) / 2;
 
-    // Note the separate name: the knob strip above has already spent "tile" and
-    // "slot" on the grid's cells, so keeping the meters' own vocabulary here is
-    // what stops a later edit from silently reusing the wrong cell size.
-    const auto meterRowHeight = (meterArea.getHeight() - rowGap) / 2;
+    // The loudness meters carry a dial AND five readout rows, so they need more height
+    // than the compressor reduction ladders, which are a vertical bar and a number. The
+    // grid is therefore split 62/38 rather than in half: the equal split left the dial a
+    // few pixels tall once the rows were reserved, which is what made the meters look
+    // tiny. The ladders still have plenty for their bar and caption.
+    const auto usableHeight = meterArea.getHeight() - rowGap;
+    const auto topRowHeight = juce::roundToInt (static_cast<float> (usableHeight) * 0.62f);
+    const auto bottomRowHeight = usableHeight - topRowHeight;
 
     const auto leftColumn = meterArea.getX();
     const auto rightColumn = meterArea.getRight() - columnWidth;
     const auto topRow = meterArea.getY();
-    const auto bottomRow = meterArea.getBottom() - meterRowHeight;
+    const auto bottomRow = meterArea.getBottom() - bottomRowHeight;
 
-    inputMeter.setBounds (leftColumn, topRow, columnWidth, meterRowHeight);
-    outputMeter.setBounds (rightColumn, topRow, columnWidth, meterRowHeight);
-    compressorMeterIn.setBounds (leftColumn, bottomRow, columnWidth, meterRowHeight);
-    compressorMeterOut.setBounds (rightColumn, bottomRow, columnWidth, meterRowHeight);
+    inputMeter.setBounds (leftColumn, topRow, columnWidth, topRowHeight);
+    outputMeter.setBounds (rightColumn, topRow, columnWidth, topRowHeight);
+    compressorMeterIn.setBounds (leftColumn, bottomRow, columnWidth, bottomRowHeight);
+    compressorMeterOut.setBounds (rightColumn, bottomRow, columnWidth, bottomRowHeight);
 }
 
 //==============================================================================

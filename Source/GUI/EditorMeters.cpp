@@ -194,50 +194,31 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // bunched against the bottom edge while the dial sat high - the lopsided look that
     // made the input/output meters read as crooked next to the compressor bars.
     constexpr int readoutRowCount = 5;
-
-    // The dial takes a fixed share of the body, and the readout rows then take
-    // whatever is genuinely LEFT below it. The old code computed the row block from a
-    // fixed share of the body and only afterwards clamped it upwards to fit, which had
-    // two consequences: the clamp pushed the first row back up against the dial, and
-    // the last row still ended up ONE pixel from the rounded bottom border at every
-    // editor size - the loudness numbers were literally touching the panel edge.
-    // Taking the row height from the space that actually remains below the dial keeps
-    // the dial, the rows and the border from fighting over the same pixels.
-    const auto bodyHeight = juce::jmax (72, getHeight() - topBlock);
-    const auto faceHeight = juce::roundToInt (static_cast<float> (bodyHeight) * 0.46f);
-    const auto face = juce::Rectangle<float> (bounds.getX(),
-                                              bounds.getY() + static_cast<float> (topBlock),
-                                              bounds.getWidth(), static_cast<float> (faceHeight));
-
     constexpr float rowGapAbove = 4.0f;
     constexpr float rowBottomMargin = 3.0f;
-    const auto rowsTop = face.getBottom() + rowGapAbove;
-    const auto availableForRows = juce::jmax (static_cast<float> (readoutRowCount * 10),
-                                              bounds.getBottom() - rowsTop - rowBottomMargin);
-    // floor, not round: rounding UP would make the block taller than the space that
-    // was actually measured, and the clamp below would then drag the whole block back
-    // up on top of the dial. Flooring guarantees the rows start below the dial and
-    // still leave the bottom margin.
-    const auto readoutRowHeight = juce::jmax (10, static_cast<int> (availableForRows
-                                                                    / readoutRowCount));
-    const auto usedReadout = readoutRowHeight * readoutRowCount;
-    const auto readoutTop = juce::jmin (rowsTop,
-                                        bounds.getBottom() - static_cast<float> (usedReadout)
-                                          - rowBottomMargin);
-    const auto rowHeight = readoutRowHeight;
 
-    // The frame now encloses only the caption and the dial. The loudness readout rows
-    // below are drawn on the panel, clearly UNDER the meter rather than crammed inside
-    // its border - which is what made PEAK dB nearly unreadable and crooked.
-    const auto frameBottom = juce::jmax (bounds.getY() + static_cast<float> (topBlock),
-                                         rowsTop - rowGapAbove * 0.5f);
-    const auto frameBounds = juce::Rectangle<float> (bounds.getX(), bounds.getY(),
-                                                     bounds.getWidth(),
-                                                     frameBottom - bounds.getY());
+    // The readout block is RESERVED FIRST and the dial takes whatever is left. Doing it
+    // the other way round - give the dial a share, let the rows take the remainder - let
+    // a short cell clamp the rows back up over the gauge, so the numbers printed on top
+    // of the dial. Reserving the rows first guarantees they always sit below the dial
+    // with the gap above and the margin below, at every cell size.
+    const auto bodyTop = bounds.getY() + static_cast<float> (topBlock);
+    const auto bodyBottom = bounds.getBottom() - rowBottomMargin;
+    const auto rowHeight = juce::jlimit (11, 20, juce::roundToInt (13.0f * textScale));
+    const auto readoutBlockHeight = static_cast<float> (rowHeight * readoutRowCount);
+    const auto faceHeight = juce::jmax (24.0f, bodyBottom - bodyTop - readoutBlockHeight
+                                                  - rowGapAbove);
+    const auto face = juce::Rectangle<float> (bounds.getX(), bodyTop,
+                                              bounds.getWidth(), faceHeight);
+    const auto rowsTop = face.getBottom() + rowGapAbove;
+    const auto readoutTop = rowsTop;
+
+    // The frame encloses the whole meter - caption, dial and the readout rows - so the
+    // loudness indicators live in the SAME box as the gauge they belong to.
     g.setColour (palette.raised.darker (0.12f));
-    g.fillRoundedRectangle (frameBounds, 5.0f);
+    g.fillRoundedRectangle (bounds, 5.0f);
     g.setColour (palette.border.withAlpha (0.9f));
-    g.drawRoundedRectangle (frameBounds.reduced (0.5f), 5.0f, 1.0f);
+    g.drawRoundedRectangle (bounds.reduced (0.5f), 5.0f, 1.0f);
 
     g.setColour (palette.text);
     g.setFont (j37panel::panelFont (10.5f * textScale, juce::Font::bold));
@@ -362,44 +343,43 @@ void FirstAudioProcessorEditor::LevelMeter::paint (juce::Graphics& g)
     // border, which is what made the numbers look pasted onto the panel edge and the
     // column read as crooked.
     const auto rowInset = juce::jmax (5, juce::roundToInt (static_cast<float> (getWidth()) * 0.055f));
-    const auto rowWidth = juce::jmax (1, getWidth() - 2 * rowInset);
+    // One label column, measured from the widest label ("PEAK dB"), and one value column
+    // measured from the widest reading: together they form one block that is CENTRED in
+    // the meter, so every name and its number sit evenly inside the frame instead of
+    // hugging the left edge.
+    const auto labelFont = j37panel::panelFont (9.0f * textScale);
+    const auto valueFont = juce::Font (juce::FontOptions (
+        juce::Font::getDefaultMonospacedFontName(), 8.5f * textScale, juce::Font::bold));
+    const auto labelColumnWidth = juce::roundToInt (
+        juce::GlyphArrangement::getStringWidth (labelFont, "PEAK dB"))
+        + juce::roundToInt (5.0f * textScale);
+    const auto valueColumnWidth = juce::jmax (1, juce::roundToInt (
+        juce::GlyphArrangement::getStringWidth (valueFont, "-70.0 dB")));
+    const auto readoutBlockWidth = labelColumnWidth + valueColumnWidth;
+    const auto readoutLeft = juce::jmax (rowInset, (getWidth() - readoutBlockWidth) / 2);
 
     const auto drawReadoutRow = [&] (const juce::String& label, float value,
                                      juce::Colour valueColour, int row)
     {
         const auto rowTop = juce::roundToInt (readoutTop) + row * rowHeight;
-        const auto rowArea = juce::Rectangle<int> (rowInset, rowTop, rowWidth, rowHeight);
 
-        // The name and the number are TWO COLUMNS, not two alignments of one
-        // rectangle. Sharing it meant each printed over the other the moment the
-        // meter narrowed: on a 240 px face "PEAK dB" and "-70.0 dB" met in the
-        // middle, and the report was a meter whose label read "PEAK d" with a
-        // number pasted onto it. The name gets the share its own text needs and
-        // the number takes the rest, right-aligned, so neither can reach the other
-        // however the panel is sized.
-        auto nameArea = rowArea;
-        auto valueArea = rowArea;
-        const auto measuredName = juce::roundToInt (juce::GlyphArrangement::getStringWidth (
-            j37panel::panelFont (9.0f * textScale), label));
-        const auto nameWidth = juce::jmin (rowArea.getWidth() * 7 / 10,
-                                           measuredName + juce::roundToInt (8.0f * textScale));
-        nameArea.setWidth (juce::jmax (1, nameWidth));
-        valueArea.setLeft (nameArea.getRight());
+        // The name and the number are two fixed columns of one centred block, so the
+        // pair reads as a unit inside the frame and every value lines up at the same x.
+        auto nameArea = juce::Rectangle<int> (readoutLeft, rowTop,
+                                              labelColumnWidth, rowHeight);
+        auto valueArea = juce::Rectangle<int> (readoutLeft + labelColumnWidth, rowTop,
+                                               valueColumnWidth, rowHeight);
 
         g.setColour (palette.secondary);
-        g.setFont (j37panel::panelFont (9.0f * textScale));
+        g.setFont (labelFont);
         g.drawFittedText (label, nameArea, juce::Justification::centredLeft, 1);
 
-        // The value column uses a monospaced face so digits are all the same width:
-        // with a proportional font the right-aligned numbers kept shifting sideways
-        // frame to frame ("1" is narrower than "8"), which read as the meter being
-        // crooked. With fixed-width digits the column has a clean, stable right edge.
+        // The value column uses a monospaced face so digits are all the same width: with
+        // a proportional font the numbers kept shifting sideways frame to frame ("1" is
+        // narrower than "8"), which read as the meter being crooked.
         g.setColour (valueColour);
-        g.setFont (juce::Font (juce::FontOptions (juce::Font::getDefaultMonospacedFontName(),
-                                                  8.5f * textScale, juce::Font::bold)));
-        // Fitted rather than clipped: a value column narrow enough to truncate
-        // "-70.0 dB" into "-70.0 d" is the same defect one column over.
-        g.drawFittedText (formatDb (value), valueArea, juce::Justification::centredRight, 1);
+        g.setFont (valueFont);
+        g.drawFittedText (formatDb (value), valueArea, juce::Justification::centredLeft, 1);
     };
 
     // The clipping lamp: only the peak view can clip, so it is flagged next to that row.
