@@ -34,7 +34,22 @@ J37_THIRDPARTY="${J37_REPO}/ThirdParty"
 # defaults they always had.
 REPO="${J37_REPO}"
 CXX="${CXX:-g++}"
-CC="${CC:-cc}"
+# CC is only used by the harnesses that compile C (the reverb tank's verb.c).
+# `cc` is the Unix driver name and does not exist on a Windows/MSVC host, which
+# made those harnesses die with "cc: command not found" there. So keep CC when
+# the caller set a working one, otherwise take the C driver that matches CXX -
+# the same compiler the rest of the harness already uses, so a host with only
+# clang++ still gets a clang for its C file.
+CC="${CC:-}"
+if [ -z "${CC}" ] || ! command -v "${CC}" >/dev/null 2>&1; then
+    case "${CXX}" in
+        clang++*) CC="$(command -v clang || true)" ;;
+        g++*)     CC="$(command -v gcc || true)" ;;
+    esac
+    if [ -z "${CC}" ]; then
+        CC="$(command -v cc || command -v clang || command -v gcc || echo cc)"
+    fi
+fi
 
 # J37_SANITIZE=address,undefined is what build-linux-debug passes; every harness
 # that compiles a binary adds "${sanitize_flags[@]}" to the command line.
@@ -51,6 +66,14 @@ fi
 # override either: J37_CXX_STD=-std=c++17 ./tests/x/run.sh.
 J37_CXX_STD="${J37_CXX_STD:--std=c++20}"
 J37_WARNINGS=(-Wall -Wextra -Wno-unused-parameter)
+
+# -lm is the Unix maths library. On a Windows host clang targets MSVC, where the
+# flag resolves to a nonexistent m.lib and fails the link even though the maths
+# functions are in the C runtime already. Ask the platform, not the compiler name.
+J37_MATH_LIB=(-lm)
+case "$(uname -s 2>/dev/null)" in
+    MINGW*|MSYS*|CYGWIN*) J37_MATH_LIB=() ;;
+esac
 
 # j37_path <name> - the directory holding that dependency's headers, which is the
 # one fact that used to be spelled out per harness. An unknown name is an error

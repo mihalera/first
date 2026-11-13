@@ -43,6 +43,6 @@ mkdir -p "${BUILD}"
 "${CXX}" "${J37_CXX_STD}" -O2 "${J37_WARNINGS[@]}" \
     "${sanitize_flags[@]}" \
     -I "${HERE}" -I "$(j37_path source)" -I "${LIBRARY}" \
-    "${HERE}/reverb_test.cpp" "${BUILD}/verb.o" -o "${BUILD}/reverb_test" -lm
+    "${HERE}/reverb_test.cpp" "${BUILD}/verb.o" -o "${BUILD}/reverb_test" "${J37_MATH_LIB[@]}"
 
 "${BUILD}/reverb_test"
