@@ -1473,6 +1473,9 @@ void FirstAudioProcessorEditor::setUpTransportRow() {
     // mouseDown/mouseUp rather than onClick. setSpindownHeld() writes both the
     // engine atomic and the host-visible parameter, so an automation lane and a
     // finger on this button are the same event.
+    styleLabel(spindownLabel, "SPINDOWN", 9.0f, paletteFor(false).secondary, true,
+               juce::Justification::left);
+    addAndMakeVisible(spindownLabel);
     spindownButton.setLookAndFeel(&customLookAndFeel);
     setTip(spindownButton, "Hold to cut the platter's power: the machine winds down "
                            "over about a second and a half, and comes back up when you "

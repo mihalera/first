@@ -978,13 +978,35 @@ jobs:
           Write-Host "CLAP: $($module.FullName)"
           "clap=$($module.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
+      # The Standalone target is built on Windows too (CMakeLists.txt puts it in
+      # J37_PLUGIN_FORMATS), so it belongs in the artifact beside the plugins: a
+      # user testing the machine without a DAW needs the .exe, and an artifact
+      # named for the plugins alone hid that it existed. JUCE writes it to
+      # <build>/first_artefacts/<Config>/Standalone/<PRODUCT_NAME>.exe.
+      - name: Verify the Standalone executable was produced
+        id: standalone
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path "build/first_artefacts/${{ env.BUILD_TYPE }}/Standalone" `
+                             -Filter "*.exe" -File -ErrorAction SilentlyContinue |
+                       Sort-Object FullName | Select-Object -First 1
+          if ($null -eq $exe) {
+              Write-Error "No Standalone .exe under build/first_artefacts/${{ env.BUILD_TYPE }}/Standalone"
+              Get-ChildItem -Recurse build/first_artefacts -ErrorAction SilentlyContinue |
+                  Select-Object -First 40 FullName
+              exit 1
+          }
+          Write-Host "Standalone: $($exe.FullName)"
+          "exe=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
       - name: Upload Windows artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: MiBoX-VST3-CLAP-Windows
+          name: MiBoX-VST3-CLAP-Standalone-Windows
           path: |
             ${{ steps.vst3.outputs.bundle }}
             ${{ steps.clap.outputs.clap }}
+            ${{ steps.standalone.outputs.exe }}
           if-no-files-found: error
 
   # ============================================================================
@@ -1136,13 +1158,30 @@ jobs:
           "vst3=$($vst3.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
           "clap=$($clap.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
 
+      - name: Verify the ARM64 Standalone executable was produced
+        id: standalone
+        shell: pwsh
+        run: |
+          $exe = Get-ChildItem -Path "build/first_artefacts/${{ env.BUILD_TYPE }}/Standalone" `
+                             -Filter "*.exe" -File -ErrorAction SilentlyContinue |
+                       Sort-Object FullName | Select-Object -First 1
+          if ($null -eq $exe) {
+              Write-Error "No Standalone .exe under build/first_artefacts/${{ env.BUILD_TYPE }}/Standalone"
+              Get-ChildItem -Recurse build/first_artefacts -ErrorAction SilentlyContinue |
+                  Select-Object -First 40 FullName
+              exit 1
+          }
+          Write-Host "Standalone: $($exe.FullName)"
+          "exe=$($exe.FullName)" | Out-File -FilePath $env:GITHUB_OUTPUT -Append
+
       - name: Upload Windows ARM64 artifacts
         uses: actions/upload-artifact@v7
         with:
-          name: MiBoX-VST3-CLAP-Windows-arm64
+          name: MiBoX-VST3-CLAP-Standalone-Windows-arm64
           path: |
             ${{ steps.bundles.outputs.vst3 }}
             ${{ steps.bundles.outputs.clap }}
+            ${{ steps.standalone.outputs.exe }}
           if-no-files-found: error
 
   # ============================================================================
