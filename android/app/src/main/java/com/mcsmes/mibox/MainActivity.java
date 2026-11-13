@@ -2,14 +2,12 @@ package com.mcsmes.mibox;
 
 import android.app.Activity;
 import android.content.Intent;
-=======
 import android.os.Build;
 import android.os.Bundle;
 import android.view.View;
 
 import java.util.Arrays;
 
-=======
 // ============================================================================
 //  The APK's launcher.
 //
@@ -31,7 +29,6 @@ import java.util.Arrays;
 //  Every lifecycle callback also writes a line through Diag, which is dormant
 //  unless the app was started with `--ez miboxDiag true`. That trace is the only
 //  way to see how far a start gets on a device we cannot attach a debugger to.
-=======
 // ============================================================================
 public class MainActivity extends Activity
 {
@@ -129,10 +126,5 @@ public class MainActivity extends Activity
                    + " results=" + Arrays.toString (results));
 
         super.onRequestPermissionsResult (requestCode, permissions, results);
-=======
-        initEdgeToEdge();
-=======
-        super.onCreate (savedInstanceState);
-        initEdgeToEdge();
     }
 }

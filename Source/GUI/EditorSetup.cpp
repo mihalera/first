@@ -187,10 +187,6 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
     constexpr int screenMarginX = 16;
     constexpr int screenMarginY = 32;
 #endif
-=======
-    constexpr int screenMarginX = JUCE_ANDROID ? 8 : 16;
-    constexpr int screenMarginY = JUCE_ANDROID ? 8 : 32;
-=======
 
     const auto &displays = juce::Desktop::getInstance().getDisplays();
     juce::Rectangle<int> workArea;
@@ -223,9 +219,6 @@ void FirstAudioProcessorEditor::setUpWindowAndSize() {
                                : preferredEditorWidth,
                 rememberedSize ? juce::jlimit (minEditorHeight, 1180, rememberedSize->y)
                                : preferredEditorHeight);
-=======
-        setSize(preferredEditorWidth, preferredEditorHeight);
-=======
 #endif
     } else {
         // toNearestInt() above already rounded, so subtracting the margin afterwards
@@ -477,12 +470,6 @@ void FirstAudioProcessorEditor::setUpLanguageAndTuning() {
                    "RANGE allows. It does not change the retune speed - SPEED owns "
                    "that - so a deep, natural correction is possible without the "
                    "snap. Default 0 percent (off).",
-=======
-                   "included, out of the path; 100 is the full pull onto the scale. "
-                   "It does not change the retune speed - SPEED owns that - so a "
-                   "deep, natural correction is possible without the snap. Default "
-                   "0 percent (off).",
-=======
                    percentText, percentValue);
     setupTuneKnob (1, "autotune_speed", "SPEED", 0.0, 1.0, 0.001,
                    "SPEED - how quickly the correction glides to its new pitch, "
@@ -794,128 +781,6 @@ void FirstAudioProcessorEditor::setUpControlStrip() {
 
         const auto &id = controlIds[static_cast<int>(i)];
         configureControlSlider(slider, id);
-=======
-
-        if (id == "input" || id == "output") {
-            // Input and Output are both calibrated decibel trims over the same range.
-            slider.setRange(minStageDb, maxStageDb, 0.1);
-            slider.setNumDecimalPlacesToDisplay(1);
-            slider.setTextValueSuffix(" dB");
-        } else if (id == "delay_time") {
-            // DELAY: the head spacing, in milliseconds.
-            slider.setRange(0.0, 250.0, 0.1);
-            slider.setNumDecimalPlacesToDisplay(1);
-            slider.setTextValueSuffix(" ms");
-        } else if (id == "delay_lowcut") {
-            // LOW CUT: a corner in Hz, with the useful range at the bottom.
-            // The range goes in first: setSkewFactorFromMidPoint() reads the
-            // slider's current range, so skewing before it would use 0..1.
-            slider.setRange(20.0, 500.0, 1.0);
-            slider.setSkewFactorFromMidPoint(80.0);
-            slider.setNumDecimalPlacesToDisplay(0);
-            slider.setTextValueSuffix(" Hz");
-        } else if (id == "reverb_lowcut") {
-            // RVB LOW: the corner of the room's input high-pass, in Hz. Like LOW
-            // CUT it is a real frequency, not a percentage, so it needs its own
-            // range before the generic percentage branch clips it to 0..1.
-            slider.setRange(20.0, 500.0, 1.0);
-            slider.setSkewFactorFromMidPoint(120.0);
-            slider.setNumDecimalPlacesToDisplay(0);
-            slider.setTextValueSuffix(" Hz");
-        } else if (id == "reverb_predelay") {
-            // PRE-RVB: a real time in milliseconds, not a percentage.
-            slider.setRange(0.0, 100.0, 0.1);
-            slider.setNumDecimalPlacesToDisplay(1);
-            slider.setTextValueSuffix(" ms");
-        } else if (id == "reverb_width") {
-            // WIDTH is stored as a 0..2 multiplier but reads as a percentage:
-            // 100 % is the tank's own pair, 0 is mono and 200 doubles the side.
-            slider.setRange(0.0, 2.0, 0.001);
-            slider.setNumDecimalPlacesToDisplay(0);
-            slider.textFromValueFunction = [](double value) {
-                return juce::String(juce::roundToInt(value * 100.0)) + " %";
-            };
-            slider.valueFromTextFunction = [](const juce::String &text) {
-                return juce::jlimit(0.0, 2.0, text.getDoubleValue() / 100.0);
-            };
-        } else if (id == "st_offset") {
-            // ST OFFSET: the inter-channel time offset, in microseconds.
-            slider.setRange(-500.0, 500.0, 1.0);
-            slider.setNumDecimalPlacesToDisplay(0);
-            slider.setTextValueSuffix(" us");
-        } else if (id == "in_low" || id == "in_mid" || id == "in_high" || id == "out_low" ||
-                   id == "out_mid" || id == "out_high") {
-            // The two equalisers' six bands: real dB, centred on 0, and with a
-            // NEUTRAL default rather than a percentage one. They are deliberately
-            // NOT given the percentage text functions below - an EQ reads in dB,
-            // and a band showing "50 %" for its flat position would be a control
-            // whose readout does not say what it is.
-            slider.setRange(-12.0, 12.0, 0.1);
-            slider.setNumDecimalPlacesToDisplay(1);
-            slider.setTextValueSuffix(" dB");
-
-            // A bipolar EQ wants its NEUTRAL position in the middle of the
-            // travel, so a double-click returns to 0 rather than to one end.
-            // The defaultValues table already holds 0.0 for these six; this is
-            // the readout to match.
-            slider.textFromValueFunction = [](double value) {
-                return juce::String(value, 1) + " dB";
-            };
-            slider.valueFromTextFunction = [](const juce::String &text) {
-                return juce::jlimit(-12.0, 12.0, text.getDoubleValue());
-            };
-        } else if (id == "transient_attack" || id == "transient_sustain") {
-            // The transient shaper's two amounts are BIPOLAR and centred on 0:
-            // negative softens/shortens, positive sharpens/lengthens, and 0 is
-            // the neutral that leaves the stage transparent. The range is the
-            // parameter's own (-1..1), shown as a signed percentage so the two
-            // halves of the control read the same way they behave.
-            slider.setRange(-1.0, 1.0, 0.001);
-            slider.setNumDecimalPlacesToDisplay(0);
-            slider.textFromValueFunction = [](double value) {
-                return juce::String(juce::roundToInt(value * 100.0)) + " %";
-            };
-            slider.valueFromTextFunction = [](const juce::String &text) {
-                return juce::jlimit(-1.0, 1.0, text.getDoubleValue() / 100.0);
-            };
-        } else if (id == "in_hp_freq" || id == "in_lp_freq" || id == "out_hp_freq" ||
-                   id == "out_lp_freq") {
-            // The EQ filters' corners, in Hz. The two ends are the two REAL
-            // bypasses: 20 Hz is below anything on a record, and 20 kHz is at or
-            // above the top of the band - so the engine treats each end as "no
-            // filter" rather than as a very gentle one, which is what makes a
-            // neutral EQ bit-for-bit transparent.
-            //
-            // The high-pass is skewed toward its low end because that is where
-            // the useful range is (a rumble filter lives between 20 and 120 Hz),
-            // and the low-pass toward its middle for the same reason.
-            if (id == "in_hp_freq" || id == "out_hp_freq") {
-                slider.setSkewFactorFromMidPoint(100.0);
-                slider.setRange(20.0, 500.0, 1.0);
-            } else {
-                slider.setSkewFactorFromMidPoint(8000.0);
-                slider.setRange(2000.0, 20000.0, 10.0);
-            }
-
-            slider.setNumDecimalPlacesToDisplay(0);
-            slider.setTextValueSuffix(" Hz");
-        } else if (id == "in_eq_q" || id == "out_eq_q") {
-            // The filters' corner resonance. Capped at 1.5: a resonant filter
-            // ringing on a tape emulation is a fault rather than a feature, so
-            // the control exists to let a steep filter be usable rather than to
-            // make it sing.
-            slider.setRange(0.5, 1.5, 0.01);
-            slider.setNumDecimalPlacesToDisplay(2);
-            slider.setTextValueSuffix(" Q");
-        } else {
-            slider.setRange(0.0, 1.0, 0.001);
-            slider.textFromValueFunction = [](double value) {
-                return juce::String(juce::roundToInt(value * 100.0)) + " %";
-            };
-            slider.valueFromTextFunction = [](const juce::String &text) {
-                return juce::jlimit(0.0, 1.0, text.getDoubleValue() / 100.0);
-            };
-        }
 
         controlLabels[i].setText(controlNames[static_cast<int>(i)], juce::dontSendNotification);
         controlLabels[i].setFont (j37panel::panelFont (9.5f, juce::Font::bold));
@@ -951,6 +816,7 @@ void FirstAudioProcessorEditor::setUpTabButtons() {
     }
 
     phonePageBox.setLookAndFeel (&customLookAndFeel);
+
     // The phone's page list is the table ORDERED BY FAMILY, which the bar does by
     // filtering and the table cannot do without moving its rows: the ui_icons
     // atlas pairs a glyph with each page by position. So the list is built here,
@@ -963,9 +829,6 @@ void FirstAudioProcessorEditor::setUpTabButtons() {
             if (tabSpecs[static_cast<std::size_t> (tab)].family == family)
                 phonePageBox.addItem (tabSpecs[static_cast<std::size_t> (tab)].name, tab + 1);
 
-=======
-    for (int tab = 0; tab < numTabs; ++tab)
-        phonePageBox.addItem (tabSpecs[static_cast<std::size_t> (tab)].name, tab + 1);
     phonePageBox.onChange = [this]
     {
         const auto selectedTab = phonePageBox.getSelectedId() - 1;
@@ -976,8 +839,6 @@ void FirstAudioProcessorEditor::setUpTabButtons() {
     phonePageBox.setVisible (false);
 
     // The four tab families share one row above the page buttons. The grid
-=======
-    // The three tab families share one row above the page buttons. The grid
     // below reflows to accommodate them.
     const std::array<juce::TextButton *, tabFamilyCount> familyButtons{
         &tabFamilyTapeButton, &tabFamilyFxButton, &tabFamilyRackButton,
@@ -2448,10 +2309,6 @@ void FirstAudioProcessorEditor::applyRenderBackend(j37::render::Backend backend)
     // while narrow, then attach the selected renderer when the editor grows past
     // the phone breakpoint.
     if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight())) {
-=======
-    if (j37panel::usesPhoneLayout (getWidth())) {
-=======
-    if (j37panel::usesPhoneLayout (getWidth(), getHeight())) {
         openGLContext.detach();
         tapeScene.setSceneEnabled(false);
         shutDownNativeScene();
@@ -2503,10 +2360,6 @@ void FirstAudioProcessorEditor::setUpOpenGlRendering() {
     nativeSceneAttachAttemptsLeft = 0;
 
     if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight())) {
-=======
-    if (j37panel::usesPhoneLayout (getWidth())) {
-=======
-    if (j37panel::usesPhoneLayout (getWidth(), getHeight())) {
         tapeScene.setSceneEnabled(false);
         shutDownNativeScene();
         openGLContext.detach();
@@ -2588,10 +2441,6 @@ void FirstAudioProcessorEditor::setUpNativeScene() {
     // The phone layout intentionally has no 3D deck. Delay adapter creation
     // until the editor is wide enough to show it, avoiding an unused GPU surface.
     if (j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight()))
-=======
-    if (j37panel::usesPhoneLayout (getWidth()))
-=======
-    if (j37panel::usesPhoneLayout (getWidth(), getHeight()))
         return;
 
     shutDownNativeScene();
