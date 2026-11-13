@@ -94,8 +94,6 @@ namespace juce
 #include "GUI/DeckBands.h"
 #include "GUI/PhoneLayout.h"
 #include "GUI/AnimationTiming.h"
-=======
-=======
 
 // The spectrum curve's arithmetic, which is checked here for the reason the knob
 // metrics are: what it can get wrong is not a crash, it is a curve that draws
@@ -518,7 +516,6 @@ void checkPhoneLayout()
            "800 px portrait is the widest phone page", "PHONE", 800, 800);
     check (! j37panel::usesPhoneLayout (801, 800),
            "801 px portrait keeps the desktop layout", "PHONE", 801, 800);
-=======
     check (! j37panel::usesPhoneLayout (601, 800),
            "601 px portrait keeps the desktop layout", "PHONE", 601, 800);
     check (j37panel::usesPhoneLayout (800, 360),
@@ -563,11 +560,9 @@ void checkPhoneLayout()
                && j37panel::panelIsAnimating (false, false, false, 0.5f, 0.0f),
            "the transport, an armed START, and live activity all count as moving",
            "ANIMATION", 60, 1);
-=======
     check (j37panel::usesPhoneLayout (360), "360 px uses the phone layout", "PHONE", 360, 800);
     check (j37panel::usesPhoneLayout (600), "600 px uses the phone layout", "PHONE", 600, 800);
     check (! j37panel::usesPhoneLayout (601), "601 px keeps the desktop layout", "PHONE", 601, 800);
-=======
     check (! j37panel::usesPhoneLayout (1280, 720),
            "1280 x 720 keeps the desktop layout", "PHONE", 1280, 720);
     check (j37panel::editorTimerHz == 60
@@ -607,14 +602,12 @@ void checkPhoneLayout()
             check (layout.controls.width == width - 2 * j37panel::phoneLayoutInset,
                    "portrait controls use the full inset width", "PHONE", width, height);
         }
-=======
         check (layout.deck.y >= layout.header.y + layout.header.height,
                "phone deck follows the header", "PHONE", width, height);
         check (layout.controls.y >= layout.deck.y + layout.deck.height,
                "phone controls follow the deck", "PHONE", width, height);
         check (layout.controls.width == width - 2 * j37panel::phoneLayoutInset,
                "phone controls use the full inset width", "PHONE", width, height);
-=======
     }
 
     const auto compact = j37panel::computePhoneEditorLayout (360, 800);
@@ -675,9 +668,6 @@ void checkPhoneLayout()
                               std::array<int, 2> { 800, 360 },
                               std::array<int, 2> { 915, 412 } })
     {
-=======
-=======
-=======
     for (const auto& size : { std::array<int, 2> { 360, 800 },
                               std::array<int, 2> { 412, 915 },
                               std::array<int, 2> { 800, 360 },
@@ -719,7 +709,6 @@ int main()
     checkDeckBands();
     checkHorizontalKnobConsistency();
     checkCameraDepth();
-=======
     checkPhoneLayout();
 
     // The editor's own resize limits, and two sizes inside them a session is

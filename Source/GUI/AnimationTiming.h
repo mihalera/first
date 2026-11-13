@@ -65,7 +65,6 @@ namespace j37panel
         return transportEngaged || spindownHeld || waitingForHost
             || activity > 0.02f || drift > 0.02f;
     }
-=======
     inline constexpr int desktopAnimationPaintIntervalTicks = 2;
     inline constexpr int androidAnimationPaintIntervalTicks = 1;
 }
