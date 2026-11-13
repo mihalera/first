@@ -42,7 +42,8 @@ void FirstAudioProcessorEditor::PresetArtworkBadge::paint (juce::Graphics& g)
 
     if (index >= 0 && index < tiles)
     {
-        g.drawImage (atlas, bounds.getX(), bounds.getY(), bounds.getWidth(), bounds.getHeight(),
+        g.drawImage (atlas, juce::roundToInt (bounds.getX()), juce::roundToInt (bounds.getY()),
+                     juce::roundToInt (bounds.getWidth()), juce::roundToInt (bounds.getHeight()),
                      index * 64, 0, 64, 64, false);
     }
     else

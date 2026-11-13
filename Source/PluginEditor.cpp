@@ -2603,7 +2603,7 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
         // Only take the two-row split when it draws a decent disc, not a row of
         // beads: a phone-landscape grid can technically fit two rows but at a
         // radius a few pixels across, and it must keep its single readable row.
-        if (bestColumns > 0 && bestDisc >= 10.0f && bestDisc >= knobScore * 0.5f)
+        if (bestColumns > 0 && bestDisc >= 9.0f && bestDisc >= knobScore * 0.3f)
         {
             knobScore = bestDisc;
             knobColumns = bestColumns;

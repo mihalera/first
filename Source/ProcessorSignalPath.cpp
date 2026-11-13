@@ -437,8 +437,6 @@ void FirstAudioProcessor::processPostMachineStages (juce::dsp::AudioBlock<float>
 {
     const auto channels = context.channels;
     const auto samples = context.samples;
-    const auto reverbMix = reverbMixSmoothed.getCurrentValue();
-    const auto vinylMix = vinylSmoothed.getCurrentValue();
     const auto irMix = irMixSmoothed.getCurrentValue();
     if (channels <= 0 || samples <= 0) return;
 

@@ -1070,8 +1070,10 @@ void J37LookAndFeel::drawButtonText (juce::Graphics& g, juce::TextButton& button
             auto iconBounds = bounds.removeFromLeft (18.0f);
             iconBounds.setY (static_cast<float> (button.getHeight() - 16) * 0.5f);
             iconBounds.setHeight (16.0f);
-            g.drawImage (icons, iconBounds.getX(), iconBounds.getY(),
-                         iconBounds.getWidth(), iconBounds.getHeight(),
+            g.drawImage (icons, juce::roundToInt (iconBounds.getX()),
+                         juce::roundToInt (iconBounds.getY()),
+                         juce::roundToInt (iconBounds.getWidth()),
+                         juce::roundToInt (iconBounds.getHeight()),
                          (iconIndex % atlasColumns) * tileSize,
                          (iconIndex / atlasColumns) * tileSize,
                          tileSize, tileSize, true);
