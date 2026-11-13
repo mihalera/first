@@ -16,6 +16,9 @@
 #include "GUI/PanelAssets.h"
 #include "GUI/PanelPaint.h"
 #include "GUI/PanelTabs.h"
+// The deck's solved band rhythm - the same solve placeDeck lays the controls
+// out with, read here only to place the section rules in the gaps between bands.
+#include "GUI/DeckBands.h"
 
 // The spectrum curve's arithmetic: where each band's level sits in a box. It is a
 // metric rather than a widget, so what this file takes from it is a list of points
@@ -358,6 +361,44 @@ void FirstAudioProcessorEditor::paint(juce::Graphics &g) {
     // through the middle of the badge text at the minimum editor size.
     g.drawHorizontalLine(layout.deck.getBottom() - 1, static_cast<float>(layout.deck.getX() + 16),
                          static_cast<float>(layout.deck.getRight() - 16));
+
+    // The deck's functional groups, made visible. The panel has always been built
+    // from bands (SOURCE, CHARACTER, VOICE, TRANSPORT, PRESET - see placeDeck and
+    // DeckBands.h), but nothing drew the seams, so the controls read as one
+    // undifferentiated block. A hairline rule on each band's top edge plus a small
+    // section tag in the air above it gives the eye the skeleton in one pass. It is
+    // paint-only: every rule and tag rides the solved gaps, and no control bound
+    // moves. The groups are the bands themselves, so the structure cannot drift out
+    // of step with the controls it labels.
+    {
+        const auto bands = j37panel::DeckBands::solve (layout.deck.getHeight());
+        const auto bandTop = [&] (int band) {
+            return static_cast<float> (layout.deck.getY()
+                                       + bands.top[static_cast<std::size_t> (band)]);
+        };
+        struct DeckGroup { int band; const char* tag; };
+        const DeckGroup groups[] = {
+            { j37panel::DeckBands::model,     "SOURCE"    },
+            { j37panel::DeckBands::switches,  "CHARACTER" },
+            { j37panel::DeckBands::types,     "VOICE"     },
+            { j37panel::DeckBands::transport, "TRANSPORT" },
+            { j37panel::DeckBands::preset,    "PRESET"    },
+        };
+        const auto ruleLeft = static_cast<float> (layout.deck.getX() + 18);
+        const auto ruleRight = static_cast<float> (layout.deck.getRight() - 18);
+        g.setFont (j37panel::panelFont (6.5f, juce::Font::bold));
+        for (const auto& group : groups)
+        {
+            const auto y = bandTop (group.band) - 1.0f;
+            g.setColour (palette.border.withAlpha (0.30f));
+            g.drawHorizontalLine (juce::roundToInt (y), ruleLeft, ruleRight);
+            g.setColour (palette.accent.withAlpha (0.60f));
+            constexpr float tagWidth = 64.0f;
+            g.drawText (group.tag,
+                        juce::Rectangle<float> (ruleRight - tagWidth, y - 8.0f, tagWidth, 7.5f),
+                        juce::Justification::centredRight, false);
+        }
+    }
 
     // A hairline rule under the header strip separates the title block from the
     // controls. It is drawn BEFORE the status pill below, so the rule cannot cut
