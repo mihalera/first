@@ -2511,7 +2511,12 @@ FirstAudioProcessorEditor::placeControlStrip (const EditorLayout& layout)
     auto knobTileHeight = 0;
     auto knobScore = 0.0f;
     auto scoredRows = 0;
-    for (int columns = 1; columns <= knobCount; ++columns)
+    // A tall page with six or seven knobs is split into rows rather than drawn as one
+    // cramped line: past five across, the discs shrink faster than a second row costs.
+    // On a short (phone-landscape) grid the single row is still the only drawable
+    // arrangement, so the cap only applies when there is height to spend.
+    const auto columnCap = (knobAreaHeight >= 220 && knobCount > 5) ? 4 : knobCount;
+    for (int columns = 1; columns <= columnCap; ++columns)
     {
         const auto rows = rowsForColumns (columns);
         if (rows == scoredRows)
@@ -3190,20 +3195,24 @@ void FirstAudioProcessorEditor::placeMeters (const EditorLayout& layout)
     const auto rowGap = 8;
     const auto columnWidth = (meterArea.getWidth() - columnGap) / 2;
 
-    // Note the separate name: the knob strip above has already spent "tile" and
-    // "slot" on the grid's cells, so keeping the meters' own vocabulary here is
-    // what stops a later edit from silently reusing the wrong cell size.
-    const auto meterRowHeight = (meterArea.getHeight() - rowGap) / 2;
+    // The loudness meters carry a dial AND five readout rows, so they need more height
+    // than the compressor reduction ladders, which are a vertical bar and a number. The
+    // grid is therefore split 62/38 rather than in half: the equal split left the dial a
+    // few pixels tall once the rows were reserved, which is what made the meters look
+    // tiny. The ladders still have plenty for their bar and caption.
+    const auto usableHeight = meterArea.getHeight() - rowGap;
+    const auto topRowHeight = juce::roundToInt (static_cast<float> (usableHeight) * 0.62f);
+    const auto bottomRowHeight = usableHeight - topRowHeight;
 
     const auto leftColumn = meterArea.getX();
     const auto rightColumn = meterArea.getRight() - columnWidth;
     const auto topRow = meterArea.getY();
-    const auto bottomRow = meterArea.getBottom() - meterRowHeight;
+    const auto bottomRow = meterArea.getBottom() - bottomRowHeight;
 
-    inputMeter.setBounds (leftColumn, topRow, columnWidth, meterRowHeight);
-    outputMeter.setBounds (rightColumn, topRow, columnWidth, meterRowHeight);
-    compressorMeterIn.setBounds (leftColumn, bottomRow, columnWidth, meterRowHeight);
-    compressorMeterOut.setBounds (rightColumn, bottomRow, columnWidth, meterRowHeight);
+    inputMeter.setBounds (leftColumn, topRow, columnWidth, topRowHeight);
+    outputMeter.setBounds (rightColumn, topRow, columnWidth, topRowHeight);
+    compressorMeterIn.setBounds (leftColumn, bottomRow, columnWidth, bottomRowHeight);
+    compressorMeterOut.setBounds (rightColumn, bottomRow, columnWidth, bottomRowHeight);
 }
 
 //==============================================================================
