@@ -1331,6 +1331,9 @@ void FirstAudioProcessorEditor::resized()
     // drag of the window's edge, and it keeps the texture from ever being
     // stretched over a size it was not built for.
     rebuildPanelTextureLayers();
+    // The panels and the texture they carry are one cached surface; build it
+    // after the texture, at the size every partial repaint will blit from.
+    rebuildPanelBackground();
 
     const auto phoneLayout = j37panel::usesPhoneLayoutOnThisPlatform (getWidth(), getHeight());
     const auto phoneLayoutChanged = phoneLayout != phoneLayoutActive;
