@@ -1351,7 +1351,7 @@ function(j37_setup_graphics_backend target)
         CPMAddPackage(
             NAME bgfx
             GITHUB_REPOSITORY bkaradzic/bgfx.cmake
-            GIT_TAG be0ef0d69a9ce609de99dd420f1182c0888cc8f1
+            GIT_TAG 797de0d5175e6e5c36236017373788095021945a
             GIT_SUBMODULES_RECURSE YES)
 
         if(NOT TARGET bgfx)
